@@ -22,5 +22,5 @@ Key flags:
   --disable-logging              Disable persisted run summaries and trajectory logs.
   --ignore-gitignore             Stage files even when they are ignored by Git.
 
-This command creates .gc/rlm/, a virtualenv, a runtime config file, and a
+This command creates .gc/runtime/packs/rlm/, a virtualenv, a runtime config file, and a
 Docker image when Docker mode is allowed. Rerunning the command is safe.

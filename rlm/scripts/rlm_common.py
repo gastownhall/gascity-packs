@@ -131,7 +131,7 @@ class RuntimeConfig:
     def validate(self) -> None:
         if self.schema != RUNTIME_SCHEMA:
             raise CLIError(
-                f"Unsupported .gc/rlm/config.toml schema {self.schema}; expected {RUNTIME_SCHEMA}.",
+                f"Unsupported RLM runtime config schema {self.schema}; expected {RUNTIME_SCHEMA}.",
                 exit_code=2,
             )
         self.backend = self.backend.strip().lower()
@@ -163,10 +163,10 @@ class RuntimeConfig:
                 exit_code=2,
             )
         if self.max_depth < 1 or self.max_depth > self.max_depth_ceiling:
-            raise CLIError("Invalid max_depth policy in .gc/rlm/config.toml.", exit_code=2)
+            raise CLIError("Invalid max_depth policy in the RLM runtime config.", exit_code=2)
         if self.max_iterations < 1 or self.max_iterations > self.max_iterations_ceiling:
             raise CLIError(
-                "Invalid max_iterations policy in .gc/rlm/config.toml.",
+                "Invalid max_iterations policy in the RLM runtime config.",
                 exit_code=2,
             )
         if self.max_calls_per_hour < 1:
@@ -266,9 +266,9 @@ def utc_now_iso() -> str:
 
 
 def city_root_from_env() -> Path:
-    raw = os.environ.get("GC_CITY_PATH")
+    raw = os.environ.get("GC_CITY_ROOT") or os.environ.get("GC_CITY_PATH")
     if not raw:
-        raise CLIError("Missing GC_CITY_PATH.", exit_code=2)
+        raise CLIError("Missing GC_CITY_ROOT/GC_CITY_PATH.", exit_code=2)
     return Path(raw).resolve()
 
 
@@ -279,42 +279,73 @@ def pack_dir_from_env() -> Path:
     return Path(raw).resolve()
 
 
-def runtime_dir(city_root: Path) -> Path:
+def canonical_runtime_dir(city_root: Path) -> Path:
+    raw = os.environ.get("GC_PACK_STATE_DIR")
+    if raw:
+        return Path(raw).resolve()
+    runtime_root = os.environ.get("GC_CITY_RUNTIME_DIR")
+    if runtime_root:
+        return Path(runtime_root).resolve() / "packs" / "rlm"
+    return city_root / ".gc" / "runtime" / "packs" / "rlm"
+
+def legacy_runtime_dir(city_root: Path) -> Path:
     return city_root / ".gc" / "rlm"
 
 
-def venv_python(city_root: Path) -> Path:
-    return runtime_dir(city_root) / "venv" / "bin" / "python"
+def runtime_dir(city_root: Path) -> Path:
+    canonical = canonical_runtime_dir(city_root)
+    canonical_markers = [
+        canonical / "config.toml",
+        canonical / "venv" / "bin" / "python",
+        canonical / "install-summary.json",
+        canonical / "logs",
+        canonical / "cache",
+    ]
+    if any(path.exists() for path in canonical_markers):
+        return canonical
+    legacy = legacy_runtime_dir(city_root)
+    if legacy.exists():
+        return legacy
+    return canonical
 
 
-def config_path(city_root: Path) -> Path:
-    return runtime_dir(city_root) / "config.toml"
+def venv_python(city_root: Path, runtime_root: Path | None = None) -> Path:
+    root = runtime_root or runtime_dir(city_root)
+    return root / "venv" / "bin" / "python"
 
 
-def logs_dir(city_root: Path) -> Path:
-    return runtime_dir(city_root) / "logs"
+def config_path(city_root: Path, runtime_root: Path | None = None) -> Path:
+    root = runtime_root or runtime_dir(city_root)
+    return root / "config.toml"
 
 
-def cache_dir(city_root: Path) -> Path:
-    return runtime_dir(city_root) / "cache"
+def logs_dir(city_root: Path, runtime_root: Path | None = None) -> Path:
+    root = runtime_root or runtime_dir(city_root)
+    return root / "logs"
 
 
-def lock_path(city_root: Path) -> Path:
-    return runtime_dir(city_root) / "install.lock"
+def cache_dir(city_root: Path, runtime_root: Path | None = None) -> Path:
+    root = runtime_root or runtime_dir(city_root)
+    return root / "cache"
 
 
-def ensure_runtime_layout(city_root: Path) -> None:
-    root = runtime_dir(city_root)
+def lock_path(city_root: Path, runtime_root: Path | None = None) -> Path:
+    root = runtime_root or runtime_dir(city_root)
+    return root / "install.lock"
+
+
+def ensure_runtime_layout(city_root: Path, runtime_root: Path | None = None) -> None:
+    root = runtime_root or runtime_dir(city_root)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(root, 0o700)
     ignore = root / ".gitignore"
     if not ignore.exists():
         ignore.write_text("*\n!.gitignore\n", encoding="utf-8")
         os.chmod(ignore, 0o600)
-    logs = logs_dir(city_root)
+    logs = logs_dir(city_root, runtime_root=root)
     logs.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(logs, 0o700)
-    cache = cache_dir(city_root)
+    cache = cache_dir(city_root, runtime_root=root)
     cache.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(cache, 0o700)
 
@@ -357,8 +388,14 @@ def load_runtime_config(city_root: Path) -> RuntimeConfig:
 
 
 def save_runtime_config(city_root: Path, cfg: RuntimeConfig) -> None:
+    save_runtime_config_at(city_root, cfg, runtime_root=None)
+
+
+def save_runtime_config_at(
+    city_root: Path, cfg: RuntimeConfig, runtime_root: Path | None = None
+) -> None:
     cfg.validate()
-    path = config_path(city_root)
+    path = config_path(city_root, runtime_root=runtime_root)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         handle.write(cfg.to_toml())

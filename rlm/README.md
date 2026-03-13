@@ -9,7 +9,7 @@ Phase 1 supports OpenAI-compatible backends only.
 
 ## What it provides
 
-- `gc rlm install` to create a pack-owned runtime under `.gc/rlm/`
+- `gc rlm install` to create a pack-owned runtime under `.gc/runtime/packs/rlm/`
 - `gc rlm ask` for bounded long-context analysis over files, globs, or stdin
 - `gc rlm status` to inspect policy, runtime health, and recent runs
 - `gc rlm uninstall` to clear broken state or remove the runtime
@@ -60,7 +60,7 @@ gc rlm install \
   --environment local
 ```
 
-The install command creates `.gc/rlm/` with a Python virtualenv, config,
+The install command creates `.gc/runtime/packs/rlm/` with a Python virtualenv, config,
 logs, cache, and a Docker image for sandboxed execution when Docker mode is
 enabled.
 

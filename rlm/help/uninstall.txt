@@ -6,6 +6,6 @@ Usage:
   gc rlm uninstall --keep-image
 
 Behavior:
-  - removes .gc/rlm/venv, config, cache, and lock state
+  - removes .gc/runtime/packs/rlm/venv, config, cache, and lock state
   - removes the Docker image by default when it belongs to this install
   - preserves logs unless --purge-logs is supplied

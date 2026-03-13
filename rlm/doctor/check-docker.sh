@@ -1,7 +1,11 @@
 #!/bin/sh
 set -eu
 
-CONFIG_PATH="${GC_CITY_PATH:-}/.gc/rlm/config.toml"
+RUNTIME_DIR="${GC_PACK_STATE_DIR:-${GC_CITY_RUNTIME_DIR:-${GC_CITY_PATH:-}/.gc/runtime}/packs/rlm}"
+if [ ! -f "$RUNTIME_DIR/config.toml" ] && [ -f "${GC_CITY_PATH:-}/.gc/rlm/config.toml" ]; then
+  RUNTIME_DIR="${GC_CITY_PATH:-}/.gc/rlm"
+fi
+CONFIG_PATH="$RUNTIME_DIR/config.toml"
 DOCKER_REQUIRED=0
 
 if [ -n "${GC_CITY_PATH:-}" ] && [ -f "$CONFIG_PATH" ]; then

@@ -1,5 +1,5 @@
 Run a bounded Recursive Language Model analysis using the policy in
-.gc/rlm/config.toml.
+.gc/runtime/packs/rlm/config.toml.
 
 Usage:
   gc rlm ask --path . --prompt "Map the major config-loading paths."

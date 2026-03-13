@@ -166,9 +166,10 @@ def install_runtime(args: argparse.Namespace) -> int:
     check_python_version()
     city_root = city_root_from_env()
     pack_dir = pack_dir_from_env()
-    ensure_runtime_layout(city_root)
+    runtime_root = canonical_runtime_dir(city_root)
+    ensure_runtime_layout(city_root, runtime_root=runtime_root)
 
-    with file_lock(lock_path(city_root)):
+    with file_lock(lock_path(city_root, runtime_root=runtime_root)):
         cfg = create_runtime_config(args, pack_dir)
         previous_cfg: RuntimeConfig | None = None
         if config_path(city_root).exists():
@@ -179,9 +180,9 @@ def install_runtime(args: argparse.Namespace) -> int:
         if "docker" in cfg.allowed_environments:
             require_docker()
 
-        venv_dir = runtime_dir(city_root) / "venv"
+        venv_dir = runtime_root / "venv"
         run([sys.executable, "-m", "venv", str(venv_dir)])
-        python = venv_python(city_root)
+        python = venv_python(city_root, runtime_root=runtime_root)
         run([str(python), "-m", "pip", "install", "--upgrade", "pip"])
         run(
             [
@@ -223,9 +224,9 @@ def install_runtime(args: argparse.Namespace) -> int:
             capture_output=True,
         )
         rlms_version = smoke.stdout.strip()
-        save_runtime_config(city_root, cfg)
+        save_runtime_config_at(city_root, cfg, runtime_root=runtime_root)
         write_json(
-            runtime_dir(city_root) / "install-summary.json",
+            runtime_root / "install-summary.json",
             install_summary_payload(
                 cfg=cfg,
                 rlms_version=rlms_version,
@@ -233,7 +234,7 @@ def install_runtime(args: argparse.Namespace) -> int:
             ),
         )
 
-    print(f"Installed rlms {rlms_version} under {runtime_dir(city_root)}")
+    print(f"Installed rlms {rlms_version} under {runtime_root}")
     if cfg.docker_image:
         print(f"Docker image: {cfg.docker_image}")
     return 0
@@ -406,7 +407,7 @@ def status_runtime(args: argparse.Namespace) -> int:
             payload["rlms_version"] = ""
         payload["docker_image_present"] = docker_image_exists(cfg.docker_image)
     else:
-        payload["hint"] = "Run 'gc rlm install' to create .gc/rlm/ for this city."
+        payload["hint"] = "Run 'gc rlm install' to create the pack runtime for this city."
 
     if args.json:
         printable = payload.copy()

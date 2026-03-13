@@ -240,7 +240,7 @@ class StageCorpusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             city_root = Path(tmp)
             ensure_runtime_layout(city_root)
-            internal = city_root / ".gc" / "rlm" / "venv"
+            internal = city_root / ".gc" / "runtime" / "packs" / "rlm" / "venv"
             internal.mkdir(parents=True, exist_ok=True)
             (internal / "ignored.py").write_text("print('ignored')\n", encoding="utf-8")
             (city_root / "keep.py").write_text("print('keep')\n", encoding="utf-8")
