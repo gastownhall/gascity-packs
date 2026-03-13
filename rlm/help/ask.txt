@@ -13,8 +13,8 @@ Flags:
   --stdin                      Read an additional text context from stdin.
   --output <text|json>         Output mode. Defaults to text.
   --no-log-content             Keep run metadata only; do not persist full trajectory content.
-  --max-depth <n>              Lower the configured max depth for this call.
-  --max-iterations <n>         Lower the configured max iterations for this call.
+  --max-depth <n>              Override depth for this call, up to the configured ceiling.
+  --max-iterations <n>         Override iterations for this call, up to the configured ceiling.
 
 Policy notes:
   - Backend, model, and execution environment come from install-time policy.

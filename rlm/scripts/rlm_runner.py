@@ -22,7 +22,16 @@ from rlm import (
 from rlm.logger import RLMLogger
 from rlm.utils.prompts import RLM_SYSTEM_PROMPT
 
-from rlm_common import CLIError, strip_code_fence, summarize_error, utc_now_iso
+from rlm_common import (
+    CLIError,
+    MAX_GREP_RESULTS,
+    MAX_LIST_FILES,
+    MAX_TOOL_CHARS,
+    MAX_TOOL_LINES,
+    strip_code_fence,
+    summarize_error,
+    utc_now_iso,
+)
 
 
 @dataclass
@@ -68,7 +77,7 @@ def build_tools(
     manifest_by_path = {entry["display_path"]: entry for entry in manifest}
 
     def list_files(glob_pattern: str | None = None, limit: int = 200) -> list[str]:
-        limit = max(1, min(int(limit), 500))
+        limit = max(1, min(int(limit), MAX_LIST_FILES))
         paths = sorted(manifest_by_path.keys())
         if glob_pattern:
             import fnmatch
@@ -85,10 +94,11 @@ def build_tools(
         entry = manifest_by_path.get(path)
         if entry is None:
             raise ValueError(f"Unknown staged path: {path}")
-        max_chars = max(200, min(int(max_chars), 40000))
+        max_chars = max(200, min(int(max_chars), MAX_TOOL_CHARS))
         start = max(1, int(start_line or 1))
         finish = int(end_line or entry["line_count"] or start)
         finish = max(start, finish)
+        finish = min(finish, start + MAX_TOOL_LINES - 1)
         text = (context_root / entry["staged_relpath"]).read_text(encoding="utf-8")
         lines = text.splitlines()
         slice_ = lines[start - 1 : finish]
@@ -100,7 +110,7 @@ def build_tools(
 
     def grep(pattern: str, glob_pattern: str | None = None, limit: int = 200) -> list[str]:
         compiled = re.compile(pattern)
-        limit = max(1, min(int(limit), 200))
+        limit = max(1, min(int(limit), MAX_GREP_RESULTS))
         results: list[str] = []
         for path in list_files(glob_pattern=glob_pattern, limit=5000):
             entry = manifest_by_path[path]

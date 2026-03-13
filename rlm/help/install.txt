@@ -10,7 +10,7 @@ Key flags:
   --environment <docker|local>   Default execution environment. Local is explicit opt-in.
   --base-url <url>               Optional OpenAI-compatible base URL.
   --backend-api-key-env <name>   Environment variable holding the API key. Empty string disables the check.
-  --allow-remote-backend         Required for any backend that needs network egress.
+  --allow-remote-backend         Required for backends that need non-loopback network egress.
   --max-depth <n>                Default recursion depth policy.
   --max-iterations <n>           Default iteration policy.
   --max-duration-seconds <n>     Max runtime budget per call.

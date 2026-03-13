@@ -136,6 +136,12 @@ def create_runtime_config(args: argparse.Namespace, pack_dir: Path) -> RuntimeCo
     return cfg
 
 
+def clamp_policy_override(override: int | None, default: int, ceiling: int) -> int:
+    if override is None:
+        return default
+    return min(override, ceiling)
+
+
 def install_runtime(args: argparse.Namespace) -> int:
     check_python_version()
     city_root = city_root_from_env()
@@ -232,8 +238,12 @@ def build_runner_spec(
         "model": cfg.model,
         "base_url": cfg.base_url,
         "backend_api_key_env": cfg.backend_api_key_env,
-        "max_depth": min(args.max_depth or cfg.max_depth, cfg.max_depth),
-        "max_iterations": min(args.max_iterations or cfg.max_iterations, cfg.max_iterations),
+        "max_depth": clamp_policy_override(args.max_depth, cfg.max_depth, cfg.max_depth_ceiling),
+        "max_iterations": clamp_policy_override(
+            args.max_iterations,
+            cfg.max_iterations,
+            cfg.max_iterations_ceiling,
+        ),
         "max_duration_seconds": cfg.max_duration_seconds,
         "max_tokens_per_call": cfg.max_tokens_per_call,
         "default_environment": cfg.default_environment,
@@ -247,6 +257,7 @@ def build_runner_spec(
 
 def ask_runtime(args: argparse.Namespace) -> int:
     city_root = city_root_from_env()
+    ensure_runtime_layout(city_root)
     cfg = load_runtime_config(city_root)
     cfg.validate()
     ensure_remote_backend_policy(cfg)
@@ -308,9 +319,9 @@ def ask_runtime(args: argparse.Namespace) -> int:
             if cfg.backend_api_key_env:
                 value = os.environ.get(cfg.backend_api_key_env, "")
                 if value:
-                    command.extend(["-e", f"{cfg.backend_api_key_env}={value}"])
+                    command.extend(["-e", cfg.backend_api_key_env])
             command.extend([cfg.docker_image, "--spec", "/workspace/output/spec.json"])
-            proc = subprocess.run(command)
+            proc = run(command, check=False)
             return proc.returncode
 
         python = require_runtime_python(city_root)
@@ -322,7 +333,10 @@ def ask_runtime(args: argparse.Namespace) -> int:
             city_root=city_root,
             container_mode=False,
         )
-        proc = subprocess.run([str(python), str(pack_dir_from_env() / "scripts" / "rlm_runner.py"), "--spec", str(spec_path)])
+        proc = run(
+            [str(python), str(pack_dir_from_env() / "scripts" / "rlm_runner.py"), "--spec", str(spec_path)],
+            check=False,
+        )
         return proc.returncode
     finally:
         shutil.rmtree(bundle.run_dir, ignore_errors=True)
@@ -421,7 +435,7 @@ def uninstall_runtime(args: argparse.Namespace) -> int:
         if args.purge_logs:
             shutil.rmtree(logs_dir(city_root), ignore_errors=True)
         if docker_image and not args.keep_image and docker_image_exists(docker_image):
-            subprocess.run(["docker", "image", "rm", "-f", docker_image], check=False)
+            run(["docker", "image", "rm", "-f", docker_image], check=False)
 
     print(f"Removed runtime state from {runtime_root}")
     if args.purge_logs:
@@ -452,4 +466,3 @@ def entrypoint(command: str) -> None:
     except CLIError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(exc.exit_code) from exc
-

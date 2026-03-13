@@ -359,7 +359,7 @@ def is_loopback_url(base_url: str) -> bool:
 
 def backend_requires_network(cfg: RuntimeConfig) -> bool:
     if cfg.base_url:
-        return True
+        return not is_loopback_url(cfg.base_url)
     return cfg.backend.strip().lower() == "openai"
 
 
@@ -398,7 +398,7 @@ def docker_image_tag(pack_dir: Path) -> str:
     return f"gascity-rlm:{RUNTIME_VERSION}-{hasher.hexdigest()[:12]}"
 
 
-def check_python_version() -> tuple[int, int, int]:
+def check_python_version() -> tuple[int, ...]:
     proc = run(
         ["python3", "-c", "import sys, json; print(json.dumps(list(sys.version_info[:3])))"],
         capture_output=True,
@@ -501,11 +501,30 @@ def safe_stage_relpath(display_value: str) -> Path:
     return Path(normalized)
 
 
+def reserve_staged_path(context_dir: Path, staged_rel: Path) -> Path:
+    candidate = context_dir / staged_rel
+    if not candidate.exists():
+        return candidate
+    stem = candidate.stem
+    suffix = candidate.suffix
+    index = 1
+    while True:
+        alt = candidate.with_name(f"{stem}__{index}{suffix}")
+        if not alt.exists():
+            return alt
+        index += 1
+
+
 def is_binary_blob(data: bytes) -> bool:
     if not data:
         return False
     if b"\x00" in data:
         return True
+    try:
+        data.decode("utf-8")
+        return False
+    except UnicodeDecodeError:
+        pass
     text_bytes = sum(
         1 for byte in data if byte in b"\t\n\r\f\b" or 32 <= byte <= 126
     )
@@ -523,11 +542,14 @@ def read_text_file(path: Path) -> tuple[str, int, str]:
 
 def maybe_find_git_root(path: Path) -> Path | None:
     probe = path if path.is_dir() else path.parent
-    proc = subprocess.run(
-        ["git", "-C", str(probe), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(probe), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
     if proc.returncode != 0:
         return None
     root = proc.stdout.strip()
@@ -555,12 +577,16 @@ def filter_gitignored(paths: list[Path], respect_gitignore: bool) -> tuple[list[
             rel = os.path.relpath(member, git_root)
             rels.append(rel)
             reverse[rel] = member
-        proc = subprocess.run(
-            ["git", "-C", str(git_root), "check-ignore", "--stdin"],
-            input="\n".join(rels) + ("\n" if rels else ""),
-            capture_output=True,
-            text=True,
-        )
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(git_root), "check-ignore", "--stdin"],
+                input="\n".join(rels) + ("\n" if rels else ""),
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            kept.extend(members)
+            continue
         ignored_set = {line.strip() for line in proc.stdout.splitlines() if line.strip()}
         for rel in rels:
             if rel in ignored_set:
@@ -680,7 +706,8 @@ def stage_corpus(
         total_bytes += size_bytes
         shown_path = display_path(candidate, cwd)
         staged_rel = safe_stage_relpath(shown_path)
-        staged_path = context_dir / staged_rel
+        staged_path = reserve_staged_path(context_dir, staged_rel)
+        staged_rel = staged_path.relative_to(context_dir)
         staged_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         staged_path.write_text(text, encoding="utf-8")
         line_count = text.count("\n") + (1 if text else 0)
@@ -701,7 +728,8 @@ def stage_corpus(
 
     if stdin_text:
         staged_rel = Path("_stdin/stdin.txt")
-        staged_path = context_dir / staged_rel
+        staged_path = reserve_staged_path(context_dir, staged_rel)
+        staged_rel = staged_path.relative_to(context_dir)
         staged_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         staged_path.write_text(stdin_text, encoding="utf-8")
         digest = hashlib.sha256(stdin_text.encode("utf-8")).hexdigest()
@@ -787,7 +815,10 @@ def iso_to_sortable(value: str) -> str:
 def docker_image_exists(tag: str) -> bool:
     if not tag:
         return False
-    proc = subprocess.run(["docker", "image", "inspect", tag], capture_output=True, text=True)
+    try:
+        proc = run(["docker", "image", "inspect", tag], capture_output=True, check=False)
+    except CLIError:
+        return False
     return proc.returncode == 0
 
 

@@ -12,7 +12,7 @@ and can call `gc rlm ask` when a task needs repo-wide or log-wide synthesis.
 - `gc rlm ask` for bounded long-context analysis over files, globs, or stdin
 - `gc rlm status` to inspect policy, runtime health, and recent runs
 - `gc rlm uninstall` to clear broken state or remove the runtime
-- `gc doctor` checks for Python, Docker, and runtime health
+- `gc doctor` checks for Python, runtime health, and Docker when sandboxed execution is configured
 - `rlm-usage` prompt fragment for agent guidance
 
 ## Include It
@@ -81,6 +81,6 @@ gc rlm ask --path . --prompt "Summarize the pack surface." --output json
 
 - Docker is the default execution path.
 - `local` mode is intentionally explicit and has no hard security boundary.
-- Remote model access requires `--allow-remote-backend` at install time.
+- Non-loopback remote model access requires `--allow-remote-backend` at install time.
 - By default the staged corpus respects `.gitignore`, skips binary files, and
   deny-lists common secret-like patterns such as `.env*` and `*.pem`.
