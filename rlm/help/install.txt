@@ -1,0 +1,19 @@
+Install or update the pack-owned RLM runtime for the current Gas City.
+
+Usage:
+  gc rlm install --backend openai --model gpt-5-mini --environment docker --allow-remote-backend
+  gc rlm install --backend openai --model local-model --base-url http://127.0.0.1:8000/v1 --backend-api-key-env '' --environment local
+
+Key flags:
+  --backend <name>               Backend identifier passed to the upstream rlms package.
+  --model <name>                 Root model name used for RLM calls.
+  --environment <docker|local>   Default execution environment. Local is explicit opt-in.
+  --base-url <url>               Optional OpenAI-compatible base URL.
+  --backend-api-key-env <name>   Environment variable holding the API key. Empty string disables the check.
+  --allow-remote-backend         Required for any backend that needs network egress.
+  --max-depth <n>                Default recursion depth policy.
+  --max-iterations <n>           Default iteration policy.
+  --max-duration-seconds <n>     Max runtime budget per call.
+
+This command creates .gc/rlm/, a virtualenv, a runtime config file, and a
+Docker image when Docker mode is allowed. Rerunning the command is safe.

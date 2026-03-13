@@ -1,0 +1,22 @@
+Run a bounded Recursive Language Model analysis using the policy in
+.gc/rlm/config.toml.
+
+Usage:
+  gc rlm ask --path . --prompt "Map the major config-loading paths."
+  gc rlm ask --glob 'docs/**/*.md' --prompt "What pack constraints matter here?"
+  gc rlm ask --stdin --prompt "Summarize this pasted log excerpt."
+
+Flags:
+  --prompt <text>              Required natural-language task.
+  --path <path>                Repeatable file or directory roots.
+  --glob <pattern>             Repeatable glob, resolved from the current working directory.
+  --stdin                      Read an additional text context from stdin.
+  --output <text|json>         Output mode. Defaults to text.
+  --no-log-content             Keep run metadata only; do not persist full trajectory content.
+  --max-depth <n>              Lower the configured max depth for this call.
+  --max-iterations <n>         Lower the configured max iterations for this call.
+
+Policy notes:
+  - Backend, model, and execution environment come from install-time policy.
+  - The staged corpus respects .gitignore by default and skips common secret patterns.
+  - Docker mode runs the RLM inside a pack-built container over a staged, filtered corpus.

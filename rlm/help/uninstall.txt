@@ -1,0 +1,11 @@
+Remove the RLM runtime from the current city.
+
+Usage:
+  gc rlm uninstall
+  gc rlm uninstall --purge-logs
+  gc rlm uninstall --keep-image
+
+Behavior:
+  - removes .gc/rlm/venv, config, cache, and lock state
+  - removes the Docker image by default when it belongs to this install
+  - preserves logs unless --purge-logs is supplied
