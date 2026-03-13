@@ -42,6 +42,7 @@ if existing_rlm is None or not hasattr(existing_rlm, "BudgetExceededError"):
 from rlm_cli import clamp_policy_override, create_runtime_config
 from rlm_common import (
     CLIError,
+    MAX_TRUNCATED_PATHS,
     RuntimeConfig,
     backend_requires_network,
     cache_dir,
@@ -234,6 +235,47 @@ class StageCorpusTests(unittest.TestCase):
                     )
 
             self.assertEqual(list(cache_dir(city_root).iterdir()), [])
+
+    def test_glob_skips_internal_gc_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            city_root = Path(tmp)
+            ensure_runtime_layout(city_root)
+            internal = city_root / ".gc" / "rlm" / "venv"
+            internal.mkdir(parents=True, exist_ok=True)
+            (internal / "ignored.py").write_text("print('ignored')\n", encoding="utf-8")
+            (city_root / "keep.py").write_text("print('keep')\n", encoding="utf-8")
+
+            bundle = stage_corpus(
+                city_root=city_root,
+                cwd=city_root,
+                path_args=[],
+                glob_args=["**/*.py"],
+                stdin_text=None,
+                cfg=RuntimeConfig(default_environment="local", allowed_environments=["local"]),
+            )
+
+            staged_paths = {entry.display_path for entry in bundle.files}
+            self.assertEqual(staged_paths, {"keep.py"})
+
+    def test_truncated_paths_are_capped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            city_root = Path(tmp)
+            ensure_runtime_layout(city_root)
+            (city_root / "keep.txt").write_text("keep\n", encoding="utf-8")
+            for index in range(MAX_TRUNCATED_PATHS + 20):
+                (city_root / f"binary-{index:03d}.bin").write_bytes(b"\x00\xff")
+
+            bundle = stage_corpus(
+                city_root=city_root,
+                cwd=city_root,
+                path_args=["."],
+                glob_args=[],
+                stdin_text=None,
+                cfg=RuntimeConfig(default_environment="local", allowed_environments=["local"]),
+            )
+
+            self.assertEqual(len(bundle.truncated_paths), MAX_TRUNCATED_PATHS + 1)
+            self.assertTrue(bundle.truncated_paths[-1].startswith("...and "))
 
 
 class RunnerPayloadTests(unittest.TestCase):

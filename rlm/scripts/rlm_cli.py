@@ -170,6 +170,12 @@ def install_runtime(args: argparse.Namespace) -> int:
 
     with file_lock(lock_path(city_root)):
         cfg = create_runtime_config(args, pack_dir)
+        previous_cfg: RuntimeConfig | None = None
+        if config_path(city_root).exists():
+            try:
+                previous_cfg = load_runtime_config(city_root)
+            except CLIError:
+                previous_cfg = None
         if "docker" in cfg.allowed_environments:
             require_docker()
 
@@ -201,6 +207,8 @@ def install_runtime(args: argparse.Namespace) -> int:
                     str(pack_dir),
                 ]
             )
+            if previous_cfg and previous_cfg.docker_image and previous_cfg.docker_image != cfg.docker_image:
+                run(["docker", "image", "rm", "-f", previous_cfg.docker_image], check=False)
 
         smoke = run(
             [
@@ -300,6 +308,11 @@ def ask_runtime(args: argparse.Namespace) -> int:
         try:
             if cfg.default_environment == "docker":
                 require_docker()
+                if not docker_image_exists(cfg.docker_image):
+                    raise CLIError(
+                        "Configured RLM Docker image is missing. Re-run 'gc rlm install'.",
+                        exit_code=2,
+                    )
                 spec_path = build_runner_spec(
                     args=args,
                     cfg=cfg,
@@ -445,7 +458,7 @@ def uninstall_runtime(args: argparse.Namespace) -> int:
             docker_image = load_runtime_config(city_root).docker_image
         except CLIError:
             docker_image = cfg.get("docker_image", "") if cfg else ""
-        for rel in ["venv", "cache", "config.toml", "install-summary.json"]:
+        for rel in ["venv", "cache", "config.toml", "install-summary.json", "install.lock"]:
             path = runtime_root / rel
             if path.is_dir():
                 shutil.rmtree(path, ignore_errors=True)

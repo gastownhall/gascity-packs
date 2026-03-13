@@ -13,7 +13,7 @@ When you use it:
 1. Scope the request to the smallest `--path` or `--glob` you can.
 2. Treat the result as advisory, not authoritative.
 3. Verify at least one important claim by reading source files directly before acting on it.
-4. If the tool reports `complete=false` or a depth/iteration limit was reached, say so and fall back to direct inspection.
+4. If completeness matters, prefer `--output json` and check `complete`; in text mode, watch for depth/iteration limit notes and say so before acting.
 5. Do not include secrets, credentials, API keys, or user PII in the `--prompt` text.
 6. If RLM output contradicts what you observe by reading files directly, trust your direct reads.
 {{ end }}

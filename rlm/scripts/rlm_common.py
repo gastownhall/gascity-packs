@@ -52,6 +52,7 @@ DEFAULT_MAX_TOKENS_PER_CALL = 120000
 DEFAULT_LOG_RETENTION_DAYS = 7
 MAX_STAGED_BYTES = 128 * 1024 * 1024
 MAX_INLINE_BYTES = 256 * 1024
+MAX_TRUNCATED_PATHS = 500
 MAX_TOOL_CHARS = 20000
 MAX_TOOL_LINES = 400
 MAX_LIST_FILES = 500
@@ -647,6 +648,14 @@ def is_within_root(path: Path, root: Path) -> bool:
         return False
 
 
+def contains_excluded_component(path: Path, root: Path) -> bool:
+    try:
+        rel = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return any(part in EXCLUDED_WALK_DIRS for part in rel.parts[:-1])
+
+
 def gather_candidates(
     *,
     cwd: Path,
@@ -688,6 +697,8 @@ def gather_candidates(
             resolved = resolve_input_path(match, cwd)
             if resolved.is_file():
                 if not is_within_root(resolved, cwd):
+                    continue
+                if contains_excluded_component(resolved, cwd):
                     continue
                 candidates.append(resolved)
             elif resolved.is_dir():
@@ -809,6 +820,13 @@ def stage_corpus(
                 exit_code=2,
             )
 
+        unique_truncated = sorted(set(truncated_paths))
+        if len(unique_truncated) > MAX_TRUNCATED_PATHS:
+            extra = len(unique_truncated) - MAX_TRUNCATED_PATHS
+            unique_truncated = unique_truncated[:MAX_TRUNCATED_PATHS] + [
+                f"...and {extra} more omitted paths"
+            ]
+
         return CorpusBundle(
             run_id=run_id,
             run_dir=run_dir,
@@ -816,7 +834,7 @@ def stage_corpus(
             output_dir=output_dir,
             files=files,
             inline_files=inline_files,
-            truncated_paths=sorted(set(truncated_paths)),
+            truncated_paths=unique_truncated,
             roots=roots,
             total_bytes=total_bytes,
             file_count=len(files),
