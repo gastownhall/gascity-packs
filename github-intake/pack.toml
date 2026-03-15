@@ -1,0 +1,63 @@
+[pack]
+name = "github-intake"
+version = "0.1.0"
+schema = 1
+
+[[service]]
+name = "github-webhook"
+kind = "proxy_process"
+state_root = ".gc/services/github-intake"
+
+[service.publication]
+visibility = "public"
+hostname = "github"
+
+[service.process]
+command = ["python3", "scripts/github_intake_service.py"]
+health_path = "/healthz"
+
+[[service]]
+name = "github-admin"
+kind = "proxy_process"
+state_root = ".gc/services/github-intake"
+
+[service.publication]
+visibility = "tenant"
+hostname = "github-admin"
+
+[service.process]
+command = ["python3", "scripts/github_intake_service.py"]
+health_path = "/healthz"
+
+[[doctor]]
+name = "python"
+description = "python3 3.11+ is available for the GitHub intake services"
+script = "doctor/check-python.sh"
+
+[[doctor]]
+name = "openssl"
+description = "openssl is available for GitHub App JWT signing"
+script = "doctor/check-openssl.sh"
+
+[[doctor]]
+name = "gc"
+description = "gc CLI is available for formula dispatch"
+script = "doctor/check-gc.sh"
+
+[[commands]]
+name = "status"
+description = "Show GitHub intake status, URLs, mappings, and recent requests"
+long_description = "help/status.txt"
+script = "commands/status.sh"
+
+[[commands]]
+name = "import-app"
+description = "Import an existing GitHub App into the pack state"
+long_description = "help/import-app.txt"
+script = "commands/import-app.sh"
+
+[[commands]]
+name = "map-repo"
+description = "Map a GitHub repository to slash-command dispatch targets"
+long_description = "help/map-repo.txt"
+script = "commands/map-repo.sh"

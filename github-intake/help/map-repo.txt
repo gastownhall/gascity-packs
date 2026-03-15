@@ -1,0 +1,17 @@
+Map one GitHub repository to one slash-command dispatch target.
+
+Examples:
+  gc github-intake map-repo owner/repo rig/polecat \
+    --review-formula mol-github-review-pr-v0
+
+  gc github-intake map-repo owner/repo rig/polecat \
+    --review-formula mol-github-review-pr-v0 \
+    --question-formula mol-github-question-v0
+
+Arguments:
+  <repository>  owner/repo
+  <target>      gc sling target, for example rig/polecat
+
+Flags:
+  --review-formula <name>    formula for /gc review
+  --question-formula <name>  formula for /gc question
