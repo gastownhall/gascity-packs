@@ -14,13 +14,16 @@ The current slice ships:
 - GitHub App manifest/bootstrap hosted by the workspace service
 - webhook signature validation
 - durable receipt and request persistence
-- `/gc review` and `/gc question` command parsing
-- generic `gc sling` dispatch to repo-mapped formulas
-- optional acknowledgment comments back to the PR using the imported app
+- issue-only `/gc fix ...` command parsing with multiline context support
+- per-issue idempotency for `/gc fix`
+- write/admin permission verification through the imported GitHub App
+- rig bead creation plus `gc sling <target> <bead> --on <formula>` dispatch
+- pack commands for issue comments, authenticated branch push, and PR creation
+- `mol-github-fix-issue` workflow for TDD bugfixes
+- legacy `/gc review` and `/gc question` passthrough formula dispatch remains available
 
-The current slice does not yet post terminal review results. It queues or
-rejects requests and records the outcome; downstream formulas still own the
-actual review workflow and result publishing.
+The new `/gc fix` path does not post an immediate ack comment. The workflow
+itself comments when work starts and when the PR is ready for review.
 
 ## Include It
 
@@ -51,11 +54,19 @@ After app bootstrap, map repositories to slash-command targets:
 
 ```bash
 gc github-intake map-repo owner/repo rig/polecat \
-  --review-formula mol-github-review-pr-v0 \
-  --question-formula mol-github-question-v0
+  --fix-formula mol-github-fix-issue
 ```
 
 That stores dispatch config locally under `.gc/services/github-intake/data/`.
+
+For mixed repos you can still map multiple commands:
+
+```bash
+gc github-intake map-repo owner/repo rig/polecat \
+  --fix-formula mol-github-fix-issue \
+  --review-formula mol-github-review-pr-v0 \
+  --question-formula mol-github-question-v0
+```
 
 ## Manual App Import
 
@@ -74,4 +85,14 @@ gc github-intake import-app \
 ```bash
 gc github-intake status
 gc github-intake status --json
+```
+
+## Workflow Helpers
+
+The pack also exposes helper commands the workflow can call directly:
+
+```bash
+gc github-intake comment-issue owner/repo 42 --installation-id 123 --body "hello"
+gc github-intake push-branch owner/repo --installation-id 123 --branch fix-42
+gc github-intake create-pr owner/repo --installation-id 123 --base main --head fix-42 --title "fix: widget"
 ```

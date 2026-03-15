@@ -14,10 +14,11 @@ def main() -> int:
     parser.add_argument("target", help="gc sling target, for example rig/polecat")
     parser.add_argument("--review-formula", default="", help="formula for /gc review")
     parser.add_argument("--question-formula", default="", help="formula for /gc question")
+    parser.add_argument("--fix-formula", default="", help="formula for /gc fix")
     args = parser.parse_args()
 
-    if not args.review_formula and not args.question_formula:
-        parser.error("at least one of --review-formula or --question-formula is required")
+    if not args.review_formula and not args.question_formula and not args.fix_formula:
+        parser.error("at least one command formula is required")
 
     config = common.load_config()
     config = common.set_repo_mapping(
@@ -26,6 +27,7 @@ def main() -> int:
         args.target,
         args.review_formula or None,
         args.question_formula or None,
+        args.fix_formula or None,
     )
     mapping = common.resolve_repo_mapping(config, args.repository) or {}
     print(json.dumps(mapping, indent=2, sort_keys=True))

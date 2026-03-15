@@ -18,6 +18,7 @@ import github_intake_common as common
 
 PROCESSING_LOCK = threading.Lock()
 PROCESSING_REQUESTS: set[str] = set()
+WRITE_PERMISSION_LEVELS = {"write", "maintain", "admin"}
 
 
 class ThreadingUnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -42,15 +43,34 @@ def text_response(handler: BaseHTTPRequestHandler, status: int, body: str, conte
     handler.wfile.write(data)
 
 
+def command_behavior(command: str) -> dict[str, Any]:
+    if command == "fix":
+        return {
+            "mode": "fix_issue",
+            "ack_comment": False,
+            "workflow_scope": "issue",
+            "requires_write_permission": True,
+        }
+    return {
+        "mode": "formula_dispatch",
+        "ack_comment": True,
+        "workflow_scope": "",
+        "requires_write_permission": False,
+    }
+
+
 def request_summary(request: dict[str, Any]) -> dict[str, Any]:
     return {
         "request_id": request.get("request_id"),
+        "workflow_key": request.get("workflow_key", ""),
         "status": request.get("status"),
         "command": request.get("command"),
         "repository_full_name": request.get("repository_full_name"),
         "issue_number": request.get("issue_number"),
+        "bead_id": request.get("bead_id", ""),
         "dispatch_target": request.get("dispatch_target", ""),
         "dispatch_formula": request.get("dispatch_formula", ""),
+        "pull_request_url": request.get("pull_request_url", ""),
         "reason": request.get("reason", ""),
     }
 
@@ -67,11 +87,92 @@ def human_reason(code: str) -> str:
         "repo_mapping_missing": "no repository mapping exists for this repo",
         "command_not_configured": "this repository does not configure that /gc command",
         "gc_not_available": "the gc CLI is not available in this runtime",
+        "github_app_not_configured": "the GitHub App is not fully configured in this workspace",
+        "comment_author_lacks_write": "the commenter does not have write or admin access to this repository",
+        "invalid_dispatch_target": "the repository mapping target is not a rig-scoped sling target",
+        "bead_create_failed": "the workflow bead could not be created",
+        "bead_update_failed": "the workflow bead could not be initialized",
+        "permission_lookup_failed": "the GitHub App could not verify the commenter's repository permission",
     }
     return mapping.get(code, code or "unknown_error")
 
 
-def run_dispatch(request: dict[str, Any], mapping: dict[str, Any], command_cfg: dict[str, Any]) -> dict[str, Any]:
+def rig_from_target(target: str) -> str:
+    if "/" not in target:
+        return ""
+    rig, _, _ = target.partition("/")
+    return rig.strip()
+
+
+def extract_json_output(raw: str) -> dict[str, Any]:
+    raw = raw.strip()
+    if not raw:
+        return {}
+    for left, right in (("{", "}"), ("[", "]")):
+        start = raw.find(left)
+        end = raw.rfind(right)
+        if start == -1 or end == -1 or end < start:
+            continue
+        try:
+            payload = json.loads(raw[start : end + 1])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, list) and payload and isinstance(payload[0], dict):
+            return payload[0]
+    return {}
+
+
+def build_fix_bead_title(request: dict[str, Any]) -> str:
+    issue_number = str(request.get("issue_number", "")).strip()
+    issue_title = str(request.get("issue_title", "")).strip()
+    context = str(request.get("command_inline_context", "")).strip()
+    summary = issue_title or context or "GitHub issue follow-up"
+    title = f"Fix GitHub issue #{issue_number}: {summary}" if issue_number else f"Fix GitHub issue: {summary}"
+    return title[:180]
+
+
+def build_fix_bead_notes(request: dict[str, Any]) -> str:
+    issue_title = str(request.get("issue_title", "")).strip() or "(none)"
+    issue_body = str(request.get("issue_body", "")).strip() or "(none)"
+    command_context = str(request.get("command_context", "")).strip() or "(none)"
+    lines = [
+        "## GitHub Source",
+        "",
+        f"- Repository: {request.get('repository_full_name', '')}",
+        f"- Issue: #{request.get('issue_number', '')}",
+        f"- Issue URL: {request.get('issue_url', '')}",
+        f"- Trigger Comment: {request.get('comment_url', '')}",
+        f"- Request ID: {request.get('request_id', '')}",
+        f"- Requested By: {request.get('comment_author', '')}",
+        "",
+        "## Issue Title",
+        "",
+        issue_title,
+        "",
+        "## Issue Body",
+        "",
+        issue_body,
+        "",
+        "## Additional Context From /gc fix",
+        "",
+        command_context,
+    ]
+    return "\n".join(lines)
+
+
+def run_subprocess(command: list[str], cwd: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def run_formula_dispatch(request: dict[str, Any], mapping: dict[str, Any], command_cfg: dict[str, Any]) -> dict[str, Any]:
     formula = str(command_cfg.get("formula", ""))
     target = str(mapping.get("target", ""))
     gc_bin = os.environ.get("GC_BIN", "gc")
@@ -92,13 +193,7 @@ def run_dispatch(request: dict[str, Any], mapping: dict[str, Any], command_cfg: 
         if value:
             command.extend(["--var", f"{key}={value}"])
     try:
-        result = subprocess.run(
-            command,
-            cwd=common.city_root() or ".",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = run_subprocess(command, common.city_root() or ".")
     except FileNotFoundError:
         return {"status": "dispatch_failed", "reason": "gc_not_available"}
     outcome = {
@@ -108,6 +203,146 @@ def run_dispatch(request: dict[str, Any], mapping: dict[str, Any], command_cfg: 
         "dispatch_exit_code": result.returncode,
         "dispatch_stdout": trim_output(result.stdout),
         "dispatch_stderr": trim_output(result.stderr),
+    }
+    if result.returncode == 0:
+        outcome["status"] = "dispatched"
+    else:
+        outcome["status"] = "dispatch_failed"
+        outcome["reason"] = "dispatch_failed"
+    return outcome
+
+
+def create_fix_bead(request: dict[str, Any], target: str) -> dict[str, Any]:
+    rig = rig_from_target(target)
+    if not rig:
+        return {"status": "dispatch_failed", "reason": "invalid_dispatch_target"}
+    city_root = common.city_root() or "."
+    bd_bin = os.environ.get("BD_BIN", "bd")
+    create_command = [bd_bin, "create", "--json", build_fix_bead_title(request), "--rig", rig, "-t", "task"]
+    try:
+        create_result = run_subprocess(create_command, city_root)
+    except FileNotFoundError:
+        return {"status": "dispatch_failed", "reason": "bead_create_failed", "dispatch_stderr": "bd not available"}
+    if create_result.returncode != 0:
+        return {
+            "status": "dispatch_failed",
+            "reason": "bead_create_failed",
+            "dispatch_stdout": trim_output(create_result.stdout),
+            "dispatch_stderr": trim_output(create_result.stderr),
+        }
+    created = extract_json_output(create_result.stdout)
+    bead_id = str(created.get("id", "")).strip()
+    if not bead_id:
+        return {
+            "status": "dispatch_failed",
+            "reason": "bead_create_failed",
+            "dispatch_stdout": trim_output(create_result.stdout),
+            "dispatch_stderr": trim_output(create_result.stderr),
+        }
+
+    metadata = {
+        "github_repo_full_name": str(request.get("repository_full_name", "")),
+        "github_issue_number": str(request.get("issue_number", "")),
+        "github_issue_url": str(request.get("issue_url", "")),
+        "github_comment_url": str(request.get("comment_url", "")),
+        "github_installation_id": str(request.get("installation_id", "")),
+        "github_request_id": str(request.get("request_id", "")),
+        "github_default_branch": str(request.get("repository_default_branch", "") or "main"),
+        "github_comment_author": str(request.get("comment_author", "")),
+    }
+    update_command = [bd_bin, "update", bead_id, "--notes", build_fix_bead_notes(request)]
+    for key, value in metadata.items():
+        if value:
+            update_command.extend(["--set-metadata", f"{key}={value}"])
+    try:
+        update_result = run_subprocess(update_command, city_root)
+    except FileNotFoundError:
+        return {
+            "status": "dispatch_failed",
+            "reason": "bead_update_failed",
+            "bead_id": bead_id,
+            "dispatch_stderr": "bd not available",
+        }
+    if update_result.returncode != 0:
+        return {
+            "status": "dispatch_failed",
+            "reason": "bead_update_failed",
+            "bead_id": bead_id,
+            "dispatch_stdout": trim_output(update_result.stdout),
+            "dispatch_stderr": trim_output(update_result.stderr),
+        }
+    return {"bead_id": bead_id}
+
+
+def build_fix_vars(request: dict[str, Any], bead_id: str) -> dict[str, str]:
+    return {
+        "issue": bead_id,
+        "github_issue_url": str(request.get("issue_url", "")),
+        "github_issue_number": str(request.get("issue_number", "")),
+        "github_issue_title": str(request.get("issue_title", "")),
+        "github_repo_full_name": str(request.get("repository_full_name", "")),
+        "github_installation_id": str(request.get("installation_id", "")),
+        "github_comment_url": str(request.get("comment_url", "")),
+        "github_request_id": str(request.get("request_id", "")),
+        "github_default_branch": str(request.get("repository_default_branch", "") or "main"),
+        "github_additional_context": str(request.get("command_context", "")),
+    }
+
+
+def run_fix_issue_dispatch(
+    request: dict[str, Any],
+    mapping: dict[str, Any],
+    command_cfg: dict[str, Any],
+    app_cfg: dict[str, Any],
+) -> dict[str, Any]:
+    formula = str(command_cfg.get("formula", ""))
+    target = str(mapping.get("target", ""))
+    if not formula or not target:
+        return {"status": "ignored", "reason": "command_not_configured"}
+    installation_id = str(request.get("installation_id", ""))
+    owner = str(request.get("repository_owner", ""))
+    repo = str(request.get("repository_name", ""))
+    commenter = str(request.get("comment_author", ""))
+    if not app_cfg or not installation_id or not owner or not repo:
+        return {"status": "ignored", "reason": "github_app_not_configured"}
+    try:
+        permission = common.repository_permission(app_cfg, installation_id, owner, repo, commenter)
+    except Exception:  # noqa: BLE001
+        return {"status": "dispatch_failed", "reason": "permission_lookup_failed"}
+    if permission not in WRITE_PERMISSION_LEVELS:
+        return {
+            "status": "ignored",
+            "reason": "comment_author_lacks_write",
+            "requester_permission": permission,
+        }
+
+    bead_outcome = create_fix_bead(request, target)
+    if "bead_id" not in bead_outcome:
+        return bead_outcome
+    bead_id = str(bead_outcome["bead_id"])
+
+    gc_bin = os.environ.get("GC_BIN", "gc")
+    command = [gc_bin, "sling", target, bead_id, "--on", formula]
+    for key, value in build_fix_vars(request, bead_id).items():
+        if value:
+            command.extend(["--var", f"{key}={value}"])
+    try:
+        result = run_subprocess(command, common.city_root() or ".")
+    except FileNotFoundError:
+        return {
+            "status": "dispatch_failed",
+            "reason": "gc_not_available",
+            "bead_id": bead_id,
+        }
+    outcome = {
+        "bead_id": bead_id,
+        "dispatch_target": target,
+        "dispatch_formula": formula,
+        "dispatch_command": command,
+        "dispatch_exit_code": result.returncode,
+        "dispatch_stdout": trim_output(result.stdout),
+        "dispatch_stderr": trim_output(result.stderr),
+        "requester_permission": permission,
     }
     if result.returncode == 0:
         outcome["status"] = "dispatched"
@@ -171,25 +406,32 @@ def maybe_post_ack_comment(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def process_request(request_id: str) -> None:
+    request: dict[str, Any] | None = None
     try:
         request = common.load_request(request_id)
         if not request:
             return
         config = common.load_config()
+        app_cfg = config.get("app", {})
         mapping = common.resolve_repo_mapping(
             config,
             str(request.get("repository_full_name", "")),
             str(request.get("repository_id", "")),
         )
+        behavior = command_behavior(str(request.get("command", "")))
         if not mapping:
             request["status"] = "ignored"
             request["reason"] = "repo_mapping_missing"
         else:
             commands = mapping.get("commands", {})
             command_cfg = commands.get(str(request.get("command", "")), {})
-            outcome = run_dispatch(request, mapping, command_cfg)
+            if behavior["mode"] == "fix_issue":
+                outcome = run_fix_issue_dispatch(request, mapping, command_cfg, app_cfg if isinstance(app_cfg, dict) else {})
+            else:
+                outcome = run_formula_dispatch(request, mapping, command_cfg)
             request.update(outcome)
-        request = maybe_post_ack_comment(request)
+        if behavior["ack_comment"]:
+            request = maybe_post_ack_comment(request)
         common.save_request(request)
     except Exception as exc:  # noqa: BLE001
         payload = common.load_request(request_id) or {"request_id": request_id}
@@ -197,7 +439,12 @@ def process_request(request_id: str) -> None:
         payload["reason"] = str(exc)
         payload["traceback"] = traceback.format_exc(limit=20)
         common.save_request(payload)
+        request = payload
     finally:
+        if request:
+            workflow_key = str(request.get("workflow_key", ""))
+            if workflow_key and not request.get("bead_id") and request.get("status") in {"ignored", "dispatch_failed", "internal_error"}:
+                common.remove_workflow_link(workflow_key)
         with PROCESSING_LOCK:
             PROCESSING_REQUESTS.discard(request_id)
 
@@ -263,14 +510,14 @@ def render_admin_home() -> str:
   <h2>Recent Requests</h2>
   <pre>{html.escape(json.dumps(snapshot['recent_requests'], indent=2, sort_keys=True))}</pre>
   <h2>Repository Mapping</h2>
-  <p>Use <code>gc github-intake map-repo owner/repo rig/polecat --review-formula ...</code> to update repo routing.</p>
+  <p>Use <code>gc github-intake map-repo owner/repo rig/polecat --fix-formula mol-github-fix-issue</code> to update repo routing.</p>
 </body>
 </html>
 """
 
 
 class IntakeHandler(BaseHTTPRequestHandler):
-    server_version = "GitHubIntake/0.1"
+    server_version = "GitHubIntake/0.2"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"[{common.current_service_name() or 'github-intake'}] {fmt % args}")
@@ -421,10 +668,15 @@ class IntakeHandler(BaseHTTPRequestHandler):
             return
         request = common.extract_issue_comment_request(payload)
         if not request:
-            json_response(self, HTTPStatus.ACCEPTED, {"status": "ignored", "reason": "not_an_actionable_pr_comment"})
+            json_response(self, HTTPStatus.ACCEPTED, {"status": "ignored", "reason": "not_an_actionable_issue_comment"})
+            return
+        bot_login = common.app_bot_login(app_cfg if isinstance(app_cfg, dict) else {})
+        if bot_login and str(request.get("comment_author", "")).lower() == bot_login.lower():
+            json_response(self, HTTPStatus.ACCEPTED, {"status": "ignored", "reason": "comment_from_app"})
             return
         request["event"] = event
         request["delivery_id"] = delivery_id
+        behavior = command_behavior(str(request.get("command", "")))
         existing = common.load_request(request["request_id"])
         if existing:
             json_response(
@@ -433,7 +685,28 @@ class IntakeHandler(BaseHTTPRequestHandler):
                 {"status": "duplicate", "request": request_summary(existing)},
             )
             return
+        workflow_key = str(request.get("workflow_key", ""))
+        if behavior["workflow_scope"] == "issue" and workflow_key:
+            workflow_link = common.load_workflow_link(workflow_key)
+            if workflow_link:
+                existing_request_id = str(workflow_link.get("request_id", ""))
+                existing_request = common.load_request(existing_request_id) or {
+                    "request_id": existing_request_id,
+                    "workflow_key": workflow_key,
+                    "status": "duplicate",
+                    "command": request.get("command", ""),
+                    "issue_number": request.get("issue_number", ""),
+                    "repository_full_name": request.get("repository_full_name", ""),
+                }
+                json_response(
+                    self,
+                    HTTPStatus.ACCEPTED,
+                    {"status": "duplicate", "request": request_summary(existing_request)},
+                )
+                return
         common.save_request(request)
+        if behavior["workflow_scope"] == "issue" and workflow_key:
+            common.save_workflow_link(workflow_key, request["request_id"])
         enqueue_request(request["request_id"])
         json_response(self, HTTPStatus.ACCEPTED, {"status": "accepted", "request": request_summary(request)})
 

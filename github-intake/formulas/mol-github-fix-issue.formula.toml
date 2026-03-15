@@ -1,0 +1,353 @@
+description = """
+GitHub issue fix workflow for a polecat.
+
+This workflow is attached to a newly created rig bead for `/gc fix` requests.
+The intake service creates the bead, records the source GitHub issue context,
+and slings it to the mapped polecat pool with this formula attached.
+
+The workflow is intentionally issue-focused:
+1. understand the bug and post a "work started" comment back to GitHub
+2. write or update tests first so the bug is reproduced
+3. implement the fix until the focused tests pass
+4. run a quality gate on the changed area
+5. push a feature branch, open a PR, and comment back on the original issue
+
+The workflow closes the internal bead after the PR is created. Review and
+merge happen on GitHub after the PR is out for review.
+"""
+formula = "mol-github-fix-issue"
+version = 1
+
+[vars]
+[vars.issue]
+description = "The work bead id created for this GitHub issue"
+required = true
+
+[vars.github_issue_url]
+description = "HTML URL of the source GitHub issue"
+required = true
+
+[vars.github_issue_number]
+description = "Source GitHub issue number"
+required = true
+
+[vars.github_issue_title]
+description = "Source GitHub issue title"
+default = ""
+
+[vars.github_repo_full_name]
+description = "Repository in owner/repo format"
+required = true
+
+[vars.github_installation_id]
+description = "GitHub App installation id for repository callbacks"
+required = true
+
+[vars.github_comment_url]
+description = "Triggering /gc fix comment URL"
+default = ""
+
+[vars.github_request_id]
+description = "Stable request id from the intake service"
+default = ""
+
+[vars.github_default_branch]
+description = "Repository default branch"
+default = "main"
+
+[vars.github_additional_context]
+description = "Additional context from the /gc fix command body"
+default = ""
+
+[[steps]]
+id = "load-context"
+title = "Load context and announce work start"
+description = """
+Prime your environment, understand the assignment, and post the first GitHub
+issue comment when work begins.
+
+**1. Prime the session:**
+```bash
+gc prime
+bd prime
+```
+
+**2. Inspect the bead and source context:**
+```bash
+bd show {{issue}}
+bd show {{issue}} --json | jq '.metadata'
+```
+
+Read the bead notes carefully. They contain:
+- the source GitHub issue title and body
+- the triggering `/gc fix` comment URL
+- the additional context supplied with the command
+
+**3. Post the "work started" issue comment exactly once:**
+```bash
+STARTED=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_started_comment_id // empty')
+if [ -z "$STARTED" ]; then
+  BODY=$(mktemp)
+  cat >"$BODY" <<EOF
+Started work on this issue in Gas City.
+
+- Bead: `{{issue}}`
+- Source request: {{github_comment_url}}
+- Workflow: `mol-github-fix-issue`
+
+I will follow up here again when the pull request is ready for review.
+EOF
+  COMMENT_JSON=$(gc github-intake comment-issue {{github_repo_full_name}} {{github_issue_number}} \
+    --installation-id {{github_installation_id}} \
+    --body-file "$BODY")
+  COMMENT_ID=$(printf '%s' "$COMMENT_JSON" | jq -r '.id // empty')
+  COMMENT_URL=$(printf '%s' "$COMMENT_JSON" | jq -r '.html_url // empty')
+  if [ -n "$COMMENT_ID" ]; then
+    bd update {{issue}} \
+      --set-metadata github_fix_started_comment_id="$COMMENT_ID" \
+      --set-metadata github_fix_started_comment_url="$COMMENT_URL"
+  fi
+  rm -f "$BODY"
+fi
+```
+
+**Exit criteria:** You understand the bug and the start comment is posted or
+already recorded on the bead metadata."""
+
+[[steps]]
+id = "workspace-setup"
+title = "Set up worktree and fix branch"
+needs = ["load-context"]
+description = """
+Create or resume an isolated git worktree and a deterministic fix branch.
+
+**1. Fetch latest refs:**
+```bash
+git fetch --prune origin
+```
+
+**2. Reuse or create the bead-scoped worktree:**
+```bash
+WORKTREE=$(bd show {{issue}} --json | jq -r '.metadata.work_dir // empty')
+if [ -n "$WORKTREE" ] && [ -d "$WORKTREE" ]; then
+  cd "$WORKTREE"
+else
+  WORKTREE_PATH=$(pwd)/worktrees/{{issue}}
+  git worktree add "$WORKTREE_PATH" --detach origin/{{github_default_branch}}
+  cd "$WORKTREE_PATH"
+  bd update {{issue}} --set-metadata work_dir="$WORKTREE_PATH"
+fi
+```
+
+**3. Reuse or create the branch:**
+```bash
+BRANCH=$(bd show {{issue}} --json | jq -r '.metadata.branch // empty')
+if [ -n "$BRANCH" ]; then
+  git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" origin/"$BRANCH"
+else
+  BRANCH="fix-{{github_issue_number}}"
+  git checkout -b "$BRANCH" origin/{{github_default_branch}}
+  bd update {{issue}} --set-metadata branch="$BRANCH"
+fi
+```
+
+**4. Verify a clean starting point:**
+```bash
+git status
+```
+
+**Exit criteria:** You are in a clean worktree on the fix branch recorded on
+the bead metadata."""
+
+[[steps]]
+id = "understand-bug"
+title = "Understand the bug before writing code"
+needs = ["workspace-setup"]
+description = """
+Take a read-first pass so you understand the problem before changing code.
+
+**1. Re-read the bead notes and identify the likely files:**
+- inspect implementation files
+- inspect existing test coverage around the bug
+- identify the smallest reproducible failing behavior
+
+**2. Record the working theory in bead notes:**
+```bash
+bd update {{issue}} --notes "## Bug Understanding
+
+### Hypothesis
+- <what is broken and why>
+
+### Relevant files
+- <file>: <reason>
+
+### Test plan
+- <the failing test you will write first>
+"
+```
+
+**Exit criteria:** You can explain the bug clearly and you know which failing
+test will prove the fix."""
+
+[[steps]]
+id = "write-tests-first"
+title = "Write or update tests first"
+needs = ["understand-bug"]
+description = """
+Follow TDD. Capture the bug in tests before you change implementation logic.
+
+**1. Add or update the smallest regression test that proves the bug.**
+
+**2. Run the focused test target and confirm it fails for the right reason.**
+
+**3. If the code change is behavioral, do not proceed until you have a failing
+test or a clear explanation in bead notes for why a test is not appropriate.**
+
+**Exit criteria:** You have a failing test or an explicit, defensible reason
+recorded on the bead for why the change is non-behavioral."""
+
+[[steps]]
+id = "implement-fix"
+title = "Implement until the tests pass"
+needs = ["write-tests-first"]
+description = """
+Make the minimum implementation change that turns the failing test green.
+
+Working rules:
+- keep the scope tight to the issue
+- prefer the smallest viable fix first
+- commit atomically once the test and implementation move together
+
+Suggested loop:
+```bash
+# focused tests fail
+# change implementation
+# focused tests pass
+git add <files>
+git commit -m "fix: resolve issue #{{github_issue_number}} ({{issue}})"
+```
+
+**Exit criteria:** The focused regression test passes and the fix is committed."""
+
+[[steps]]
+id = "quality-gate"
+title = "Run quality gate on the finished fix"
+needs = ["implement-fix"]
+description = """
+Before you open a PR, check the diff and run the relevant quality gates.
+
+**1. Review the final diff:**
+```bash
+git diff origin/{{github_default_branch}}...HEAD
+git diff --stat origin/{{github_default_branch}}...HEAD
+git log --oneline origin/{{github_default_branch}}..HEAD
+```
+
+**2. Run the relevant tests and checks for the changed area.**
+- the regression test must still pass
+- run broader tests if the change touches shared logic
+- if lint/build/typecheck are appropriate for this repo, run them too
+
+**3. Ensure the tree is clean before submission:**
+```bash
+git status
+```
+
+If there are uncommitted changes:
+```bash
+git add -A
+git commit -m "chore: capture final fix adjustments ({{issue}})"
+```
+
+**Exit criteria:** The fix is committed, the tree is clean, and the relevant
+checks pass."""
+
+[[steps]]
+id = "submit-pr"
+title = "Push branch, open PR, and report back to GitHub"
+needs = ["quality-gate"]
+description = """
+Push the fix branch with the workspace GitHub App, create a PR, and comment
+back on the original issue when the PR is ready for review.
+
+**1. Load the branch name:**
+```bash
+BRANCH=$(bd show {{issue}} --json | jq -r '.metadata.branch // empty')
+```
+
+**2. Push the branch:**
+```bash
+gc github-intake push-branch {{github_repo_full_name}} \
+  --installation-id {{github_installation_id}} \
+  --branch "$BRANCH"
+```
+
+**3. Create the PR exactly once:**
+```bash
+PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
+if [ -z "$PR_URL" ]; then
+  BODY=$(mktemp)
+  cat >"$BODY" <<EOF
+## Summary
+- <what changed>
+
+## Validation
+- <tests and checks you ran>
+
+Closes #{{github_issue_number}}
+EOF
+  PR_JSON=$(gc github-intake create-pr {{github_repo_full_name}} \
+    --installation-id {{github_installation_id}} \
+    --base {{github_default_branch}} \
+    --head "$BRANCH" \
+    --title "fix: {{github_issue_title}}" \
+    --body-file "$BODY")
+  PR_URL=$(printf '%s' "$PR_JSON" | jq -r '.html_url // empty')
+  PR_NUMBER=$(printf '%s' "$PR_JSON" | jq -r '.number // empty')
+  if [ -n "$PR_URL" ]; then
+    bd update {{issue}} \
+      --set-metadata github_fix_pr_url="$PR_URL" \
+      --set-metadata github_fix_pr_number="$PR_NUMBER"
+  fi
+  rm -f "$BODY"
+fi
+```
+
+**4. Post the completion issue comment exactly once:**
+```bash
+DONE=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_complete_comment_id // empty')
+PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
+if [ -z "$DONE" ] && [ -n "$PR_URL" ]; then
+  BODY=$(mktemp)
+  cat >"$BODY" <<EOF
+The fix is out for review.
+
+- Bead: `{{issue}}`
+- Pull request: $PR_URL
+
+I will leave follow-up review and merge on GitHub.
+EOF
+  COMMENT_JSON=$(gc github-intake comment-issue {{github_repo_full_name}} {{github_issue_number}} \
+    --installation-id {{github_installation_id}} \
+    --body-file "$BODY")
+  COMMENT_ID=$(printf '%s' "$COMMENT_JSON" | jq -r '.id // empty')
+  COMMENT_URL=$(printf '%s' "$COMMENT_JSON" | jq -r '.html_url // empty')
+  if [ -n "$COMMENT_ID" ]; then
+    bd update {{issue}} \
+      --set-metadata github_fix_complete_comment_id="$COMMENT_ID" \
+      --set-metadata github_fix_complete_comment_url="$COMMENT_URL"
+  fi
+  rm -f "$BODY"
+fi
+```
+
+**5. Close the bead and exit:**
+```bash
+PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
+bd update {{issue}} --status=closed --notes "PR ready for review: $PR_URL"
+gc runtime drain-ack
+exit
+```
+
+**Exit criteria:** The branch is pushed, the PR exists, the original issue has
+the completion comment, the bead is closed, and the session drains."""

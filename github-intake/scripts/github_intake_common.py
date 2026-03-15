@@ -67,6 +67,10 @@ def deliveries_dir() -> str:
     return os.path.join(data_dir(), "deliveries")
 
 
+def workflows_dir() -> str:
+    return os.path.join(data_dir(), "workflows")
+
+
 def config_path() -> str:
     return os.path.join(data_dir(), "config.json")
 
@@ -82,7 +86,7 @@ def published_services_dir() -> str:
 
 
 def ensure_layout() -> None:
-    for path in (data_dir(), requests_dir(), deliveries_dir()):
+    for path in (data_dir(), requests_dir(), deliveries_dir(), workflows_dir()):
         os.makedirs(path, exist_ok=True)
 
 
@@ -175,12 +179,19 @@ def normalize_repo_key(value: str) -> str:
     return value.strip().lower()
 
 
+def _set_command_formula(commands: dict[str, Any], name: str, formula: str | None) -> dict[str, Any]:
+    if formula:
+        commands[name] = {"formula": formula}
+    return commands
+
+
 def set_repo_mapping(
     config: dict[str, Any],
     repository: str,
     target: str,
     review_formula: str | None,
     question_formula: str | None,
+    fix_formula: str | None,
 ) -> dict[str, Any]:
     cfg = normalize_config(config)
     repo_key = normalize_repo_key(repository)
@@ -188,10 +199,9 @@ def set_repo_mapping(
     mapping["repository"] = repo_key
     mapping["target"] = target
     commands: dict[str, Any] = mapping.get("commands", {})
-    if review_formula:
-        commands["review"] = {"formula": review_formula}
-    if question_formula:
-        commands["question"] = {"formula": question_formula}
+    commands = _set_command_formula(commands, "review", review_formula)
+    commands = _set_command_formula(commands, "question", question_formula)
+    commands = _set_command_formula(commands, "fix", fix_formula)
     mapping["commands"] = commands
     cfg["repositories"][repo_key] = mapping
     return save_config(cfg)
@@ -254,8 +264,9 @@ def build_manifest() -> dict[str, Any]:
         "description": "Workspace-hosted GitHub slash-command intake for Gas City",
         "public": False,
         "default_permissions": {
+            "contents": "write",
             "issues": "write",
-            "pull_requests": "read",
+            "pull_requests": "write",
         },
         "default_events": [
             "issue_comment",
@@ -265,14 +276,28 @@ def build_manifest() -> dict[str, Any]:
     }
 
 
-def parse_gc_command(body: str) -> str | None:
-    for raw_line in body.splitlines():
+def parse_gc_command(body: str) -> dict[str, Any] | None:
+    lines = body.splitlines()
+    for index, raw_line in enumerate(lines):
         line = raw_line.strip()
         if not line:
             continue
-        parts = line.split()
-        if len(parts) == 2 and parts[0] == "/gc":
-            return parts[1].lower()
+        parts = line.split(maxsplit=2)
+        if len(parts) < 2 or parts[0] != "/gc":
+            continue
+        command = parts[1].lower()
+        if not command or not all(ch.isalnum() or ch in ("-", "_") for ch in command):
+            continue
+        inline_context = parts[2].strip() if len(parts) == 3 else ""
+        trailing_context = "\n".join(lines[index + 1 :]).strip()
+        context_parts = [part for part in (inline_context, trailing_context) if part]
+        return {
+            "command": command,
+            "command_line": line,
+            "line_index": index,
+            "inline_context": inline_context,
+            "context": "\n".join(context_parts),
+        }
     return None
 
 
@@ -281,37 +306,63 @@ def build_request_id(repository_id: str, comment_id: str, command: str) -> str:
     return f"gh-{repository_id}-{comment_id}-{safe_command}"
 
 
+def build_workflow_key(repository_id: str, issue_number: str, command: str) -> str:
+    safe_command = "".join(ch for ch in command.lower() if ch.isalnum() or ch in ("-", "_")) or "command"
+    return f"gh:{repository_id}:issue:{issue_number}:{safe_command}"
+
+
+def safe_storage_id(value: str, prefix: str) -> str:
+    value = value.strip()
+    if value and all(ch.isalnum() or ch in ("-", "_", ":") for ch in value):
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+    return f"{prefix}-{digest}"
+
+
 def extract_issue_comment_request(payload: dict[str, Any]) -> dict[str, Any] | None:
     if payload.get("action") != "created":
         return None
     issue = payload.get("issue") or {}
-    if "pull_request" not in issue:
+    if issue.get("pull_request"):
         return None
     comment = payload.get("comment") or {}
     repository = payload.get("repository") or {}
     owner = repository.get("owner") or {}
-    command = parse_gc_command(str(comment.get("body", "")))
-    if not command:
+    parsed_command = parse_gc_command(str(comment.get("body", "")))
+    if not parsed_command:
         return None
     repository_id = str(repository.get("id", ""))
     comment_id = str(comment.get("id", ""))
-    if not repository_id or not comment_id:
+    issue_number = str(issue.get("number", ""))
+    if not repository_id or not comment_id or not issue_number:
         return None
+    command = str(parsed_command["command"])
     return {
         "request_id": build_request_id(repository_id, comment_id, command),
+        "workflow_key": build_workflow_key(repository_id, issue_number, command),
         "status": "received",
         "command": command,
+        "command_line": str(parsed_command.get("command_line", "")),
+        "command_context": str(parsed_command.get("context", "")),
+        "command_inline_context": str(parsed_command.get("inline_context", "")),
         "created_at": utcnow(),
         "updated_at": utcnow(),
         "repository_id": repository_id,
         "repository_full_name": str(repository.get("full_name", "")).lower(),
         "repository_owner": str(owner.get("login", "")),
         "repository_name": str(repository.get("name", "")),
-        "issue_number": str(issue.get("number", "")),
+        "repository_default_branch": str(repository.get("default_branch", "")),
+        "issue_id": str(issue.get("id", "")),
+        "issue_number": issue_number,
+        "issue_title": str(issue.get("title", "")),
+        "issue_body": str(issue.get("body", "")),
+        "issue_url": str(issue.get("html_url", "")),
+        "issue_author": str((issue.get("user") or {}).get("login", "")),
         "comment_id": comment_id,
         "comment_body": str(comment.get("body", "")),
         "comment_url": str(comment.get("html_url", "")),
         "comment_author": str((comment.get("user") or {}).get("login", "")),
+        "comment_author_association": str(comment.get("author_association", "")),
         "installation_id": str((payload.get("installation") or {}).get("id", "")),
     }
 
@@ -322,6 +373,10 @@ def request_path(request_id: str) -> str:
 
 def delivery_path(delivery_id: str) -> str:
     return os.path.join(deliveries_dir(), f"{safe_storage_id(delivery_id, 'delivery')}.json")
+
+
+def workflow_path(workflow_key: str) -> str:
+    return os.path.join(workflows_dir(), f"{safe_storage_id(workflow_key, 'workflow')}.json")
 
 
 def load_request(request_id: str) -> dict[str, Any] | None:
@@ -342,6 +397,31 @@ def save_request(payload: dict[str, Any]) -> dict[str, Any]:
 def save_delivery(payload: dict[str, Any]) -> None:
     ensure_layout()
     atomic_write_json(delivery_path(payload["delivery_id"]), payload)
+
+
+def load_workflow_link(workflow_key: str) -> dict[str, Any] | None:
+    data = read_json(workflow_path(workflow_key))
+    if isinstance(data, dict):
+        return data
+    return None
+
+
+def save_workflow_link(workflow_key: str, request_id: str) -> dict[str, Any]:
+    ensure_layout()
+    payload = {
+        "workflow_key": workflow_key,
+        "request_id": request_id,
+        "created_at": utcnow(),
+    }
+    atomic_write_json(workflow_path(workflow_key), payload)
+    return payload
+
+
+def remove_workflow_link(workflow_key: str) -> None:
+    try:
+        os.remove(workflow_path(workflow_key))
+    except FileNotFoundError:
+        return
 
 
 def list_recent_requests(limit: int = 20) -> list[dict[str, Any]]:
@@ -384,6 +464,19 @@ def verify_github_signature(secret: str, payload: bytes, header_value: str) -> b
 
 def _base64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def github_web_base() -> str:
+    parsed = urllib.parse.urlparse(GITHUB_API_BASE)
+    if parsed.netloc == "api.github.com":
+        return "https://github.com"
+    host = parsed.netloc or "github.com"
+    if host.startswith("api."):
+        host = host[4:]
+    path = parsed.path.rstrip("/")
+    if path.endswith("/api/v3"):
+        path = path[:-7]
+    return urllib.parse.urlunparse((parsed.scheme or "https", host, path.rstrip("/"), "", "", "")).rstrip("/")
 
 
 def github_api_request(
@@ -429,8 +522,7 @@ def github_api_request(
 
 
 def exchange_manifest_code(code: str) -> dict[str, Any]:
-    response = github_api_request("POST", f"/app-manifests/{urllib.parse.quote(code)}/conversions")
-    return response
+    return github_api_request("POST", f"/app-manifests/{urllib.parse.quote(code)}/conversions")
 
 
 def app_identifier(app_cfg: dict[str, Any]) -> str:
@@ -438,14 +530,6 @@ def app_identifier(app_cfg: dict[str, Any]) -> str:
     if value:
         return str(value)
     raise GitHubAPIError("GitHub App app_id is required for JWT signing")
-
-
-def safe_storage_id(value: str, prefix: str) -> str:
-    value = value.strip()
-    if value and all(ch.isalnum() or ch in ("-", "_") for ch in value):
-        return value
-    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
-    return f"{prefix}-{digest}"
 
 
 def build_app_jwt(app_cfg: dict[str, Any]) -> str:
@@ -498,6 +582,27 @@ def create_installation_token(app_cfg: dict[str, Any], installation_id: str) -> 
     return str(token)
 
 
+def repository_permission(
+    app_cfg: dict[str, Any],
+    installation_id: str,
+    owner: str,
+    repo: str,
+    username: str,
+) -> str:
+    token = create_installation_token(app_cfg, installation_id)
+    try:
+        response = github_api_request(
+            "GET",
+            f"/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(repo)}/collaborators/{urllib.parse.quote(username)}/permission",
+            bearer_token=token,
+        )
+    except GitHubAPIError as exc:
+        if " 404:" in str(exc):
+            return "none"
+        raise
+    return str(response.get("permission", "none")).lower()
+
+
 def post_issue_comment(
     app_cfg: dict[str, Any],
     installation_id: str,
@@ -515,8 +620,75 @@ def post_issue_comment(
     )
 
 
+def create_pull_request(
+    app_cfg: dict[str, Any],
+    installation_id: str,
+    owner: str,
+    repo: str,
+    title: str,
+    head: str,
+    base: str,
+    body: str,
+) -> dict[str, Any]:
+    token = create_installation_token(app_cfg, installation_id)
+    return github_api_request(
+        "POST",
+        f"/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(repo)}/pulls",
+        payload={
+            "title": title,
+            "head": head,
+            "base": base,
+            "body": body,
+        },
+        bearer_token=token,
+    )
+
+
+def repository_git_url(repository_full_name: str) -> str:
+    return f"{github_web_base().rstrip('/')}/{repository_full_name}.git"
+
+
+def git_push_branch(
+    app_cfg: dict[str, Any],
+    installation_id: str,
+    repository_full_name: str,
+    branch: str,
+    ref: str = "HEAD",
+) -> dict[str, Any]:
+    token = create_installation_token(app_cfg, installation_id)
+    basic_auth = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
+    base_url = github_web_base().rstrip("/")
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = f"http.{base_url}/.extraheader"
+    env["GIT_CONFIG_VALUE_0"] = f"AUTHORIZATION: basic {basic_auth}"
+    result = subprocess.run(
+        ["git", "push", repository_git_url(repository_full_name), f"{ref}:refs/heads/{branch}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise GitHubAPIError(f"git push failed with exit code {result.returncode}: {stderr}")
+    return {
+        "branch": branch,
+        "stdout": result.stdout.strip(),
+        "stderr": result.stderr.strip(),
+    }
+
+
 def install_url(app_cfg: dict[str, Any]) -> str:
     slug = app_cfg.get("slug")
     if slug:
         return f"https://github.com/apps/{slug}/installations/new"
+    return ""
+
+
+def app_bot_login(app_cfg: dict[str, Any]) -> str:
+    slug = str(app_cfg.get("slug", "")).strip()
+    if slug:
+        return f"{slug}[bot]"
     return ""

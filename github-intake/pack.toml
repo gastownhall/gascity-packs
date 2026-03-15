@@ -3,6 +3,9 @@ name = "github-intake"
 version = "0.1.0"
 schema = 1
 
+[formulas]
+dir = "formulas"
+
 [[service]]
 name = "github-webhook"
 kind = "proxy_process"
@@ -61,3 +64,21 @@ name = "map-repo"
 description = "Map a GitHub repository to slash-command dispatch targets"
 long_description = "help/map-repo.txt"
 script = "commands/map-repo.sh"
+
+[[commands]]
+name = "comment-issue"
+description = "Post an issue comment using the workspace GitHub App installation"
+long_description = "help/comment-issue.txt"
+script = "commands/comment-issue.sh"
+
+[[commands]]
+name = "create-pr"
+description = "Create a pull request using the workspace GitHub App installation"
+long_description = "help/create-pr.txt"
+script = "commands/create-pr.sh"
+
+[[commands]]
+name = "push-branch"
+description = "Push the current branch to GitHub using the workspace GitHub App installation"
+long_description = "help/push-branch.txt"
+script = "commands/push-branch.sh"

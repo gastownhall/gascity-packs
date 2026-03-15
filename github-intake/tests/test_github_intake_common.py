@@ -60,12 +60,18 @@ class GitHubIntakeCommonTests(unittest.TestCase):
             "https://admin.example.com/v0/github/app/manifest/callback",
         )
         self.assertIn("issue_comment", manifest["default_events"])
+        self.assertEqual(manifest["default_permissions"]["contents"], "write")
+        self.assertEqual(manifest["default_permissions"]["pull_requests"], "write")
 
-    def test_parse_gc_command_accepts_one_token_command(self) -> None:
-        self.assertEqual(common.parse_gc_command("\n/gc review\n"), "review")
-        self.assertEqual(common.parse_gc_command("/gc question"), "question")
-        self.assertEqual(common.parse_gc_command("please review this\n/gc review"), "review")
-        self.assertIsNone(common.parse_gc_command("/gc review now"))
+    def test_parse_gc_command_extracts_multiline_context(self) -> None:
+        parsed = common.parse_gc_command("please take a look\n/gc fix crash on startup\nstack trace line 1\nstack trace line 2")
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(parsed["command"], "fix")
+        self.assertEqual(parsed["inline_context"], "crash on startup")
+        self.assertEqual(parsed["context"], "crash on startup\nstack trace line 1\nstack trace line 2")
+        self.assertEqual(parsed["command_line"], "/gc fix crash on startup")
 
     def test_verify_github_signature(self) -> None:
         payload = b'{"ok":true}'
@@ -75,21 +81,30 @@ class GitHubIntakeCommonTests(unittest.TestCase):
         self.assertTrue(common.verify_github_signature(secret, payload, f"sha256={digest}"))
         self.assertFalse(common.verify_github_signature(secret, payload, "sha256=deadbeef"))
 
-    def test_extract_issue_comment_request_requires_pr_comment_and_command(self) -> None:
+    def test_extract_issue_comment_request_accepts_issue_comment_and_rejects_pr_comment(self) -> None:
         payload = {
             "action": "created",
             "installation": {"id": 77},
-            "issue": {"number": 42, "pull_request": {"url": "https://api.github.com/repos/o/r/pulls/42"}},
+            "issue": {
+                "id": 4242,
+                "number": 42,
+                "title": "Crash on startup",
+                "body": "The app crashes when env var X is missing.",
+                "html_url": "https://github.com/owner/repo/issues/42",
+                "user": {"login": "reporter"},
+            },
             "comment": {
                 "id": 99,
-                "body": "/gc review\nplease do the thing",
-                "html_url": "https://github.com/owner/repo/pull/42#issuecomment-99",
+                "body": "/gc fix missing env guard\nrepro: unset X\nrun the app",
+                "html_url": "https://github.com/owner/repo/issues/42#issuecomment-99",
                 "user": {"login": "alice"},
+                "author_association": "MEMBER",
             },
             "repository": {
                 "id": 123,
                 "name": "repo",
                 "full_name": "Owner/Repo",
+                "default_branch": "main",
                 "owner": {"login": "Owner"},
             },
         }
@@ -97,12 +112,16 @@ class GitHubIntakeCommonTests(unittest.TestCase):
         request = common.extract_issue_comment_request(payload)
 
         self.assertIsNotNone(request)
-        self.assertEqual(request["request_id"], "gh-123-99-review")
+        assert request is not None
+        self.assertEqual(request["request_id"], "gh-123-99-fix")
+        self.assertEqual(request["workflow_key"], "gh:123:issue:42:fix")
         self.assertEqual(request["repository_full_name"], "owner/repo")
         self.assertEqual(request["installation_id"], "77")
         self.assertEqual(request["comment_author"], "alice")
-        self.assertEqual(request["command"], "review")
-        payload["issue"] = {"number": 42}
+        self.assertEqual(request["command"], "fix")
+        self.assertEqual(request["command_context"], "missing env guard\nrepro: unset X\nrun the app")
+        self.assertEqual(request["issue_url"], "https://github.com/owner/repo/issues/42")
+        payload["issue"]["pull_request"] = {"url": "https://api.github.com/repos/o/r/pulls/42"}
         self.assertIsNone(common.extract_issue_comment_request(payload))
 
     def test_set_repo_mapping_persists_commands(self) -> None:
@@ -112,6 +131,7 @@ class GitHubIntakeCommonTests(unittest.TestCase):
             "product/polecat",
             "mol-review",
             "mol-question",
+            "mol-fix",
         )
 
         mapping = common.resolve_repo_mapping(config, "owner/repo")
@@ -119,12 +139,25 @@ class GitHubIntakeCommonTests(unittest.TestCase):
         self.assertEqual(mapping["target"], "product/polecat")
         self.assertEqual(mapping["commands"]["review"]["formula"], "mol-review")
         self.assertEqual(mapping["commands"]["question"]["formula"], "mol-question")
+        self.assertEqual(mapping["commands"]["fix"]["formula"], "mol-fix")
 
     def test_safe_storage_id_sanitizes_delivery_header_values(self) -> None:
         self.assertEqual(common.safe_storage_id("abc-123", "delivery"), "abc-123")
         sanitized = common.safe_storage_id("../../etc/passwd", "delivery")
         self.assertTrue(sanitized.startswith("delivery-"))
         self.assertNotIn("/", sanitized)
+
+    def test_workflow_link_round_trip(self) -> None:
+        saved = common.save_workflow_link("gh:123:issue:42:fix", "gh-123-99-fix")
+
+        loaded = common.load_workflow_link("gh:123:issue:42:fix")
+
+        self.assertEqual(saved["request_id"], "gh-123-99-fix")
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertEqual(loaded["request_id"], "gh-123-99-fix")
+        common.remove_workflow_link("gh:123:issue:42:fix")
+        self.assertIsNone(common.load_workflow_link("gh:123:issue:42:fix"))
 
     def test_app_identifier_requires_app_id(self) -> None:
         self.assertEqual(common.app_identifier({"app_id": "123456"}), "123456")
