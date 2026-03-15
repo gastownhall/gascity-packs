@@ -27,9 +27,7 @@ class GitHubIntakeServiceTests(unittest.TestCase):
     def test_fix_command_behavior(self) -> None:
         behavior = service.command_behavior("fix")
 
-        self.assertEqual(behavior["mode"], "fix_issue")
         self.assertEqual(behavior["workflow_scope"], "issue")
-        self.assertTrue(behavior["requires_write_permission"])
 
     def test_unknown_command_behavior_is_empty(self) -> None:
         self.assertEqual(service.command_behavior("review"), {})

@@ -47,11 +47,7 @@ def text_response(handler: BaseHTTPRequestHandler, status: int, body: str, conte
 def command_behavior(command: str) -> dict[str, Any]:
     if command != "fix":
         return {}
-    return {
-        "mode": "fix_issue",
-        "workflow_scope": "issue",
-        "requires_write_permission": True,
-    }
+    return {"workflow_scope": "issue"}
 
 
 def request_summary(request: dict[str, Any]) -> dict[str, Any]:

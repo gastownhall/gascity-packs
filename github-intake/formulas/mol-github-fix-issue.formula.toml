@@ -143,7 +143,7 @@ if [ -n "$BRANCH" ]; then
     || git checkout -b "$BRANCH" origin/"$BRANCH" 2>/dev/null \
     || git checkout -b "$BRANCH" origin/{{github_default_branch}}
 else
-  BRANCH="fix-{{github_issue_number}}"
+  BRANCH="fix-{{github_issue_number}}-{{issue}}"
   git checkout -b "$BRANCH" origin/{{github_default_branch}}
   bd update {{issue}} --set-metadata branch="$BRANCH"
 fi
@@ -171,7 +171,12 @@ Take a read-first pass so you understand the problem before changing code.
 
 **2. Record the working theory in bead notes:**
 ```bash
-bd update {{issue}} --notes "## Bug Understanding
+CURRENT_NOTES=$(bd show {{issue}} --json | jq -r '.notes // empty')
+NOTES_FILE=$(mktemp)
+cat >"$NOTES_FILE" <<EOF
+$CURRENT_NOTES
+
+## Bug Understanding
 
 ### Hypothesis
 - <what is broken and why>
@@ -181,7 +186,9 @@ bd update {{issue}} --notes "## Bug Understanding
 
 ### Test plan
 - <the failing test you will write first>
-"
+EOF
+bd update {{issue}} --notes "$(cat "$NOTES_FILE")"
+rm -f "$NOTES_FILE"
 ```
 
 **Exit criteria:** You can explain the bug clearly and you know which failing
