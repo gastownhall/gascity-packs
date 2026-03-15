@@ -20,7 +20,7 @@ The current slice ships:
 - rig bead creation plus `gc sling <target> <bead> --on <formula>` dispatch
 - pack commands for issue comments, authenticated branch push, and PR creation
 - `mol-github-fix-issue` workflow for TDD bugfixes
-- legacy `/gc review` and `/gc question` passthrough formula dispatch remains available
+- command mapping still supports additional slash commands, but the current webhook ingress is intentionally issue-only for `/gc fix`
 
 The new `/gc fix` path does not post an immediate ack comment. The workflow
 itself comments when work starts and when the PR is ready for review.
