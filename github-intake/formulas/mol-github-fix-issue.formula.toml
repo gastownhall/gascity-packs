@@ -280,7 +280,7 @@ gc github-intake push-branch {{github_repo_full_name}} \
   --branch "$BRANCH"
 ```
 
-**3. Create the PR exactly once:**
+**3. Draft the PR body with the real summary and validation before submission:**
 ```bash
 PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
 if [ -z "$PR_URL" ]; then
@@ -291,14 +291,22 @@ if [ -z "$PR_URL" ]; then
   BODY=$(mktemp)
   cat >"$BODY" <<EOF
 ## Summary
-- summarize the actual code changes you made for this issue
+- describe the actual code changes you made for this issue
 
 ## Validation
 - list the actual tests and checks you ran for this fix
 
 Closes #{{github_issue_number}}
 EOF
-  echo "Before creating the PR, replace the template bullets in $BODY with the real summary and validation from this run."
+fi
+```
+
+Replace the template bullets in `$BODY` with the real summary and validation
+from this run before you submit the PR.
+
+**4. Create the PR exactly once:**
+```bash
+if [ -z "$PR_URL" ]; then
   PR_JSON=$(gc github-intake create-pr {{github_repo_full_name}} \
     --installation-id {{github_installation_id}} \
     --base {{github_default_branch}} \
@@ -316,7 +324,7 @@ EOF
 fi
 ```
 
-**4. Post the completion issue comment exactly once:**
+**5. Post the completion issue comment exactly once:**
 ```bash
 DONE=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_complete_comment_id // empty')
 PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
@@ -344,7 +352,7 @@ EOF
 fi
 ```
 
-**5. Close the bead and exit:**
+**6. Close the bead and exit:**
 ```bash
 PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
 WORKTREE=$(bd show {{issue}} --json | jq -r '.metadata.work_dir // empty')

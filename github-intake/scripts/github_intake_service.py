@@ -132,6 +132,7 @@ def build_fix_bead_title(request: dict[str, Any]) -> str:
 def build_fix_bead_notes(request: dict[str, Any]) -> str:
     issue_title = str(request.get("issue_title", "")).strip() or "(none)"
     issue_body = str(request.get("issue_body", "")).strip() or "(none)"
+    comment_body = str(request.get("comment_body", "")).strip() or "(none)"
     command_context = str(request.get("command_context", "")).strip() or "(none)"
     lines = [
         "## GitHub Source",
@@ -150,6 +151,10 @@ def build_fix_bead_notes(request: dict[str, Any]) -> str:
         "## Issue Body",
         "",
         issue_body,
+        "",
+        "## Trigger Comment Body",
+        "",
+        comment_body,
         "",
         "## Additional Context From /gc fix",
         "",
@@ -245,6 +250,22 @@ def build_fix_vars(request: dict[str, Any], bead_id: str) -> dict[str, str]:
     }
 
 
+def close_failed_bead(bead_id: str, reason: str) -> None:
+    bead_id = bead_id.strip()
+    if not bead_id:
+        return
+    bd_bin = os.environ.get("BD_BIN", "bd")
+    city_root = common.city_root() or "."
+    try:
+        run_subprocess(
+            [bd_bin, "update", bead_id, "--notes", f"GitHub intake dispatch failed: {human_reason(reason)}"],
+            city_root,
+        )
+        run_subprocess([bd_bin, "close", bead_id, "--reason", f"github-intake:{reason or 'dispatch_failed'}"], city_root)
+    except FileNotFoundError:
+        return
+
+
 def run_fix_issue_dispatch(
     request: dict[str, Any],
     mapping: dict[str, Any],
@@ -273,7 +294,10 @@ def run_fix_issue_dispatch(
         }
 
     bead_outcome = create_fix_bead(request, target)
-    if bead_outcome.get("status") == "dispatch_failed" or "bead_id" not in bead_outcome:
+    if bead_outcome.get("status") == "dispatch_failed":
+        close_failed_bead(str(bead_outcome.get("bead_id", "")), str(bead_outcome.get("reason", "")))
+        return bead_outcome
+    if "bead_id" not in bead_outcome:
         return bead_outcome
     bead_id = str(bead_outcome["bead_id"])
 
@@ -285,6 +309,7 @@ def run_fix_issue_dispatch(
     try:
         result = run_subprocess(command, common.city_root() or ".")
     except FileNotFoundError:
+        close_failed_bead(bead_id, "gc_not_available")
         return {
             "status": "dispatch_failed",
             "reason": "gc_not_available",
@@ -305,6 +330,7 @@ def run_fix_issue_dispatch(
     else:
         outcome["status"] = "dispatch_failed"
         outcome["reason"] = "dispatch_failed"
+        close_failed_bead(bead_id, "dispatch_failed")
     return outcome
 
 

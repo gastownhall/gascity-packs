@@ -52,6 +52,7 @@ class GitHubIntakeServiceTests(unittest.TestCase):
             "comment_url": "https://github.com/owner/repo/issues/42#issuecomment-99",
             "request_id": "gh-123-99-fix",
             "comment_author": "alice",
+            "comment_body": "I think this is in foo.py\n/gc fix missing env guard\nrepro: unset X",
             "issue_title": "Crash on startup",
             "issue_body": "The app crashes if X is unset.",
             "command_context": "missing env guard\nsteps to reproduce",
@@ -61,6 +62,7 @@ class GitHubIntakeServiceTests(unittest.TestCase):
 
         self.assertIn("## GitHub Source", notes)
         self.assertIn("Crash on startup", notes)
+        self.assertIn("I think this is in foo.py", notes)
         self.assertIn("missing env guard", notes)
         self.assertIn("gh-123-99-fix", notes)
 
@@ -109,7 +111,18 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         self.assertEqual(outcome["status"], "dispatch_failed")
         self.assertEqual(outcome["reason"], "bead_update_failed")
         self.assertEqual(outcome["bead_id"], "bd-1")
-        run_subprocess.assert_not_called()
+        commands = [call.args[0] for call in run_subprocess.call_args_list]
+        self.assertEqual(commands[0][:3], ["bd", "update", "bd-1"])
+        self.assertEqual(commands[1], ["bd", "close", "bd-1", "--reason", "github-intake:bead_update_failed"])
+        self.assertNotIn("gc", [command[0] for command in commands])
+
+    def test_close_failed_bead_updates_and_closes(self) -> None:
+        with mock.patch.object(service, "run_subprocess") as run_subprocess:
+            service.close_failed_bead("bd-1", "dispatch_failed")
+
+        commands = [call.args[0] for call in run_subprocess.call_args_list]
+        self.assertEqual(commands[0][:3], ["bd", "update", "bd-1"])
+        self.assertEqual(commands[1], ["bd", "close", "bd-1", "--reason", "github-intake:dispatch_failed"])
 
     def test_process_request_releases_workflow_link_after_dispatch_failure_with_bead(self) -> None:
         request = {
