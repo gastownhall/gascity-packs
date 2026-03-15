@@ -17,6 +17,7 @@ from typing import Any
 import github_intake_common as common
 
 PROCESSING_LOCK = threading.Lock()
+ACCEPTANCE_LOCK = threading.Lock()
 PROCESSING_REQUESTS: set[str] = set()
 WRITE_PERMISSION_LEVELS = {"write", "maintain", "admin"}
 
@@ -44,18 +45,12 @@ def text_response(handler: BaseHTTPRequestHandler, status: int, body: str, conte
 
 
 def command_behavior(command: str) -> dict[str, Any]:
-    if command == "fix":
-        return {
-            "mode": "fix_issue",
-            "ack_comment": False,
-            "workflow_scope": "issue",
-            "requires_write_permission": True,
-        }
+    if command != "fix":
+        return {}
     return {
-        "mode": "formula_dispatch",
-        "ack_comment": True,
-        "workflow_scope": "",
-        "requires_write_permission": False,
+        "mode": "fix_issue",
+        "workflow_scope": "issue",
+        "requires_write_permission": True,
     }
 
 
@@ -86,6 +81,7 @@ def human_reason(code: str) -> str:
     mapping = {
         "repo_mapping_missing": "no repository mapping exists for this repo",
         "command_not_configured": "this repository does not configure that /gc command",
+        "command_not_supported": "this GitHub intake slice only supports /gc fix on issues",
         "gc_not_available": "the gc CLI is not available in this runtime",
         "github_app_not_configured": "the GitHub App is not fully configured in this workspace",
         "comment_author_lacks_write": "the commenter does not have write or admin access to this repository",
@@ -93,6 +89,7 @@ def human_reason(code: str) -> str:
         "bead_create_failed": "the workflow bead could not be created",
         "bead_update_failed": "the workflow bead could not be initialized",
         "permission_lookup_failed": "the GitHub App could not verify the commenter's repository permission",
+        "pr_comments_not_supported": "this slice only accepts /gc fix commands on GitHub issues, not pull requests",
     }
     return mapping.get(code, code or "unknown_error")
 
@@ -172,46 +169,6 @@ def run_subprocess(command: list[str], cwd: str) -> subprocess.CompletedProcess[
     )
 
 
-def run_formula_dispatch(request: dict[str, Any], mapping: dict[str, Any], command_cfg: dict[str, Any]) -> dict[str, Any]:
-    formula = str(command_cfg.get("formula", ""))
-    target = str(mapping.get("target", ""))
-    gc_bin = os.environ.get("GC_BIN", "gc")
-    if not formula or not target:
-        return {"status": "ignored", "reason": "command_not_configured"}
-    variables = {
-        "github_command": request.get("command", ""),
-        "github_repository": request.get("repository_full_name", ""),
-        "github_repository_id": request.get("repository_id", ""),
-        "github_issue_number": request.get("issue_number", ""),
-        "github_comment_id": request.get("comment_id", ""),
-        "github_comment_url": request.get("comment_url", ""),
-        "github_installation_id": request.get("installation_id", ""),
-        "github_request_id": request.get("request_id", ""),
-    }
-    command = [gc_bin, "sling", target, formula, "--formula"]
-    for key, value in variables.items():
-        if value:
-            command.extend(["--var", f"{key}={value}"])
-    try:
-        result = run_subprocess(command, common.city_root() or ".")
-    except FileNotFoundError:
-        return {"status": "dispatch_failed", "reason": "gc_not_available"}
-    outcome = {
-        "dispatch_target": target,
-        "dispatch_formula": formula,
-        "dispatch_command": command,
-        "dispatch_exit_code": result.returncode,
-        "dispatch_stdout": trim_output(result.stdout),
-        "dispatch_stderr": trim_output(result.stderr),
-    }
-    if result.returncode == 0:
-        outcome["status"] = "dispatched"
-    else:
-        outcome["status"] = "dispatch_failed"
-        outcome["reason"] = "dispatch_failed"
-    return outcome
-
-
 def create_fix_bead(request: dict[str, Any], target: str) -> dict[str, Any]:
     rig = rig_from_target(target)
     if not rig:
@@ -243,6 +200,7 @@ def create_fix_bead(request: dict[str, Any], target: str) -> dict[str, Any]:
     metadata = {
         "github_repo_full_name": str(request.get("repository_full_name", "")),
         "github_issue_number": str(request.get("issue_number", "")),
+        "github_issue_title": str(request.get("issue_title", "")),
         "github_issue_url": str(request.get("issue_url", "")),
         "github_comment_url": str(request.get("comment_url", "")),
         "github_installation_id": str(request.get("installation_id", "")),
@@ -279,7 +237,6 @@ def build_fix_vars(request: dict[str, Any], bead_id: str) -> dict[str, str]:
         "issue": bead_id,
         "github_issue_url": str(request.get("issue_url", "")),
         "github_issue_number": str(request.get("issue_number", "")),
-        "github_issue_title": str(request.get("issue_title", "")),
         "github_repo_full_name": str(request.get("repository_full_name", "")),
         "github_installation_id": str(request.get("installation_id", "")),
         "github_comment_url": str(request.get("comment_url", "")),
@@ -352,59 +309,6 @@ def run_fix_issue_dispatch(
     return outcome
 
 
-def build_ack_comment(request: dict[str, Any]) -> str:
-    command = request.get("command", "")
-    comment_url = request.get("comment_url", "")
-    request_ref = f"[this request]({comment_url})" if comment_url else "this request"
-    status = request.get("status")
-    if status == "dispatched":
-        body = [
-            f"Gas City queued `/{'gc ' + command}` for {request_ref}.",
-            "",
-            f"Dispatch target: `{request.get('dispatch_target', '')}`",
-            f"Formula: `{request.get('dispatch_formula', '')}`",
-            f"Request id: `{request.get('request_id', '')}`",
-        ]
-    else:
-        body = [
-            f"Gas City could not route `/{'gc ' + command}` for {request_ref}.",
-            "",
-            f"Reason: {human_reason(str(request.get('reason', '')))}",
-            f"Request id: `{request.get('request_id', '')}`",
-        ]
-        stderr = request.get("dispatch_stderr", "")
-        if stderr:
-            body.extend(["", "Dispatch stderr:", "```text", stderr, "```"])
-    body.extend(["", f"<!-- gc-intake-request:{request.get('request_id', '')}:ack -->"])
-    return "\n".join(body)
-
-
-def maybe_post_ack_comment(request: dict[str, Any]) -> dict[str, Any]:
-    config = common.load_config()
-    app_cfg = config.get("app", {})
-    installation_id = request.get("installation_id", "")
-    owner = request.get("repository_owner", "")
-    repo = request.get("repository_name", "")
-    issue_number = request.get("issue_number", "")
-    if not app_cfg or not installation_id or not owner or not repo or not issue_number:
-        return request
-    try:
-        comment = common.post_issue_comment(
-            app_cfg,
-            str(installation_id),
-            str(owner),
-            str(repo),
-            str(issue_number),
-            build_ack_comment(request),
-        )
-    except Exception as exc:  # noqa: BLE001
-        request["ack_comment_error"] = str(exc)
-        return request
-    request["ack_comment_id"] = str(comment.get("id", ""))
-    request["ack_comment_url"] = str(comment.get("html_url", ""))
-    return request
-
-
 def process_request(request_id: str) -> None:
     request: dict[str, Any] | None = None
     try:
@@ -419,19 +323,17 @@ def process_request(request_id: str) -> None:
             str(request.get("repository_id", "")),
         )
         behavior = command_behavior(str(request.get("command", "")))
-        if not mapping:
+        if not behavior:
+            request["status"] = "ignored"
+            request["reason"] = "command_not_supported"
+        elif not mapping:
             request["status"] = "ignored"
             request["reason"] = "repo_mapping_missing"
         else:
             commands = mapping.get("commands", {})
             command_cfg = commands.get(str(request.get("command", "")), {})
-            if behavior["mode"] == "fix_issue":
-                outcome = run_fix_issue_dispatch(request, mapping, command_cfg, app_cfg if isinstance(app_cfg, dict) else {})
-            else:
-                outcome = run_formula_dispatch(request, mapping, command_cfg)
+            outcome = run_fix_issue_dispatch(request, mapping, command_cfg, app_cfg if isinstance(app_cfg, dict) else {})
             request.update(outcome)
-        if behavior["ack_comment"]:
-            request = maybe_post_ack_comment(request)
         common.save_request(request)
     except Exception as exc:  # noqa: BLE001
         payload = common.load_request(request_id) or {"request_id": request_id}
@@ -443,10 +345,34 @@ def process_request(request_id: str) -> None:
     finally:
         if request:
             workflow_key = str(request.get("workflow_key", ""))
-            if workflow_key and not request.get("bead_id") and request.get("status") in {"ignored", "dispatch_failed", "internal_error"}:
+            if workflow_key and request.get("status") in {"ignored", "dispatch_failed", "internal_error"}:
                 common.remove_workflow_link(workflow_key)
         with PROCESSING_LOCK:
             PROCESSING_REQUESTS.discard(request_id)
+
+
+def reserve_request(request: dict[str, Any], behavior: dict[str, Any]) -> dict[str, Any] | None:
+    with ACCEPTANCE_LOCK:
+        existing = common.load_request(request["request_id"])
+        if existing:
+            return existing
+        workflow_key = str(request.get("workflow_key", ""))
+        if behavior.get("workflow_scope") == "issue" and workflow_key:
+            workflow_link = common.load_workflow_link(workflow_key)
+            if workflow_link:
+                existing_request_id = str(workflow_link.get("request_id", ""))
+                return common.load_request(existing_request_id) or {
+                    "request_id": existing_request_id,
+                    "workflow_key": workflow_key,
+                    "status": "duplicate",
+                    "command": request.get("command", ""),
+                    "issue_number": request.get("issue_number", ""),
+                    "repository_full_name": request.get("repository_full_name", ""),
+                }
+        common.save_request(request)
+        if behavior.get("workflow_scope") == "issue" and workflow_key:
+            common.save_workflow_link(workflow_key, request["request_id"])
+    return None
 
 
 def enqueue_request(request_id: str) -> None:
@@ -666,6 +592,19 @@ class IntakeHandler(BaseHTTPRequestHandler):
         if event != "issue_comment":
             json_response(self, HTTPStatus.ACCEPTED, {"status": "ignored", "event": event})
             return
+        parsed_command = common.parse_gc_command(str((payload.get("comment") or {}).get("body", "")))
+        issue = payload.get("issue") or {}
+        if issue.get("pull_request") and parsed_command:
+            json_response(
+                self,
+                HTTPStatus.ACCEPTED,
+                {
+                    "status": "ignored",
+                    "reason": "pr_comments_not_supported",
+                    "command": str(parsed_command.get("command", "")),
+                },
+            )
+            return
         request = common.extract_issue_comment_request(payload)
         if not request:
             json_response(self, HTTPStatus.ACCEPTED, {"status": "ignored", "reason": "not_an_actionable_issue_comment"})
@@ -677,7 +616,18 @@ class IntakeHandler(BaseHTTPRequestHandler):
         request["event"] = event
         request["delivery_id"] = delivery_id
         behavior = command_behavior(str(request.get("command", "")))
-        existing = common.load_request(request["request_id"])
+        if not behavior:
+            json_response(
+                self,
+                HTTPStatus.ACCEPTED,
+                {
+                    "status": "ignored",
+                    "reason": "command_not_supported",
+                    "command": str(request.get("command", "")),
+                },
+            )
+            return
+        existing = reserve_request(request, behavior)
         if existing:
             json_response(
                 self,
@@ -685,28 +635,6 @@ class IntakeHandler(BaseHTTPRequestHandler):
                 {"status": "duplicate", "request": request_summary(existing)},
             )
             return
-        workflow_key = str(request.get("workflow_key", ""))
-        if behavior["workflow_scope"] == "issue" and workflow_key:
-            workflow_link = common.load_workflow_link(workflow_key)
-            if workflow_link:
-                existing_request_id = str(workflow_link.get("request_id", ""))
-                existing_request = common.load_request(existing_request_id) or {
-                    "request_id": existing_request_id,
-                    "workflow_key": workflow_key,
-                    "status": "duplicate",
-                    "command": request.get("command", ""),
-                    "issue_number": request.get("issue_number", ""),
-                    "repository_full_name": request.get("repository_full_name", ""),
-                }
-                json_response(
-                    self,
-                    HTTPStatus.ACCEPTED,
-                    {"status": "duplicate", "request": request_summary(existing_request)},
-                )
-                return
-        common.save_request(request)
-        if behavior["workflow_scope"] == "issue" and workflow_key:
-            common.save_workflow_link(workflow_key, request["request_id"])
         enqueue_request(request["request_id"])
         json_response(self, HTTPStatus.ACCEPTED, {"status": "accepted", "request": request_summary(request)})
 

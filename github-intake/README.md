@@ -20,7 +20,7 @@ The current slice ships:
 - rig bead creation plus `gc sling <target> <bead> --on <formula>` dispatch
 - pack commands for issue comments, authenticated branch push, and PR creation
 - `mol-github-fix-issue` workflow for TDD bugfixes
-- command mapping still supports additional slash commands, but the current webhook ingress is intentionally issue-only for `/gc fix`
+- issue-only `/gc fix` routing for this phase; other `/gc` commands are intentionally ignored
 
 The new `/gc fix` path does not post an immediate ack comment. The workflow
 itself comments when work starts and when the PR is ready for review.
@@ -58,15 +58,6 @@ gc github-intake map-repo owner/repo rig/polecat \
 ```
 
 That stores dispatch config locally under `.gc/services/github-intake/data/`.
-
-For mixed repos you can still map multiple commands:
-
-```bash
-gc github-intake map-repo owner/repo rig/polecat \
-  --fix-formula mol-github-fix-issue \
-  --review-formula mol-github-review-pr-v0 \
-  --question-formula mol-github-question-v0
-```
 
 ## Manual App Import
 

@@ -41,12 +41,10 @@ def main() -> int:
         for repo_name in sorted(repositories):
             mapping = repositories[repo_name]
             commands = mapping.get("commands", {})
-            review = (commands.get("review") or {}).get("formula", "(unset)")
-            question = (commands.get("question") or {}).get("formula", "(unset)")
+            fix = (commands.get("fix") or {}).get("formula", "(unset)")
             print(f"  {repo_name}:")
             print(f"    target: {mapping.get('target', '(unset)')}")
-            print(f"    review_formula: {review}")
-            print(f"    question_formula: {question}")
+            print(f"    fix_formula: {fix}")
     else:
         print("repository_mappings: (none)")
 

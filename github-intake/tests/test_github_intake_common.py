@@ -129,23 +129,23 @@ class GitHubIntakeCommonTests(unittest.TestCase):
             common.load_config(),
             "Owner/Repo",
             "product/polecat",
-            "mol-review",
-            "mol-question",
             "mol-fix",
         )
 
         mapping = common.resolve_repo_mapping(config, "owner/repo")
         self.assertIsNotNone(mapping)
         self.assertEqual(mapping["target"], "product/polecat")
-        self.assertEqual(mapping["commands"]["review"]["formula"], "mol-review")
-        self.assertEqual(mapping["commands"]["question"]["formula"], "mol-question")
         self.assertEqual(mapping["commands"]["fix"]["formula"], "mol-fix")
 
     def test_safe_storage_id_sanitizes_delivery_header_values(self) -> None:
         self.assertEqual(common.safe_storage_id("abc-123", "delivery"), "abc-123")
+        self.assertTrue(common.safe_storage_id("gh:123:issue:42:fix", "delivery").startswith("delivery-"))
         sanitized = common.safe_storage_id("../../etc/passwd", "delivery")
         self.assertTrue(sanitized.startswith("delivery-"))
         self.assertNotIn("/", sanitized)
+
+    def test_workflow_storage_id_preserves_expected_issue_key_shape(self) -> None:
+        self.assertEqual(common.workflow_storage_id("gh:123:issue:42:fix"), "gh:123:issue:42:fix")
 
     def test_workflow_link_round_trip(self) -> None:
         saved = common.save_workflow_link("gh:123:issue:42:fix", "gh-123-99-fix")

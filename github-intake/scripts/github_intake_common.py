@@ -189,8 +189,6 @@ def set_repo_mapping(
     config: dict[str, Any],
     repository: str,
     target: str,
-    review_formula: str | None,
-    question_formula: str | None,
     fix_formula: str | None,
 ) -> dict[str, Any]:
     cfg = normalize_config(config)
@@ -198,9 +196,7 @@ def set_repo_mapping(
     mapping: dict[str, Any] = cfg["repositories"].get(repo_key, {})
     mapping["repository"] = repo_key
     mapping["target"] = target
-    commands: dict[str, Any] = mapping.get("commands", {})
-    commands = _set_command_formula(commands, "review", review_formula)
-    commands = _set_command_formula(commands, "question", question_formula)
+    commands: dict[str, Any] = {}
     commands = _set_command_formula(commands, "fix", fix_formula)
     mapping["commands"] = commands
     cfg["repositories"][repo_key] = mapping
@@ -313,10 +309,18 @@ def build_workflow_key(repository_id: str, issue_number: str, command: str) -> s
 
 def safe_storage_id(value: str, prefix: str) -> str:
     value = value.strip()
-    if value and all(ch.isalnum() or ch in ("-", "_", ":") for ch in value):
+    if value and all(ch.isalnum() or ch in ("-", "_") for ch in value):
         return value
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
     return f"{prefix}-{digest}"
+
+
+def workflow_storage_id(value: str) -> str:
+    value = value.strip()
+    if value and all(ch.isalnum() or ch in ("-", "_", ":") for ch in value):
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+    return f"workflow-{digest}"
 
 
 def extract_issue_comment_request(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -376,7 +380,7 @@ def delivery_path(delivery_id: str) -> str:
 
 
 def workflow_path(workflow_key: str) -> str:
-    return os.path.join(workflows_dir(), f"{safe_storage_id(workflow_key, 'workflow')}.json")
+    return os.path.join(workflows_dir(), f"{workflow_storage_id(workflow_key)}.json")
 
 
 def load_request(request_id: str) -> dict[str, Any] | None:

@@ -6,6 +6,7 @@ import unittest
 
 import os
 import sys
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -27,9 +28,11 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         behavior = service.command_behavior("fix")
 
         self.assertEqual(behavior["mode"], "fix_issue")
-        self.assertFalse(behavior["ack_comment"])
         self.assertEqual(behavior["workflow_scope"], "issue")
         self.assertTrue(behavior["requires_write_permission"])
+
+    def test_unknown_command_behavior_is_empty(self) -> None:
+        self.assertEqual(service.command_behavior("review"), {})
 
     def test_rig_from_target_extracts_rig_name(self) -> None:
         self.assertEqual(service.rig_from_target("product/polecat"), "product")
@@ -60,6 +63,67 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         self.assertIn("Crash on startup", notes)
         self.assertIn("missing env guard", notes)
         self.assertIn("gh-123-99-fix", notes)
+
+    def test_reserve_request_deduplicates_issue_workflow(self) -> None:
+        behavior = service.command_behavior("fix")
+        first = {
+            "request_id": "gh-123-99-fix",
+            "workflow_key": "gh:123:issue:42:fix",
+            "command": "fix",
+            "issue_number": "42",
+            "repository_full_name": "owner/repo",
+        }
+        second = {
+            "request_id": "gh-123-100-fix",
+            "workflow_key": "gh:123:issue:42:fix",
+            "command": "fix",
+            "issue_number": "42",
+            "repository_full_name": "owner/repo",
+        }
+
+        self.assertIsNone(service.reserve_request(first, behavior))
+        duplicate = service.reserve_request(second, behavior)
+
+        self.assertIsNotNone(duplicate)
+        assert duplicate is not None
+        self.assertEqual(duplicate["request_id"], "gh-123-99-fix")
+
+    def test_process_request_releases_workflow_link_after_dispatch_failure_with_bead(self) -> None:
+        request = {
+            "request_id": "gh-123-99-fix",
+            "workflow_key": "gh:123:issue:42:fix",
+            "command": "fix",
+            "repository_full_name": "owner/repo",
+            "repository_id": "123",
+            "issue_number": "42",
+            "installation_id": "88",
+            "repository_owner": "owner",
+            "repository_name": "repo",
+            "comment_author": "alice",
+        }
+        mapping = {
+            "target": "product/polecat",
+            "commands": {"fix": {"formula": "mol-github-fix-issue"}},
+        }
+        service.common.save_request(request)
+        service.common.save_workflow_link(request["workflow_key"], request["request_id"])
+
+        with mock.patch.object(service.common, "load_config", return_value={"app": {"app_id": "1"}}), mock.patch.object(
+            service.common,
+            "resolve_repo_mapping",
+            return_value=mapping,
+        ), mock.patch.object(
+            service,
+            "run_fix_issue_dispatch",
+            return_value={"status": "dispatch_failed", "reason": "dispatch_failed", "bead_id": "bd-1"},
+        ):
+            service.process_request(request["request_id"])
+
+        saved = service.common.load_request(request["request_id"])
+        self.assertIsNotNone(saved)
+        assert saved is not None
+        self.assertEqual(saved["status"], "dispatch_failed")
+        self.assertIsNone(service.common.load_workflow_link(request["workflow_key"]))
 
 
 if __name__ == "__main__":

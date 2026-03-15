@@ -31,10 +31,6 @@ required = true
 description = "Source GitHub issue number"
 required = true
 
-[vars.github_issue_title]
-description = "Source GitHub issue title"
-default = ""
-
 [vars.github_repo_full_name]
 description = "Repository in owner/repo format"
 required = true
@@ -143,7 +139,9 @@ fi
 ```bash
 BRANCH=$(bd show {{issue}} --json | jq -r '.metadata.branch // empty')
 if [ -n "$BRANCH" ]; then
-  git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" origin/"$BRANCH"
+  git checkout "$BRANCH" 2>/dev/null \
+    || git checkout -b "$BRANCH" origin/"$BRANCH" 2>/dev/null \
+    || git checkout -b "$BRANCH" origin/{{github_default_branch}}
 else
   BRANCH="fix-{{github_issue_number}}"
   git checkout -b "$BRANCH" origin/{{github_default_branch}}
@@ -286,6 +284,10 @@ gc github-intake push-branch {{github_repo_full_name}} \
 ```bash
 PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
 if [ -z "$PR_URL" ]; then
+  ISSUE_TITLE=$(bd show {{issue}} --json | jq -r '.metadata.github_issue_title // empty' | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')
+  if [ -z "$ISSUE_TITLE" ]; then
+    ISSUE_TITLE="issue #{{github_issue_number}}"
+  fi
   BODY=$(mktemp)
   cat >"$BODY" <<EOF
 ## Summary
@@ -300,7 +302,7 @@ EOF
     --installation-id {{github_installation_id}} \
     --base {{github_default_branch}} \
     --head "$BRANCH" \
-    --title "fix: {{github_issue_title}}" \
+    --title "fix: $ISSUE_TITLE" \
     --body-file "$BODY")
   PR_URL=$(printf '%s' "$PR_JSON" | jq -r '.html_url // empty')
   PR_NUMBER=$(printf '%s' "$PR_JSON" | jq -r '.number // empty')
@@ -344,7 +346,14 @@ fi
 **5. Close the bead and exit:**
 ```bash
 PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
-bd update {{issue}} --status=closed --notes "PR ready for review: $PR_URL"
+WORKTREE=$(bd show {{issue}} --json | jq -r '.metadata.work_dir // empty')
+if [ -n "$WORKTREE" ] && [ -d "$WORKTREE" ]; then
+  cd "$(dirname "$WORKTREE")"
+  git worktree remove "$WORKTREE" --force
+  bd update {{issue}} --unset-metadata work_dir
+fi
+bd update {{issue}} --notes "PR ready for review: $PR_URL"
+bd close {{issue}}
 gc runtime drain-ack
 exit
 ```
