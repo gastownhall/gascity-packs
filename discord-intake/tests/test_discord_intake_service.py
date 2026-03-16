@@ -127,10 +127,11 @@ class DiscordIntakeServiceTests(unittest.TestCase):
         }
 
         with mock.patch.object(service, "enqueue_request") as enqueue_request:
-            response = service.accept_fix_request(payload, "Crash on startup", "unset env X", "interaction-1")
+            response, receipt = service.accept_fix_request(payload, "Crash on startup", "unset env X", "interaction-1")
 
         self.assertEqual(response["type"], 4)
         self.assertIn("Accepted /gc fix", response["data"]["content"])
+        self.assertEqual(receipt["response_kind"], "accepted")
         request = common.list_recent_requests(limit=1)[0]
         self.assertEqual(request["summary"], "Crash on startup")
         self.assertEqual(request["dispatch_target"], "product/polecat")
@@ -146,11 +147,12 @@ class DiscordIntakeServiceTests(unittest.TestCase):
             "member": {"user": {"id": "99", "username": "alice"}, "roles": []},
         }
 
-        response = service.accept_fix_request(payload, "Crash on startup", "unset env X", "interaction-1")
+        response, receipt = service.accept_fix_request(payload, "Crash on startup", "unset env X", "interaction-1")
 
         self.assertEqual(response["type"], 4)
         self.assertIn("not fully configured", response["data"]["content"])
         self.assertEqual(response["data"]["flags"], 64)
+        self.assertEqual(receipt["response_kind"], "message")
         self.assertEqual(common.list_recent_requests(limit=20), [])
 
     def test_create_fix_bead_parses_json_after_cli_noise(self) -> None:
@@ -228,6 +230,49 @@ class DiscordIntakeServiceTests(unittest.TestCase):
         saved = common.load_request(request["request_id"])
         self.assertEqual(saved["status"], "dispatch_failed")
         self.assertIsNone(common.load_workflow_link(request["workflow_key"]))
+
+    def test_process_request_posts_failure_followup_for_async_dispatch_failure(self) -> None:
+        common.save_bot_token("bot-token")
+        request = {
+            "request_id": "dc-4-fix",
+            "workflow_key": "dc:guild:1:conversation:4:fix",
+            "command": "fix",
+            "summary": "Crash on startup",
+            "channel_id": "22",
+            "thread_id": "44",
+            "dispatch_target": "product/polecat",
+            "dispatch_formula": "mol-discord-fix-issue",
+        }
+        common.save_request(request)
+
+        with mock.patch.object(
+            service,
+            "run_fix_dispatch",
+            return_value={"status": "dispatch_failed", "reason": "dispatch_failed", "bead_id": "bd-1"},
+        ), mock.patch.object(
+            common,
+            "post_channel_message",
+            return_value={"id": "msg-1"},
+        ) as post_channel_message:
+            service.process_request(request["request_id"])
+
+        saved = common.load_request(request["request_id"])
+        self.assertEqual(saved["failure_message_id"], "msg-1")
+        post_channel_message.assert_called_once()
+        self.assertEqual(post_channel_message.call_args.args[0], "44")
+        self.assertIn("could not be started", post_channel_message.call_args.args[1])
+
+    def test_finalize_modal_origin_receipt_replaces_stale_modal_replay(self) -> None:
+        common.save_interaction_receipt("slash-1", {"response_kind": "modal", "modal_nonce": "nonce-1"})
+        common.save_interaction_receipt("modal-1", {"response_kind": "accepted", "request_id": "dc-1"})
+        response = service.build_message_response("Accepted /gc fix for this conversation.", ephemeral=False)
+
+        service.finalize_modal_origin_receipt("slash-1", "modal-1", response)
+
+        receipt = common.load_interaction_receipt("slash-1")
+        self.assertEqual(receipt["response_kind"], "accepted")
+        replayed = service.replay_response_from_receipt(receipt)
+        self.assertEqual(replayed, response)
 
 
 if __name__ == "__main__":

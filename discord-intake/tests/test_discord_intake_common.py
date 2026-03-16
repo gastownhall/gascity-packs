@@ -59,6 +59,16 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertTrue(redacted["app"]["bot_token_present"])
         self.assertEqual(redacted["policy"]["guild_allowlist"], ["1"])
 
+    def test_import_app_config_rejects_invalid_public_key(self) -> None:
+        with self.assertRaisesRegex(ValueError, "public_key must be valid 32-byte hex"):
+            common.import_app_config(
+                common.load_config(),
+                {
+                    "application_id": "123",
+                    "public_key": "not-hex",
+                },
+            )
+
     def test_set_channel_mapping_persists_fix_formula(self) -> None:
         config = common.set_channel_mapping(common.load_config(), "1", "2", "product/polecat", "mol-discord-fix-issue")
 
@@ -113,6 +123,15 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertTrue(first)
         self.assertFalse(second)
         self.assertEqual(common.load_interaction_receipt("abc")["request_id"], "dc-1")
+
+    def test_replace_interaction_receipt_overwrites_existing_payload(self) -> None:
+        common.save_interaction_receipt("abc", {"response_kind": "modal", "modal_nonce": "nonce-1"})
+
+        common.replace_interaction_receipt("abc", {"response_kind": "accepted", "request_id": "dc-1"})
+
+        receipt = common.load_interaction_receipt("abc")
+        self.assertEqual(receipt["response_kind"], "accepted")
+        self.assertEqual(receipt["request_id"], "dc-1")
 
     def test_verify_discord_signature_returns_true_when_openssl_verifies(self) -> None:
         with mock.patch.object(common.subprocess, "run", return_value=mock.Mock(returncode=0)):

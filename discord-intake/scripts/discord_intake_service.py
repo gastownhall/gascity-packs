@@ -178,6 +178,17 @@ def build_duplicate_response(existing: dict[str, Any]) -> dict[str, Any]:
     return build_message_response(content or "A workflow is already active for this conversation.", ephemeral=True)
 
 
+def receipt_payload(response: dict[str, Any], response_kind: str = "", request_id: str = "") -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "response": response,
+    }
+    if response_kind:
+        payload["response_kind"] = response_kind
+    if request_id:
+        payload["request_id"] = request_id
+    return payload
+
+
 def prompt_to_summary_context(prompt: str) -> tuple[str, str]:
     prompt = prompt.strip()
     if not prompt:
@@ -481,6 +492,8 @@ def process_request(request_id: str) -> None:
         else:
             outcome = run_fix_dispatch(request)
             request.update(outcome)
+            if request.get("status") in {"dispatch_failed", "internal_error"}:
+                maybe_notify_dispatch_failure(request)
         common.save_request(request)
     except Exception as exc:  # noqa: BLE001
         payload = request or common.load_request(request_id) or {"request_id": request_id}
@@ -493,6 +506,7 @@ def process_request(request_id: str) -> None:
         payload["status"] = "internal_error"
         payload["reason"] = str(exc)
         payload["traceback"] = traceback.format_exc(limit=20)
+        maybe_notify_dispatch_failure(payload)
         common.save_request(payload)
         request = payload
     finally:
@@ -631,6 +645,9 @@ def build_request(
 
 
 def replay_response_from_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
+    stored_response = receipt.get("response")
+    if isinstance(stored_response, dict):
+        return stored_response
     response_kind = str(receipt.get("response_kind", "")).strip()
     if response_kind == "modal":
         return build_modal_response(str(receipt.get("modal_nonce", "")))
@@ -641,12 +658,69 @@ def replay_response_from_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
     return build_duplicate_response(request or {"request_id": request_id, "status": "duplicate"})
 
 
-def accept_fix_request(payload: dict[str, Any], summary: str, context_markdown: str, interaction_id: str) -> dict[str, Any]:
+def build_dispatch_failure_message(request: dict[str, Any]) -> str:
+    request_id = str(request.get("request_id", "")).strip()
+    bead_id = str(request.get("bead_id", "")).strip()
+    status = str(request.get("status", "")).strip()
+    reason = str(request.get("reason", "")).strip()
+    lines = [
+        "Discord `/gc fix` could not be started.",
+        f"Request: `{request_id}`" if request_id else "",
+        f"Status: `{status}`" if status else "",
+        f"Reason: {human_reason(reason)}" if reason else "",
+        f"Bead: `{bead_id}`" if bead_id else "",
+    ]
+    return "\n".join(line for line in lines if line)
+
+
+def maybe_notify_dispatch_failure(request: dict[str, Any]) -> dict[str, Any]:
+    if request.get("failure_notified_at"):
+        return request
+    target_channel = str(request.get("thread_id", "")).strip() or str(request.get("channel_id", "")).strip()
+    if not target_channel:
+        return request
+    try:
+        response = common.post_channel_message(target_channel, build_dispatch_failure_message(request))
+    except common.DiscordAPIError as exc:
+        request["failure_notification_error"] = str(exc)
+        return request
+    request["failure_notified_at"] = common.utcnow()
+    message_id = str((response or {}).get("id", "")).strip() if isinstance(response, dict) else ""
+    if message_id:
+        request["failure_message_id"] = message_id
+    return request
+
+
+def finalize_modal_origin_receipt(
+    original_interaction_id: str,
+    modal_interaction_id: str,
+    response: dict[str, Any],
+) -> None:
+    original_interaction_id = original_interaction_id.strip()
+    if not original_interaction_id:
+        return
+    modal_receipt = common.load_interaction_receipt(modal_interaction_id) or {}
+    payload = receipt_payload(
+        response,
+        response_kind=str(modal_receipt.get("response_kind", "message")).strip() or "message",
+        request_id=str(modal_receipt.get("request_id", "")).strip(),
+    )
+    common.replace_interaction_receipt(original_interaction_id, payload)
+
+
+def accept_fix_request(
+    payload: dict[str, Any],
+    summary: str,
+    context_markdown: str,
+    interaction_id: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     config = common.load_config()
     if not str(payload.get("guild_id", "")).strip():
-        return build_message_response(human_reason("guild_only"), ephemeral=True)
+        response = build_message_response(human_reason("guild_only"), ephemeral=True)
+        return response, receipt_payload(response, response_kind="message")
     if not common.load_bot_token():
-        return build_message_response(human_reason("discord_app_not_configured"), ephemeral=True)
+        response = build_message_response(human_reason("discord_app_not_configured"), ephemeral=True)
+        return response, receipt_payload(response, response_kind="message")
     channel_context = common.load_channel_context(
         config,
         str(payload.get("guild_id", "")),
@@ -655,7 +729,8 @@ def accept_fix_request(payload: dict[str, Any], summary: str, context_markdown: 
     )
     mapping = channel_context.get("mapping") or {}
     if not mapping:
-        return build_message_response(human_reason("channel_mapping_missing"), ephemeral=True)
+        response = build_message_response(human_reason("channel_mapping_missing"), ephemeral=True)
+        return response, receipt_payload(response, response_kind="message")
     reason = common.policy_reason(
         config,
         str(payload.get("guild_id", "")),
@@ -663,22 +738,27 @@ def accept_fix_request(payload: dict[str, Any], summary: str, context_markdown: 
         role_ids(payload),
     )
     if reason:
-        return build_message_response(human_reason(reason), ephemeral=True)
+        response = build_message_response(human_reason(reason), ephemeral=True)
+        return response, receipt_payload(response, response_kind="message")
     summary = summary.strip()
     context_markdown = context_markdown.strip()
     if not summary and context_markdown:
         summary, context_markdown = prompt_to_summary_context(context_markdown)
     if not summary:
-        return build_message_response(human_reason("summary_required"), ephemeral=True)
+        response = build_message_response(human_reason("summary_required"), ephemeral=True)
+        return response, receipt_payload(response, response_kind="message")
     request = build_request(payload, summary, context_markdown, channel_context)
     behavior = command_behavior("fix")
     if not behavior:
-        return build_message_response(human_reason("command_not_supported"), ephemeral=True)
+        response = build_message_response(human_reason("command_not_supported"), ephemeral=True)
+        return response, receipt_payload(response, response_kind="message")
     existing = reserve_request(request, behavior, interaction_id)
     if existing:
-        return build_duplicate_response(existing)
+        response = build_duplicate_response(existing)
+        return response, receipt_payload(response, response_kind="duplicate", request_id=str(existing.get("request_id", "")).strip())
     enqueue_request(request["request_id"])
-    return build_acceptance_response(request)
+    response = build_acceptance_response(request)
+    return response, receipt_payload(response, response_kind="accepted", request_id=request["request_id"])
 
 
 class IntakeHandler(BaseHTTPRequestHandler):
@@ -739,7 +819,11 @@ class IntakeHandler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
         if parsed.path == "/v0/discord/app/import":
-            config = common.import_app_config(common.load_config(), body)
+            try:
+                config = common.import_app_config(common.load_config(), body)
+            except ValueError as exc:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
             json_response(self, HTTPStatus.OK, {"config": common.redact_config(config)})
             return
         if parsed.path == "/v0/discord/bot-token/import":
@@ -854,7 +938,8 @@ class IntakeHandler(BaseHTTPRequestHandler):
             prompt = str(parsed_command.get("prompt", "")).strip()
             if prompt:
                 summary, context_markdown = prompt_to_summary_context(prompt)
-                interaction_response(self, accept_fix_request(payload, summary, context_markdown, interaction_id))
+                response, _ = accept_fix_request(payload, summary, context_markdown, interaction_id)
+                interaction_response(self, response)
                 return
             nonce = secrets.token_hex(12)
             common.save_pending_modal(
@@ -892,7 +977,9 @@ class IntakeHandler(BaseHTTPRequestHandler):
             summary = str(fields.get("summary", "")).strip()
             context_markdown = str(fields.get("context", "")).strip()
             common.remove_pending_modal(nonce)
-            interaction_response(self, accept_fix_request(payload, summary, context_markdown, interaction_id))
+            response, _ = accept_fix_request(payload, summary, context_markdown, interaction_id)
+            finalize_modal_origin_receipt(str(pending.get("interaction_id", "")), interaction_id, response)
+            interaction_response(self, response)
             return
 
         interaction_response(self, build_message_response("Unsupported Discord interaction type.", ephemeral=True))

@@ -29,17 +29,20 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     bot_token = args.bot_token.strip() or _read_optional_file(args.bot_token_file)
-    config = common.import_app_config(
-        common.load_config(),
-        {
-            "application_id": args.application_id,
-            "public_key": args.public_key,
-            "command_name": args.command_name,
-            "guild_allowlist": args.guild_allowlist,
-            "channel_allowlist": args.channel_allowlist,
-            "role_allowlist": args.role_allowlist,
-        },
-    )
+    try:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": args.application_id,
+                "public_key": args.public_key,
+                "command_name": args.command_name,
+                "guild_allowlist": args.guild_allowlist,
+                "channel_allowlist": args.channel_allowlist,
+                "role_allowlist": args.role_allowlist,
+            },
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     if bot_token:
         common.save_bot_token(bot_token)
     print(json.dumps(common.redact_config(config), indent=2, sort_keys=True))

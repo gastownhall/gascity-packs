@@ -240,15 +240,37 @@ def redact_config(config: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
+def validate_application_id(value: str) -> str:
+    normalized = str(value).strip()
+    if not normalized:
+        return ""
+    if not normalized.isdigit():
+        raise ValueError("application_id must be a Discord snowflake")
+    return normalized
+
+
+def validate_public_key(value: str) -> str:
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return ""
+    try:
+        raw = bytes.fromhex(normalized)
+    except ValueError as exc:
+        raise ValueError("public_key must be valid 32-byte hex") from exc
+    if len(raw) != 32:
+        raise ValueError("public_key must be valid 32-byte hex")
+    return normalized
+
+
 def import_app_config(config: dict[str, Any], app_fields: dict[str, Any]) -> dict[str, Any]:
     cfg = normalize_config(config)
     app = cfg.setdefault("app", {})
-    application_id = str(app_fields.get("application_id", app_fields.get("app_id", ""))).strip()
-    public_key = str(app_fields.get("public_key", "")).strip()
+    application_id = validate_application_id(app_fields.get("application_id", app_fields.get("app_id", "")))
+    public_key = validate_public_key(app_fields.get("public_key", ""))
     if application_id:
         app["application_id"] = application_id
     if public_key:
-        app["public_key"] = public_key.lower()
+        app["public_key"] = public_key
     command_name = str(app_fields.get("command_name", app.get("command_name", COMMAND_NAME_DEFAULT))).strip()
     app["command_name"] = command_name or COMMAND_NAME_DEFAULT
 
@@ -427,6 +449,16 @@ def save_interaction_receipt(interaction_id: str, payload: dict[str, Any]) -> bo
     with os.fdopen(fd, "wb") as handle:
         handle.write(data)
     return True
+
+
+def replace_interaction_receipt(interaction_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_layout()
+    existing = load_interaction_receipt(interaction_id) or {}
+    body = copy.deepcopy(payload)
+    body["interaction_id"] = interaction_id
+    body.setdefault("created_at", str(existing.get("created_at", "")).strip() or utcnow())
+    atomic_write_json(receipt_path(interaction_id), body)
+    return body
 
 
 def load_workflow_link(workflow_key: str) -> dict[str, Any] | None:
