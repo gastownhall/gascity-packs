@@ -1,0 +1,15 @@
+Release a stuck workflow lock for a Discord conversation.
+
+This is an operator recovery command. It does not touch the bead; it only
+clears the intake-side workflow lock so `/gc fix` can be accepted again for the
+same channel or thread.
+
+Example:
+  gc discord-intake release-workflow 123456789012345678 223456789012345678
+
+Arguments:
+  <guild_id>         Discord guild id
+  <conversation_id>  Channel id or thread id used for the workflow key
+
+Flags:
+  --command <name>  slash command to unlock, default: fix
