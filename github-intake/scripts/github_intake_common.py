@@ -266,8 +266,6 @@ def build_manifest() -> dict[str, Any]:
         },
         "default_events": [
             "issue_comment",
-            "installation",
-            "installation_repositories",
         ],
     }
 
