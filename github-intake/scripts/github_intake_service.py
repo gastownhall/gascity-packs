@@ -449,10 +449,25 @@ def render_admin_home() -> str:
     if manifest_json:
         escaped_manifest = html.escape(manifest_json, quote=True)
         register_form = f"""
-<form action="https://github.com/settings/apps/new" method="post">
+<form id="manifest-form" action="https://github.com/settings/apps/new" method="post">
   <input type="hidden" name="manifest" value="{escaped_manifest}">
+  <label for="org-name">Organization (leave blank for personal account):</label><br>
+  <input type="text" id="org-name" placeholder="my-org" style="margin: 0.5rem 0; padding: 0.3rem; font-family: inherit;">
+  <br>
   <button type="submit">Register GitHub App</button>
 </form>
+<script>
+(function() {{
+  var orgInput = document.getElementById("org-name");
+  var form = document.getElementById("manifest-form");
+  orgInput.addEventListener("input", function() {{
+    var org = orgInput.value.trim();
+    form.action = org
+      ? "https://github.com/organizations/" + encodeURIComponent(org) + "/settings/apps/new"
+      : "https://github.com/settings/apps/new";
+  }});
+}})();
+</script>
 """
 
     install_html = ""
@@ -478,8 +493,9 @@ def render_admin_home() -> str:
   <h2>App Setup</h2>
   {register_form or f'<p class="warning">{html.escape(manifest_error or "Manifest unavailable")}</p>'}
   {install_html}
-  <p>For organization-owned apps, use the manifest JSON below from the org settings app-registration page.</p>
+  <details><summary>Raw manifest JSON</summary>
   <pre>{html.escape(manifest_json or manifest_error or "manifest unavailable")}</pre>
+  </details>
   <h2>Config</h2>
   <pre>{html.escape(json.dumps(config, indent=2, sort_keys=True))}</pre>
   <h2>Recent Requests</h2>
