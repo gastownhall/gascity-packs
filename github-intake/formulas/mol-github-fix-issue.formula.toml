@@ -291,7 +291,7 @@ gc github-intake push-branch {{github_repo_full_name}} \
 ```bash
 PR_URL=$(bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // empty')
 if [ -z "$PR_URL" ]; then
-  ISSUE_TITLE=$(bd show {{issue}} --json | jq -r '.metadata.github_issue_title // empty' | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')
+  ISSUE_TITLE=$(bd show {{issue}} --json | jq -r '.metadata.github_issue_title // empty' | tr '\\n' ' ' | sed 's/[[:space:]]\\+/ /g' | sed 's/^ //; s/ $//')
   if [ -z "$ISSUE_TITLE" ]; then
     ISSUE_TITLE="issue #{{github_issue_number}}"
   fi
