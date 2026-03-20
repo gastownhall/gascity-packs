@@ -281,6 +281,27 @@ def rig_from_target(target: str) -> str:
     return rig.strip()
 
 
+def rig_workdir(rig: str) -> str:
+    """Resolve a rig's working directory from .beads/routes.jsonl."""
+    root = common.city_root() or "."
+    routes_path = os.path.join(root, ".beads", "routes.jsonl")
+    try:
+        with open(routes_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entry = json.loads(line)
+                path = str(entry.get("path", ""))
+                if path == rig:
+                    resolved = os.path.join(root, path) if not os.path.isabs(path) else path
+                    if os.path.isdir(resolved):
+                        return resolved
+    except (OSError, json.JSONDecodeError):
+        pass
+    return ""
+
+
 def extract_json_output(raw: str) -> dict[str, Any]:
     raw = raw.strip()
     if not raw:
@@ -335,9 +356,10 @@ def create_fix_bead(request: dict[str, Any], target: str) -> dict[str, Any]:
         return {"status": "dispatch_failed", "reason": "invalid_dispatch_target"}
     city_root = common.city_root() or "."
     bd_bin = os.environ.get("BD_BIN", "bd")
-    create_command = [bd_bin, "create", "--json", build_fix_bead_title(request), "--rig", rig, "-t", "task"]
+    bd_cwd = rig_workdir(rig) or city_root
+    create_command = [bd_bin, "create", "--json", build_fix_bead_title(request), "-t", "task"]
     try:
-        create_result = run_subprocess(create_command, city_root)
+        create_result = run_subprocess(create_command, bd_cwd)
     except FileNotFoundError:
         return {"status": "dispatch_failed", "reason": "bead_create_failed", "dispatch_stderr": "bd not available"}
     if create_result.returncode != 0:
@@ -370,7 +392,7 @@ def create_fix_bead(request: dict[str, Any], target: str) -> dict[str, Any]:
         if value:
             update_command.extend(["--set-metadata", f"{key}={value}"])
     try:
-        update_result = run_subprocess(update_command, city_root)
+        update_result = run_subprocess(update_command, bd_cwd)
     except FileNotFoundError:
         return {
             "status": "dispatch_failed",
@@ -404,20 +426,21 @@ def build_fix_vars(request: dict[str, Any], bead_id: str) -> dict[str, str]:
     }
 
 
-def close_failed_bead(bead_id: str, reason: str) -> bool:
+def close_failed_bead(bead_id: str, reason: str, rig: str = "") -> bool:
     bead_id = bead_id.strip()
     if not bead_id:
         return True
     bd_bin = os.environ.get("BD_BIN", "bd")
     city_root = common.city_root() or "."
+    bd_cwd = (rig_workdir(rig) or city_root) if rig else city_root
     try:
         set_reason = run_subprocess(
             [bd_bin, "update", bead_id, "--set-metadata", f"close_reason=discord-intake:{reason or 'dispatch_failed'}"],
-            city_root,
+            bd_cwd,
         )
         if set_reason.returncode != 0:
             return False
-        result = run_subprocess([bd_bin, "close", bead_id], city_root)
+        result = run_subprocess([bd_bin, "close", bead_id], bd_cwd)
     except FileNotFoundError:
         return False
     return result.returncode == 0
@@ -429,9 +452,10 @@ def run_fix_dispatch(request: dict[str, Any]) -> dict[str, Any]:
     if not formula or not target:
         return {"status": "ignored", "reason": "command_not_configured"}
 
+    rig = rig_from_target(target)
     bead_outcome = create_fix_bead(request, target)
     if bead_outcome.get("status") == "dispatch_failed":
-        cleanup_ok = close_failed_bead(str(bead_outcome.get("bead_id", "")), str(bead_outcome.get("reason", "")))
+        cleanup_ok = close_failed_bead(str(bead_outcome.get("bead_id", "")), str(bead_outcome.get("reason", "")), rig)
         if cleanup_ok:
             bead_outcome["bead_closed"] = True
         else:
@@ -450,7 +474,7 @@ def run_fix_dispatch(request: dict[str, Any]) -> dict[str, Any]:
     try:
         result = run_subprocess(command, common.city_root() or ".")
     except FileNotFoundError:
-        cleanup_ok = close_failed_bead(bead_id, "gc_not_available")
+        cleanup_ok = close_failed_bead(bead_id, "gc_not_available", rig)
         outcome = {"status": "dispatch_failed", "reason": "gc_not_available", "bead_id": bead_id}
         if cleanup_ok:
             outcome["bead_closed"] = True
@@ -471,7 +495,7 @@ def run_fix_dispatch(request: dict[str, Any]) -> dict[str, Any]:
     else:
         outcome["status"] = "dispatch_failed"
         outcome["reason"] = "dispatch_failed"
-        if close_failed_bead(bead_id, "dispatch_failed"):
+        if close_failed_bead(bead_id, "dispatch_failed", rig):
             outcome["bead_closed"] = True
         else:
             outcome["cleanup_failed"] = True
@@ -499,8 +523,9 @@ def process_request(request_id: str) -> None:
     except Exception as exc:  # noqa: BLE001
         payload = request or common.load_request(request_id) or {"request_id": request_id}
         bead_id = str(payload.get("bead_id", ""))
+        rig = rig_from_target(str(payload.get("dispatch_target", "")))
         if bead_id and not payload.get("bead_closed"):
-            if close_failed_bead(bead_id, "internal_error"):
+            if close_failed_bead(bead_id, "internal_error", rig):
                 payload["bead_closed"] = True
             else:
                 payload["cleanup_failed"] = True
