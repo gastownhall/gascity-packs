@@ -29,6 +29,8 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         gateway_service.INGRESS_PROCESS_LOCKS.clear()
         gateway_service.GC_API_HEALTH_CACHE["checked_at"] = 0.0
         gateway_service.GC_API_HEALTH_CACHE["reachable"] = True
+        gateway_service.AMBIENT_ROOM_BINDINGS_CACHE["config_signature"] = None
+        gateway_service.AMBIENT_ROOM_BINDINGS_CACHE["bindings"] = {}
 
     def tearDown(self) -> None:
         os.environ.clear()
@@ -121,7 +123,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             "author": {"id": "u-22", "username": "alice"},
         }
 
-        with mock.patch.object(common, "discord_api_request", return_value={"id": "222", "parent_id": "22"}), mock.patch.object(
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "222", "parent_id": "22", "type": 11}), mock.patch.object(
             common,
             "session_index_by_name",
             return_value={"sky": {"session_name": "sky", "state": "active"}},
@@ -133,8 +135,34 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(deliver_session_message.call_args.args[0], "sky")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("binding_id: room:22", envelope)
+        self.assertIn("conversation: guild:1 channel:22 thread:222", envelope)
         self.assertIn("publish_conversation_id: 222", envelope)
         self.assertIn("publish_trigger_id: 212", envelope)
+
+    def test_process_inbound_thread_message_inherits_parent_room_binding_when_lookup_omits_type(self) -> None:
+        common.set_chat_binding(common.load_config(), "room", "22", ["sky"], guild_id="1")
+        common.save_bot_token("bot-token")
+        message = {
+            "id": "212b",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "<@999> can you take a look?",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-22b", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "222", "parent_id": "22"}), mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        deliver_session_message.assert_called_once()
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("binding_id: room:22", envelope)
+        self.assertIn("conversation: guild:1 channel:22 thread:222", envelope)
 
     def test_process_inbound_thread_message_marks_lookup_failure_as_retryable(self) -> None:
         common.save_bot_token("bot-token")
@@ -242,6 +270,671 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(outcome["status"], "ignored")
         self.assertEqual(outcome["reason"], "not_mentioned")
         deliver_session_message.assert_not_called()
+
+    def test_process_inbound_ambient_room_message_routes_targeted_alias_without_bot_mention(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        message = {
+            "id": "506",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@Sky please check the shard",
+            "mentions": [],
+            "author": {"id": "u-5a", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={
+                "sky": {"session_name": "sky", "state": "active"},
+                "lawrence": {"session_name": "lawrence", "state": "active"},
+            },
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        deliver_session_message.assert_called_once()
+        self.assertEqual(deliver_session_message.call_args.args[0], "sky")
+        receipt = common.load_chat_ingress("in-506")
+        assert receipt is not None
+        self.assertEqual(receipt["delivery"], "targeted")
+        self.assertEqual(receipt["mentioned_aliases"], ["sky"])
+
+    def test_process_inbound_ambient_thread_message_hydrates_thread_context_on_delivery(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "222",
+            ["sky"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+            channel_metadata={"channel_type": 11, "thread_parent_id": "22"},
+        )
+        message = {
+            "id": "506b",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "@sky please check the shard",
+            "mentions": [],
+            "author": {"id": "u-5aa", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request") as discord_api_request, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        discord_api_request.assert_not_called()
+        deliver_session_message.assert_called_once()
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("conversation: guild:1 channel:22 thread:222", envelope)
+
+    def test_process_inbound_ambient_thread_missing_parent_metadata_falls_back_to_lookup(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "222",
+            ["sky"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+            channel_metadata={"channel_type": 11},
+        )
+        common.save_bot_token("bot-token")
+        message = {
+            "id": "506bb",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "@sky please check the shard",
+            "mentions": [],
+            "author": {"id": "u-5aab", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "222", "parent_id": "22", "type": 11}) as discord_api_request, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        discord_api_request.assert_called_once()
+        deliver_session_message.assert_called_once()
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("conversation: guild:1 channel:22 thread:222", envelope)
+
+    def test_process_inbound_bot_mentioned_ambient_thread_uses_binding_thread_metadata(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "222",
+            ["sky"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+            channel_metadata={"channel_type": 11, "thread_parent_id": "22"},
+        )
+        message = {
+            "id": "506c",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "<@999> @sky please check the shard",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5ab", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request") as discord_api_request, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        discord_api_request.assert_not_called()
+        deliver_session_message.assert_called_once()
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("conversation: guild:1 channel:22 thread:222", envelope)
+
+    def test_process_inbound_direct_thread_binding_missing_parent_metadata_falls_back_to_lookup(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "222",
+            ["sky"],
+            guild_id="1",
+            channel_metadata={"channel_type": 11},
+        )
+        common.save_bot_token("bot-token")
+        message = {
+            "id": "506d",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "<@999> @sky please check the shard",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5ac", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "222", "parent_id": "22", "type": 11}) as discord_api_request, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        discord_api_request.assert_called_once()
+        deliver_session_message.assert_called_once()
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("conversation: guild:1 channel:22 thread:222", envelope)
+
+    def test_process_inbound_ambient_room_message_ignores_untargeted_body(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        message = {
+            "id": "507",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "just chatting here",
+            "mentions": [],
+            "author": {"id": "u-5b", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "session_index_by_name") as session_index_by_name, mock.patch.object(
+            common, "deliver_session_message"
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored_untargeted")
+        session_index_by_name.assert_not_called()
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-507")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "ignored_untargeted")
+        self.assertEqual(receipt["reason"], "ambient_target_required")
+
+    def test_process_inbound_ambient_room_message_ignores_unknown_alias_with_receipt(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        message = {
+            "id": "507a",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@ghost please check the shard",
+            "mentions": [],
+            "author": {"id": "u-5ba", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "session_index_by_name") as session_index_by_name, mock.patch.object(
+            common, "deliver_session_message"
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored_untargeted")
+        session_index_by_name.assert_not_called()
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-507a")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "ignored_untargeted")
+        self.assertEqual(receipt["reason"], "ambient_target_required")
+
+    def test_process_inbound_ambient_room_message_dedupes_replayed_unknown_alias_after_binding_changes(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        message = {
+            "id": "507aa",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@ghost please check the shard",
+            "mentions": [],
+            "author": {"id": "u-5baa", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "session_index_by_name") as session_index_by_name, mock.patch.object(
+            common, "deliver_session_message"
+        ) as deliver_session_message:
+            first_outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(first_outcome["status"], "ignored_untargeted")
+        session_index_by_name.assert_not_called()
+        deliver_session_message.assert_not_called()
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence", "ghost"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+
+        with mock.patch.object(common, "session_index_by_name") as session_index_by_name, mock.patch.object(
+            common, "deliver_session_message"
+        ) as deliver_session_message:
+            replay_outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(replay_outcome["status"], "duplicate")
+        session_index_by_name.assert_not_called()
+        deliver_session_message.assert_not_called()
+
+    def test_process_inbound_ambient_room_message_preserves_unknown_alias_rejection_when_mixed(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        message = {
+            "id": "507b",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@sky @ghost please check the shard",
+            "mentions": [],
+            "author": {"id": "u-5bb", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={
+                "sky": {"session_name": "sky", "state": "active"},
+                "lawrence": {"session_name": "lawrence", "state": "active"},
+            },
+        ), mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "rejected_targeting")
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-507b")
+        assert receipt is not None
+        self.assertEqual(receipt["reason"], "unknown_alias:ghost")
+
+    def test_process_inbound_bound_room_message_does_not_fetch_channel_info_for_main_room_delivery(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky"],
+            guild_id="1",
+            channel_metadata={"channel_type": 0},
+        )
+        common.save_bot_token("bot-token")
+        message = {
+            "id": "507b",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> @sky please check the shard",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5bb", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request") as discord_api_request, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        discord_api_request.assert_not_called()
+        deliver_session_message.assert_called_once()
+
+    def test_process_inbound_legacy_main_room_binding_survives_lookup_failure(self) -> None:
+        common.set_chat_binding(common.load_config(), "room", "22", ["sky"], guild_id="1")
+        common.save_bot_token("bot-token")
+        message = {
+            "id": "507c",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> @sky please check the shard",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5bc", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common, "discord_api_request", side_effect=common.DiscordAPIError("GET failed", status_code=500)
+        ), mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        deliver_session_message.assert_called_once()
+
+    def test_process_inbound_legacy_main_room_binding_caches_metadata_after_successful_lookup(self) -> None:
+        common.set_chat_binding(common.load_config(), "room", "22", ["sky"], guild_id="1")
+        common.save_bot_token("bot-token")
+        first_message = {
+            "id": "507d",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> @sky please check the shard",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5bd", "username": "alice"},
+        }
+        second_message = {
+            "id": "507e",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> @sky please check the shard again",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5be", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "22", "type": 0}) as discord_api_request, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            first_outcome = gateway_service.process_inbound_message(first_message, bot_user_id="999")
+
+        self.assertEqual(first_outcome["status"], "delivered")
+        discord_api_request.assert_called_once()
+        deliver_session_message.assert_called_once()
+        binding = common.resolve_chat_binding(common.load_config(), common.chat_binding_id("room", "22"))
+        assert binding is not None
+        self.assertNotIn("channel_type", binding)
+        self.assertEqual(common.load_channel_metadata_cache("22"), {"channel_type": 0})
+
+        gateway_service.CHANNEL_INFO_CACHE.clear()
+
+        with mock.patch.object(common, "discord_api_request") as discord_api_request, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"sky": {"session_name": "sky", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            second_outcome = gateway_service.process_inbound_message(second_message, bot_user_id="999")
+
+        self.assertEqual(second_outcome["status"], "delivered")
+        discord_api_request.assert_not_called()
+        deliver_session_message.assert_called_once()
+
+    def test_persist_binding_channel_metadata_writes_runtime_cache_without_rewriting_binding(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        stale_binding = common.resolve_chat_binding(common.load_config(), common.chat_binding_id("room", "22"))
+        assert stale_binding is not None
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True, "peer_fanout_enabled": True},
+        )
+
+        gateway_service.persist_binding_channel_metadata({**stale_binding, "channel_type": 0})
+
+        binding = common.resolve_chat_binding(common.load_config(), common.chat_binding_id("room", "22"))
+        assert binding is not None
+        self.assertEqual(binding["session_names"], ["sky", "lawrence"])
+        self.assertNotIn("channel_type", binding)
+        self.assertTrue(common.binding_peer_policy(binding)["peer_fanout_enabled"])
+        self.assertEqual(common.load_channel_metadata_cache("22"), {"channel_type": 0})
+
+    def test_process_inbound_ambient_room_message_still_requires_target_when_bot_mentioned(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        message = {
+            "id": "508",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> please check the shard",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5c", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={
+                "sky": {"session_name": "sky", "state": "active"},
+                "lawrence": {"session_name": "lawrence", "state": "active"},
+            },
+        ), mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored_untargeted")
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-508")
+        assert receipt is not None
+        self.assertEqual(receipt["reason"], "ambient_target_required")
+
+    def test_process_inbound_bot_mentioned_thread_with_ambient_parent_still_requires_target(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        common.save_bot_token("bot-token")
+        message = {
+            "id": "508b",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "<@999> please check the shard",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5cc", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "222", "parent_id": "22", "type": 11}), mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={
+                "sky": {"session_name": "sky", "state": "active"},
+                "lawrence": {"session_name": "lawrence", "state": "active"},
+            },
+        ), mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored_untargeted")
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-508b")
+        assert receipt is not None
+        self.assertEqual(receipt["reason"], "ambient_target_required")
+
+    def test_process_inbound_unmentioned_thread_does_not_probe_parent_binding_for_ambient_read(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky", "lawrence"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+        message = {
+            "id": "509",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "@sky please check the shard",
+            "mentions": [],
+            "author": {"id": "u-5d", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "discord_api_request") as discord_api_request, mock.patch.object(
+            common,
+            "deliver_session_message",
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored")
+        self.assertEqual(outcome["reason"], "not_mentioned")
+        discord_api_request.assert_not_called()
+        deliver_session_message.assert_not_called()
+
+    def test_cached_ambient_room_binding_reuses_cached_config_between_messages(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+
+        with mock.patch.object(common, "load_config", wraps=common.load_config) as load_config:
+            first = gateway_service.cached_ambient_room_binding("22")
+            second = gateway_service.cached_ambient_room_binding("22")
+
+        self.assertIsNotNone(first)
+        self.assertEqual(first, second)
+        self.assertEqual(load_config.call_count, 1)
+
+    def test_cached_ambient_room_binding_serializes_cache_refill(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+        )
+
+        release = threading.Event()
+        started = threading.Event()
+        load_count = 0
+        real_load_config = common.load_config
+
+        def blocking_load_config() -> dict[str, object]:
+            nonlocal load_count
+            load_count += 1
+            started.set()
+            release.wait(timeout=2)
+            return real_load_config()
+
+        def worker() -> None:
+            gateway_service.cached_ambient_room_binding("22")
+
+        with mock.patch.object(common, "load_config", side_effect=blocking_load_config):
+            thread_a = threading.Thread(target=worker)
+            thread_b = threading.Thread(target=worker)
+            thread_a.start()
+            thread_b.start()
+            started.wait(timeout=2)
+            time.sleep(0.05)
+            release.set()
+            thread_a.join()
+            thread_b.join()
+
+        self.assertEqual(load_count, 1)
+
+    def test_cached_ambient_room_binding_refreshes_on_signature_change(self) -> None:
+        config_one = {
+            "chat": {
+                "bindings": {
+                    "room:22": {
+                        "id": "room:22",
+                        "kind": "room",
+                        "conversation_id": "22",
+                        "guild_id": "1",
+                        "session_names": ["sky"],
+                        "policy": {"ambient_read_enabled": True},
+                    }
+                }
+            }
+        }
+        config_two = {
+            "chat": {
+                "bindings": {
+                    "room:22": {
+                        "id": "room:22",
+                        "kind": "room",
+                        "conversation_id": "22",
+                        "guild_id": "1",
+                        "session_names": ["lawrence"],
+                        "policy": {"ambient_read_enabled": True},
+                    }
+                }
+            }
+        }
+
+        stat_one = mock.Mock(st_mtime_ns=100, st_size=1000, st_ino=1)
+        stat_two = mock.Mock(st_mtime_ns=100, st_size=1000, st_ino=2)
+
+        with mock.patch.object(gateway_service.os, "stat", side_effect=[stat_one, stat_one, stat_two, stat_two]), mock.patch.object(
+            common,
+            "load_config",
+            side_effect=[common.normalize_config(config_one), common.normalize_config(config_two)],
+        ) as load_config:
+            first = gateway_service.cached_ambient_room_binding("22")
+            second = gateway_service.cached_ambient_room_binding("22")
+
+        assert first is not None
+        assert second is not None
+        self.assertEqual(first["session_names"], ["sky"])
+        self.assertEqual(second["session_names"], ["lawrence"])
+        self.assertEqual(load_config.call_count, 2)
+
+    def test_cached_ambient_room_binding_skips_lookup_for_persisted_main_room_metadata(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["sky"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True},
+            channel_metadata={"channel_type": 0},
+        )
+
+        with mock.patch.object(common, "discord_api_request") as discord_api_request:
+            binding = gateway_service.cached_ambient_room_binding("22")
+
+        self.assertIsNotNone(binding)
+        assert binding is not None
+        self.assertEqual(binding["channel_type"], 0)
+        discord_api_request.assert_not_called()
+
+    def test_cached_ambient_room_binding_ignores_invalid_config(self) -> None:
+        config_path = common.config_path()
+        common.ensure_layout()
+        pathlib.Path(config_path).write_text("{not valid json", encoding="utf-8")
+
+        binding = gateway_service.cached_ambient_room_binding("22")
+
+        self.assertIsNone(binding)
 
     def test_process_inbound_room_message_ignores_native_user_mentions_for_aliases(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["sky", "lawrence"], guild_id="1")
@@ -589,7 +1282,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             "author": {"id": "u-22", "username": "alice"},
         }
 
-        with mock.patch.object(common, "discord_api_request", return_value={"id": "222", "parent_id": "22"}) as discord_api_request, mock.patch.object(
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "222", "parent_id": "22", "type": 11}) as discord_api_request, mock.patch.object(
             common,
             "session_index_by_name",
             return_value={"sky": {"session_name": "sky", "state": "active"}},
@@ -611,7 +1304,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             calls.append(path)
             entered.set()
             release.wait(timeout=1)
-            return {"id": "222", "parent_id": "22"}
+            return {"id": "222", "parent_id": "22", "type": 11}
 
         def worker() -> None:
             results.append(gateway_service.load_channel_info("222", "bot-token"))
@@ -627,7 +1320,16 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             thread_b.join()
 
         self.assertEqual(calls, ["/channels/222"])
-        self.assertEqual(results, [{"id": "222", "parent_id": "22"}, {"id": "222", "parent_id": "22"}])
+        self.assertEqual(
+            results,
+            [{"id": "222", "parent_id": "22", "type": 11}, {"id": "222", "parent_id": "22", "type": 11}],
+        )
+
+    def test_load_channel_info_strips_parent_id_for_non_thread_channels(self) -> None:
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "22", "parent_id": "88", "type": 0}):
+            info = gateway_service.load_channel_info("22", "bot-token")
+
+        self.assertEqual(info, {"id": "22", "type": 0})
 
     def test_channel_info_fetch_lock_is_scoped_per_channel(self) -> None:
         lock_a = gateway_service.channel_info_fetch_lock("222")

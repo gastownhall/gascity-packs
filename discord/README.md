@@ -120,6 +120,7 @@ Bind Discord conversations to exact permanent session names:
 ```bash
 gc discord bind-dm 123456789012345678 sky
 gc discord bind-room --guild-id 223456789012345678 323456789012345678 sky lawrence
+gc discord bind-room --guild-id 223456789012345678 --enable-ambient-read 323456789012345678 sky lawrence
 gc discord bind-room --guild-id 223456789012345678 --enable-peer-fanout 323456789012345678 corp--sky corp--priya
 ```
 
@@ -142,9 +143,13 @@ Inbound behavior in v0:
 
 - DMs to the bot route through the matching `bind-dm` binding
 - guild and thread messages route only when the bot is explicitly mentioned
+- ambient-read room bindings are the exception: the bound room or bound thread accepts unmentioned messages, but only when one or more exact `@session_name` targets are present
 - thread messages inherit the parent room binding when the thread itself is not bound
+- inherited thread routing still requires a bot mention unless the thread itself is bound with ambient read
+- ambient-read rooms stay targeted-only even when the bot is mentioned; the bot mention only gets the message into the bridge
 - `@sky` inside the message targets that session name exactly
 - untargeted room messages fan out to every bound participant session
+- untargeted ambient-read room messages are ignored instead of broadcasting
 - agent normal output remains private; only explicit publish commands speak back to humans
 - agents should prefer `gc discord reply-current --body-file ...` when answering the latest Discord turn
 - direct `gc discord publish` only participates in peer fanout when explicit source metadata is supplied

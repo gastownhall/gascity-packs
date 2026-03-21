@@ -3,11 +3,19 @@ Bind a Discord channel or thread to one or more named sessions.
 Examples:
   gc discord bind-room 123456789012345678 sky lawrence
   gc discord bind-room --guild-id 223456789012345678 123456789012345678 sky lawrence
+  gc discord bind-room --guild-id 223456789012345678 --enable-ambient-read 123456789012345678 sky lawrence
   gc discord bind-room --guild-id 223456789012345678 --enable-peer-fanout 123456789012345678 corp--sky corp--priya
   gc discord bind-room --guild-id 223456789012345678 --enable-peer-fanout --allow-untargeted-peer-fanout 123456789012345678 corp--sky corp--priya
 
 This stores the binding under `.gc/services/discord/data/config.json`.
 Use exact permanent session names.
+
+Ambient read is disabled by default. When enabled, messages in this bound room
+or bound thread no longer need to mention the bot, but they still must
+explicitly target one or more `@session_name` values to route. Parent-room
+thread inheritance still requires a bot mention unless the thread itself is
+also bound. Ambient-read bindings remain targeted-only even when the bot is
+mentioned directly.
 
 Peer fanout is disabled by default. When enabled, the bridge can reinject one
 session's room publish to other bound sessions as `discord_peer_publication`
@@ -16,6 +24,7 @@ events without re-reading bot messages from Discord.
 Peer-fanout-enabled room bindings require lowercase canonical session names.
 Useful flags:
 
+- `--enable-ambient-read` / `--disable-ambient-read`
 - `--enable-peer-fanout` / `--disable-peer-fanout`
 - `--allow-untargeted-peer-fanout` / `--disallow-untargeted-peer-fanout`
 - `--max-peer-triggered-publishes-per-root N`

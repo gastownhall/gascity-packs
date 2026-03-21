@@ -131,6 +131,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             ["corp--sky", "corp--priya"],
             guild_id="1",
             policy={
+                "ambient_read_enabled": True,
                 "peer_fanout_enabled": True,
                 "allow_untargeted_peer_fanout": True,
                 "max_peer_triggered_publishes_per_root": 2,
@@ -142,11 +143,28 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         binding = common.resolve_chat_binding(config, "room:22")
 
         assert binding is not None
+        self.assertTrue(binding["policy"]["ambient_read_enabled"])
         self.assertTrue(binding["policy"]["peer_fanout_enabled"])
         self.assertTrue(binding["policy"]["allow_untargeted_peer_fanout"])
         self.assertEqual(binding["policy"]["max_peer_triggered_publishes_per_root"], 2)
         self.assertEqual(binding["policy"]["max_total_peer_deliveries_per_root"], 9)
         self.assertEqual(binding["policy"]["max_peer_triggered_publishes_per_session_per_minute"], 7)
+
+    def test_set_chat_binding_persists_room_channel_metadata(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "222",
+            ["sky"],
+            guild_id="1",
+            channel_metadata={"channel_type": 11, "thread_parent_id": "22"},
+        )
+
+        binding = common.resolve_chat_binding(config, "room:222")
+
+        assert binding is not None
+        self.assertEqual(binding["channel_type"], 11)
+        self.assertEqual(binding["thread_parent_id"], "22")
 
     def test_set_chat_binding_merges_existing_room_peer_policy(self) -> None:
         config = common.set_chat_binding(
@@ -155,7 +173,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             "22",
             ["corp--sky", "corp--priya"],
             guild_id="1",
-            policy={"peer_fanout_enabled": True, "allow_untargeted_peer_fanout": True},
+            policy={"ambient_read_enabled": True, "peer_fanout_enabled": True, "allow_untargeted_peer_fanout": True},
         )
         config = common.set_chat_binding(
             config,
@@ -169,6 +187,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         binding = common.resolve_chat_binding(config, "room:22")
 
         assert binding is not None
+        self.assertTrue(binding["policy"]["ambient_read_enabled"])
         self.assertTrue(binding["policy"]["peer_fanout_enabled"])
         self.assertFalse(binding["policy"]["allow_untargeted_peer_fanout"])
 
@@ -196,6 +215,30 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(context["parent_channel_id"], "22")
         self.assertEqual(context["thread_id"], "33")
         self.assertEqual(context["mapping"]["target"], "product/polecat")
+
+    def test_describe_room_channel_metadata_normalizes_threads(self) -> None:
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "33", "parent_id": "22", "type": 11}):
+            metadata = common.describe_room_channel_metadata("33", bot_token="bot-token")
+
+        self.assertEqual(metadata, {"channel_type": 11, "thread_parent_id": "22"})
+
+    def test_describe_room_channel_metadata_strips_parent_for_non_threads(self) -> None:
+        with mock.patch.object(common, "discord_api_request", return_value={"id": "22", "parent_id": "77", "type": 0}):
+            metadata = common.describe_room_channel_metadata("22", bot_token="bot-token")
+
+        self.assertEqual(metadata, {"channel_type": 0})
+
+    def test_save_channel_metadata_cache_round_trips_normalized_metadata(self) -> None:
+        metadata = common.save_channel_metadata_cache("22", {"type": 11, "parent_id": "7"})
+
+        self.assertEqual(metadata, {"channel_type": 11, "thread_parent_id": "7"})
+        self.assertEqual(common.load_channel_metadata_cache("22"), {"channel_type": 11, "thread_parent_id": "7"})
+
+    def test_load_channel_metadata_cache_ignores_invalid_payload(self) -> None:
+        common.ensure_layout()
+        pathlib.Path(common.channel_metadata_cache_path("22")).write_text("{not valid json", encoding="utf-8")
+
+        self.assertEqual(common.load_channel_metadata_cache("22"), {})
 
     def test_load_channel_context_prefers_parent_hint_without_discord_lookup(self) -> None:
         config = common.set_channel_mapping(common.load_config(), "1", "22", "product/polecat", "mol-discord-fix-issue")

@@ -45,6 +45,7 @@ PEER_ROOT_WINDOW_SECONDS = 60.0
 CANONICAL_PEER_SESSION_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 URL_PATTERN = re.compile(r"https?://\S+")
 DISCORD_RESERVED_MENTIONS = {"everyone", "here"}
+THREAD_CHANNEL_TYPES = {10, 11, 12}
 
 
 class DiscordAPIError(RuntimeError):
@@ -121,6 +122,10 @@ def chat_ingress_dir() -> str:
     return os.path.join(data_dir(), "chat-ingress")
 
 
+def channel_metadata_cache_dir() -> str:
+    return os.path.join(data_dir(), "channel-metadata")
+
+
 def peer_root_budget_dir() -> str:
     return os.path.join(data_dir(), "peer-root-budgets")
 
@@ -160,6 +165,7 @@ def ensure_layout() -> None:
         pending_modals_dir(),
         chat_publishes_dir(),
         chat_ingress_dir(),
+        channel_metadata_cache_dir(),
         peer_root_budget_dir(),
         locks_dir(),
         secrets_dir(),
@@ -252,6 +258,24 @@ def dedupe_session_names(values: list[str]) -> list[str]:
     return session_names
 
 
+def normalize_binding_channel_metadata(value: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    normalized: dict[str, Any] = {}
+    has_channel_type = "channel_type" in raw or "type" in raw
+    channel_type_raw = raw.get("channel_type", raw.get("type", 0))
+    try:
+        channel_type = int(channel_type_raw or 0)
+    except (TypeError, ValueError):
+        channel_type = 0
+    if has_channel_type:
+        normalized["channel_type"] = channel_type
+    if channel_type in THREAD_CHANNEL_TYPES:
+        parent_id = str(raw.get("thread_parent_id", raw.get("parent_id", ""))).strip()
+        if parent_id:
+            normalized["thread_parent_id"] = parent_id
+    return normalized
+
+
 def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
     config = default_config()
     if not raw:
@@ -297,6 +321,9 @@ def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
                     "guild_id": str(value.get("guild_id", "")).strip(),
                     "session_names": normalized_session_names,
                 }
+                channel_metadata = normalize_binding_channel_metadata(value)
+                if channel_metadata:
+                    normalized_bindings[binding_id].update(channel_metadata)
                 if kind == "room":
                     normalized_bindings[binding_id]["policy"] = normalize_room_peer_policy(value.get("policy"))
         config["chat"] = {
@@ -398,6 +425,7 @@ def _coerce_bool(value: Any, default: bool) -> bool:
 
 def default_room_peer_policy() -> dict[str, Any]:
     return {
+        "ambient_read_enabled": False,
         "peer_fanout_enabled": False,
         "allow_untargeted_peer_fanout": False,
         "max_peer_triggered_publishes_per_root": 1,
@@ -410,6 +438,7 @@ def normalize_room_peer_policy(policy: dict[str, Any] | None = None) -> dict[str
     raw = policy if isinstance(policy, dict) else {}
     defaults = default_room_peer_policy()
     return {
+        "ambient_read_enabled": _coerce_bool(raw.get("ambient_read_enabled"), defaults["ambient_read_enabled"]),
         "peer_fanout_enabled": _coerce_bool(raw.get("peer_fanout_enabled"), defaults["peer_fanout_enabled"]),
         "allow_untargeted_peer_fanout": _coerce_bool(
             raw.get("allow_untargeted_peer_fanout"), defaults["allow_untargeted_peer_fanout"]
@@ -511,6 +540,7 @@ def set_chat_binding(
     guild_id: str = "",
     *,
     policy: dict[str, Any] | None = None,
+    channel_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_kind = str(kind).strip().lower()
     if normalized_kind not in {"dm", "room"}:
@@ -528,6 +558,9 @@ def set_chat_binding(
     binding_id = chat_binding_id(normalized_kind, normalized_conversation)
     existing = resolve_chat_binding(cfg, binding_id) or {}
     raw_room_policy = copy.deepcopy(existing.get("policy")) if isinstance(existing.get("policy"), dict) else {}
+    raw_channel_metadata = normalize_binding_channel_metadata(existing)
+    if isinstance(channel_metadata, dict):
+        raw_channel_metadata.update(normalize_binding_channel_metadata(channel_metadata))
     if isinstance(policy, dict):
         raw_room_policy.update(copy.deepcopy(policy))
     room_policy = normalize_room_peer_policy(raw_room_policy)
@@ -545,9 +578,42 @@ def set_chat_binding(
         "session_names": normalized_session_names,
     }
     if normalized_kind == "room":
+        if raw_channel_metadata:
+            binding.update(raw_channel_metadata)
         binding["policy"] = room_policy
     cfg["chat"]["bindings"][binding_id] = binding
     return save_config(cfg)
+
+
+def describe_room_channel_metadata(conversation_id: str, *, bot_token: str = "") -> dict[str, Any]:
+    token = str(bot_token).strip() or load_bot_token()
+    if not token:
+        return {}
+    info = discord_api_request("GET", f"/channels/{urllib.parse.quote(str(conversation_id).strip())}", bot_token=token)
+    if not isinstance(info, dict):
+        return {}
+    return normalize_binding_channel_metadata(info)
+
+
+def channel_metadata_cache_path(conversation_id: str) -> str:
+    return os.path.join(channel_metadata_cache_dir(), f"{safe_storage_id(str(conversation_id).strip(), 'channel-metadata')}.json")
+
+
+def load_channel_metadata_cache(conversation_id: str) -> dict[str, Any]:
+    ensure_layout()
+    data = read_json(channel_metadata_cache_path(conversation_id), allow_invalid=True)
+    if not isinstance(data, dict):
+        return {}
+    return normalize_binding_channel_metadata(data)
+
+
+def save_channel_metadata_cache(conversation_id: str, metadata: dict[str, Any] | None) -> dict[str, Any]:
+    ensure_layout()
+    normalized = normalize_binding_channel_metadata(metadata)
+    if not normalized:
+        return {}
+    atomic_write_json(channel_metadata_cache_path(conversation_id), normalized)
+    return normalized
 
 
 def resolve_chat_binding(config: dict[str, Any], binding_id: str) -> dict[str, Any] | None:

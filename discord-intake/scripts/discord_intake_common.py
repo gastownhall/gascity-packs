@@ -26,7 +26,9 @@ ED25519_SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")
 
 
 class DiscordAPIError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def utcnow() -> str:
@@ -756,7 +758,7 @@ def discord_api_request(
     except urllib.error.HTTPError as exc:
         raw = exc.read()
         message = raw.decode("utf-8", errors="replace")
-        raise DiscordAPIError(f"{method.upper()} {url} failed with {exc.code}: {message}") from exc
+        raise DiscordAPIError(f"{method.upper()} {url} failed with {exc.code}: {message}", status_code=exc.code) from exc
     except urllib.error.URLError as exc:
         raise DiscordAPIError(f"{method.upper()} {url} failed: {exc}") from exc
     if not raw:

@@ -61,6 +61,9 @@ CHANNEL_INFO_CACHE_LOCK = threading.Lock()
 CHANNEL_INFO_FETCH_LOCKS_LOCK = threading.Lock()
 CHANNEL_INFO_FETCH_LOCKS: dict[str, threading.Lock] = {}
 CHANNEL_INFO_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+AMBIENT_ROOM_BINDINGS_CACHE_LOCK = threading.Lock()
+AMBIENT_ROOM_BINDINGS_FETCH_LOCK = threading.Lock()
+AMBIENT_ROOM_BINDINGS_CACHE: dict[str, Any] = {"config_signature": None, "bindings": {}}
 STALE_RECLAIM_LOCKS_LOCK = threading.Lock()
 STALE_RECLAIM_LOCKS: dict[str, threading.Lock] = {}
 INGRESS_PROCESS_LOCKS_LOCK = threading.Lock()
@@ -220,6 +223,62 @@ def utc_age_seconds(value: str) -> float:
     return max(time.time() - calendar.timegm(parsed), 0.0)
 
 
+def normalize_channel_info(info: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(info, dict):
+        return {}
+    normalized = dict(info)
+    has_channel_type = "channel_type" in normalized or "type" in normalized
+    channel_type_raw = normalized.get("channel_type", normalized.get("type", 0))
+    try:
+        channel_type = int(channel_type_raw or 0)
+    except (TypeError, ValueError):
+        channel_type = 0
+    if has_channel_type:
+        normalized["type"] = channel_type
+    if not has_channel_type:
+        return normalized
+    if channel_type not in common.THREAD_CHANNEL_TYPES:
+        normalized.pop("parent_id", None)
+        return normalized
+    parent_id = str(normalized.get("parent_id", "")).strip()
+    if not parent_id:
+        normalized.pop("parent_id", None)
+        return normalized
+    normalized["parent_id"] = parent_id
+    return normalized
+
+
+def binding_channel_info(binding: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(binding, dict):
+        return {}
+    channel_type_raw = binding.get("channel_type", 0)
+    try:
+        channel_type = int(channel_type_raw or 0)
+    except (TypeError, ValueError):
+        channel_type = 0
+    if channel_type not in common.THREAD_CHANNEL_TYPES:
+        return {}
+    parent_id = str(binding.get("thread_parent_id", "")).strip()
+    if not parent_id:
+        return {}
+    return {"type": channel_type, "parent_id": parent_id}
+
+
+def persist_binding_channel_metadata(binding: dict[str, Any]) -> None:
+    if str(binding.get("kind", "")).strip() != "room":
+        return
+    channel_metadata = common.normalize_binding_channel_metadata(binding)
+    if not channel_metadata:
+        return
+    conversation_id = str(binding.get("conversation_id", "")).strip()
+    if not conversation_id:
+        return
+    try:
+        common.save_channel_metadata_cache(conversation_id, channel_metadata)
+    except (ValueError, OSError, json.JSONDecodeError):
+        return
+
+
 def load_channel_info(channel_id: str, bot_token: str) -> dict[str, Any]:
     now = time.monotonic()
     with CHANNEL_INFO_CACHE_LOCK:
@@ -235,10 +294,11 @@ def load_channel_info(channel_id: str, bot_token: str) -> dict[str, Any]:
             if cached and cached[0] > now:
                 return dict(cached[1])
         info = common.discord_api_request("GET", f"/channels/{urllib.parse.quote(channel_id)}", bot_token=bot_token)
-    if isinstance(info, dict):
-        with CHANNEL_INFO_CACHE_LOCK:
-            CHANNEL_INFO_CACHE[channel_id] = (now + CHANNEL_INFO_TTL_SECONDS, dict(info))
-        return dict(info)
+        if isinstance(info, dict):
+            info = normalize_channel_info(info)
+            with CHANNEL_INFO_CACHE_LOCK:
+                CHANNEL_INFO_CACHE[channel_id] = (now + CHANNEL_INFO_TTL_SECONDS, dict(info))
+            return dict(info)
     return {}
 
 
@@ -331,8 +391,51 @@ def resolve_binding(config: dict[str, Any], message: dict[str, Any]) -> tuple[di
     channel_info: dict[str, Any] = {}
     binding_id = common.chat_binding_id("dm" if not guild_id else "room", channel_id)
     binding = common.resolve_chat_binding(config, binding_id)
-    if not guild_id or binding:
+    if not guild_id:
         return binding, channel_info
+    if binding:
+        binding = dict(binding)
+        if binding_allows_ambient_read(binding):
+            cached_binding = cached_ambient_room_binding(channel_id)
+            if cached_binding:
+                binding = cached_binding
+        channel_info = binding_channel_info(binding)
+        if channel_info:
+            return binding, channel_info
+        cached_channel_metadata = common.load_channel_metadata_cache(channel_id)
+        if cached_channel_metadata:
+            binding.update(cached_channel_metadata)
+            channel_info = binding_channel_info(binding)
+            if channel_info:
+                return binding, channel_info
+        channel_type_raw = binding.get("channel_type", None)
+        if channel_type_raw is None:
+            bot_token = common.load_bot_token()
+            if not bot_token:
+                return binding, {}
+            try:
+                looked_up_channel_info = load_channel_info(channel_id, bot_token)
+            except common.DiscordAPIError:
+                return binding, {}
+            binding.update(common.normalize_binding_channel_metadata(looked_up_channel_info))
+            persist_binding_channel_metadata(binding)
+            return binding, binding_channel_info(binding)
+        try:
+            channel_type = int(channel_type_raw or 0)
+        except (TypeError, ValueError):
+            channel_type = 0
+        if channel_type not in common.THREAD_CHANNEL_TYPES:
+            return binding, {}
+        bot_token = common.load_bot_token()
+        if not bot_token:
+            return binding, channel_info
+        try:
+            looked_up_channel_info = load_channel_info(channel_id, bot_token)
+        except common.DiscordAPIError:
+            return binding, {}
+        binding.update(common.normalize_binding_channel_metadata(looked_up_channel_info))
+        persist_binding_channel_metadata(binding)
+        return binding, binding_channel_info(binding)
     bot_token = common.load_bot_token()
     if not bot_token:
         return None, channel_info
@@ -356,6 +459,8 @@ def resolve_targets(
     binding: dict[str, Any],
     session_index: dict[str, dict[str, Any]],
     mentioned_aliases: list[str],
+    *,
+    require_targeted_aliases: bool = False,
 ) -> tuple[list[str], str, str]:
     participants = [str(item).strip() for item in binding.get("session_names", []) if str(item).strip()]
     participant_lookup, participant_collisions = casefold_lookup(participants)
@@ -380,6 +485,9 @@ def resolve_targets(
             targets.append(participant_name)
         return targets, "targeted", ""
 
+    if require_targeted_aliases:
+        return [], "targeted", "target_required"
+
     targets = []
     for alias in participants:
         session_payload = session_index.get(alias)
@@ -387,6 +495,65 @@ def resolve_targets(
         if session_payload and state not in NON_ROUTABLE_SESSION_STATES:
             targets.append(alias)
     return targets, "broadcast", ""
+
+
+def binding_allows_ambient_read(binding: dict[str, Any] | None) -> bool:
+    if not isinstance(binding, dict):
+        return False
+    if str(binding.get("kind", "")).strip() != "room":
+        return False
+    return bool(common.binding_peer_policy(binding).get("ambient_read_enabled"))
+
+
+def ambient_bindings_config_signature() -> tuple[int, int, int] | None:
+    try:
+        stat_result = os.stat(common.config_path())
+    except OSError:
+        return None
+    return (
+        int(getattr(stat_result, "st_mtime_ns", 0)),
+        int(getattr(stat_result, "st_size", 0)),
+        int(getattr(stat_result, "st_ino", 0)),
+    )
+
+
+def cached_ambient_room_binding(channel_id: str) -> dict[str, Any] | None:
+    config_signature = ambient_bindings_config_signature()
+    with AMBIENT_ROOM_BINDINGS_CACHE_LOCK:
+        if AMBIENT_ROOM_BINDINGS_CACHE.get("config_signature") == config_signature:
+            bindings = AMBIENT_ROOM_BINDINGS_CACHE.get("bindings", {})
+            if isinstance(bindings, dict):
+                binding = bindings.get(channel_id)
+                return dict(binding) if isinstance(binding, dict) else None
+
+    with AMBIENT_ROOM_BINDINGS_FETCH_LOCK:
+        config_signature = ambient_bindings_config_signature()
+        with AMBIENT_ROOM_BINDINGS_CACHE_LOCK:
+            if AMBIENT_ROOM_BINDINGS_CACHE.get("config_signature") == config_signature:
+                bindings = AMBIENT_ROOM_BINDINGS_CACHE.get("bindings", {})
+                if isinstance(bindings, dict):
+                    binding = bindings.get(channel_id)
+                    return dict(binding) if isinstance(binding, dict) else None
+
+        bindings: dict[str, dict[str, Any]] = {}
+        try:
+            config = common.load_config()
+        except (OSError, ValueError, json.JSONDecodeError):
+            config = {}
+        for binding in common.list_chat_bindings(config):
+            if str(binding.get("kind", "")).strip() != "room":
+                continue
+            if not binding_allows_ambient_read(binding):
+                continue
+            conversation_id = str(binding.get("conversation_id", "")).strip()
+            if conversation_id:
+                bindings[conversation_id] = dict(binding)
+
+        with AMBIENT_ROOM_BINDINGS_CACHE_LOCK:
+            AMBIENT_ROOM_BINDINGS_CACHE["config_signature"] = config_signature
+            AMBIENT_ROOM_BINDINGS_CACHE["bindings"] = bindings
+    binding = bindings.get(channel_id)
+    return dict(binding) if isinstance(binding, dict) else None
 
 
 def build_human_envelope(
@@ -454,6 +621,43 @@ def save_rejected_ingress_receipt(
     )
 
 
+def reject_ingress_before_processing(
+    message: dict[str, Any],
+    bot_user_id: str,
+    *,
+    status: str,
+    reason: str,
+) -> dict[str, Any]:
+    ingress_id = message_ingress_id(message)
+    claimed, receipt = save_rejected_ingress_receipt(
+        message,
+        bot_user_id,
+        status=status,
+        reason=reason,
+    )
+    if claimed:
+        return {"status": status, "reason": reason, "ingress_id": ingress_id, "receipt": receipt}
+    if str(receipt.get("status", "")).strip() == "claim_conflict_unreadable":
+        receipt = persist_ingress_receipt(
+            {
+                **receipt,
+                "ingress_id": ingress_id,
+                "discord_message_id": str(message.get("id", "")).strip(),
+                "guild_id": str(message.get("guild_id", "")).strip(),
+                "conversation_id": str(message.get("channel_id", "")).strip(),
+                "binding_id": "",
+                "from_user_id": str((message.get("author") or {}).get("id", "")).strip(),
+                "from_display": display_name_from_message(message),
+                "body_preview": ingress_preview(message, bot_user_id),
+                "status": "failed_claim_conflict",
+                "reason": str(receipt.get("reason", "")).strip() or "ingress_claim_unreadable",
+                "targets": [],
+            }
+        )
+        return {"status": "failed_claim_conflict", "ingress_id": ingress_id, "receipt": receipt}
+    return {"status": "duplicate", "ingress_id": ingress_id, "receipt": receipt}
+
+
 def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[str, Any]:
     ingress_id = message_ingress_id(message)
     author = message.get("author") or {}
@@ -465,8 +669,51 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
     if not channel_id:
         return {"status": "ignored", "reason": "missing_channel", "ingress_id": ingress_id}
 
-    if guild_id and not bot_was_mentioned(message, bot_user_id):
-        return {"status": "ignored", "reason": "not_mentioned", "ingress_id": ingress_id}
+    mentioned_bot = bot_was_mentioned(message, bot_user_id) if guild_id else False
+    preloaded_binding: dict[str, Any] | None = None
+    preloaded_channel_info: dict[str, Any] = {}
+    preloaded_body: str | None = None
+    preloaded_aliases: list[str] | None = None
+    if guild_id and not mentioned_bot:
+        preloaded_binding = cached_ambient_room_binding(channel_id)
+        if not preloaded_binding or not binding_allows_ambient_read(preloaded_binding):
+            return {"status": "ignored", "reason": "not_mentioned", "ingress_id": ingress_id}
+        preloaded_channel_info = binding_channel_info(preloaded_binding)
+        preloaded_body = strip_bot_mentions(str(message.get("content", "")), bot_user_id)
+        preloaded_aliases = extract_alias_mentions(preloaded_body)
+        if not preloaded_aliases:
+            return reject_ingress_before_processing(
+                message,
+                bot_user_id,
+                status="ignored_untargeted",
+                reason="ambient_target_required",
+            )
+        participant_names = [str(item).strip() for item in preloaded_binding.get("session_names", []) if str(item).strip()]
+        participant_lookup, participant_collisions = casefold_lookup(participant_names)
+        has_valid_preloaded_alias = False
+        for alias in preloaded_aliases:
+            key = alias.casefold()
+            if key in participant_collisions:
+                continue
+            if participant_lookup.get(key):
+                has_valid_preloaded_alias = True
+                break
+        if not has_valid_preloaded_alias:
+            return reject_ingress_before_processing(
+                message,
+                bot_user_id,
+                status="ignored_untargeted",
+                reason="ambient_target_required",
+            )
+        preloaded_channel_type_raw = preloaded_binding.get("channel_type", 0)
+        try:
+            preloaded_channel_type = int(preloaded_channel_type_raw or 0)
+        except (TypeError, ValueError):
+            preloaded_channel_type = 0
+        if not preloaded_channel_info and (
+            "channel_type" not in preloaded_binding or preloaded_channel_type in common.THREAD_CHANNEL_TYPES
+        ):
+            preloaded_binding = None
 
     preview = ingress_preview(message, bot_user_id)
     claimed, base_receipt = common.save_chat_ingress_if_absent(
@@ -563,19 +810,22 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
     if not process_lock.acquire(blocking=False):
         return {"status": "duplicate", "ingress_id": ingress_id, "receipt": common.load_chat_ingress(ingress_id) or base_receipt}
     try:
-        config = common.load_config()
-        try:
-            binding, channel_info = resolve_binding(config, message)
-        except common.DiscordAPIError as exc:
-            receipt = persist_ingress_receipt(
-                {
-                    **base_receipt,
-                    "status": "failed_lookup",
-                    "reason": str(exc),
-                    "targets": [],
-                }
-            )
-            return {"status": "failed_lookup", "ingress_id": ingress_id, "receipt": receipt}
+        binding = preloaded_binding
+        channel_info = dict(preloaded_channel_info)
+        if binding is None:
+            config = common.load_config()
+            try:
+                binding, channel_info = resolve_binding(config, message)
+            except common.DiscordAPIError as exc:
+                receipt = persist_ingress_receipt(
+                    {
+                        **base_receipt,
+                        "status": "failed_lookup",
+                        "reason": str(exc),
+                        "targets": [],
+                    }
+                )
+                return {"status": "failed_lookup", "ingress_id": ingress_id, "receipt": receipt}
         base_receipt.update(
             {
                 "ingress_id": ingress_id,
@@ -599,7 +849,7 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             )
             return {"status": "rejected_unbound", "ingress_id": ingress_id, "receipt": receipt}
 
-        body = strip_bot_mentions(str(message.get("content", "")), bot_user_id)
+        body = preloaded_body if preloaded_body is not None else strip_bot_mentions(str(message.get("content", "")), bot_user_id)
         if not body:
             receipt = persist_ingress_receipt(
                 {
@@ -612,7 +862,7 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             )
             return {"status": "ignored_empty", "ingress_id": ingress_id, "receipt": receipt}
 
-        mentioned_aliases = extract_alias_mentions(body)
+        mentioned_aliases = preloaded_aliases if preloaded_aliases is not None else extract_alias_mentions(body)
         try:
             session_index = common.session_index_by_name(state="all")
         except common.GCAPIError as exc:
@@ -627,8 +877,25 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             )
             return {"status": "failed_lookup", "ingress_id": ingress_id, "receipt": receipt}
 
-        targets, delivery, resolve_error = resolve_targets(binding, session_index, mentioned_aliases)
+        targets, delivery, resolve_error = resolve_targets(
+            binding,
+            session_index,
+            mentioned_aliases,
+            require_targeted_aliases=bool(binding_allows_ambient_read(binding) and guild_id),
+        )
         if resolve_error:
+            if resolve_error == "target_required":
+                receipt = persist_ingress_receipt(
+                    {
+                        **base_receipt,
+                        "binding_id": str(binding.get("id", "")).strip(),
+                        "status": "ignored_untargeted",
+                        "reason": "ambient_target_required",
+                        "mentioned_aliases": mentioned_aliases,
+                        "targets": [],
+                    }
+                )
+                return {"status": "ignored_untargeted", "ingress_id": ingress_id, "receipt": receipt}
             receipt = persist_ingress_receipt(
                 {
                     **base_receipt,

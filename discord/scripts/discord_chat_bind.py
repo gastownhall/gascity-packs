@@ -13,6 +13,16 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Bind a Discord conversation to named sessions")
     parser.add_argument("--kind", required=True, choices=("dm", "room"), help="Binding kind")
     parser.add_argument("--guild-id", default="", help="Discord guild id for room metadata")
+    parser.add_argument(
+        "--enable-ambient-read",
+        action="store_true",
+        help="Allow bound room messages to route without a bot mention; explicit @session_name targeting is still required",
+    )
+    parser.add_argument(
+        "--disable-ambient-read",
+        action="store_true",
+        help="Require a bot mention before guild room messages are routed",
+    )
     parser.add_argument("--enable-peer-fanout", action="store_true", help="Enable bridge-local peer fanout for room publishes")
     parser.add_argument("--disable-peer-fanout", action="store_true", help="Disable bridge-local peer fanout for this room")
     parser.add_argument(
@@ -47,11 +57,17 @@ def main(argv: list[str]) -> int:
     parser.add_argument("session_name", nargs="+", help="Exact Gas City session name")
     args = parser.parse_args(argv)
 
+    if args.enable_ambient_read and args.disable_ambient_read:
+        raise SystemExit("choose only one of --enable-ambient-read or --disable-ambient-read")
     if args.enable_peer_fanout and args.disable_peer_fanout:
         raise SystemExit("choose only one of --enable-peer-fanout or --disable-peer-fanout")
     if args.allow_untargeted_peer_fanout and args.disallow_untargeted_peer_fanout:
         raise SystemExit("choose only one of --allow-untargeted-peer-fanout or --disallow-untargeted-peer-fanout")
     policy_updates: dict[str, object] = {}
+    if args.enable_ambient_read:
+        policy_updates["ambient_read_enabled"] = True
+    if args.disable_ambient_read:
+        policy_updates["ambient_read_enabled"] = False
     if args.enable_peer_fanout:
         policy_updates["peer_fanout_enabled"] = True
     if args.disable_peer_fanout:
@@ -69,7 +85,7 @@ def main(argv: list[str]) -> int:
             args.max_peer_triggered_publishes_per_session_per_minute
         )
     if policy_updates and args.kind != "room":
-        raise SystemExit("peer fanout policy flags require --kind room")
+        raise SystemExit("room policy flags require --kind room")
 
     try:
         config = common.set_chat_binding(
