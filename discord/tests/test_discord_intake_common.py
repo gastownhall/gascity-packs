@@ -108,6 +108,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         assert binding is not None
         self.assertEqual(binding["guild_id"], "1")
         self.assertEqual(binding["session_names"], ["sky", "lawrence"])
+        self.assertEqual(binding["policy"], common.default_room_peer_policy())
 
     def test_set_chat_binding_deduplicates_participants_case_insensitively(self) -> None:
         config = common.set_chat_binding(common.load_config(), "room", "22", ["sky", "Sky", "lawrence"], guild_id="1")
@@ -121,6 +122,66 @@ class DiscordIntakeCommonTests(unittest.TestCase):
     def test_set_chat_binding_rejects_dm_fanout(self) -> None:
         with self.assertRaisesRegex(ValueError, "exactly one session name"):
             common.set_chat_binding(common.load_config(), "dm", "22", ["sky", "lawrence"])
+
+    def test_set_chat_binding_persists_room_peer_policy(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={
+                "peer_fanout_enabled": True,
+                "allow_untargeted_peer_fanout": True,
+                "max_peer_triggered_publishes_per_root": 2,
+                "max_total_peer_deliveries_per_root": 9,
+                "max_peer_triggered_publishes_per_session_per_minute": 7,
+            },
+        )
+
+        binding = common.resolve_chat_binding(config, "room:22")
+
+        assert binding is not None
+        self.assertTrue(binding["policy"]["peer_fanout_enabled"])
+        self.assertTrue(binding["policy"]["allow_untargeted_peer_fanout"])
+        self.assertEqual(binding["policy"]["max_peer_triggered_publishes_per_root"], 2)
+        self.assertEqual(binding["policy"]["max_total_peer_deliveries_per_root"], 9)
+        self.assertEqual(binding["policy"]["max_peer_triggered_publishes_per_session_per_minute"], 7)
+
+    def test_set_chat_binding_merges_existing_room_peer_policy(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True, "allow_untargeted_peer_fanout": True},
+        )
+        config = common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"allow_untargeted_peer_fanout": False},
+        )
+
+        binding = common.resolve_chat_binding(config, "room:22")
+
+        assert binding is not None
+        self.assertTrue(binding["policy"]["peer_fanout_enabled"])
+        self.assertFalse(binding["policy"]["allow_untargeted_peer_fanout"])
+
+    def test_set_chat_binding_rejects_noncanonical_names_when_peer_fanout_enabled(self) -> None:
+        with self.assertRaisesRegex(ValueError, "lowercase canonical session names"):
+            common.set_chat_binding(
+                common.load_config(),
+                "room",
+                "22",
+                ["Corp--Sky", "corp--priya"],
+                guild_id="1",
+                policy={"peer_fanout_enabled": True},
+            )
 
     def test_load_channel_context_uses_parent_mapping_for_threads(self) -> None:
         config = common.set_channel_mapping(common.load_config(), "1", "22", "product/polecat", "mol-discord-fix-issue")
@@ -441,6 +502,36 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(fields["publish_conversation_id"], "22")
         self.assertEqual(fields["publish_trigger_id"], "newer")
 
+    def test_extract_peer_session_mentions_ignores_urls_and_code(self) -> None:
+        mentions = common.extract_peer_session_mentions(
+            "\n".join(
+                [
+                    "Talk to @corp--priya please",
+                    "Ignore https://example.test/@corp--eve here",
+                    "`@corp--lawrence` stays code",
+                    "> @corp--eve is quoted",
+                    "@everyone should not route",
+                ]
+            )
+        )
+
+        self.assertEqual(mentions, ["corp--priya"])
+
+    def test_extract_peer_session_mentions_ignores_double_backtick_code_spans(self) -> None:
+        mentions = common.extract_peer_session_mentions("Talk to ``@corp--priya`` later")
+
+        self.assertEqual(mentions, [])
+
+    def test_extract_peer_session_mentions_ignores_discord_multiline_quotes(self) -> None:
+        mentions = common.extract_peer_session_mentions(">>> quoted preface\n@corp--priya should stay quoted")
+
+        self.assertEqual(mentions, [])
+
+    def test_extract_peer_session_mentions_ignores_raw_discord_user_mentions(self) -> None:
+        mentions = common.extract_peer_session_mentions("<@123456789012345678> @corp--priya")
+
+        self.assertEqual(mentions, ["corp--priya"])
+
     def test_publish_binding_message_requires_remote_message_id(self) -> None:
         common.set_chat_binding(common.load_config(), "dm", "22", ["sky"])
         binding = common.resolve_chat_binding(common.load_config(), "dm:22")
@@ -449,6 +540,256 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         with mock.patch.object(common, "post_channel_message", return_value={}):
             with self.assertRaisesRegex(common.DiscordAPIError, "returned no message id"):
                 common.publish_binding_message(binding, "hello humans", trigger_id="orig-9")
+
+    def test_publish_binding_message_peer_fanout_delivers_targeted_peer_event(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True},
+        )
+        binding = common.resolve_chat_binding(common.load_config(), "room:22")
+        assert binding is not None
+        os.environ["GC_SESSION_NAME"] = "corp--sky"
+        os.environ["GC_SESSION_ID"] = "gc-sky"
+
+        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-1"}), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-priya"},
+        ) as deliver_session_message, mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[
+                {"session_name": "corp--sky", "state": "active", "running": True, "created_at": "2026-03-21T00:00:00Z"},
+                {"session_name": "corp--priya", "state": "active", "running": True, "created_at": "2026-03-21T00:00:00Z"},
+            ],
+        ):
+            payload = common.publish_binding_message(
+                binding,
+                "@corp--priya hello",
+                trigger_id="orig-9",
+                source_context={
+                    "kind": "discord_human_message",
+                    "ingress_receipt_id": "in-9",
+                    "publish_binding_id": "room:22",
+                    "publish_conversation_id": "22",
+                    "publish_trigger_id": "orig-9",
+                    "publish_reply_to_discord_message_id": "orig-9",
+                },
+            )
+
+        record = payload["record"]
+        self.assertEqual(record["source_event_kind"], "discord_human_message")
+        self.assertEqual(record["root_ingress_receipt_id"], "in-9")
+        self.assertEqual(record["peer_delivery"]["status"], "delivered")
+        self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
+        self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["corp--priya"])
+        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["corp--priya"])
+        deliver_session_message.assert_called_once()
+        self.assertIn("publish_conversation_id: 22", deliver_session_message.call_args.args[1])
+        self.assertIn("kind: discord_peer_publication", deliver_session_message.call_args.args[1])
+
+    def test_publish_binding_message_resolves_source_name_from_id_only_env(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True},
+        )
+        binding = common.resolve_chat_binding(common.load_config(), "room:22")
+        assert binding is not None
+        os.environ.pop("GC_SESSION_NAME", None)
+        os.environ["GC_SESSION_ID"] = "gc-sky"
+
+        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-1"}), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-priya"},
+        ), mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[
+                {"id": "gc-sky", "session_name": "corp--sky", "state": "active", "running": True, "created_at": "2026-03-21T00:00:00Z"},
+                {"id": "gc-priya", "session_name": "corp--priya", "state": "active", "running": True, "created_at": "2026-03-21T00:00:00Z"},
+            ],
+        ):
+            payload = common.publish_binding_message(
+                binding,
+                "@corp--priya hello",
+                trigger_id="orig-9",
+                source_context={
+                    "kind": "discord_human_message",
+                    "ingress_receipt_id": "in-9",
+                },
+            )
+
+        self.assertEqual(payload["record"]["source_session_name"], "corp--sky")
+        self.assertEqual(payload["record"]["source_session_id"], "gc-sky")
+
+    def test_publish_binding_message_peer_fanout_skips_without_root_context(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True},
+        )
+        binding = common.resolve_chat_binding(common.load_config(), "room:22")
+        assert binding is not None
+        os.environ["GC_SESSION_NAME"] = "corp--sky"
+        os.environ["GC_SESSION_ID"] = "gc-sky"
+
+        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-1"}), mock.patch.object(
+            common,
+            "deliver_session_message",
+        ) as deliver_session_message:
+            payload = common.publish_binding_message(binding, "@corp--priya hello", trigger_id="orig-9")
+
+        self.assertEqual(payload["record"]["peer_delivery"]["status"], "skipped_missing_root_context")
+        deliver_session_message.assert_not_called()
+
+    def test_publish_binding_message_targeted_unavailable_records_retryable_targets(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya", "corp--eve"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True},
+        )
+        binding = common.resolve_chat_binding(common.load_config(), "room:22")
+        assert binding is not None
+        os.environ["GC_SESSION_NAME"] = "corp--sky"
+        os.environ["GC_SESSION_ID"] = "gc-sky"
+
+        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-1"}), mock.patch.object(
+            common,
+            "deliver_session_message",
+        ) as deliver_session_message, mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[
+                {"id": "gc-sky", "session_name": "corp--sky", "state": "active", "running": True, "created_at": "2026-03-21T00:00:00Z"},
+                {"id": "gc-priya", "session_name": "corp--priya", "state": "active", "running": True, "created_at": "2026-03-21T00:00:00Z"},
+                {"id": "gc-eve", "session_name": "corp--eve", "state": "closed", "running": False, "created_at": "2026-03-21T00:00:00Z"},
+            ],
+        ):
+            payload = common.publish_binding_message(
+                binding,
+                "@corp--priya @corp--eve hello",
+                trigger_id="orig-9",
+                source_context={
+                    "kind": "discord_human_message",
+                    "ingress_receipt_id": "in-9",
+                },
+            )
+
+        self.assertEqual(payload["record"]["peer_delivery"]["status"], "failed_targeting_unavailable")
+        targets = {entry["session_name"]: entry for entry in payload["record"]["peer_delivery"]["targets"]}
+        self.assertEqual(targets["corp--priya"]["status"], "failed_retryable")
+        self.assertEqual(targets["corp--eve"]["status"], "failed_retryable")
+        deliver_session_message.assert_not_called()
+
+    def test_resolve_session_identity_prefers_routable_named_session(self) -> None:
+        with mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[
+                {"id": "gc-old", "session_name": "corp--sky", "state": "", "running": False, "created_at": "2026-03-18T00:00:00Z"},
+                {"id": "gc-new", "session_name": "corp--sky", "state": "active", "running": True, "created_at": "2026-03-19T00:00:00Z"},
+            ],
+        ):
+            identity = common.resolve_session_identity("corp--sky")
+
+        self.assertEqual(identity["session_name"], "corp--sky")
+        self.assertEqual(identity["session_id"], "gc-new")
+
+    def test_peer_root_budget_index_tracks_root_counts(self) -> None:
+        common.save_chat_publish(
+            {
+                "publish_id": "discord-publish-1",
+                "binding_id": "room:22",
+                "root_ingress_receipt_id": "in-1",
+                "source_session_name": "corp--sky",
+                "source_event_kind": "discord_peer_publication",
+                "created_at": "2026-03-21T00:00:00Z",
+                "peer_delivery": {"frozen_targets": ["corp--priya", "corp--eve"]},
+            }
+        )
+        common.save_chat_publish(
+            {
+                "publish_id": "discord-publish-2",
+                "binding_id": "room:22",
+                "root_ingress_receipt_id": "in-1",
+                "source_session_name": "corp--sky",
+                "source_event_kind": "discord_peer_publication",
+                "created_at": "2026-03-21T00:01:00Z",
+                "peer_delivery": {"frozen_targets": ["corp--lawrence"]},
+            }
+        )
+
+        self.assertEqual(common._count_root_peer_triggered_publishes("room:22", "in-1", "corp--sky"), 2)
+        self.assertEqual(common._count_root_peer_deliveries_from_index("room:22", "in-1"), 3)
+
+    def test_retry_peer_fanout_redrives_failed_target_without_reposting(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True},
+        )
+        common.save_chat_publish(
+            {
+                "publish_id": "discord-publish-1",
+                "binding_id": "room:22",
+                "binding_kind": "room",
+                "binding_conversation_id": "22",
+                "conversation_id": "22",
+                "guild_id": "1",
+                "source_session_name": "corp--sky",
+                "source_session_id": "gc-sky",
+                "source_event_kind": "discord_human_message",
+                "root_ingress_receipt_id": "in-9",
+                "body": "@corp--priya hello",
+                "remote_message_id": "msg-1",
+                "peer_delivery": {
+                    "phase": "peer_fanout_partial_failure",
+                    "status": "partial_failure",
+                    "delivery": "targeted",
+                    "mentioned_session_names": ["corp--priya"],
+                    "frozen_targets": ["corp--priya"],
+                    "targets": [
+                        {
+                            "session_name": "corp--priya",
+                            "status": "failed_retryable",
+                            "attempt_count": 1,
+                            "idempotency_key": "peer_publish:discord-publish-1:binding:room:22:target:corp--priya",
+                            "attempts": [],
+                        }
+                    ],
+                    "budget_snapshot": {},
+                },
+            }
+        )
+
+        with mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-priya"},
+        ) as deliver_session_message, mock.patch.object(common, "post_channel_message") as post_channel_message:
+            record = common.retry_peer_fanout("discord-publish-1")
+
+        self.assertEqual(record["peer_delivery"]["status"], "delivered")
+        post_channel_message.assert_not_called()
+        deliver_session_message.assert_called_once()
 
     def test_save_chat_ingress_if_absent_only_claims_once(self) -> None:
         payload = {"ingress_id": "in-claim", "status": "processing"}

@@ -22,11 +22,9 @@ Current slices:
 - normalized `<discord-event>` delivery into exact named sessions
 - explicit `gc discord publish` for human-visible replies through saved bindings
 - safer `gc discord reply-current` for replying to the latest Discord turn in-session
+- bridge-local room peer fanout after a successful publish
+- `gc discord retry-peer-fanout` for redriving failed peer targets without reposting to Discord
 - shared prompt fragment at `prompts/shared/discord-v0.md.tmpl`
-
-Not shipped yet in this pack:
-
-- room peer fanout between sessions after a publication
 
 ## Include It
 
@@ -122,6 +120,7 @@ Bind Discord conversations to exact permanent session names:
 ```bash
 gc discord bind-dm 123456789012345678 sky
 gc discord bind-room --guild-id 223456789012345678 323456789012345678 sky lawrence
+gc discord bind-room --guild-id 223456789012345678 --enable-peer-fanout 323456789012345678 corp--sky corp--priya
 ```
 
 Publish a human-visible reply through a saved binding:
@@ -130,9 +129,13 @@ Publish a human-visible reply through a saved binding:
 gc discord publish --binding room:323456789012345678 --body-file ./reply.txt
 gc discord publish --binding room:323456789012345678 --trigger 423456789012345678 --body "On it."
 gc discord publish --binding room:323456789012345678 --conversation-id 523456789012345678 --trigger 423456789012345678 --body "Reply in the thread"
+gc discord publish --binding room:323456789012345678 --source-event-kind discord_human_message --source-ingress-receipt-id in-423456789012345678 --source-session corp--sky --body-file ./reply.txt
 
 # Preferred agent reply path for the current Discord turn
 gc discord reply-current --body-file ./reply.txt
+
+# Repair failed peer deliveries without reposting to Discord
+gc discord retry-peer-fanout discord-publish-123
 ```
 
 Inbound behavior in v0:
@@ -144,6 +147,10 @@ Inbound behavior in v0:
 - untargeted room messages fan out to every bound participant session
 - agent normal output remains private; only explicit publish commands speak back to humans
 - agents should prefer `gc discord reply-current --body-file ...` when answering the latest Discord turn
+- direct `gc discord publish` only participates in peer fanout when explicit source metadata is supplied
+- bot-authored Discord messages remain ignored on inbound; peer fanout is local bridge behavior
+- peer fanout for room publishes is opt-in per binding and disabled by default
+- peer-triggered publishes only fan out when they explicitly mention target `@session_name` values
 
 ## Inspect Status
 

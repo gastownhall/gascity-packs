@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import calendar
 import base64
+import contextlib
 import copy
+import fcntl
 import hashlib
 import json
 import os
@@ -36,6 +39,12 @@ DISCORD_RATE_LIMIT_RETRIES = 2
 GC_API_REQUEST_TIMEOUT_SECONDS = 20.0
 SERVICE_SOCKET_PROBE_TIMEOUT_SECONDS = 0.2
 NON_ROUTABLE_SESSION_STATES = {"", "closed", "stopped", "orphaned", "quarantined"}
+PEER_DELIVERY_TIMEOUT_SECONDS = 10.0
+PEER_IN_PROGRESS_STALE_SECONDS = 30.0
+PEER_ROOT_WINDOW_SECONDS = 60.0
+CANONICAL_PEER_SESSION_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+URL_PATTERN = re.compile(r"https?://\S+")
+DISCORD_RESERVED_MENTIONS = {"everyone", "here"}
 
 
 class DiscordAPIError(RuntimeError):
@@ -112,6 +121,14 @@ def chat_ingress_dir() -> str:
     return os.path.join(data_dir(), "chat-ingress")
 
 
+def peer_root_budget_dir() -> str:
+    return os.path.join(data_dir(), "peer-root-budgets")
+
+
+def locks_dir() -> str:
+    return os.path.join(data_dir(), "locks")
+
+
 def config_path() -> str:
     return os.path.join(data_dir(), "config.json")
 
@@ -143,6 +160,8 @@ def ensure_layout() -> None:
         pending_modals_dir(),
         chat_publishes_dir(),
         chat_ingress_dir(),
+        peer_root_budget_dir(),
+        locks_dir(),
         secrets_dir(),
     ):
         os.makedirs(path, exist_ok=True)
@@ -278,6 +297,8 @@ def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
                     "guild_id": str(value.get("guild_id", "")).strip(),
                     "session_names": normalized_session_names,
                 }
+                if kind == "room":
+                    normalized_bindings[binding_id]["policy"] = normalize_room_peer_policy(value.get("policy"))
         config["chat"] = {
             "bindings": normalized_bindings,
         }
@@ -355,6 +376,69 @@ def save_config(config: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def canonical_peer_session_name(name: str) -> str:
+    normalized = str(name).strip()
+    if normalized and CANONICAL_PEER_SESSION_NAME.fullmatch(normalized):
+        return normalized
+    return ""
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if text in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
+
+
+def default_room_peer_policy() -> dict[str, Any]:
+    return {
+        "peer_fanout_enabled": False,
+        "allow_untargeted_peer_fanout": False,
+        "max_peer_triggered_publishes_per_root": 1,
+        "max_total_peer_deliveries_per_root": 8,
+        "max_peer_triggered_publishes_per_session_per_minute": 5,
+    }
+
+
+def normalize_room_peer_policy(policy: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw = policy if isinstance(policy, dict) else {}
+    defaults = default_room_peer_policy()
+    return {
+        "peer_fanout_enabled": _coerce_bool(raw.get("peer_fanout_enabled"), defaults["peer_fanout_enabled"]),
+        "allow_untargeted_peer_fanout": _coerce_bool(
+            raw.get("allow_untargeted_peer_fanout"), defaults["allow_untargeted_peer_fanout"]
+        ),
+        "max_peer_triggered_publishes_per_root": max(
+            0, int(raw.get("max_peer_triggered_publishes_per_root", defaults["max_peer_triggered_publishes_per_root"]) or 0)
+        ),
+        "max_total_peer_deliveries_per_root": max(
+            0, int(raw.get("max_total_peer_deliveries_per_root", defaults["max_total_peer_deliveries_per_root"]) or 0)
+        ),
+        "max_peer_triggered_publishes_per_session_per_minute": max(
+            0,
+            int(
+                raw.get(
+                    "max_peer_triggered_publishes_per_session_per_minute",
+                    defaults["max_peer_triggered_publishes_per_session_per_minute"],
+                )
+                or 0
+            ),
+        ),
+    }
+
+
+def binding_peer_policy(binding: dict[str, Any]) -> dict[str, Any]:
+    if str(binding.get("kind", "")).strip() != "room":
+        return default_room_peer_policy()
+    return normalize_room_peer_policy(binding.get("policy"))
+
+
 def redact_config(config: dict[str, Any]) -> dict[str, Any]:
     redacted = normalize_config(config)
     redacted["app"]["bot_token_present"] = bool(load_bot_token())
@@ -425,6 +509,8 @@ def set_chat_binding(
     conversation_id: str,
     session_names: list[str],
     guild_id: str = "",
+    *,
+    policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_kind = str(kind).strip().lower()
     if normalized_kind not in {"dm", "room"}:
@@ -440,15 +526,27 @@ def set_chat_binding(
 
     cfg = normalize_config(config)
     binding_id = chat_binding_id(normalized_kind, normalized_conversation)
+    existing = resolve_chat_binding(cfg, binding_id) or {}
+    raw_room_policy = copy.deepcopy(existing.get("policy")) if isinstance(existing.get("policy"), dict) else {}
+    if isinstance(policy, dict):
+        raw_room_policy.update(copy.deepcopy(policy))
+    room_policy = normalize_room_peer_policy(raw_room_policy)
+    if normalized_kind == "room" and room_policy.get("peer_fanout_enabled"):
+        invalid = [name for name in normalized_session_names if canonical_peer_session_name(name) != name]
+        if invalid:
+            raise ValueError("peer-fanout-enabled room bindings require lowercase canonical session names")
     cfg.setdefault("chat", {})
     cfg["chat"].setdefault("bindings", {})
-    cfg["chat"]["bindings"][binding_id] = {
+    binding: dict[str, Any] = {
         "id": binding_id,
         "kind": normalized_kind,
         "conversation_id": normalized_conversation,
         "guild_id": str(guild_id).strip(),
         "session_names": normalized_session_names,
     }
+    if normalized_kind == "room":
+        binding["policy"] = room_policy
+    cfg["chat"]["bindings"][binding_id] = binding
     return save_config(cfg)
 
 
@@ -859,7 +957,25 @@ def save_chat_publish(payload: dict[str, Any]) -> dict[str, Any]:
         body["publish_id"] = publish_id
     body.setdefault("created_at", utcnow())
     atomic_write_json(chat_publish_path(publish_id), body)
+    _update_peer_root_budget_index(body)
     return body
+
+
+def load_chat_publish(publish_id: str) -> dict[str, Any] | None:
+    data = read_json(chat_publish_path(publish_id), allow_invalid=True)
+    if isinstance(data, dict):
+        return data
+    return None
+
+
+def iter_chat_publishes() -> list[dict[str, Any]]:
+    ensure_layout()
+    items: list[dict[str, Any]] = []
+    for path in pathlib.Path(chat_publishes_dir()).glob("*.json"):
+        data = read_json(str(path), allow_invalid=True)
+        if isinstance(data, dict):
+            items.append(data)
+    return items
 
 
 def list_recent_chat_publishes(limit: int = 20) -> list[dict[str, Any]]:
@@ -876,6 +992,139 @@ def list_recent_chat_publishes(limit: int = 20) -> list[dict[str, Any]]:
             entries.append(data)
     entries.sort(key=lambda item: item.get("created_at", ""), reverse=True)
     return entries[:limit]
+
+
+def iter_chat_publishes_since(since_epoch: float) -> list[dict[str, Any]]:
+    ensure_layout()
+    items: list[dict[str, Any]] = []
+    for path in pathlib.Path(chat_publishes_dir()).glob("*.json"):
+        try:
+            stat_result = path.stat()
+        except OSError:
+            continue
+        if stat_result.st_mtime < since_epoch:
+            continue
+        data = read_json(str(path), allow_invalid=True)
+        if isinstance(data, dict):
+            items.append(data)
+    return items
+
+
+def _safe_lock_name(prefix: str, key: str) -> str:
+    digest = hashlib.sha256(str(key).encode("utf-8")).hexdigest()[:16]
+    return os.path.join(locks_dir(), f"{prefix}-{digest}.lock")
+
+
+def peer_root_budget_path(binding_id: str, root_ingress_receipt_id: str) -> str:
+    safe_key = safe_storage_id(f"{binding_id}:{root_ingress_receipt_id}", "peer-root-budget")
+    return os.path.join(peer_root_budget_dir(), f"{safe_key}.json")
+
+
+@contextlib.contextmanager
+def advisory_lock(path: str):
+    ensure_layout()
+    handle = open(path, "a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield handle
+    finally:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
+
+
+def parse_utc_timestamp(value: str) -> float | None:
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = time.strptime(text, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+    return float(calendar.timegm(parsed))
+
+
+def _normalize_peer_root_budget_index(index: dict[str, Any] | None, *, binding_id: str, root_ingress_receipt_id: str) -> dict[str, Any]:
+    payload = copy.deepcopy(index) if isinstance(index, dict) else {}
+    entries = payload.get("entries")
+    normalized_entries: dict[str, dict[str, Any]] = {}
+    if isinstance(entries, dict):
+        for publish_id, item in entries.items():
+            if not isinstance(item, dict):
+                continue
+            normalized_entries[str(publish_id).strip()] = {
+                "publish_id": str(item.get("publish_id", publish_id)).strip(),
+                "created_at": str(item.get("created_at", "")).strip(),
+                "source_session_name": str(item.get("source_session_name", "")).strip(),
+                "source_event_kind": str(item.get("source_event_kind", "")).strip(),
+                "frozen_target_count": max(0, int(item.get("frozen_target_count", 0) or 0)),
+            }
+    payload["binding_id"] = binding_id
+    payload["root_ingress_receipt_id"] = root_ingress_receipt_id
+    payload["entries"] = normalized_entries
+    return payload
+
+
+def load_peer_root_budget_index(binding_id: str, root_ingress_receipt_id: str) -> dict[str, Any]:
+    if not binding_id or not root_ingress_receipt_id:
+        return _normalize_peer_root_budget_index({}, binding_id=binding_id, root_ingress_receipt_id=root_ingress_receipt_id)
+    payload = read_json(peer_root_budget_path(binding_id, root_ingress_receipt_id), {}, allow_invalid=True)
+    if not isinstance(payload, dict):
+        payload = {}
+    return _normalize_peer_root_budget_index(payload, binding_id=binding_id, root_ingress_receipt_id=root_ingress_receipt_id)
+
+
+def _prune_peer_root_budget_index(index: dict[str, Any]) -> dict[str, Any]:
+    payload = copy.deepcopy(index)
+    cutoff = time.time() - CHAT_PUBLISH_RETENTION_SECONDS
+    entries = payload.get("entries")
+    if not isinstance(entries, dict):
+        payload["entries"] = {}
+        return payload
+    for publish_id, item in list(entries.items()):
+        created_at = ""
+        if isinstance(item, dict):
+            created_at = str(item.get("created_at", "")).strip()
+        created_epoch = parse_utc_timestamp(created_at)
+        if created_epoch is not None and created_epoch < cutoff:
+            entries.pop(publish_id, None)
+    payload["entries"] = entries
+    return payload
+
+
+def save_peer_root_budget_index(index: dict[str, Any]) -> dict[str, Any]:
+    payload = _prune_peer_root_budget_index(index)
+    binding_id = str(payload.get("binding_id", "")).strip()
+    root_ingress_receipt_id = str(payload.get("root_ingress_receipt_id", "")).strip()
+    if not binding_id or not root_ingress_receipt_id:
+        return payload
+    atomic_write_json(peer_root_budget_path(binding_id, root_ingress_receipt_id), payload)
+    return payload
+
+
+def _update_peer_root_budget_index(record: dict[str, Any]) -> None:
+    binding_id = str(record.get("binding_id", "")).strip()
+    root_ingress_receipt_id = str(record.get("root_ingress_receipt_id", "")).strip()
+    publish_id = str(record.get("publish_id", "")).strip()
+    if not binding_id or not root_ingress_receipt_id or not publish_id:
+        return
+    lock_path = _safe_lock_name("peer-root-index", f"{binding_id}:{root_ingress_receipt_id}")
+    with advisory_lock(lock_path):
+        index = load_peer_root_budget_index(binding_id, root_ingress_receipt_id)
+        entries = index.setdefault("entries", {})
+        peer_delivery = record.get("peer_delivery")
+        frozen_targets: list[str] = []
+        if isinstance(peer_delivery, dict):
+            frozen = peer_delivery.get("frozen_targets")
+            if isinstance(frozen, list):
+                frozen_targets = [str(item).strip() for item in frozen if str(item).strip()]
+        entries[publish_id] = {
+            "publish_id": publish_id,
+            "created_at": str(record.get("created_at", "")).strip(),
+            "source_session_name": str(record.get("source_session_name", "")).strip(),
+            "source_event_kind": str(record.get("source_event_kind", "")).strip(),
+            "frozen_target_count": len(frozen_targets),
+        }
+        save_peer_root_budget_index(index)
 
 
 def load_chat_ingress(ingress_id: str) -> dict[str, Any] | None:
@@ -1457,6 +1706,27 @@ def session_index_by_name(state: str = "all") -> dict[str, dict[str, Any]]:
     return index
 
 
+def resolve_session_identity(session_selector: str) -> dict[str, str]:
+    selector = str(session_selector).strip()
+    if not selector:
+        return {}
+    session_by_name = session_index_by_name(state="all").get(selector)
+    if session_by_name:
+        return {
+            "session_name": str(session_by_name.get("session_name", "")).strip(),
+            "session_id": str(session_by_name.get("id", "")).strip(),
+        }
+    for item in list_city_sessions(state="all"):
+        session_id = str(item.get("id", "")).strip()
+        if session_id != selector:
+            continue
+        return {
+            "session_name": str(item.get("session_name", "")).strip(),
+            "session_id": session_id,
+        }
+    raise GCAPIError(f"session not found: {selector}")
+
+
 def _session_record_preference(item: dict[str, Any]) -> tuple[int, int, int, str]:
     state = str(item.get("state", "")).strip()
     return (
@@ -1466,6 +1736,332 @@ def _session_record_preference(item: dict[str, Any]) -> tuple[int, int, int, str
         str(item.get("created_at", "")).strip(),
     )
 
+
+def derive_publish_source_metadata(source_context: dict[str, str] | None = None) -> dict[str, str]:
+    fields = source_context if isinstance(source_context, dict) else {}
+    source_kind = str(fields.get("kind", "")).strip()
+    ingress_id = str(fields.get("ingress_receipt_id", "")).strip()
+    root_ingress_id = str(fields.get("root_ingress_receipt_id", "")).strip()
+    if source_kind == "discord_human_message" and ingress_id:
+        root_ingress_id = ingress_id
+    return {
+        "source_event_kind": source_kind,
+        "ingress_receipt_id": ingress_id,
+        "root_ingress_receipt_id": root_ingress_id,
+        "publish_binding_id": str(fields.get("publish_binding_id", "")).strip(),
+        "publish_trigger_id": str(fields.get("publish_trigger_id", "")).strip(),
+        "publish_reply_to_discord_message_id": str(fields.get("publish_reply_to_discord_message_id", "")).strip(),
+    }
+
+
+def _derive_publish_source_metadata(source_context: dict[str, str] | None = None) -> dict[str, str]:
+    return derive_publish_source_metadata(source_context)
+
+
+def _strip_inline_code(text: str) -> str:
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "`":
+            j = i
+            while j < len(text) and text[j] == "`":
+                j += 1
+            ticks = text[i:j]
+            close = text.find(ticks, j)
+            out.extend(" " * len(ticks))
+            if close < 0:
+                i = j
+                continue
+            out.extend(" " * (close - j))
+            out.extend(" " * len(ticks))
+            i = close + len(ticks)
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _peer_routing_visible_text(body: str) -> str:
+    lines: list[str] = []
+    in_fence = False
+    in_block_quote = False
+    for raw_line in str(body).splitlines():
+        line = raw_line
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            lines.append("")
+            continue
+        if in_fence:
+            lines.append("")
+            continue
+        if stripped.startswith(">>>"):
+            in_block_quote = True
+            lines.append("")
+            continue
+        if in_block_quote:
+            lines.append("")
+            continue
+        if stripped.startswith(">"):
+            lines.append("")
+            continue
+        visible = URL_PATTERN.sub(" ", _strip_inline_code(line))
+        lines.append(visible)
+    return "\n".join(lines)
+
+
+def extract_peer_session_mentions(body: str) -> list[str]:
+    text = _peer_routing_visible_text(body)
+    mentions: list[str] = []
+    seen: set[str] = set()
+    i = 0
+    while i < len(text):
+        if text[i] != "@":
+            i += 1
+            continue
+        prev = text[i - 1] if i > 0 else ""
+        if prev == "<":
+            i += 1
+            continue
+        if prev and (prev.isalnum() or prev == "_"):
+            i += 1
+            continue
+        j = i + 1
+        if j >= len(text) or not text[j].isdigit() and not ("a" <= text[j] <= "z"):
+            i += 1
+            continue
+        while j < len(text) and (text[j].isdigit() or ("a" <= text[j] <= "z") or text[j] in {"_", "-"}):
+            j += 1
+        token = text[i + 1 : j]
+        if token and token not in DISCORD_RESERVED_MENTIONS and canonical_peer_session_name(token) == token and token not in seen:
+            seen.add(token)
+            mentions.append(token)
+        i = j
+    return mentions
+
+
+def _binding_session_lookup(binding: dict[str, Any]) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for name in binding.get("session_names", []):
+        session_name = str(name).strip()
+        if session_name:
+            lookup[session_name] = session_name
+    return lookup
+
+
+def _peer_delivery_payload(record: dict[str, Any]) -> dict[str, Any]:
+    payload = record.get("peer_delivery")
+    if isinstance(payload, dict):
+        return copy.deepcopy(payload)
+    return {
+        "phase": "discord_posted",
+        "status": "",
+        "delivery": "",
+        "mentioned_session_names": [],
+        "frozen_targets": [],
+        "targets": [],
+        "budget_snapshot": {},
+    }
+
+
+def _save_chat_publish_record(record: dict[str, Any]) -> dict[str, Any]:
+    return save_chat_publish(record)
+
+
+def _update_peer_target(peer_delivery: dict[str, Any], session_name: str, patch: dict[str, Any]) -> None:
+    targets = peer_delivery.setdefault("targets", [])
+    for entry in targets:
+        if str(entry.get("session_name", "")).strip() == session_name:
+            entry.update(copy.deepcopy(patch))
+            return
+    item = {"session_name": session_name}
+    item.update(copy.deepcopy(patch))
+    targets.append(item)
+
+
+def _peer_attempt(session_name: str, status: str, reason: str = "", response: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "at": utcnow(),
+        "status": status,
+    }
+    if reason:
+        payload["reason"] = reason
+    if response:
+        payload["response"] = response
+    payload["session_name"] = session_name
+    return payload
+
+
+def _count_matching_publishes(
+    *,
+    binding_id: str,
+    root_ingress_receipt_id: str,
+    source_session_name: str = "",
+    source_event_kind: str = "",
+    since_epoch: float | None = None,
+    exclude_publish_id: str = "",
+    records: list[dict[str, Any]] | None = None,
+) -> int:
+    total = 0
+    publish_records = records if records is not None else iter_chat_publishes()
+    for record in publish_records:
+        if exclude_publish_id and str(record.get("publish_id", "")).strip() == exclude_publish_id:
+            continue
+        if str(record.get("binding_id", "")).strip() != binding_id:
+            continue
+        if root_ingress_receipt_id and str(record.get("root_ingress_receipt_id", "")).strip() != root_ingress_receipt_id:
+            continue
+        if source_session_name and str(record.get("source_session_name", "")).strip() != source_session_name:
+            continue
+        if source_event_kind and str(record.get("source_event_kind", "")).strip() != source_event_kind:
+            continue
+        if since_epoch is not None:
+            created = parse_utc_timestamp(str(record.get("created_at", "")).strip())
+            if created is None or created < since_epoch:
+                continue
+        total += 1
+    return total
+
+
+def _count_root_peer_deliveries(binding_id: str, root_ingress_receipt_id: str, records: list[dict[str, Any]] | None = None) -> int:
+    total = 0
+    publish_records = records if records is not None else iter_chat_publishes()
+    for record in publish_records:
+        if str(record.get("binding_id", "")).strip() != binding_id:
+            continue
+        if str(record.get("root_ingress_receipt_id", "")).strip() != root_ingress_receipt_id:
+            continue
+        peer_delivery = record.get("peer_delivery")
+        if not isinstance(peer_delivery, dict):
+            continue
+        frozen = peer_delivery.get("frozen_targets")
+        if isinstance(frozen, list):
+            total += len([item for item in frozen if str(item).strip()])
+    return total
+
+
+def _count_root_peer_triggered_publishes(
+    binding_id: str,
+    root_ingress_receipt_id: str,
+    source_session_name: str,
+    *,
+    exclude_publish_id: str = "",
+) -> int:
+    index = load_peer_root_budget_index(binding_id, root_ingress_receipt_id)
+    total = 0
+    for publish_id, item in index.get("entries", {}).items():
+        if exclude_publish_id and publish_id == exclude_publish_id:
+            continue
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("source_session_name", "")).strip() != source_session_name:
+            continue
+        if str(item.get("source_event_kind", "")).strip() != "discord_peer_publication":
+            continue
+        total += 1
+    return total
+
+
+def _count_root_peer_deliveries_from_index(binding_id: str, root_ingress_receipt_id: str) -> int:
+    index = load_peer_root_budget_index(binding_id, root_ingress_receipt_id)
+    total = 0
+    for item in index.get("entries", {}).values():
+        if not isinstance(item, dict):
+            continue
+        total += max(0, int(item.get("frozen_target_count", 0) or 0))
+    return total
+
+
+def _resolve_peer_targets(
+    binding: dict[str, Any],
+    *,
+    body: str,
+    source_session_name: str,
+    source_event_kind: str,
+) -> tuple[list[str], str, str, list[str]]:
+    policy = binding_peer_policy(binding)
+    session_lookup = _binding_session_lookup(binding)
+    mentions = extract_peer_session_mentions(body)
+    if mentions:
+        if any(name not in session_lookup for name in mentions):
+            return [], "targeted", "failed_targeting_unknown_session", mentions
+        targets = [name for name in mentions if name != source_session_name]
+        if not targets:
+            return [], "targeted", "failed_targeting_self_only", mentions
+        return targets, "targeted", "", mentions
+    if source_event_kind == "discord_peer_publication":
+        return [], "untargeted", "skipped_peer_target_required", []
+    if not policy.get("allow_untargeted_peer_fanout"):
+        return [], "untargeted", "skipped_policy_untargeted_disabled", []
+    targets = [name for name in session_lookup if name != source_session_name]
+    if not targets:
+        return [], "untargeted", "skipped_no_peer_targets", []
+    return targets, "untargeted", "", []
+
+
+def _build_peer_envelope(
+    *,
+    binding: dict[str, Any],
+    record: dict[str, Any],
+    source_session_name: str,
+    source_session_id: str,
+    target_session_name: str,
+    delivery: str,
+    mentioned_session_names: list[str],
+    root_ingress_receipt_id: str,
+    idempotency_key: str,
+) -> str:
+    lines = [
+        "<discord-event>",
+        "version: 1",
+        "kind: discord_peer_publication",
+        f"binding_id: {str(binding.get('id', '')).strip()}",
+        f"ingress_receipt_id: peer:{str(record.get('publish_id', '')).strip()}:target:{target_session_name}",
+        f"conversation: {'guild:' + str(binding.get('guild_id', '')).strip() + ' channel:' + str(record.get('conversation_id', '')).strip() if str(binding.get('guild_id', '')).strip() else 'dm:' + str(record.get('conversation_id', '')).strip()}",
+        f"conversation_key: {('guild:' + str(binding.get('guild_id', '')).strip() + ':conversation:' + str(record.get('conversation_id', '')).strip()) if str(binding.get('guild_id', '')).strip() else ('dm:' + str(record.get('conversation_id', '')).strip())}",
+        f"discord_message_id: {str(record.get('remote_message_id', '')).strip()}",
+        f"source_session_name: {source_session_name}",
+        f"source_session_id: {source_session_id}",
+        "source_kind: peer_session",
+        f"target_session_name: {target_session_name}",
+        f"publish_id: {str(record.get('publish_id', '')).strip()}",
+        f"root_ingress_receipt_id: {root_ingress_receipt_id}",
+        f"publish_binding_id: {str(binding.get('id', '')).strip()}",
+        f"publish_conversation_id: {str(record.get('conversation_id', '')).strip()}",
+        f"publish_trigger_id: {str(record.get('remote_message_id', '')).strip()}",
+        f"publish_reply_to_discord_message_id: {str(record.get('remote_message_id', '')).strip()}",
+        f"delivery_idempotency_key: {idempotency_key}",
+        f"delivery: {delivery}",
+        f"mentioned_session_names_json: {json.dumps(mentioned_session_names)}",
+        f"untrusted_body_json: {json.dumps(str(record.get('body', '')))}",
+        f"created_at: {str(record.get('created_at', '')).strip()}",
+        "normal_output_visibility: internal_only",
+        "reply_contract: explicit_publish_required",
+        "hop: 1",
+        "max_hop: 1",
+        "</discord-event>",
+    ]
+    return "\n".join(lines)
+
+
+def _promote_stale_in_progress_targets(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    body = copy.deepcopy(record)
+    peer_delivery = _peer_delivery_payload(body)
+    changed = False
+    now = time.time()
+    for entry in peer_delivery.get("targets", []):
+        if str(entry.get("status", "")).strip() != "in_progress":
+            continue
+        attempted_at = parse_utc_timestamp(str(entry.get("attempted_at", "")).strip())
+        if attempted_at is None or now - attempted_at < PEER_IN_PROGRESS_STALE_SECONDS:
+            continue
+        entry["status"] = "delivery_unknown"
+        entry.setdefault("reason", "stale_in_progress")
+        changed = True
+    if changed:
+        body["peer_delivery"] = peer_delivery
+    return body, changed
 
 def resolve_publish_conversation_id(binding: dict[str, Any], requested_conversation_id: str) -> str:
     binding_conversation_id = str(binding.get("conversation_id", "")).strip()
@@ -1484,6 +2080,477 @@ def resolve_publish_conversation_id(binding: dict[str, Any], requested_conversat
     return requested
 
 
+def _peer_delivery_needs_attention(record: dict[str, Any]) -> bool:
+    peer_delivery = record.get("peer_delivery")
+    if not isinstance(peer_delivery, dict):
+        return False
+    phase = str(peer_delivery.get("phase", "")).strip()
+    status = str(peer_delivery.get("status", "")).strip()
+    if phase == "peer_fanout_partial_failure":
+        return True
+    if status.startswith("failed_"):
+        return True
+    return any(
+        str(entry.get("status", "")).strip() in {"failed_retryable", "failed_permanent", "delivery_unknown"}
+        for entry in peer_delivery.get("targets", [])
+        if isinstance(entry, dict)
+    )
+
+
+def peer_delivery_exit_code(record: dict[str, Any]) -> int:
+    return 2 if _peer_delivery_needs_attention(record) else 0
+
+
+def _finalize_peer_delivery(record: dict[str, Any]) -> dict[str, Any]:
+    body = copy.deepcopy(record)
+    peer_delivery = _peer_delivery_payload(body)
+    terminal_statuses = {
+        str(entry.get("status", "")).strip()
+        for entry in peer_delivery.get("targets", [])
+        if isinstance(entry, dict)
+    }
+    status = str(peer_delivery.get("status", "")).strip()
+    if {"pending", "in_progress"} & terminal_statuses:
+        peer_delivery["phase"] = "peer_fanout_in_progress"
+    elif status.startswith("failed_"):
+        peer_delivery["phase"] = "peer_fanout_partial_failure"
+    elif {"failed_retryable", "failed_permanent", "delivery_unknown"} & terminal_statuses:
+        peer_delivery["phase"] = "peer_fanout_partial_failure"
+        peer_delivery["status"] = "partial_failure"
+    elif terminal_statuses:
+        peer_delivery["phase"] = "peer_fanout_complete"
+        if "delivered" in terminal_statuses:
+            peer_delivery["status"] = "delivered"
+        elif not status or status == "partial_failure":
+            peer_delivery["status"] = "delivered"
+    elif not status:
+        peer_delivery["phase"] = "peer_fanout_complete"
+        peer_delivery["status"] = "skipped_no_peer_targets"
+    body["peer_delivery"] = peer_delivery
+    return body
+
+
+def _update_target_in_progress(
+    *,
+    publish_id: str,
+    fallback_record: dict[str, Any],
+    session_name: str,
+    idempotency_key: str,
+) -> tuple[dict[str, Any], int]:
+    with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
+        current = load_chat_publish(publish_id) or copy.deepcopy(fallback_record)
+        peer_delivery = _peer_delivery_payload(current)
+        target_entry = next(
+            (item for item in peer_delivery.get("targets", []) if str(item.get("session_name", "")).strip() == session_name),
+            None,
+        )
+        if target_entry and str(target_entry.get("status", "")).strip() == "delivered":
+            return current, int(target_entry.get("attempt_count", 0) or 0)
+        attempt_count = int((target_entry or {}).get("attempt_count", 0) or 0) + 1
+        _update_peer_target(
+            peer_delivery,
+            session_name,
+            {
+                "status": "in_progress",
+                "idempotency_key": idempotency_key,
+                "attempt_count": attempt_count,
+                "attempted_at": utcnow(),
+            },
+        )
+        current["peer_delivery"] = peer_delivery
+        current = _save_chat_publish_record(current)
+        return current, attempt_count
+
+
+def _update_target_delivery_result(
+    *,
+    publish_id: str,
+    fallback_record: dict[str, Any],
+    session_name: str,
+    response: dict[str, Any] | None = None,
+    error: str = "",
+) -> dict[str, Any]:
+    with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
+        current = load_chat_publish(publish_id) or copy.deepcopy(fallback_record)
+        peer_delivery = _peer_delivery_payload(current)
+        target_entry = next(
+            (item for item in peer_delivery.get("targets", []) if str(item.get("session_name", "")).strip() == session_name),
+            None,
+        )
+        attempts = list((target_entry or {}).get("attempts", []))
+        if error:
+            attempts.append(_peer_attempt(session_name, "failed_retryable", error))
+            _update_peer_target(
+                peer_delivery,
+                session_name,
+                {
+                    "status": "failed_retryable",
+                    "reason": error,
+                    "attempts": attempts,
+                },
+            )
+        else:
+            attempts.append(_peer_attempt(session_name, "delivered", response=response or {}))
+            _update_peer_target(
+                peer_delivery,
+                session_name,
+                {
+                    "status": "delivered",
+                    "delivered_at": utcnow(),
+                    "response": response or {},
+                    "attempts": attempts,
+                },
+            )
+        current["peer_delivery"] = peer_delivery
+        return _save_chat_publish_record(current)
+
+
+def _apply_peer_fanout(
+    record: dict[str, Any],
+    binding: dict[str, Any],
+    *,
+    source_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    if str(binding.get("kind", "")).strip() != "room":
+        return record
+
+    binding_id = str(binding.get("id", "")).strip()
+    publish_id = str(record.get("publish_id", "")).strip()
+    source_session_name = str(record.get("source_session_name", "")).strip()
+    source_session_id = str(record.get("source_session_id", "")).strip()
+    policy = binding_peer_policy(binding)
+    source_meta = _derive_publish_source_metadata(source_context)
+    root_ingress_receipt_id = source_meta.get("root_ingress_receipt_id", "")
+    budget_lock_key = f"{binding_id}:{root_ingress_receipt_id or publish_id}"
+    delivery_targets: list[str] = []
+    delivery_mode = ""
+    delivery_mentions: list[str] = []
+    with advisory_lock(_safe_lock_name("peer-budget", budget_lock_key)):
+        with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
+            current = load_chat_publish(publish_id) or copy.deepcopy(record)
+            current, stale_changed = _promote_stale_in_progress_targets(current)
+            if stale_changed:
+                current = _save_chat_publish_record(current)
+            peer_delivery = _peer_delivery_payload(current)
+            peer_delivery.setdefault("delivery", "")
+            peer_delivery.setdefault("mentioned_session_names", [])
+            peer_delivery.setdefault("frozen_targets", [])
+            peer_delivery.setdefault("targets", [])
+            peer_delivery.setdefault("budget_snapshot", {})
+            current["source_event_kind"] = source_meta.get("source_event_kind", "")
+            current["root_ingress_receipt_id"] = root_ingress_receipt_id
+
+            if not policy.get("peer_fanout_enabled"):
+                peer_delivery["phase"] = "peer_fanout_complete"
+                peer_delivery["status"] = "skipped_policy_disabled"
+                current["peer_delivery"] = peer_delivery
+                return _save_chat_publish_record(current)
+            if not root_ingress_receipt_id:
+                peer_delivery["phase"] = "peer_fanout_complete"
+                peer_delivery["status"] = "skipped_missing_root_context"
+                current["peer_delivery"] = peer_delivery
+                return _save_chat_publish_record(current)
+            if not source_session_name or source_session_name not in _binding_session_lookup(binding):
+                peer_delivery["phase"] = "peer_fanout_partial_failure"
+                peer_delivery["status"] = "failed_source_not_bound"
+                current["peer_delivery"] = peer_delivery
+                return _save_chat_publish_record(current)
+
+            now = time.time()
+            if source_meta.get("source_event_kind") == "discord_peer_publication":
+                per_root_count = _count_root_peer_triggered_publishes(
+                    binding_id,
+                    root_ingress_receipt_id,
+                    source_session_name,
+                    exclude_publish_id=publish_id,
+                )
+                if per_root_count >= int(policy.get("max_peer_triggered_publishes_per_root", 0) or 0):
+                    peer_delivery["phase"] = "peer_fanout_complete"
+                    peer_delivery["status"] = "skipped_budget_exhausted"
+                    peer_delivery["budget_snapshot"] = {"peer_triggered_publishes_per_root": per_root_count}
+                    current["peer_delivery"] = peer_delivery
+                    return _save_chat_publish_record(current)
+                recent_publish_records = iter_chat_publishes_since(now - PEER_ROOT_WINDOW_SECONDS)
+                minute_count = _count_matching_publishes(
+                    binding_id=binding_id,
+                    root_ingress_receipt_id="",
+                    source_session_name=source_session_name,
+                    source_event_kind="discord_peer_publication",
+                    since_epoch=now - PEER_ROOT_WINDOW_SECONDS,
+                    exclude_publish_id=publish_id,
+                    records=recent_publish_records,
+                )
+                if minute_count >= int(policy.get("max_peer_triggered_publishes_per_session_per_minute", 0) or 0):
+                    peer_delivery["phase"] = "peer_fanout_complete"
+                    peer_delivery["status"] = "skipped_rate_limited"
+                    peer_delivery["budget_snapshot"] = {"peer_triggered_publishes_per_session_per_minute": minute_count}
+                    current["peer_delivery"] = peer_delivery
+                    return _save_chat_publish_record(current)
+
+            targets, delivery, resolve_reason, mentions = _resolve_peer_targets(
+                binding,
+                body=str(current.get("body", "")),
+                source_session_name=source_session_name,
+                source_event_kind=source_meta.get("source_event_kind", ""),
+            )
+            peer_delivery["delivery"] = delivery
+            peer_delivery["mentioned_session_names"] = mentions
+            if resolve_reason:
+                peer_delivery["phase"] = "peer_fanout_partial_failure" if resolve_reason.startswith("failed_") else "peer_fanout_complete"
+                peer_delivery["status"] = resolve_reason
+                current["peer_delivery"] = peer_delivery
+                return _save_chat_publish_record(current)
+
+            session_index = session_index_by_name(state="all")
+            live_targets: list[str] = []
+            targeted_unavailable: list[str] = []
+            for session_name in targets:
+                session_payload = session_index.get(session_name)
+                state = str((session_payload or {}).get("state", "")).strip()
+                if not session_payload or state in NON_ROUTABLE_SESSION_STATES:
+                    if delivery == "targeted":
+                        targeted_unavailable.append(session_name)
+                        _update_peer_target(
+                            peer_delivery,
+                            session_name,
+                            {
+                                "status": "failed_retryable",
+                                "reason": "failed_targeting_unavailable",
+                                "attempt_count": 0,
+                                "attempts": [_peer_attempt(session_name, "failed_retryable", "failed_targeting_unavailable")],
+                            },
+                        )
+                        continue
+                    _update_peer_target(
+                        peer_delivery,
+                        session_name,
+                        {
+                            "status": "skipped",
+                            "reason": "skipped_unavailable_target",
+                            "attempt_count": 0,
+                            "attempts": [_peer_attempt(session_name, "skipped", "skipped_unavailable_target")],
+                        },
+                    )
+                    continue
+                live_targets.append(session_name)
+
+            if targeted_unavailable:
+                for session_name in live_targets:
+                    _update_peer_target(
+                        peer_delivery,
+                        session_name,
+                        {
+                            "status": "failed_retryable",
+                            "reason": "blocked_by_unavailable_explicit_target",
+                            "attempt_count": 0,
+                            "attempts": [
+                                _peer_attempt(session_name, "failed_retryable", "blocked_by_unavailable_explicit_target")
+                            ],
+                        },
+                    )
+                peer_delivery["phase"] = "peer_fanout_partial_failure"
+                peer_delivery["status"] = "failed_targeting_unavailable"
+                current["peer_delivery"] = peer_delivery
+                return _save_chat_publish_record(current)
+
+            if not live_targets:
+                peer_delivery["phase"] = "peer_fanout_complete"
+                peer_delivery["status"] = "skipped_no_live_targets"
+                current["peer_delivery"] = peer_delivery
+                return _save_chat_publish_record(current)
+
+            total_peer_deliveries = _count_root_peer_deliveries_from_index(binding_id, root_ingress_receipt_id)
+            projected = total_peer_deliveries + len(live_targets)
+            peer_delivery["budget_snapshot"] = {
+                "root_ingress_receipt_id": root_ingress_receipt_id,
+                "existing_peer_deliveries_for_root": total_peer_deliveries,
+                "projected_peer_deliveries_for_root": projected,
+            }
+            max_total = int(policy.get("max_total_peer_deliveries_per_root", 0) or 0)
+            if max_total and projected > max_total:
+                peer_delivery["phase"] = "peer_fanout_complete"
+                peer_delivery["status"] = "skipped_budget_exhausted"
+                current["peer_delivery"] = peer_delivery
+                return _save_chat_publish_record(current)
+
+            peer_delivery["frozen_targets"] = list(live_targets)
+            peer_delivery["phase"] = "peer_fanout_in_progress"
+            for session_name in live_targets:
+                _update_peer_target(
+                    peer_delivery,
+                    session_name,
+                    {
+                        "status": "pending",
+                        "attempt_count": 0,
+                        "attempted_at": "",
+                        "attempts": [],
+                    },
+                )
+            current["peer_delivery"] = peer_delivery
+            current = _save_chat_publish_record(current)
+            delivery_targets = list(live_targets)
+            delivery_mode = delivery
+            delivery_mentions = list(mentions)
+
+    for session_name in delivery_targets:
+        idempotency_key = f"peer_publish:{publish_id}:binding:{binding_id}:target:{session_name}"
+        current, _ = _update_target_in_progress(
+            publish_id=publish_id,
+            fallback_record=current,
+            session_name=session_name,
+            idempotency_key=idempotency_key,
+        )
+        envelope = _build_peer_envelope(
+            binding=binding,
+            record=current,
+            source_session_name=source_session_name,
+            source_session_id=source_session_id,
+            target_session_name=session_name,
+            delivery=delivery_mode,
+            mentioned_session_names=delivery_mentions,
+            root_ingress_receipt_id=root_ingress_receipt_id,
+            idempotency_key=idempotency_key,
+        )
+        try:
+            response = deliver_session_message(
+                session_name,
+                envelope,
+                idempotency_key=idempotency_key,
+                timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
+            )
+        except GCAPIError as exc:
+            current = _update_target_delivery_result(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                error=str(exc),
+            )
+            continue
+        current = _update_target_delivery_result(
+            publish_id=publish_id,
+            fallback_record=current,
+            session_name=session_name,
+            response=response,
+        )
+
+    with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
+        current = load_chat_publish(publish_id) or current
+        current, stale_changed = _promote_stale_in_progress_targets(current)
+        if stale_changed:
+            current = _save_chat_publish_record(current)
+        current = _finalize_peer_delivery(current)
+        return _save_chat_publish_record(current)
+
+
+def retry_peer_fanout(
+    publish_id: str,
+    *,
+    include_unknown: bool = False,
+    target_session_names: list[str] | None = None,
+) -> dict[str, Any]:
+    record = load_chat_publish(publish_id)
+    if not record:
+        raise ValueError(f"publish not found: {publish_id}")
+    binding_id = str(record.get("binding_id", "")).strip()
+    binding = resolve_chat_binding(load_config(), binding_id)
+    if not binding:
+        raise ValueError(f"binding not found: {binding_id}")
+    retry_targets: list[tuple[str, str, str, list[str], str, str, str]] = []
+    with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
+        current = load_chat_publish(publish_id) or record
+        current, changed = _promote_stale_in_progress_targets(current)
+        if changed:
+            current = _save_chat_publish_record(current)
+        peer_delivery = _peer_delivery_payload(current)
+        eligible = {"failed_retryable"}
+        if include_unknown:
+            eligible.add("delivery_unknown")
+        selected = {str(item).strip() for item in (target_session_names or []) if str(item).strip()}
+        delivery = str(peer_delivery.get("delivery", "")).strip() or "targeted"
+        mentioned_session_names = [str(item).strip() for item in peer_delivery.get("mentioned_session_names", []) if str(item).strip()]
+        root_ingress_receipt_id = str(current.get("root_ingress_receipt_id", "")).strip()
+        source_session_name = str(current.get("source_session_name", "")).strip()
+        source_session_id = str(current.get("source_session_id", "")).strip()
+        for entry in peer_delivery.get("targets", []):
+            if not isinstance(entry, dict):
+                continue
+            session_name = str(entry.get("session_name", "")).strip()
+            if selected and session_name not in selected:
+                continue
+            if str(entry.get("status", "")).strip() not in eligible:
+                continue
+            idempotency_key = str(entry.get("idempotency_key", "")).strip()
+            if not idempotency_key:
+                idempotency_key = f"peer_publish:{publish_id}:binding:{binding_id}:target:{session_name}"
+            attempts = list(entry.get("attempts", []))
+            attempts.append(_peer_attempt(session_name, "retrying"))
+            _update_peer_target(
+                peer_delivery,
+                session_name,
+                {
+                    "status": "in_progress",
+                    "attempt_count": int(entry.get("attempt_count", 0) or 0) + 1,
+                    "attempted_at": utcnow(),
+                    "idempotency_key": idempotency_key,
+                    "attempts": attempts,
+                },
+            )
+            retry_targets.append(
+                (
+                    session_name,
+                    idempotency_key,
+                    delivery,
+                    mentioned_session_names,
+                    root_ingress_receipt_id,
+                    source_session_name,
+                    source_session_id,
+                )
+            )
+        current["peer_delivery"] = peer_delivery
+        current = _save_chat_publish_record(current)
+
+    for session_name, idempotency_key, delivery, mentioned_session_names, root_ingress_receipt_id, source_session_name, source_session_id in retry_targets:
+        envelope = _build_peer_envelope(
+            binding=binding,
+            record=current,
+            source_session_name=source_session_name,
+            source_session_id=source_session_id,
+            target_session_name=session_name,
+            delivery=delivery,
+            mentioned_session_names=mentioned_session_names,
+            root_ingress_receipt_id=root_ingress_receipt_id,
+            idempotency_key=idempotency_key,
+        )
+        try:
+            response = deliver_session_message(
+                session_name,
+                envelope,
+                idempotency_key=idempotency_key,
+                timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
+            )
+        except GCAPIError as exc:
+            current = _update_target_delivery_result(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                error=str(exc),
+            )
+            continue
+        current = _update_target_delivery_result(
+            publish_id=publish_id,
+            fallback_record=current,
+            session_name=session_name,
+            response=response,
+        )
+    with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
+        current = load_chat_publish(publish_id) or current
+        current, changed = _promote_stale_in_progress_targets(current)
+        if changed:
+            current = _save_chat_publish_record(current)
+        current = _finalize_peer_delivery(current)
+        return _save_chat_publish_record(current)
+
+
 def publish_binding_message(
     binding: dict[str, Any],
     body: str,
@@ -1491,6 +2558,9 @@ def publish_binding_message(
     requested_conversation_id: str = "",
     trigger_id: str = "",
     reply_to_message_id: str = "",
+    source_context: dict[str, str] | None = None,
+    source_session_name: str = "",
+    source_session_id: str = "",
 ) -> dict[str, Any]:
     conversation_id = resolve_publish_conversation_id(binding, requested_conversation_id)
     if not conversation_id:
@@ -1504,6 +2574,24 @@ def publish_binding_message(
     remote_message_id = str((response or {}).get("id", "")).strip()
     if not remote_message_id:
         raise DiscordAPIError("discord publish returned no message id")
+    source_meta = _derive_publish_source_metadata(source_context)
+    resolved_source_identity: dict[str, str] = {}
+    source_selector = str(source_session_name).strip() or str(source_session_id).strip() or current_session_selector()
+    if source_selector and (not str(source_session_name).strip() or not str(source_session_id).strip()):
+        try:
+            resolved_source_identity = resolve_session_identity(source_selector)
+        except GCAPIError:
+            resolved_source_identity = {}
+    effective_source_session_name = (
+        str(source_session_name).strip()
+        or str(resolved_source_identity.get("session_name", "")).strip()
+        or str(os.environ.get("GC_SESSION_NAME", "")).strip()
+    )
+    effective_source_session_id = (
+        str(source_session_id).strip()
+        or str(resolved_source_identity.get("session_id", "")).strip()
+        or str(os.environ.get("GC_SESSION_ID", "")).strip()
+    )
     record = save_chat_publish(
         {
             "binding_id": str(binding.get("id", "")).strip(),
@@ -1513,16 +2601,19 @@ def publish_binding_message(
             "guild_id": str(binding.get("guild_id", "")).strip(),
             "trigger_id": str(trigger_id).strip(),
             "reply_to_message_id": reply_target,
-            "source_session_id": str(os.environ.get("GC_SESSION_ID", "")).strip(),
-            "source_session_name": str(os.environ.get("GC_SESSION_NAME", "")).strip(),
+            "source_session_id": effective_source_session_id,
+            "source_session_name": effective_source_session_name,
+            "source_event_kind": source_meta.get("source_event_kind", ""),
+            "root_ingress_receipt_id": source_meta.get("root_ingress_receipt_id", ""),
             "body": body,
             "remote_message_id": remote_message_id,
         }
     )
+    record = _apply_peer_fanout(record, binding, source_context=source_context)
     return {"binding": binding, "record": record, "response": response}
 
 
-def deliver_session_message(session_name: str, message: str, idempotency_key: str = "") -> dict[str, Any]:
+def deliver_session_message(session_name: str, message: str, idempotency_key: str = "", timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS) -> dict[str, Any]:
     headers: dict[str, str] = {}
     key = str(idempotency_key).strip()
     if key:
@@ -1532,6 +2623,7 @@ def deliver_session_message(session_name: str, message: str, idempotency_key: st
         f"/v0/session/{urllib.parse.quote(str(session_name).strip(), safe='')}/messages",
         payload={"message": message},
         headers=headers,
+        timeout=timeout,
     )
     if not isinstance(payload, dict):
         return {}

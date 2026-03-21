@@ -23,6 +23,27 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--conversation-id", default="", help="Discord channel or thread id to publish into")
     parser.add_argument("--trigger", default="", help="Original Discord message id for reply threading")
     parser.add_argument("--reply-to", default="", help="Explicit Discord message id to reply to")
+    parser.add_argument(
+        "--source-event-kind",
+        default="",
+        choices=("", "discord_human_message", "discord_peer_publication"),
+        help="Optional source event kind for peer-fanout-capable publishes",
+    )
+    parser.add_argument(
+        "--source-ingress-receipt-id",
+        default="",
+        help="Ingress receipt id for the source Discord event; used to derive the root for human-originated fanout",
+    )
+    parser.add_argument(
+        "--root-ingress-receipt-id",
+        default="",
+        help="Root ingress receipt id for peer-fanout-capable publishes",
+    )
+    parser.add_argument(
+        "--source-session",
+        default="",
+        help="Optional exact session name or id to attribute this publish to instead of the current session env",
+    )
     parser.add_argument("--body", default="", help="Inline message body")
     parser.add_argument("--body-file", default="", help="Read the message body from a file")
     args = parser.parse_args(argv)
@@ -32,6 +53,19 @@ def main(argv: list[str]) -> int:
     binding = common.resolve_chat_binding(config, args.binding)
     if not binding:
         raise SystemExit(f"binding not found: {args.binding}")
+    source_context = {}
+    if args.source_event_kind:
+        source_context["kind"] = args.source_event_kind
+    if args.source_ingress_receipt_id:
+        source_context["ingress_receipt_id"] = args.source_ingress_receipt_id
+    if args.root_ingress_receipt_id:
+        source_context["root_ingress_receipt_id"] = args.root_ingress_receipt_id
+    source_identity = {}
+    try:
+        if args.source_session:
+            source_identity = common.resolve_session_identity(args.source_session)
+    except common.GCAPIError as exc:
+        raise SystemExit(str(exc)) from exc
     try:
         payload = common.publish_binding_message(
             binding,
@@ -39,11 +73,14 @@ def main(argv: list[str]) -> int:
             requested_conversation_id=args.conversation_id,
             trigger_id=args.trigger,
             reply_to_message_id=args.reply_to,
+            source_context=source_context or None,
+            source_session_name=str(source_identity.get("session_name", "")).strip(),
+            source_session_id=str(source_identity.get("session_id", "")).strip(),
         )
     except (ValueError, common.DiscordAPIError) as exc:
         raise SystemExit(str(exc)) from exc
     print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0
+    return common.peer_delivery_exit_code(payload.get("record", {}))
 
 
 if __name__ == "__main__":

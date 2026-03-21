@@ -14,7 +14,14 @@ If you want a human-visible reply to the current Discord turn, write the reply
 body to a file and run `gc discord reply-current --body-file ...`.
 
 Use `gc discord publish` directly only when you intentionally need to publish to
-some binding other than the latest Discord turn in this session.
+some binding other than the latest Discord turn in this session. Direct
+`publish` only participates in peer fanout if explicit source metadata is
+supplied; `reply-current` is the normal path for in-session agent replies.
+
+Some room inputs may be `kind: discord_peer_publication`. In a peer-fanout-
+enabled room, if you want another bound session to receive your room message as
+peer input, include its exact lowercase `@session_name` in the published body.
+Untargeted replies to peer publications do not fan out.
 
 Do not put long or multi-line replies inline in `--body`. Use `--body-file`.
 Do not pipe the publish command through `grep`, `sed`, or other filters that
@@ -22,4 +29,9 @@ can hide failures.
 
 Only claim success after the command returns JSON containing a non-empty
 `record.remote_message_id`.
+
+If `gc discord reply-current` exits with status `2`, or a source-context-enabled
+`gc discord publish` exits with status `2`, the Discord post succeeded but peer
+fanout was partial or needs repair. Do not claim that peer delivery succeeded
+unless `record.peer_delivery.status` is exactly `delivered`.
 {{- end }}
