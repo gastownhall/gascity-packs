@@ -3591,9 +3591,10 @@ def _apply_peer_fanout(
                 return _save_chat_publish_record(current)
 
             session_index = session_index_by_name(state="all")
-            live_targets: list[str] = []
+            live_targets: list[tuple[str, str]] = []
             targeted_unavailable: list[str] = []
             for session_name in targets:
+                target_key = session_name
                 resolved_target_selector = session_name
                 session_payload = session_index.get(session_name)
                 participant: dict[str, Any] = {}
@@ -3605,51 +3606,54 @@ def _apply_peer_fanout(
                         session_payload = resolve_routable_session_record(resolved_target_selector)
                 if session_payload:
                     resolved_target_selector = (
-                        room_launch_participant_delivery_selector(participant)
-                        or str(session_payload.get("alias", "")).strip()
-                        or str(session_payload.get("session_name", "")).strip()
+                        str(session_payload.get("session_name", "")).strip()
                         or str(session_payload.get("id", "")).strip()
+                        or str(participant.get("delivery_selector", "")).strip()
+                        or str(session_payload.get("alias", "")).strip()
                         or resolved_target_selector
                     )
                 state = str((session_payload or {}).get("state", "")).strip()
                 if not session_payload or state in NON_ROUTABLE_SESSION_STATES:
                     if delivery == "targeted":
-                        targeted_unavailable.append(session_name)
+                        targeted_unavailable.append(target_key)
                         _update_peer_target(
                             peer_delivery,
-                            session_name,
+                            target_key,
                             {
                                 "status": "failed_retryable",
                                 "reason": "failed_targeting_unavailable",
                                 "attempt_count": 0,
-                                "attempts": [_peer_attempt(session_name, "failed_retryable", "failed_targeting_unavailable")],
+                                "delivery_selector": resolved_target_selector,
+                                "attempts": [_peer_attempt(target_key, "failed_retryable", "failed_targeting_unavailable")],
                             },
                         )
                         continue
                     _update_peer_target(
                         peer_delivery,
-                        session_name,
+                        target_key,
                         {
                             "status": "skipped",
                             "reason": "skipped_unavailable_target",
                             "attempt_count": 0,
-                            "attempts": [_peer_attempt(session_name, "skipped", "skipped_unavailable_target")],
+                            "delivery_selector": resolved_target_selector,
+                            "attempts": [_peer_attempt(target_key, "skipped", "skipped_unavailable_target")],
                         },
                     )
                     continue
-                live_targets.append(resolved_target_selector)
+                live_targets.append((target_key, resolved_target_selector))
 
             if targeted_unavailable:
-                for session_name in live_targets:
+                for target_key, delivery_selector in live_targets:
                     _update_peer_target(
                         peer_delivery,
-                        session_name,
+                        target_key,
                         {
                             "status": "failed_retryable",
                             "reason": "blocked_by_unavailable_explicit_target",
                             "attempt_count": 0,
+                            "delivery_selector": delivery_selector,
                             "attempts": [
-                                _peer_attempt(session_name, "failed_retryable", "blocked_by_unavailable_explicit_target")
+                                _peer_attempt(target_key, "failed_retryable", "blocked_by_unavailable_explicit_target")
                             ],
                         },
                     )
@@ -3678,16 +3682,17 @@ def _apply_peer_fanout(
                 current["peer_delivery"] = peer_delivery
                 return _save_chat_publish_record(current)
 
-            peer_delivery["frozen_targets"] = list(live_targets)
+            peer_delivery["frozen_targets"] = [delivery_selector for _target_key, delivery_selector in live_targets]
             peer_delivery["phase"] = "peer_fanout_in_progress"
-            for session_name in live_targets:
+            for target_key, delivery_selector in live_targets:
                 _update_peer_target(
                     peer_delivery,
-                    session_name,
+                    target_key,
                     {
                         "status": "pending",
                         "attempt_count": 0,
                         "attempted_at": "",
+                        "delivery_selector": delivery_selector,
                         "attempts": [],
                     },
                 )
@@ -3697,12 +3702,12 @@ def _apply_peer_fanout(
             delivery_mode = delivery
             delivery_mentions = list(mentions)
 
-    for session_name in delivery_targets:
-        idempotency_key = f"peer_publish:{publish_id}:binding:{binding_id}:target:{session_name}"
+    for target_key, delivery_selector in delivery_targets:
+        idempotency_key = f"peer_publish:{publish_id}:binding:{binding_id}:target:{target_key}"
         current, _ = _update_target_in_progress(
             publish_id=publish_id,
             fallback_record=current,
-            session_name=session_name,
+            session_name=target_key,
             idempotency_key=idempotency_key,
         )
         envelope = _build_peer_envelope(
@@ -3710,7 +3715,7 @@ def _apply_peer_fanout(
             record=current,
             source_session_name=source_session_name,
             source_session_id=source_session_id,
-            target_session_name=session_name,
+            target_session_name=delivery_selector,
             delivery=delivery_mode,
             mentioned_session_names=delivery_mentions,
             root_ingress_receipt_id=root_ingress_receipt_id,
@@ -3719,7 +3724,7 @@ def _apply_peer_fanout(
         )
         try:
             response = deliver_session_message(
-                session_name,
+                delivery_selector,
                 envelope,
                 idempotency_key=idempotency_key,
                 timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
@@ -3728,14 +3733,14 @@ def _apply_peer_fanout(
             current = _update_target_delivery_result(
                 publish_id=publish_id,
                 fallback_record=current,
-                session_name=session_name,
+                session_name=target_key,
                 error=str(exc),
             )
             continue
         current = _update_target_delivery_result(
             publish_id=publish_id,
             fallback_record=current,
-            session_name=session_name,
+            session_name=target_key,
             response=response,
         )
 
@@ -3765,7 +3770,7 @@ def retry_peer_fanout(
     launch_id = str(record.get("launch_id", "")).strip()
     if launch_id:
         launch_record = load_room_launch(launch_id)
-    retry_targets: list[tuple[str, str, str, list[str], str, str, str]] = []
+    retry_targets: list[tuple[str, str, str, str, list[str], str, str, str]] = []
     with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
         current = load_chat_publish(publish_id) or record
         current, changed = _promote_stale_in_progress_targets(current)
@@ -3785,11 +3790,11 @@ def retry_peer_fanout(
             if not isinstance(entry, dict):
                 continue
             session_name = str(entry.get("session_name", "")).strip()
+            target_selector = str(entry.get("delivery_selector", "")).strip() or session_name
             if launch_record:
                 resolved_name, _participant, _identity = resolve_room_launch_target_selector(launch_record, session_name)
-                if resolved_name and resolved_name != session_name:
-                    _rename_peer_target(peer_delivery, session_name, resolved_name)
-                    session_name = resolved_name
+                if resolved_name:
+                    target_selector = resolved_name
             if selected and session_name not in selected:
                 continue
             if str(entry.get("status", "")).strip() not in eligible:
@@ -3807,12 +3812,14 @@ def retry_peer_fanout(
                     "attempt_count": int(entry.get("attempt_count", 0) or 0) + 1,
                     "attempted_at": utcnow(),
                     "idempotency_key": idempotency_key,
+                    "delivery_selector": target_selector,
                     "attempts": attempts,
                 },
             )
             retry_targets.append(
                 (
                     session_name,
+                    target_selector,
                     idempotency_key,
                     delivery,
                     mentioned_session_names,
@@ -3824,10 +3831,7 @@ def retry_peer_fanout(
         current["peer_delivery"] = peer_delivery
         current = _save_chat_publish_record(current)
 
-    for session_name, idempotency_key, delivery, mentioned_session_names, root_ingress_receipt_id, source_session_name, source_session_id in retry_targets:
-        target_selector = session_name
-        if launch_record:
-            target_selector, _participant, _identity = resolve_room_launch_target_selector(launch_record, session_name)
+    for session_name, target_selector, idempotency_key, delivery, mentioned_session_names, root_ingress_receipt_id, source_session_name, source_session_id in retry_targets:
         envelope = _build_peer_envelope(
             binding=binding,
             record=current,
@@ -3851,14 +3855,14 @@ def retry_peer_fanout(
             current = _update_target_delivery_result(
                 publish_id=publish_id,
                 fallback_record=current,
-                session_name=target_selector,
+                session_name=session_name,
                 error=str(exc),
             )
             continue
         current = _update_target_delivery_result(
             publish_id=publish_id,
             fallback_record=current,
-            session_name=target_selector,
+            session_name=session_name,
             response=response,
         )
     with advisory_lock(_safe_lock_name("chat-publish", publish_id)):

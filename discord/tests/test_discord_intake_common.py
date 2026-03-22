@@ -1552,9 +1552,9 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(record["source_qualified_handle"], "corp/priya")
         self.assertEqual(record["peer_delivery"]["status"], "delivered")
         self.assertEqual(record["peer_delivery"]["delivery"], "untargeted")
-        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["dc-thread-corp-sky"])
+        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["s-gc-sky"])
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-thread-corp-sky")
+        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-sky")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("kind: discord_peer_publication", envelope)
         self.assertIn("publish_binding_id: launch-room:22", envelope)
@@ -1629,9 +1629,97 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(record["peer_delivery"]["status"], "delivered")
         self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
         self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["dc-thread-corp-priya"])
-        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["dc-thread-corp-priya"])
+        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["s-gc-priya"])
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-thread-corp-priya")
+        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya")
+
+    def test_publish_binding_message_room_launch_peer_fanout_prefers_live_session_name_over_stale_alias(self) -> None:
+        common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:thread-live-name",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "root-live-name",
+                "thread_id": "thread-live-name",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-thread-corp-sky",
+                "session_id": "gc-sky",
+                "session_name": "s-gc-sky",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-thread-corp-sky",
+                        "session_id": "gc-sky",
+                        "session_name": "s-gc-sky",
+                    },
+                    "corp/priya": {
+                        "qualified_handle": "corp/priya",
+                        "session_alias": "dc-stale-priya",
+                        "session_id": "gc-priya",
+                        "session_name": "s-gc-priya",
+                    },
+                },
+                "state": "active",
+            }
+        )
+        binding = common.resolve_publish_route(common.load_config(), "launch-room:22")
+        assert binding is not None
+        os.environ["GC_SESSION_NAME"] = "s-gc-sky"
+        os.environ["GC_SESSION_ID"] = "gc-sky"
+
+        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-live-name"}), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-priya"},
+        ) as deliver_session_message, mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[
+                {
+                    "id": "gc-sky",
+                    "alias": "dc-thread-corp-sky",
+                    "session_name": "s-gc-sky",
+                    "state": "active",
+                    "running": True,
+                    "created_at": "2026-03-22T00:00:00Z",
+                },
+                {
+                    "id": "gc-priya",
+                    "alias": "dc-stale-priya",
+                    "session_name": "s-gc-priya",
+                    "state": "active",
+                    "running": True,
+                    "created_at": "2026-03-22T00:00:00Z",
+                },
+            ],
+        ):
+            payload = common.publish_binding_message(
+                binding,
+                "@@corp/priya take a look at this",
+                requested_conversation_id="thread-live-name",
+                trigger_id="peer-live-name",
+                source_context={
+                    "kind": "discord_human_message",
+                    "ingress_receipt_id": "in-live-name",
+                    "publish_binding_id": "launch-room:22",
+                    "publish_conversation_id": "thread-live-name",
+                    "publish_trigger_id": "peer-live-name",
+                    "publish_reply_to_discord_message_id": "peer-live-name",
+                    "publish_launch_id": "room-launch:thread-live-name",
+                },
+            )
+
+        record = payload["record"]
+        self.assertEqual(record["peer_delivery"]["status"], "delivered")
+        self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
+        self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["dc-stale-priya"])
+        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["s-gc-priya"])
+        deliver_session_message.assert_called_once()
+        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya")
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("target_session_name: s-gc-priya", envelope)
+        self.assertIn("launch_qualified_handle: corp/priya", envelope)
 
     def test_publish_binding_message_room_launch_peer_fanout_matches_source_by_session_id_when_name_missing(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
@@ -1701,7 +1789,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(record["source_qualified_handle"], "corp/sky")
         self.assertEqual(record["source_session_id"], "gc-sky")
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-thread-corp-priya")
+        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("source_qualified_handle: corp/sky", envelope)
         self.assertIn("launch_qualified_handle: corp/priya", envelope)
@@ -1772,9 +1860,9 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         record = payload["record"]
         self.assertEqual(record["peer_delivery"]["status"], "delivered")
         self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
-        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["dc-thread-corp-priya"])
+        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["gc-priya"])
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-thread-corp-priya")
+        self.assertEqual(deliver_session_message.call_args.args[0], "gc-priya")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("launch_qualified_handle: corp/priya", envelope)
         self.assertIn("launch_session_alias: dc-thread-corp-priya", envelope)
@@ -1845,9 +1933,9 @@ class DiscordIntakeCommonTests(unittest.TestCase):
 
         record = payload["record"]
         self.assertEqual(record["peer_delivery"]["status"], "delivered")
-        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["dc-live-priya"])
+        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["gc-priya"])
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-live-priya")
+        self.assertEqual(deliver_session_message.call_args.args[0], "gc-priya")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("launch_qualified_handle: corp/priya", envelope)
         self.assertIn("launch_session_alias: dc-thread-corp-priya", envelope)
@@ -1954,6 +2042,101 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         targets = {entry["session_name"]: entry for entry in payload["record"]["peer_delivery"]["targets"]}
         self.assertEqual(targets["corp--priya"]["status"], "failed_retryable")
         self.assertEqual(targets["corp--eve"]["status"], "failed_retryable")
+        deliver_session_message.assert_not_called()
+
+    def test_publish_binding_message_room_launch_unavailable_after_selector_rename_uses_single_target_key(self) -> None:
+        common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:thread-rename-unavailable",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "root-rename-unavailable",
+                "thread_id": "thread-rename-unavailable",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-thread-corp-sky",
+                "session_id": "gc-sky",
+                "session_name": "s-gc-sky",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-thread-corp-sky",
+                        "session_id": "gc-sky",
+                        "session_name": "s-gc-sky",
+                    },
+                    "corp/priya": {
+                        "qualified_handle": "corp/priya",
+                        "session_alias": "dc-stale-priya",
+                        "session_id": "gc-priya",
+                        "session_name": "s-gc-priya",
+                    },
+                },
+                "state": "active",
+            }
+        )
+        binding = common.resolve_publish_route(common.load_config(), "launch-room:22")
+        assert binding is not None
+        os.environ["GC_SESSION_NAME"] = "s-gc-sky"
+        os.environ["GC_SESSION_ID"] = "gc-sky"
+
+        def fake_resolve(selector: str) -> dict[str, object] | None:
+            if selector == "s-gc-priya":
+                return {
+                    "id": "gc-priya",
+                    "session_name": "s-gc-priya",
+                    "state": "closed",
+                    "running": False,
+                    "created_at": "2026-03-22T00:00:00Z",
+                }
+            return None
+
+        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-rename-unavailable"}), mock.patch.object(
+            common,
+            "deliver_session_message",
+        ) as deliver_session_message, mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[
+                {
+                    "id": "gc-sky",
+                    "session_name": "s-gc-sky",
+                    "state": "active",
+                    "running": True,
+                    "created_at": "2026-03-22T00:00:00Z",
+                }
+            ],
+        ), mock.patch.object(
+            common,
+            "resolve_room_launch_target_selector",
+            return_value=("s-gc-priya", common.room_launch_participant(common.load_room_launch("room-launch:thread-rename-unavailable") or {}, "corp/priya"), {}),
+        ), mock.patch.object(
+            common,
+            "resolve_routable_session_record",
+            side_effect=fake_resolve,
+        ):
+            payload = common.publish_binding_message(
+                binding,
+                "@@corp/priya take a look at this",
+                requested_conversation_id="thread-rename-unavailable",
+                trigger_id="peer-rename-unavailable",
+                source_context={
+                    "kind": "discord_human_message",
+                    "ingress_receipt_id": "in-rename-unavailable",
+                    "publish_binding_id": "launch-room:22",
+                    "publish_conversation_id": "thread-rename-unavailable",
+                    "publish_trigger_id": "peer-rename-unavailable",
+                    "publish_reply_to_discord_message_id": "peer-rename-unavailable",
+                    "publish_launch_id": "room-launch:thread-rename-unavailable",
+                },
+            )
+
+        self.assertEqual(payload["record"]["peer_delivery"]["status"], "failed_targeting_unavailable")
+        self.assertEqual(payload["record"]["peer_delivery"]["mentioned_session_names"], ["dc-stale-priya"])
+        targets = payload["record"]["peer_delivery"]["targets"]
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0]["session_name"], "dc-stale-priya")
+        self.assertEqual(targets[0]["delivery_selector"], "s-gc-priya")
+        self.assertEqual(targets[0]["status"], "failed_retryable")
         deliver_session_message.assert_not_called()
 
     def test_resolve_session_identity_prefers_routable_named_session(self) -> None:
@@ -2272,6 +2455,139 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(record["peer_delivery"]["status"], "delivered")
         deliver_session_message.assert_called_once()
         self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya")
+
+    def test_retry_peer_fanout_room_launch_survives_participant_rotation(self) -> None:
+        common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:thread-79",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "root-79",
+                "thread_id": "thread-79",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-thread-corp-sky",
+                "session_id": "gc-sky",
+                "session_name": "s-gc-sky",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-thread-corp-sky",
+                        "session_id": "gc-sky",
+                        "session_name": "s-gc-sky",
+                    },
+                    "corp/priya": {
+                        "qualified_handle": "corp/priya",
+                        "delivery_selector": "s-gc-priya-old",
+                        "session_alias": "dc-stale-priya",
+                        "session_id": "gc-priya-old",
+                        "session_name": "s-gc-priya-old",
+                    },
+                },
+                "state": "active",
+            }
+        )
+        common.save_chat_publish(
+            {
+                "publish_id": "discord-publish-launch-rotated",
+                "binding_id": "launch-room:22",
+                "binding_kind": "room",
+                "binding_conversation_id": "22",
+                "conversation_id": "thread-79",
+                "guild_id": "1",
+                "source_session_name": "s-gc-sky",
+                "source_session_id": "gc-sky",
+                "source_event_kind": "discord_human_message",
+                "root_ingress_receipt_id": "in-79",
+                "launch_id": "room-launch:thread-79",
+                "body": "@@corp/priya hello",
+                "remote_message_id": "msg-79",
+                "peer_delivery": {
+                    "phase": "peer_fanout_partial_failure",
+                    "status": "partial_failure",
+                    "delivery": "targeted",
+                    "mentioned_session_names": ["dc-stale-priya"],
+                    "frozen_targets": ["s-gc-priya-old"],
+                    "targets": [
+                        {
+                            "session_name": "dc-stale-priya",
+                            "delivery_selector": "s-gc-priya-old",
+                            "status": "failed_retryable",
+                            "attempt_count": 1,
+                            "idempotency_key": "peer_publish:discord-publish-launch-rotated:binding:launch-room:22:target:dc-stale-priya",
+                            "attempts": [],
+                        }
+                    ],
+                    "budget_snapshot": {},
+                },
+            }
+        )
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:thread-79",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "root-79",
+                "thread_id": "thread-79",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-thread-corp-sky",
+                "session_id": "gc-sky",
+                "session_name": "s-gc-sky",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-thread-corp-sky",
+                        "session_id": "gc-sky",
+                        "session_name": "s-gc-sky",
+                    },
+                    "corp/priya": {
+                        "qualified_handle": "corp/priya",
+                        "delivery_selector": "s-gc-priya-new",
+                        "session_alias": "dc-stale-priya",
+                        "session_id": "gc-priya-new",
+                        "session_name": "s-gc-priya-new",
+                    },
+                },
+                "state": "active",
+            }
+        )
+
+        with mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[
+                {
+                    "id": "gc-sky",
+                    "alias": "dc-thread-corp-sky",
+                    "session_name": "s-gc-sky",
+                    "state": "active",
+                    "running": True,
+                    "created_at": "2026-03-22T00:00:00Z",
+                },
+                {
+                    "id": "gc-priya-new",
+                    "alias": "",
+                    "session_name": "s-gc-priya-new",
+                    "state": "active",
+                    "running": True,
+                    "created_at": "2026-03-22T00:00:00Z",
+                },
+            ],
+        ), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-priya-new"},
+        ) as deliver_session_message:
+            record = common.retry_peer_fanout("discord-publish-launch-rotated")
+
+        self.assertEqual(record["peer_delivery"]["status"], "delivered")
+        deliver_session_message.assert_called_once()
+        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya-new")
+        targets = record["peer_delivery"]["targets"]
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0]["session_name"], "dc-stale-priya")
+        self.assertEqual(targets[0]["delivery_selector"], "s-gc-priya-new")
+        self.assertEqual(targets[0]["status"], "delivered")
 
     def test_save_chat_ingress_if_absent_only_claims_once(self) -> None:
         payload = {"ingress_id": "in-claim", "status": "processing"}
