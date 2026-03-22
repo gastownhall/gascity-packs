@@ -18,6 +18,12 @@ Some Discord turns come from launcher-backed rooms. In those turns, fields like
 bridge will create the managed Discord thread for you on the first successful
 reply. Do not try to create the thread yourself.
 
+Launcher-managed thread turns may also include `routing_mode`,
+`launch_qualified_handle`, and `thread_participants_json`. Those tell you which
+agent-handle this specific human turn was routed to and who else is currently
+participating in the thread. Treat that as routing context, not as a request to
+echo handles back to Discord.
+
 Use `gc discord publish` directly only when you intentionally need to publish to
 some binding other than the latest Discord turn in this session. Direct
 `publish` only participates in peer fanout if explicit source metadata is

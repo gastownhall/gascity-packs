@@ -9,6 +9,9 @@ Launcher-mode rooms are different from direct `bind-room` rooms:
 - `@@handle` in the root room launches a thread-scoped session for that agent
 - the first agent reply creates the visible Discord thread
 - follow-up messages in that managed thread continue to the same session
+- `@@handle` inside the managed thread retargets the conversation to another agent
+- replying to an agent-authored Discord message inside the managed thread implicitly targets that agent
+- unmentioned follow-ups inside the managed thread continue to the last agent the human addressed there
 - direct `bind-room` and launcher mode are mutually exclusive for one room
 
 `mention_only` is the safe default. `respond_all` requires `--default-handle`

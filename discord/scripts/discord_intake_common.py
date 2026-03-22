@@ -49,6 +49,7 @@ DISCORD_RESERVED_MENTIONS = {"everyone", "here"}
 THREAD_CHANNEL_TYPES = {10, 11, 12}
 ROOM_LAUNCH_RESPONSE_MODES = {"mention_only", "respond_all"}
 ROOM_LAUNCH_ALIAS_SLUG_MAX = 24
+ROOM_LAUNCH_MESSAGE_TARGET_LIMIT = 64
 AGENT_HANDLE_SEGMENT = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
 
@@ -1158,13 +1159,113 @@ def save_chat_publish(payload: dict[str, Any]) -> dict[str, Any]:
 def load_room_launch(launch_id: str) -> dict[str, Any] | None:
     data = read_json(room_launch_path(launch_id), allow_invalid=True)
     if isinstance(data, dict):
-        return data
+        return normalize_room_launch_record(data)
     return None
+
+
+def normalize_room_launch_record(payload: dict[str, Any]) -> dict[str, Any]:
+    body = copy.deepcopy(payload)
+    participants: dict[str, dict[str, Any]] = {}
+    raw_participants = body.get("participants")
+    if isinstance(raw_participants, dict):
+        for key, raw in raw_participants.items():
+            item = copy.deepcopy(raw) if isinstance(raw, dict) else {}
+            qualified_handle = str(item.get("qualified_handle", "")).strip() or str(key).strip()
+            if not qualified_handle:
+                continue
+            participants[qualified_handle] = {
+                **item,
+                "qualified_handle": qualified_handle,
+                "session_alias": str(item.get("session_alias", "")).strip(),
+                "session_id": str(item.get("session_id", "")).strip(),
+                "session_name": str(item.get("session_name", "")).strip(),
+            }
+    primary_handle = str(body.get("qualified_handle", "")).strip()
+    if primary_handle:
+        participant = copy.deepcopy(participants.get(primary_handle, {}))
+        participant["qualified_handle"] = primary_handle
+        for field in ("session_alias", "session_id", "session_name"):
+            top_level = str(body.get(field, "")).strip()
+            participant[field] = top_level or str(participant.get(field, "")).strip()
+        participants[primary_handle] = participant
+    body["participants"] = participants
+    message_targets: dict[str, str] = {}
+    raw_message_targets = body.get("message_targets")
+    if isinstance(raw_message_targets, dict):
+        for message_id, qualified_handle in raw_message_targets.items():
+            normalized_message_id = str(message_id).strip()
+            normalized_handle = str(qualified_handle).strip()
+            if normalized_message_id and normalized_handle:
+                message_targets[normalized_message_id] = normalized_handle
+    root_message_id = str(body.get("root_message_id", "")).strip()
+    if primary_handle and root_message_id and root_message_id not in message_targets:
+        message_targets[root_message_id] = primary_handle
+    if message_targets:
+        body["message_targets"] = message_targets
+    else:
+        body.pop("message_targets", None)
+    target_order = [str(item).strip() for item in body.get("message_target_order", []) if str(item).strip()]
+    if root_message_id and root_message_id in message_targets and root_message_id not in target_order:
+        target_order.insert(0, root_message_id)
+    if target_order:
+        body["message_target_order"] = target_order
+    else:
+        body.pop("message_target_order", None)
+    if primary_handle and primary_handle in participants:
+        participant = participants[primary_handle]
+        body["session_alias"] = str(participant.get("session_alias", "")).strip()
+        body["session_id"] = str(participant.get("session_id", "")).strip()
+        body["session_name"] = str(participant.get("session_name", "")).strip()
+    cursor = str(body.get("last_addressed_qualified_handle", "")).strip()
+    if cursor:
+        body["last_addressed_qualified_handle"] = cursor
+    elif primary_handle:
+        body["last_addressed_qualified_handle"] = primary_handle
+    return body
+
+
+def room_launch_participants(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    body = normalize_room_launch_record(payload)
+    raw = body.get("participants")
+    if isinstance(raw, dict):
+        return copy.deepcopy(raw)
+    return {}
+
+
+def room_launch_participant(payload: dict[str, Any], qualified_handle: str) -> dict[str, Any]:
+    return copy.deepcopy(room_launch_participants(payload).get(str(qualified_handle).strip(), {}))
+
+
+def room_launch_participant_summaries(payload: dict[str, Any]) -> list[dict[str, str]]:
+    summaries: list[dict[str, str]] = []
+    for qualified_handle, participant in room_launch_participants(payload).items():
+        summaries.append(
+            {
+                "qualified_handle": qualified_handle,
+                "session_alias": str(participant.get("session_alias", "")).strip(),
+                "session_name": str(participant.get("session_name", "")).strip(),
+            }
+        )
+    summaries.sort(key=lambda item: item["qualified_handle"])
+    return summaries
+
+
+def room_launch_message_target_handle(payload: dict[str, Any], remote_message_id: str) -> str:
+    body = normalize_room_launch_record(payload)
+    message_id = str(remote_message_id).strip()
+    if not message_id:
+        return ""
+    handle = str(body.get("message_targets", {}).get(message_id, "")).strip()
+    if not handle:
+        return ""
+    if handle not in room_launch_participants(body):
+        return ""
+    return handle
 
 
 def save_room_launch(payload: dict[str, Any]) -> dict[str, Any]:
     ensure_layout()
-    body = copy.deepcopy(payload)
+    body = normalize_room_launch_record(payload)
     launch_id = str(body.get("launch_id", "")).strip()
     if not launch_id:
         raise ValueError("launch_id is required")
@@ -1184,6 +1285,22 @@ def touch_room_launch(launch_id: str, *, activity_at: str = "") -> dict[str, Any
             return None
         body = copy.deepcopy(current)
         body["last_activity_at"] = str(activity_at).strip() or utcnow()
+        return save_room_launch(body)
+
+
+def set_room_launch_last_addressed(launch_id: str, qualified_handle: str) -> dict[str, Any] | None:
+    normalized_launch_id = str(launch_id).strip()
+    normalized_handle = str(qualified_handle).strip()
+    if not normalized_launch_id or not normalized_handle:
+        return None
+    with advisory_lock(room_launch_lock_path(normalized_launch_id)):
+        current = load_room_launch(normalized_launch_id)
+        if not isinstance(current, dict):
+            return None
+        if normalized_handle not in room_launch_participants(current):
+            return current
+        body = copy.deepcopy(current)
+        body["last_addressed_qualified_handle"] = normalized_handle
         return save_room_launch(body)
 
 
@@ -2130,39 +2247,91 @@ def create_agent_session(
     return payload
 
 
+def _room_launch_participant_matches_session(participant: dict[str, Any], *, session_name: str = "", session_id: str = "") -> bool:
+    normalized_session_name = str(session_name).strip()
+    normalized_session_id = str(session_id).strip()
+    if normalized_session_id and str(participant.get("session_id", "")).strip() == normalized_session_id:
+        return True
+    if normalized_session_name and normalized_session_name in {
+        str(participant.get("session_name", "")).strip(),
+        str(participant.get("session_alias", "")).strip(),
+    }:
+        return True
+    return False
+
+
+def ensure_room_launch_session_for_handle(
+    launch: dict[str, Any],
+    qualified_handle: str,
+    *,
+    title: str = "",
+    initial_message: str = "",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    launch_id = str(launch.get("launch_id", "")).strip()
+    normalized_handle = str(qualified_handle).strip()
+    if not launch_id or not normalized_handle:
+        raise ValueError("launch is missing required session fields")
+    with advisory_lock(room_launch_lock_path(launch_id)):
+        current = load_room_launch(launch_id) or normalize_room_launch_record(dict(launch))
+        current = normalize_room_launch_record(current)
+        participants = room_launch_participants(current)
+        participant = copy.deepcopy(participants.get(normalized_handle, {}))
+        session_alias = (
+            str(participant.get("session_alias", "")).strip()
+            or room_launch_session_alias(
+                str(current.get("guild_id", "")).strip(),
+                str(current.get("conversation_id", "")).strip(),
+                str(current.get("root_message_id", "")).strip(),
+                normalized_handle,
+            )
+        )
+        existing = session_index_by_alias(state="all").get(session_alias)
+        if existing is None and str(participant.get("session_name", "")).strip():
+            existing = session_index_by_name(state="all").get(str(participant.get("session_name", "")).strip())
+        if session_record_routable(existing):
+            participant["session_alias"] = str(existing.get("alias", "")).strip() or session_alias
+            participant["session_id"] = str(existing.get("id", "")).strip()
+            participant["session_name"] = str(existing.get("session_name", "")).strip()
+        else:
+            created = create_agent_session(
+                normalized_handle,
+                alias=session_alias,
+                title=title or room_launch_thread_name(normalized_handle, str(current.get("from_display", "")).strip()),
+                initial_message=initial_message,
+                idempotency_key=f"{launch_id}:create-session:{normalized_handle}",
+            )
+            participant["session_alias"] = str(created.get("alias", "")).strip() or session_alias
+            participant["session_id"] = str(created.get("id", "")).strip()
+            participant["session_name"] = str(created.get("session_name", "")).strip()
+        participant["qualified_handle"] = normalized_handle
+        participants[normalized_handle] = participant
+        current["participants"] = participants
+        if not str(current.get("qualified_handle", "")).strip():
+            current["qualified_handle"] = normalized_handle
+        if str(current.get("qualified_handle", "")).strip() == normalized_handle:
+            current["session_alias"] = str(participant.get("session_alias", "")).strip()
+            current["session_id"] = str(participant.get("session_id", "")).strip()
+            current["session_name"] = str(participant.get("session_name", "")).strip()
+        if not str(current.get("last_addressed_qualified_handle", "")).strip():
+            current["last_addressed_qualified_handle"] = normalized_handle
+        current = save_room_launch(current)
+        return current, copy.deepcopy(participant)
+
+
 def ensure_room_launch_session(
     launch: dict[str, Any],
     *,
     title: str = "",
     initial_message: str = "",
 ) -> dict[str, Any]:
-    launch_id = str(launch.get("launch_id", "")).strip()
     qualified_handle = str(launch.get("qualified_handle", "")).strip()
-    session_alias = str(launch.get("session_alias", "")).strip()
-    if not launch_id or not qualified_handle or not session_alias:
-        raise ValueError("launch is missing required session fields")
-    with advisory_lock(room_launch_lock_path(launch_id)):
-        current = load_room_launch(launch_id) or dict(launch)
-        current_alias = str(current.get("session_alias", "")).strip() or session_alias
-        existing = session_index_by_alias(state="all").get(current_alias)
-        if session_record_routable(existing):
-            current["session_alias"] = str(existing.get("alias", "")).strip() or current_alias
-            current["session_id"] = str(existing.get("id", "")).strip()
-            current["session_name"] = str(existing.get("session_name", "")).strip()
-            save_room_launch(current)
-            return current
-        created = create_agent_session(
-            qualified_handle,
-            alias=current_alias,
-            title=title or room_launch_thread_name(qualified_handle, str(current.get("from_display", "")).strip()),
-            initial_message=initial_message,
-            idempotency_key=f"{launch_id}:create-session",
-        )
-        current["session_alias"] = str(created.get("alias", "")).strip() or current_alias
-        current["session_id"] = str(created.get("id", "")).strip()
-        current["session_name"] = str(created.get("session_name", "")).strip()
-        save_room_launch(current)
-        return current
+    current, _participant = ensure_room_launch_session_for_handle(
+        launch,
+        qualified_handle,
+        title=title,
+        initial_message=initial_message,
+    )
+    return current
 
 
 def create_thread_from_message(parent_channel_id: str, source_message_id: str, name: str) -> dict[str, Any]:
@@ -2573,6 +2742,55 @@ def ensure_room_launch_thread(binding: dict[str, Any], launch_id: str) -> tuple[
         current["state"] = "active"
         current = save_room_launch(current)
         return current, True
+
+
+def record_room_launch_message_target(
+    launch_id: str,
+    remote_message_id: str,
+    *,
+    source_session_name: str = "",
+    source_session_id: str = "",
+) -> dict[str, Any] | None:
+    normalized_launch_id = str(launch_id).strip()
+    normalized_remote_message_id = str(remote_message_id).strip()
+    if not normalized_launch_id or not normalized_remote_message_id:
+        return None
+    with advisory_lock(room_launch_lock_path(normalized_launch_id)):
+        current = load_room_launch(normalized_launch_id)
+        if not current:
+            return None
+        current = normalize_room_launch_record(current)
+        matched_handle = ""
+        for qualified_handle, participant in room_launch_participants(current).items():
+            if _room_launch_participant_matches_session(
+                participant,
+                session_name=source_session_name,
+                session_id=source_session_id,
+            ):
+                matched_handle = qualified_handle
+                break
+        if not matched_handle:
+            return current
+        body = copy.deepcopy(current)
+        message_targets = {
+            str(message_id).strip(): str(qualified_handle).strip()
+            for message_id, qualified_handle in body.get("message_targets", {}).items()
+            if str(message_id).strip() and str(qualified_handle).strip()
+        }
+        target_order = [str(item).strip() for item in body.get("message_target_order", []) if str(item).strip()]
+        message_targets[normalized_remote_message_id] = matched_handle
+        target_order = [item for item in target_order if item != normalized_remote_message_id]
+        target_order.append(normalized_remote_message_id)
+        while len(target_order) > ROOM_LAUNCH_MESSAGE_TARGET_LIMIT:
+            evicted = target_order.pop(0)
+            message_targets.pop(evicted, None)
+        body["message_targets"] = {
+            message_id: message_targets[message_id]
+            for message_id in target_order
+            if message_id in message_targets
+        }
+        body["message_target_order"] = target_order
+        return save_room_launch(body)
 
 
 def resolve_publish_conversation_id(binding: dict[str, Any], requested_conversation_id: str) -> str:
@@ -3163,6 +3381,18 @@ def publish_binding_message(
             "remote_message_id": remote_message_id,
         }
     )
+    launch_record = launch
+    if launch_record is None and str(source_meta.get("launch_id", "")).strip():
+        launch_record = load_room_launch(str(source_meta.get("launch_id", "")).strip())
+    launch_thread_id = str((launch_record or {}).get("thread_id", "")).strip()
+    launch_record_id = str((launch_record or {}).get("launch_id", "")).strip() or str(source_meta.get("launch_id", "")).strip()
+    if launch_record_id and launch_thread_id and conversation_id == launch_thread_id:
+        record_room_launch_message_target(
+            launch_record_id,
+            remote_message_id,
+            source_session_name=effective_source_session_name,
+            source_session_id=effective_source_session_id,
+        )
     record = _apply_peer_fanout(record, binding, source_context=source_context)
     return {"binding": binding, "record": record, "response": response}
 

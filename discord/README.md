@@ -160,7 +160,9 @@ Inbound behavior in v0:
 - in `respond_all` launcher rooms, top-level replies still require an explicit `@@handle`
 - the first launcher-backed agent reply creates the Discord thread automatically
 - follow-up messages inside that managed thread continue to the same agent session without requiring a bot mention
-- thread retargeting to a second agent is not shipped in this slice yet
+- `@@handle` inside a managed launcher thread retargets the next turn to that agent and creates its thread-local session on demand
+- replying to an agent-authored Discord message inside a managed launcher thread implicitly targets that same agent
+- unmentioned follow-ups inside a managed launcher thread continue to the last agent the human addressed in that thread
 - guild and thread messages route only when the bot is explicitly mentioned
 - ambient-read room bindings are the exception: the bound room or bound thread accepts unmentioned messages, but only when one or more exact `@session_name` targets are present
 - thread messages inherit the parent room binding when the thread itself is not bound

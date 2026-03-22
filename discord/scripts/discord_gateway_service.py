@@ -168,7 +168,7 @@ def extract_alias_mentions(content: str) -> list[str]:
     return aliases
 
 
-def root_message_reference_id(message: dict[str, Any]) -> str:
+def referenced_message_id(message: dict[str, Any]) -> str:
     reference = message.get("message_reference")
     if not isinstance(reference, dict):
         return ""
@@ -627,6 +627,8 @@ def build_room_launch_envelope(
         "launch_surface_kind: room",
         f"launch_qualified_handle: {str(launch.get('qualified_handle', '')).strip()}",
         f"launch_session_alias: {str(launch.get('session_alias', '')).strip()}",
+        f"launch_session_name: {str(launch.get('session_name', '')).strip()}",
+        f"thread_participants_json: {json.dumps(common.room_launch_participant_summaries(launch))}",
         f"untrusted_body_json: {json.dumps(body)}",
         f"publish_binding_id: {str(launcher.get('id', '')).strip()}",
         f"publish_conversation_id: {channel_id}",
@@ -643,14 +645,20 @@ def build_room_launch_thread_envelope(
     *,
     launcher: dict[str, Any],
     launch: dict[str, Any],
+    target_participant: dict[str, Any],
     message: dict[str, Any],
     body: str,
     mentioned_handles: list[str],
     ingress_id: str,
+    routing_mode: str,
+    reply_to_id: str,
 ) -> str:
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
     parent_id = str(launch.get("conversation_id", "")).strip()
+    target_qualified_handle = str(target_participant.get("qualified_handle", "")).strip() or str(launch.get("qualified_handle", "")).strip()
+    target_session_alias = str(target_participant.get("session_alias", "")).strip() or str(launch.get("session_alias", "")).strip()
+    target_session_name = str(target_participant.get("session_name", "")).strip()
     lines = [
         "<discord-event>",
         "version: 1",
@@ -663,11 +671,17 @@ def build_room_launch_thread_envelope(
         f"from_display: {display_name_from_message(message)}",
         f"from_user_id: {str((message.get('author') or {}).get('id', '')).strip()}",
         "delivery: targeted",
+        f"routing_mode: {routing_mode}",
+        f"reply_to_discord_message_id: {reply_to_id}",
         f"mentioned_handles_json: {json.dumps(mentioned_handles)}",
         f"launch_id: {str(launch.get('launch_id', '')).strip()}",
         "launch_surface_kind: room",
-        f"launch_qualified_handle: {str(launch.get('qualified_handle', '')).strip()}",
-        f"launch_session_alias: {str(launch.get('session_alias', '')).strip()}",
+        f"launch_root_qualified_handle: {str(launch.get('qualified_handle', '')).strip()}",
+        f"launch_root_session_alias: {str(launch.get('session_alias', '')).strip()}",
+        f"launch_qualified_handle: {target_qualified_handle}",
+        f"launch_session_alias: {target_session_alias}",
+        f"launch_session_name: {target_session_name}",
+        f"thread_participants_json: {json.dumps(common.room_launch_participant_summaries(launch))}",
         f"untrusted_body_json: {json.dumps(body)}",
         f"publish_binding_id: {str(launcher.get('id', '')).strip()}",
         f"publish_conversation_id: {channel_id}",
@@ -770,7 +784,7 @@ def process_room_launch_message(
 
     mentioned_handles = common.extract_agent_handles(body)
     response_mode = str(launcher.get("response_mode", "mention_only")).strip() or "mention_only"
-    reply_to_id = root_message_reference_id(message)
+    reply_to_id = referenced_message_id(message)
     if len(mentioned_handles) > 1:
         receipt = persist_ingress_receipt(
             {
@@ -955,6 +969,7 @@ def process_room_launch_thread_message(
         )
         return {"status": "ignored_empty", "ingress_id": ingress_id, "receipt": receipt}
     mentioned_handles = common.extract_agent_handles(body)
+    reply_to_id = referenced_message_id(message)
     if len(mentioned_handles) > 1:
         receipt = persist_ingress_receipt(
             {
@@ -967,6 +982,8 @@ def process_room_launch_thread_message(
             }
         )
         return {"status": "rejected_targeting", "ingress_id": ingress_id, "receipt": receipt}
+    target_handle = ""
+    routing_mode = ""
     if mentioned_handles:
         try:
             qualified_handle, resolve_error = common.resolve_agent_handle(mentioned_handles[0])
@@ -993,42 +1010,45 @@ def process_room_launch_thread_message(
                 }
             )
             return {"status": "rejected_targeting", "ingress_id": ingress_id, "receipt": receipt}
-        if qualified_handle != str(launch.get("qualified_handle", "")).strip():
-            receipt = persist_ingress_receipt(
-                {
-                    **base_receipt,
-                    "binding_id": str(launcher.get("id", "")).strip(),
-                    "status": "rejected_targeting",
-                    "reason": "thread_retarget_not_supported",
-                    "mentioned_handles": mentioned_handles,
-                    "targets": [],
-                }
-            )
-            return {"status": "rejected_targeting", "ingress_id": ingress_id, "receipt": receipt}
-
-    target_selector = str(launch.get("session_alias", "")).strip() or str(launch.get("session_name", "")).strip()
-    alias_selector = str(launch.get("session_alias", "")).strip()
-    session_selector = str(launch.get("session_name", "")).strip()
-    existing_session = None
-    if alias_selector:
-        existing_session = common.session_index_by_alias(state="all").get(alias_selector)
-    if existing_session is None and session_selector:
-        existing_session = common.session_index_by_name(state="all").get(session_selector)
-    if not target_selector or not common.session_record_routable(existing_session):
-        try:
-            launch = common.ensure_room_launch_session(launch)
-        except (ValueError, common.GCAPIError) as exc:
-            receipt = persist_ingress_receipt(
-                {
-                    **base_receipt,
-                    "binding_id": str(launcher.get("id", "")).strip(),
-                    "status": "failed_lookup",
-                    "reason": str(exc),
-                    "targets": [],
-                }
-            )
-            return {"status": "failed_lookup", "ingress_id": ingress_id, "receipt": receipt}
-        target_selector = str(launch.get("session_alias", "")).strip() or str(launch.get("session_name", "")).strip()
+        target_handle = qualified_handle
+        routing_mode = "explicit_handle"
+    if not target_handle and reply_to_id:
+        target_handle = common.room_launch_message_target_handle(launch, reply_to_id)
+        if target_handle:
+            routing_mode = "reply_to"
+    if not target_handle:
+        target_handle = str(launch.get("last_addressed_qualified_handle", "")).strip()
+        if target_handle:
+            routing_mode = "last_addressed"
+    if not target_handle:
+        target_handle = str(launch.get("qualified_handle", "")).strip()
+        if target_handle:
+            routing_mode = "launch_default"
+    if not target_handle:
+        receipt = persist_ingress_receipt(
+            {
+                **base_receipt,
+                "binding_id": str(launcher.get("id", "")).strip(),
+                "status": "failed_lookup",
+                "reason": "missing_thread_target",
+                "targets": [],
+            }
+        )
+        return {"status": "failed_lookup", "ingress_id": ingress_id, "receipt": receipt}
+    try:
+        launch, target_participant = common.ensure_room_launch_session_for_handle(launch, target_handle)
+    except (ValueError, common.GCAPIError) as exc:
+        receipt = persist_ingress_receipt(
+            {
+                **base_receipt,
+                "binding_id": str(launcher.get("id", "")).strip(),
+                "status": "failed_lookup",
+                "reason": str(exc),
+                "targets": [],
+            }
+        )
+        return {"status": "failed_lookup", "ingress_id": ingress_id, "receipt": receipt}
+    target_selector = str(target_participant.get("session_alias", "")).strip() or str(target_participant.get("session_name", "")).strip()
 
     receipt = persist_ingress_receipt(
         {
@@ -1038,18 +1058,22 @@ def process_room_launch_thread_message(
             "delivery": "targeted",
             "route_kind": "room_launch_thread",
             "launch_id": str(launch.get("launch_id", "")).strip(),
+            "routing_mode": routing_mode,
             "mentioned_handles": mentioned_handles,
-            "qualified_handle": str(launch.get("qualified_handle", "")).strip(),
+            "qualified_handle": target_handle,
             "targets": [{"session_name": target_selector, "status": "pending"}],
         }
     )
     envelope = build_room_launch_thread_envelope(
         launcher=launcher,
         launch=launch,
+        target_participant=target_participant,
         message=message,
         body=body,
         mentioned_handles=mentioned_handles,
         ingress_id=ingress_id,
+        routing_mode=routing_mode,
+        reply_to_id=reply_to_id,
     )
     try:
         response = common.deliver_session_message(
@@ -1062,6 +1086,9 @@ def process_room_launch_thread_message(
         receipt["targets"] = [{"session_name": target_selector, "status": "failed", "error": str(exc)}]
         receipt = persist_ingress_receipt(receipt)
         return {"status": "failed", "ingress_id": ingress_id, "receipt": receipt}
+    updated_launch = common.set_room_launch_last_addressed(str(launch.get("launch_id", "")).strip(), target_handle)
+    if isinstance(updated_launch, dict):
+        launch = updated_launch
     receipt["status"] = "delivered"
     receipt["targets"] = [{"session_name": target_selector, "status": "delivered", "response": response}]
     receipt = persist_ingress_receipt(receipt)

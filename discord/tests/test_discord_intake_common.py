@@ -653,6 +653,85 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(payload["record"]["launch_id"], "room-launch:orig-9")
         self.assertEqual(common.load_room_launch("room-launch:orig-9")["thread_id"], "333")
 
+    def test_publish_binding_message_records_room_launch_message_target(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+        route = common.resolve_publish_route(config, "launch-room:22")
+        assert route is not None
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:orig-11",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "orig-11",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-123-sky",
+                        "session_name": "dc-sky",
+                        "session_id": "gc-sky",
+                    }
+                },
+                "thread_id": "333",
+            }
+        )
+
+        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-launch-11"}):
+            payload = common.publish_binding_message(
+                route,
+                "hello humans",
+                source_context={"kind": "discord_human_message", "publish_launch_id": "room-launch:orig-11"},
+                source_session_name="dc-sky",
+                source_session_id="gc-sky",
+            )
+
+        self.assertEqual(payload["record"]["remote_message_id"], "msg-launch-11")
+        launch = common.load_room_launch("room-launch:orig-11")
+        assert launch is not None
+        self.assertEqual(launch["message_targets"]["msg-launch-11"], "corp/sky")
+
+    def test_publish_binding_message_does_not_record_non_thread_launch_publish_target(self) -> None:
+        common.set_chat_binding(common.load_config(), "room", "22", ["corp--sky"], guild_id="1")
+        binding = common.resolve_chat_binding(common.load_config(), "room:22")
+        assert binding is not None
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:orig-12",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "orig-12",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+                "thread_id": "333",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-123-sky",
+                        "session_name": "dc-sky",
+                        "session_id": "gc-sky",
+                    }
+                },
+            }
+        )
+
+        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-root-12"}):
+            common.publish_binding_message(
+                binding,
+                "root-room note",
+                source_context={"kind": "discord_human_message", "publish_launch_id": "room-launch:orig-12"},
+                source_session_name="dc-sky",
+                source_session_id="gc-sky",
+            )
+
+        launch = common.load_room_launch("room-launch:orig-12")
+        assert launch is not None
+        self.assertEqual(launch["message_targets"], {"orig-12": "corp/sky"})
+
     def test_touch_room_launch_sets_last_activity_at(self) -> None:
         common.save_room_launch(
             {
@@ -724,6 +803,38 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         create_agent_session.assert_called_once()
         self.assertEqual(current["session_id"], "gc-new")
         self.assertEqual(current["session_name"], "dc-new-sky")
+
+    def test_ensure_room_launch_session_for_handle_creates_secondary_participant(self) -> None:
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:thread-join",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "thread-join",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+            }
+        )
+
+        with mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[],
+        ), mock.patch.object(
+            common,
+            "create_agent_session",
+            return_value={"id": "gc-alex", "session_name": "dc-alex", "alias": "dc-456-alex"},
+        ) as create_agent_session:
+            current, participant = common.ensure_room_launch_session_for_handle(
+                common.load_room_launch("room-launch:thread-join") or {},
+                "corp/alex",
+            )
+
+        create_agent_session.assert_called_once()
+        self.assertEqual(participant["session_name"], "dc-alex")
+        self.assertEqual(current["participants"]["corp/alex"]["session_alias"], "dc-456-alex")
 
     def test_publish_binding_message_peer_fanout_delivers_targeted_peer_event(self) -> None:
         common.set_chat_binding(
