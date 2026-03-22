@@ -36,8 +36,8 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._old_environ)
 
-    def test_gateway_does_not_require_message_content_intent(self) -> None:
-        self.assertFalse(gateway_service.GATEWAY_INTENTS & (1 << 15))
+    def test_gateway_requests_message_content_intent(self) -> None:
+        self.assertTrue(gateway_service.GATEWAY_INTENTS & (1 << 15))
 
     def test_display_name_from_message_skips_none_strings(self) -> None:
         message = {
@@ -137,7 +137,6 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             return_value={
                 "launch_id": "room-launch:208",
                 "qualified_handle": "corp/sky",
-                "delivery_selector": "s-gc-123",
                 "session_alias": "dc-123-sky",
                 "session_name": "s-gc-123",
                 "session_id": "gc-123",
@@ -147,14 +146,61 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
         self.assertEqual(outcome["status"], "delivered")
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-123")
+        self.assertEqual(deliver_session_message.call_args.args[0], "dc-123-sky")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("binding_id: launch-room:22", envelope)
         self.assertIn("launch_id: room-launch:208", envelope)
         self.assertIn("launch_session_alias: dc-123-sky", envelope)
+        self.assertIn("reply_tool: gc discord reply-current --body-file <path>", envelope)
+        self.assertIn("reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current", envelope)
+        self.assertIn(
+            "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input",
+            envelope,
+        )
         receipt = common.load_chat_ingress("in-208")
         assert receipt is not None
         self.assertEqual(receipt["launch_id"], "room-launch:208")
+
+    def test_build_room_launch_thread_envelope_omits_peer_rule_for_legacy_launcher(self) -> None:
+        launcher = {
+            "id": "launch-room:22",
+            "kind": "room",
+            "guild_id": "1",
+            "conversation_id": "22",
+            "response_mode": "mention_only",
+        }
+        launch = {
+            "launch_id": "room-launch:222",
+            "conversation_id": "22",
+            "qualified_handle": "corp/sky",
+            "session_alias": "dc-123-sky",
+            "participants": {},
+        }
+        target_participant = {
+            "qualified_handle": "corp/sky",
+            "session_alias": "dc-123-sky",
+            "session_name": "dc-sky",
+        }
+        message = {
+            "id": "209x",
+            "guild_id": "1",
+            "channel_id": "222",
+            "author": {"id": "u-209x", "username": "alice"},
+        }
+
+        envelope = gateway_service.build_room_launch_thread_envelope(
+            launcher=launcher,
+            launch=launch,
+            target_participant=target_participant,
+            message=message,
+            body="follow up",
+            mentioned_handles=[],
+            ingress_id="in-209x",
+            routing_mode="last_addressed",
+            reply_to_id="",
+        )
+
+        self.assertNotIn("peer_targeting_rule:", envelope)
 
     def test_process_inbound_room_launch_recovers_empty_guild_content_via_rest(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
@@ -182,7 +228,6 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             return_value={
                 "launch_id": "room-launch:208b",
                 "qualified_handle": "corp/sky",
-                "delivery_selector": "s-gc-123",
                 "session_alias": "dc-123-sky",
                 "session_name": "s-gc-123",
                 "session_id": "gc-123",
@@ -192,7 +237,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
         self.assertEqual(outcome["status"], "delivered")
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-123")
+        self.assertEqual(deliver_session_message.call_args.args[0], "dc-123-sky")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn('untrusted_body_json: "@@corp/sky please help"', envelope)
         receipt = common.load_chat_ingress("in-208b")
@@ -223,7 +268,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(receipt["reason"], "message_content_unavailable")
         self.assertEqual((receipt.get("message_debug") or {}).get("content_source"), "gateway_empty_rest_unavailable")
 
-    def test_process_inbound_room_launch_ignores_unexpected_rest_recovery_failure(self) -> None:
+    def test_process_inbound_room_launch_ignores_rest_recovery_exceptions(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
         message = {
             "id": "208d",
@@ -256,6 +301,17 @@ class DiscordGatewayServiceTests(unittest.TestCase):
                 "root_message_id": "222",
                 "qualified_handle": "corp/sky",
                 "session_alias": "dc-123-sky",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-123-sky",
+                        "session_name": "dc-123-sky",
+                        "session_id": "gc-sky",
+                        "primer_version": common.ROOM_LAUNCH_PRIMER_VERSION,
+                        "primer_identity": "gc-sky",
+                        "primed_at": "2026-03-22T00:00:00Z",
+                    }
+                },
                 "thread_id": "222",
                 "state": "active",
             }
@@ -273,7 +329,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             "list_city_sessions",
             return_value=[
                 {
-                    "id": "gc-123",
+                    "id": "gc-sky",
                     "alias": "dc-123-sky",
                     "session_name": "dc-123-sky",
                     "state": "active",
@@ -412,7 +468,6 @@ class DiscordGatewayServiceTests(unittest.TestCase):
                             "session_id": "gc-sky",
                         },
                         "corp/alex": {
-                            "delivery_selector": "dc-alex",
                             "qualified_handle": "corp/alex",
                             "session_alias": "dc-456-alex",
                             "session_name": "dc-alex",
@@ -421,7 +476,6 @@ class DiscordGatewayServiceTests(unittest.TestCase):
                     },
                 },
                 {
-                    "delivery_selector": "dc-alex",
                     "qualified_handle": "corp/alex",
                     "session_alias": "dc-456-alex",
                     "session_name": "dc-alex",
@@ -437,10 +491,15 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
         self.assertEqual(outcome["status"], "delivered")
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-alex")
+        self.assertEqual(deliver_session_message.call_args.args[0], "dc-456-alex")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("launch_qualified_handle: corp/alex", envelope)
         self.assertIn('thread_participants_json: [{"qualified_handle": "corp/alex"', envelope)
+        self.assertIn("reply_success_signal: record.remote_message_id", envelope)
+        self.assertIn(
+            "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input",
+            envelope,
+        )
         receipt = common.load_chat_ingress("in-211")
         assert receipt is not None
         self.assertEqual(receipt["routing_mode"], "explicit_handle")
@@ -492,7 +551,6 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             return_value=(
                 common.load_room_launch("room-launch:222") or {},
                 {
-                    "delivery_selector": "dc-alex",
                     "qualified_handle": "corp/alex",
                     "session_alias": "dc-456-alex",
                     "session_name": "dc-alex",
@@ -507,7 +565,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
 
         self.assertEqual(outcome["status"], "delivered")
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-alex")
+        self.assertEqual(deliver_session_message.call_args.args[0], "dc-456-alex")
         receipt = common.load_chat_ingress("in-212a")
         assert receipt is not None
         self.assertEqual(receipt["routing_mode"], "reply_to")
@@ -557,7 +615,6 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             return_value=(
                 common.load_room_launch("room-launch:222") or {},
                 {
-                    "delivery_selector": "dc-alex",
                     "qualified_handle": "corp/alex",
                     "session_alias": "dc-456-alex",
                     "session_name": "dc-alex",
@@ -572,7 +629,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
 
         self.assertEqual(outcome["status"], "delivered")
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-alex")
+        self.assertEqual(deliver_session_message.call_args.args[0], "dc-456-alex")
         receipt = common.load_chat_ingress("in-212b")
         assert receipt is not None
         self.assertEqual(receipt["routing_mode"], "last_addressed")

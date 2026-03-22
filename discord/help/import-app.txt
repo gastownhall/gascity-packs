@@ -16,3 +16,6 @@ Optional fields:
 The public key is the Discord app's interaction verification key. The bot
 token is stored under the pack state root so the service can sync commands and
 post workflow status updates.
+
+If you want launcher rooms or ambient-read room bindings, also enable
+`Message Content Intent` for the app in the Discord Developer Portal.

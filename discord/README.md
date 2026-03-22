@@ -27,6 +27,11 @@ Current slices:
 - `gc discord retry-peer-fanout` for redriving failed peer targets without reposting to Discord
 - shared prompt fragment at `prompts/shared/discord-v0.md.tmpl`
 
+Launcher rooms and ambient room reads require Discord's `Message Content Intent`
+to be enabled for the app in the Developer Portal. Without that privileged
+intent, Discord can deliver guild message events with empty `content` unless
+the bot was directly mentioned.
+
 ## Include It
 
 ```toml
@@ -168,6 +173,7 @@ Inbound behavior in v0:
 - thread messages inherit the parent room binding when the thread itself is not bound
 - inherited thread routing still requires a bot mention unless the thread itself is bound with ambient read
 - ambient-read rooms stay targeted-only even when the bot is mentioned; the bot mention only gets the message into the bridge
+- launcher rooms and ambient-read rooms depend on Discord `Message Content Intent` because they consume unmentioned guild text
 - `@sky` inside the message targets that session name exactly
 - untargeted room messages fan out to every bound participant session
 - untargeted ambient-read room messages are ignored instead of broadcasting

@@ -42,6 +42,34 @@ class DiscordChatScriptTests(unittest.TestCase):
             self.assertTrue(script_path.is_file(), f"missing command script for {command.get('name')}: {script_path}")
             self.assertTrue(help_path.is_file(), f"missing help text for {command.get('name')}: {help_path}")
 
+    def test_enable_room_launch_preserves_legacy_launcher_without_policy_flags(self) -> None:
+        common.save_config(
+            common.normalize_config(
+                {
+                    "chat": {
+                        "launchers": {
+                            "launch-room:22": {
+                                "id": "launch-room:22",
+                                "kind": "room",
+                                "guild_id": "1",
+                                "conversation_id": "22",
+                                "response_mode": "mention_only",
+                            }
+                        }
+                    }
+                }
+            )
+        )
+
+        with redirect_stdout(io.StringIO()):
+            code = room_launch_script.main(["--guild-id", "1", "22"])
+
+        self.assertEqual(code, 0)
+        launcher = common.resolve_room_launcher(common.load_config(), "22")
+        self.assertIsNotNone(launcher)
+        assert launcher is not None
+        self.assertNotIn("policy", launcher)
+
     def test_publish_uses_binding_target_and_saves_record(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["sky"], guild_id="1")
 
@@ -508,6 +536,22 @@ class DiscordChatScriptTests(unittest.TestCase):
         self.assertIsNotNone(launcher)
         assert launcher is not None
         self.assertEqual(launcher["response_mode"], "mention_only")
+        self.assertTrue(launcher["policy"]["peer_fanout_enabled"])
+        self.assertTrue(launcher["policy"]["allow_untargeted_peer_fanout"])
+
+    def test_enable_room_launch_script_can_disable_peer_fanout(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = room_launch_script.main(
+                ["--guild-id", "1", "--disable-peer-fanout", "--disallow-untargeted-peer-fanout", "22"]
+            )
+
+        self.assertEqual(code, 0)
+        launcher = common.resolve_room_launcher(common.load_config(), "22")
+        self.assertIsNotNone(launcher)
+        assert launcher is not None
+        self.assertFalse(launcher["policy"]["peer_fanout_enabled"])
+        self.assertFalse(launcher["policy"]["allow_untargeted_peer_fanout"])
 
     def test_bind_script_rejects_conflicting_ambient_read_flags(self) -> None:
         with self.assertRaises(SystemExit) as exc:

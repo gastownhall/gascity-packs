@@ -25,7 +25,7 @@ from typing import Any
 
 import discord_intake_common as common
 
-GATEWAY_INTENTS = (1 << 0) | (1 << 9) | (1 << 12)
+GATEWAY_INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15)
 ALIAS_PATTERN = re.compile(r"(?<![A-Za-z0-9_<])@([a-z0-9][a-z0-9_-]*)", re.IGNORECASE)
 DISCORD_RESERVED_MENTIONS = {"everyone", "here"}
 NON_ROUTABLE_SESSION_STATES = {"", "closed", "stopped", "orphaned", "quarantined"}
@@ -707,6 +707,9 @@ def build_human_envelope(
         f"publish_reply_to_discord_message_id: {str(message.get('id', '')).strip()}",
         "normal_output_visibility: internal_only",
         "reply_contract: explicit_publish_required",
+        "reply_tool: gc discord reply-current --body-file <path>",
+        "reply_success_signal: record.remote_message_id",
+        "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
         "</discord-event>",
     ]
     return "\n".join(lines)
@@ -723,6 +726,7 @@ def build_room_launch_envelope(
 ) -> str:
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
+    peer_fanout_enabled = bool(common.binding_peer_policy(launcher).get("peer_fanout_enabled"))
     lines = [
         "<discord-event>",
         "version: 1",
@@ -749,8 +753,15 @@ def build_room_launch_envelope(
         f"publish_launch_id: {str(launch.get('launch_id', '')).strip()}",
         "normal_output_visibility: internal_only",
         "reply_contract: explicit_publish_required",
-        "</discord-event>",
+        "reply_tool: gc discord reply-current --body-file <path>",
+        "reply_success_signal: record.remote_message_id",
+        "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
     ]
+    if peer_fanout_enabled:
+        lines.append(
+            "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input"
+        )
+    lines.append("</discord-event>")
     return "\n".join(lines)
 
 
@@ -769,6 +780,7 @@ def build_room_launch_thread_envelope(
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
     parent_id = str(launch.get("conversation_id", "")).strip()
+    peer_fanout_enabled = bool(common.binding_peer_policy(launcher).get("peer_fanout_enabled"))
     target_qualified_handle = str(target_participant.get("qualified_handle", "")).strip() or str(launch.get("qualified_handle", "")).strip()
     target_session_alias = str(target_participant.get("session_alias", "")).strip() or str(launch.get("session_alias", "")).strip()
     target_session_name = str(target_participant.get("session_name", "")).strip()
@@ -803,8 +815,15 @@ def build_room_launch_thread_envelope(
         f"publish_launch_id: {str(launch.get('launch_id', '')).strip()}",
         "normal_output_visibility: internal_only",
         "reply_contract: explicit_publish_required",
-        "</discord-event>",
+        "reply_tool: gc discord reply-current --body-file <path>",
+        "reply_success_signal: record.remote_message_id",
+        "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
     ]
+    if peer_fanout_enabled:
+        lines.append(
+            "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input"
+        )
+    lines.append("</discord-event>")
     return "\n".join(lines)
 
 

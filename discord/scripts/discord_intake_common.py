@@ -51,8 +51,8 @@ ROOM_LAUNCH_RESPONSE_MODES = {"mention_only", "respond_all"}
 ROOM_LAUNCH_ALIAS_SLUG_MAX = 24
 ROOM_LAUNCH_MESSAGE_TARGET_LIMIT = 64
 ROOM_LAUNCH_IDENTITY_RESOLVE_TIMEOUT_SECONDS = 30.0
-ROOM_LAUNCH_IDENTITY_RESOLVE_INITIAL_DELAY_SECONDS = 0.25
-ROOM_LAUNCH_IDENTITY_RESOLVE_MAX_DELAY_SECONDS = 2.0
+ROOM_LAUNCH_IDENTITY_RESOLVE_DELAY_SECONDS = 0.25
+ROOM_LAUNCH_PRIMER_VERSION = 1
 AGENT_HANDLE_SEGMENT = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
 
@@ -377,6 +377,8 @@ def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
                     "response_mode": response_mode,
                     "default_qualified_handle": default_handle,
                 }
+                if isinstance(value.get("policy"), dict):
+                    normalized_launchers[launcher_id]["policy"] = normalize_room_launch_peer_policy(value.get("policy"))
         config["chat"] = {
             "bindings": normalized_bindings,
             "launchers": normalized_launchers,
@@ -486,9 +488,15 @@ def default_room_peer_policy() -> dict[str, Any]:
     }
 
 
-def normalize_room_peer_policy(policy: dict[str, Any] | None = None) -> dict[str, Any]:
-    raw = policy if isinstance(policy, dict) else {}
+def default_room_launch_peer_policy() -> dict[str, Any]:
     defaults = default_room_peer_policy()
+    defaults["peer_fanout_enabled"] = True
+    defaults["allow_untargeted_peer_fanout"] = True
+    return defaults
+
+
+def _normalize_peer_policy(policy: dict[str, Any] | None, defaults: dict[str, Any]) -> dict[str, Any]:
+    raw = policy if isinstance(policy, dict) else {}
     return {
         "ambient_read_enabled": _coerce_bool(raw.get("ambient_read_enabled"), defaults["ambient_read_enabled"]),
         "peer_fanout_enabled": _coerce_bool(raw.get("peer_fanout_enabled"), defaults["peer_fanout_enabled"]),
@@ -514,9 +522,23 @@ def normalize_room_peer_policy(policy: dict[str, Any] | None = None) -> dict[str
     }
 
 
+def normalize_room_peer_policy(policy: dict[str, Any] | None = None) -> dict[str, Any]:
+    return _normalize_peer_policy(policy, default_room_peer_policy())
+
+
+def normalize_room_launch_peer_policy(policy: dict[str, Any] | None = None) -> dict[str, Any]:
+    return _normalize_peer_policy(policy, default_room_launch_peer_policy())
+
+
 def binding_peer_policy(binding: dict[str, Any]) -> dict[str, Any]:
     if str(binding.get("kind", "")).strip() != "room":
         return default_room_peer_policy()
+    if str(binding.get("publish_route_kind", "")).strip() == "room_launch" or str(binding.get("id", "")).strip().startswith(
+        "launch-room:"
+    ):
+        if not isinstance(binding.get("policy"), dict):
+            return default_room_peer_policy()
+        return normalize_room_launch_peer_policy(binding.get("policy"))
     return normalize_room_peer_policy(binding.get("policy"))
 
 
@@ -646,6 +668,7 @@ def set_room_launcher(
     *,
     response_mode: str = "mention_only",
     default_qualified_handle: str = "",
+    policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_conversation = str(conversation_id).strip()
     normalized_guild_id = str(guild_id).strip()
@@ -668,7 +691,16 @@ def set_room_launcher(
     cfg.setdefault("chat", {})
     cfg["chat"].setdefault("launchers", {})
     launcher_id = room_launch_surface_id(normalized_conversation)
-    cfg["chat"]["launchers"][launcher_id] = {
+    existing_launcher = resolve_room_launcher(cfg, normalized_conversation) or {}
+    existing_has_policy = isinstance(existing_launcher.get("policy"), dict)
+    has_policy = existing_has_policy or not existing_launcher
+    raw_policy = copy.deepcopy(existing_launcher.get("policy")) if existing_has_policy else {}
+    if not existing_launcher:
+        raw_policy = default_room_launch_peer_policy()
+    if isinstance(policy, dict) and policy:
+        has_policy = True
+        raw_policy.update(copy.deepcopy(policy))
+    launcher = {
         "id": launcher_id,
         "kind": "room",
         "guild_id": normalized_guild_id,
@@ -676,6 +708,9 @@ def set_room_launcher(
         "response_mode": normalized_response_mode,
         "default_qualified_handle": normalized_default_handle,
     }
+    if has_policy:
+        launcher["policy"] = normalize_room_launch_peer_policy(raw_policy)
+    cfg["chat"]["launchers"][launcher_id] = launcher
     return save_config(cfg)
 
 
@@ -1251,6 +1286,82 @@ def room_launch_participant_summaries(payload: dict[str, Any]) -> list[dict[str,
         )
     summaries.sort(key=lambda item: item["qualified_handle"])
     return summaries
+
+
+def room_launch_participant_handle_lookup(payload: dict[str, Any]) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for qualified_handle, participant in room_launch_participants(payload).items():
+        selector = room_launch_participant_delivery_selector(participant)
+        if qualified_handle and selector:
+            lookup[qualified_handle] = selector
+    return lookup
+
+
+def room_launch_participant_session_lookup(payload: dict[str, Any]) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for participant in room_launch_participants(payload).values():
+        selector = room_launch_participant_delivery_selector(participant)
+        session_name = str(participant.get("session_name", "")).strip()
+        if session_name and selector:
+            lookup[session_name] = selector
+    return lookup
+
+
+def room_launch_participant_delivery_targets(payload: dict[str, Any]) -> list[str]:
+    targets: list[str] = []
+    seen: set[str] = set()
+    for participant in room_launch_participants(payload).values():
+        selector = room_launch_participant_delivery_selector(participant)
+        if not selector or selector in seen:
+            continue
+        seen.add(selector)
+        targets.append(selector)
+    return targets
+
+
+def room_launch_participant_handle_for_session(payload: dict[str, Any], *, session_name: str = "", session_id: str = "") -> str:
+    for qualified_handle, participant in room_launch_participants(payload).items():
+        if _room_launch_participant_matches_session(
+            participant,
+            session_name=session_name,
+            session_id=session_id,
+        ):
+            return qualified_handle
+    return ""
+
+
+def resolve_room_launch_target_selector(launch: dict[str, Any], target_selector: str) -> tuple[str, dict[str, Any], dict[str, str]]:
+    normalized_target = str(target_selector).strip()
+    if not normalized_target:
+        return "", {}, {}
+    participant_handle = room_launch_participant_handle_for_session(
+        launch,
+        session_name=normalized_target,
+        session_id=normalized_target,
+    )
+    participant = room_launch_participant(launch, participant_handle)
+    try:
+        sessions = list_city_sessions(state="all")
+    except GCAPIError:
+        sessions = []
+    resolved_selector, identity = resolve_routable_session_candidate_from_sessions(
+        sessions,
+        participant.get("session_name", ""),
+        participant.get("delivery_selector", ""),
+        participant.get("session_alias", ""),
+        participant.get("session_id", ""),
+        normalized_target,
+    )
+    if resolved_selector:
+        return resolved_selector, participant, identity
+    local_selector = (
+        str(participant.get("session_alias", "")).strip()
+        or str(participant.get("delivery_selector", "")).strip()
+        or str(participant.get("session_name", "")).strip()
+        or str(participant.get("session_id", "")).strip()
+        or normalized_target
+    )
+    return local_selector, participant, {}
 
 
 def room_launch_message_target_handle(payload: dict[str, Any], remote_message_id: str) -> str:
@@ -2180,10 +2291,7 @@ def resolve_session_identity(session_selector: str) -> dict[str, str]:
 
 
 def resolve_routable_session_identity(session_selector: str) -> dict[str, str]:
-    selector = str(session_selector).strip()
-    if not selector:
-        return {}
-    return resolve_routable_session_identity_from_sessions(list_city_sessions(state="all"), selector)
+    return resolve_routable_session_identity_from_sessions(list_city_sessions(state="all"), session_selector)
 
 
 def _session_identity_fields(item: dict[str, Any]) -> dict[str, str]:
@@ -2222,7 +2330,27 @@ def resolve_routable_session_identity_from_sessions(sessions: list[dict[str, Any
     return _session_identity_fields(chosen)
 
 
+def resolve_routable_session_candidate_from_sessions(
+    sessions: list[dict[str, Any]], *selectors: str
+) -> tuple[str, dict[str, str]]:
+    seen: set[str] = set()
+    for selector in selectors:
+        normalized = str(selector).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        identity = resolve_routable_session_identity_from_sessions(sessions, normalized)
+        if identity:
+            return normalized, identity
+    return "", {}
+
+
 def resolve_routable_session_identity_eventually(*selectors: str) -> dict[str, str]:
+    _matched_selector, identity = resolve_routable_session_candidate_eventually(*selectors)
+    return identity
+
+
+def resolve_routable_session_candidate_eventually(*selectors: str) -> tuple[str, dict[str, str]]:
     candidates: list[str] = []
     seen: set[str] = set()
     for selector in selectors:
@@ -2232,20 +2360,33 @@ def resolve_routable_session_identity_eventually(*selectors: str) -> dict[str, s
         seen.add(normalized)
         candidates.append(normalized)
     if not candidates:
-        return {}
+        return "", {}
     deadline = time.monotonic() + ROOM_LAUNCH_IDENTITY_RESOLVE_TIMEOUT_SECONDS
-    delay_seconds = ROOM_LAUNCH_IDENTITY_RESOLVE_INITIAL_DELAY_SECONDS
     while True:
         sessions = list_city_sessions(state="all")
-        for selector in candidates:
-            identity = resolve_routable_session_identity_from_sessions(sessions, selector)
-            if identity:
-                return identity
+        matched_selector, identity = resolve_routable_session_candidate_from_sessions(sessions, *candidates)
+        if identity:
+            return matched_selector, identity
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return {}
-        time.sleep(min(delay_seconds, remaining))
-        delay_seconds = min(delay_seconds * 2.0, ROOM_LAUNCH_IDENTITY_RESOLVE_MAX_DELAY_SECONDS)
+            return "", {}
+        time.sleep(min(ROOM_LAUNCH_IDENTITY_RESOLVE_DELAY_SECONDS, remaining))
+
+
+def resolve_routable_session_record(session_selector: str) -> dict[str, Any] | None:
+    selector = str(session_selector).strip()
+    if not selector:
+        return None
+    by_name = session_index_by_name(state="all").get(selector)
+    if session_record_routable(by_name):
+        return by_name
+    by_alias = session_index_by_alias(state="all").get(selector)
+    if session_record_routable(by_alias):
+        return by_alias
+    for item in list_city_sessions(state="all"):
+        if str(item.get("id", "")).strip() == selector and session_record_routable(item):
+            return item
+    return None
 
 
 def _session_record_preference(item: dict[str, Any]) -> tuple[int, int, int, str]:
@@ -2296,8 +2437,11 @@ def create_agent_session(
     *,
     alias: str,
     title: str,
+    initial_message: str = "",
     idempotency_key: str = "",
 ) -> dict[str, Any]:
+    if str(initial_message).strip():
+        raise ValueError("initial_message is not supported for async launcher session creation")
     headers: dict[str, str] = {}
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
@@ -2318,6 +2462,119 @@ def create_agent_session(
     return payload
 
 
+def room_launch_participant_delivery_selector(participant: dict[str, Any]) -> str:
+    for key in ("delivery_selector", "session_alias", "session_name", "session_id"):
+        value = str((participant or {}).get(key, "")).strip()
+        if value:
+            return value
+    return ""
+
+
+def room_launch_primer_message(
+    launch: dict[str, Any],
+    participant: dict[str, Any],
+    *,
+    extra_message: str = "",
+    peer_fanout_enabled: bool = True,
+) -> str:
+    qualified_handle = str(participant.get("qualified_handle", "")).strip() or str(launch.get("qualified_handle", "")).strip()
+    session_name = str(participant.get("session_name", "")).strip()
+    lines = [
+        "<discord-launch-primer>",
+        "This is transport guidance for a Discord launcher-backed session.",
+        "Do not answer this primer directly.",
+        f"Your routed handle for this conversation is: {qualified_handle}",
+    ]
+    if session_name:
+        lines.append(f"Your current session_name is: {session_name}")
+    lines.extend(
+        [
+            "Normal assistant text is private and invisible to Discord humans.",
+            "If you want a human-visible reply, you MUST:",
+            "1. Write the reply body to a file.",
+            "2. Run `gc discord reply-current --body-file <path>`.",
+            "3. Only treat the Discord reply as sent after the command returns JSON with a non-empty `record.remote_message_id`.",
+            "For launcher-backed root-room turns, the first successful `gc discord reply-current` creates the Discord thread automatically.",
+            "Do not end a turn with plain assistant prose if you intend the human to see a reply.",
+            "If you decide not to answer, stay silent instead of pretending the reply was sent.",
+        ]
+    )
+    if peer_fanout_enabled:
+        lines.extend(
+            [
+                "In launcher-managed threads, human-visible replies are also forwarded to the other participating launcher sessions as peer input.",
+                "Include `@@rig/alias` in the Discord reply if you want to target a specific thread participant; untargeted replies to peer publications do not fan out.",
+            ]
+        )
+    extra = str(extra_message).strip()
+    if extra:
+        lines.extend(
+            [
+                "",
+                "Additional launch guidance:",
+                extra,
+            ]
+        )
+    lines.append("</discord-launch-primer>")
+    return "\n".join(lines)
+
+
+def room_launch_primer_idempotency_key(launch_id: str, qualified_handle: str) -> str:
+    return f"{str(launch_id).strip()}:primer:{str(qualified_handle).strip()}:v{ROOM_LAUNCH_PRIMER_VERSION}"
+
+
+def room_launch_participant_primer_identity(participant: dict[str, Any]) -> str:
+    for key in ("session_id", "session_name", "session_alias"):
+        value = str((participant or {}).get(key, "")).strip()
+        if value:
+            return value
+    return ""
+
+
+def room_launch_participant_needs_primer(participant: dict[str, Any]) -> bool:
+    try:
+        current_version = int(str(participant.get("primer_version", "")).strip() or "0")
+    except ValueError:
+        current_version = 0
+    if current_version < ROOM_LAUNCH_PRIMER_VERSION:
+        return True
+    current_identity = room_launch_participant_primer_identity(participant)
+    if not current_identity:
+        return False
+    return str(participant.get("primer_identity", "")).strip() != current_identity
+
+
+def prime_room_launch_participant(
+    launch: dict[str, Any],
+    participant: dict[str, Any],
+    *,
+    extra_message: str = "",
+) -> dict[str, Any]:
+    qualified_handle = str(participant.get("qualified_handle", "")).strip()
+    if not qualified_handle:
+        raise ValueError("launch participant is missing qualified_handle")
+    selector = room_launch_participant_delivery_selector(participant)
+    if not selector:
+        raise GCAPIError(f"launch participant {qualified_handle!r} is not routable yet")
+    launcher = resolve_room_launcher(load_config(), str(launch.get("conversation_id", "")).strip()) or {}
+    peer_fanout_enabled = bool(binding_peer_policy(launcher).get("peer_fanout_enabled"))
+    deliver_session_message(
+        selector,
+        room_launch_primer_message(
+            launch,
+            participant,
+            extra_message=extra_message,
+            peer_fanout_enabled=peer_fanout_enabled,
+        ),
+        idempotency_key=room_launch_primer_idempotency_key(str(launch.get("launch_id", "")).strip(), qualified_handle),
+    )
+    body = copy.deepcopy(participant)
+    body["primer_version"] = ROOM_LAUNCH_PRIMER_VERSION
+    body["primer_identity"] = room_launch_participant_primer_identity(participant)
+    body["primed_at"] = utcnow()
+    return body
+
+
 def _room_launch_participant_matches_session(participant: dict[str, Any], *, session_name: str = "", session_id: str = "") -> bool:
     normalized_session_name = str(session_name).strip()
     normalized_session_id = str(session_id).strip()
@@ -2326,6 +2583,7 @@ def _room_launch_participant_matches_session(participant: dict[str, Any], *, ses
     if normalized_session_name and normalized_session_name in {
         str(participant.get("session_name", "")).strip(),
         str(participant.get("session_alias", "")).strip(),
+        str(participant.get("delivery_selector", "")).strip(),
     }:
         return True
     return False
@@ -2336,6 +2594,7 @@ def ensure_room_launch_session_for_handle(
     qualified_handle: str,
     *,
     title: str = "",
+    initial_message: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     launch_id = str(launch.get("launch_id", "")).strip()
     normalized_handle = str(qualified_handle).strip()
@@ -2346,8 +2605,8 @@ def ensure_room_launch_session_for_handle(
         current = normalize_room_launch_record(current)
         participants = room_launch_participants(current)
         participant = copy.deepcopy(participants.get(normalized_handle, {}))
-        sessions = list_city_sessions(state="all")
-        requested_session_alias = (
+        created_new = False
+        session_alias = (
             str(participant.get("session_alias", "")).strip()
             or room_launch_session_alias(
                 str(current.get("guild_id", "")).strip(),
@@ -2356,45 +2615,64 @@ def ensure_room_launch_session_for_handle(
                 normalized_handle,
             )
         )
-        existing_identity = resolve_routable_session_identity_from_sessions(sessions, requested_session_alias)
-        if not existing_identity and str(participant.get("session_name", "")).strip():
-            existing_identity = resolve_routable_session_identity_from_sessions(
-                sessions, str(participant.get("session_name", "")).strip()
-            )
-        if existing_identity:
-            participant["session_alias"] = str(existing_identity.get("alias", "")).strip() or requested_session_alias
-            participant["session_id"] = str(existing_identity.get("session_id", "")).strip()
-            participant["session_name"] = str(existing_identity.get("session_name", "")).strip()
-            participant["delivery_selector"] = (
-                participant["session_alias"] or participant["session_name"] or participant["session_id"]
-            )
+        existing = None
+        if str(participant.get("session_name", "")).strip():
+            existing_by_name = session_index_by_name(state="all").get(str(participant.get("session_name", "")).strip())
+            if session_record_routable(existing_by_name):
+                existing = existing_by_name
+        if not session_record_routable(existing):
+            existing_by_alias = session_index_by_alias(state="all").get(session_alias)
+            if session_record_routable(existing_by_alias):
+                existing = existing_by_alias
+        if session_record_routable(existing):
+            participant["session_alias"] = str(existing.get("alias", "")).strip() or session_alias
+            participant["session_id"] = str(existing.get("id", "")).strip()
+            participant["session_name"] = str(existing.get("session_name", "")).strip()
         else:
+            created_new = True
             created = create_agent_session(
                 normalized_handle,
-                alias=requested_session_alias,
+                alias=session_alias,
                 title=title or room_launch_thread_name(normalized_handle, str(current.get("from_display", "")).strip()),
+                initial_message=initial_message,
                 idempotency_key=f"{launch_id}:create-session:{normalized_handle}",
             )
-            participant["session_alias"] = str(created.get("alias", "")).strip()
+            participant["session_alias"] = str(created.get("alias", "")).strip() or session_alias
             participant["session_id"] = str(created.get("id", "")).strip()
             participant["session_name"] = str(created.get("session_name", "")).strip()
-            hydrated = resolve_routable_session_identity_eventually(
-                participant["session_alias"],
-                requested_session_alias,
-                participant["session_name"],
-                participant["session_id"],
+        selector_snapshot, hydrated = resolve_routable_session_candidate_from_sessions(
+            list_city_sessions(state="all"),
+            participant.get("session_name", ""),
+            participant.get("session_id", ""),
+            participant.get("delivery_selector", ""),
+            participant.get("session_alias", ""),
+        )
+        if created_new and not selector_snapshot:
+            selector_snapshot, hydrated = resolve_routable_session_candidate_eventually(
+                participant.get("session_name", ""),
+                participant.get("delivery_selector", ""),
+                participant.get("session_alias", ""),
+                participant.get("session_id", ""),
             )
-            participant["session_alias"] = str(hydrated.get("alias", "")).strip() or participant["session_alias"]
-            participant["session_id"] = str(hydrated.get("session_id", "")).strip() or participant["session_id"]
-            participant["session_name"] = str(hydrated.get("session_name", "")).strip() or participant["session_name"]
-            if not hydrated:
-                raise GCAPIError(
-                    f"created launch session is not routable yet: {participant['session_alias'] or requested_session_alias or normalized_handle}"
-                )
-            participant["delivery_selector"] = (
-                participant["session_alias"] or participant["session_name"] or participant["session_id"]
-            )
+        if hydrated:
+            participant["session_alias"] = str(hydrated.get("alias", "")).strip() or str(participant.get("session_alias", "")).strip()
+            participant["session_id"] = str(hydrated.get("session_id", "")).strip() or str(participant.get("session_id", "")).strip()
+            participant["session_name"] = str(hydrated.get("session_name", "")).strip() or str(participant.get("session_name", "")).strip()
+        if created_new and not selector_snapshot:
+            raise GCAPIError(f"created launch session is not routable yet: {participant['session_alias'] or normalized_handle}")
+        participant["delivery_selector"] = (
+            selector_snapshot
+            or str(participant.get("session_name", "")).strip()
+            or str(participant.get("session_id", "")).strip()
+            or str(participant.get("session_alias", "")).strip()
+        )
         participant["qualified_handle"] = normalized_handle
+        if room_launch_participant_needs_primer(participant):
+            participant = prime_room_launch_participant(
+                current,
+                participant,
+                extra_message=initial_message,
+            )
         participants[normalized_handle] = participant
         current["participants"] = participants
         if not str(current.get("qualified_handle", "")).strip():
@@ -2403,7 +2681,6 @@ def ensure_room_launch_session_for_handle(
             current["session_alias"] = str(participant.get("session_alias", "")).strip()
             current["session_id"] = str(participant.get("session_id", "")).strip()
             current["session_name"] = str(participant.get("session_name", "")).strip()
-            current["delivery_selector"] = str(participant.get("delivery_selector", "")).strip()
         if not str(current.get("last_addressed_qualified_handle", "")).strip():
             current["last_addressed_qualified_handle"] = normalized_handle
         current = save_room_launch(current)
@@ -2414,12 +2691,14 @@ def ensure_room_launch_session(
     launch: dict[str, Any],
     *,
     title: str = "",
+    initial_message: str = "",
 ) -> dict[str, Any]:
     qualified_handle = str(launch.get("qualified_handle", "")).strip()
     current, _participant = ensure_room_launch_session_for_handle(
         launch,
         qualified_handle,
         title=title,
+        initial_message=initial_message,
     )
     return current
 
@@ -2577,7 +2856,9 @@ def extract_agent_handles(body: str) -> list[str]:
     return handles
 
 
-def _binding_session_lookup(binding: dict[str, Any]) -> dict[str, str]:
+def _binding_session_lookup(binding: dict[str, Any], *, launch: dict[str, Any] | None = None) -> dict[str, str]:
+    if launch and str(binding.get("publish_route_kind", "")).strip() == "room_launch":
+        return room_launch_participant_session_lookup(launch)
     lookup: dict[str, str] = {}
     for name in binding.get("session_names", []):
         session_name = str(name).strip()
@@ -2614,6 +2895,34 @@ def _update_peer_target(peer_delivery: dict[str, Any], session_name: str, patch:
     item = {"session_name": session_name}
     item.update(copy.deepcopy(patch))
     targets.append(item)
+
+
+def _rename_peer_target(peer_delivery: dict[str, Any], old_session_name: str, new_session_name: str) -> None:
+    old_name = str(old_session_name).strip()
+    new_name = str(new_session_name).strip()
+    if not old_name or not new_name or old_name == new_name:
+        return
+    targets = peer_delivery.setdefault("targets", [])
+    old_entry = next((entry for entry in targets if str(entry.get("session_name", "")).strip() == old_name), None)
+    new_entry = next((entry for entry in targets if str(entry.get("session_name", "")).strip() == new_name), None)
+    if old_entry and not new_entry:
+        old_entry["session_name"] = new_name
+    elif old_entry and new_entry:
+        for key, value in old_entry.items():
+            if key == "session_name":
+                continue
+            new_entry.setdefault(key, value)
+        targets.remove(old_entry)
+    for key in ("mentioned_session_names", "frozen_targets"):
+        values = []
+        seen: set[str] = set()
+        for item in peer_delivery.get(key, []):
+            normalized = new_name if str(item).strip() == old_name else str(item).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            values.append(normalized)
+        peer_delivery[key] = values
 
 
 def _peer_attempt(session_name: str, status: str, reason: str = "", response: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -2714,15 +3023,51 @@ def _resolve_peer_targets(
     *,
     body: str,
     source_session_name: str,
+    source_session_id: str,
     source_event_kind: str,
+    launch: dict[str, Any] | None = None,
 ) -> tuple[list[str], str, str, list[str]]:
     policy = binding_peer_policy(binding)
-    session_lookup = _binding_session_lookup(binding)
+    session_lookup = _binding_session_lookup(binding, launch=launch)
+    handle_lookup = room_launch_participant_handle_lookup(launch) if launch else {}
+    delivery_targets = room_launch_participant_delivery_targets(launch) if launch else []
+    source_delivery_selector = source_session_name
+    if launch:
+        source_handle = room_launch_participant_handle_for_session(
+            launch,
+            session_name=source_session_name,
+            session_id=source_session_id,
+        )
+        if source_handle:
+            source_delivery_selector = room_launch_participant_delivery_selector(
+                room_launch_participant(launch, source_handle)
+            )
+    if handle_lookup:
+        handles = extract_agent_handles(body)
+        if handles:
+            if any(handle not in handle_lookup for handle in handles):
+                return [], "targeted", "failed_targeting_unknown_handle", handles
+            resolved_mentions: list[str] = []
+            targets: list[str] = []
+            seen: set[str] = set()
+            for handle in handles:
+                selector = str(handle_lookup.get(handle, "")).strip()
+                if not selector:
+                    continue
+                resolved_mentions.append(selector)
+                if selector == source_delivery_selector or selector in seen:
+                    continue
+                seen.add(selector)
+                targets.append(selector)
+            if not targets:
+                return [], "targeted", "failed_targeting_self_only", resolved_mentions
+            return targets, "targeted", "", resolved_mentions
     mentions = extract_peer_session_mentions(body)
     if mentions:
         if any(name not in session_lookup for name in mentions):
             return [], "targeted", "failed_targeting_unknown_session", mentions
-        targets = [name for name in mentions if name != source_session_name]
+        targets = [str(session_lookup.get(name, "")).strip() for name in mentions]
+        targets = [name for name in targets if name and name != source_delivery_selector]
         if not targets:
             return [], "targeted", "failed_targeting_self_only", mentions
         return targets, "targeted", "", mentions
@@ -2730,7 +3075,10 @@ def _resolve_peer_targets(
         return [], "untargeted", "skipped_peer_target_required", []
     if not policy.get("allow_untargeted_peer_fanout"):
         return [], "untargeted", "skipped_policy_untargeted_disabled", []
-    targets = [name for name in session_lookup if name != source_session_name]
+    if delivery_targets:
+        targets = [name for name in delivery_targets if name != source_delivery_selector]
+    else:
+        targets = [name for name in session_lookup if name != source_session_name]
     if not targets:
         return [], "untargeted", "skipped_no_peer_targets", []
     return targets, "untargeted", "", []
@@ -2747,7 +3095,33 @@ def _build_peer_envelope(
     mentioned_session_names: list[str],
     root_ingress_receipt_id: str,
     idempotency_key: str,
+    launch: dict[str, Any] | None = None,
 ) -> str:
+    launch_id = str((launch or {}).get("launch_id", "")).strip()
+    target_delivery_selector, target_participant, target_identity = resolve_room_launch_target_selector(
+        launch or {},
+        target_session_name,
+    )
+    target_delivery_selector = target_delivery_selector or str(target_session_name).strip()
+    source_qualified_handle = room_launch_participant_handle_for_session(
+        launch or {},
+        session_name=source_session_name,
+        session_id=source_session_id,
+    )
+    target_qualified_handle = str(target_participant.get("qualified_handle", "")).strip()
+    if not target_qualified_handle and target_identity:
+        target_qualified_handle = room_launch_participant_handle_for_session(
+            launch or {},
+            session_name=str(target_identity.get("session_name", "")).strip(),
+            session_id=str(target_identity.get("session_id", "")).strip(),
+        )
+    if not target_qualified_handle and target_delivery_selector:
+        target_qualified_handle = room_launch_participant_handle_for_session(
+            launch or {},
+            session_name=target_delivery_selector,
+        )
+    target_participant = target_participant or room_launch_participant(launch or {}, target_qualified_handle)
+    target_session_label = str(target_participant.get("session_name", "")).strip() or target_delivery_selector
     lines = [
         "<discord-event>",
         "version: 1",
@@ -2760,13 +3134,14 @@ def _build_peer_envelope(
         f"source_session_name: {source_session_name}",
         f"source_session_id: {source_session_id}",
         "source_kind: peer_session",
-        f"target_session_name: {target_session_name}",
+        f"target_session_name: {target_session_label}",
         f"publish_id: {str(record.get('publish_id', '')).strip()}",
         f"root_ingress_receipt_id: {root_ingress_receipt_id}",
         f"publish_binding_id: {str(binding.get('id', '')).strip()}",
         f"publish_conversation_id: {str(record.get('conversation_id', '')).strip()}",
         f"publish_trigger_id: {str(record.get('remote_message_id', '')).strip()}",
         f"publish_reply_to_discord_message_id: {str(record.get('remote_message_id', '')).strip()}",
+        f"publish_launch_id: {launch_id}",
         f"delivery_idempotency_key: {idempotency_key}",
         f"delivery: {delivery}",
         f"mentioned_session_names_json: {json.dumps(mentioned_session_names)}",
@@ -2776,8 +3151,22 @@ def _build_peer_envelope(
         "reply_contract: explicit_publish_required",
         "hop: 1",
         "max_hop: 1",
-        "</discord-event>",
     ]
+    if launch_id:
+        lines.extend(
+            [
+                f"launch_id: {launch_id}",
+                "launch_surface_kind: room",
+                f"launch_root_qualified_handle: {str((launch or {}).get('qualified_handle', '')).strip()}",
+                f"launch_root_session_alias: {str((launch or {}).get('session_alias', '')).strip()}",
+                f"launch_qualified_handle: {target_qualified_handle}",
+                f"launch_session_alias: {str(target_participant.get('session_alias', '')).strip()}",
+                f"launch_session_name: {target_session_label}",
+                f"source_qualified_handle: {source_qualified_handle}",
+                f"thread_participants_json: {json.dumps(room_launch_participant_summaries(launch or {}))}",
+            ]
+        )
+    lines.append("</discord-event>")
     return "\n".join(lines)
 
 
@@ -3076,6 +3465,12 @@ def _apply_peer_fanout(
     policy = binding_peer_policy(binding)
     source_meta = _derive_publish_source_metadata(source_context)
     root_ingress_receipt_id = source_meta.get("root_ingress_receipt_id", "")
+    launch_record = None
+    if str(binding.get("publish_route_kind", "")).strip() == "room_launch":
+        launch_id = str(source_meta.get("launch_id", "")).strip() or str(record.get("launch_id", "")).strip()
+        if launch_id:
+            launch_record = load_room_launch(launch_id) or {}
+    source_delivery_selector = source_session_name
     budget_lock_key = f"{binding_id}:{root_ingress_receipt_id or publish_id}"
     delivery_targets: list[str] = []
     delivery_mode = ""
@@ -3105,7 +3500,44 @@ def _apply_peer_fanout(
                 peer_delivery["status"] = "skipped_missing_root_context"
                 current["peer_delivery"] = peer_delivery
                 return _save_chat_publish_record(current)
-            if not source_session_name or source_session_name not in _binding_session_lookup(binding):
+            session_lookup = _binding_session_lookup(binding, launch=launch_record)
+            if str(binding.get("publish_route_kind", "")).strip() == "room_launch" and launch_record:
+                source_handle = room_launch_participant_handle_for_session(
+                    launch_record,
+                    session_name=source_session_name,
+                    session_id=source_session_id,
+                )
+                if not source_handle:
+                    current_selector = current_session_selector()
+                    if current_selector:
+                        source_handle = room_launch_participant_handle_for_session(
+                            launch_record,
+                            session_name=current_selector,
+                            session_id=current_selector,
+                        )
+                if not source_handle:
+                    peer_delivery["phase"] = "peer_fanout_complete"
+                    peer_delivery["status"] = "skipped_source_not_thread_participant"
+                    current["peer_delivery"] = peer_delivery
+                    return _save_chat_publish_record(current)
+                source_participant = room_launch_participant(launch_record, source_handle)
+                source_delivery_selector = room_launch_participant_delivery_selector(source_participant)
+                source_session_name = (
+                    source_session_name
+                    or str(source_participant.get("session_name", "")).strip()
+                    or source_delivery_selector
+                )
+                source_session_id = source_session_id or str(source_participant.get("session_id", "")).strip()
+                current["source_session_name"] = source_session_name
+                current["source_session_id"] = source_session_id
+                current["source_qualified_handle"] = source_handle
+                current = _save_chat_publish_record(current)
+            if not source_session_name or (not source_delivery_selector and source_session_name not in session_lookup):
+                peer_delivery["phase"] = "peer_fanout_partial_failure"
+                peer_delivery["status"] = "failed_source_not_bound"
+                current["peer_delivery"] = peer_delivery
+                return _save_chat_publish_record(current)
+            if source_delivery_selector and not launch_record and source_delivery_selector not in session_lookup.values():
                 peer_delivery["phase"] = "peer_fanout_partial_failure"
                 peer_delivery["status"] = "failed_source_not_bound"
                 current["peer_delivery"] = peer_delivery
@@ -3146,7 +3578,9 @@ def _apply_peer_fanout(
                 binding,
                 body=str(current.get("body", "")),
                 source_session_name=source_session_name,
+                source_session_id=source_session_id,
                 source_event_kind=source_meta.get("source_event_kind", ""),
+                launch=launch_record,
             )
             peer_delivery["delivery"] = delivery
             peer_delivery["mentioned_session_names"] = mentions
@@ -3160,7 +3594,23 @@ def _apply_peer_fanout(
             live_targets: list[str] = []
             targeted_unavailable: list[str] = []
             for session_name in targets:
+                resolved_target_selector = session_name
                 session_payload = session_index.get(session_name)
+                participant: dict[str, Any] = {}
+                if not session_payload:
+                    session_payload = resolve_routable_session_record(session_name)
+                if not session_payload and launch_record:
+                    resolved_target_selector, participant, _identity = resolve_room_launch_target_selector(launch_record, session_name)
+                    if resolved_target_selector != session_name:
+                        session_payload = resolve_routable_session_record(resolved_target_selector)
+                if session_payload:
+                    resolved_target_selector = (
+                        room_launch_participant_delivery_selector(participant)
+                        or str(session_payload.get("alias", "")).strip()
+                        or str(session_payload.get("session_name", "")).strip()
+                        or str(session_payload.get("id", "")).strip()
+                        or resolved_target_selector
+                    )
                 state = str((session_payload or {}).get("state", "")).strip()
                 if not session_payload or state in NON_ROUTABLE_SESSION_STATES:
                     if delivery == "targeted":
@@ -3187,7 +3637,7 @@ def _apply_peer_fanout(
                         },
                     )
                     continue
-                live_targets.append(session_name)
+                live_targets.append(resolved_target_selector)
 
             if targeted_unavailable:
                 for session_name in live_targets:
@@ -3265,6 +3715,7 @@ def _apply_peer_fanout(
             mentioned_session_names=delivery_mentions,
             root_ingress_receipt_id=root_ingress_receipt_id,
             idempotency_key=idempotency_key,
+            launch=launch_record,
         )
         try:
             response = deliver_session_message(
@@ -3310,6 +3761,10 @@ def retry_peer_fanout(
     binding = resolve_publish_route(load_config(), binding_id)
     if not binding:
         raise ValueError(f"binding not found: {binding_id}")
+    launch_record = None
+    launch_id = str(record.get("launch_id", "")).strip()
+    if launch_id:
+        launch_record = load_room_launch(launch_id)
     retry_targets: list[tuple[str, str, str, list[str], str, str, str]] = []
     with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
         current = load_chat_publish(publish_id) or record
@@ -3330,6 +3785,11 @@ def retry_peer_fanout(
             if not isinstance(entry, dict):
                 continue
             session_name = str(entry.get("session_name", "")).strip()
+            if launch_record:
+                resolved_name, _participant, _identity = resolve_room_launch_target_selector(launch_record, session_name)
+                if resolved_name and resolved_name != session_name:
+                    _rename_peer_target(peer_delivery, session_name, resolved_name)
+                    session_name = resolved_name
             if selected and session_name not in selected:
                 continue
             if str(entry.get("status", "")).strip() not in eligible:
@@ -3365,20 +3825,24 @@ def retry_peer_fanout(
         current = _save_chat_publish_record(current)
 
     for session_name, idempotency_key, delivery, mentioned_session_names, root_ingress_receipt_id, source_session_name, source_session_id in retry_targets:
+        target_selector = session_name
+        if launch_record:
+            target_selector, _participant, _identity = resolve_room_launch_target_selector(launch_record, session_name)
         envelope = _build_peer_envelope(
             binding=binding,
             record=current,
             source_session_name=source_session_name,
             source_session_id=source_session_id,
-            target_session_name=session_name,
+            target_session_name=target_selector,
             delivery=delivery,
             mentioned_session_names=mentioned_session_names,
             root_ingress_receipt_id=root_ingress_receipt_id,
             idempotency_key=idempotency_key,
+            launch=launch_record,
         )
         try:
             response = deliver_session_message(
-                session_name,
+                target_selector,
                 envelope,
                 idempotency_key=idempotency_key,
                 timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
@@ -3387,14 +3851,14 @@ def retry_peer_fanout(
             current = _update_target_delivery_result(
                 publish_id=publish_id,
                 fallback_record=current,
-                session_name=session_name,
+                session_name=target_selector,
                 error=str(exc),
             )
             continue
         current = _update_target_delivery_result(
             publish_id=publish_id,
             fallback_record=current,
-            session_name=session_name,
+            session_name=target_selector,
             response=response,
         )
     with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
@@ -3452,6 +3916,11 @@ def publish_binding_message(
         or str(resolved_source_identity.get("session_id", "")).strip()
         or str(os.environ.get("GC_SESSION_ID", "")).strip()
     )
+    effective_source_qualified_handle = room_launch_participant_handle_for_session(
+        launch or {},
+        session_name=effective_source_session_name,
+        session_id=effective_source_session_id,
+    )
     record = save_chat_publish(
         {
             "binding_id": str(binding.get("id", "")).strip(),
@@ -3463,6 +3932,7 @@ def publish_binding_message(
             "reply_to_message_id": reply_target,
             "source_session_id": effective_source_session_id,
             "source_session_name": effective_source_session_name,
+            "source_qualified_handle": effective_source_qualified_handle,
             "source_event_kind": source_meta.get("source_event_kind", ""),
             "root_ingress_receipt_id": source_meta.get("root_ingress_receipt_id", ""),
             "launch_id": source_meta.get("launch_id", ""),

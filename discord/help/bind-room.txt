@@ -19,6 +19,10 @@ thread inheritance still requires a bot mention unless the thread itself is
 also bound. Ambient-read bindings remain targeted-only even when the bot is
 mentioned directly.
 
+Ambient read consumes unmentioned guild messages. Discord therefore requires
+the app's `Message Content Intent` to be enabled in the Developer Portal
+before ambient-read routing will work reliably.
+
 Peer fanout is disabled by default. When enabled, the bridge can reinject one
 session's room publish to other bound sessions as `discord_peer_publication`
 events without re-reading bot messages from Discord.

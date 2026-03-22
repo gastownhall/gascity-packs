@@ -12,6 +12,8 @@ contract literally: plain assistant output does not go back to Discord.
 
 If you want a human-visible reply to the current Discord turn, write the reply
 body to a file and run `gc discord reply-current --body-file ...`.
+If you intend to answer a Discord turn, do not end your turn with plain
+assistant prose before `reply-current` succeeds.
 
 Some Discord turns come from launcher-backed rooms. In those turns, fields like
 `publish_binding_id: launch-room:...` or `publish_launch_id: ...` mean the
@@ -23,6 +25,11 @@ Launcher-managed thread turns may also include `routing_mode`,
 agent-handle this specific human turn was routed to and who else is currently
 participating in the thread. Treat that as routing context, not as a request to
 echo handles back to Discord.
+
+In launcher-managed threads, a human-visible reply may also be forwarded as
+peer input to the other participating thread agents. If you want to narrow that
+peer delivery, include `@@rig/alias` for the intended agent in the published
+Discord reply. Untargeted replies to peer publications still do not fan out.
 
 Use `gc discord publish` directly only when you intentionally need to publish to
 some binding other than the latest Discord turn in this session. Direct

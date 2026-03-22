@@ -23,6 +23,16 @@ def main(argv: list[str]) -> int:
         default="",
         help="Qualified rig/alias handle used for respond_all rooms",
     )
+    parser.add_argument(
+        "--disable-peer-fanout",
+        action="store_true",
+        help="Disable agent-to-agent peer delivery inside launcher-managed threads",
+    )
+    parser.add_argument(
+        "--disallow-untargeted-peer-fanout",
+        action="store_true",
+        help="Require explicit @@rig/alias targeting before launcher-thread publishes fan out to peer sessions",
+    )
     parser.add_argument("conversation_id", help="Discord channel id for the root room")
     args = parser.parse_args(argv)
 
@@ -34,12 +44,18 @@ def main(argv: list[str]) -> int:
         default_handle = qualified_handle
 
     try:
+        policy_updates: dict[str, bool] = {}
+        if args.disable_peer_fanout:
+            policy_updates["peer_fanout_enabled"] = False
+        if args.disallow_untargeted_peer_fanout:
+            policy_updates["allow_untargeted_peer_fanout"] = False
         config = common.set_room_launcher(
             common.load_config(),
             args.guild_id,
             args.conversation_id,
             response_mode=args.response_mode,
             default_qualified_handle=default_handle,
+            policy=policy_updates or None,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
