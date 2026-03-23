@@ -74,7 +74,7 @@ WORKER_QUEUE_SENTINEL: tuple[dict[str, Any], str] | None = None
 
 
 def participant_delivery_selector(participant: dict[str, Any]) -> str:
-    for key in ("delivery_selector", "session_alias", "session_name", "session_id"):
+    for key in ("session_name", "session_id", "session_alias", "delivery_selector"):
         value = str((participant or {}).get(key, "")).strip()
         if value:
             return value

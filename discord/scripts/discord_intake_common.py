@@ -2463,7 +2463,7 @@ def create_agent_session(
 
 
 def room_launch_participant_delivery_selector(participant: dict[str, Any]) -> str:
-    for key in ("delivery_selector", "session_alias", "session_name", "session_id"):
+    for key in ("session_name", "session_id", "session_alias", "delivery_selector"):
         value = str((participant or {}).get(key, "")).strip()
         if value:
             return value
@@ -2661,10 +2661,10 @@ def ensure_room_launch_session_for_handle(
         if created_new and not selector_snapshot:
             raise GCAPIError(f"created launch session is not routable yet: {participant['session_alias'] or normalized_handle}")
         participant["delivery_selector"] = (
-            selector_snapshot
-            or str(participant.get("session_name", "")).strip()
+            str(participant.get("session_name", "")).strip()
             or str(participant.get("session_id", "")).strip()
             or str(participant.get("session_alias", "")).strip()
+            or selector_snapshot
         )
         participant["qualified_handle"] = normalized_handle
         if room_launch_participant_needs_primer(participant):

@@ -1353,6 +1353,16 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(participant["delivery_selector"], "dc-sky-live")
         self.assertEqual(current["participants"]["corp/sky"]["delivery_selector"], "dc-sky-live")
 
+    def test_room_launch_participant_delivery_selector_prefers_live_name_over_alias(self) -> None:
+        participant = {
+            "session_alias": "dc-123-maya",
+            "session_name": "s-gc-maya",
+            "session_id": "gc-maya",
+            "delivery_selector": "dc-123-maya",
+        }
+
+        self.assertEqual(common.room_launch_participant_delivery_selector(participant), "s-gc-maya")
+
     def test_prime_room_launch_participant_omits_peer_guidance_for_legacy_launcher(self) -> None:
         common.save_config(
             common.normalize_config(
@@ -1628,7 +1638,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         record = payload["record"]
         self.assertEqual(record["peer_delivery"]["status"], "delivered")
         self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
-        self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["dc-thread-corp-priya"])
+        self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["s-gc-priya"])
         self.assertEqual(record["peer_delivery"]["frozen_targets"], ["s-gc-priya"])
         deliver_session_message.assert_called_once()
         self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya")
@@ -1713,7 +1723,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         record = payload["record"]
         self.assertEqual(record["peer_delivery"]["status"], "delivered")
         self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
-        self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["dc-stale-priya"])
+        self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["s-gc-priya"])
         self.assertEqual(record["peer_delivery"]["frozen_targets"], ["s-gc-priya"])
         deliver_session_message.assert_called_once()
         self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya")
@@ -2131,10 +2141,10 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             )
 
         self.assertEqual(payload["record"]["peer_delivery"]["status"], "failed_targeting_unavailable")
-        self.assertEqual(payload["record"]["peer_delivery"]["mentioned_session_names"], ["dc-stale-priya"])
+        self.assertEqual(payload["record"]["peer_delivery"]["mentioned_session_names"], ["s-gc-priya"])
         targets = payload["record"]["peer_delivery"]["targets"]
         self.assertEqual(len(targets), 1)
-        self.assertEqual(targets[0]["session_name"], "dc-stale-priya")
+        self.assertEqual(targets[0]["session_name"], "s-gc-priya")
         self.assertEqual(targets[0]["delivery_selector"], "s-gc-priya")
         self.assertEqual(targets[0]["status"], "failed_retryable")
         deliver_session_message.assert_not_called()

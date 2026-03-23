@@ -146,7 +146,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
         self.assertEqual(outcome["status"], "delivered")
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-123-sky")
+        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-123")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("binding_id: launch-room:22", envelope)
         self.assertIn("launch_id: room-launch:208", envelope)
@@ -237,7 +237,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
         self.assertEqual(outcome["status"], "delivered")
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-123-sky")
+        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-123")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn('untrusted_body_json: "@@corp/sky please help"', envelope)
         receipt = common.load_chat_ingress("in-208b")
@@ -491,7 +491,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
         self.assertEqual(outcome["status"], "delivered")
         deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-456-alex")
+        self.assertEqual(deliver_session_message.call_args.args[0], "dc-alex")
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("launch_qualified_handle: corp/alex", envelope)
         self.assertIn('thread_participants_json: [{"qualified_handle": "corp/alex"', envelope)
@@ -565,7 +565,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
 
         self.assertEqual(outcome["status"], "delivered")
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-456-alex")
+        self.assertEqual(deliver_session_message.call_args.args[0], "dc-alex")
         receipt = common.load_chat_ingress("in-212a")
         assert receipt is not None
         self.assertEqual(receipt["routing_mode"], "reply_to")
@@ -629,7 +629,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
 
         self.assertEqual(outcome["status"], "delivered")
-        self.assertEqual(deliver_session_message.call_args.args[0], "dc-456-alex")
+        self.assertEqual(deliver_session_message.call_args.args[0], "dc-alex")
         receipt = common.load_chat_ingress("in-212b")
         assert receipt is not None
         self.assertEqual(receipt["routing_mode"], "last_addressed")
