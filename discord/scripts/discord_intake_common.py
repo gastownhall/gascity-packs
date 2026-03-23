@@ -52,6 +52,8 @@ ROOM_LAUNCH_ALIAS_SLUG_MAX = 24
 ROOM_LAUNCH_MESSAGE_TARGET_LIMIT = 64
 ROOM_LAUNCH_IDENTITY_RESOLVE_TIMEOUT_SECONDS = 30.0
 ROOM_LAUNCH_IDENTITY_RESOLVE_DELAY_SECONDS = 0.25
+ROOM_LAUNCH_READY_RESOLVE_TIMEOUT_SECONDS = 90.0
+ROOM_LAUNCH_READY_RESOLVE_DELAY_SECONDS = 0.5
 ROOM_LAUNCH_PRIMER_VERSION = 1
 AGENT_HANDLE_SEGMENT = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
@@ -2377,6 +2379,80 @@ def resolve_routable_session_candidate_eventually(*selectors: str) -> tuple[str,
         time.sleep(min(ROOM_LAUNCH_IDENTITY_RESOLVE_DELAY_SECONDS, remaining))
 
 
+def session_record_ready(item: dict[str, Any] | None) -> bool:
+    if not session_record_routable(item):
+        return False
+    if str(item.get("state", "")).strip() != "active":
+        return False
+    return bool(item.get("running"))
+
+
+def resolve_ready_session_identity_from_sessions(sessions: list[dict[str, Any]], session_selector: str) -> dict[str, str]:
+    selector = str(session_selector).strip()
+    if not selector:
+        return {}
+    alias_match: dict[str, Any] | None = None
+    name_match: dict[str, Any] | None = None
+    id_match: dict[str, Any] | None = None
+    for item in sessions:
+        if not session_record_ready(item):
+            continue
+        if str(item.get("alias", "")).strip() == selector and (
+            alias_match is None or _session_record_preference(item) > _session_record_preference(alias_match)
+        ):
+            alias_match = item
+        if str(item.get("session_name", "")).strip() == selector and (
+            name_match is None or _session_record_preference(item) > _session_record_preference(name_match)
+        ):
+            name_match = item
+        if str(item.get("id", "")).strip() == selector and (
+            id_match is None or _session_record_preference(item) > _session_record_preference(id_match)
+        ):
+            id_match = item
+    chosen = alias_match or name_match or id_match
+    if not chosen:
+        return {}
+    return _session_identity_fields(chosen)
+
+
+def resolve_ready_session_candidate_from_sessions(
+    sessions: list[dict[str, Any]], *selectors: str
+) -> tuple[str, dict[str, str]]:
+    seen: set[str] = set()
+    for selector in selectors:
+        normalized = str(selector).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        identity = resolve_ready_session_identity_from_sessions(sessions, normalized)
+        if identity:
+            return normalized, identity
+    return "", {}
+
+
+def resolve_ready_session_candidate_eventually(*selectors: str) -> tuple[str, dict[str, str]]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for selector in selectors:
+        normalized = str(selector).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        candidates.append(normalized)
+    if not candidates:
+        return "", {}
+    deadline = time.monotonic() + ROOM_LAUNCH_READY_RESOLVE_TIMEOUT_SECONDS
+    while True:
+        sessions = list_city_sessions(state="all")
+        matched_selector, identity = resolve_ready_session_candidate_from_sessions(sessions, *candidates)
+        if identity:
+            return matched_selector, identity
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return "", {}
+        time.sleep(min(ROOM_LAUNCH_READY_RESOLVE_DELAY_SECONDS, remaining))
+
+
 def resolve_routable_session_record(session_selector: str) -> dict[str, Any] | None:
     selector = str(session_selector).strip()
     if not selector:
@@ -2692,6 +2768,25 @@ def ensure_room_launch_session_for_handle(
         participant["qualified_handle"] = normalized_handle
         current = _sync_launch_participant(current, normalized_handle, participant)
         current = save_room_launch(current)
+        if created_new:
+            _ready_selector, ready_identity = resolve_ready_session_candidate_eventually(
+                participant.get("session_name", ""),
+                participant.get("session_id", ""),
+                participant.get("session_alias", ""),
+                participant.get("delivery_selector", ""),
+            )
+            if not ready_identity:
+                raise GCAPIError(f"created launch session is not ready yet: {participant['session_alias'] or normalized_handle}")
+            participant["session_alias"] = str(ready_identity.get("alias", "")).strip() or str(participant.get("session_alias", "")).strip()
+            participant["session_id"] = str(ready_identity.get("session_id", "")).strip() or str(participant.get("session_id", "")).strip()
+            participant["session_name"] = str(ready_identity.get("session_name", "")).strip() or str(participant.get("session_name", "")).strip()
+            participant["delivery_selector"] = (
+                str(participant.get("session_name", "")).strip()
+                or str(participant.get("session_id", "")).strip()
+                or str(participant.get("session_alias", "")).strip()
+            )
+            current = _sync_launch_participant(current, normalized_handle, participant)
+            current = save_room_launch(current)
         if room_launch_participant_needs_primer(participant):
             try:
                 participant = prime_room_launch_participant(

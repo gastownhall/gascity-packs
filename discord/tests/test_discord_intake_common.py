@@ -1093,6 +1093,64 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertTrue(str(participant.get("primer_last_failed_at", "")).strip())
         self.assertNotIn("primer_version", participant)
 
+    def test_ensure_room_launch_session_waits_until_created_session_is_ready_before_priming(self) -> None:
+        launch = {
+            "launch_id": "room-launch:ready-wait",
+            "qualified_handle": "corp/sky",
+            "session_alias": "dc-123-sky",
+            "from_display": "alice",
+        }
+
+        calls = {"count": 0}
+
+        def list_sessions(*, state: str = "all") -> list[dict[str, object]]:
+            self.assertEqual(state, "all")
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return []
+            if calls["count"] < 4:
+                return [
+                    {
+                        "id": "gc-new",
+                        "alias": "dc-123-sky",
+                        "session_name": "dc-new-sky",
+                        "state": "creating",
+                        "running": False,
+                        "created_at": "2026-03-22T00:00:00Z",
+                    }
+                ]
+            return [
+                {
+                    "id": "gc-new",
+                    "alias": "dc-123-sky",
+                    "session_name": "dc-new-sky",
+                    "state": "active",
+                    "running": True,
+                    "created_at": "2026-03-22T00:00:00Z",
+                }
+            ]
+
+        with mock.patch.object(
+            common,
+            "list_city_sessions",
+            side_effect=list_sessions,
+        ), mock.patch.object(
+            common,
+            "create_agent_session",
+            return_value={"id": "gc-new", "session_name": "dc-new-sky", "alias": "dc-123-sky"},
+        ), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-new"},
+        ) as deliver_session_message, mock.patch.object(common.time, "sleep"):
+            current = common.ensure_room_launch_session(launch)
+
+        deliver_session_message.assert_called_once()
+        self.assertGreaterEqual(calls["count"], 4)
+        participant = current["participants"]["corp/sky"]
+        self.assertEqual(participant["session_name"], "dc-new-sky")
+        self.assertEqual(participant["delivery_selector"], "dc-new-sky")
+
     def test_ensure_room_launch_session_raises_when_created_identity_never_becomes_routable(self) -> None:
         launch = {
             "launch_id": "room-launch:stuck",
