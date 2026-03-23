@@ -1083,6 +1083,24 @@ def process_room_launch_message(
     return {"status": "delivered", "ingress_id": ingress_id, "receipt": receipt}
 
 
+def fail_ingress_unexpected(
+    *,
+    base_receipt: dict[str, Any],
+    ingress_id: str,
+    reason_prefix: str,
+    exc: Exception,
+) -> dict[str, Any]:
+    receipt = persist_ingress_receipt(
+        {
+            **base_receipt,
+            "status": "failed",
+            "reason": f"{reason_prefix}: {type(exc).__name__}: {exc}",
+            "targets": list(base_receipt.get("targets") or []),
+        }
+    )
+    return {"status": "failed", "ingress_id": ingress_id, "receipt": receipt}
+
+
 def process_room_launch_thread_message(
     *,
     base_receipt: dict[str, Any],
@@ -1445,24 +1463,40 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             }
         )
         if launcher and launch:
-            return process_room_launch_thread_message(
-                base_receipt=base_receipt,
-                launcher=launcher,
-                launch=launch,
-                message=message,
-                bot_user_id=bot_user_id,
-                ingress_id=ingress_id,
-                message_debug=message_debug,
-            )
+            try:
+                return process_room_launch_thread_message(
+                    base_receipt=base_receipt,
+                    launcher=launcher,
+                    launch=launch,
+                    message=message,
+                    bot_user_id=bot_user_id,
+                    ingress_id=ingress_id,
+                    message_debug=message_debug,
+                )
+            except Exception as exc:  # noqa: BLE001
+                return fail_ingress_unexpected(
+                    base_receipt=base_receipt,
+                    ingress_id=ingress_id,
+                    reason_prefix="room_launch_thread_error",
+                    exc=exc,
+                )
         if launcher:
-            return process_room_launch_message(
-                base_receipt=base_receipt,
-                launcher=launcher,
-                message=message,
-                bot_user_id=bot_user_id,
-                ingress_id=ingress_id,
-                message_debug=message_debug,
-            )
+            try:
+                return process_room_launch_message(
+                    base_receipt=base_receipt,
+                    launcher=launcher,
+                    message=message,
+                    bot_user_id=bot_user_id,
+                    ingress_id=ingress_id,
+                    message_debug=message_debug,
+                )
+            except Exception as exc:  # noqa: BLE001
+                return fail_ingress_unexpected(
+                    base_receipt=base_receipt,
+                    ingress_id=ingress_id,
+                    reason_prefix="room_launch_error",
+                    exc=exc,
+                )
         if not binding:
             receipt = persist_ingress_receipt(
                 {

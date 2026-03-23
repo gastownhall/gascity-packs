@@ -2066,6 +2066,10 @@ def gc_api_request(
         raise GCAPIError(f"{method.upper()} {url} failed with {exc.code}: {message}") from exc
     except urllib.error.URLError as exc:
         raise GCAPIError(f"{method.upper()} {url} failed: {exc}") from exc
+    except TimeoutError as exc:
+        raise GCAPIError(f"{method.upper()} {url} timed out") from exc
+    except OSError as exc:
+        raise GCAPIError(f"{method.upper()} {url} failed: {exc}") from exc
     if not raw:
         return {}
     try:
@@ -2575,6 +2579,25 @@ def prime_room_launch_participant(
     return body
 
 
+def _sync_launch_participant(
+    current: dict[str, Any],
+    normalized_handle: str,
+    participant: dict[str, Any],
+) -> dict[str, Any]:
+    participants = room_launch_participants(current)
+    participants[normalized_handle] = participant
+    current["participants"] = participants
+    if not str(current.get("qualified_handle", "")).strip():
+        current["qualified_handle"] = normalized_handle
+    if str(current.get("qualified_handle", "")).strip() == normalized_handle:
+        current["session_alias"] = str(participant.get("session_alias", "")).strip()
+        current["session_id"] = str(participant.get("session_id", "")).strip()
+        current["session_name"] = str(participant.get("session_name", "")).strip()
+    if not str(current.get("last_addressed_qualified_handle", "")).strip():
+        current["last_addressed_qualified_handle"] = normalized_handle
+    return current
+
+
 def _room_launch_participant_matches_session(participant: dict[str, Any], *, session_name: str = "", session_id: str = "") -> bool:
     normalized_session_name = str(session_name).strip()
     normalized_session_id = str(session_id).strip()
@@ -2667,23 +2690,23 @@ def ensure_room_launch_session_for_handle(
             or selector_snapshot
         )
         participant["qualified_handle"] = normalized_handle
-        if room_launch_participant_needs_primer(participant):
-            participant = prime_room_launch_participant(
-                current,
-                participant,
-                extra_message=initial_message,
-            )
-        participants[normalized_handle] = participant
-        current["participants"] = participants
-        if not str(current.get("qualified_handle", "")).strip():
-            current["qualified_handle"] = normalized_handle
-        if str(current.get("qualified_handle", "")).strip() == normalized_handle:
-            current["session_alias"] = str(participant.get("session_alias", "")).strip()
-            current["session_id"] = str(participant.get("session_id", "")).strip()
-            current["session_name"] = str(participant.get("session_name", "")).strip()
-        if not str(current.get("last_addressed_qualified_handle", "")).strip():
-            current["last_addressed_qualified_handle"] = normalized_handle
+        current = _sync_launch_participant(current, normalized_handle, participant)
         current = save_room_launch(current)
+        if room_launch_participant_needs_primer(participant):
+            try:
+                participant = prime_room_launch_participant(
+                    current,
+                    participant,
+                    extra_message=initial_message,
+                )
+            except Exception as exc:  # noqa: BLE001
+                participant["primer_error"] = str(exc)
+                participant["primer_last_failed_at"] = utcnow()
+            else:
+                participant.pop("primer_error", None)
+                participant.pop("primer_last_failed_at", None)
+            current = _sync_launch_participant(current, normalized_handle, participant)
+            current = save_room_launch(current)
         return current, copy.deepcopy(participant)
 
 

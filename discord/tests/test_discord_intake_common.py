@@ -1051,6 +1051,48 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(current["session_name"], "dc-new-sky")
         self.assertEqual(current["participants"]["corp/sky"]["delivery_selector"], "dc-new-sky")
 
+    def test_ensure_room_launch_session_persists_routable_identity_even_when_primer_delivery_times_out(self) -> None:
+        launch = {
+            "launch_id": "room-launch:primer-timeout",
+            "qualified_handle": "corp/sky",
+            "session_alias": "dc-123-sky",
+            "from_display": "alice",
+        }
+
+        with mock.patch.object(
+            common,
+            "list_city_sessions",
+            return_value=[
+                {
+                    "id": "gc-new",
+                    "alias": "dc-123-sky",
+                    "session_name": "dc-new-sky",
+                    "state": "active",
+                    "running": True,
+                    "created_at": "2026-03-22T00:00:00Z",
+                }
+            ],
+        ), mock.patch.object(
+            common,
+            "create_agent_session",
+            return_value={"id": "gc-new", "session_name": "dc-new-sky", "alias": "dc-123-sky"},
+        ), mock.patch.object(
+            common,
+            "deliver_session_message",
+            side_effect=TimeoutError("timed out"),
+        ):
+            current = common.ensure_room_launch_session(launch)
+
+        participant = current["participants"]["corp/sky"]
+        self.assertEqual(current["session_id"], "gc-new")
+        self.assertEqual(current["session_name"], "dc-new-sky")
+        self.assertEqual(participant["delivery_selector"], "dc-new-sky")
+        self.assertEqual(participant["session_id"], "gc-new")
+        self.assertEqual(participant["session_name"], "dc-new-sky")
+        self.assertIn("timed out", participant["primer_error"])
+        self.assertTrue(str(participant.get("primer_last_failed_at", "")).strip())
+        self.assertNotIn("primer_version", participant)
+
     def test_ensure_room_launch_session_raises_when_created_identity_never_becomes_routable(self) -> None:
         launch = {
             "launch_id": "room-launch:stuck",

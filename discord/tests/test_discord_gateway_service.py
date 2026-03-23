@@ -246,6 +246,30 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(receipt["from_display"], "alice")
         self.assertEqual((receipt.get("message_debug") or {}).get("content_source"), "rest_fallback")
 
+    def test_process_inbound_room_launch_marks_unexpected_launcher_errors_failed(self) -> None:
+        common.set_room_launcher(common.load_config(), "1", "22")
+        message = {
+            "id": "208b2",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@@corp/sky please help",
+            "author": {"id": "u-208b2", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "resolve_agent_handle", return_value=("corp/sky", "")), mock.patch.object(
+            common,
+            "ensure_room_launch_session",
+            side_effect=TimeoutError("timed out"),
+        ), mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "failed")
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-208b2")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "failed")
+        self.assertIn("room_launch_error: TimeoutError: timed out", receipt["reason"])
+
     def test_process_inbound_room_launch_marks_guild_empty_content_unavailable(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
         message = {
