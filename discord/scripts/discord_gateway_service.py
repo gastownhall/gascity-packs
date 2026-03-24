@@ -74,7 +74,7 @@ WORKER_QUEUE_SENTINEL: tuple[dict[str, Any], str] | None = None
 
 
 def participant_delivery_selector(participant: dict[str, Any]) -> str:
-    for key in ("session_name", "session_id", "session_alias", "delivery_selector"):
+    for key in ("session_name", "session_id", "session_alias"):
         value = str((participant or {}).get(key, "")).strip()
         if value:
             return value
@@ -257,16 +257,12 @@ def fetch_message_via_rest(channel_id: str, message_id: str) -> dict[str, Any]:
     except common.DiscordAPIError as exc:
         if int(getattr(exc, "status_code", 0) or 0) != 404:
             return {}
-    except Exception:
-        return {}
     try:
         payload = common.discord_api_request(
             "GET",
             f"/channels/{quoted_channel}/messages?around={quoted_message}&limit=3",
         )
     except common.DiscordAPIError:
-        return {}
-    except Exception:
         return {}
     if isinstance(payload, list):
         for item in payload:
@@ -726,7 +722,6 @@ def build_room_launch_envelope(
 ) -> str:
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
-    peer_fanout_enabled = bool(common.binding_peer_policy(launcher).get("peer_fanout_enabled"))
     lines = [
         "<discord-event>",
         "version: 1",
@@ -756,12 +751,9 @@ def build_room_launch_envelope(
         "reply_tool: gc discord reply-current --body-file <path>",
         "reply_success_signal: record.remote_message_id",
         "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
+        "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input",
+        "</discord-event>",
     ]
-    if peer_fanout_enabled:
-        lines.append(
-            "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input"
-        )
-    lines.append("</discord-event>")
     return "\n".join(lines)
 
 
@@ -780,7 +772,6 @@ def build_room_launch_thread_envelope(
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
     parent_id = str(launch.get("conversation_id", "")).strip()
-    peer_fanout_enabled = bool(common.binding_peer_policy(launcher).get("peer_fanout_enabled"))
     target_qualified_handle = str(target_participant.get("qualified_handle", "")).strip() or str(launch.get("qualified_handle", "")).strip()
     target_session_alias = str(target_participant.get("session_alias", "")).strip() or str(launch.get("session_alias", "")).strip()
     target_session_name = str(target_participant.get("session_name", "")).strip()
@@ -818,12 +809,9 @@ def build_room_launch_thread_envelope(
         "reply_tool: gc discord reply-current --body-file <path>",
         "reply_success_signal: record.remote_message_id",
         "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
+        "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input",
+        "</discord-event>",
     ]
-    if peer_fanout_enabled:
-        lines.append(
-            "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input"
-        )
-    lines.append("</discord-event>")
     return "\n".join(lines)
 
 
@@ -1081,24 +1069,6 @@ def process_room_launch_message(
     receipt["targets"] = [{"session_name": target_selector, "status": "delivered", "response": response}]
     receipt = persist_ingress_receipt(receipt)
     return {"status": "delivered", "ingress_id": ingress_id, "receipt": receipt}
-
-
-def fail_ingress_unexpected(
-    *,
-    base_receipt: dict[str, Any],
-    ingress_id: str,
-    reason_prefix: str,
-    exc: Exception,
-) -> dict[str, Any]:
-    receipt = persist_ingress_receipt(
-        {
-            **base_receipt,
-            "status": "failed",
-            "reason": f"{reason_prefix}: {type(exc).__name__}: {exc}",
-            "targets": list(base_receipt.get("targets") or []),
-        }
-    )
-    return {"status": "failed", "ingress_id": ingress_id, "receipt": receipt}
 
 
 def process_room_launch_thread_message(
@@ -1463,40 +1433,24 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             }
         )
         if launcher and launch:
-            try:
-                return process_room_launch_thread_message(
-                    base_receipt=base_receipt,
-                    launcher=launcher,
-                    launch=launch,
-                    message=message,
-                    bot_user_id=bot_user_id,
-                    ingress_id=ingress_id,
-                    message_debug=message_debug,
-                )
-            except Exception as exc:  # noqa: BLE001
-                return fail_ingress_unexpected(
-                    base_receipt=base_receipt,
-                    ingress_id=ingress_id,
-                    reason_prefix="room_launch_thread_error",
-                    exc=exc,
-                )
+            return process_room_launch_thread_message(
+                base_receipt=base_receipt,
+                launcher=launcher,
+                launch=launch,
+                message=message,
+                bot_user_id=bot_user_id,
+                ingress_id=ingress_id,
+                message_debug=message_debug,
+            )
         if launcher:
-            try:
-                return process_room_launch_message(
-                    base_receipt=base_receipt,
-                    launcher=launcher,
-                    message=message,
-                    bot_user_id=bot_user_id,
-                    ingress_id=ingress_id,
-                    message_debug=message_debug,
-                )
-            except Exception as exc:  # noqa: BLE001
-                return fail_ingress_unexpected(
-                    base_receipt=base_receipt,
-                    ingress_id=ingress_id,
-                    reason_prefix="room_launch_error",
-                    exc=exc,
-                )
+            return process_room_launch_message(
+                base_receipt=base_receipt,
+                launcher=launcher,
+                message=message,
+                bot_user_id=bot_user_id,
+                ingress_id=ingress_id,
+                message_debug=message_debug,
+            )
         if not binding:
             receipt = persist_ingress_receipt(
                 {

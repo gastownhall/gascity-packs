@@ -1,0 +1,15 @@
+{
+  "connected": false,
+  "dropped_messages": 1,
+  "duplicate_messages": 0,
+  "failed_messages": 0,
+  "ignored_messages": 0,
+  "last_event_at": "2026-03-23T00:42:57Z",
+  "last_message_preview": "",
+  "last_message_status": "shutting_down",
+  "message_queue_size": 0,
+  "routed_messages": 0,
+  "service": "discord-gateway",
+  "state": "stopped",
+  "updated_at": "2026-03-23T00:42:57Z"
+}

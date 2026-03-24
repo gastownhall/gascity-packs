@@ -1,0 +1,24 @@
+# PR Review — formula-driven adopt-PR workflow.
+#
+# Provides a 6-step molecule formula for reviewing and merging contributor PRs.
+# The polecat follows the formula steps; a human gate after review blocks until
+# the maintainer is ready to finalize.
+#
+# No agents defined — this pack provides a formula and a review skill overlay.
+# The consuming pack must supply the polecat agent.
+#
+# Usage in city.toml:
+#   [workspace]
+#   includes = [
+#       "https://github.com/julianknutsen/packs/tree/main/pr-review",
+#   ]
+#
+# Sling a PR review:
+#   gc sling <rig>/polecat mol-adopt-pr --formula --var pr=<url-or-number>
+
+[pack]
+name = "pr-review"
+schema = 1
+
+[formulas]
+dir = "formulas"

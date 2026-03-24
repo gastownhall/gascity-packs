@@ -10,8 +10,8 @@ import discord_intake_common as common
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Enable launcher mode for a Discord root room")
-    parser.add_argument("--guild-id", required=True, help="Discord guild id for the room")
+    parser = argparse.ArgumentParser(description="Enable launcher mode for a Discord root room via extmsg")
+    parser.add_argument("--guild-id", required=True, help="Discord guild id")
     parser.add_argument(
         "--response-mode",
         default="mention_only",
@@ -23,18 +23,13 @@ def main(argv: list[str]) -> int:
         default="",
         help="Qualified rig/alias handle used for respond_all rooms",
     )
-    parser.add_argument(
-        "--disable-peer-fanout",
-        action="store_true",
-        help="Disable agent-to-agent peer delivery inside launcher-managed threads",
-    )
-    parser.add_argument(
-        "--disallow-untargeted-peer-fanout",
-        action="store_true",
-        help="Require explicit @@rig/alias targeting before launcher-thread publishes fan out to peer sessions",
-    )
     parser.add_argument("conversation_id", help="Discord channel id for the root room")
     args = parser.parse_args(argv)
+
+    config = common.load_config()
+    app_id = str(config.get("app", {}).get("application_id", "")).strip()
+    if not app_id:
+        raise SystemExit("Discord app not configured. Run gc discord import-app first.")
 
     default_handle = str(args.default_handle).strip().lower()
     if default_handle:
@@ -43,24 +38,25 @@ def main(argv: list[str]) -> int:
             raise SystemExit(resolve_error)
         default_handle = qualified_handle
 
-    try:
-        policy_updates: dict[str, bool] = {}
-        if args.disable_peer_fanout:
-            policy_updates["peer_fanout_enabled"] = False
-        if args.disallow_untargeted_peer_fanout:
-            policy_updates["allow_untargeted_peer_fanout"] = False
-        config = common.set_room_launcher(
-            common.load_config(),
-            args.guild_id,
-            args.conversation_id,
-            response_mode=args.response_mode,
-            default_qualified_handle=default_handle,
-            policy=policy_updates or None,
-        )
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
-    launcher = common.resolve_room_launcher(config, args.conversation_id)
-    print(json.dumps(launcher, indent=2, sort_keys=True))
+    conversation = {
+        "scope_id": args.guild_id,
+        "provider": "discord",
+        "account_id": app_id,
+        "conversation_id": args.conversation_id,
+        "kind": "room",
+    }
+
+    # Create group via extmsg API.
+    group = common.gc_api_request("POST", "/v0/extmsg/groups", {
+        "root_conversation": conversation,
+        "mode": "launcher",
+        "default_handle": default_handle,
+        "metadata": {
+            "response_mode": args.response_mode,
+            "guild_id": args.guild_id,
+        },
+    })
+    print(json.dumps(group, indent=2, sort_keys=True))
     return 0
 
 
