@@ -2153,6 +2153,101 @@ def find_latest_discord_reply_context(session_selector: str = "", tail: int = 40
     raise GCAPIError(f"no recent discord event with publish metadata found for {selector}")
 
 
+def normalize_to_extmsg_message(
+    discord_event: dict[str, Any],
+    guild_id: str,
+    application_id: str,
+    participants: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Normalize a Discord MESSAGE_CREATE event to an extmsg ExternalInboundMessage."""
+    author = discord_event.get("author") or {}
+    channel_id = str(discord_event.get("channel_id", ""))
+    parent_id = str(discord_event.get("thread_metadata", {}).get("parent_id", "")
+                     if "thread_metadata" in discord_event
+                     else discord_event.get("parent_id", ""))
+    content = str(discord_event.get("content", ""))
+
+    # Determine conversation kind.
+    channel_type = discord_event.get("channel_type", discord_event.get("type", 0))
+    if channel_type == 1:  # DM
+        kind = "dm"
+    elif parent_id:  # thread
+        kind = "thread"
+    else:
+        kind = "room"
+
+    # Extract explicit target via natural language matching against participants.
+    explicit_target = ""
+    if participants:
+        explicit_target = _fuzzy_match_handle(content, participants)
+
+    # Extract reply-to from message reference.
+    ref = discord_event.get("message_reference") or {}
+    reply_to = str(ref.get("message_id", ""))
+
+    return {
+        "provider_message_id": str(discord_event.get("id", "")),
+        "conversation": {
+            "scope_id": guild_id or "global",
+            "provider": "discord",
+            "account_id": application_id,
+            "conversation_id": channel_id,
+            "parent_conversation_id": parent_id,
+            "kind": kind,
+        },
+        "actor": {
+            "id": str(author.get("id", "")),
+            "display_name": str(author.get("global_name", "") or author.get("username", "")),
+            "is_bot": bool(author.get("bot", False)),
+        },
+        "text": content,
+        "explicit_target": explicit_target,
+        "reply_to_message_id": reply_to,
+        "received_at": utcnow(),
+    }
+
+
+def _fuzzy_match_handle(
+    text: str,
+    participants: list[dict[str, str]],
+) -> str:
+    """Match participant handles in natural language text.
+
+    Looks for participant names/handles mentioned naturally in the message
+    (e.g., "hey worker, can you fix this?" matches handle "worker").
+    Returns the first matching handle, or empty string if none found.
+    """
+    lower_text = text.lower()
+    for p in participants:
+        handle = str(p.get("handle", "")).strip().lower()
+        if not handle:
+            continue
+        # Match the short name (after the rig/ prefix if present).
+        short = handle.rsplit("/", 1)[-1] if "/" in handle else handle
+        # Look for the handle as a word boundary match.
+        for name in (short, handle):
+            if not name:
+                continue
+            idx = lower_text.find(name)
+            if idx < 0:
+                continue
+            # Check word boundaries.
+            before_ok = idx == 0 or not lower_text[idx - 1].isalnum()
+            after_idx = idx + len(name)
+            after_ok = after_idx >= len(lower_text) or not lower_text[after_idx].isalnum()
+            if before_ok and after_ok:
+                return handle
+    return ""
+
+
+def deliver_to_extmsg(
+    message: dict[str, Any],
+    application_id: str,
+) -> dict[str, Any]:
+    """Post a normalized message to the extmsg inbound API."""
+    return gc_api_request("POST", "/v0/extmsg/inbound", {"message": message})
+
+
 def list_city_sessions(state: str = "all") -> list[dict[str, Any]]:
     suffix = ""
     normalized_state = str(state).strip()

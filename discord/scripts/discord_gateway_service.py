@@ -1887,8 +1887,30 @@ class GatewayWorker:
                 self.message_queue.task_done()
                 self.runtime_state.patch(message_queue_size=self.message_queue.qsize())
 
+    def _record_extmsg_inbound(self, message: dict[str, Any], bot_user_id: str) -> None:
+        """Normalize and post inbound Discord message to extmsg fabric (best-effort)."""
+        try:
+            author = message.get("author") or {}
+            if bool(author.get("bot")) or str(author.get("id", "")).strip() == bot_user_id:
+                return  # Skip bot messages.
+            guild_id = str(message.get("guild_id", "")).strip()
+            config = common.load_config()
+            app_id = str(config.get("app", {}).get("application_id", "")).strip()
+            if not app_id:
+                return
+            normalized = common.normalize_to_extmsg_message(
+                message,
+                guild_id=guild_id,
+                application_id=app_id,
+            )
+            common.deliver_to_extmsg(normalized, app_id)
+        except Exception:
+            pass  # Best-effort; existing delivery path handles routing.
+
     def handle_gateway_message(self, message: dict[str, Any], bot_user_id: str) -> None:
         try:
+            # Record inbound message in the extmsg transcript (best-effort).
+            self._record_extmsg_inbound(message, bot_user_id)
             outcome = process_inbound_message(message, bot_user_id)
             status = str(outcome.get("status", "")).strip()
             preview = summarize_body(str((outcome.get("receipt") or {}).get("body_preview", "")))
