@@ -1888,7 +1888,11 @@ class GatewayWorker:
                 self.runtime_state.patch(message_queue_size=self.message_queue.qsize())
 
     def _record_extmsg_inbound(self, message: dict[str, Any], bot_user_id: str) -> None:
-        """Normalize and post inbound Discord message to extmsg fabric (best-effort)."""
+        """Normalize and post inbound Discord message to extmsg fabric.
+
+        If the message contains @mentions in a room (not a thread), this also
+        triggers thread creation and session setup — the room is a launchpad.
+        """
         try:
             author = message.get("author") or {}
             if bool(author.get("bot")) or str(author.get("id", "")).strip() == bot_user_id:
@@ -1898,6 +1902,43 @@ class GatewayWorker:
             app_id = str(config.get("app", {}).get("application_id", "")).strip()
             if not app_id:
                 return
+
+            content = str(message.get("content", ""))
+            channel_id = str(message.get("channel_id", "")).strip()
+            parent_id = str(message.get("parent_id", "")).strip()
+            is_thread = bool(parent_id)
+
+            # If this is a room message (not a thread) with @mentions,
+            # launch a new thread with the mentioned agents.
+            if guild_id and channel_id and not is_thread:
+                mentions = common.resolve_at_mentions(content)
+                if mentions:
+                    targets = common.resolve_mention_targets(mentions)
+                    if targets:
+                        # Get participant list for NL matching in the thread.
+                        participants = [
+                            {"handle": t.get("mention", "")}
+                            for t in targets
+                        ]
+                        group = common.launch_thread_for_mentions(
+                            message, targets, guild_id, app_id,
+                        )
+                        if group:
+                            # Deliver the original message into the new thread's
+                            # extmsg transcript so participants see it.
+                            thread_conv_id = str(group.get("root_conversation", {}).get("conversation_id", ""))
+                            if thread_conv_id:
+                                normalized = common.normalize_to_extmsg_message(
+                                    {**message, "channel_id": thread_conv_id, "parent_id": channel_id},
+                                    guild_id=guild_id,
+                                    application_id=app_id,
+                                    participants=participants,
+                                )
+                                common.deliver_to_extmsg(normalized, app_id)
+                        return  # Thread launched; don't also deliver as room message.
+
+            # For thread messages or non-mention room messages, just record
+            # in the extmsg transcript.
             normalized = common.normalize_to_extmsg_message(
                 message,
                 guild_id=guild_id,

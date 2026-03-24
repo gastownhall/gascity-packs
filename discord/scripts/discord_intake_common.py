@@ -2248,6 +2248,183 @@ def deliver_to_extmsg(
     return gc_api_request("POST", "/v0/extmsg/inbound", {"message": message})
 
 
+def resolve_at_mentions(text: str) -> list[str]:
+    """Extract @mentions from message text.
+
+    Matches @name patterns (e.g., "@sky", "@worker", "@backend/sky").
+    Returns list of raw mention strings (without the @ prefix).
+    """
+    import re
+    return re.findall(r"@([a-zA-Z][a-zA-Z0-9_/-]*)", text)
+
+
+def resolve_mention_targets(mentions: list[str]) -> list[dict[str, Any]]:
+    """Resolve @mention names to session/template targets.
+
+    Resolution order for each mention:
+    1. Managed session with matching alias → {"kind": "session", "session": {...}}
+    2. Agent template with matching name → {"kind": "template", "template": str, "agent": {...}}
+    3. Unresolved → skipped
+
+    Returns list of resolved targets.
+    """
+    if not mentions:
+        return []
+    sessions = list_city_sessions(state="all")
+    agents = list_city_agents()
+
+    # Build lookup indices.
+    session_by_alias: dict[str, dict[str, Any]] = {}
+    for s in sessions:
+        alias = str(s.get("alias", "")).strip().lower()
+        if alias:
+            session_by_alias[alias] = s
+        name = str(s.get("name", "")).strip().lower()
+        if name:
+            session_by_alias[name] = s
+
+    agent_by_name: dict[str, dict[str, Any]] = {}
+    for a in agents:
+        qname = str(a.get("name", "")).strip().lower()
+        if qname:
+            agent_by_name[qname] = a
+            # Also index by bare name (after rig/).
+            base = qname.rsplit("/", 1)[-1] if "/" in qname else qname
+            if base not in agent_by_name:
+                agent_by_name[base] = a
+        template = str(a.get("template", "")).strip().lower()
+        if template and template not in agent_by_name:
+            agent_by_name[template] = a
+
+    targets = []
+    seen: set[str] = set()
+    for mention in mentions:
+        key = mention.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        # 1. Try managed session by alias/name.
+        if key in session_by_alias:
+            targets.append({"kind": "session", "session": session_by_alias[key], "mention": mention})
+            continue
+        # 2. Try agent template.
+        if key in agent_by_name:
+            agent = agent_by_name[key]
+            targets.append({"kind": "template", "template": str(agent.get("name", "")), "agent": agent, "mention": mention})
+            continue
+    return targets
+
+
+def launch_thread_for_mentions(
+    discord_message: dict[str, Any],
+    targets: list[dict[str, Any]],
+    guild_id: str,
+    application_id: str,
+) -> dict[str, Any] | None:
+    """Create a Discord thread from a room message and set up extmsg group.
+
+    Called when a human @mentions agents in a room. Creates the thread,
+    creates an extmsg group, and adds each target as a participant.
+
+    Returns the created group record, or None on failure.
+    """
+    channel_id = str(discord_message.get("channel_id", ""))
+    message_id = str(discord_message.get("id", ""))
+    content = str(discord_message.get("content", ""))
+    if not channel_id or not message_id or not targets:
+        return None
+
+    # Create Discord thread from the message.
+    thread_name = content[:100] if content else "Thread"
+    try:
+        thread = discord_api_request(
+            "POST",
+            f"/channels/{channel_id}/messages/{message_id}/threads",
+            {"name": thread_name, "auto_archive_duration": 1440},
+        )
+    except DiscordAPIError:
+        return None
+
+    thread_id = str(thread.get("id", ""))
+    if not thread_id:
+        return None
+
+    # Create extmsg group for the thread.
+    thread_conversation = {
+        "scope_id": guild_id or "global",
+        "provider": "discord",
+        "account_id": application_id,
+        "conversation_id": thread_id,
+        "parent_conversation_id": channel_id,
+        "kind": "thread",
+    }
+
+    first_handle = ""
+    for t in targets:
+        if t["kind"] == "session":
+            first_handle = str(t["session"].get("alias", "") or t["session"].get("name", ""))
+            break
+        if t["kind"] == "template":
+            first_handle = str(t["agent"].get("name", "")).rsplit("/", 1)[-1]
+            break
+
+    try:
+        group = gc_api_request("POST", "/v0/extmsg/groups", {
+            "root_conversation": thread_conversation,
+            "mode": "launcher",
+            "default_handle": first_handle,
+            "metadata": {"guild_id": guild_id, "source_channel_id": channel_id, "source_message_id": message_id},
+        })
+    except GCAPIError:
+        return None
+
+    group_id = str(group.get("id", ""))
+
+    # Add each target as a participant.
+    for target in targets:
+        session_id = ""
+        handle = ""
+        if target["kind"] == "session":
+            session_id = str(target["session"].get("name", ""))
+            handle = str(target["session"].get("alias", "") or session_id)
+        elif target["kind"] == "template":
+            # Create a new session from the template.
+            template_name = str(target["template"])
+            try:
+                session = gc_api_request("POST", "/v0/sessions", {
+                    "template": template_name,
+                })
+                session_id = str(session.get("name", "") or session.get("session_name", ""))
+            except GCAPIError:
+                continue
+            handle = template_name.rsplit("/", 1)[-1] if "/" in template_name else template_name
+
+        if not session_id or not handle:
+            continue
+
+        # Add as group participant.
+        try:
+            gc_api_request("POST", "/v0/extmsg/groups/participants", {
+                "group_id": group_id,
+                "handle": handle,
+                "session_id": session_id,
+                "public": True,
+            })
+        except GCAPIError:
+            pass
+
+        # Ensure transcript membership.
+        try:
+            gc_api_request("POST", "/v0/extmsg/bindings", {
+                "conversation": thread_conversation,
+                "session_id": session_id,
+            })
+        except GCAPIError:
+            pass  # May conflict if already bound; that's fine.
+
+    return group
+
+
 def list_city_sessions(state: str = "all") -> list[dict[str, Any]]:
     suffix = ""
     normalized_state = str(state).strip()
