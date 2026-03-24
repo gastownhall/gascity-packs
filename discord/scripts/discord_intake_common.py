@@ -4170,7 +4170,8 @@ def publish_binding_message(
             source_session_name=effective_source_session_name,
             source_session_id=effective_source_session_id,
         )
-    record = _apply_peer_fanout(record, binding, source_context=source_context)
+    # Peer notification is now handled by the extmsg outbound orchestrator
+    # via transcript membership — no pack-side fanout needed.
     return {"binding": binding, "record": record, "response": response}
 
 
