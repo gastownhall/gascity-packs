@@ -1887,45 +1887,52 @@ class GatewayWorker:
                 self.message_queue.task_done()
                 self.runtime_state.patch(message_queue_size=self.message_queue.qsize())
 
-    def _record_extmsg_inbound(self, message: dict[str, Any], bot_user_id: str) -> None:
+    def _record_extmsg_inbound(self, message: dict[str, Any], bot_user_id: str) -> bool:
         """Normalize and post inbound Discord message to extmsg fabric.
 
         If the message contains @mentions in a room (not a thread), this also
         triggers thread creation and session setup — the room is a launchpad.
+
+        Returns True if the message was fully handled by extmsg (caller should
+        skip legacy routing). Returns False to fall through to legacy path.
         """
         try:
             author = message.get("author") or {}
             if bool(author.get("bot")) or str(author.get("id", "")).strip() == bot_user_id:
-                return  # Skip bot messages.
+                return False  # Skip bot messages.
             guild_id = str(message.get("guild_id", "")).strip()
             config = common.load_config()
             app_id = str(config.get("app", {}).get("application_id", "")).strip()
             if not app_id:
-                return
+                return False
 
             content = str(message.get("content", ""))
             channel_id = str(message.get("channel_id", "")).strip()
             parent_id = str(message.get("parent_id", "")).strip()
             is_thread = bool(parent_id)
 
-            # If this is a room message (not a thread) with @mentions,
-            # launch a new thread with the mentioned agents.
+            # If this is a room message (not a thread) with @mentions or
+            # natural language agent name references, launch a thread.
             if guild_id and channel_id and not is_thread:
                 mentions = common.resolve_at_mentions(content)
+                # Also try NL matching if no @mentions found.
+                if not mentions:
+                    mentions = common.resolve_nl_agent_mentions(content)
+                print(f"[extmsg] content={content!r} mentions={mentions}", flush=True)
                 if mentions:
                     targets = common.resolve_mention_targets(mentions)
+                    print(f"[extmsg] targets={[(t.get('kind'),t.get('mention','')) for t in targets]}", flush=True)
                     if targets:
-                        # Get participant list for NL matching in the thread.
                         participants = [
                             {"handle": t.get("mention", "")}
                             for t in targets
                         ]
+                        print(f"[extmsg] launching thread for {len(targets)} targets", flush=True)
                         group = common.launch_thread_for_mentions(
                             message, targets, guild_id, app_id,
                         )
+                        print(f"[extmsg] group={group}", flush=True)
                         if group:
-                            # Deliver the original message into the new thread's
-                            # extmsg transcript so participants see it.
                             thread_conv_id = str(group.get("root_conversation", {}).get("conversation_id", ""))
                             if thread_conv_id:
                                 normalized = common.normalize_to_extmsg_message(
@@ -1935,23 +1942,36 @@ class GatewayWorker:
                                     participants=participants,
                                 )
                                 common.deliver_to_extmsg(normalized, app_id)
-                        return  # Thread launched; don't also deliver as room message.
+                            return True  # Thread launched — fully handled.
 
-            # For thread messages or non-mention room messages, just record
-            # in the extmsg transcript.
-            normalized = common.normalize_to_extmsg_message(
-                message,
-                guild_id=guild_id,
-                application_id=app_id,
-            )
-            common.deliver_to_extmsg(normalized, app_id)
-        except Exception:
-            pass  # Best-effort; existing delivery path handles routing.
+            # For thread messages, deliver to extmsg transcript.
+            if is_thread:
+                normalized = common.normalize_to_extmsg_message(
+                    message,
+                    guild_id=guild_id,
+                    application_id=app_id,
+                )
+                common.deliver_to_extmsg(normalized, app_id)
+                return True  # Thread message — fully handled by extmsg.
+
+            # Room message without @mentions — fall through to legacy.
+            return False
+        except Exception as exc:
+            import traceback
+            print(f"[extmsg] error: {exc}", flush=True)
+            traceback.print_exc()
+            return False  # On error, fall through to legacy path.
 
     def handle_gateway_message(self, message: dict[str, Any], bot_user_id: str) -> None:
         try:
-            # Record inbound message in the extmsg transcript (best-effort).
-            self._record_extmsg_inbound(message, bot_user_id)
+            # Try the new extmsg path first. If it handles the message
+            # (e.g., creates a thread from @mentions), skip legacy routing.
+            if self._record_extmsg_inbound(message, bot_user_id):
+                self.runtime_state.bump("routed_messages",
+                    last_message_status="extmsg_routed",
+                    last_message_preview=common.utcnow(),
+                    last_event_at=common.utcnow())
+                return
             outcome = process_inbound_message(message, bot_user_id)
             status = str(outcome.get("status", "")).strip()
             preview = summarize_body(str((outcome.get("receipt") or {}).get("body_preview", "")))

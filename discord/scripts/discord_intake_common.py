@@ -1972,7 +1972,30 @@ def normalize_gc_api_bind(value: Any) -> str:
     return bind or "127.0.0.1"
 
 
+_supervisor_scope_cache: dict[str, tuple[float, str]] = {}  # workspace_name → (timestamp, scope)
+_SCOPE_CACHE_TTL = 60.0  # seconds
+
+
 def discover_supervisor_gc_api_scope(city_cfg: dict[str, Any]) -> str:
+    """Discover the supervisor API scope prefix for the city.
+
+    Caches the result for 60 seconds to avoid hitting the supervisor
+    on every API call.
+    """
+    workspace_cfg = city_cfg.get("workspace") or {}
+    workspace_name = str(workspace_cfg.get("name", "")).strip() if isinstance(workspace_cfg, dict) else ""
+    cache_key = workspace_name or "__default__"
+    now = time.monotonic()
+    if cache_key in _supervisor_scope_cache:
+        cached_at, cached_scope = _supervisor_scope_cache[cache_key]
+        if now - cached_at < _SCOPE_CACHE_TTL:
+            return cached_scope
+    scope = _discover_supervisor_gc_api_scope_uncached(city_cfg)
+    _supervisor_scope_cache[cache_key] = (now, scope)
+    return scope
+
+
+def _discover_supervisor_gc_api_scope_uncached(city_cfg: dict[str, Any]) -> str:
     workspace_cfg = city_cfg.get("workspace") or {}
     workspace_name = ""
     if isinstance(workspace_cfg, dict):
@@ -2041,11 +2064,19 @@ def gc_api_request(
     if path.startswith("http://") or path.startswith("https://"):
         url = path
     else:
-        city_cfg = load_city_toml()
-        scope_prefix = discover_supervisor_gc_api_scope(city_cfg)
-        normalized_path = path
-        if scope_prefix and path.startswith("/v0/"):
-            normalized_path = scope_prefix + "/" + path[len("/v0/") :]
+        # Skip scope discovery if the caller provided an explicit base URL
+        # (it already includes the scope prefix). Strip /v0/ from path
+        # since the base URL already contains the scoped root.
+        override = str(os.environ.get("GC_API_BASE_URL", "")).strip()
+        if override:
+            # Explicit base URL already includes scope; strip /v0/ prefix.
+            normalized_path = "/" + path[len("/v0/"):] if path.startswith("/v0/") else path
+        else:
+            city_cfg = load_city_toml()
+            scope_prefix = discover_supervisor_gc_api_scope(city_cfg)
+            normalized_path = path
+            if scope_prefix and path.startswith("/v0/"):
+                normalized_path = scope_prefix + "/" + path[len("/v0/") :]
         url = urllib.parse.urljoin(base_url.rstrip("/") + "/", normalized_path.lstrip("/"))
     body = None
     request_headers = {
@@ -2258,6 +2289,36 @@ def resolve_at_mentions(text: str) -> list[str]:
     return re.findall(r"@([a-zA-Z][a-zA-Z0-9_/-]*)", text)
 
 
+def resolve_nl_agent_mentions(text: str) -> list[str]:
+    """Find agent names mentioned naturally in text (without @ prefix).
+
+    Matches known agent names as word boundaries in the message.
+    Returns list of matched agent base names.
+    """
+    lower_text = text.lower()
+    agents = list_city_agents()
+    found: list[str] = []
+    seen: set[str] = set()
+    for a in agents:
+        qname = str(a.get("name", "")).strip().lower()
+        if not qname:
+            continue
+        base = qname.rsplit("/", 1)[-1] if "/" in qname else qname
+        if base in seen or not base:
+            continue
+        # Word boundary match.
+        idx = lower_text.find(base)
+        if idx < 0:
+            continue
+        before_ok = idx == 0 or not lower_text[idx - 1].isalnum()
+        after_idx = idx + len(base)
+        after_ok = after_idx >= len(lower_text) or not lower_text[after_idx].isalnum()
+        if before_ok and after_ok:
+            found.append(base)
+            seen.add(base)
+    return found
+
+
 def resolve_mention_targets(mentions: list[str]) -> list[dict[str, Any]]:
     """Resolve @mention names to session/template targets.
 
@@ -2274,12 +2335,13 @@ def resolve_mention_targets(mentions: list[str]) -> list[dict[str, Any]]:
     agents = list_city_agents()
 
     # Build lookup indices.
+    # Match sessions by alias or session name (both are stable identifiers).
     session_by_alias: dict[str, dict[str, Any]] = {}
     for s in sessions:
         alias = str(s.get("alias", "")).strip().lower()
         if alias:
             session_by_alias[alias] = s
-        name = str(s.get("name", "")).strip().lower()
+        name = str(s.get("session_name", s.get("name", ""))).strip().lower()
         if name:
             session_by_alias[name] = s
 
@@ -2296,6 +2358,17 @@ def resolve_mention_targets(mentions: list[str]) -> list[dict[str, Any]]:
         if template and template not in agent_by_name:
             agent_by_name[template] = a
 
+    # Collect agent base names so we can detect when a session alias
+    # is just the agent template name (those should create new sessions,
+    # not reuse the singleton).
+    agent_base_names: set[str] = set()
+    for a in agents:
+        qname = str(a.get("name", "")).strip().lower()
+        if qname:
+            base = qname.rsplit("/", 1)[-1] if "/" in qname else qname
+            agent_base_names.add(base)
+            agent_base_names.add(qname)
+
     targets = []
     seen: set[str] = set()
     for mention in mentions:
@@ -2303,16 +2376,36 @@ def resolve_mention_targets(mentions: list[str]) -> list[dict[str, Any]]:
         if key in seen:
             continue
         seen.add(key)
-        # 1. Try managed session by alias/name.
-        if key in session_by_alias:
-            targets.append({"kind": "session", "session": session_by_alias[key], "mention": mention})
-            continue
-        # 2. Try agent template.
+        # 1. Try agent template first — if the mention matches a template
+        # name, always create a new session (don't reuse the singleton).
         if key in agent_by_name:
             agent = agent_by_name[key]
             targets.append({"kind": "template", "template": str(agent.get("name", "")), "agent": agent, "mention": mention})
             continue
+        # 2. Try managed session by alias/name — only for mentions that
+        # don't match any agent template (e.g., explicit session names
+        # like "s-gc-33" or custom aliases like "my-worker").
+        if key in session_by_alias:
+            targets.append({"kind": "session", "session": session_by_alias[key], "mention": mention})
+            continue
     return targets
+
+
+def _create_session_from_template(template_name: str, alias: str) -> str:
+    """Create a session from an agent template via the sessions API (async).
+
+    Returns the session name. The reconciler will start the process.
+    """
+    session = gc_api_request("POST", "/v0/sessions", {
+        "template": template_name,
+        "name": template_name,
+        "kind": "agent",
+        "async": True,
+    })
+    session_name = str(session.get("session_name", "") or session.get("name", "")).strip()
+    if not session_name:
+        raise RuntimeError(f"session creation returned no session_name for {template_name}")
+    return session_name
 
 
 def launch_thread_for_mentions(
@@ -2342,7 +2435,8 @@ def launch_thread_for_mentions(
             f"/channels/{channel_id}/messages/{message_id}/threads",
             {"name": thread_name, "auto_archive_duration": 1440},
         )
-    except DiscordAPIError:
+    except DiscordAPIError as exc:
+        print(f"[extmsg] Discord thread creation failed: {exc}", flush=True)
         return None
 
     thread_id = str(thread.get("id", ""))
@@ -2368,6 +2462,7 @@ def launch_thread_for_mentions(
             first_handle = str(t["agent"].get("name", "")).rsplit("/", 1)[-1]
             break
 
+    print(f"[extmsg] thread created: {thread_id}, creating group...", flush=True)
     try:
         group = gc_api_request("POST", "/v0/extmsg/groups", {
             "root_conversation": thread_conversation,
@@ -2375,7 +2470,8 @@ def launch_thread_for_mentions(
             "default_handle": first_handle,
             "metadata": {"guild_id": guild_id, "source_channel_id": channel_id, "source_message_id": message_id},
         })
-    except GCAPIError:
+    except GCAPIError as exc:
+        print(f"[extmsg] group creation failed: {exc}", flush=True)
         return None
 
     group_id = str(group.get("id", ""))
@@ -2388,16 +2484,13 @@ def launch_thread_for_mentions(
             session_id = str(target["session"].get("name", ""))
             handle = str(target["session"].get("alias", "") or session_id)
         elif target["kind"] == "template":
-            # Create a new session from the template.
+            # Create a new session from the template via gc session new.
             template_name = str(target["template"])
-            try:
-                session = gc_api_request("POST", "/v0/sessions", {
-                    "template": template_name,
-                })
-                session_id = str(session.get("name", "") or session.get("session_name", ""))
-            except GCAPIError:
-                continue
             handle = template_name.rsplit("/", 1)[-1] if "/" in template_name else template_name
+            try:
+                session_id = _create_session_from_template(template_name, handle)
+            except (GCAPIError, RuntimeError):
+                continue
 
         if not session_id or not handle:
             continue
