@@ -1991,7 +1991,8 @@ def discover_supervisor_gc_api_scope(city_cfg: dict[str, Any]) -> str:
         if now - cached_at < _SCOPE_CACHE_TTL:
             return cached_scope
     scope = _discover_supervisor_gc_api_scope_uncached(city_cfg)
-    _supervisor_scope_cache[cache_key] = (now, scope)
+    if scope:  # Only cache successful discovery; retry on next call if empty.
+        _supervisor_scope_cache[cache_key] = (now, scope)
     return scope
 
 
@@ -2391,21 +2392,132 @@ def resolve_mention_targets(mentions: list[str]) -> list[dict[str, Any]]:
     return targets
 
 
-def _create_session_from_template(template_name: str, alias: str) -> str:
-    """Create a session from an agent template via the sessions API (async).
+def _create_session_from_template(template_name: str, alias: str, initial_message: str = "") -> str:
+    """Create a session from an agent template via the sessions API.
 
-    Returns the session name. The reconciler will start the process.
+    If initial_message is provided, creates synchronously so the session
+    starts with the message in its context. Otherwise creates async.
+
+    Returns the session name.
     """
-    session = gc_api_request("POST", "/v0/sessions", {
+    payload: dict[str, Any] = {
         "template": template_name,
         "name": template_name,
         "kind": "agent",
-        "async": True,
-    })
+    }
+    if initial_message:
+        payload["message"] = initial_message
+    else:
+        payload["async"] = True
+    session = gc_api_request("POST", "/v0/sessions", payload, timeout=60.0)
     session_name = str(session.get("session_name", "") or session.get("name", "")).strip()
     if not session_name:
         raise RuntimeError(f"session creation returned no session_name for {template_name}")
     return session_name
+
+
+def _build_discord_prompt_fragment(handle: str) -> str:
+    """Build the Discord conversation prompt fragment for an agent."""
+    return f"""<system-context>
+You are in a shared Discord thread with humans and other agents.
+Your agent handle is "{handle}". When someone mentions "{handle}" (or @{handle}),
+they are likely addressing you.
+
+## How this thread works
+
+Everyone in this thread sees every message — humans and agents alike. There is
+no private channel. When you reply, your message is visible to all participants.
+
+## When to respond
+
+- **You are named directly** ("{handle}, fix the tests" or "@{handle}"): You
+  should definitely respond. This is a strong signal the message is for you.
+- **@{handle} in thread**: This is the strongest signal — the human expects a
+  response from you specifically.
+- **Multiple agents named** ("{handle}, priya, work together"): All named agents
+  should respond.
+- **No one is named, but you have relevant info**: Respond if you can genuinely
+  add value. If someone else already handled it, stay silent. Silence is fine.
+- **A peer agent says something relevant to your work**: You may respond, but
+  do not pile on.
+- **A peer says something not relevant to you**: Read for context, move on.
+
+The key test: **does this message need MY input?** If yes, respond. If maybe,
+use judgment. If no, listen.
+
+## Replying to Discord
+
+Normal assistant output stays private to the session. Do not assume a human on
+Discord can see it.
+
+If the event includes `reply_contract: explicit_publish_required`, follow that
+contract literally: plain assistant output does not go back to Discord.
+
+To send a human-visible reply, write the body to a file and run the command
+shown in the `reply_tool` field of the discord-event. Example:
+  gc discord reply-current --conversation-id <id> --reply-to <id> --body-file <path>
+
+**Always prefix your Discord messages with your handle in bold** so humans and
+other agents know who is speaking. Example: if your handle is "sky", start
+every reply with "**sky:** " followed by your message. Other agents should use
+@sky to address you directly.
+
+Do not put long replies inline in --body. Use --body-file.
+Only claim success after the command returns JSON with a non-empty
+record.remote_message_id.
+
+## Addressing others
+
+When addressing a specific peer agent, use @name for clarity (e.g., "@priya can
+you look at the test failures?"). This helps the routing layer.
+
+When you need a response from a human, use their Discord mention tag (e.g.,
+`<@USER_ID>`) so they get a notification. The discord-event includes
+`from_user_id` — use `<@` + the from_user_id value + `>` to tag the person
+who messaged you. Do not assume humans are watching the thread.
+</system-context>"""
+
+
+def _build_thread_launch_envelope(
+    *,
+    discord_message: dict[str, Any],
+    thread_id: str,
+    channel_id: str,
+    guild_id: str,
+    handle: str,
+    content: str,
+) -> str:
+    """Build a discord-event envelope with prompt fragment for a thread-launch message."""
+    author = discord_message.get("author") or {}
+    message_id = str(discord_message.get("id", ""))
+    prompt = _build_discord_prompt_fragment(handle)
+    lines = [
+        prompt,
+        "",
+        "<discord-event>",
+        "version: 1",
+        "kind: discord_human_message",
+        f"guild_id: {guild_id}",
+        f"conversation: discord/{guild_id}/{thread_id}",
+        f"conversation_key: {guild_id}:{thread_id}",
+        f"discord_message_id: {message_id}",
+        f"from_display: {str(author.get('global_name', '') or author.get('username', '')).strip()}",
+        f"from_user_id: {str(author.get('id', '')).strip()}",
+        "delivery: targeted",
+        f"target_handle: {handle}",
+        f"untrusted_body_json: {json.dumps(content)}",
+        f"publish_binding_id: extmsg:thread:{thread_id}",
+        f"publish_conversation_id: {thread_id}",
+        f"publish_trigger_id: {message_id}",
+        f"publish_reply_to_discord_message_id: {message_id}",
+        "normal_output_visibility: internal_only",
+        "reply_contract: explicit_publish_required",
+        f"reply_tool: gc discord reply-current --conversation-id {thread_id} --body-file <path>",
+        "reply_success_signal: record.remote_message_id",
+        "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
+        "</discord-event>",
+    ]
+    return "\n".join(lines)
 
 
 def launch_thread_for_mentions(
@@ -2476,20 +2588,157 @@ def launch_thread_for_mentions(
 
     group_id = str(group.get("id", ""))
 
-    # Add each target as a participant.
+    # Prepare participant work items.
+    def _create_participant(target: dict[str, Any]) -> tuple[str, str] | None:
+        """Create a session for a target and return (session_id, handle) or None."""
+        if target["kind"] == "session":
+            sid = str(target["session"].get("name", ""))
+            handle = str(target["session"].get("alias", "") or sid)
+            return (sid, handle) if sid else None
+        if target["kind"] == "template":
+            template_name = str(target["template"])
+            handle = template_name.rsplit("/", 1)[-1] if "/" in template_name else template_name
+            envelope = _build_thread_launch_envelope(
+                discord_message=discord_message,
+                thread_id=thread_id,
+                channel_id=channel_id,
+                guild_id=guild_id,
+                handle=handle,
+                content=content,
+            )
+            try:
+                sid = _create_session_from_template(template_name, handle)
+                print(f"[extmsg] session {sid} created from {template_name}", flush=True)
+                # Deliver the envelope as a nudge after session creation rather
+                # than as body.Message, to avoid shared-workdir leakage between
+                # sessions started by the same reconciler tick.
+                try:
+                    gc_api_request("POST", f"/v0/session/{sid}/messages", {"message": envelope}, timeout=10.0)
+                except GCAPIError:
+                    pass  # best-effort; the transcript hook will also deliver context
+                return (sid, handle)
+            except (GCAPIError, RuntimeError) as exc:
+                print(f"[extmsg] session creation failed for {template_name}: {exc}", flush=True)
+                return None
+        return None
+
+    # Create sessions sequentially to avoid parallel prompt resolution races.
+    # TODO: switch back to parallel once the session API prompt race is fixed.
+    participants: list[tuple[str, str]] = []
+    for t in targets:
+        result = _create_participant(t)
+        if result:
+            participants.append(result)
+
+    # Register participants and bindings (fast, sequential).
+    for session_id, handle in participants:
+        try:
+            gc_api_request("POST", "/v0/extmsg/groups/participants", {
+                "group_id": group_id,
+                "handle": handle,
+                "session_id": session_id,
+                "public": True,
+            })
+        except GCAPIError:
+            pass
+        try:
+            gc_api_request("POST", "/v0/extmsg/bindings", {
+                "conversation": thread_conversation,
+                "session_id": session_id,
+            })
+        except GCAPIError:
+            pass
+
+    return group
+
+
+def add_participants_to_thread(
+    thread_id: str,
+    parent_channel_id: str,
+    targets: list[dict[str, Any]],
+    guild_id: str,
+    application_id: str,
+    content: str = "",
+) -> None:
+    """Add new agent participants to an existing thread.
+
+    For each target, creates a session (if template) or reuses existing,
+    adds as group participant, creates binding, and delivers the message
+    as a discord-event envelope.
+    """
+    thread_conversation = {
+        "scope_id": guild_id or "global",
+        "provider": "discord",
+        "account_id": application_id,
+        "conversation_id": thread_id,
+        "parent_conversation_id": parent_channel_id,
+        "kind": "thread",
+    }
+
+    # Find or create the group for this thread.
+    try:
+        group = gc_api_request("GET", f"/v0/extmsg/groups?scope_id={guild_id}&provider=discord&account_id={application_id}&conversation_id={thread_id}&kind=thread")
+        group_id = str(group.get("id", ""))
+    except GCAPIError:
+        # Group doesn't exist yet — create it.
+        try:
+            group = gc_api_request("POST", "/v0/extmsg/groups", {
+                "root_conversation": thread_conversation,
+                "mode": "launcher",
+                "default_handle": "",
+            })
+            group_id = str(group.get("id", ""))
+        except GCAPIError as exc:
+            print(f"[extmsg] group creation failed for thread {thread_id}: {exc}", flush=True)
+            return
+
+    # Get existing bindings for this thread to avoid duplicates.
+    existing_sessions: set[str] = set()
+    try:
+        # Check all sessions — find those bound to this thread.
+        sessions = list_city_sessions(state="all")
+        for s in sessions:
+            sid = str(s.get("session_name", s.get("name", "")))
+            try:
+                bindings = gc_api_request("GET", f"/v0/extmsg/bindings?session_id={sid}")
+                for b in (bindings.get("items") or []):
+                    if str(b.get("conversation", {}).get("conversation_id", "")) == thread_id:
+                        tmpl = str(s.get("template", ""))
+                        existing_sessions.add(tmpl)
+                        break
+            except GCAPIError:
+                pass
+    except GCAPIError:
+        pass
+
     for target in targets:
         session_id = ""
         handle = ""
         if target["kind"] == "session":
-            session_id = str(target["session"].get("name", ""))
+            session_id = str(target["session"].get("session_name", target["session"].get("name", "")))
             handle = str(target["session"].get("alias", "") or session_id)
         elif target["kind"] == "template":
-            # Create a new session from the template via gc session new.
             template_name = str(target["template"])
             handle = template_name.rsplit("/", 1)[-1] if "/" in template_name else template_name
+            # Skip if a session from this template is already in the thread.
+            if template_name in existing_sessions:
+                print(f"[extmsg] {handle} already in thread {thread_id}, skipping", flush=True)
+                continue
+            envelope = _build_thread_launch_envelope(
+                discord_message={"id": "", "content": content, "author": {}, "channel_id": thread_id},
+                thread_id=thread_id,
+                channel_id=parent_channel_id,
+                guild_id=guild_id,
+                handle=handle,
+                content=content,
+            )
             try:
-                session_id = _create_session_from_template(template_name, handle)
-            except (GCAPIError, RuntimeError):
+                session_id = _create_session_from_template(
+                    template_name, handle, initial_message=envelope,
+                )
+                print(f"[extmsg] added {handle} to thread {thread_id} as {session_id}", flush=True)
+            except (GCAPIError, RuntimeError) as exc:
+                print(f"[extmsg] failed to add {handle}: {exc}", flush=True)
                 continue
 
         if not session_id or not handle:
@@ -2506,16 +2755,14 @@ def launch_thread_for_mentions(
         except GCAPIError:
             pass
 
-        # Ensure transcript membership.
+        # Create binding.
         try:
             gc_api_request("POST", "/v0/extmsg/bindings", {
                 "conversation": thread_conversation,
                 "session_id": session_id,
             })
         except GCAPIError:
-            pass  # May conflict if already bound; that's fine.
-
-    return group
+            pass
 
 
 def list_city_sessions(state: str = "all") -> list[dict[str, Any]]:
@@ -4515,7 +4762,7 @@ def sync_guild_commands(config: dict[str, Any], guild_id: str) -> Any:
 def post_channel_message(channel_id: str, body: str, reply_to_message_id: str = "") -> Any:
     payload: dict[str, Any] = {
         "content": body,
-        "allowed_mentions": {"parse": []},
+        "allowed_mentions": {"parse": ["users"]},
     }
     reply_to_message_id = str(reply_to_message_id).strip()
     if reply_to_message_id:

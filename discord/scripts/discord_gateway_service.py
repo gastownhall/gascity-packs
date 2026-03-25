@@ -1770,6 +1770,25 @@ class GatewayWebSocket:
             raise WebSocketClosed(f"unsupported websocket opcode: {opcode}")
 
 
+_thread_parent_cache: dict[str, str] = {}  # channel_id → parent_id (empty = not a thread)
+_THREAD_TYPES = {10, 11, 12}  # public thread, private thread, news thread
+
+
+def _resolve_thread_parent(channel_id: str) -> str:
+    """Return the parent channel ID if channel_id is a thread, else empty string. Cached."""
+    if channel_id in _thread_parent_cache:
+        return _thread_parent_cache[channel_id]
+    parent = ""
+    try:
+        ch_info = common.discord_api_request("GET", f"/channels/{channel_id}")
+        if ch_info.get("type") in _THREAD_TYPES:
+            parent = str(ch_info.get("parent_id", "")).strip()
+    except (common.DiscordAPIError, Exception):
+        pass
+    _thread_parent_cache[channel_id] = parent
+    return parent
+
+
 class GatewayWorker:
     def __init__(self, runtime_state: GatewayRuntimeState) -> None:
         self.runtime_state = runtime_state
@@ -1908,58 +1927,68 @@ class GatewayWorker:
 
             content = str(message.get("content", ""))
             channel_id = str(message.get("channel_id", "")).strip()
-            parent_id = str(message.get("parent_id", "")).strip()
+            # Discord MESSAGE_CREATE in threads doesn't include parent_id.
+            # Check channel type to detect threads (cached).
+            parent_id = _resolve_thread_parent(channel_id)
             is_thread = bool(parent_id)
 
-            # If this is a room message (not a thread) with @mentions or
-            # natural language agent name references, launch a thread.
+            # ROOM: @mentions required to launch a new thread.
+            # NL mentions in the room are ignored (no accidental threads).
             if guild_id and channel_id and not is_thread:
-                mentions = common.resolve_at_mentions(content)
-                # Also try NL matching if no @mentions found.
-                if not mentions:
-                    mentions = common.resolve_nl_agent_mentions(content)
-                print(f"[extmsg] content={content!r} mentions={mentions}", flush=True)
-                if mentions:
-                    targets = common.resolve_mention_targets(mentions)
-                    print(f"[extmsg] targets={[(t.get('kind'),t.get('mention','')) for t in targets]}", flush=True)
-                    if targets:
-                        participants = [
-                            {"handle": t.get("mention", "")}
-                            for t in targets
-                        ]
-                        print(f"[extmsg] launching thread for {len(targets)} targets", flush=True)
-                        group = common.launch_thread_for_mentions(
-                            message, targets, guild_id, app_id,
+                at_mentions = common.resolve_at_mentions(content)
+                if not at_mentions:
+                    return False  # No @mentions in room — fall through to legacy.
+                targets = common.resolve_mention_targets(at_mentions)
+                if not targets:
+                    return False
+                group = common.launch_thread_for_mentions(
+                    message, targets, guild_id, app_id,
+                )
+                if group:
+                    thread_conv_id = str(group.get("root_conversation", {}).get("conversation_id", ""))
+                    if thread_conv_id:
+                        participants = [{"handle": t.get("mention", "")} for t in targets]
+                        normalized = common.normalize_to_extmsg_message(
+                            {**message, "channel_id": thread_conv_id, "parent_id": channel_id},
+                            guild_id=guild_id,
+                            application_id=app_id,
+                            participants=participants,
                         )
-                        print(f"[extmsg] group={group}", flush=True)
-                        if group:
-                            thread_conv_id = str(group.get("root_conversation", {}).get("conversation_id", ""))
-                            if thread_conv_id:
-                                normalized = common.normalize_to_extmsg_message(
-                                    {**message, "channel_id": thread_conv_id, "parent_id": channel_id},
-                                    guild_id=guild_id,
-                                    application_id=app_id,
-                                    participants=participants,
-                                )
-                                common.deliver_to_extmsg(normalized, app_id)
-                            return True  # Thread launched — fully handled.
+                        common.deliver_to_extmsg(normalized, app_id)
+                    return True
+                return False
 
-            # For thread messages, deliver to extmsg transcript.
+            # THREAD: all messages go to transcript. Handle @mentions and NL names.
             if is_thread:
+                # @mentions in thread = add new participants (strong signal).
+                at_mentions = common.resolve_at_mentions(content)
+                if at_mentions:
+                    targets = common.resolve_mention_targets(at_mentions)
+                    if targets:
+                        print(f"[extmsg] thread @mentions: adding {[t.get('mention','') for t in targets]}", flush=True)
+                        common.add_participants_to_thread(
+                            channel_id, parent_id, targets, guild_id, app_id, content,
+                        )
+
+                # NL mentions in thread = set explicit_target (attention signal).
+                nl_mentions = common.resolve_nl_agent_mentions(content)
+
                 normalized = common.normalize_to_extmsg_message(
-                    message,
+                    {**message, "parent_id": parent_id},
                     guild_id=guild_id,
                     application_id=app_id,
                 )
-                common.deliver_to_extmsg(normalized, app_id)
-                return True  # Thread message — fully handled by extmsg.
+                # Set explicit_target from @mention or NL match.
+                if at_mentions:
+                    normalized["explicit_target"] = at_mentions[0]
+                elif nl_mentions:
+                    normalized["explicit_target"] = nl_mentions[0]
 
-            # Room message without @mentions — fall through to legacy.
+                common.deliver_to_extmsg(normalized, app_id)
+                return True
+
             return False
-        except Exception as exc:
-            import traceback
-            print(f"[extmsg] error: {exc}", flush=True)
-            traceback.print_exc()
+        except Exception:
             return False  # On error, fall through to legacy path.
 
     def handle_gateway_message(self, message: dict[str, Any], bot_user_id: str) -> None:
