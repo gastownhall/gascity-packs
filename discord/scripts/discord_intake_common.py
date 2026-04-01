@@ -2778,6 +2778,14 @@ def list_city_sessions(state: str = "all") -> list[dict[str, Any]]:
 
 
 def list_city_agents() -> list[dict[str, Any]]:
+    # Try /v0/config first — it includes pack-expanded agents.
+    # /v0/agents may return empty if the binary predates pack expansion fixes.
+    config_payload = gc_api_request("GET", "/v0/config")
+    if isinstance(config_payload, dict):
+        agents = config_payload.get("agents")
+        if isinstance(agents, list) and agents:
+            return [item for item in agents if isinstance(item, dict)]
+    # Fallback to /v0/agents.
     payload = gc_api_request("GET", "/v0/agents")
     items = payload.get("items") if isinstance(payload, dict) else None
     if not isinstance(items, list):
