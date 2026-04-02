@@ -59,6 +59,42 @@ def main(argv: list[str]) -> int:
     if not remote_message_id:
         raise SystemExit("discord publish returned no message id")
 
+    # Notify extmsg fabric so transcript members (other agents in the thread)
+    # get a nudge about this reply. Best-effort — don't fail if extmsg is down.
+    try:
+        config = common.load_config()
+        app_id = str(config.get("app", {}).get("application_id", "")).strip()
+        parent_id = ""
+        channel_info = {}
+        try:
+            channel_info = common.discord_api_request("GET", f"/channels/{conversation_id}")
+            ch_type = int(channel_info.get("type", 0))
+            if ch_type in (10, 11, 12):  # thread types
+                parent_id = str(channel_info.get("parent_id", "")).strip()
+        except Exception:
+            pass
+        session_id = os.environ.get("GC_SESSION_NAME", os.environ.get("GC_AGENT", ""))
+        guild_id = str(channel_info.get("guild_id", "")).strip() if channel_info else ""
+        if app_id and session_id:
+            common.gc_api_request("POST", "/v0/extmsg/inbound", {
+                "message": {
+                    "provider_message_id": remote_message_id,
+                    "conversation": {
+                        "scope_id": guild_id or "global",
+                        "provider": "discord",
+                        "account_id": app_id,
+                        "conversation_id": conversation_id,
+                        "parent_conversation_id": parent_id,
+                        "kind": "thread" if parent_id else "room",
+                    },
+                    "actor": {"id": session_id, "display_name": session_id, "is_bot": True},
+                    "text": body,
+                    "received_at": response.get("timestamp", ""),
+                },
+            }, timeout=5.0)
+    except Exception:
+        pass  # best-effort
+
     result = {
         "record": {
             "remote_message_id": remote_message_id,

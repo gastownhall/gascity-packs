@@ -2630,7 +2630,7 @@ def launch_thread_for_mentions(
         if result:
             participants.append(result)
 
-    # Register participants and bindings (fast, sequential).
+    # Register participants, bindings, and transcript memberships (fast, sequential).
     for session_id, handle in participants:
         try:
             gc_api_request("POST", "/v0/extmsg/groups/participants", {
@@ -2643,6 +2643,15 @@ def launch_thread_for_mentions(
             pass
         try:
             gc_api_request("POST", "/v0/extmsg/bindings", {
+                "conversation": thread_conversation,
+                "session_id": session_id,
+            })
+        except GCAPIError:
+            pass
+        # Enroll in transcript so the session receives notifications
+        # when other participants post messages.
+        try:
+            gc_api_request("POST", "/v0/extmsg/transcript/membership", {
                 "conversation": thread_conversation,
                 "session_id": session_id,
             })
