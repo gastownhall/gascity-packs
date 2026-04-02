@@ -8,6 +8,10 @@ import hashlib
 import json
 import os
 import queue
+
+# Route API calls through the extmsg sidecar which handles /v0/extmsg/*
+# and proxies everything else to the main supervisor.
+os.environ.setdefault("GC_API_BASE_URL", "http://127.0.0.1:18372")
 import random
 import re
 import signal
@@ -74,7 +78,7 @@ WORKER_QUEUE_SENTINEL: tuple[dict[str, Any], str] | None = None
 
 
 def participant_delivery_selector(participant: dict[str, Any]) -> str:
-    for key in ("session_name", "session_id", "session_alias", "delivery_selector"):
+    for key in ("session_name", "session_id", "session_alias"):
         value = str((participant or {}).get(key, "")).strip()
         if value:
             return value
@@ -257,16 +261,12 @@ def fetch_message_via_rest(channel_id: str, message_id: str) -> dict[str, Any]:
     except common.DiscordAPIError as exc:
         if int(getattr(exc, "status_code", 0) or 0) != 404:
             return {}
-    except Exception:
-        return {}
     try:
         payload = common.discord_api_request(
             "GET",
             f"/channels/{quoted_channel}/messages?around={quoted_message}&limit=3",
         )
     except common.DiscordAPIError:
-        return {}
-    except Exception:
         return {}
     if isinstance(payload, list):
         for item in payload:
@@ -726,7 +726,6 @@ def build_room_launch_envelope(
 ) -> str:
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
-    peer_fanout_enabled = bool(common.binding_peer_policy(launcher).get("peer_fanout_enabled"))
     lines = [
         "<discord-event>",
         "version: 1",
@@ -756,12 +755,9 @@ def build_room_launch_envelope(
         "reply_tool: gc discord reply-current --body-file <path>",
         "reply_success_signal: record.remote_message_id",
         "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
+        "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input",
+        "</discord-event>",
     ]
-    if peer_fanout_enabled:
-        lines.append(
-            "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input"
-        )
-    lines.append("</discord-event>")
     return "\n".join(lines)
 
 
@@ -780,7 +776,6 @@ def build_room_launch_thread_envelope(
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
     parent_id = str(launch.get("conversation_id", "")).strip()
-    peer_fanout_enabled = bool(common.binding_peer_policy(launcher).get("peer_fanout_enabled"))
     target_qualified_handle = str(target_participant.get("qualified_handle", "")).strip() or str(launch.get("qualified_handle", "")).strip()
     target_session_alias = str(target_participant.get("session_alias", "")).strip() or str(launch.get("session_alias", "")).strip()
     target_session_name = str(target_participant.get("session_name", "")).strip()
@@ -818,12 +813,9 @@ def build_room_launch_thread_envelope(
         "reply_tool: gc discord reply-current --body-file <path>",
         "reply_success_signal: record.remote_message_id",
         "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
+        "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input",
+        "</discord-event>",
     ]
-    if peer_fanout_enabled:
-        lines.append(
-            "peer_targeting_rule: include @@rig/alias in the Discord reply if you want another launcher participant to receive it as peer input"
-        )
-    lines.append("</discord-event>")
     return "\n".join(lines)
 
 
@@ -1081,24 +1073,6 @@ def process_room_launch_message(
     receipt["targets"] = [{"session_name": target_selector, "status": "delivered", "response": response}]
     receipt = persist_ingress_receipt(receipt)
     return {"status": "delivered", "ingress_id": ingress_id, "receipt": receipt}
-
-
-def fail_ingress_unexpected(
-    *,
-    base_receipt: dict[str, Any],
-    ingress_id: str,
-    reason_prefix: str,
-    exc: Exception,
-) -> dict[str, Any]:
-    receipt = persist_ingress_receipt(
-        {
-            **base_receipt,
-            "status": "failed",
-            "reason": f"{reason_prefix}: {type(exc).__name__}: {exc}",
-            "targets": list(base_receipt.get("targets") or []),
-        }
-    )
-    return {"status": "failed", "ingress_id": ingress_id, "receipt": receipt}
 
 
 def process_room_launch_thread_message(
@@ -1463,40 +1437,24 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             }
         )
         if launcher and launch:
-            try:
-                return process_room_launch_thread_message(
-                    base_receipt=base_receipt,
-                    launcher=launcher,
-                    launch=launch,
-                    message=message,
-                    bot_user_id=bot_user_id,
-                    ingress_id=ingress_id,
-                    message_debug=message_debug,
-                )
-            except Exception as exc:  # noqa: BLE001
-                return fail_ingress_unexpected(
-                    base_receipt=base_receipt,
-                    ingress_id=ingress_id,
-                    reason_prefix="room_launch_thread_error",
-                    exc=exc,
-                )
+            return process_room_launch_thread_message(
+                base_receipt=base_receipt,
+                launcher=launcher,
+                launch=launch,
+                message=message,
+                bot_user_id=bot_user_id,
+                ingress_id=ingress_id,
+                message_debug=message_debug,
+            )
         if launcher:
-            try:
-                return process_room_launch_message(
-                    base_receipt=base_receipt,
-                    launcher=launcher,
-                    message=message,
-                    bot_user_id=bot_user_id,
-                    ingress_id=ingress_id,
-                    message_debug=message_debug,
-                )
-            except Exception as exc:  # noqa: BLE001
-                return fail_ingress_unexpected(
-                    base_receipt=base_receipt,
-                    ingress_id=ingress_id,
-                    reason_prefix="room_launch_error",
-                    exc=exc,
-                )
+            return process_room_launch_message(
+                base_receipt=base_receipt,
+                launcher=launcher,
+                message=message,
+                bot_user_id=bot_user_id,
+                ingress_id=ingress_id,
+                message_debug=message_debug,
+            )
         if not binding:
             receipt = persist_ingress_receipt(
                 {
@@ -1816,6 +1774,25 @@ class GatewayWebSocket:
             raise WebSocketClosed(f"unsupported websocket opcode: {opcode}")
 
 
+_thread_parent_cache: dict[str, str] = {}  # channel_id → parent_id (empty = not a thread)
+_THREAD_TYPES = {10, 11, 12}  # public thread, private thread, news thread
+
+
+def _resolve_thread_parent(channel_id: str) -> str:
+    """Return the parent channel ID if channel_id is a thread, else empty string. Cached."""
+    if channel_id in _thread_parent_cache:
+        return _thread_parent_cache[channel_id]
+    parent = ""
+    try:
+        ch_info = common.discord_api_request("GET", f"/channels/{channel_id}")
+        if ch_info.get("type") in _THREAD_TYPES:
+            parent = str(ch_info.get("parent_id", "")).strip()
+    except (common.DiscordAPIError, Exception):
+        pass
+    _thread_parent_cache[channel_id] = parent
+    return parent
+
+
 class GatewayWorker:
     def __init__(self, runtime_state: GatewayRuntimeState) -> None:
         self.runtime_state = runtime_state
@@ -1933,8 +1910,101 @@ class GatewayWorker:
                 self.message_queue.task_done()
                 self.runtime_state.patch(message_queue_size=self.message_queue.qsize())
 
+    def _record_extmsg_inbound(self, message: dict[str, Any], bot_user_id: str) -> bool:
+        """Normalize and post inbound Discord message to extmsg fabric.
+
+        If the message contains @mentions in a room (not a thread), this also
+        triggers thread creation and session setup — the room is a launchpad.
+
+        Returns True if the message was fully handled by extmsg (caller should
+        skip legacy routing). Returns False to fall through to legacy path.
+        """
+        try:
+            author = message.get("author") or {}
+            if bool(author.get("bot")) or str(author.get("id", "")).strip() == bot_user_id:
+                return False  # Skip bot messages.
+            guild_id = str(message.get("guild_id", "")).strip()
+            config = common.load_config()
+            app_id = str(config.get("app", {}).get("application_id", "")).strip()
+            if not app_id:
+                return False
+
+            content = str(message.get("content", ""))
+            channel_id = str(message.get("channel_id", "")).strip()
+            # Discord MESSAGE_CREATE in threads doesn't include parent_id.
+            # Check channel type to detect threads (cached).
+            parent_id = _resolve_thread_parent(channel_id)
+            is_thread = bool(parent_id)
+
+            # ROOM: @mentions required to launch a new thread.
+            # NL mentions in the room are ignored (no accidental threads).
+            if guild_id and channel_id and not is_thread:
+                at_mentions = common.resolve_at_mentions(content)
+                if not at_mentions:
+                    return False  # No @mentions in room — fall through to legacy.
+                targets = common.resolve_mention_targets(at_mentions)
+                if not targets:
+                    return False
+                group = common.launch_thread_for_mentions(
+                    message, targets, guild_id, app_id,
+                )
+                if group:
+                    thread_conv_id = str(group.get("root_conversation", {}).get("conversation_id", ""))
+                    if thread_conv_id:
+                        participants = [{"handle": t.get("mention", "")} for t in targets]
+                        normalized = common.normalize_to_extmsg_message(
+                            {**message, "channel_id": thread_conv_id, "parent_id": channel_id},
+                            guild_id=guild_id,
+                            application_id=app_id,
+                            participants=participants,
+                        )
+                        common.deliver_to_extmsg(normalized, app_id)
+                    return True
+                return False
+
+            # THREAD: all messages go to transcript. Handle @mentions and NL names.
+            if is_thread:
+                # @mentions in thread = add new participants (strong signal).
+                at_mentions = common.resolve_at_mentions(content)
+                if at_mentions:
+                    targets = common.resolve_mention_targets(at_mentions)
+                    if targets:
+                        print(f"[extmsg] thread @mentions: adding {[t.get('mention','') for t in targets]}", flush=True)
+                        common.add_participants_to_thread(
+                            channel_id, parent_id, targets, guild_id, app_id, content,
+                        )
+
+                # NL mentions in thread = set explicit_target (attention signal).
+                nl_mentions = common.resolve_nl_agent_mentions(content)
+
+                normalized = common.normalize_to_extmsg_message(
+                    {**message, "parent_id": parent_id},
+                    guild_id=guild_id,
+                    application_id=app_id,
+                )
+                # Set explicit_target from @mention or NL match.
+                if at_mentions:
+                    normalized["explicit_target"] = at_mentions[0]
+                elif nl_mentions:
+                    normalized["explicit_target"] = nl_mentions[0]
+
+                common.deliver_to_extmsg(normalized, app_id)
+                return True
+
+            return False
+        except Exception:
+            return False  # On error, fall through to legacy path.
+
     def handle_gateway_message(self, message: dict[str, Any], bot_user_id: str) -> None:
         try:
+            # Try the new extmsg path first. If it handles the message
+            # (e.g., creates a thread from @mentions), skip legacy routing.
+            if self._record_extmsg_inbound(message, bot_user_id):
+                self.runtime_state.bump("routed_messages",
+                    last_message_status="extmsg_routed",
+                    last_message_preview=common.utcnow(),
+                    last_event_at=common.utcnow())
+                return
             outcome = process_inbound_message(message, bot_user_id)
             status = str(outcome.get("status", "")).strip()
             preview = summarize_body(str((outcome.get("receipt") or {}).get("body_preview", "")))

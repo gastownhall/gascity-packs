@@ -1,0 +1,525 @@
+description = """
+Adopt-PR workflow — 6 steps from intake through merge.
+
+Sling a contributor PR to a polecat for review and merge. The polecat follows
+each step in order; a human gate after review blocks until the maintainer
+closes it manually. Crash-safe: `bd mol current` resumes at the right step.
+
+The molecule root bead IS the control bead — all run state is stored in its
+notes via `bd update <root-id> --notes "key: value"`. No separate tracking
+bead needed.
+
+## Contract
+
+1. Caller slings with `--var pr=<url-or-number>` (and optionally `--var skip_gemini=true`)
+2. Polecat reads steps, executes each in order
+3. After review, human-gate blocks until maintainer closes it
+4. Polecat resumes finalize → merge → cleanup
+
+## Variables
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| pr | caller | PR URL or bare integer (required) |
+| skip_gemini | caller | "true" to skip Gemini reviewer (default: "false") |
+
+## Failure Modes
+
+| Situation | Action |
+|-----------|--------|
+| gh command fails | Check `gh auth status`, report error, stop |
+| Rebase has complex conflicts | Abort rebase, post comment, close root bead, stop |
+| Push fails | Report error, stop. User resolves manually |
+| CI fails | Report failure, stop, wait for human-gate or nudge |
+| Review-pr fails | Report which step failed, stop. Retry on next nudge |"""
+formula = "mol-adopt-pr"
+version = 1
+
+[vars]
+[vars.pr]
+description = "PR URL (https://github.com/org/repo/pull/N) or bare integer"
+required = true
+
+[vars.skip_gemini]
+description = "Set to 'true' to skip Gemini reviewer (dual-model mode: Claude + Codex only)"
+default = "false"
+
+[[steps]]
+id = "intake"
+title = "Parse PR and checkout"
+description = """
+Parse the PR, fetch metadata, validate scope, checkout the branch, and record
+initial state in the root bead notes.
+
+**1. Find the root bead:**
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+```
+
+**2. Parse PR identifier from `{{pr}}`:**
+- If `{{pr}}` matches `https://github.com/.*/pull/\\d+` → extract owner, repo, PR number from URL
+- If `{{pr}}` is a bare integer → use current repo (`gh repo view --json nameWithOwner -q .nameWithOwner`)
+
+**3. Fetch PR metadata:**
+```bash
+gh pr view <number> --json title,body,author,baseRefName,headRefName,number,additions,deletions,changedFiles,maintainerCanModify,url,mergeable
+```
+
+**4. Validate PR scope:**
+
+Fetch changed files:
+```bash
+gh pr view <number> --json files --jq '.files[].path'
+```
+
+Compare against the PR title/description. If the changes are clearly outside
+the described scope (e.g., a "fix typo" PR that touches dozens of packages),
+the branch has diverged from main. **STOP immediately:**
+- Post a scope mismatch comment asking the contributor to rebase
+- Request changes: `gh pr review <number> --request-changes --body "Branch has diverged from main"`
+- Close the root bead: `bd close $ROOT_ID --reason "scope mismatch"`
+- Exit
+
+**5. Check maintainer edits:**
+Record in root bead notes: `maintainer_edits: true` or `maintainer_edits: false`.
+If false, warn but continue — Phase 6 uses Path C if maintainer changes exist.
+
+**6. Checkout the PR branch:**
+```bash
+gh pr checkout <number>
+```
+
+**7. Record state in root bead notes:**
+```bash
+bd update $ROOT_ID --notes "pr_number: <N>
+pr_url: <url>
+repo: <owner/repo>
+pr_title: <title>
+pr_author: <author.login>
+head_ref: <headRefName>
+base_branch: <baseRefName>
+maintainer_edits: <true|false>
+original_head: pending
+rebase_status: pending
+merge_path: undetermined
+skip_gemini: {{skip_gemini}}
+review_run_dir: pending"
+```
+
+**8. Display summary:**
+```
+[adopt-pr] Intake complete
+[adopt-pr]   PR #<N>: "<title>"
+[adopt-pr]   Author: <author.login>
+[adopt-pr]   Base: <baseRefName> <- Head: <headRefName>
+[adopt-pr]   Stats: +<additions> -<deletions> across <changedFiles> files
+[adopt-pr]   Maintainer edits: <enabled|DISABLED>
+```
+
+**Exit criteria:** On PR branch, metadata recorded in root bead notes."""
+
+[[steps]]
+id = "rebase-check"
+title = "Check and resolve conflicts"
+needs = ["intake"]
+description = """
+Check mergeable status and handle conflicts. Auto-rebase straightforward
+cases; abort on complex conflicts that need the contributor.
+
+**1. Read root bead notes for PR metadata:**
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+```
+
+**2. Check merge status:**
+```bash
+MERGEABLE=$(gh pr view <number> --json mergeable --jq '.mergeable')
+```
+
+- If `MERGEABLE` or `UNKNOWN` → record `rebase_status: not_needed`, record
+  `original_head: $(git rev-parse HEAD)`, close this step, proceed.
+- If `CONFLICTING` → continue.
+
+**3. Gate on maintainerCanModify:**
+If `maintainer_edits` is false → **STOP**:
+- Post conflict comment asking author to rebase
+- Add label: `gh pr edit <number> --add-label "status/needs-info"`
+- Close root bead: `bd close $ROOT_ID --reason "conflicts, maintainerCanModify=false"`
+- Exit
+
+**4. Fetch upstream base:**
+```bash
+UPSTREAM_URL="https://github.com/<owner>/<repo>.git"
+git fetch "$UPSTREAM_URL" <baseRefName>:refs/adopt-pr/upstream-base
+PRE_REBASE_HEAD=$(git rev-parse HEAD)
+PR_FILES=$(git diff --name-only refs/adopt-pr/upstream-base...HEAD)
+```
+
+**5. Attempt rebase:**
+```bash
+git rebase refs/adopt-pr/upstream-base
+```
+
+If clean → record state, proceed.
+
+**6. Handle conflicts (if rebase paused):**
+
+For each conflicting file, classify:
+- **Non-PR file** (not in PR_FILES) → `git checkout --theirs <file> && git add <file>`. Safe.
+- **Redundant commit** (PR file, but upstream already has identical content) → `git rebase --skip`. Safe.
+- **Add/add conflict** (PR file, empty base section in diff3 markers) → resolve with union merge:
+  ```bash
+  git show :1:"$file" > /tmp/base; git show :2:"$file" > /tmp/ours; git show :3:"$file" > /tmp/theirs
+  cp /tmp/ours /tmp/union
+  git merge-file --union /tmp/union /tmp/base /tmp/theirs
+  ```
+  Validate: no conflict markers survive, all PR additions present. If valid → `cp /tmp/union "$file" && git add "$file"`.
+- **Modify/modify conflict** (non-empty base section) → **complex**, abort.
+
+If complex conflicts found:
+```bash
+git rebase --abort
+gh pr comment <number> --body "<conflict comment asking author to rebase>"
+gh pr edit <number> --add-label "status/needs-info"
+bd close $ROOT_ID --reason "complex merge conflicts"
+```
+Exit.
+
+**7. Record state in root bead notes:**
+```bash
+ORIGINAL_HEAD=$(git rev-parse HEAD)
+```
+Update notes with:
+- `original_head: $ORIGINAL_HEAD`
+- `rebase_status: not_needed | clean | straightforward_resolved | redundant_skipped | trivial_resolved`
+- `pre_rebase_head: <sha>` (if rebased, else `n/a`)
+
+**Exit criteria:** On a clean branch (possibly rebased), ORIGINAL_HEAD recorded."""
+
+[[steps]]
+id = "review"
+title = "Run multi-model review"
+needs = ["rebase-check"]
+description = """
+Fetch the canonical upstream base and invoke the multi-model review engine.
+
+**1. Read root bead notes:**
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+```
+Extract `pr_number`, `repo`, `base_branch`, `skip_gemini` from notes.
+
+**2. Fetch canonical upstream base:**
+```bash
+UPSTREAM_URL="https://github.com/<owner>/<repo>.git"
+git fetch "$UPSTREAM_URL" <base_branch>:refs/adopt-pr/upstream-base
+```
+
+**3. Invoke /review-pr:**
+```
+/review-pr <pr_number>
+```
+If `skip_gemini` is "true", append `--skip-gemini`:
+```
+/review-pr <pr_number> --skip-gemini
+```
+
+**CRITICAL:** When the review completes and asks whether to post the comment
+to GitHub, **DECLINE** (do not post). The finalize step posts its own
+synthesized comment.
+
+**4. Save the run_dir:**
+
+After the review completes, note the run_dir path from the output.
+Update root bead notes:
+```bash
+bd update $ROOT_ID --notes "<existing notes>
+review_run_dir: <run_dir_path>"
+```
+
+The synthesis artifact is at `<run_dir>/outputs/synthesis.md`.
+
+**5. Present findings summary:**
+
+Read the synthesis and present a brief summary to orient the human reviewer:
+- Decision (approve/request_changes)
+- Top findings by severity
+- Key files affected
+
+```
+[adopt-pr] Review complete
+[adopt-pr]   Decision: <approve|request_changes>
+[adopt-pr]   Findings: <N> total (<blockers>, <majors>, <minors>)
+[adopt-pr]   Run dir: <path>
+```
+
+**Exit criteria:** Review complete, findings presented, run_dir saved in notes."""
+
+[[steps]]
+id = "human-gate"
+title = "Human review checkpoint"
+needs = ["review"]
+description = """
+**This step is closed by a HUMAN, not by the polecat.**
+
+The polecat has completed the review. The human maintainer now:
+1. Reads the review findings (synthesis available at the run_dir in root bead notes)
+2. Optionally makes fixup commits on the PR branch
+3. Optionally runs another review manually
+4. Closes this step when ready to proceed to finalize
+
+**For the polecat:** When you reach this step via `bd mol current`, there is
+nothing for you to do. Print a status message and wait:
+
+```
+[adopt-pr] Human gate reached — waiting for maintainer
+[adopt-pr]   Review findings are in the root bead notes (review_run_dir)
+[adopt-pr]   Close this step when ready to finalize:
+[adopt-pr]     bd close <this-step-id>
+```
+
+Then exit or idle. The maintainer closes the gate:
+```bash
+bd close <human-gate-step-id>
+```
+
+This unblocks the `finalize` step. The polecat picks it up on its next loop
+iteration (via `bd mol current`) or when nudged.
+
+**Exit criteria:** Human has closed this step."""
+
+[[steps]]
+id = "finalize"
+title = "Push, post synthesis, merge"
+needs = ["human-gate"]
+description = """
+Determine the merge path, push, post synthesis comment, wait for CI, merge.
+
+**1. Read root bead notes:**
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+```
+Extract all state: `pr_number`, `repo`, `base_branch`, `original_head`,
+`head_ref`, `maintainer_edits`, `rebase_status`, `review_run_dir`,
+`pr_title`, `pr_author`.
+
+**2. Check if PR was already merged:**
+```bash
+PR_STATE=$(gh pr view <number> --json state --jq '.state')
+```
+
+If `MERGED`:
+- If maintainer commits exist (`git rev-list --count $ORIGINAL_HEAD..HEAD > 0`) → **Path D**
+- If no maintainer commits → done, close root bead with "PR already merged", exit
+
+**3. Determine merge path (if not already merged):**
+```bash
+MAINTAINER_COMMIT_COUNT=$(git rev-list --count $ORIGINAL_HEAD..HEAD)
+```
+
+- `MAINTAINER_COMMIT_COUNT == 0` → **Path A** (squash merge, no maintainer changes)
+- `MAINTAINER_COMMIT_COUNT > 0` AND `maintainer_edits: true` → **Path B** (merge commit)
+- `MAINTAINER_COMMIT_COUNT > 0` AND `maintainer_edits: false` → **Path C** (new PR)
+
+Update notes: `merge_path: A|B|C|D`
+
+---
+
+### Path A: Squash Merge (no maintainer changes)
+
+**A.1: Post synthesis comment.**
+Read `<review_run_dir>/outputs/synthesis.md`. Build comment using Path A template:
+
+```markdown
+## Adoption Review
+
+Thanks for the contribution, @<author>! <specific acknowledgment>.
+
+### Review Summary
+<Decision + 2-3 sentence summary from synthesis>
+
+### Review Findings
+| # | Category | Severity | Confidence | Source | Summary |
+|---|----------|----------|------------|--------|---------|
+<findings from synthesis, or "No issues found.">
+
+---
+_Adopted via `/adopt-pr` workflow. Contributor commits preserved._
+```
+
+Post: `gh pr comment <number> --body "<comment>"`
+
+**A.2: Wait for CI.**
+
+First verify CI checks exist:
+```bash
+gh pr checks <number>
+```
+If no checks reported → **STOP**, print message telling maintainer to approve
+GitHub Actions workflow run. Wait for nudge.
+
+Once checks exist:
+```bash
+gh pr checks <number> --watch
+```
+If CI fails → **STOP**, report failure, wait for nudge.
+
+**A.3: Push rebased branch (if applicable).**
+If rebase was performed (`rebase_status` is not `not_needed`):
+```bash
+git push --force-with-lease
+```
+
+**A.4: Squash merge:**
+```bash
+gh pr merge <number> --squash
+```
+
+**A.5: Cleanup:**
+```bash
+git update-ref -d refs/adopt-pr/upstream-base
+bd update $ROOT_ID --notes "<notes with merge_path: A, status: merged>"
+```
+
+---
+
+### Path B: Merge Commit (maintainer changes present)
+
+**B.1: Squash contributor commits (if >1).**
+```bash
+CONTRIBUTOR_COUNT=$(git rev-list --count refs/adopt-pr/upstream-base..$ORIGINAL_HEAD)
+```
+
+If `CONTRIBUTOR_COUNT > 1`:
+```bash
+# Get contributor authorship
+AUTHOR_NAME=$(git log --format="%an" $ORIGINAL_HEAD -1)
+AUTHOR_EMAIL=$(git log --format="%ae" $ORIGINAL_HEAD -1)
+AUTHOR_DATE=$(git log --format="%aD" $ORIGINAL_HEAD -1)
+
+OLD_TIP=$(git rev-parse HEAD)
+BASE_SHA=$(git rev-parse refs/adopt-pr/upstream-base)
+MERGE_BASE=$(git merge-base refs/adopt-pr/upstream-base $ORIGINAL_HEAD)
+
+# Rebase contributor commits onto upstream-base, then squash
+git checkout --detach $ORIGINAL_HEAD
+git rebase --onto refs/adopt-pr/upstream-base $MERGE_BASE
+REBASED_TREE=$(git rev-parse HEAD^{tree})
+
+SQUASH_SHA=$(GIT_AUTHOR_NAME="$AUTHOR_NAME" GIT_AUTHOR_EMAIL="$AUTHOR_EMAIL" \
+  GIT_AUTHOR_DATE="$AUTHOR_DATE" \
+  git commit-tree "$REBASED_TREE" -p "$BASE_SHA" -m "<pr_title> (#<number>)")
+
+git checkout $SQUASH_SHA
+git cherry-pick ${ORIGINAL_HEAD}..${OLD_TIP}
+git checkout -B <branch-name> HEAD
+```
+
+**Guardrails (all four must pass, else restore and STOP):**
+1. Contributor diff identity — sorted added/removed lines match original
+2. File count — squashed commit touches same files as original
+3. Commit count — exactly 1 + MAINTAINER_COMMIT_COUNT
+4. Authorship — contributor name/email preserved
+
+If any fails: `git checkout -B <branch> $OLD_TIP` and **STOP**.
+
+**B.2: Push.**
+```bash
+if [ $CONTRIBUTOR_COUNT -gt 1 ] || [ "$REBASE_STATUS" != "not_needed" ]; then
+    git push --force-with-lease
+else
+    git push
+fi
+```
+
+**B.3: Post synthesis comment** (Path B template — includes Initial Review,
+Maintainer Changes, Final Review Status sections).
+
+**B.4: Wait for CI** (same as Path A).
+
+**B.5: Merge commit:**
+```bash
+gh pr merge <number> --merge
+```
+
+**B.6: Cleanup** (same as Path A).
+
+---
+
+### Path C: New PR from Maintainer's Fork (maintainer_edits disabled)
+
+**C.1:** Squash contributor commits (same as B.1).
+**C.2:** Create new branch from upstream main:
+```bash
+git checkout -b fix/<head_ref>-complete refs/adopt-pr/upstream-base
+```
+**C.3:** Cherry-pick contributor commit + maintainer commits.
+**C.4:** Push: `git push -u origin fix/<head_ref>-complete`
+**C.5:** Create PR against upstream:
+```bash
+gh pr create --repo <owner>/<repo> --base <baseRefName> \
+  --head <origin-owner>:fix/<head_ref>-complete \
+  --title "<pr_title>" --body "<body referencing original PR>"
+```
+**C.6:** Post synthesis on new PR (Path C template — credits contributor).
+**C.7:** Wait for CI on new PR.
+**C.8:** Merge new PR: `gh pr merge <new-number> --repo <owner>/<repo> --merge`
+**C.9:** Close original PR with warm thank-you comment.
+**C.10:** Cleanup.
+
+---
+
+### Path D: Follow-up PR (original already merged)
+
+**D.1:** Fetch latest upstream, create branch `fix/<head_ref>-review-fixups`.
+**D.2:** Cherry-pick maintainer fixup commits only.
+**D.3:** Push: `git push -u origin fix/<head_ref>-review-fixups`
+**D.4:** Create follow-up PR referencing original.
+**D.5:** Post synthesis on follow-up PR (Path D template).
+**D.6:** Wait for CI.
+**D.7:** Squash merge follow-up: `gh pr merge <followup-number> --squash`
+**D.8:** Comment on original PR linking to follow-up.
+**D.9:** Cleanup.
+
+---
+
+**Critical rules for all paths:**
+- **No force-push** except after contributor squash or rebase (always `--force-with-lease`)
+- **Contributor credit preserved** — squash commit keeps original author
+- **CI checks must exist** — never merge without CI. First-time forks need manual approval.
+- **Squash guardrails mandatory** — all four checks must pass before pushing rewritten history
+- **All reviews use canonical upstream base** — fetched from the real upstream URL, not origin
+
+**Exit criteria:** PR merged (or new PR created and merged), synthesis posted."""
+
+[[steps]]
+id = "complete"
+title = "Cleanup"
+needs = ["finalize"]
+description = """
+Clean up temporary refs and update root bead with final status.
+
+**1. Read root bead notes:**
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+```
+
+**2. Clean up refs:**
+```bash
+git update-ref -d refs/adopt-pr/upstream-base 2>/dev/null || true
+```
+
+**3. Update root bead notes with final status:**
+```bash
+bd update $ROOT_ID --notes "<existing notes with status: complete>"
+```
+
+**4. Report:**
+```
+[adopt-pr] Complete
+[adopt-pr]   PR merged successfully
+[adopt-pr]   Refs cleaned up
+[adopt-pr]   Root bead updated
+```
+
+**Exit criteria:** All refs cleaned, root bead updated with final status."""

@@ -20,58 +20,91 @@ def _load_body(args: argparse.Namespace) -> str:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Reply to the latest Discord event seen by the current session")
-    parser.add_argument("--session", default="", help="Override the current session selector (defaults to $GC_SESSION_ID or $GC_SESSION_NAME)")
-    parser.add_argument("--tail", type=int, default=40, help="How many raw transcript messages to search for the latest Discord event")
+    parser = argparse.ArgumentParser(description="Reply to the latest Discord event in the current session")
+    parser.add_argument("--session", default="", help="Override session selector")
+    parser.add_argument("--tail", type=int, default=40, help="Transcript messages to search for Discord context")
+    parser.add_argument("--conversation-id", default="", help="Discord channel/thread ID to reply in (skips transcript search)")
+    parser.add_argument("--reply-to", default="", help="Discord message ID to reply to")
     parser.add_argument("--body", default="", help="Inline message body")
     parser.add_argument("--body-file", default="", help="Read the message body from a file")
     args = parser.parse_args(argv)
 
     body = _load_body(args)
+
+    # Use explicit IDs if provided, otherwise search transcript.
+    conversation_id = str(args.conversation_id).strip()
+    reply_to = str(args.reply_to).strip()
+    if not conversation_id:
+        try:
+            context = common.find_latest_discord_reply_context(args.session, tail=max(1, args.tail))
+        except common.GCAPIError as exc:
+            raise SystemExit(str(exc)) from exc
+        conversation_id = str(context.get("publish_conversation_id", "")).strip()
+        if not conversation_id:
+            raise SystemExit("latest discord event is missing publish_conversation_id")
+        if not reply_to:
+            reply_to = str(context.get("publish_reply_to_discord_message_id", "")).strip()
+
+    # Post directly to Discord.
     try:
-        context = common.find_latest_discord_reply_context(args.session, tail=max(1, args.tail))
-    except common.GCAPIError as exc:
-        raise SystemExit(str(exc)) from exc
-    source_meta = common.derive_publish_source_metadata(context)
-    binding_id = str(context.get("publish_binding_id", "")).strip()
-    if not binding_id:
-        raise SystemExit("latest discord event is missing publish_binding_id")
-    config = common.load_config()
-    binding = common.resolve_publish_route(config, binding_id)
-    if not binding:
-        raise SystemExit(f"binding not found: {binding_id}")
-    source_identity = {}
-    try:
-        if args.session:
-            source_identity = common.resolve_session_identity(args.session)
-    except common.GCAPIError as exc:
-        raise SystemExit(str(exc)) from exc
-    try:
-        payload = common.publish_binding_message(
-            binding,
+        response = common.post_channel_message(
+            conversation_id,
             body,
-            requested_conversation_id=str(context.get("publish_conversation_id", "")).strip(),
-            trigger_id=str(context.get("publish_trigger_id", "")).strip(),
-            reply_to_message_id=str(context.get("publish_reply_to_discord_message_id", "")).strip(),
-            source_context=context,
-            source_session_name=str(source_identity.get("session_name", "")).strip(),
-            source_session_id=str(source_identity.get("session_id", "")).strip(),
+            reply_to_message_id=reply_to,
         )
-    except (ValueError, common.DiscordAPIError) as exc:
+    except common.DiscordAPIError as exc:
         raise SystemExit(str(exc)) from exc
-    payload["reply_context"] = {
-        "session_selector": str(args.session).strip() or common.current_session_selector(),
-        "binding_id": binding_id,
-        "source_event_kind": str(source_meta.get("source_event_kind", "")).strip(),
-        "root_ingress_receipt_id": str(source_meta.get("root_ingress_receipt_id", "")).strip(),
-        "publish_conversation_id": str(context.get("publish_conversation_id", "")).strip(),
-        "publish_trigger_id": str(context.get("publish_trigger_id", "")).strip(),
-        "publish_reply_to_discord_message_id": str(context.get("publish_reply_to_discord_message_id", "")).strip(),
-        "source_session_name": str(source_identity.get("session_name", "")).strip() or str(os.environ.get("GC_SESSION_NAME", "")).strip(),
-        "source_session_id": str(source_identity.get("session_id", "")).strip() or str(os.environ.get("GC_SESSION_ID", "")).strip(),
+
+    remote_message_id = str((response or {}).get("id", "")).strip()
+    if not remote_message_id:
+        raise SystemExit("discord publish returned no message id")
+
+    # Notify extmsg fabric so transcript members (other agents in the thread)
+    # get a nudge about this reply. Best-effort — don't fail if extmsg is down.
+    try:
+        config = common.load_config()
+        app_id = str(config.get("app", {}).get("application_id", "")).strip()
+        parent_id = ""
+        channel_info = {}
+        try:
+            channel_info = common.discord_api_request("GET", f"/channels/{conversation_id}")
+            ch_type = int(channel_info.get("type", 0))
+            if ch_type in (10, 11, 12):  # thread types
+                parent_id = str(channel_info.get("parent_id", "")).strip()
+        except Exception:
+            pass
+        session_id = os.environ.get("GC_SESSION_NAME", os.environ.get("GC_AGENT", ""))
+        guild_id = str(channel_info.get("guild_id", "")).strip() if channel_info else ""
+        if app_id and session_id:
+            common.gc_api_request("POST", "/v0/extmsg/inbound", {
+                "message": {
+                    "provider_message_id": remote_message_id,
+                    "conversation": {
+                        "scope_id": guild_id or "global",
+                        "provider": "discord",
+                        "account_id": app_id,
+                        "conversation_id": conversation_id,
+                        "parent_conversation_id": parent_id,
+                        "kind": "thread" if parent_id else "room",
+                    },
+                    "actor": {"id": session_id, "display_name": session_id, "is_bot": True},
+                    "text": body,
+                    "received_at": response.get("timestamp", ""),
+                },
+            }, timeout=5.0)
+    except Exception:
+        pass  # best-effort
+
+    result = {
+        "record": {
+            "remote_message_id": remote_message_id,
+            "conversation_id": conversation_id,
+            "reply_to": reply_to,
+        },
+        "response": response,
     }
-    print(json.dumps(payload, indent=2, sort_keys=True))
-    return common.peer_delivery_exit_code(payload.get("record", {}))
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":

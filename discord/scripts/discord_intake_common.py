@@ -8,6 +8,9 @@ import fcntl
 import hashlib
 import json
 import os
+
+# Route API calls through the extmsg sidecar.
+os.environ.setdefault("GC_API_BASE_URL", "http://127.0.0.1:18372")
 import pathlib
 import re
 import socket
@@ -1972,7 +1975,31 @@ def normalize_gc_api_bind(value: Any) -> str:
     return bind or "127.0.0.1"
 
 
+_supervisor_scope_cache: dict[str, tuple[float, str]] = {}  # workspace_name → (timestamp, scope)
+_SCOPE_CACHE_TTL = 60.0  # seconds
+
+
 def discover_supervisor_gc_api_scope(city_cfg: dict[str, Any]) -> str:
+    """Discover the supervisor API scope prefix for the city.
+
+    Caches the result for 60 seconds to avoid hitting the supervisor
+    on every API call.
+    """
+    workspace_cfg = city_cfg.get("workspace") or {}
+    workspace_name = str(workspace_cfg.get("name", "")).strip() if isinstance(workspace_cfg, dict) else ""
+    cache_key = workspace_name or "__default__"
+    now = time.monotonic()
+    if cache_key in _supervisor_scope_cache:
+        cached_at, cached_scope = _supervisor_scope_cache[cache_key]
+        if now - cached_at < _SCOPE_CACHE_TTL:
+            return cached_scope
+    scope = _discover_supervisor_gc_api_scope_uncached(city_cfg)
+    if scope:  # Only cache successful discovery; retry on next call if empty.
+        _supervisor_scope_cache[cache_key] = (now, scope)
+    return scope
+
+
+def _discover_supervisor_gc_api_scope_uncached(city_cfg: dict[str, Any]) -> str:
     workspace_cfg = city_cfg.get("workspace") or {}
     workspace_name = ""
     if isinstance(workspace_cfg, dict):
@@ -2041,11 +2068,19 @@ def gc_api_request(
     if path.startswith("http://") or path.startswith("https://"):
         url = path
     else:
-        city_cfg = load_city_toml()
-        scope_prefix = discover_supervisor_gc_api_scope(city_cfg)
-        normalized_path = path
-        if scope_prefix and path.startswith("/v0/"):
-            normalized_path = scope_prefix + "/" + path[len("/v0/") :]
+        # Skip scope discovery if the caller provided an explicit base URL
+        # (it already includes the scope prefix). Strip /v0/ from path
+        # since the base URL already contains the scoped root.
+        override = str(os.environ.get("GC_API_BASE_URL", "")).strip()
+        if override:
+            # Explicit base URL already includes scope; strip /v0/ prefix.
+            normalized_path = "/" + path[len("/v0/"):] if path.startswith("/v0/") else path
+        else:
+            city_cfg = load_city_toml()
+            scope_prefix = discover_supervisor_gc_api_scope(city_cfg)
+            normalized_path = path
+            if scope_prefix and path.startswith("/v0/"):
+                normalized_path = scope_prefix + "/" + path[len("/v0/") :]
         url = urllib.parse.urljoin(base_url.rstrip("/") + "/", normalized_path.lstrip("/"))
     body = None
     request_headers = {
@@ -2153,6 +2188,601 @@ def find_latest_discord_reply_context(session_selector: str = "", tail: int = 40
     raise GCAPIError(f"no recent discord event with publish metadata found for {selector}")
 
 
+def normalize_to_extmsg_message(
+    discord_event: dict[str, Any],
+    guild_id: str,
+    application_id: str,
+    participants: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Normalize a Discord MESSAGE_CREATE event to an extmsg ExternalInboundMessage."""
+    author = discord_event.get("author") or {}
+    channel_id = str(discord_event.get("channel_id", ""))
+    parent_id = str(discord_event.get("thread_metadata", {}).get("parent_id", "")
+                     if "thread_metadata" in discord_event
+                     else discord_event.get("parent_id", ""))
+    content = str(discord_event.get("content", ""))
+
+    # Determine conversation kind.
+    channel_type = discord_event.get("channel_type", discord_event.get("type", 0))
+    if channel_type == 1:  # DM
+        kind = "dm"
+    elif parent_id:  # thread
+        kind = "thread"
+    else:
+        kind = "room"
+
+    # Extract explicit target via natural language matching against participants.
+    explicit_target = ""
+    if participants:
+        explicit_target = _fuzzy_match_handle(content, participants)
+
+    # Extract reply-to from message reference.
+    ref = discord_event.get("message_reference") or {}
+    reply_to = str(ref.get("message_id", ""))
+
+    return {
+        "provider_message_id": str(discord_event.get("id", "")),
+        "conversation": {
+            "scope_id": guild_id or "global",
+            "provider": "discord",
+            "account_id": application_id,
+            "conversation_id": channel_id,
+            "parent_conversation_id": parent_id,
+            "kind": kind,
+        },
+        "actor": {
+            "id": str(author.get("id", "")),
+            "display_name": str(author.get("global_name", "") or author.get("username", "")),
+            "is_bot": bool(author.get("bot", False)),
+        },
+        "text": content,
+        "explicit_target": explicit_target,
+        "reply_to_message_id": reply_to,
+        "received_at": utcnow(),
+    }
+
+
+def _fuzzy_match_handle(
+    text: str,
+    participants: list[dict[str, str]],
+) -> str:
+    """Match participant handles in natural language text.
+
+    Looks for participant names/handles mentioned naturally in the message
+    (e.g., "hey worker, can you fix this?" matches handle "worker").
+    Returns the first matching handle, or empty string if none found.
+    """
+    lower_text = text.lower()
+    for p in participants:
+        handle = str(p.get("handle", "")).strip().lower()
+        if not handle:
+            continue
+        # Match the short name (after the rig/ prefix if present).
+        short = handle.rsplit("/", 1)[-1] if "/" in handle else handle
+        # Look for the handle as a word boundary match.
+        for name in (short, handle):
+            if not name:
+                continue
+            idx = lower_text.find(name)
+            if idx < 0:
+                continue
+            # Check word boundaries.
+            before_ok = idx == 0 or not lower_text[idx - 1].isalnum()
+            after_idx = idx + len(name)
+            after_ok = after_idx >= len(lower_text) or not lower_text[after_idx].isalnum()
+            if before_ok and after_ok:
+                return handle
+    return ""
+
+
+def deliver_to_extmsg(
+    message: dict[str, Any],
+    application_id: str,
+) -> dict[str, Any]:
+    """Post a normalized message to the extmsg inbound API."""
+    return gc_api_request("POST", "/v0/extmsg/inbound", {"message": message})
+
+
+def resolve_at_mentions(text: str) -> list[str]:
+    """Extract @mentions from message text.
+
+    Matches @name patterns (e.g., "@sky", "@worker", "@backend/sky").
+    Returns list of raw mention strings (without the @ prefix).
+    """
+    import re
+    return re.findall(r"@([a-zA-Z][a-zA-Z0-9_/-]*)", text)
+
+
+def resolve_nl_agent_mentions(text: str) -> list[str]:
+    """Find agent names mentioned naturally in text (without @ prefix).
+
+    Matches known agent names as word boundaries in the message.
+    Returns list of matched agent base names.
+    """
+    lower_text = text.lower()
+    agents = list_city_agents()
+    found: list[str] = []
+    seen: set[str] = set()
+    for a in agents:
+        qname = str(a.get("name", "")).strip().lower()
+        if not qname:
+            continue
+        base = qname.rsplit("/", 1)[-1] if "/" in qname else qname
+        if base in seen or not base:
+            continue
+        # Word boundary match.
+        idx = lower_text.find(base)
+        if idx < 0:
+            continue
+        before_ok = idx == 0 or not lower_text[idx - 1].isalnum()
+        after_idx = idx + len(base)
+        after_ok = after_idx >= len(lower_text) or not lower_text[after_idx].isalnum()
+        if before_ok and after_ok:
+            found.append(base)
+            seen.add(base)
+    return found
+
+
+def resolve_mention_targets(mentions: list[str]) -> list[dict[str, Any]]:
+    """Resolve @mention names to session/template targets.
+
+    Resolution order for each mention:
+    1. Managed session with matching alias → {"kind": "session", "session": {...}}
+    2. Agent template with matching name → {"kind": "template", "template": str, "agent": {...}}
+    3. Unresolved → skipped
+
+    Returns list of resolved targets.
+    """
+    if not mentions:
+        return []
+    sessions = list_city_sessions(state="all")
+    agents = list_city_agents()
+
+    # Build lookup indices.
+    # Match sessions by alias or session name (both are stable identifiers).
+    session_by_alias: dict[str, dict[str, Any]] = {}
+    for s in sessions:
+        alias = str(s.get("alias", "")).strip().lower()
+        if alias:
+            session_by_alias[alias] = s
+        name = str(s.get("session_name", s.get("name", ""))).strip().lower()
+        if name:
+            session_by_alias[name] = s
+
+    agent_by_name: dict[str, dict[str, Any]] = {}
+    for a in agents:
+        qname = str(a.get("name", "")).strip().lower()
+        if qname:
+            agent_by_name[qname] = a
+            # Also index by bare name (after rig/).
+            base = qname.rsplit("/", 1)[-1] if "/" in qname else qname
+            if base not in agent_by_name:
+                agent_by_name[base] = a
+        template = str(a.get("template", "")).strip().lower()
+        if template and template not in agent_by_name:
+            agent_by_name[template] = a
+
+    # Collect agent base names so we can detect when a session alias
+    # is just the agent template name (those should create new sessions,
+    # not reuse the singleton).
+    agent_base_names: set[str] = set()
+    for a in agents:
+        qname = str(a.get("name", "")).strip().lower()
+        if qname:
+            base = qname.rsplit("/", 1)[-1] if "/" in qname else qname
+            agent_base_names.add(base)
+            agent_base_names.add(qname)
+
+    targets = []
+    seen: set[str] = set()
+    for mention in mentions:
+        key = mention.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        # 1. Try agent template first — if the mention matches a template
+        # name, always create a new session (don't reuse the singleton).
+        if key in agent_by_name:
+            agent = agent_by_name[key]
+            targets.append({"kind": "template", "template": str(agent.get("name", "")), "agent": agent, "mention": mention})
+            continue
+        # 2. Try managed session by alias/name — only for mentions that
+        # don't match any agent template (e.g., explicit session names
+        # like "s-gc-33" or custom aliases like "my-worker").
+        if key in session_by_alias:
+            targets.append({"kind": "session", "session": session_by_alias[key], "mention": mention})
+            continue
+    return targets
+
+
+def _create_session_from_template(template_name: str, alias: str, initial_message: str = "") -> str:
+    """Create a session from an agent template via the sessions API.
+
+    If initial_message is provided, creates synchronously so the session
+    starts with the message in its context. Otherwise creates async.
+
+    Returns the session name.
+    """
+    payload: dict[str, Any] = {
+        "template": template_name,
+        "name": template_name,
+        "kind": "agent",
+        "options": {
+            "permission_mode": "unrestricted",
+            "effort": "max",
+        },
+    }
+    if initial_message:
+        payload["message"] = initial_message
+    else:
+        payload["async"] = True
+    session = gc_api_request("POST", "/v0/sessions", payload, timeout=60.0)
+    session_name = str(session.get("session_name", "") or session.get("name", "")).strip()
+    if not session_name:
+        raise RuntimeError(f"session creation returned no session_name for {template_name}")
+    return session_name
+
+
+def _build_discord_prompt_fragment(handle: str) -> str:
+    """Build the Discord conversation prompt fragment for an agent."""
+    return f"""<system-context>
+You are in a shared Discord thread with humans and other agents.
+Your agent handle is "{handle}". When someone mentions "{handle}" (or @{handle}),
+they are likely addressing you.
+
+## How this thread works
+
+Everyone in this thread sees every message — humans and agents alike. There is
+no private channel. When you reply, your message is visible to all participants.
+
+## When to respond
+
+- **You are named directly** ("{handle}, fix the tests" or "@{handle}"): You
+  should definitely respond. This is a strong signal the message is for you.
+- **@{handle} in thread**: This is the strongest signal — the human expects a
+  response from you specifically.
+- **Multiple agents named** ("{handle}, priya, work together"): All named agents
+  should respond.
+- **No one is named, but you have relevant info**: Respond if you can genuinely
+  add value. If someone else already handled it, stay silent. Silence is fine.
+- **A peer agent says something relevant to your work**: You may respond, but
+  do not pile on.
+- **A peer says something not relevant to you**: Read for context, move on.
+
+The key test: **does this message need MY input?** If yes, respond. If maybe,
+use judgment. If no, listen.
+
+## Replying to Discord
+
+Normal assistant output stays private to the session. Do not assume a human on
+Discord can see it.
+
+If the event includes `reply_contract: explicit_publish_required`, follow that
+contract literally: plain assistant output does not go back to Discord.
+
+To send a human-visible reply, write the body to a file and run the command
+shown in the `reply_tool` field of the discord-event. Example:
+  gc discord reply-current --conversation-id <id> --reply-to <id> --body-file <path>
+
+**Always prefix your Discord messages with your handle in bold** so humans and
+other agents know who is speaking. Example: if your handle is "sky", start
+every reply with "**sky:** " followed by your message. Other agents should use
+@sky to address you directly.
+
+Do not put long replies inline in --body. Use --body-file.
+Only claim success after the command returns JSON with a non-empty
+record.remote_message_id.
+
+## Addressing others
+
+When addressing a specific peer agent, use @name for clarity (e.g., "@priya can
+you look at the test failures?"). This helps the routing layer.
+
+When you need a response from a human, use their Discord mention tag (e.g.,
+`<@USER_ID>`) so they get a notification. The discord-event includes
+`from_user_id` — use `<@` + the from_user_id value + `>` to tag the person
+who messaged you. Do not assume humans are watching the thread.
+</system-context>"""
+
+
+def _build_thread_launch_envelope(
+    *,
+    discord_message: dict[str, Any],
+    thread_id: str,
+    channel_id: str,
+    guild_id: str,
+    handle: str,
+    content: str,
+) -> str:
+    """Build a discord-event envelope with prompt fragment for a thread-launch message."""
+    author = discord_message.get("author") or {}
+    message_id = str(discord_message.get("id", ""))
+    prompt = _build_discord_prompt_fragment(handle)
+    lines = [
+        prompt,
+        "",
+        "<discord-event>",
+        "version: 1",
+        "kind: discord_human_message",
+        f"guild_id: {guild_id}",
+        f"conversation: discord/{guild_id}/{thread_id}",
+        f"conversation_key: {guild_id}:{thread_id}",
+        f"discord_message_id: {message_id}",
+        f"from_display: {str(author.get('global_name', '') or author.get('username', '')).strip()}",
+        f"from_user_id: {str(author.get('id', '')).strip()}",
+        "delivery: targeted",
+        f"target_handle: {handle}",
+        f"untrusted_body_json: {json.dumps(content)}",
+        f"publish_binding_id: extmsg:thread:{thread_id}",
+        f"publish_conversation_id: {thread_id}",
+        f"publish_trigger_id: {message_id}",
+        f"publish_reply_to_discord_message_id: {message_id}",
+        "normal_output_visibility: internal_only",
+        "reply_contract: explicit_publish_required",
+        f"reply_tool: gc discord reply-current --conversation-id {thread_id} --body-file <path>",
+        "reply_success_signal: record.remote_message_id",
+        "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
+        "</discord-event>",
+    ]
+    return "\n".join(lines)
+
+
+def launch_thread_for_mentions(
+    discord_message: dict[str, Any],
+    targets: list[dict[str, Any]],
+    guild_id: str,
+    application_id: str,
+) -> dict[str, Any] | None:
+    """Create a Discord thread from a room message and set up extmsg group.
+
+    Called when a human @mentions agents in a room. Creates the thread,
+    creates an extmsg group, and adds each target as a participant.
+
+    Returns the created group record, or None on failure.
+    """
+    channel_id = str(discord_message.get("channel_id", ""))
+    message_id = str(discord_message.get("id", ""))
+    content = str(discord_message.get("content", ""))
+    if not channel_id or not message_id or not targets:
+        return None
+
+    # Create Discord thread from the message.
+    thread_name = content[:100] if content else "Thread"
+    try:
+        thread = discord_api_request(
+            "POST",
+            f"/channels/{channel_id}/messages/{message_id}/threads",
+            {"name": thread_name, "auto_archive_duration": 1440},
+        )
+    except DiscordAPIError as exc:
+        print(f"[extmsg] Discord thread creation failed: {exc}", flush=True)
+        return None
+
+    thread_id = str(thread.get("id", ""))
+    if not thread_id:
+        return None
+
+    # Create extmsg group for the thread.
+    thread_conversation = {
+        "scope_id": guild_id or "global",
+        "provider": "discord",
+        "account_id": application_id,
+        "conversation_id": thread_id,
+        "parent_conversation_id": channel_id,
+        "kind": "thread",
+    }
+
+    first_handle = ""
+    for t in targets:
+        if t["kind"] == "session":
+            first_handle = str(t["session"].get("alias", "") or t["session"].get("name", ""))
+            break
+        if t["kind"] == "template":
+            first_handle = str(t["agent"].get("name", "")).rsplit("/", 1)[-1]
+            break
+
+    print(f"[extmsg] thread created: {thread_id}, creating group...", flush=True)
+    try:
+        group = gc_api_request("POST", "/v0/extmsg/groups", {
+            "root_conversation": thread_conversation,
+            "mode": "launcher",
+            "default_handle": first_handle,
+            "metadata": {"guild_id": guild_id, "source_channel_id": channel_id, "source_message_id": message_id},
+        })
+    except GCAPIError as exc:
+        print(f"[extmsg] group creation failed: {exc}", flush=True)
+        return None
+
+    group_id = str(group.get("id", ""))
+
+    # Prepare participant work items.
+    def _create_participant(target: dict[str, Any]) -> tuple[str, str] | None:
+        """Create a session for a target and return (session_id, handle) or None."""
+        if target["kind"] == "session":
+            sid = str(target["session"].get("name", ""))
+            handle = str(target["session"].get("alias", "") or sid)
+            return (sid, handle) if sid else None
+        if target["kind"] == "template":
+            template_name = str(target["template"])
+            handle = template_name.rsplit("/", 1)[-1] if "/" in template_name else template_name
+            envelope = _build_thread_launch_envelope(
+                discord_message=discord_message,
+                thread_id=thread_id,
+                channel_id=channel_id,
+                guild_id=guild_id,
+                handle=handle,
+                content=content,
+            )
+            try:
+                sid = _create_session_from_template(template_name, handle, initial_message=envelope)
+                print(f"[extmsg] session {sid} created from {template_name}", flush=True)
+                return (sid, handle)
+            except (GCAPIError, RuntimeError) as exc:
+                print(f"[extmsg] session creation failed for {template_name}: {exc}", flush=True)
+                return None
+        return None
+
+    # Create sessions sequentially to avoid parallel prompt resolution races.
+    # TODO: switch back to parallel once the session API prompt race is fixed.
+    participants: list[tuple[str, str]] = []
+    for t in targets:
+        result = _create_participant(t)
+        if result:
+            participants.append(result)
+
+    # Register participants, bindings, and transcript memberships (fast, sequential).
+    for session_id, handle in participants:
+        try:
+            gc_api_request("POST", "/v0/extmsg/groups/participants", {
+                "group_id": group_id,
+                "handle": handle,
+                "session_id": session_id,
+                "public": True,
+            })
+        except GCAPIError:
+            pass
+        try:
+            gc_api_request("POST", "/v0/extmsg/bindings", {
+                "conversation": thread_conversation,
+                "session_id": session_id,
+            })
+        except GCAPIError:
+            pass
+        # Enroll in transcript so the session receives notifications
+        # when other participants post messages.
+        try:
+            gc_api_request("POST", "/v0/extmsg/transcript/membership", {
+                "conversation": thread_conversation,
+                "session_id": session_id,
+            })
+        except GCAPIError:
+            pass
+
+    return group
+
+
+def add_participants_to_thread(
+    thread_id: str,
+    parent_channel_id: str,
+    targets: list[dict[str, Any]],
+    guild_id: str,
+    application_id: str,
+    content: str = "",
+) -> None:
+    """Add new agent participants to an existing thread.
+
+    For each target, creates a session (if template) or reuses existing,
+    adds as group participant, creates binding, and delivers the message
+    as a discord-event envelope.
+    """
+    thread_conversation = {
+        "scope_id": guild_id or "global",
+        "provider": "discord",
+        "account_id": application_id,
+        "conversation_id": thread_id,
+        "parent_conversation_id": parent_channel_id,
+        "kind": "thread",
+    }
+
+    # Find or create the group for this thread.
+    try:
+        group = gc_api_request("GET", f"/v0/extmsg/groups?scope_id={guild_id}&provider=discord&account_id={application_id}&conversation_id={thread_id}&kind=thread")
+        group_id = str(group.get("id", ""))
+    except GCAPIError:
+        # Group doesn't exist yet — create it.
+        try:
+            group = gc_api_request("POST", "/v0/extmsg/groups", {
+                "root_conversation": thread_conversation,
+                "mode": "launcher",
+                "default_handle": "",
+            })
+            group_id = str(group.get("id", ""))
+        except GCAPIError as exc:
+            print(f"[extmsg] group creation failed for thread {thread_id}: {exc}", flush=True)
+            return
+
+    # Get existing bindings for this thread to avoid duplicates.
+    existing_sessions: set[str] = set()
+    try:
+        # Check all sessions — find those bound to this thread.
+        sessions = list_city_sessions(state="all")
+        for s in sessions:
+            sid = str(s.get("session_name", s.get("name", "")))
+            try:
+                bindings = gc_api_request("GET", f"/v0/extmsg/bindings?session_id={sid}")
+                for b in (bindings.get("items") or []):
+                    if str(b.get("conversation", {}).get("conversation_id", "")) == thread_id:
+                        tmpl = str(s.get("template", ""))
+                        existing_sessions.add(tmpl)
+                        break
+            except GCAPIError:
+                pass
+    except GCAPIError:
+        pass
+
+    for target in targets:
+        session_id = ""
+        handle = ""
+        if target["kind"] == "session":
+            session_id = str(target["session"].get("session_name", target["session"].get("name", "")))
+            handle = str(target["session"].get("alias", "") or session_id)
+        elif target["kind"] == "template":
+            template_name = str(target["template"])
+            handle = template_name.rsplit("/", 1)[-1] if "/" in template_name else template_name
+            # Skip if a session from this template is already in the thread.
+            if template_name in existing_sessions:
+                print(f"[extmsg] {handle} already in thread {thread_id}, skipping", flush=True)
+                continue
+            envelope = _build_thread_launch_envelope(
+                discord_message={"id": "", "content": content, "author": {}, "channel_id": thread_id},
+                thread_id=thread_id,
+                channel_id=parent_channel_id,
+                guild_id=guild_id,
+                handle=handle,
+                content=content,
+            )
+            try:
+                session_id = _create_session_from_template(
+                    template_name, handle, initial_message=envelope,
+                )
+                print(f"[extmsg] added {handle} to thread {thread_id} as {session_id}", flush=True)
+            except (GCAPIError, RuntimeError) as exc:
+                print(f"[extmsg] failed to add {handle}: {exc}", flush=True)
+                continue
+
+        if not session_id or not handle:
+            continue
+
+        # Add as group participant.
+        try:
+            gc_api_request("POST", "/v0/extmsg/groups/participants", {
+                "group_id": group_id,
+                "handle": handle,
+                "session_id": session_id,
+                "public": True,
+            })
+        except GCAPIError:
+            pass
+
+        # Create binding.
+        try:
+            gc_api_request("POST", "/v0/extmsg/bindings", {
+                "conversation": thread_conversation,
+                "session_id": session_id,
+            })
+        except GCAPIError:
+            pass
+
+        # Enroll in transcript for notifications.
+        try:
+            gc_api_request("POST", "/v0/extmsg/transcript/membership", {
+                "conversation": thread_conversation,
+                "session_id": session_id,
+            })
+        except GCAPIError:
+            pass
+
+
 def list_city_sessions(state: str = "all") -> list[dict[str, Any]]:
     suffix = ""
     normalized_state = str(state).strip()
@@ -2166,6 +2796,14 @@ def list_city_sessions(state: str = "all") -> list[dict[str, Any]]:
 
 
 def list_city_agents() -> list[dict[str, Any]]:
+    # Try /v0/config first — it includes pack-expanded agents.
+    # /v0/agents may return empty if the binary predates pack expansion fixes.
+    config_payload = gc_api_request("GET", "/v0/config")
+    if isinstance(config_payload, dict):
+        agents = config_payload.get("agents")
+        if isinstance(agents, list) and agents:
+            return [item for item in agents if isinstance(item, dict)]
+    # Fallback to /v0/agents.
     payload = gc_api_request("GET", "/v0/agents")
     items = payload.get("items") if isinstance(payload, dict) else None
     if not isinstance(items, list):
@@ -4075,7 +4713,8 @@ def publish_binding_message(
             source_session_name=effective_source_session_name,
             source_session_id=effective_source_session_id,
         )
-    record = _apply_peer_fanout(record, binding, source_context=source_context)
+    # Peer notification is now handled by the extmsg outbound orchestrator
+    # via transcript membership — no pack-side fanout needed.
     return {"binding": binding, "record": record, "response": response}
 
 
@@ -4149,7 +4788,7 @@ def sync_guild_commands(config: dict[str, Any], guild_id: str) -> Any:
 def post_channel_message(channel_id: str, body: str, reply_to_message_id: str = "") -> Any:
     payload: dict[str, Any] = {
         "content": body,
-        "allowed_mentions": {"parse": []},
+        "allowed_mentions": {"parse": ["users"]},
     }
     reply_to_message_id = str(reply_to_message_id).strip()
     if reply_to_message_id:
