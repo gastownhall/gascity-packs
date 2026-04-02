@@ -2614,15 +2614,8 @@ def launch_thread_for_mentions(
                 content=content,
             )
             try:
-                sid = _create_session_from_template(template_name, handle)
+                sid = _create_session_from_template(template_name, handle, initial_message=envelope)
                 print(f"[extmsg] session {sid} created from {template_name}", flush=True)
-                # Deliver the envelope as a nudge after session creation rather
-                # than as body.Message, to avoid shared-workdir leakage between
-                # sessions started by the same reconciler tick.
-                try:
-                    gc_api_request("POST", f"/v0/session/{sid}/messages", {"message": envelope}, timeout=10.0)
-                except GCAPIError:
-                    pass  # best-effort; the transcript hook will also deliver context
                 return (sid, handle)
             except (GCAPIError, RuntimeError) as exc:
                 print(f"[extmsg] session creation failed for {template_name}: {exc}", flush=True)
