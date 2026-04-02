@@ -2414,6 +2414,8 @@ def _create_session_from_template(template_name: str, alias: str, initial_messag
     }
     if initial_message:
         payload["message"] = initial_message
+    else:
+        payload["async"] = True
     session = gc_api_request("POST", "/v0/sessions", payload, timeout=60.0)
     session_name = str(session.get("session_name", "") or session.get("name", "")).strip()
     if not session_name:
