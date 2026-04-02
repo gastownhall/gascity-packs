@@ -8,6 +8,10 @@ import hashlib
 import json
 import os
 import queue
+
+# Route API calls through the extmsg sidecar which handles /v0/extmsg/*
+# and proxies everything else to the main supervisor.
+os.environ.setdefault("GC_API_BASE_URL", "http://127.0.0.1:18372")
 import random
 import re
 import signal
