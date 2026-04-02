@@ -2773,6 +2773,15 @@ def add_participants_to_thread(
         except GCAPIError:
             pass
 
+        # Enroll in transcript for notifications.
+        try:
+            gc_api_request("POST", "/v0/extmsg/transcript/membership", {
+                "conversation": thread_conversation,
+                "session_id": session_id,
+            })
+        except GCAPIError:
+            pass
+
 
 def list_city_sessions(state: str = "all") -> list[dict[str, Any]]:
     suffix = ""
