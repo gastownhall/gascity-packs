@@ -8,9 +8,6 @@ import fcntl
 import hashlib
 import json
 import os
-
-# Route API calls through the extmsg sidecar.
-os.environ.setdefault("GC_API_BASE_URL", "http://127.0.0.1:18372")
 import pathlib
 import re
 import socket
