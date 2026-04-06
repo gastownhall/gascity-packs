@@ -1,43 +1,48 @@
 # /search-sessions — Search past agent sessions
 
-Use `cass` to search past coding agent sessions for relevant solutions,
-debugging history, and patterns.
+Use `cass` to search past coding-agent sessions for relevant solutions,
+debugging history, and prior decisions.
 
-## Basic search
+Never run bare `cass` in an agent context. Use non-interactive mode only.
+
+## Preflight
 
 ```bash
-cass search "error message or concept" --robot --limit 5 --fields minimal
+cass health --json || cass index --full
 ```
 
-Always use `--robot` for machine-readable output and `--fields minimal`
-to keep token usage low.
+## Find relevant sessions
 
-## Expand a result
-
-When a search result looks relevant, expand it for full context:
+Current workspace and recent matches:
 
 ```bash
-cass expand <session-id> --robot
+cass sessions --current --json
+cass sessions --workspace "$(pwd)" --json --limit 5
 ```
 
-## Search with filters
-
-Filter by date range:
+Direct search:
 
 ```bash
-cass search "query" --robot --after 2026-01-01 --limit 10 --fields minimal
+cass search "error message or subsystem" --json --limit 5 --fields minimal
 ```
 
-Filter by project/directory:
+## Inspect a hit
+
+Use `source_path` and `line_number` from search output:
 
 ```bash
-cass search "query" --robot --dir /path/to/project --limit 5 --fields minimal
+cass view <source_path> -n <line_number> --json
+cass expand <source_path> -n <line_number> -C 3 --json
+```
+
+## If expected history is missing
+
+```bash
+cass diag --json
 ```
 
 ## Tips
 
-- Search before starting a new task — a previous session may have solved it
-- Use specific error messages as search queries for best results
-- Keep `--limit` low (3-5) for initial searches, expand if needed
-- Use `--fields minimal` to avoid flooding your context window
-- Expand only the most relevant results to get full session context
+- Start with an exact error string, workspace path, or subsystem name.
+- Use `--fields minimal` first, then inspect only the strongest hits.
+- Check prior sessions before re-debugging an unfamiliar failure.
