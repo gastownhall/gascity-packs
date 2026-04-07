@@ -621,6 +621,17 @@ def binding_allows_ambient_read(binding: dict[str, Any] | None) -> bool:
     return bool(common.binding_peer_policy(binding).get("ambient_read_enabled"))
 
 
+def binding_allows_untargeted_ambient_delivery(binding: dict[str, Any] | None) -> bool:
+    if not binding_allows_ambient_read(binding):
+        return False
+    if not isinstance(binding, dict):
+        return False
+    participants = [str(item).strip() for item in binding.get("session_names", []) if str(item).strip()]
+    if len(participants) != 1:
+        return False
+    return bool(common.binding_peer_policy(binding).get("allow_untargeted_ambient_delivery"))
+
+
 def ambient_bindings_config_signature() -> tuple[int, int, int] | None:
     try:
         stat_result = os.stat(common.config_path())
@@ -1268,7 +1279,7 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             preloaded_channel_info = binding_channel_info(preloaded_binding)
             preloaded_body = strip_bot_mentions(str(message.get("content", "")), bot_user_id)
             preloaded_aliases = extract_alias_mentions(preloaded_body)
-            if not preloaded_aliases:
+            if not preloaded_aliases and not binding_allows_untargeted_ambient_delivery(preloaded_binding):
                 return reject_ingress_before_processing(
                     message,
                     bot_user_id,
@@ -1286,7 +1297,7 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
                 if participant_lookup.get(key):
                     has_valid_preloaded_alias = True
                     break
-            if not has_valid_preloaded_alias:
+            if preloaded_aliases and not has_valid_preloaded_alias:
                 return reject_ingress_before_processing(
                     message,
                     bot_user_id,
@@ -1495,7 +1506,9 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             binding,
             session_index,
             mentioned_aliases,
-            require_targeted_aliases=bool(binding_allows_ambient_read(binding) and guild_id),
+            require_targeted_aliases=bool(
+                binding_allows_ambient_read(binding) and guild_id and not binding_allows_untargeted_ambient_delivery(binding)
+            ),
         )
         if resolve_error:
             if resolve_error == "target_required":

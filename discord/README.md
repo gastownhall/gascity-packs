@@ -127,6 +127,7 @@ Direct bindings still exist for exact session routing:
 gc discord bind-dm 123456789012345678 sky
 gc discord bind-room --guild-id 223456789012345678 323456789012345678 sky lawrence
 gc discord bind-room --guild-id 223456789012345678 --enable-ambient-read 323456789012345678 sky lawrence
+gc discord bind-room --guild-id 223456789012345678 --enable-ambient-read --allow-untargeted-ambient-delivery 323456789012345678 randy
 gc discord bind-room --guild-id 223456789012345678 --enable-peer-fanout 323456789012345678 corp--sky corp--priya
 ```
 
@@ -170,9 +171,10 @@ Inbound behavior in v0:
 - unmentioned follow-ups inside a managed launcher thread continue to the last agent the human addressed in that thread
 - guild and thread messages route only when the bot is explicitly mentioned
 - ambient-read room bindings are the exception: the bound room or bound thread accepts unmentioned messages, but only when one or more exact `@session_name` targets are present
+- single-session ambient-read bindings may opt into untargeted delivery with `--allow-untargeted-ambient-delivery`; that is the sticky room mode for long-lived agents like Randy
 - thread messages inherit the parent room binding when the thread itself is not bound
 - inherited thread routing still requires a bot mention unless the thread itself is bound with ambient read
-- ambient-read rooms stay targeted-only even when the bot is mentioned; the bot mention only gets the message into the bridge
+- ambient-read rooms stay targeted-only even when the bot is mentioned, unless the binding explicitly allows untargeted ambient delivery for its one bound session
 - launcher rooms and ambient-read rooms depend on Discord `Message Content Intent` because they consume unmentioned guild text
 - `@sky` inside the message targets that session name exactly
 - untargeted room messages fan out to every bound participant session

@@ -482,6 +482,7 @@ def _coerce_bool(value: Any, default: bool) -> bool:
 def default_room_peer_policy() -> dict[str, Any]:
     return {
         "ambient_read_enabled": False,
+        "allow_untargeted_ambient_delivery": False,
         "peer_fanout_enabled": False,
         "allow_untargeted_peer_fanout": False,
         "max_peer_triggered_publishes_per_root": 1,
@@ -501,6 +502,9 @@ def _normalize_peer_policy(policy: dict[str, Any] | None, defaults: dict[str, An
     raw = policy if isinstance(policy, dict) else {}
     return {
         "ambient_read_enabled": _coerce_bool(raw.get("ambient_read_enabled"), defaults["ambient_read_enabled"]),
+        "allow_untargeted_ambient_delivery": _coerce_bool(
+            raw.get("allow_untargeted_ambient_delivery"), defaults["allow_untargeted_ambient_delivery"]
+        ),
         "peer_fanout_enabled": _coerce_bool(raw.get("peer_fanout_enabled"), defaults["peer_fanout_enabled"]),
         "allow_untargeted_peer_fanout": _coerce_bool(
             raw.get("allow_untargeted_peer_fanout"), defaults["allow_untargeted_peer_fanout"]
@@ -646,6 +650,11 @@ def set_chat_binding(
         invalid = [name for name in normalized_session_names if canonical_peer_session_name(name) != name]
         if invalid:
             raise ValueError("peer-fanout-enabled room bindings require lowercase canonical session names")
+    if normalized_kind == "room" and room_policy.get("allow_untargeted_ambient_delivery"):
+        if not room_policy.get("ambient_read_enabled"):
+            raise ValueError("untargeted ambient delivery requires ambient read to be enabled")
+        if len(normalized_session_names) != 1:
+            raise ValueError("untargeted ambient delivery requires exactly one session name")
     cfg.setdefault("chat", {})
     cfg["chat"].setdefault("bindings", {})
     binding: dict[str, Any] = {

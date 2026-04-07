@@ -916,6 +916,42 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "ignored_untargeted")
         self.assertEqual(receipt["reason"], "ambient_target_required")
 
+    def test_process_inbound_ambient_room_message_routes_untargeted_single_session_when_enabled(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["randy"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+        )
+        message = {
+            "id": "507-single",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "what changed since yesterday?",
+            "mentions": [],
+            "author": {"id": "u-5b1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"randy": {"session_name": "randy", "state": "active"}},
+        ) as session_index_by_name, mock.patch.object(
+            common, "deliver_session_message", return_value={"status": "accepted"}
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        session_index_by_name.assert_called_once()
+        deliver_session_message.assert_called_once()
+        self.assertEqual(deliver_session_message.call_args.args[0], "randy")
+        receipt = common.load_chat_ingress("in-507-single")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "delivered")
+        self.assertEqual(receipt["delivery"], "broadcast")
+
     def test_process_inbound_ambient_room_message_ignores_unknown_alias_with_receipt(self) -> None:
         common.set_chat_binding(
             common.load_config(),
@@ -1189,6 +1225,38 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         receipt = common.load_chat_ingress("in-508")
         assert receipt is not None
         self.assertEqual(receipt["reason"], "ambient_target_required")
+
+    def test_process_inbound_bot_mentioned_ambient_room_routes_untargeted_single_session_when_enabled(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["randy"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+        )
+        message = {
+            "id": "508-single",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> what changed since yesterday?",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-5c1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"randy": {"session_name": "randy", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        deliver_session_message.assert_called_once()
+        self.assertEqual(deliver_session_message.call_args.args[0], "randy")
+        receipt = common.load_chat_ingress("in-508-single")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "delivered")
 
     def test_process_inbound_bot_mentioned_thread_with_ambient_parent_still_requires_target(self) -> None:
         common.set_chat_binding(

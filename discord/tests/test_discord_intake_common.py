@@ -75,6 +75,14 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 },
             )
 
+    def test_shared_discord_prompt_requires_bold_speaker_prefix(self) -> None:
+        fragment = (
+            pathlib.Path(__file__).resolve().parents[1] / "prompts" / "shared" / "discord-v0.md.tmpl"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Always prefix your Discord messages with your handle in bold", fragment)
+        self.assertIn("**randy:**", fragment)
+
     def test_set_channel_mapping_persists_fix_formula(self) -> None:
         config = common.set_channel_mapping(common.load_config(), "1", "2", "product/polecat", "mol-discord-fix-issue")
 
@@ -192,6 +200,44 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(binding["policy"]["max_peer_triggered_publishes_per_root"], 2)
         self.assertEqual(binding["policy"]["max_total_peer_deliveries_per_root"], 9)
         self.assertEqual(binding["policy"]["max_peer_triggered_publishes_per_session_per_minute"], 7)
+
+    def test_set_chat_binding_persists_untargeted_ambient_delivery_policy(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["randy"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+        )
+
+        binding = common.resolve_chat_binding(config, "room:22")
+
+        assert binding is not None
+        self.assertTrue(binding["policy"]["ambient_read_enabled"])
+        self.assertTrue(binding["policy"]["allow_untargeted_ambient_delivery"])
+
+    def test_set_chat_binding_rejects_untargeted_ambient_delivery_without_ambient_read(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires ambient read to be enabled"):
+            common.set_chat_binding(
+                common.load_config(),
+                "room",
+                "22",
+                ["randy"],
+                guild_id="1",
+                policy={"allow_untargeted_ambient_delivery": True},
+            )
+
+    def test_set_chat_binding_rejects_untargeted_ambient_delivery_for_multi_session_room(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires exactly one session name"):
+            common.set_chat_binding(
+                common.load_config(),
+                "room",
+                "22",
+                ["randy", "wendy"],
+                guild_id="1",
+                policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+            )
 
     def test_set_chat_binding_persists_room_channel_metadata(self) -> None:
         config = common.set_chat_binding(

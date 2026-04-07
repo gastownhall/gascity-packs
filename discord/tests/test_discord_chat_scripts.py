@@ -507,6 +507,28 @@ class DiscordChatScriptTests(unittest.TestCase):
         self.assertEqual(binding["policy"]["max_total_peer_deliveries_per_root"], 9)
         self.assertEqual(binding["policy"]["max_peer_triggered_publishes_per_session_per_minute"], 7)
 
+    def test_bind_script_persists_untargeted_ambient_delivery_policy(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = bind_script.main(
+                [
+                    "--kind",
+                    "room",
+                    "--guild-id",
+                    "1",
+                    "--enable-ambient-read",
+                    "--allow-untargeted-ambient-delivery",
+                    "22",
+                    "randy",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        binding = common.resolve_chat_binding(common.load_config(), "room:22")
+        assert binding is not None
+        self.assertTrue(binding["policy"]["ambient_read_enabled"])
+        self.assertTrue(binding["policy"]["allow_untargeted_ambient_delivery"])
+
     def test_bind_script_disable_ambient_read_updates_existing_room_binding(self) -> None:
         common.set_chat_binding(
             common.load_config(),
@@ -558,6 +580,24 @@ class DiscordChatScriptTests(unittest.TestCase):
             bind_script.main(["--kind", "room", "--enable-ambient-read", "--disable-ambient-read", "22", "sky"])
 
         self.assertEqual(str(exc.exception), "choose only one of --enable-ambient-read or --disable-ambient-read")
+
+    def test_bind_script_rejects_conflicting_untargeted_ambient_delivery_flags(self) -> None:
+        with self.assertRaises(SystemExit) as exc:
+            bind_script.main(
+                [
+                    "--kind",
+                    "room",
+                    "--allow-untargeted-ambient-delivery",
+                    "--disallow-untargeted-ambient-delivery",
+                    "22",
+                    "randy",
+                ]
+            )
+
+        self.assertEqual(
+            str(exc.exception),
+            "choose only one of --allow-untargeted-ambient-delivery or --disallow-untargeted-ambient-delivery",
+        )
 
     def test_bind_script_rejects_invalid_dm_fanout_cleanly(self) -> None:
         with self.assertRaises(SystemExit) as exc:

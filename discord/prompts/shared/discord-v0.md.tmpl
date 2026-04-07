@@ -42,6 +42,10 @@ To send a human-visible reply, write the body to a file and run:
 gc discord reply-current --body-file <path>
 ```
 
+Always prefix your Discord messages with your handle in bold so humans and
+other agents can tell who is speaking. Example: if your handle is `randy`,
+start replies with `**randy:** `.
+
 Do not put long replies inline in `--body`. Use `--body-file`.
 Do not pipe the command through filters that can hide failures.
 Only claim success after the command returns JSON with a non-empty
