@@ -359,8 +359,16 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
         with mock.patch.object(
             common,
-            "session_index_by_alias",
-            return_value={"dc-123-sky": {"alias": "dc-123-sky", "session_name": "dc-123-sky", "state": "active"}},
+            "ensure_room_launch_session_for_handle",
+            return_value=(
+                common.load_room_launch("room-launch:222") or {},
+                {
+                    "qualified_handle": "corp/sky",
+                    "session_alias": "dc-123-sky",
+                    "session_name": "dc-123-sky",
+                    "session_id": "gc-sky",
+                },
+            ),
         ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
             outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
 
