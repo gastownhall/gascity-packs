@@ -36,6 +36,16 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._old_environ)
 
+    def _new_gateway_worker(self) -> gateway_service.GatewayWorker:
+        runtime_state = gateway_service.GatewayRuntimeState()
+        with mock.patch.object(gateway_service, "GATEWAY_WORKER_THREADS", 0):
+            worker = gateway_service.GatewayWorker(runtime_state)
+        self.addCleanup(worker.stop)
+        return worker
+
+    def _configure_discord_app(self) -> None:
+        common.import_app_config(common.load_config(), {"application_id": "1484616391729483786"})
+
     def test_gateway_requests_message_content_intent(self) -> None:
         self.assertTrue(gateway_service.GATEWAY_INTENTS & (1 << 15))
 
@@ -120,6 +130,94 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(outcome["status"], "delivered")
         deliver_session_message.assert_called_once()
         self.assertEqual(deliver_session_message.call_args.args[0], "Sky")
+
+    def test_record_extmsg_inbound_skips_bound_room_mentions(self) -> None:
+        self._configure_discord_app()
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["randy"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+        )
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207a",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@randy what changed?",
+            "author": {"id": "u-207a", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "resolve_at_mentions", return_value=["randy"]) as resolve_at_mentions, mock.patch.object(
+            common, "resolve_mention_targets"
+        ) as resolve_mention_targets, mock.patch.object(common, "launch_thread_for_mentions") as launch_thread_for_mentions:
+            handled = worker._record_extmsg_inbound(message, bot_user_id="999")
+
+        self.assertFalse(handled)
+        resolve_at_mentions.assert_not_called()
+        resolve_mention_targets.assert_not_called()
+        launch_thread_for_mentions.assert_not_called()
+
+    def test_handle_gateway_message_prefers_bound_room_over_extmsg_thread_launch(self) -> None:
+        self._configure_discord_app()
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["randy"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+        )
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207aa",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@randy what changed?",
+            "author": {"id": "u-207aa", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "launch_thread_for_mentions") as launch_thread_for_mentions, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"randy": {"session_name": "randy", "state": "active"}},
+        ), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted"},
+        ) as deliver_session_message:
+            worker.handle_gateway_message(message, bot_user_id="999")
+
+        launch_thread_for_mentions.assert_not_called()
+        deliver_session_message.assert_called_once()
+        self.assertEqual(deliver_session_message.call_args.args[0], "randy")
+        receipt = common.load_chat_ingress("in-207aa")
+        assert receipt is not None
+        self.assertEqual(receipt["binding_id"], "room:22")
+        self.assertEqual(receipt["status"], "delivered")
+
+    def test_record_extmsg_inbound_skips_thread_when_parent_room_is_bound(self) -> None:
+        self._configure_discord_app()
+        common.set_chat_binding(common.load_config(), "room", "22", ["randy"], guild_id="1")
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207b",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "@randy still there?",
+            "author": {"id": "u-207b", "username": "alice"},
+        }
+
+        with mock.patch.object(gateway_service, "_resolve_thread_parent", return_value="22"), mock.patch.object(
+            common, "deliver_to_extmsg"
+        ) as deliver_to_extmsg, mock.patch.object(common, "normalize_to_extmsg_message") as normalize_to_extmsg_message:
+            handled = worker._record_extmsg_inbound(message, bot_user_id="999")
+
+        self.assertFalse(handled)
+        normalize_to_extmsg_message.assert_not_called()
+        deliver_to_extmsg.assert_not_called()
 
     def test_process_inbound_room_launch_routes_handle_without_bot_mention(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")

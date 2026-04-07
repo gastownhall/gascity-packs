@@ -632,6 +632,19 @@ def binding_allows_untargeted_ambient_delivery(binding: dict[str, Any] | None) -
     return bool(common.binding_peer_policy(binding).get("allow_untargeted_ambient_delivery"))
 
 
+def explicit_room_binding(config: dict[str, Any], channel_id: str) -> dict[str, Any] | None:
+    return common.resolve_chat_binding(config, common.chat_binding_id("room", channel_id))
+
+
+def bound_room_claims_message(config: dict[str, Any], channel_id: str, parent_id: str = "") -> bool:
+    if explicit_room_binding(config, channel_id):
+        return True
+    parent = str(parent_id).strip()
+    if parent and explicit_room_binding(config, parent):
+        return True
+    return False
+
+
 def ambient_bindings_config_signature() -> tuple[int, int, int] | None:
     try:
         stat_result = os.stat(common.config_path())
@@ -1944,6 +1957,12 @@ class GatewayWorker:
             # Check channel type to detect threads (cached).
             parent_id = _resolve_thread_parent(channel_id)
             is_thread = bool(parent_id)
+
+            # Explicit room bindings take precedence over generic extmsg
+            # mention/thread launching. This keeps sticky bound rooms, and
+            # their inherited thread routing, from spawning new sessions.
+            if guild_id and channel_id and bound_room_claims_message(config, channel_id, parent_id):
+                return False
 
             # ROOM: @mentions required to launch a new thread.
             # NL mentions in the room are ignored (no accidental threads).
