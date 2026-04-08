@@ -3,3 +3,5 @@
 .dolt/
 *.db
 .beads-credential-key
+.beads/
+.gc/
