@@ -32,16 +32,12 @@ before cancel/retry automation exists, release the intake lock manually:
 gc github-intake release-workflow owner/repo 42
 ```
 
-## Include It
+## Import It
 
 ```toml
-[packs.github-intake]
-source = "https://github.com/julianknutsen/packs.git"
-ref = "main"
-path = "github-intake"
-
-[workspace]
-includes = ["github-intake"]
+# pack.toml
+[imports.github-intake]
+source = "../packs/github-intake"
 ```
 
 ## Publication

@@ -1,0 +1,2 @@
+description = 'openssl is available for GitHub App JWT signing'
+run = '../check-openssl.sh'

@@ -1,12 +1,24 @@
 [pack]
 name = "jeffrey"
-schema = 1
-includes = [
-    "../planning-workflow",
-    "../de-slopify",
-    "../ui-polish",
-    "../code-review",
-    "../robot-mode",
-    "../readme-revise",
-    "../idea-wizard",
-]
+schema = 2
+
+[imports.planning-workflow]
+source = "../planning-workflow"
+
+[imports.de-slopify]
+source = "../de-slopify"
+
+[imports.ui-polish]
+source = "../ui-polish"
+
+[imports.code-review]
+source = "../code-review"
+
+[imports.robot-mode]
+source = "../robot-mode"
+
+[imports.readme-revise]
+source = "../readme-revise"
+
+[imports.idea-wizard]
+source = "../idea-wizard"

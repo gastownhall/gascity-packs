@@ -1,43 +1,4 @@
 [pack]
 name = "rlm"
 version = "0.1.0"
-schema = 1
-
-[[doctor]]
-name = "python"
-description = "python3 3.11+ is available for the RLM runtime"
-script = "doctor/check-python.sh"
-
-[[doctor]]
-name = "docker"
-description = "Docker is available for the default sandboxed execution path"
-script = "doctor/check-docker.sh"
-
-[[doctor]]
-name = "runtime"
-description = "The pack-owned RLM runtime is installed and healthy"
-script = "doctor/check-rlm-runtime.sh"
-
-[[commands]]
-name = "install"
-description = "Install or update the RLM runtime for this city"
-long_description = "help/install.txt"
-script = "commands/install.sh"
-
-[[commands]]
-name = "ask"
-description = "Run a bounded long-context RLM analysis"
-long_description = "help/ask.txt"
-script = "commands/ask.sh"
-
-[[commands]]
-name = "status"
-description = "Show runtime, policy, and recent run status"
-long_description = "help/status.txt"
-script = "commands/status.sh"
-
-[[commands]]
-name = "uninstall"
-description = "Remove the RLM runtime from this city"
-long_description = "help/uninstall.txt"
-script = "commands/uninstall.sh"
+schema = 2

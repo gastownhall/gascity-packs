@@ -1,0 +1,2 @@
+description = 'Publish a Discord-visible message through a saved chat binding'
+run = '../publish.sh'

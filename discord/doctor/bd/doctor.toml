@@ -1,0 +1,2 @@
+description = 'bd CLI is available for Discord bead lifecycle commands'
+run = '../check-bd.sh'

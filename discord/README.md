@@ -25,23 +25,19 @@ Current slices:
 - safer `gc discord reply-current` for replying to the latest Discord turn in-session
 - bridge-local room peer fanout after a successful publish
 - `gc discord retry-peer-fanout` for redriving failed peer targets without reposting to Discord
-- shared prompt fragment at `prompts/shared/discord-v0.md.tmpl`
+- shared prompt fragment at `template-fragments/discord-v0.template.md`
 
 Launcher rooms and ambient room reads require Discord's `Message Content Intent`
 to be enabled for the app in the Developer Portal. Without that privileged
 intent, Discord can deliver guild message events with empty `content` unless
 the bot was directly mentioned.
 
-## Include It
+## Import It
 
 ```toml
-[packs.discord]
-source = "https://github.com/julianknutsen/packs.git"
-ref = "main"
-path = "discord"
-
-[workspace]
-includes = ["discord"]
+# pack.toml
+[imports.discord]
+source = "../packs/discord"
 ```
 
 ## Migration

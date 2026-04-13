@@ -1,0 +1,2 @@
+description = 'Run a bounded long-context RLM analysis'
+run = '../ask.sh'

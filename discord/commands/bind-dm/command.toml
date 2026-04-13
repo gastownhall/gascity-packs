@@ -1,0 +1,2 @@
+description = 'Bind a Discord DM channel to one named session'
+run = '../bind-dm.sh'

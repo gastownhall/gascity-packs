@@ -1,0 +1,2 @@
+description = 'legacy discord-intake state is not present in this workspace'
+run = '../check-legacy-pack-conflict.sh'

@@ -1,0 +1,2 @@
+description = 'jq is available for Discord workflow metadata extraction'
+run = '../check-jq.sh'

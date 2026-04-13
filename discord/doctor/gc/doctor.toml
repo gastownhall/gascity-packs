@@ -1,0 +1,2 @@
+description = 'gc CLI is available for Discord workflow dispatch'
+run = '../check-gc.sh'

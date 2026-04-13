@@ -1,0 +1,2 @@
+description = 'Map a GitHub repository to slash-command dispatch targets'
+run = '../map-repo.sh'

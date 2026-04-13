@@ -35,6 +35,18 @@ class DiscordChatScriptTests(unittest.TestCase):
     def test_pack_commands_reference_existing_files(self) -> None:
         pack_dir = pathlib.Path(__file__).resolve().parents[1]
         manifest = tomllib.loads((pack_dir / "pack.toml").read_text(encoding="utf-8"))
+        schema = int(manifest.get("pack", {}).get("schema", 1))
+
+        if schema >= 2:
+            command_dirs = sorted(path for path in (pack_dir / "commands").iterdir() if path.is_dir())
+            self.assertTrue(command_dirs, "expected pack v2 command directories")
+            for command_dir in command_dirs:
+                command_manifest = tomllib.loads((command_dir / "command.toml").read_text(encoding="utf-8"))
+                run_path = (command_dir / str(command_manifest.get("run", "")).strip()).resolve()
+                help_path = command_dir / "help.md"
+                self.assertTrue(run_path.is_file(), f"missing command script for {command_dir.name}: {run_path}")
+                self.assertTrue(help_path.is_file(), f"missing help text for {command_dir.name}: {help_path}")
+            return
 
         for command in manifest.get("commands", []):
             script_path = pack_dir / str(command.get("script", "")).strip()

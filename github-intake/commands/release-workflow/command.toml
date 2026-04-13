@@ -1,0 +1,2 @@
+description = 'Release a stuck workflow lock so the same GitHub issue can be retried'
+run = '../release-workflow.sh'

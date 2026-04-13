@@ -1,0 +1,2 @@
+description = 'Push the current branch to GitHub using the workspace GitHub App installation'
+run = '../push-branch.sh'

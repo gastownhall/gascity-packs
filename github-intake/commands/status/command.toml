@@ -1,0 +1,2 @@
+description = 'Show GitHub intake status, URLs, mappings, and recent requests'
+run = '../status.sh'

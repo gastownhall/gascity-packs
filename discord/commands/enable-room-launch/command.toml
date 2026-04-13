@@ -1,0 +1,2 @@
+description = 'Enable launcher mode for a Discord root room'
+run = '../enable-room-launch.sh'

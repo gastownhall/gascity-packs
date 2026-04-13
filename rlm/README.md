@@ -16,25 +16,15 @@ Phase 1 supports OpenAI-compatible backends only.
 - `gc doctor` checks for Python, runtime health, and Docker when sandboxed execution is configured
 - `rlm-usage` prompt fragment for agent guidance
 
-## Include It
+## Import It
 
 ```toml
-[packs.rlm]
-source = "https://github.com/julianknutsen/packs.git"
-ref = "main"
-path = "rlm"
+# pack.toml
+[imports.rlm]
+source = "../packs/rlm"
 
-[workspace]
-includes = ["rlm"]
-global_fragments = ["rlm-usage"]
-```
-
-You can also inject the fragment only into selected rig agents:
-
-```toml
-[[rigs.overrides]]
-agent = "worker"
-inject_fragments_append = ["rlm-usage"]
+[agent_defaults]
+append_fragments = ["rlm-usage"]
 ```
 
 ## Install

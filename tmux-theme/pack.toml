@@ -1,6 +1,6 @@
 [pack]
 name = "tmux-theme"
-schema = 1
+schema = 2
 
 [global]
 session_live = [

@@ -1,0 +1,2 @@
+description = 'Bind a Discord room channel or thread to named sessions'
+run = '../bind-room.sh'

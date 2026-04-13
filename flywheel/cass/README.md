@@ -6,7 +6,7 @@ Search past coding-agent sessions with
 ## What It Provides
 
 - Claude skill overlay at `overlay/.claude/skills/search-sessions/SKILL.md`
-- Shared prompt fragment at `prompts/shared/cass-search.md.tmpl`
+- Shared prompt fragment at `template-fragments/cass-search.template.md`
 
 The overlay skill is Claude-only. The shared prompt fragment is the
 recommended cross-provider path for Claude, Codex, and Gemini cities.
@@ -31,28 +31,23 @@ cargo build --release
 install -m 0755 target/release/cass ~/.local/bin/cass
 ```
 
-## Include It
+## Import It
 
 Local checkout:
 
 ```toml
-[workspace]
-includes = ["../packs/flywheel/cass"]
-global_fragments = ["cass-search"]
-install_agent_hooks = ["claude", "codex", "gemini"] # optional
+# pack.toml
+[imports.cass]
+source = "../packs/flywheel/cass"
+
+[agent_defaults]
+append_fragments = ["cass-search"]
 ```
 
-Remote pack source:
+Optional deployment hooks still belong in `city.toml`:
 
 ```toml
-[packs.cass]
-source = "https://github.com/gastownhall/gascity-packs.git"
-ref = "main"
-path = "flywheel/cass"
-
 [workspace]
-includes = ["cass"]
-global_fragments = ["cass-search"]
 install_agent_hooks = ["claude", "codex", "gemini"] # optional
 ```
 

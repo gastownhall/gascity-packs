@@ -1,0 +1,2 @@
+description = 'python3 3.11+ is available for the Discord intake services'
+run = '../check-python.sh'

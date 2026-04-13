@@ -35,11 +35,9 @@ crontab -e
 
 ## Usage
 
-Add to your `city.toml`:
+Add to your city's `pack.toml`:
 
 ```toml
-[workspace]
-includes = [
-    "https://github.com/julianknutsen/packs/tree/main/flywheel/cm",
-]
+[imports.cm]
+source = "../packs/flywheel/cm"
 ```

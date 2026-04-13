@@ -1,0 +1,2 @@
+description = 'Docker is available for the default sandboxed execution path'
+run = '../check-docker.sh'
