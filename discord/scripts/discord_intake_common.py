@@ -4352,86 +4352,34 @@ def _apply_peer_fanout(
                 current["peer_delivery"] = peer_delivery
                 return _save_chat_publish_record(current)
 
-            session_index = session_index_by_name(state="all")
-            live_targets: list[tuple[str, str]] = []
-            targeted_unavailable: list[str] = []
+            # Peer delivery also targets the configured selectors directly so
+            # sleeping or reserved named sessions still receive the publication.
+            resolved_targets: list[tuple[str, str]] = []
             for session_name in targets:
-                target_key = session_name
-                resolved_target_selector = session_name
-                session_payload = session_index.get(session_name)
-                participant: dict[str, Any] = {}
-                if not session_payload:
-                    session_payload = resolve_routable_session_record(session_name)
-                if not session_payload and launch_record:
-                    resolved_target_selector, participant, _identity = resolve_room_launch_target_selector(launch_record, session_name)
-                    if resolved_target_selector != session_name:
-                        session_payload = resolve_routable_session_record(resolved_target_selector)
-                if session_payload:
-                    resolved_target_selector = (
-                        str(session_payload.get("session_name", "")).strip()
-                        or str(session_payload.get("id", "")).strip()
-                        or str(participant.get("delivery_selector", "")).strip()
-                        or str(session_payload.get("alias", "")).strip()
-                        or resolved_target_selector
-                    )
-                state = str((session_payload or {}).get("state", "")).strip()
-                if not session_payload or state in NON_ROUTABLE_SESSION_STATES:
-                    if delivery == "targeted":
-                        targeted_unavailable.append(target_key)
-                        _update_peer_target(
-                            peer_delivery,
-                            target_key,
-                            {
-                                "status": "failed_retryable",
-                                "reason": "failed_targeting_unavailable",
-                                "attempt_count": 0,
-                                "delivery_selector": resolved_target_selector,
-                                "attempts": [_peer_attempt(target_key, "failed_retryable", "failed_targeting_unavailable")],
-                            },
-                        )
-                        continue
-                    _update_peer_target(
-                        peer_delivery,
-                        target_key,
-                        {
-                            "status": "skipped",
-                            "reason": "skipped_unavailable_target",
-                            "attempt_count": 0,
-                            "delivery_selector": resolved_target_selector,
-                            "attempts": [_peer_attempt(target_key, "skipped", "skipped_unavailable_target")],
-                        },
-                    )
+                target_key = str(session_name).strip()
+                if not target_key:
                     continue
-                live_targets.append((target_key, resolved_target_selector))
-
-            if targeted_unavailable:
-                for target_key, delivery_selector in live_targets:
-                    _update_peer_target(
-                        peer_delivery,
-                        target_key,
-                        {
-                            "status": "failed_retryable",
-                            "reason": "blocked_by_unavailable_explicit_target",
-                            "attempt_count": 0,
-                            "delivery_selector": delivery_selector,
-                            "attempts": [
-                                _peer_attempt(target_key, "failed_retryable", "blocked_by_unavailable_explicit_target")
-                            ],
-                        },
+                delivery_selector = target_key
+                if launch_record:
+                    resolved_target_selector, participant, _identity = resolve_room_launch_target_selector(launch_record, target_key)
+                    delivery_selector = (
+                        str(resolved_target_selector).strip()
+                        or str((participant or {}).get("delivery_selector", "")).strip()
+                        or str((participant or {}).get("session_name", "")).strip()
+                        or str((participant or {}).get("session_id", "")).strip()
+                        or str((participant or {}).get("session_alias", "")).strip()
+                        or target_key
                     )
-                peer_delivery["phase"] = "peer_fanout_partial_failure"
-                peer_delivery["status"] = "failed_targeting_unavailable"
-                current["peer_delivery"] = peer_delivery
-                return _save_chat_publish_record(current)
+                resolved_targets.append((target_key, delivery_selector))
 
-            if not live_targets:
+            if not resolved_targets:
                 peer_delivery["phase"] = "peer_fanout_complete"
-                peer_delivery["status"] = "skipped_no_live_targets"
+                peer_delivery["status"] = "skipped_no_peer_targets"
                 current["peer_delivery"] = peer_delivery
                 return _save_chat_publish_record(current)
 
             total_peer_deliveries = _count_root_peer_deliveries_from_index(binding_id, root_ingress_receipt_id)
-            projected = total_peer_deliveries + len(live_targets)
+            projected = total_peer_deliveries + len(resolved_targets)
             peer_delivery["budget_snapshot"] = {
                 "root_ingress_receipt_id": root_ingress_receipt_id,
                 "existing_peer_deliveries_for_root": total_peer_deliveries,
@@ -4444,9 +4392,9 @@ def _apply_peer_fanout(
                 current["peer_delivery"] = peer_delivery
                 return _save_chat_publish_record(current)
 
-            peer_delivery["frozen_targets"] = [delivery_selector for _target_key, delivery_selector in live_targets]
+            peer_delivery["frozen_targets"] = [delivery_selector for _target_key, delivery_selector in resolved_targets]
             peer_delivery["phase"] = "peer_fanout_in_progress"
-            for target_key, delivery_selector in live_targets:
+            for target_key, delivery_selector in resolved_targets:
                 _update_peer_target(
                     peer_delivery,
                     target_key,
@@ -4460,7 +4408,7 @@ def _apply_peer_fanout(
                 )
             current["peer_delivery"] = peer_delivery
             current = _save_chat_publish_record(current)
-            delivery_targets = list(live_targets)
+            delivery_targets = list(resolved_targets)
             delivery_mode = delivery
             delivery_mentions = list(mentions)
 
@@ -4724,15 +4672,28 @@ def publish_binding_message(
     return {"binding": binding, "record": record, "response": response}
 
 
-def deliver_session_message(session_name: str, message: str, idempotency_key: str = "", timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS) -> dict[str, Any]:
+def deliver_session_message(
+    session_name: str,
+    message: str,
+    idempotency_key: str = "",
+    timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS,
+    *,
+    intent: str = "default",
+) -> dict[str, Any]:
     headers: dict[str, str] = {}
     key = str(idempotency_key).strip()
     if key:
         headers["Idempotency-Key"] = key
+    normalized_intent = str(intent or "default").strip() or "default"
+    path = f"/v0/session/{urllib.parse.quote(str(session_name).strip(), safe='')}/messages"
+    payload_body: dict[str, Any] = {"message": message}
+    if normalized_intent != "default":
+        path = f"/v0/session/{urllib.parse.quote(str(session_name).strip(), safe='')}/submit"
+        payload_body["intent"] = normalized_intent
     payload = gc_api_request(
         "POST",
-        f"/v0/session/{urllib.parse.quote(str(session_name).strip(), safe='')}/messages",
-        payload={"message": message},
+        path,
+        payload=payload_body,
         headers=headers,
         timeout=timeout,
     )

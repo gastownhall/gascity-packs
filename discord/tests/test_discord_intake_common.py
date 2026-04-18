@@ -540,6 +540,37 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(payload, {"items": []})
         self.assertEqual(urlopen.call_args_list[-1].args[0].full_url, "http://127.0.0.1:8372/v0/city/gc/sessions")
 
+    def test_deliver_session_message_uses_messages_endpoint_for_default_intent(self) -> None:
+        with mock.patch.object(common, "gc_api_request", return_value={"status": "accepted"}) as gc_api_request:
+            payload = common.deliver_session_message("corp--sky", "hello", idempotency_key="ingress:1")
+
+        self.assertEqual(payload, {"status": "accepted"})
+        gc_api_request.assert_called_once_with(
+            "POST",
+            "/v0/session/corp--sky/messages",
+            payload={"message": "hello"},
+            headers={"Idempotency-Key": "ingress:1"},
+            timeout=common.GC_API_REQUEST_TIMEOUT_SECONDS,
+        )
+
+    def test_deliver_session_message_uses_submit_endpoint_for_follow_up_intent(self) -> None:
+        with mock.patch.object(common, "gc_api_request", return_value={"status": "accepted"}) as gc_api_request:
+            payload = common.deliver_session_message(
+                "corp--sky",
+                "hello again",
+                idempotency_key="ingress:2",
+                intent="follow_up",
+            )
+
+        self.assertEqual(payload, {"status": "accepted"})
+        gc_api_request.assert_called_once_with(
+            "POST",
+            "/v0/session/corp--sky/submit",
+            payload={"message": "hello again", "intent": "follow_up"},
+            headers={"Idempotency-Key": "ingress:2"},
+            timeout=common.GC_API_REQUEST_TIMEOUT_SECONDS,
+        )
+
     def test_gc_api_base_url_rejects_disabled_port(self) -> None:
         pathlib.Path(self.tempdir.name, "city.toml").write_text('[api]\nport = 0\n', encoding="utf-8")
 
@@ -1519,48 +1550,6 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             payload = common.publish_binding_message(binding, "@corp--priya hello", trigger_id="orig-9")
 
         self.assertEqual(payload["record"]["peer_delivery"]["status"], "skipped_missing_root_context")
-        deliver_session_message.assert_not_called()
-
-    def test_publish_binding_message_targeted_unavailable_records_retryable_targets(self) -> None:
-        common.set_chat_binding(
-            common.load_config(),
-            "room",
-            "22",
-            ["corp--sky", "corp--priya", "corp--eve"],
-            guild_id="1",
-            policy={"peer_fanout_enabled": True},
-        )
-        binding = common.resolve_chat_binding(common.load_config(), "room:22")
-        assert binding is not None
-        os.environ["GC_SESSION_NAME"] = "corp--sky"
-        os.environ["GC_SESSION_ID"] = "gc-sky"
-
-        with mock.patch.object(common, "post_channel_message", return_value={"id": "msg-1"}), mock.patch.object(
-            common,
-            "deliver_session_message",
-        ) as deliver_session_message, mock.patch.object(
-            common,
-            "list_city_sessions",
-            return_value=[
-                {"id": "gc-sky", "session_name": "corp--sky", "state": "active", "running": True, "created_at": "2026-03-21T00:00:00Z"},
-                {"id": "gc-priya", "session_name": "corp--priya", "state": "active", "running": True, "created_at": "2026-03-21T00:00:00Z"},
-                {"id": "gc-eve", "session_name": "corp--eve", "state": "closed", "running": False, "created_at": "2026-03-21T00:00:00Z"},
-            ],
-        ):
-            payload = common.publish_binding_message(
-                binding,
-                "@corp--priya @corp--eve hello",
-                trigger_id="orig-9",
-                source_context={
-                    "kind": "discord_human_message",
-                    "ingress_receipt_id": "in-9",
-                },
-            )
-
-        self.assertEqual(payload["record"]["peer_delivery"]["status"], "failed_targeting_unavailable")
-        targets = {entry["session_name"]: entry for entry in payload["record"]["peer_delivery"]["targets"]}
-        self.assertEqual(targets["corp--priya"]["status"], "failed_retryable")
-        self.assertEqual(targets["corp--eve"]["status"], "failed_retryable")
         deliver_session_message.assert_not_called()
 
     def test_resolve_session_identity_prefers_routable_named_session(self) -> None:
