@@ -696,27 +696,30 @@ def build_human_envelope(
     ingress_id: str,
 ) -> str:
     conversation_value, conversation_key = conversation_fields(message, channel_info)
+    binding_id = str(binding.get("id", "")).strip()
+    channel_id = str(message.get("channel_id", "")).strip()
+    message_id = str(message.get("id", "")).strip()
     lines = [
         "<discord-event>",
         "version: 1",
         "kind: discord_human_message",
-        f"binding_id: {str(binding.get('id', '')).strip()}",
+        f"binding_id: {binding_id}",
         f"ingress_receipt_id: {ingress_id}",
         f"conversation: {conversation_value}",
         f"conversation_key: {conversation_key}",
-        f"discord_message_id: {str(message.get('id', '')).strip()}",
+        f"discord_message_id: {message_id}",
         f"from_display: {display_name_from_message(message)}",
         f"from_user_id: {str((message.get('author') or {}).get('id', '')).strip()}",
         f"delivery: {delivery}",
         f"mentioned_aliases_json: {json.dumps(mentioned_aliases)}",
         f"untrusted_body_json: {json.dumps(body)}",
-        f"publish_binding_id: {str(binding.get('id', '')).strip()}",
-        f"publish_conversation_id: {str(message.get('channel_id', '')).strip()}",
-        f"publish_trigger_id: {str(message.get('id', '')).strip()}",
-        f"publish_reply_to_discord_message_id: {str(message.get('id', '')).strip()}",
+        f"publish_binding_id: {binding_id}",
+        f"publish_conversation_id: {channel_id}",
+        f"publish_trigger_id: {message_id}",
+        f"publish_reply_to_discord_message_id: {message_id}",
         "normal_output_visibility: internal_only",
         "reply_contract: explicit_publish_required",
-        "reply_tool: gc discord reply-current --body-file <path>",
+        f"reply_tool: gc discord reply-current --conversation-id {channel_id} --reply-to {message_id} --body-file <path>",
         "reply_success_signal: record.remote_message_id",
         "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
         "</discord-event>",

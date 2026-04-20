@@ -2183,14 +2183,102 @@ def _extract_discord_event_fields(text: str) -> dict[str, str]:
     return fields
 
 
+def _chat_ingress_target_matches_selector(target: dict[str, Any], selector: str) -> bool:
+    wanted = str(selector).strip()
+    if not wanted:
+        return False
+    candidates = {
+        str(target.get("session_name", "")).strip(),
+        str(target.get("session_id", "")).strip(),
+        str(target.get("session_alias", "")).strip(),
+        str(target.get("id", "")).strip(),
+    }
+    response = target.get("response")
+    if isinstance(response, dict):
+        candidates.update(
+            {
+                str(response.get("id", "")).strip(),
+                str(response.get("session_name", "")).strip(),
+                str(response.get("session_id", "")).strip(),
+                str(response.get("session_alias", "")).strip(),
+            }
+        )
+    return wanted in {candidate for candidate in candidates if candidate}
+
+
+def _chat_ingress_delivered_to_selector(record: dict[str, Any], selector: str) -> bool:
+    targets = record.get("targets")
+    if not isinstance(targets, list):
+        return False
+    for target in targets:
+        if not isinstance(target, dict):
+            continue
+        if str(target.get("status", "")).strip() != "delivered":
+            continue
+        if _chat_ingress_target_matches_selector(target, selector):
+            return True
+    return False
+
+
+def _chat_ingress_reply_context(record: dict[str, Any]) -> dict[str, str]:
+    ingress_id = str(record.get("ingress_id", "")).strip()
+    binding_id = str(record.get("binding_id", "")).strip()
+    conversation_id = str(record.get("conversation_id", "")).strip()
+    message_id = str(record.get("discord_message_id", "")).strip()
+    if not (ingress_id and binding_id and conversation_id and message_id):
+        return {}
+    fields = {
+        "kind": "discord_human_message",
+        "binding_id": binding_id,
+        "ingress_receipt_id": ingress_id,
+        "discord_message_id": message_id,
+        "publish_binding_id": binding_id,
+        "publish_conversation_id": conversation_id,
+        "publish_trigger_id": message_id,
+        "publish_reply_to_discord_message_id": message_id,
+    }
+    for key in ("guild_id", "delivery", "route_kind", "launch_id", "qualified_handle", "routing_mode"):
+        value = str(record.get(key, "")).strip()
+        if value:
+            fields[key] = value
+    if fields.get("launch_id"):
+        fields["publish_launch_id"] = fields["launch_id"]
+    return fields
+
+
+def find_latest_delivered_chat_ingress_reply_context(session_selector: str, limit: int = 40) -> dict[str, str]:
+    selector = str(session_selector).strip()
+    if not selector:
+        return {}
+    for record in list_recent_chat_ingress(limit=max(1, int(limit))):
+        if str(record.get("status", "")).strip() not in {"delivered", "partial_failed"}:
+            continue
+        if not _chat_ingress_delivered_to_selector(record, selector):
+            continue
+        fields = _chat_ingress_reply_context(record)
+        if fields.get("publish_binding_id"):
+            return fields
+    return {}
+
+
 def find_latest_discord_reply_context(session_selector: str = "", tail: int = 40) -> dict[str, str]:
     selector = str(session_selector).strip() or current_session_selector()
     if not selector:
         raise GCAPIError("GC_SESSION_ID or GC_SESSION_NAME is required")
-    for entry in reversed(load_session_transcript_raw(selector, tail=tail)):
+    try:
+        transcript_entries = load_session_transcript_raw(selector, tail=tail)
+    except GCAPIError as exc:
+        fields = find_latest_delivered_chat_ingress_reply_context(selector, limit=tail)
+        if fields:
+            return fields
+        raise exc
+    for entry in reversed(transcript_entries):
         fields = _extract_discord_event_fields(_raw_user_message_text(entry))
         if fields.get("publish_binding_id"):
             return fields
+    fields = find_latest_delivered_chat_ingress_reply_context(selector, limit=tail)
+    if fields:
+        return fields
     raise GCAPIError(f"no recent discord event with publish metadata found for {selector}")
 
 

@@ -675,6 +675,53 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(fields["publish_conversation_id"], "22")
         self.assertEqual(fields["publish_trigger_id"], "newer")
 
+    def test_find_latest_discord_reply_context_falls_back_to_delivered_ingress(self) -> None:
+        common.save_chat_ingress(
+            {
+                "ingress_id": "in-older",
+                "binding_id": "room:old",
+                "conversation_id": "old",
+                "discord_message_id": "old-msg",
+                "created_at": "2026-04-20T22:35:00Z",
+                "status": "delivered",
+                "targets": [
+                    {
+                        "session_name": "wendy__wendy",
+                        "status": "delivered",
+                        "response": {"id": "mc-ayq6xi"},
+                    }
+                ],
+            }
+        )
+        common.save_chat_ingress(
+            {
+                "ingress_id": "in-newer",
+                "binding_id": "room:22",
+                "conversation_id": "22",
+                "discord_message_id": "new-msg",
+                "guild_id": "1",
+                "created_at": "2026-04-20T22:36:00Z",
+                "status": "delivered",
+                "targets": [
+                    {
+                        "session_name": "wendy__wendy",
+                        "status": "delivered",
+                        "response": {"id": "mc-ayq6xi"},
+                    }
+                ],
+            }
+        )
+
+        with mock.patch.object(common, "gc_api_request", return_value={"messages": []}):
+            fields = common.find_latest_discord_reply_context("mc-ayq6xi", tail=5)
+
+        self.assertEqual(fields["kind"], "discord_human_message")
+        self.assertEqual(fields["ingress_receipt_id"], "in-newer")
+        self.assertEqual(fields["publish_binding_id"], "room:22")
+        self.assertEqual(fields["publish_conversation_id"], "22")
+        self.assertEqual(fields["publish_trigger_id"], "new-msg")
+        self.assertEqual(fields["publish_reply_to_discord_message_id"], "new-msg")
+
     def test_extract_peer_session_mentions_ignores_urls_and_code(self) -> None:
         mentions = common.extract_peer_session_mentions(
             "\n".join(

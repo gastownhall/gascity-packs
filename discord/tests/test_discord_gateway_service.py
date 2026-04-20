@@ -78,6 +78,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         envelope = deliver_session_message.call_args.args[1]
         self.assertIn("kind: discord_human_message", envelope)
         self.assertIn('untrusted_body_json: "hello from discord"', envelope)
+        self.assertIn("reply_tool: gc discord reply-current --conversation-id 55 --reply-to 101 --body-file <path>", envelope)
         self.assertEqual(common.load_chat_ingress("in-101")["status"], "delivered")
 
     def test_process_inbound_room_message_targets_only_named_alias(self) -> None:
