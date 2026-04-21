@@ -31,11 +31,9 @@ alias am="curl -s -H 'Authorization: Bearer $MCP_AGENT_MAIL_TOKEN' http://127.0.
 
 ## Usage
 
-Add to your `city.toml`:
+Add to your city's `pack.toml`:
 
 ```toml
-[workspace]
-includes = [
-    "https://github.com/julianknutsen/packs/tree/main/flywheel/mcp-agent-mail",
-]
+[imports.mcp-agent-mail]
+source = "../packs/flywheel/mcp-agent-mail"
 ```

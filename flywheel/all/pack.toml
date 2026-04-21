@@ -3,16 +3,22 @@
 # Includes: mcp-agent-mail, cass, cm, ubs.
 # All settings.json files are deep-merged, skills are additive.
 #
-# Usage in city.toml:
-#   [workspace]
-#   includes = ["packs/all"]
+# Usage in your city's pack.toml:
+#   [imports.flywheel]
+#   source = "../packs/flywheel/all"
 
 [pack]
 name = "flywheel-all"
-schema = 1
-includes = [
-    "../mcp-agent-mail",
-    "../cass",
-    "../cm",
-    "../ubs",
-]
+schema = 2
+
+[imports.mcp-agent-mail]
+source = "../mcp-agent-mail"
+
+[imports.cass]
+source = "../cass"
+
+[imports.cm]
+source = "../cm"
+
+[imports.ubs]
+source = "../ubs"

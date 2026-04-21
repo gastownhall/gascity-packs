@@ -1,0 +1,2 @@
+description = 'Register guild-scoped /gc commands with Discord'
+run = '../sync-commands.sh'

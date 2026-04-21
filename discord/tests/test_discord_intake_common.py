@@ -77,7 +77,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
 
     def test_shared_discord_prompt_requires_bold_speaker_prefix(self) -> None:
         fragment = (
-            pathlib.Path(__file__).resolve().parents[1] / "prompts" / "shared" / "discord-v0.md.tmpl"
+            pathlib.Path(__file__).resolve().parents[1] / "template-fragments" / "discord-v0.template.md"
         ).read_text(encoding="utf-8")
 
         self.assertIn("Always prefix your Discord messages with your handle in bold", fragment)

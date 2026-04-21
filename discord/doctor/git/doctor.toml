@@ -1,0 +1,2 @@
+description = 'git is available for Discord workflow worktree management'
+run = '../check-git.sh'

@@ -1,0 +1,2 @@
+description = 'Map a Discord guild channel to a slash-command dispatch target'
+run = '../map-channel.sh'

@@ -1,0 +1,2 @@
+description = 'Retry failed peer fanout targets for a saved room publish without reposting to Discord'
+run = '../retry-peer-fanout.sh'

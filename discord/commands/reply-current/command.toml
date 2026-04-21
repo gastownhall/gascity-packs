@@ -1,0 +1,2 @@
+description = 'Reply to the latest Discord event seen by the current session'
+run = '../reply-current.sh'

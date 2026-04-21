@@ -1,0 +1,2 @@
+description = 'Install or update the RLM runtime for this city'
+run = '../install.sh'

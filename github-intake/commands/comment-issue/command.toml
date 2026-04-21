@@ -1,0 +1,2 @@
+description = 'Post an issue comment using the workspace GitHub App installation'
+run = '../comment-issue.sh'

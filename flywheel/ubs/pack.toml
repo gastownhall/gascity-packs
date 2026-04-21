@@ -6,10 +6,10 @@
 # Prerequisites:
 #   - ubs binary installed and in PATH
 #
-# Usage in city.toml:
-#   [workspace]
-#   packs = ["packs/ubs"]
+# Usage in your city's pack.toml:
+#   [imports.ubs]
+#   source = "../packs/flywheel/ubs"
 
 [pack]
 name = "ubs"
-schema = 1
+schema = 2

@@ -59,11 +59,9 @@ gc sling <rig>/polecat mol-adopt-pr --formula \
 | C | Maintainer changes + edits disabled | New PR from maintainer's fork |
 | D | Original PR already merged | Follow-up PR for fixups |
 
-## Including in city.toml
+## Importing into pack.toml
 
 ```toml
-[workspace]
-includes = [
-    "https://github.com/julianknutsen/packs/tree/main/pr-review",
-]
+[imports.pr-review]
+source = "../packs/pr-review"
 ```

@@ -1,0 +1,2 @@
+description = 'Create a pull request using the workspace GitHub App installation'
+run = '../create-pr.sh'

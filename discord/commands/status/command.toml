@@ -1,0 +1,2 @@
+description = 'Show Discord provider status, URLs, mappings, bindings, and recent activity'
+run = '../status.sh'

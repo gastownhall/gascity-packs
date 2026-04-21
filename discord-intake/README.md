@@ -41,16 +41,12 @@ gc discord-intake release-workflow 123456789012345678 223456789012345678
 gc discord-intake release-workflow --request-id dc-interaction-fix
 ```
 
-## Include It
+## Import It
 
 ```toml
-[packs.discord-intake]
-source = "https://github.com/julianknutsen/packs.git"
-ref = "main"
-path = "discord-intake"
-
-[workspace]
-includes = ["discord-intake"]
+# pack.toml
+[imports.discord-intake]
+source = "../packs/discord-intake"
 ```
 
 ## Publication

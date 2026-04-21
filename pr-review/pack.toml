@@ -7,18 +7,13 @@
 # No agents defined — this pack provides a formula and a review skill overlay.
 # The consuming pack must supply the polecat agent.
 #
-# Usage in city.toml:
-#   [workspace]
-#   includes = [
-#       "https://github.com/julianknutsen/packs/tree/main/pr-review",
-#   ]
+# Usage in your city's pack.toml:
+#   [imports.pr-review]
+#   source = "../packs/pr-review"
 #
 # Sling a PR review:
 #   gc sling <rig>/polecat mol-adopt-pr --formula --var pr=<url-or-number>
 
 [pack]
 name = "pr-review"
-schema = 1
-
-[formulas]
-dir = "formulas"
+schema = 2

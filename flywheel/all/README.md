@@ -16,18 +16,18 @@ See each individual pack's README for installation instructions.
 Full stack:
 
 ```toml
-[workspace]
-includes = [
-    "https://github.com/julianknutsen/packs/tree/main/flywheel/all",
-]
+# pack.toml
+[imports.flywheel]
+source = "../packs/flywheel/all"
 ```
 
 Or cherry-pick individual packs:
 
 ```toml
-[workspace]
-includes = [
-    "https://github.com/julianknutsen/packs/tree/main/flywheel/mcp-agent-mail",
-    "https://github.com/julianknutsen/packs/tree/main/flywheel/ubs",
-]
+# pack.toml
+[imports.mcp-agent-mail]
+source = "../packs/flywheel/mcp-agent-mail"
+
+[imports.ubs]
+source = "../packs/flywheel/ubs"
 ```

@@ -1,0 +1,2 @@
+description = 'Import an existing GitHub App into the pack state'
+run = '../import-app.sh'
