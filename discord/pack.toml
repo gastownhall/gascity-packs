@@ -151,3 +151,8 @@ description = "Reply to the latest Discord event seen by the current session"
 long_description = "help/reply-current.txt"
 script = "commands/reply-current.sh"
 
+[[commands]]
+name = "retry-peer-fanout"
+description = "Retry failed peer fanout targets for a saved room publish without reposting to Discord"
+long_description = "help/retry-peer-fanout.txt"
+script = "commands/retry-peer-fanout.sh"

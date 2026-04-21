@@ -158,7 +158,7 @@ class DiscordChatScriptTests(unittest.TestCase):
 
         self.assertEqual(code, 2)
 
-    def test_publish_with_source_context_and_session_can_peer_fanout(self) -> None:
+    def test_publish_with_source_context_and_session_saves_source_metadata(self) -> None:
         common.set_chat_binding(
             common.load_config(),
             "room",
@@ -197,7 +197,7 @@ class DiscordChatScriptTests(unittest.TestCase):
                 )
 
         self.assertEqual(code, 0)
-        deliver_session_message.assert_called_once()
+        deliver_session_message.assert_not_called()
 
     def test_plain_publish_without_source_context_stays_successful_in_peer_room(self) -> None:
         common.set_chat_binding(
@@ -221,7 +221,7 @@ class DiscordChatScriptTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         payload = common.json.loads(stdout.getvalue())
-        self.assertEqual(payload["record"]["peer_delivery"]["status"], "skipped_missing_root_context")
+        self.assertNotIn("peer_delivery", payload["record"])
         deliver_session_message.assert_not_called()
 
     def test_reply_current_uses_latest_discord_context(self) -> None:
@@ -249,7 +249,7 @@ class DiscordChatScriptTests(unittest.TestCase):
         self.assertEqual(recent[0]["binding_id"], "dm:22")
         self.assertEqual(recent[0]["remote_message_id"], "msg-22")
 
-    def test_reply_current_passes_source_context_and_surfaces_partial_peer_failure(self) -> None:
+    def test_reply_current_passes_source_context_through_publish(self) -> None:
         common.set_chat_binding(
             common.load_config(),
             "room",
@@ -277,7 +277,7 @@ class DiscordChatScriptTests(unittest.TestCase):
             common,
             "deliver_session_message",
             side_effect=common.GCAPIError("boom"),
-        ), mock.patch.object(
+        ) as deliver_session_message, mock.patch.object(
             common,
             "list_city_sessions",
             return_value=[
@@ -289,11 +289,13 @@ class DiscordChatScriptTests(unittest.TestCase):
             with redirect_stdout(stdout):
                 code = reply_current_script.main(["--body-file", str(body_file)])
 
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 0)
         payload = common.json.loads(stdout.getvalue())
         self.assertEqual(payload["reply_context"]["source_event_kind"], "discord_peer_publication")
         self.assertEqual(payload["reply_context"]["root_ingress_receipt_id"], "in-1")
         self.assertEqual(payload["record"]["source_event_kind"], "discord_peer_publication")
+        self.assertNotIn("peer_delivery", payload["record"])
+        deliver_session_message.assert_not_called()
 
     def test_reply_current_session_override_sets_source_identity(self) -> None:
         common.set_chat_binding(
@@ -324,7 +326,7 @@ class DiscordChatScriptTests(unittest.TestCase):
             common,
             "deliver_session_message",
             return_value={"status": "accepted", "id": "gc-priya"},
-        ), mock.patch.object(
+        ) as deliver_session_message, mock.patch.object(
             common,
             "list_city_sessions",
             return_value=[
@@ -342,6 +344,7 @@ class DiscordChatScriptTests(unittest.TestCase):
         self.assertEqual(payload["record"]["source_session_name"], "corp--sky")
         self.assertEqual(payload["record"]["source_session_id"], "gc-sky")
         self.assertEqual(payload["reply_context"]["source_session_name"], "corp--sky")
+        deliver_session_message.assert_not_called()
 
     def test_reply_current_reply_context_falls_back_to_current_session_env(self) -> None:
         common.set_chat_binding(common.load_config(), "dm", "22", ["sky"])

@@ -467,7 +467,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         payload = discord_api_request.call_args.kwargs["payload"]
         self.assertEqual(payload["message_reference"]["message_id"], "99")
         self.assertFalse(payload["message_reference"]["fail_if_not_exists"])
-        self.assertEqual(payload["allowed_mentions"]["parse"], [])
+        self.assertEqual(payload["allowed_mentions"]["parse"], ["users"])
 
     def test_discord_jump_url_rejects_non_numeric_ids(self) -> None:
         self.assertEqual(common.discord_jump_url("guild", "22"), "")
@@ -525,6 +525,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             '[workspace]\nname = "gc"\n[api]\nbind = "0.0.0.0"\nport = 9555\n',
             encoding="utf-8",
         )
+        common._supervisor_scope_cache.clear()
         cities = mock.Mock()
         cities.__enter__ = mock.Mock(
             return_value=mock.Mock(read=mock.Mock(return_value=b'{"items":[{"name":"gc","running":true}]}'))
@@ -534,7 +535,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         sessions.__enter__ = mock.Mock(return_value=mock.Mock(read=mock.Mock(return_value=b'{"items": []}')))
         sessions.__exit__ = mock.Mock(return_value=False)
 
-        with mock.patch.object(common.urllib.request, "urlopen", side_effect=[cities, cities, sessions]) as urlopen:
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=[cities, sessions]) as urlopen:
             payload = common.gc_api_request("GET", "/v0/sessions")
 
         self.assertEqual(payload, {"items": []})
@@ -1159,6 +1160,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                         "session_name": "dc-sky",
                         "session_id": "gc-sky",
                         "primer_version": common.ROOM_LAUNCH_PRIMER_VERSION,
+                        "primer_identity": "gc-sky",
                         "primed_at": "2026-03-22T00:00:00Z",
                     }
                 },
@@ -1234,13 +1236,10 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         record = payload["record"]
         self.assertEqual(record["source_event_kind"], "discord_human_message")
         self.assertEqual(record["root_ingress_receipt_id"], "in-9")
-        self.assertEqual(record["peer_delivery"]["status"], "delivered")
-        self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
-        self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["corp--priya"])
-        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["corp--priya"])
-        deliver_session_message.assert_called_once()
-        self.assertIn("publish_conversation_id: 22", deliver_session_message.call_args.args[1])
-        self.assertIn("kind: discord_peer_publication", deliver_session_message.call_args.args[1])
+        self.assertEqual(record["source_session_name"], "corp--sky")
+        self.assertEqual(record["source_session_id"], "gc-sky")
+        self.assertNotIn("peer_delivery", record)
+        deliver_session_message.assert_not_called()
 
     def test_publish_binding_message_room_launch_peer_fanout_delivers_other_thread_participants(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
@@ -1308,17 +1307,13 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         record = payload["record"]
         self.assertEqual(record["source_session_name"], "s-gc-priya")
         self.assertEqual(record["source_qualified_handle"], "corp/priya")
-        self.assertEqual(record["peer_delivery"]["status"], "delivered")
-        self.assertEqual(record["peer_delivery"]["delivery"], "untargeted")
-        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["s-gc-sky"])
-        deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-sky")
-        envelope = deliver_session_message.call_args.args[1]
-        self.assertIn("kind: discord_peer_publication", envelope)
-        self.assertIn("publish_binding_id: launch-room:22", envelope)
-        self.assertIn("publish_launch_id: room-launch:thread-44", envelope)
-        self.assertIn("source_qualified_handle: corp/priya", envelope)
-        self.assertIn("launch_qualified_handle: corp/sky", envelope)
+        self.assertEqual(record["launch_id"], "room-launch:thread-44")
+        self.assertEqual(record["conversation_id"], "thread-44")
+        self.assertNotIn("peer_delivery", record)
+        deliver_session_message.assert_not_called()
+        updated_launch = common.load_room_launch("room-launch:thread-44")
+        assert updated_launch is not None
+        self.assertEqual(updated_launch["message_targets"]["msg-44"], "corp/priya")
 
     def test_publish_binding_message_room_launch_peer_fanout_targets_explicit_handle(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
@@ -1384,12 +1379,13 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             )
 
         record = payload["record"]
-        self.assertEqual(record["peer_delivery"]["status"], "delivered")
-        self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
-        self.assertEqual(record["peer_delivery"]["mentioned_session_names"], ["s-gc-priya"])
-        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["s-gc-priya"])
-        deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya")
+        self.assertEqual(record["launch_id"], "room-launch:thread-55")
+        self.assertEqual(record["source_qualified_handle"], "corp/sky")
+        self.assertNotIn("peer_delivery", record)
+        deliver_session_message.assert_not_called()
+        updated_launch = common.load_room_launch("room-launch:thread-55")
+        assert updated_launch is not None
+        self.assertEqual(updated_launch["message_targets"]["msg-55"], "corp/sky")
 
     def test_publish_binding_message_room_launch_peer_fanout_matches_source_by_session_id_when_name_missing(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
@@ -1455,14 +1451,14 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             )
 
         record = payload["record"]
-        self.assertEqual(record["peer_delivery"]["status"], "delivered")
         self.assertEqual(record["source_qualified_handle"], "corp/sky")
         self.assertEqual(record["source_session_id"], "gc-sky")
-        deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "s-gc-priya")
-        envelope = deliver_session_message.call_args.args[1]
-        self.assertIn("source_qualified_handle: corp/sky", envelope)
-        self.assertIn("launch_qualified_handle: corp/priya", envelope)
+        self.assertEqual(record["launch_id"], "room-launch:thread-66")
+        self.assertNotIn("peer_delivery", record)
+        deliver_session_message.assert_not_called()
+        updated_launch = common.load_room_launch("room-launch:thread-66")
+        assert updated_launch is not None
+        self.assertEqual(updated_launch["message_targets"]["msg-66"], "corp/sky")
 
     def test_publish_binding_message_room_launch_peer_fanout_targets_handle_when_target_name_missing(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
@@ -1528,14 +1524,13 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             )
 
         record = payload["record"]
-        self.assertEqual(record["peer_delivery"]["status"], "delivered")
-        self.assertEqual(record["peer_delivery"]["delivery"], "targeted")
-        self.assertEqual(record["peer_delivery"]["frozen_targets"], ["gc-priya"])
-        deliver_session_message.assert_called_once()
-        self.assertEqual(deliver_session_message.call_args.args[0], "gc-priya")
-        envelope = deliver_session_message.call_args.args[1]
-        self.assertIn("launch_qualified_handle: corp/priya", envelope)
-        self.assertIn("launch_session_alias: dc-thread-corp-priya", envelope)
+        self.assertEqual(record["source_qualified_handle"], "corp/sky")
+        self.assertEqual(record["launch_id"], "room-launch:thread-67")
+        self.assertNotIn("peer_delivery", record)
+        deliver_session_message.assert_not_called()
+        updated_launch = common.load_room_launch("room-launch:thread-67")
+        assert updated_launch is not None
+        self.assertEqual(updated_launch["message_targets"]["msg-67"], "corp/sky")
 
     def test_publish_binding_message_resolves_source_name_from_id_only_env(self) -> None:
         common.set_chat_binding(
@@ -1596,7 +1591,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         ) as deliver_session_message:
             payload = common.publish_binding_message(binding, "@corp--priya hello", trigger_id="orig-9")
 
-        self.assertEqual(payload["record"]["peer_delivery"]["status"], "skipped_missing_root_context")
+        self.assertNotIn("peer_delivery", payload["record"])
         deliver_session_message.assert_not_called()
 
     def test_resolve_session_identity_prefers_routable_named_session(self) -> None:
@@ -1628,7 +1623,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 "root_ingress_receipt_id": "in-1",
                 "source_session_name": "corp--sky",
                 "source_event_kind": "discord_peer_publication",
-                "created_at": "2026-03-21T00:00:00Z",
+                "created_at": "2026-04-20T00:00:00Z",
                 "peer_delivery": {"frozen_targets": ["corp--priya", "corp--eve"]},
             }
         )
@@ -1639,7 +1634,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 "root_ingress_receipt_id": "in-1",
                 "source_session_name": "corp--sky",
                 "source_event_kind": "discord_peer_publication",
-                "created_at": "2026-03-21T00:01:00Z",
+                "created_at": "2026-04-20T00:01:00Z",
                 "peer_delivery": {"frozen_targets": ["corp--lawrence"]},
             }
         )

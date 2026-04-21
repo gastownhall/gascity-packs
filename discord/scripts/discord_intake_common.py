@@ -3471,6 +3471,11 @@ def ensure_room_launch_session_for_handle(
             participant["session_alias"] = str(created.get("alias", "")).strip() or session_alias
             participant["session_id"] = str(created.get("id", "")).strip()
             participant["session_name"] = str(created.get("session_name", "")).strip()
+        created_identity = {
+            "alias": str(participant.get("session_alias", "")).strip(),
+            "session_id": str(participant.get("session_id", "")).strip(),
+            "session_name": str(participant.get("session_name", "")).strip(),
+        }
         selector_snapshot, hydrated = resolve_routable_session_candidate_from_sessions(
             list_city_sessions(state="all"),
             participant.get("session_name", ""),
@@ -3478,6 +3483,11 @@ def ensure_room_launch_session_for_handle(
             participant.get("delivery_selector", ""),
             participant.get("session_alias", ""),
         )
+        if created_new and not selector_snapshot:
+            created_selector = str(created_identity.get("session_name", "")).strip() or str(created_identity.get("session_id", "")).strip()
+            if created_selector:
+                selector_snapshot = created_selector
+                hydrated = created_identity
         if created_new and not selector_snapshot:
             selector_snapshot, hydrated = resolve_routable_session_candidate_eventually(
                 participant.get("session_name", ""),
@@ -3501,12 +3511,25 @@ def ensure_room_launch_session_for_handle(
         current = _sync_launch_participant(current, normalized_handle, participant)
         current = save_room_launch(current)
         if created_new:
-            _ready_selector, ready_identity = resolve_ready_session_candidate_eventually(
+            _ready_selector, ready_identity = resolve_ready_session_candidate_from_sessions(
+                list_city_sessions(state="all"),
                 participant.get("session_name", ""),
                 participant.get("session_id", ""),
                 participant.get("session_alias", ""),
                 participant.get("delivery_selector", ""),
             )
+            if not ready_identity:
+                ready_selector = str(created_identity.get("session_name", "")).strip() or str(created_identity.get("session_id", "")).strip()
+                if ready_selector:
+                    _ready_selector = ready_selector
+                    ready_identity = created_identity
+            if not ready_identity:
+                _ready_selector, ready_identity = resolve_ready_session_candidate_eventually(
+                    participant.get("session_name", ""),
+                    participant.get("session_id", ""),
+                    participant.get("session_alias", ""),
+                    participant.get("delivery_selector", ""),
+                )
             if not ready_identity:
                 raise GCAPIError(f"created launch session is not ready yet: {participant['session_alias'] or normalized_handle}")
             participant["session_alias"] = str(ready_identity.get("alias", "")).strip() or str(participant.get("session_alias", "")).strip()
