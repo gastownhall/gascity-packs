@@ -2183,14 +2183,102 @@ def _extract_discord_event_fields(text: str) -> dict[str, str]:
     return fields
 
 
+def _chat_ingress_target_matches_selector(target: dict[str, Any], selector: str) -> bool:
+    wanted = str(selector).strip()
+    if not wanted:
+        return False
+    candidates = {
+        str(target.get("session_name", "")).strip(),
+        str(target.get("session_id", "")).strip(),
+        str(target.get("session_alias", "")).strip(),
+        str(target.get("id", "")).strip(),
+    }
+    response = target.get("response")
+    if isinstance(response, dict):
+        candidates.update(
+            {
+                str(response.get("id", "")).strip(),
+                str(response.get("session_name", "")).strip(),
+                str(response.get("session_id", "")).strip(),
+                str(response.get("session_alias", "")).strip(),
+            }
+        )
+    return wanted in {candidate for candidate in candidates if candidate}
+
+
+def _chat_ingress_delivered_to_selector(record: dict[str, Any], selector: str) -> bool:
+    targets = record.get("targets")
+    if not isinstance(targets, list):
+        return False
+    for target in targets:
+        if not isinstance(target, dict):
+            continue
+        if str(target.get("status", "")).strip() != "delivered":
+            continue
+        if _chat_ingress_target_matches_selector(target, selector):
+            return True
+    return False
+
+
+def _chat_ingress_reply_context(record: dict[str, Any]) -> dict[str, str]:
+    ingress_id = str(record.get("ingress_id", "")).strip()
+    binding_id = str(record.get("binding_id", "")).strip()
+    conversation_id = str(record.get("conversation_id", "")).strip()
+    message_id = str(record.get("discord_message_id", "")).strip()
+    if not (ingress_id and binding_id and conversation_id and message_id):
+        return {}
+    fields = {
+        "kind": "discord_human_message",
+        "binding_id": binding_id,
+        "ingress_receipt_id": ingress_id,
+        "discord_message_id": message_id,
+        "publish_binding_id": binding_id,
+        "publish_conversation_id": conversation_id,
+        "publish_trigger_id": message_id,
+        "publish_reply_to_discord_message_id": message_id,
+    }
+    for key in ("guild_id", "delivery", "route_kind", "launch_id", "qualified_handle", "routing_mode"):
+        value = str(record.get(key, "")).strip()
+        if value:
+            fields[key] = value
+    if fields.get("launch_id"):
+        fields["publish_launch_id"] = fields["launch_id"]
+    return fields
+
+
+def find_latest_delivered_chat_ingress_reply_context(session_selector: str, limit: int = 40) -> dict[str, str]:
+    selector = str(session_selector).strip()
+    if not selector:
+        return {}
+    for record in list_recent_chat_ingress(limit=max(1, int(limit))):
+        if str(record.get("status", "")).strip() not in {"delivered", "partial_failed"}:
+            continue
+        if not _chat_ingress_delivered_to_selector(record, selector):
+            continue
+        fields = _chat_ingress_reply_context(record)
+        if fields.get("publish_binding_id"):
+            return fields
+    return {}
+
+
 def find_latest_discord_reply_context(session_selector: str = "", tail: int = 40) -> dict[str, str]:
     selector = str(session_selector).strip() or current_session_selector()
     if not selector:
         raise GCAPIError("GC_SESSION_ID or GC_SESSION_NAME is required")
-    for entry in reversed(load_session_transcript_raw(selector, tail=tail)):
+    try:
+        transcript_entries = load_session_transcript_raw(selector, tail=tail)
+    except GCAPIError as exc:
+        fields = find_latest_delivered_chat_ingress_reply_context(selector, limit=tail)
+        if fields:
+            return fields
+        raise exc
+    for entry in reversed(transcript_entries):
         fields = _extract_discord_event_fields(_raw_user_message_text(entry))
         if fields.get("publish_binding_id"):
             return fields
+    fields = find_latest_delivered_chat_ingress_reply_context(selector, limit=tail)
+    if fields:
+        return fields
     raise GCAPIError(f"no recent discord event with publish metadata found for {selector}")
 
 
@@ -3383,6 +3471,11 @@ def ensure_room_launch_session_for_handle(
             participant["session_alias"] = str(created.get("alias", "")).strip() or session_alias
             participant["session_id"] = str(created.get("id", "")).strip()
             participant["session_name"] = str(created.get("session_name", "")).strip()
+        created_identity = {
+            "alias": str(participant.get("session_alias", "")).strip(),
+            "session_id": str(participant.get("session_id", "")).strip(),
+            "session_name": str(participant.get("session_name", "")).strip(),
+        }
         selector_snapshot, hydrated = resolve_routable_session_candidate_from_sessions(
             list_city_sessions(state="all"),
             participant.get("session_name", ""),
@@ -3390,6 +3483,11 @@ def ensure_room_launch_session_for_handle(
             participant.get("delivery_selector", ""),
             participant.get("session_alias", ""),
         )
+        if created_new and not selector_snapshot:
+            created_selector = str(created_identity.get("session_name", "")).strip() or str(created_identity.get("session_id", "")).strip()
+            if created_selector:
+                selector_snapshot = created_selector
+                hydrated = created_identity
         if created_new and not selector_snapshot:
             selector_snapshot, hydrated = resolve_routable_session_candidate_eventually(
                 participant.get("session_name", ""),
@@ -3413,12 +3511,25 @@ def ensure_room_launch_session_for_handle(
         current = _sync_launch_participant(current, normalized_handle, participant)
         current = save_room_launch(current)
         if created_new:
-            _ready_selector, ready_identity = resolve_ready_session_candidate_eventually(
+            _ready_selector, ready_identity = resolve_ready_session_candidate_from_sessions(
+                list_city_sessions(state="all"),
                 participant.get("session_name", ""),
                 participant.get("session_id", ""),
                 participant.get("session_alias", ""),
                 participant.get("delivery_selector", ""),
             )
+            if not ready_identity:
+                ready_selector = str(created_identity.get("session_name", "")).strip() or str(created_identity.get("session_id", "")).strip()
+                if ready_selector:
+                    _ready_selector = ready_selector
+                    ready_identity = created_identity
+            if not ready_identity:
+                _ready_selector, ready_identity = resolve_ready_session_candidate_eventually(
+                    participant.get("session_name", ""),
+                    participant.get("session_id", ""),
+                    participant.get("session_alias", ""),
+                    participant.get("delivery_selector", ""),
+                )
             if not ready_identity:
                 raise GCAPIError(f"created launch session is not ready yet: {participant['session_alias'] or normalized_handle}")
             participant["session_alias"] = str(ready_identity.get("alias", "")).strip() or str(participant.get("session_alias", "")).strip()
@@ -4352,86 +4463,34 @@ def _apply_peer_fanout(
                 current["peer_delivery"] = peer_delivery
                 return _save_chat_publish_record(current)
 
-            session_index = session_index_by_name(state="all")
-            live_targets: list[tuple[str, str]] = []
-            targeted_unavailable: list[str] = []
+            # Peer delivery also targets the configured selectors directly so
+            # sleeping or reserved named sessions still receive the publication.
+            resolved_targets: list[tuple[str, str]] = []
             for session_name in targets:
-                target_key = session_name
-                resolved_target_selector = session_name
-                session_payload = session_index.get(session_name)
-                participant: dict[str, Any] = {}
-                if not session_payload:
-                    session_payload = resolve_routable_session_record(session_name)
-                if not session_payload and launch_record:
-                    resolved_target_selector, participant, _identity = resolve_room_launch_target_selector(launch_record, session_name)
-                    if resolved_target_selector != session_name:
-                        session_payload = resolve_routable_session_record(resolved_target_selector)
-                if session_payload:
-                    resolved_target_selector = (
-                        str(session_payload.get("session_name", "")).strip()
-                        or str(session_payload.get("id", "")).strip()
-                        or str(participant.get("delivery_selector", "")).strip()
-                        or str(session_payload.get("alias", "")).strip()
-                        or resolved_target_selector
-                    )
-                state = str((session_payload or {}).get("state", "")).strip()
-                if not session_payload or state in NON_ROUTABLE_SESSION_STATES:
-                    if delivery == "targeted":
-                        targeted_unavailable.append(target_key)
-                        _update_peer_target(
-                            peer_delivery,
-                            target_key,
-                            {
-                                "status": "failed_retryable",
-                                "reason": "failed_targeting_unavailable",
-                                "attempt_count": 0,
-                                "delivery_selector": resolved_target_selector,
-                                "attempts": [_peer_attempt(target_key, "failed_retryable", "failed_targeting_unavailable")],
-                            },
-                        )
-                        continue
-                    _update_peer_target(
-                        peer_delivery,
-                        target_key,
-                        {
-                            "status": "skipped",
-                            "reason": "skipped_unavailable_target",
-                            "attempt_count": 0,
-                            "delivery_selector": resolved_target_selector,
-                            "attempts": [_peer_attempt(target_key, "skipped", "skipped_unavailable_target")],
-                        },
-                    )
+                target_key = str(session_name).strip()
+                if not target_key:
                     continue
-                live_targets.append((target_key, resolved_target_selector))
-
-            if targeted_unavailable:
-                for target_key, delivery_selector in live_targets:
-                    _update_peer_target(
-                        peer_delivery,
-                        target_key,
-                        {
-                            "status": "failed_retryable",
-                            "reason": "blocked_by_unavailable_explicit_target",
-                            "attempt_count": 0,
-                            "delivery_selector": delivery_selector,
-                            "attempts": [
-                                _peer_attempt(target_key, "failed_retryable", "blocked_by_unavailable_explicit_target")
-                            ],
-                        },
+                delivery_selector = target_key
+                if launch_record:
+                    resolved_target_selector, participant, _identity = resolve_room_launch_target_selector(launch_record, target_key)
+                    delivery_selector = (
+                        str(resolved_target_selector).strip()
+                        or str((participant or {}).get("delivery_selector", "")).strip()
+                        or str((participant or {}).get("session_name", "")).strip()
+                        or str((participant or {}).get("session_id", "")).strip()
+                        or str((participant or {}).get("session_alias", "")).strip()
+                        or target_key
                     )
-                peer_delivery["phase"] = "peer_fanout_partial_failure"
-                peer_delivery["status"] = "failed_targeting_unavailable"
-                current["peer_delivery"] = peer_delivery
-                return _save_chat_publish_record(current)
+                resolved_targets.append((target_key, delivery_selector))
 
-            if not live_targets:
+            if not resolved_targets:
                 peer_delivery["phase"] = "peer_fanout_complete"
-                peer_delivery["status"] = "skipped_no_live_targets"
+                peer_delivery["status"] = "skipped_no_peer_targets"
                 current["peer_delivery"] = peer_delivery
                 return _save_chat_publish_record(current)
 
             total_peer_deliveries = _count_root_peer_deliveries_from_index(binding_id, root_ingress_receipt_id)
-            projected = total_peer_deliveries + len(live_targets)
+            projected = total_peer_deliveries + len(resolved_targets)
             peer_delivery["budget_snapshot"] = {
                 "root_ingress_receipt_id": root_ingress_receipt_id,
                 "existing_peer_deliveries_for_root": total_peer_deliveries,
@@ -4444,9 +4503,9 @@ def _apply_peer_fanout(
                 current["peer_delivery"] = peer_delivery
                 return _save_chat_publish_record(current)
 
-            peer_delivery["frozen_targets"] = [delivery_selector for _target_key, delivery_selector in live_targets]
+            peer_delivery["frozen_targets"] = [delivery_selector for _target_key, delivery_selector in resolved_targets]
             peer_delivery["phase"] = "peer_fanout_in_progress"
-            for target_key, delivery_selector in live_targets:
+            for target_key, delivery_selector in resolved_targets:
                 _update_peer_target(
                     peer_delivery,
                     target_key,
@@ -4460,7 +4519,7 @@ def _apply_peer_fanout(
                 )
             current["peer_delivery"] = peer_delivery
             current = _save_chat_publish_record(current)
-            delivery_targets = list(live_targets)
+            delivery_targets = list(resolved_targets)
             delivery_mode = delivery
             delivery_mentions = list(mentions)
 
@@ -4724,15 +4783,28 @@ def publish_binding_message(
     return {"binding": binding, "record": record, "response": response}
 
 
-def deliver_session_message(session_name: str, message: str, idempotency_key: str = "", timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS) -> dict[str, Any]:
+def deliver_session_message(
+    session_name: str,
+    message: str,
+    idempotency_key: str = "",
+    timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS,
+    *,
+    intent: str = "default",
+) -> dict[str, Any]:
     headers: dict[str, str] = {}
     key = str(idempotency_key).strip()
     if key:
         headers["Idempotency-Key"] = key
+    normalized_intent = str(intent or "default").strip() or "default"
+    path = f"/v0/session/{urllib.parse.quote(str(session_name).strip(), safe='')}/messages"
+    payload_body: dict[str, Any] = {"message": message}
+    if normalized_intent != "default":
+        path = f"/v0/session/{urllib.parse.quote(str(session_name).strip(), safe='')}/submit"
+        payload_body["intent"] = normalized_intent
     payload = gc_api_request(
         "POST",
-        f"/v0/session/{urllib.parse.quote(str(session_name).strip(), safe='')}/messages",
-        payload={"message": message},
+        path,
+        payload=payload_body,
         headers=headers,
         timeout=timeout,
     )

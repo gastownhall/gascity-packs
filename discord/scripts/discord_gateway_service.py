@@ -28,7 +28,6 @@ import discord_intake_common as common
 GATEWAY_INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15)
 ALIAS_PATTERN = re.compile(r"(?<![A-Za-z0-9_<])@([a-z0-9][a-z0-9_-]*)", re.IGNORECASE)
 DISCORD_RESERVED_MENTIONS = {"everyone", "here"}
-NON_ROUTABLE_SESSION_STATES = {"", "closed", "stopped", "orphaned", "quarantined"}
 MAX_STATUS_PREVIEW = 160
 GATEWAY_WORKER_THREADS = 8
 GATEWAY_MAX_PENDING_MESSAGES = 128
@@ -573,18 +572,18 @@ def resolve_binding(config: dict[str, Any], message: dict[str, Any]) -> tuple[di
 
 def resolve_targets(
     binding: dict[str, Any],
-    session_index: dict[str, dict[str, Any]],
     mentioned_aliases: list[str],
     *,
     require_targeted_aliases: bool = False,
 ) -> tuple[list[str], str, str]:
+    # Bound room selectors are authoritative. Delivery materializes named
+    # sessions on first reference via the core /v0/session/{selector}/messages API.
     participants = [str(item).strip() for item in binding.get("session_names", []) if str(item).strip()]
     participant_lookup, participant_collisions = casefold_lookup(participants)
-    _, session_collisions = casefold_lookup(list(session_index.keys()))
     if mentioned_aliases:
         for alias in mentioned_aliases:
             key = alias.casefold()
-            if key in participant_collisions or key in session_collisions:
+            if key in participant_collisions:
                 return [], "targeted", f"ambiguous_alias:{alias}"
             participant_name = participant_lookup.get(key)
             if not participant_name:
@@ -594,23 +593,13 @@ def resolve_targets(
             participant_name = participant_lookup.get(alias.casefold())
             if not participant_name:
                 return [], "targeted", f"unknown_alias:{alias}"
-            session_payload = session_index.get(participant_name)
-            state = str((session_payload or {}).get("state", "")).strip()
-            if not session_payload or state in NON_ROUTABLE_SESSION_STATES:
-                return [], "targeted", f"unavailable_alias:{alias}"
             targets.append(participant_name)
         return targets, "targeted", ""
 
     if require_targeted_aliases:
         return [], "targeted", "target_required"
 
-    targets = []
-    for alias in participants:
-        session_payload = session_index.get(alias)
-        state = str((session_payload or {}).get("state", "")).strip()
-        if session_payload and state not in NON_ROUTABLE_SESSION_STATES:
-            targets.append(alias)
-    return targets, "broadcast", ""
+    return participants, "broadcast", ""
 
 
 def binding_allows_ambient_read(binding: dict[str, Any] | None) -> bool:
@@ -707,27 +696,30 @@ def build_human_envelope(
     ingress_id: str,
 ) -> str:
     conversation_value, conversation_key = conversation_fields(message, channel_info)
+    binding_id = str(binding.get("id", "")).strip()
+    channel_id = str(message.get("channel_id", "")).strip()
+    message_id = str(message.get("id", "")).strip()
     lines = [
         "<discord-event>",
         "version: 1",
         "kind: discord_human_message",
-        f"binding_id: {str(binding.get('id', '')).strip()}",
+        f"binding_id: {binding_id}",
         f"ingress_receipt_id: {ingress_id}",
         f"conversation: {conversation_value}",
         f"conversation_key: {conversation_key}",
-        f"discord_message_id: {str(message.get('id', '')).strip()}",
+        f"discord_message_id: {message_id}",
         f"from_display: {display_name_from_message(message)}",
         f"from_user_id: {str((message.get('author') or {}).get('id', '')).strip()}",
         f"delivery: {delivery}",
         f"mentioned_aliases_json: {json.dumps(mentioned_aliases)}",
         f"untrusted_body_json: {json.dumps(body)}",
-        f"publish_binding_id: {str(binding.get('id', '')).strip()}",
-        f"publish_conversation_id: {str(message.get('channel_id', '')).strip()}",
-        f"publish_trigger_id: {str(message.get('id', '')).strip()}",
-        f"publish_reply_to_discord_message_id: {str(message.get('id', '')).strip()}",
+        f"publish_binding_id: {binding_id}",
+        f"publish_conversation_id: {channel_id}",
+        f"publish_trigger_id: {message_id}",
+        f"publish_reply_to_discord_message_id: {message_id}",
         "normal_output_visibility: internal_only",
         "reply_contract: explicit_publish_required",
-        "reply_tool: gc discord reply-current --body-file <path>",
+        f"reply_tool: gc discord reply-current --conversation-id {channel_id} --reply-to {message_id} --body-file <path>",
         "reply_success_signal: record.remote_message_id",
         "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
         "</discord-event>",
@@ -1501,23 +1493,8 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
             return {"status": "ignored_empty", "ingress_id": ingress_id, "receipt": receipt}
 
         mentioned_aliases = preloaded_aliases if preloaded_aliases is not None else extract_alias_mentions(body)
-        try:
-            session_index = common.session_index_by_name(state="all")
-        except common.GCAPIError as exc:
-            receipt = persist_ingress_receipt(
-                {
-                    **base_receipt,
-                    "binding_id": str(binding.get("id", "")).strip(),
-                    "status": "failed_lookup",
-                    "reason": str(exc),
-                    "targets": [],
-                }
-            )
-            return {"status": "failed_lookup", "ingress_id": ingress_id, "receipt": receipt}
-
         targets, delivery, resolve_error = resolve_targets(
             binding,
-            session_index,
             mentioned_aliases,
             require_targeted_aliases=bool(
                 binding_allows_ambient_read(binding) and guild_id and not binding_allows_untargeted_ambient_delivery(binding)
@@ -1552,13 +1529,13 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
                 {
                     **base_receipt,
                     "binding_id": str(binding.get("id", "")).strip(),
-                    "status": "skipped_no_live_targets",
-                    "reason": "no_live_targets",
+                    "status": "skipped_no_targets",
+                    "reason": "no_targets",
                     "mentioned_aliases": mentioned_aliases,
                     "targets": [],
                 }
             )
-            return {"status": "skipped_no_live_targets", "ingress_id": ingress_id, "receipt": receipt}
+            return {"status": "skipped_no_targets", "ingress_id": ingress_id, "receipt": receipt}
 
         receipt = persist_ingress_receipt(
             {
@@ -1584,7 +1561,12 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
         for target in targets:
             idempotency_key = f"ingress:{ingress_id}:target:{target}"
             try:
-                response = common.deliver_session_message(target, envelope, idempotency_key=idempotency_key)
+                response = common.deliver_session_message(
+                    target,
+                    envelope,
+                    idempotency_key=idempotency_key,
+                    intent="follow_up",
+                )
                 updated_targets.append(
                     {
                         "session_name": target,
