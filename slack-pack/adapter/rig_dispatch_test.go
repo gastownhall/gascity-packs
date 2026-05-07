@@ -200,6 +200,7 @@ func TestSlackInteractionsRigSlashOpensModal(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		cityPath:        cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -285,6 +286,7 @@ func TestSlackInteractionsRigSlashMissingTriggerID(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		cityPath:        cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -330,6 +332,7 @@ func TestSlackInteractionsRigSlashViewsOpenFailure(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		cityPath:        cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -366,6 +369,7 @@ func TestSlackInteractionsRigSlashMissingSlingTarget(t *testing.T) {
 	cfg := config{
 		slackSigningKey: "secret", slackBotToken: "xoxb-test",
 		accountID: "T1", cityName: "test-city", cityPath: cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -407,6 +411,7 @@ func TestSlackInteractionsRigSlashMissingWorkdir(t *testing.T) {
 	cfg := config{
 		slackSigningKey: "secret", slackBotToken: "xoxb-test",
 		accountID: "T1", cityName: "test-city", cityPath: cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -456,6 +461,7 @@ func TestSlackInteractionsRigViewSubmissionDispatchesHappyPath(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		cityPath:        cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -574,6 +580,7 @@ func TestSlackInteractionsRigViewSubmissionEmptyContextOmitsVar(t *testing.T) {
 	cfg := config{
 		slackSigningKey: "secret", accountID: "T1",
 		cityName: "test-city", cityPath: cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -643,6 +650,7 @@ func TestSlackInteractionsRigViewSubmissionMissingSummaryClearsModal(t *testing.
 	cfg := config{
 		slackSigningKey: "secret", accountID: "T1",
 		cityName: "test-city", cityPath: cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -702,6 +710,7 @@ func TestSlackInteractionsRigViewSubmissionRigUnmappedClearsModal(t *testing.T) 
 	cfg := config{
 		slackSigningKey: "secret", accountID: "T1",
 		cityName: "test-city", cityPath: cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	// rigReg has NO record for "alpha" — the rig was removed between
@@ -753,6 +762,7 @@ func TestSlackInteractionsRigViewSubmissionGcFailureClosesBead(t *testing.T) {
 	cfg := config{
 		slackSigningKey: "secret", accountID: "T1",
 		cityName: "test-city", cityPath: cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -814,6 +824,7 @@ func TestSlackInteractionsRigViewSubmissionSaturationDrop(t *testing.T) {
 	cfg := config{
 		slackSigningKey: "secret", accountID: "T1",
 		cityName: "test-city", cityPath: cityPath,
+		dispatchSem: make(chan struct{}, 1),
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -827,9 +838,7 @@ func TestSlackInteractionsRigViewSubmissionSaturationDrop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	restore := setDispatchSemaphoreForTest(1)
-	t.Cleanup(restore)
-	holdRelease, _, ok := acquireDispatchSlot()
+	holdRelease, _, ok := cfg.acquireDispatchSlot()
 	if !ok {
 		t.Fatal("acquireDispatchSlot: failed to take initial slot")
 	}
@@ -888,6 +897,7 @@ func TestSlackInteractionsRigDispatchBlockActionsHappyPath(t *testing.T) {
 	cfg := config{
 		slackSigningKey: "secret", accountID: "T1",
 		cityName: "test-city", cityPath: cityPath,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)

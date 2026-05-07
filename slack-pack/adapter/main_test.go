@@ -25,15 +25,64 @@ import (
 	"time"
 )
 
-// TestMain installs a default dispatchSem capacity for all tests in
-// this package. Production main() initializes dispatchSem from
-// loadConfig; tests that exercise dispatch goroutines without going
-// through main need a non-nil channel here. Tests asserting drop-on-
-// saturation behavior install their own scoped sem via
-// setDispatchSemaphoreForTest.
+// defaultTestDispatchSem is the shared dispatch semaphore used by
+// tests whose configs go through inbound-dispatch handlers but are
+// not specifically asserting saturation behavior. Initialized once in
+// TestMain at cap=50 (matching production's default
+// SLACK_DISPATCH_CONCURRENCY) and assigned into each such cfg via
+// `cfg.dispatchSem = defaultTestDispatchSem`. Tests asserting
+// saturation construct their own bounded sem locally instead, so they
+// can run in parallel without interfering with the shared cap.
+// gc-px8.7 (was gc-cby.30).
+var defaultTestDispatchSem chan struct{}
+
+// TestMain initializes the shared test dispatch semaphore. Production
+// main() initializes cfg.dispatchSem from cfg.dispatchConcurrency;
+// tests that exercise dispatch goroutines without going through main
+// pull a non-nil channel from defaultTestDispatchSem above.
 func TestMain(m *testing.M) {
-	dispatchSem = make(chan struct{}, 50)
+	defaultTestDispatchSem = make(chan struct{}, 50)
 	os.Exit(m.Run())
+}
+
+// TestDispatchSemIsCfgScopedAndParallelSafe is a structural assertion
+// for gc-px8.7: two configs each carry an independent dispatchSem, so
+// saturating one cfg's slot does NOT bleed into another cfg running in
+// parallel. The pre-refactor package-level dispatchSem made parallel
+// saturation tests interfere — a test calling
+// setDispatchSemaphoreForTest forced its peers to serialize via
+// `must NOT call t.Parallel`. After px8.7 each cfg owns its sem, so
+// two t.Parallel subtests can fully saturate their own caps without
+// touching each other's accounting. This test fails the build if the
+// refactor is ever silently reverted to a shared singleton.
+func TestDispatchSemIsCfgScopedAndParallelSafe(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cfgA-saturates", func(t *testing.T) {
+		t.Parallel()
+		cfg := config{dispatchSem: make(chan struct{}, 1)}
+		release, _, ok := cfg.acquireDispatchSlot()
+		if !ok {
+			t.Fatal("cfgA: failed to take its only slot")
+		}
+		t.Cleanup(release)
+		// Now the cfg-A sem is saturated. A second acquire on cfgA
+		// must fail (cap=1, slot held).
+		if _, _, again := cfg.acquireDispatchSlot(); again {
+			t.Fatal("cfgA: expected saturation on second acquire")
+		}
+	})
+
+	t.Run("cfgB-unaffected-by-cfgA", func(t *testing.T) {
+		t.Parallel()
+		cfg := config{dispatchSem: make(chan struct{}, 1)}
+		// cfgB has its own sem; cfgA's saturation must not show here.
+		release, _, ok := cfg.acquireDispatchSlot()
+		if !ok {
+			t.Fatal("cfgB: cfg-scoped sem leaked into cfgA's saturation")
+		}
+		t.Cleanup(release)
+	})
 }
 
 // stubEnv builds a getenv function from a fixed map, mirroring os.Getenv's
@@ -1006,6 +1055,7 @@ func TestRegisterAdapterEscapesCityName(t *testing.T) {
 		cityName:  "city/with slash",
 		provider:  "slack",
 		accountID: "T0",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	if err := registerAdapter(cfg); err != nil {
 		t.Fatalf("registerAdapter: %v", err)
@@ -2062,6 +2112,7 @@ func TestDownloadSlackFiles(t *testing.T) {
 			cfg := config{
 				slackBotToken:    "xoxb-test",
 				inboundFileStore: filepath.Join(t.TempDir(), "inbound"),
+				dispatchSem: defaultTestDispatchSem,
 			}
 			if tc.emptyStore {
 				cfg.inboundFileStore = ""
@@ -2407,6 +2458,7 @@ func TestDownloadSlackFilesPermissions(t *testing.T) {
 	cfg := config{
 		slackBotToken:    "xoxb-test",
 		inboundFileStore: filepath.Join(t.TempDir(), "inbound"),
+		dispatchSem: defaultTestDispatchSem,
 	}
 	files := []slackFile{{
 		ID:         "F1",
@@ -2490,6 +2542,7 @@ func TestTightenStorePermissions(t *testing.T) {
 			identityStorePath:    idFile,
 			handleAliasStorePath: aliasFile,
 			inboundFileStore:     inboundDir,
+			dispatchSem: defaultTestDispatchSem,
 		}
 		tightenStorePermissions(cfg)
 
@@ -2539,6 +2592,7 @@ func TestTightenStorePermissions(t *testing.T) {
 			identityStorePath:    filepath.Join(dir, "missing-id", "id.json"),
 			handleAliasStorePath: filepath.Join(dir, "missing-alias", "alias.json"),
 			inboundFileStore:     filepath.Join(dir, "missing-inbound"),
+			dispatchSem: defaultTestDispatchSem,
 		}
 		// Should not panic, should not error to caller (helper returns void).
 		tightenStorePermissions(cfg)
@@ -3154,6 +3208,7 @@ func TestProcessSlackEventReleasesSlotOnNoAliasPath(t *testing.T) {
 		provider:     "slack",
 		accountID:    "T1",
 		handlePrefix: "@",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 
@@ -3198,6 +3253,7 @@ func TestProcessSlackEventTransfersSlotToAliasGoroutine(t *testing.T) {
 		provider:     "slack",
 		accountID:    "T1",
 		handlePrefix: "@",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	if err := aliasReg.Set("mayor", "gc-2568"); err != nil {
@@ -3256,22 +3312,20 @@ func TestHandleSlackEventsDropsWhenSemaphoreFull(t *testing.T) {
 	}))
 	t.Cleanup(gcStub.Close)
 
-	// Saturate the semaphore: cap=1, hold the only slot.
-	restore := setDispatchSemaphoreForTest(1)
-	t.Cleanup(restore)
-	holdRelease, _, ok := acquireDispatchSlot()
-	if !ok {
-		t.Fatal("acquireDispatchSlot: failed to take initial slot in fresh sem")
-	}
-	t.Cleanup(holdRelease)
-
 	cfg := config{
 		gcAPIBase:       gcStub.URL,
 		cityName:        "test-city",
 		provider:        "slack",
 		accountID:       "T1",
 		slackSigningKey: "secret",
+		// Saturate the semaphore: cap=1, hold the only slot below.
+		dispatchSem: make(chan struct{}, 1),
 	}
+	holdRelease, _, ok := cfg.acquireDispatchSlot()
+	if !ok {
+		t.Fatal("acquireDispatchSlot: failed to take initial slot in fresh sem")
+	}
+	t.Cleanup(holdRelease)
 	aliasReg := newTestHandleAliasRegistry(t)
 
 	read, cleanup := captureLog(t)
@@ -3456,6 +3510,7 @@ func TestSlackEventsPerAppSignatureLookup(t *testing.T) {
 		accountID:    "T1",
 		appsRegistry: appsReg,
 		// no env signing key — registry is the only source.
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 
@@ -3495,6 +3550,7 @@ func TestSlackEventsRegistryMissUsesEnvFallback(t *testing.T) {
 		accountID:       "T1",
 		slackSigningKey: "env-fallback",
 		appsRegistry:    appsReg,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 
@@ -3525,6 +3581,7 @@ func TestSlackEventsNoSecretRejects401(t *testing.T) {
 		accountID:    "T1",
 		appsRegistry: appsReg,
 		// no env, no registry match → no candidates.
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 
@@ -3550,6 +3607,7 @@ func TestSlackEventsMalformedBodyFallsBackToEnv(t *testing.T) {
 		accountID:       "T1",
 		slackSigningKey: "env-secret",
 		// no apps registry seeded.
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 

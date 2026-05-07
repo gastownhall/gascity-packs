@@ -405,7 +405,7 @@ func handleSlackInteractions(cfg config, mapReg *channelMappingRegistry, rigReg 
 
 		switch rec.TargetKind {
 		case channelMappingTargetKindSession:
-			release, capacity, acquired := acquireDispatchSlot()
+			release, capacity, acquired := cfg.acquireDispatchSlot()
 			if !acquired {
 				log.Printf("slack adapter: dispatch queue full (cap=%d), dropping slash command=%q channel=%q session=%q",
 					capacity, command, channelID, rec.TargetID)
@@ -622,7 +622,7 @@ func handleBlockActionsPayload(w http.ResponseWriter, cfg config, mapReg *channe
 
 	switch rec.TargetKind {
 	case channelMappingTargetKindSession:
-		release, capacity, acquired := acquireDispatchSlot()
+		release, capacity, acquired := cfg.acquireDispatchSlot()
 		if !acquired {
 			log.Printf("slack adapter: dispatch queue full (cap=%d), dropping block_actions team=%q channel=%q session=%q",
 				capacity, p.Team.ID, channelID, rec.TargetID)
@@ -677,7 +677,7 @@ func handleViewSubmissionPayload(w http.ResponseWriter, cfg config, rigReg *rigM
 		return
 	}
 
-	release, capacity, acquired := acquireDispatchSlot()
+	release, capacity, acquired := cfg.acquireDispatchSlot()
 	if !acquired {
 		log.Printf("slack adapter: dispatch queue full (cap=%d), dropping view_submission team=%q session=%q",
 			capacity, p.Team.ID, sessionID)

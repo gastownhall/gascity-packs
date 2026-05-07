@@ -85,6 +85,7 @@ func TestProcessSlackEventDoubleHandleUnclaimedEmitsLauncherEphemeral(t *testing
 		accountID:     "T1",
 		handlePrefix:  "@",
 		slackBotToken: "xoxb-test",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)
@@ -167,6 +168,7 @@ func TestProcessSlackEventDoubleHandlePreClaimedEmitsBoundEphemeral(t *testing.T
 		accountID:     "T1",
 		handlePrefix:  "@",
 		slackBotToken: "xoxb-test",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	if err := aliasReg.Set("ops", "gc-existing-7"); err != nil {
@@ -240,6 +242,7 @@ func TestProcessSlackEventSingleHandleStillReachesAliasDispatch(t *testing.T) {
 		provider:     "slack",
 		accountID:    "T1",
 		handlePrefix: "@",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	if err := aliasReg.Set("mayor", "gc-2568"); err != nil {
@@ -289,6 +292,7 @@ func TestProcessSlackEventPlainTextUnaffected(t *testing.T) {
 		provider:     "slack",
 		accountID:    "T1",
 		handlePrefix: "@",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)
@@ -333,6 +337,7 @@ func TestProcessSlackEventDoubleHandleNilThreadRegistry(t *testing.T) {
 		provider:     "slack",
 		accountID:    "T1",
 		handlePrefix: "@",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 
@@ -409,6 +414,7 @@ func TestHandleSlackEventsAcceptsThreadRegistry(t *testing.T) {
 		provider:        "slack",
 		accountID:       "T1",
 		slackSigningKey: "secret",
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)

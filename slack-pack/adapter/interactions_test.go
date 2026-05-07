@@ -195,6 +195,7 @@ func TestSlackInteractionsSessionMappingHitDispatches(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -463,6 +464,7 @@ func TestSlackInteractionsResolverChannelOverride(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	rigReg := newTestRigMappingRegistry(t)
@@ -768,6 +770,7 @@ func TestSessionDispatchGoroutineDrainedBeforeNextTest(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       stub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	chanReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -953,6 +956,7 @@ func TestSlackInteractionsDropsSlashCommandWhenSemaphoreFull(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem:     make(chan struct{}, 1),
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -965,9 +969,7 @@ func TestSlackInteractionsDropsSlashCommandWhenSemaphoreFull(t *testing.T) {
 	}
 
 	// cap=1, hold the only slot.
-	restore := setDispatchSemaphoreForTest(1)
-	t.Cleanup(restore)
-	holdRelease, _, ok := acquireDispatchSlot()
+	holdRelease, _, ok := cfg.acquireDispatchSlot()
 	if !ok {
 		t.Fatal("acquireDispatchSlot: failed to take initial slot")
 	}
@@ -1025,6 +1027,8 @@ func TestSlackInteractionsAdmitsSlashCommandWhenSemaphoreHasRoom(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		// cap=2 leaves one free slot for the dispatch goroutine.
+		dispatchSem: make(chan struct{}, 2),
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -1035,10 +1039,6 @@ func TestSlackInteractionsAdmitsSlashCommandWhenSemaphoreHasRoom(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	// cap=2 leaves one free slot for the dispatch goroutine.
-	restore := setDispatchSemaphoreForTest(2)
-	t.Cleanup(restore)
 
 	body := []byte(url.Values{
 		"team_id":    {"T1"},
@@ -1138,6 +1138,7 @@ func TestSlackInteractionsPerAppSignatureLookup(t *testing.T) {
 		accountID:    "T1",
 		cityName:     "test-city",
 		appsRegistry: appsReg,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 
@@ -1183,6 +1184,7 @@ func TestSlackInteractionsRegistryMissUsesEnvFallback(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		appsRegistry:    appsReg,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 
@@ -1209,6 +1211,7 @@ func TestSlackInteractionsNoSecretRejects401(t *testing.T) {
 		accountID: "T1",
 		cityName:  "test-city",
 		// no env, no apps registry
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 
@@ -1320,6 +1323,7 @@ func TestSlackInteractionsBlockActionsSessionDispatch(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -1389,6 +1393,7 @@ func TestSlackInteractionsBlockActionsContainerChannelFallback(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -1557,6 +1562,7 @@ func TestSlackInteractionsBlockActionsEmptyActionsArray(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -1612,6 +1618,7 @@ func TestSlackInteractionsBlockActionsMultipleActions(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -1667,6 +1674,7 @@ func TestSlackInteractionsBlockActionsSemaphoreFull(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem:     make(chan struct{}, 1),
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -1678,9 +1686,7 @@ func TestSlackInteractionsBlockActionsSemaphoreFull(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	restore := setDispatchSemaphoreForTest(1)
-	t.Cleanup(restore)
-	holdRelease, _, ok := acquireDispatchSlot()
+	holdRelease, _, ok := cfg.acquireDispatchSlot()
 	if !ok {
 		t.Fatal("acquireDispatchSlot: failed to take initial slot")
 	}
@@ -1731,6 +1737,7 @@ func TestSlackInteractionsBlockActionsPerAppSecret(t *testing.T) {
 		accountID:    "T1",
 		cityName:     "test-city",
 		appsRegistry: appsReg,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 
@@ -1775,6 +1782,7 @@ func TestSlackInteractionsViewSubmissionDispatch(t *testing.T) {
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 
@@ -1971,6 +1979,7 @@ func TestSlackInteractionsBlockActionsNeutralizesSystemReminderInjection(t *test
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()
@@ -2040,6 +2049,7 @@ func TestSlackInteractionsSlashCommandNeutralizesSystemReminderInjection(t *test
 		accountID:       "T1",
 		cityName:        "test-city",
 		gcAPIBase:       gcStub.URL,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	mapReg := newTestChannelMappingRegistry(t)
 	now := time.Now().UTC()

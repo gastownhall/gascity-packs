@@ -186,7 +186,7 @@ func dispatchBlockActionsToRig(
 		return
 	}
 
-	release, capacity, acquired := acquireDispatchSlot()
+	release, capacity, acquired := cfg.acquireDispatchSlot()
 	if !acquired {
 		log.Printf("slack adapter: dispatch queue full (cap=%d), dropping block_actions team=%q channel=%q rig=%q",
 			capacity, workspaceID, channelID, rigName)
@@ -284,7 +284,7 @@ func dispatchRigFixFromViewSubmission(
 	contextMarkdown := strings.TrimSpace(extractModalInput(
 		p.View.State.Values, rigFixModalContextBlockID, rigFixModalContextActionID))
 
-	release, capacity, acquired := acquireDispatchSlot()
+	release, capacity, acquired := cfg.acquireDispatchSlot()
 	if !acquired {
 		log.Printf("slack adapter: dispatch queue full (cap=%d), dropping view_submission rig_fix rig=%q user=%q",
 			capacity, meta.RigName, meta.UserID)

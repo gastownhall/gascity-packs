@@ -200,23 +200,10 @@ const (
 // slackAPIBase is a var (not const) so tests can replace it with a fake.
 var slackAPIBase = "https://slack.com/api"
 
-// dispatchSem caps the number of concurrent inbound dispatch
-// goroutines (slash-command → session, slack-event → session,
-// alias-resolved → session). Initialized in main() from
-// config.dispatchConcurrency. Tests that exercise the dispatch
-// goroutines must call setDispatchSemaphoreForTest to install a
-// scoped semaphore and restore the previous one in t.Cleanup.
-// The pre-init nil channel deliberately blocks forever in the select's
-// send case so a caller hitting the dispatch path before main() has
-// initialized falls through to the non-blocking `default` branch and
-// the request is dropped with a clear log line. main() must
-// initialize this var before any dispatch site fires. sec-S-04.
-var dispatchSem chan struct{}
-
 // dispatchInflightWG counts in-flight dispatch goroutines that own a
-// dispatchSem release(). Every `go func()` that defers release() MUST
-// also Add(1) before the spawn and `defer dispatchInflightWG.Done()`
-// inside. The current set of spawn sites:
+// dispatch-slot release(). Every `go func()` that defers release()
+// MUST also Add(1) before the spawn and `defer
+// dispatchInflightWG.Done()` inside. The current set of spawn sites:
 //
 //   - interactions.go: slash → session, block_actions → session,
 //     view_submission → session
@@ -236,17 +223,22 @@ var dispatchSem chan struct{}
 // Folding the hook into the WG is left as a future cleanup.
 var dispatchInflightWG sync.WaitGroup
 
-// acquireDispatchSlot tries to acquire one slot on dispatchSem
+// acquireDispatchSlot tries to acquire one slot on cfg.dispatchSem
 // without blocking. On success it returns a release func bound to
 // the channel observed at acquire time, plus the channel's capacity
 // (handy for log messages); on failure it returns nil and the
 // observed cap. The caller must defer release() at goroutine entry.
 //
 // Capturing the channel reference at acquire time keeps the goroutine
-// race-clean even if tests swap dispatchSem out via
-// setDispatchSemaphoreForTest before the goroutine completes.
-func acquireDispatchSlot() (release func(), capacity int, ok bool) {
-	sem := dispatchSem
+// race-clean even if a future call site builds a fresh cfg between
+// acquire and release. A nil cfg.dispatchSem makes the channel send
+// case block forever, falling through to default and reporting "not
+// acquired"; main() initializes the field before any handler is wired
+// in, so production reaches this only if the operator wires a handler
+// from a test-style cfg without a sem (in which case the dropped-load
+// log line is the intended fail-safe behavior). sec-S-04.
+func (c config) acquireDispatchSlot() (release func(), capacity int, ok bool) {
+	sem := c.dispatchSem
 	semCap := cap(sem)
 	select {
 	case sem <- struct{}{}:
@@ -254,16 +246,6 @@ func acquireDispatchSlot() (release func(), capacity int, ok bool) {
 	default:
 		return nil, semCap, false
 	}
-}
-
-// setDispatchSemaphoreForTest installs a fresh dispatchSem of the
-// given capacity and restores the previous one when the test ends.
-// Tests using this helper must NOT call t.Parallel — dispatchSem is
-// package-level state.
-func setDispatchSemaphoreForTest(capacity int) func() {
-	prev := dispatchSem
-	dispatchSem = make(chan struct{}, capacity)
-	return func() { dispatchSem = prev }
 }
 
 type config struct {
@@ -361,6 +343,15 @@ type config struct {
 	// negative, and non-numeric values rather than silently disabling
 	// dispatch. sec-S-04.
 	dispatchConcurrency int
+	// dispatchSem caps the number of concurrent inbound dispatch
+	// goroutines. main() initializes this to a buffered channel of
+	// size dispatchConcurrency before any handler is wired in;
+	// acquireDispatchSlot reads it through the cfg value. Tests build a
+	// cfg with their own scoped channel rather than sharing a
+	// package-level singleton, so saturation tests can run in parallel
+	// without interfering with other tests' slot counts. gc-px8.7
+	// (was gc-cby.30).
+	dispatchSem chan struct{}
 	// appsRegistryPath is the JSON file written by `gc slack import-app`
 	// mapping (workspace_id, app_id) → app record (incl. signing_secret
 	// populated post-OAuth). Read-only on this side; same SIGHUP-or-
@@ -868,9 +859,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
-	// Initialize the shared dispatch semaphore from config. cap is a
-	// fixed positive int — loadConfig rejected 0/negative. sec-S-04.
-	dispatchSem = make(chan struct{}, cfg.dispatchConcurrency)
+	// Initialize the shared dispatch semaphore on the cfg value before
+	// any handler closes over it. cap is a fixed positive int —
+	// loadConfig rejected 0/negative. sec-S-04. gc-px8.7.
+	cfg.dispatchSem = make(chan struct{}, cfg.dispatchConcurrency)
 	// Wire the process-wide thread-context cache. Nil-safe consumer
 	// path; only the production main() initializes it. gc-px8.5.
 	cfg.threadContextCache = newThreadContextCache()
@@ -1742,7 +1734,7 @@ func handleSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 
 		// Process event_callback. Always 200 quickly to avoid Slack retries.
 		w.WriteHeader(http.StatusOK)
-		release, capacity, ok := acquireDispatchSlot()
+		release, capacity, ok := cfg.acquireDispatchSlot()
 		if !ok {
 			log.Printf("slack adapter: dispatch queue full (cap=%d), dropping slack event type=%q",
 				capacity, env.Type)
@@ -1751,7 +1743,7 @@ func handleSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 		// Slot ownership transfers to processSlackEvent, which either
 		// releases on its own return path or hands the slot to its
 		// alias-dispatch goroutine. This avoids double-counting against
-		// dispatchSem when an inbound triggers an alias dispatch (which
+		// cfg.dispatchSem when an inbound triggers an alias dispatch (which
 		// would otherwise hold two slots concurrently — see gc-cby.26
 		// Phase 4 review fix).
 		go processSlackEvent(cfg, aliasReg, threadReg, roomLaunchReg, env, release)

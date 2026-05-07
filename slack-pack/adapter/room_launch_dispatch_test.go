@@ -122,6 +122,7 @@ func TestRoomLaunchDispatchSpawnOnMissCreatesSessionAndPostsFirstMessage(t *test
 		handlePrefix:        "@",
 		slackBotToken:       "xoxb-test",
 		dispatchConcurrency: 8,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)
@@ -219,6 +220,7 @@ func TestRoomLaunchDispatchReuseOnHitSkipsCreateAndPostsToExistingSession(t *tes
 		handlePrefix:        "@",
 		slackBotToken:       "xoxb-test",
 		dispatchConcurrency: 8,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)
@@ -275,6 +277,7 @@ func TestRoomLaunchDispatchChannelNotEnabledEmitsActionableEphemeral(t *testing.
 		handlePrefix:        "@",
 		slackBotToken:       "xoxb-test",
 		dispatchConcurrency: 8,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)
@@ -326,6 +329,7 @@ func TestRoomLaunchDispatchSpawnFailureLeavesRegistryEmpty(t *testing.T) {
 		handlePrefix:        "@",
 		slackBotToken:       "xoxb-test",
 		dispatchConcurrency: 8,
+		dispatchSem: defaultTestDispatchSem,
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)
@@ -378,14 +382,6 @@ func TestRoomLaunchDispatchSaturationDropsAtOuterSlot(t *testing.T) {
 	srv, hits := newGCStub(t)
 	_ = captureSlackPostEphemeral(t)
 
-	restore := setDispatchSemaphoreForTest(1)
-	defer restore()
-	holdRelease, _, ok := acquireDispatchSlot()
-	if !ok {
-		t.Fatal("could not acquire dispatch slot for saturation setup")
-	}
-	defer holdRelease()
-
 	cfg := config{
 		gcAPIBase:           srv.URL,
 		cityName:            "test-city",
@@ -395,7 +391,13 @@ func TestRoomLaunchDispatchSaturationDropsAtOuterSlot(t *testing.T) {
 		slackBotToken:       "xoxb-test",
 		slackSigningKey:     "secret",
 		dispatchConcurrency: 1,
+		dispatchSem:         make(chan struct{}, 1),
 	}
+	holdRelease, _, ok := cfg.acquireDispatchSlot()
+	if !ok {
+		t.Fatal("could not acquire dispatch slot for saturation setup")
+	}
+	defer holdRelease()
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)
 	roomReg := newTestRoomLaunchRegistry(t, "T1", "C1", "mission-control/launcher")
