@@ -362,6 +362,13 @@ func handleSlackInteractions(cfg config, mapReg *channelMappingRegistry, rigReg 
 
 		teamID = form.Get("team_id")
 		channelID := form.Get("channel_id")
+		// channel_name is the human-readable Slack channel name
+		// (e.g. "oversight-platform"). Slack's slash-command POST
+		// always includes it; consumed by the gc-px8.9 pattern-
+		// resolver tier in resolveChannelTargetWithName. Empty-string
+		// fallback keeps us safe against forged payloads or future
+		// Slack changes — patterns are then inert.
+		channelName := form.Get("channel_name")
 		command := form.Get("command")
 		text := form.Get("text")
 		userID := form.Get("user_id")
@@ -386,7 +393,7 @@ func handleSlackInteractions(cfg config, mapReg *channelMappingRegistry, rigReg 
 			return
 		}
 
-		rec, source, ok := resolveChannelTarget(mapReg, rigReg, teamID, channelID)
+		rec, source, ok := resolveChannelTargetWithName(mapReg, rigReg, teamID, channelID, channelName)
 		if !ok {
 			writeEphemeral(w, http.StatusOK, fmt.Sprintf(
 				"No binding for this channel. Bind a rig with `gc slack map-rig <name> --workspace-id %s --channel %s`, or bind a session with `gc slack map-channel %s --workspace-id %s --session <id>`.",

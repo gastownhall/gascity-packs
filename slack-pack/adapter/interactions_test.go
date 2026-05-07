@@ -535,6 +535,199 @@ func TestSlackInteractionsResolverSourceDiscriminatorLogged(t *testing.T) {
 	}
 }
 
+// TestResolveChannelTargetWithNamePatternFallthrough pins the slash-
+// command intake tier 3 wiring (gc-px8.9): when no channel-mapping or
+// rig channel-ID hit, but the channel NAME matches a registered
+// pattern, the resolver returns a synthetic rig record with
+// source="rig-pattern".
+func TestResolveChannelTargetWithNamePatternFallthrough(t *testing.T) {
+	chanReg := newTestChannelMappingRegistry(t)
+	rigReg := newTestRigMappingRegistry(t)
+	now := time.Now().UTC()
+	if err := rigReg.Set(rigMappingDiskRecord{
+		WorkspaceID: "T1", RigName: "oversight",
+		ChannelPatterns: []string{"oversight-*"},
+		CreatedAt:       now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec, src, ok := resolveChannelTargetWithName(chanReg, rigReg, "T1", "C-X", "oversight-platform")
+	if !ok {
+		t.Fatal("ok=false; pattern fall-through should hit")
+	}
+	if src != "rig-pattern" {
+		t.Errorf("source = %q, want rig-pattern", src)
+	}
+	if rec.TargetKind != channelMappingTargetKindRig || rec.TargetID != "oversight" {
+		t.Errorf("synthetic record mismatch: %+v", rec)
+	}
+	if rec.ChannelID != "C-X" {
+		t.Errorf("ChannelID = %q, want C-X (resolver propagates the inbound channel ID)", rec.ChannelID)
+	}
+}
+
+// TestResolveChannelTargetWithNameChannelMappingStillWins is the
+// regression guard: tier 1 (channel mapping) MUST beat tier 3 (pattern)
+// even when both could match. Channel-mapping is the operator's
+// override mechanism — patterns must never override it.
+func TestResolveChannelTargetWithNameChannelMappingStillWins(t *testing.T) {
+	chanReg := newTestChannelMappingRegistry(t)
+	rigReg := newTestRigMappingRegistry(t)
+	now := time.Now().UTC()
+	if err := chanReg.Set(channelMappingDiskRecord{
+		WorkspaceID: "T1", ChannelID: "C1",
+		TargetKind: "session", TargetID: "gc-1",
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := rigReg.Set(rigMappingDiskRecord{
+		WorkspaceID: "T1", RigName: "oversight",
+		ChannelPatterns: []string{"oversight-*"},
+		CreatedAt:       now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec, src, ok := resolveChannelTargetWithName(chanReg, rigReg, "T1", "C1", "oversight-platform")
+	if !ok {
+		t.Fatal("ok=false")
+	}
+	if src != "channel" {
+		t.Errorf("source = %q, want channel (override wins over pattern)", src)
+	}
+	if rec.TargetID != "gc-1" {
+		t.Errorf("TargetID = %q, want gc-1", rec.TargetID)
+	}
+}
+
+// TestResolveChannelTargetWithNameRigLiteralBeatsPattern keeps tier 2
+// distinct from tier 3: a literal channel-ID claim must beat a pattern
+// claim (cby.22 design contract).
+func TestResolveChannelTargetWithNameRigLiteralBeatsPattern(t *testing.T) {
+	chanReg := newTestChannelMappingRegistry(t)
+	rigReg := newTestRigMappingRegistry(t)
+	now := time.Now().UTC()
+	if err := rigReg.Set(rigMappingDiskRecord{
+		WorkspaceID: "T1", RigName: "literal",
+		ChannelIDs: []string{"C1"},
+		CreatedAt:  now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := rigReg.Set(rigMappingDiskRecord{
+		WorkspaceID: "T1", RigName: "patterned",
+		ChannelPatterns: []string{"oversight-*"},
+		CreatedAt:       now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec, src, ok := resolveChannelTargetWithName(chanReg, rigReg, "T1", "C1", "oversight-platform")
+	if !ok {
+		t.Fatal("ok=false")
+	}
+	if src != "rig" {
+		t.Errorf("source = %q, want rig (literal wins)", src)
+	}
+	if rec.TargetID != "literal" {
+		t.Errorf("TargetID = %q, want literal", rec.TargetID)
+	}
+}
+
+// TestResolveChannelTargetLegacySignatureUnchanged is the regression
+// guard for the existing call sites that have no channel-name in
+// hand. The thin wrapper must behave identically to the pre-px8.9 code.
+func TestResolveChannelTargetLegacySignatureUnchanged(t *testing.T) {
+	chanReg := newTestChannelMappingRegistry(t)
+	rigReg := newTestRigMappingRegistry(t)
+	now := time.Now().UTC()
+	if err := rigReg.Set(rigMappingDiskRecord{
+		WorkspaceID: "T1", RigName: "oversight",
+		ChannelPatterns: []string{"*"}, // would match any name if name were passed
+		CreatedAt:       now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Legacy resolveChannelTarget — patterns must be inert (no name in hand).
+	if _, src, ok := resolveChannelTarget(chanReg, rigReg, "T1", "C-UNBOUND"); ok {
+		t.Errorf("legacy resolveChannelTarget consulted patterns; ok=true src=%q", src)
+	}
+}
+
+// TestSlackInteractionsResolverPatternFromChannelName covers the
+// slash-command-intake side of the wiring: the form's channel_name
+// field flows into the resolver and produces a tier-3 hit when no
+// literal binding exists.
+func TestSlackInteractionsResolverPatternFromChannelName(t *testing.T) {
+	cfg := config{slackSigningKey: "secret", accountID: "T1", cityName: "test-city"}
+	chanReg := newTestChannelMappingRegistry(t)
+	rigReg := newTestRigMappingRegistry(t)
+	now := time.Now().UTC()
+	if err := rigReg.Set(rigMappingDiskRecord{
+		WorkspaceID: "T1", RigName: "oversight",
+		ChannelPatterns: []string{"oversight-*"},
+		CreatedAt:       now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(url.Values{
+		"team_id":      {"T1"},
+		"channel_id":   {"C-NEW"},
+		"channel_name": {"oversight-platform"},
+		"command":      {"/gc"},
+		"text":         {"deploy"},
+		"user_id":      {"U1"},
+	}.Encode())
+	req := signedSlackInteractionRequest(t, cfg.slackSigningKey, body)
+	rec := httptest.NewRecorder()
+	handleSlackInteractions(cfg, chanReg, rigReg)(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "oversight") {
+		t.Errorf("body should mention rig oversight (pattern fall-through): %s", rec.Body.String())
+	}
+}
+
+// TestSlackInteractionsResolverPatternSourceLogged confirms the
+// log line emitted by the slash-command handler carries
+// source=rig-pattern when the route was selected by tier 3, so
+// operators can see in adapter logs which tier resolved each hit.
+func TestSlackInteractionsResolverPatternSourceLogged(t *testing.T) {
+	var logs strings.Builder
+	prevOut := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(prevOut) })
+
+	cfg := config{slackSigningKey: "secret", accountID: "T1", cityName: "test-city"}
+	chanReg := newTestChannelMappingRegistry(t)
+	rigReg := newTestRigMappingRegistry(t)
+	now := time.Now().UTC()
+	_ = rigReg.Set(rigMappingDiskRecord{
+		WorkspaceID: "T1", RigName: "oversight",
+		ChannelPatterns: []string{"oversight-*"},
+		CreatedAt:       now, UpdatedAt: now,
+	})
+	body := []byte(url.Values{
+		"team_id":      {"T1"},
+		"channel_id":   {"C-NEW"},
+		"channel_name": {"oversight-platform"},
+		"command":      {"/gc"},
+		"text":         {"x"},
+		"user_id":      {"U1"},
+	}.Encode())
+	req := signedSlackInteractionRequest(t, cfg.slackSigningKey, body)
+	rec := httptest.NewRecorder()
+	handleSlackInteractions(cfg, chanReg, rigReg)(rec, req)
+
+	if !strings.Contains(logs.String(), "source=rig-pattern") {
+		t.Errorf("log should include source=rig-pattern: %s", logs.String())
+	}
+}
+
 // TestSessionDispatchGoroutineDrainedBeforeNextTest pins the gc-cby.36
 // race fix: every dispatch goroutine spawned by handleSlackInteractions
 // must register with dispatchInflightWG so the test framework can drain

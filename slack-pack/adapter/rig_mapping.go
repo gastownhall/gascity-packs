@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -148,6 +149,99 @@ func (r *rigMappingRegistry) LookupRigForChannel(workspaceID, channelID string) 
 		return rigMappingDiskRecord{}, "", false
 	}
 	return rec, "rig", true
+}
+
+// LookupRigForChannelName extends LookupRigForChannel with channel-
+// name-aware pattern matching (gc-px8.9, the resolver tier deferred
+// from cby.22).
+//
+// Resolution order:
+//
+//  1. Literal channel-ID hit via LookupRigForChannel (existing
+//     behaviour wins; source="rig"). The literal lock is released
+//     before the pattern scan begins, so this method is not a
+//     nested-RLock hazard.
+//  2. If no literal hit AND channelName is non-empty, scan the
+//     workspace's pattern index. source="rig-pattern" on hit.
+//
+// Conflict policy when 2+ patterns match:
+//
+//   - Longest pattern wins (more specific patterns beat coarser ones,
+//     so an operator can carve a sub-namespace out of a coarser
+//     claim).
+//   - Equal-length matches break by lexical pattern order ascending
+//     (stable, deterministic across map iteration order).
+//   - Equal-length, equal-pattern collisions across rigs break by
+//     lexical rig key — the only way to reach this branch is for two
+//     rigs in the same workspace to register the exact same pattern,
+//     which is itself a misconfiguration.
+//   - Multi-match cases emit a WARN log line naming every match plus
+//     the resolved winner so operators see the contradictory binding
+//     in adapter logs.
+//
+// channelName="" disables the pattern path entirely. Callers that
+// don't have a channel-name in hand (block_actions, view_submission)
+// should use LookupRigForChannel directly.
+func (r *rigMappingRegistry) LookupRigForChannelName(workspaceID, channelID, channelName string) (rigMappingDiskRecord, string, bool) {
+	if rec, src, ok := r.LookupRigForChannel(workspaceID, channelID); ok {
+		return rec, src, true
+	}
+	if channelName == "" {
+		return rigMappingDiskRecord{}, "", false
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	type match struct {
+		rigKey  string
+		pattern string
+	}
+	prefix := workspaceID + ":"
+	var matches []match
+	for rigKey, patterns := range r.byPattern {
+		if !strings.HasPrefix(rigKey, prefix) {
+			continue
+		}
+		for _, p := range patterns {
+			ok, err := path.Match(p, channelName)
+			if err != nil {
+				// Patterns are validated at write/load — reaching this
+				// branch means the registry was corrupted out-of-band.
+				// Skip the pattern rather than fail the lookup.
+				continue
+			}
+			if ok {
+				matches = append(matches, match{rigKey: rigKey, pattern: p})
+			}
+		}
+	}
+	if len(matches) == 0 {
+		return rigMappingDiskRecord{}, "", false
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if len(matches[i].pattern) != len(matches[j].pattern) {
+			return len(matches[i].pattern) > len(matches[j].pattern)
+		}
+		if matches[i].pattern != matches[j].pattern {
+			return matches[i].pattern < matches[j].pattern
+		}
+		return matches[i].rigKey < matches[j].rigKey
+	})
+	if len(matches) > 1 {
+		summary := make([]string, 0, len(matches))
+		for _, m := range matches {
+			summary = append(summary, fmt.Sprintf("%s=>%s", m.pattern, m.rigKey))
+		}
+		log.Printf("WARN: %d channel_patterns match channel %q in workspace %q: %s; resolved to pattern=%q rig=%q (longest-match wins, lexical tiebreak)",
+			len(matches), channelName, workspaceID, strings.Join(summary, ", "),
+			matches[0].pattern, matches[0].rigKey)
+	}
+	rec, ok := r.byKey[matches[0].rigKey]
+	if !ok {
+		return rigMappingDiskRecord{}, "", false
+	}
+	return rec, "rig-pattern", true
 }
 
 // Len returns the number of records currently loaded. Read-locked so
@@ -445,13 +539,35 @@ func (r *rigMappingRegistry) saveLocked() error {
 // CreatedAt/UpdatedAt mirror the rig record's so observability
 // downstream stays accurate.
 func resolveChannelTarget(chanReg *channelMappingRegistry, rigReg *rigMappingRegistry, workspaceID, channelID string) (channelMappingDiskRecord, string, bool) {
+	return resolveChannelTargetWithName(chanReg, rigReg, workspaceID, channelID, "")
+}
+
+// resolveChannelTargetWithName is the channel-name-aware resolver
+// (gc-px8.9). The signature mirrors resolveChannelTarget plus a
+// channelName argument; channelName="" reduces the function to the
+// legacy literal-only behaviour.
+//
+// Tier order:
+//
+//  1. channel-mapping registry exact (cby.3). This includes both
+//     session and rig targets, so an operator's `gc slack map-channel`
+//     override always beats whatever the rig store would have chosen.
+//  2. rig-mapping registry exact channel-ID (cby.4).
+//  3. rig-mapping registry channel-name pattern (cby.22 storage,
+//     gc-px8.9 resolver). Conflict policy lives in
+//     LookupRigForChannelName.
+//  4. Unbound — the caller writes the help message.
+//
+// Source discriminators returned: "channel", "rig", "rig-pattern", or
+// "" on miss.
+func resolveChannelTargetWithName(chanReg *channelMappingRegistry, rigReg *rigMappingRegistry, workspaceID, channelID, channelName string) (channelMappingDiskRecord, string, bool) {
 	if chanReg != nil {
 		if rec, ok := chanReg.Get(workspaceID, channelID); ok {
 			return rec, "channel", true
 		}
 	}
 	if rigReg != nil {
-		if rec, _, ok := rigReg.LookupRigForChannel(workspaceID, channelID); ok {
+		if rec, src, ok := rigReg.LookupRigForChannelName(workspaceID, channelID, channelName); ok {
 			return channelMappingDiskRecord{
 				WorkspaceID: rec.WorkspaceID,
 				ChannelID:   channelID,
@@ -459,7 +575,7 @@ func resolveChannelTarget(chanReg *channelMappingRegistry, rigReg *rigMappingReg
 				TargetID:    rec.RigName,
 				CreatedAt:   rec.CreatedAt,
 				UpdatedAt:   rec.UpdatedAt,
-			}, "rig", true
+			}, src, true
 		}
 	}
 	return channelMappingDiskRecord{}, "", false

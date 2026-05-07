@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -298,5 +299,227 @@ func TestRigMappingSnapshotAtomicallySwapsPatternIndex(t *testing.T) {
 	}
 	if got := reg.PatternsForRig("T1", "alpha"); len(got) != 0 {
 		t.Errorf("v1-revert patterns = %v, want empty", got)
+	}
+}
+
+// helper used by the LookupRigForChannelName tests below to populate a
+// fresh registry with a record. Keeps the table-style tests terse.
+func setRig(t *testing.T, reg *rigMappingRegistry, workspace, rig string, channelIDs, patterns []string) {
+	t.Helper()
+	now := time.Now().UTC()
+	if err := reg.Set(rigMappingDiskRecord{
+		WorkspaceID:     workspace,
+		RigName:         rig,
+		ChannelIDs:      channelIDs,
+		ChannelPatterns: patterns,
+		CreatedAt:       now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("Set %s/%s: %v", workspace, rig, err)
+	}
+}
+
+// TestLookupRigForChannelNameLiteralWinsOverPattern pins the precedence
+// contract: when a literal channel-ID hit and a pattern hit both exist
+// for the same channel, the literal hit wins (cby.22 design — existing
+// behaviour is unchanged).
+func TestLookupRigForChannelNameLiteralWinsOverPattern(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "literalrig", []string{"C1"}, nil)
+	setRig(t, reg, "T1", "patternrig", nil, []string{"oversight-*"})
+
+	rec, src, ok := reg.LookupRigForChannelName("T1", "C1", "oversight-platform")
+	if !ok {
+		t.Fatal("ok=false; literal should have hit")
+	}
+	if src != "rig" {
+		t.Errorf("source = %q, want rig", src)
+	}
+	if rec.RigName != "literalrig" {
+		t.Errorf("RigName = %q, want literalrig (literal beats pattern)", rec.RigName)
+	}
+}
+
+// TestLookupRigForChannelNamePatternHitWhenLiteralMisses pins tier 3:
+// no literal channel-ID hit, but the channel name matches a registered
+// pattern → returned with source="rig-pattern".
+func TestLookupRigForChannelNamePatternHitWhenLiteralMisses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "oversight", nil, []string{"oversight-*"})
+
+	rec, src, ok := reg.LookupRigForChannelName("T1", "C-UNBOUND", "oversight-platform")
+	if !ok {
+		t.Fatal("ok=false; pattern should have hit")
+	}
+	if src != "rig-pattern" {
+		t.Errorf("source = %q, want rig-pattern", src)
+	}
+	if rec.RigName != "oversight" {
+		t.Errorf("RigName = %q, want oversight", rec.RigName)
+	}
+}
+
+// TestLookupRigForChannelNameEmptyNameSkipsPatterns confirms the
+// resolver does NOT consult patterns when the caller has no channel
+// name in hand. Mirrors the legacy LookupRigForChannel behaviour.
+func TestLookupRigForChannelNameEmptyNameSkipsPatterns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "oversight", nil, []string{"*"})
+
+	if _, src, ok := reg.LookupRigForChannelName("T1", "C-UNBOUND", ""); ok {
+		t.Errorf("ok=true with empty channelName; pattern matching must be gated on a non-empty name. src=%q", src)
+	}
+}
+
+// TestLookupRigForChannelNameLongestMatchWins pins the conflict policy:
+// when multiple patterns match, the longer pattern beats the shorter.
+// Rationale: longer patterns are more specific and must take precedence
+// so an operator can carve a sub-namespace out of a coarser claim.
+func TestLookupRigForChannelNameLongestMatchWins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "broad", nil, []string{"oversight-*"})
+	setRig(t, reg, "T1", "narrow", nil, []string{"oversight-platform-*"})
+
+	rec, src, ok := reg.LookupRigForChannelName("T1", "C-X", "oversight-platform-deploys")
+	if !ok {
+		t.Fatal("ok=false")
+	}
+	if src != "rig-pattern" {
+		t.Errorf("source = %q, want rig-pattern", src)
+	}
+	if rec.RigName != "narrow" {
+		t.Errorf("RigName = %q, want narrow (longest pattern wins)", rec.RigName)
+	}
+}
+
+// TestLookupRigForChannelNameLexicalTiebreak pins the secondary rule:
+// equal-length matches break by lexical pattern order ascending. Without
+// this rule, multi-match resolution would be non-deterministic across
+// map iteration order.
+func TestLookupRigForChannelNameLexicalTiebreak(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "zeta", nil, []string{"team-z-*"})
+	setRig(t, reg, "T1", "alpha", nil, []string{"team-a-*"})
+	// Both patterns are length 8 and both match "team-?-anything". Use a
+	// channel name that lex-sorts under both.
+	setRig(t, reg, "T1", "beta", nil, []string{"team-?-x"})
+
+	// With channel-name "team-a-x" patterns "team-a-*" (len 8) and
+	// "team-?-x" (len 8) both match. Lex order ascending: "team-?-x"
+	// (? < a) wins.
+	rec, _, ok := reg.LookupRigForChannelName("T1", "C-X", "team-a-x")
+	if !ok {
+		t.Fatal("ok=false")
+	}
+	if rec.RigName != "beta" {
+		t.Errorf("RigName = %q, want beta (lex tiebreak: ? < a)", rec.RigName)
+	}
+}
+
+// TestLookupRigForChannelNameLogsMultiMatchConflict pins the operator
+// observability requirement: when 2+ patterns match, the resolver MUST
+// log a WARN that names every match so the conflict is visible in
+// adapter logs even though the runtime result is deterministic.
+func TestLookupRigForChannelNameLogsMultiMatchConflict(t *testing.T) {
+	var logs strings.Builder
+	prevOut := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(prevOut) })
+
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "broad", nil, []string{"oversight-*"})
+	setRig(t, reg, "T1", "narrow", nil, []string{"oversight-platform-*"})
+
+	if _, _, ok := reg.LookupRigForChannelName("T1", "C-X", "oversight-platform-deploys"); !ok {
+		t.Fatal("ok=false")
+	}
+	out := logs.String()
+	if !strings.Contains(out, "WARN") || !strings.Contains(out, "channel_patterns") {
+		t.Errorf("expected multi-match WARN in logs, got: %s", out)
+	}
+	if !strings.Contains(out, "oversight-*") || !strings.Contains(out, "oversight-platform-*") {
+		t.Errorf("expected both patterns named in WARN, got: %s", out)
+	}
+}
+
+// TestLookupRigForChannelNameSingleMatchDoesNotWarn keeps the WARN
+// signal high-information. A single match is the happy path; logging it
+// at WARN would drown out the actual conflict warnings.
+func TestLookupRigForChannelNameSingleMatchDoesNotWarn(t *testing.T) {
+	var logs strings.Builder
+	prevOut := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(prevOut) })
+
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "oversight", nil, []string{"oversight-*"})
+
+	if _, _, ok := reg.LookupRigForChannelName("T1", "C-X", "oversight-platform"); !ok {
+		t.Fatal("ok=false")
+	}
+	if strings.Contains(logs.String(), "WARN") {
+		t.Errorf("single match should not emit WARN; got: %s", logs.String())
+	}
+}
+
+// TestLookupRigForChannelNameWorkspaceScoped pins multi-tenant
+// isolation: a pattern registered under workspace T1 must NOT match a
+// channel name under workspace T2 even when names are identical.
+func TestLookupRigForChannelNameWorkspaceScoped(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "oversight", nil, []string{"oversight-*"})
+
+	if _, _, ok := reg.LookupRigForChannelName("T2", "C-X", "oversight-platform"); ok {
+		t.Errorf("pattern leaked across workspace boundary")
+	}
+}
+
+// TestLookupRigForChannelNameNoMatch covers the unbound case — neither
+// literal nor pattern hits — and confirms the (zero, "", false) shape.
+func TestLookupRigForChannelNameNoMatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rig_mappings.json")
+	reg, err := newRigMappingRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRig(t, reg, "T1", "oversight", nil, []string{"oversight-*"})
+
+	rec, src, ok := reg.LookupRigForChannelName("T1", "C-X", "ops-platform")
+	if ok {
+		t.Errorf("ok=true on unrelated channel; got rec=%+v src=%q", rec, src)
+	}
+	if src != "" {
+		t.Errorf("source on miss = %q, want empty", src)
 	}
 }
