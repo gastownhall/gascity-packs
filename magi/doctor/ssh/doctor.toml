@@ -1,0 +1,2 @@
+description = "Verify sshpass + ssh availability. Fails only when INSTALL_REMOTE_MCP=1; warns otherwise."
+run = "../check-ssh.sh"

@@ -1,0 +1,2 @@
+description = 'Store a magi-namespaced key/value via bd remember (key: magi:<name>)'
+run = '../remember.sh'

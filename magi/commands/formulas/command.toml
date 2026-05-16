@@ -1,0 +1,2 @@
+description = 'List, show, or cook magi-bundled bd formulas'
+run = '../formulas.sh'

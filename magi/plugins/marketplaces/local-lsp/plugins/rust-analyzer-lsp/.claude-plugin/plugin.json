@@ -1,0 +1,5 @@
+{
+  "name": "rust-analyzer-lsp",
+  "description": "Rust code intelligence via rust-analyzer",
+  "version": "1.0.0"
+}

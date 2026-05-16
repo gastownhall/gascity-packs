@@ -1,0 +1,58 @@
+# Codex native execpolicy. This complements hook enforcement by blocking
+# command prefixes before unsandboxed approval can be granted.
+
+prefix_rule(
+    pattern = ["python", "-c"],
+    decision = "forbidden",
+    justification = "Inline Python is ephemeral and bypasses reviewed scripts. Write a checked script or run a module.",
+    match = ["python -c 'print(1)'"],
+)
+
+prefix_rule(
+    pattern = ["python3", "-c"],
+    decision = "forbidden",
+    justification = "Inline Python is ephemeral and bypasses reviewed scripts. Write a checked script or run a module.",
+    match = ["python3 -c 'print(1)'"],
+)
+
+prefix_rule(
+    pattern = ["node", "-e"],
+    decision = "forbidden",
+    justification = "Inline Node is ephemeral and bypasses reviewed scripts. Write a checked script or run a project command.",
+    match = ["node -e 'console.log(1)'"],
+)
+
+prefix_rule(
+    pattern = ["ruby", "-e"],
+    decision = "forbidden",
+    justification = "Inline Ruby is ephemeral and bypasses reviewed scripts.",
+    match = ["ruby -e 'puts 1'"],
+)
+
+prefix_rule(
+    pattern = ["perl", "-e"],
+    decision = "forbidden",
+    justification = "Inline Perl is ephemeral and bypasses reviewed scripts.",
+    match = ["perl -e 'print 1'"],
+)
+
+prefix_rule(
+    pattern = ["pip", "install"],
+    decision = "forbidden",
+    justification = "Do not install into the ambient Python environment. Use the project package manager or a venv.",
+    match = ["pip install requests"],
+)
+
+prefix_rule(
+    pattern = ["pip3", "install"],
+    decision = "forbidden",
+    justification = "Do not install into the ambient Python environment. Use the project package manager or a venv.",
+    match = ["pip3 install requests"],
+)
+
+prefix_rule(
+    pattern = ["mktemp"],
+    decision = "forbidden",
+    justification = "Use project-local scratch directories instead of system temp locations.",
+    match = ["mktemp"],
+)

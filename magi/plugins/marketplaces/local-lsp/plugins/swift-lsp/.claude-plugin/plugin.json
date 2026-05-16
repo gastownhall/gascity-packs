@@ -1,0 +1,5 @@
+{
+  "name": "swift-lsp",
+  "description": "Swift code intelligence via sourcekit-lsp",
+  "version": "1.0.0"
+}

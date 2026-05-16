@@ -1,0 +1,2 @@
+description = "Probe LM Studio's OpenAI-compatible /v1/models endpoint. Warn-only when unreachable."
+run = "../check-lmstudio.sh"

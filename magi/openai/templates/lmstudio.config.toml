@@ -1,0 +1,59 @@
+# LM Studio OpenAI-compat configuration (managed by magi pack)
+# ============================================================================
+# Rendered by magi/openai/deploy_openai.sh from this template. Placeholders
+# of the form __LM_STUDIO_*__ are substituted at deploy time. Edit the
+# resulting config.toml (not this template) to customize a deployment;
+# re-running the deployer backs up the existing file before rewriting.
+# ============================================================================
+
+[meta]
+# Schema version. Bump when adding new top-level tables.
+schema_version = 1
+# Human-readable label for log correlation.
+label = "magi-lm-studio"
+
+[server]
+# Host LM Studio binds to. Use localhost for single-user, 0.0.0.0 for
+# multi-client (LAN-only; do NOT expose LM Studio to the public internet).
+host = "__LM_STUDIO_HOST__"
+# Port LM Studio binds to. Standard LM Studio default is 1234.
+# Stored as a quoted string in the template so this file parses as valid
+# TOML before substitution. deploy_openai.sh strips the quotes after the
+# placeholder is replaced with the numeric port value.
+port = "__LM_STUDIO_PORT__"
+# CORS origins allowed for the /v1/* endpoints. Leave empty to disable CORS.
+# Examples: ["http://localhost:3000", "https://example.invalid"]
+cors_origins = []
+
+[model]
+# Default model identifier loaded on server start. The id matches whatever
+# LM Studio reports under /v1/models. Empty = let LM Studio pick its own
+# default model based on UI state.
+default = "__LM_STUDIO_MODEL__"
+# Default context window the openai-compat layer advertises. Matches the
+# `context_length` returned by /v1/models. Must not exceed the model's
+# actual context window. Quoted in the template so this file is valid
+# TOML at rest; deploy_openai.sh strips the quotes after substitution.
+context_length = "__LM_STUDIO_CONTEXT__"
+
+[autoload]
+# Comma-separated list of model ids that LM Studio loads at startup so they
+# are warm by the time the first request arrives. Reduces first-request
+# latency for steady-state workloads.
+models = ""
+
+[openai_compat]
+# Path prefix LM Studio uses for its OpenAI-compatible endpoints. Default
+# is /v1. Changing this also changes the URL `magi doctor lmstudio` probes.
+path_prefix = "/v1"
+# When true the layer accepts the legacy `text-davinci-*` completions API
+# in addition to chat completions. Off by default.
+legacy_completions = false
+
+[logging]
+# Path LM Studio writes its access log to. The deployer creates this
+# directory in the target home. Rotation is LM Studio's responsibility.
+access_log = "logs/access.log"
+# When true the server logs full request bodies. Useful for debugging;
+# disables for production to avoid logging PII or secrets.
+log_request_bodies = false

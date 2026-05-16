@@ -1,0 +1,2 @@
+description = 'Uninstall a magi target runtime, with a two-flag gate for full purge'
+run = '../uninstall.sh'

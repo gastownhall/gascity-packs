@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "cleanupPeriodDays": 90,
+  "env": {
+    "CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP": "1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
+    "MAX_MCP_OUTPUT_TOKENS": "50000",
+    "BASH_DEFAULT_TIMEOUT_MS": "300000",
+    "BASH_MAX_TIMEOUT_MS": "600000",
+    "BASH_MAX_OUTPUT_LENGTH": "1000000",
+    "MCP_TIMEOUT": "60000",
+    "MCP_TOOL_TIMEOUT": "120000",
+    "DISABLE_PROMPT_CACHING": "0",
+    "DISABLE_COST_WARNINGS": "0",
+    "SKIP_QUALITY_CHECK": "1",
+    "HARNESS_ENABLE_REMOTE_MCP": "__HARNESS_ENABLE_REMOTE_MCP__",
+    "HARNESS_ENABLE_LAUNCHD": "__HARNESS_ENABLE_LAUNCHD__",
+    "HARNESS_ENABLE_GLOBAL_CLAUDE_MD": "__HARNESS_ENABLE_GLOBAL_CLAUDE_MD__",
+    "HARNESS_ENABLE_LM_STUDIO": "__HARNESS_ENABLE_LM_STUDIO__",
+    "LM_STUDIO_HOST": "__LM_STUDIO_HOST__",
+    "LM_STUDIO_PORT": "__LM_STUDIO_PORT__",
+    "LM_STUDIO_URL": "__LM_STUDIO_URL__"
+  },
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "deny": []
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "guidelines-retriever",
+    "project-memory",
+    "system-info",
+    "filesystem-local",
+    "sequential-thinking",
+    "memory-local",
+    "everything-local",
+    "tree-sitter",
+    "remote-shell",
+    "remote-filesystem",
+    "remote-memory",
+    "remote-fetch",
+    "remote-git",
+    "remote-sqlite",
+    "remote-sequential-thinking",
+    "remote-everything",
+    "remote-brave-search",
+    "remote-github",
+    "remote-puppeteer",
+    "remote-postgres",
+    "remote-gitea",
+    "remote-context7"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/session-start-cleanup.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/guidelines/session-start-guidelines.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/history-per-project.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/enforcement-cache.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/session-tracker.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/inject-global-feedback.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/sweep-stale-artifacts.sh",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/session-tracker.sh",
+            "timeout": 1500
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/detect-compaction.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/guidelines/force-prohibited-read.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/clear-extensionless-tracking.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/rules/enforce-rules.sh",
+            "timeout": 320000
+          },
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/guidelines/enforce-guidelines.sh",
+            "timeout": 320000
+          },
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/enforce-ssh-sshpass.sh",
+            "timeout": 5000
+          },
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/enforce-file-extension.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/enforce-agent-routing.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CLAUDE_HOME__/enforcement/lifecycle/stop-verify-quality.sh",
+            "timeout": 120000
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "pyright-lsp@local-lsp": true,
+    "typescript-lsp@local-lsp": true,
+    "rust-analyzer-lsp@local-lsp": true,
+    "clangd-lsp@local-lsp": true,
+    "swift-lsp@local-lsp": true,
+    "bash-lsp@local-lsp": true,
+    "csharp-lsp@local-lsp": true,
+    "java-lsp@local-lsp": true
+  },
+  "extraKnownMarketplaces": {
+    "local-lsp": {
+      "source": {
+        "source": "directory",
+        "path": "__CLAUDE_HOME__/plugins/marketplaces/local-lsp"
+      }
+    }
+  },
+  "effortLevel": "high",
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark-daltonized",
+  "skipAutoPermissionPrompt": true
+}

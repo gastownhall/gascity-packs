@@ -1,0 +1,2 @@
+description = "Verify MAGI_UTILITIES_SOURCE is configured and setup_utilities.sh is executable. Warn-only on missing."
+run = "../check-utilities.sh"

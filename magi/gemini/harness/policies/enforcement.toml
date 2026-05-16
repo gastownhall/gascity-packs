@@ -1,0 +1,55 @@
+# Gemini enforcement policy skeleton (managed by magi pack)
+# ============================================================================
+# This file is written into ${GEMINI_HOME}/policies/enforcement.toml by the
+# magi deploy_gemini.sh installer. Existing files are backed up with a
+# timestamp suffix; this skeleton ships defaults the installer relies on.
+# Comments document each section so operators can edit safely.
+# ============================================================================
+
+[meta]
+# Schema version for the policy file. Bump when adding new top-level tables.
+schema_version = 1
+# Human-readable label that identifies this policy bundle in the logs.
+label = "magi-gemini-default"
+
+[features]
+# Master switch for the Gemini hook bridge. When false the gemini-hook.sh
+# stub still runs but does not consult any policy table.
+gemini_hooks = true
+# Enable LM Studio quality-review wiring for postPrompt events. Requires
+# INSTALL_LM_STUDIO=1 at deploy time plus a reachable LM Studio endpoint.
+lm_studio_review = false
+
+[limits]
+# Maximum characters of model output per turn the hook will inspect before
+# returning control. Higher values increase review fidelity at latency cost.
+turn_content_limit = 8192
+# Maximum seconds the LM Studio review subprocess is allowed before the hook
+# gives up and returns the original payload.
+lm_studio_timeout_seconds = 30
+
+[lm_studio]
+# OpenAI-compatible LM Studio endpoint. host/port/model are populated by the
+# installer from environment variables or .env values.
+host = "localhost"
+port = 1234
+model = ""
+
+[events.prePrompt]
+# When true the hook logs prePrompt events to enforcement/logs. Useful for
+# auditing what Gemini receives before model inference.
+log = true
+
+[events.postPrompt]
+# When true the hook logs postPrompt events. The LM Studio review path
+# attaches a verdict only when features.lm_studio_review is true.
+log = true
+
+[events.preCommand]
+# Pre-tool-execution hook logs. Set to false to reduce log volume in busy
+# sessions.
+log = true
+
+[events.postCommand]
+# Post-tool-execution hook logs. Captures stdout/stderr summaries.
+log = true

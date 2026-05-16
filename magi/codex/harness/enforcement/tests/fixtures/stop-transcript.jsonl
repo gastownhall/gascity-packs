@@ -1,0 +1,5 @@
+{"type":"session_meta","payload":{"id":"fixture-stop-unreachable","cwd":"/home/example/.codex/enforcement"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Implement a Codex Stop quality verifier."}]}}
+{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"shellcheck ~/.codex/enforcement/bin/codex-hook.sh\",\"workdir\":\"~/.codex/enforcement\"}","call_id":"call_fixture_shellcheck"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_fixture_shellcheck","output":"exit=0"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Implemented the Stop quality verifier and ran shellcheck."}]}}

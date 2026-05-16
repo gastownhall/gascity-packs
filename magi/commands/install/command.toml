@@ -1,0 +1,2 @@
+description = 'Install or update a magi target runtime (claude, codex, gemini, openai, or all)'
+run = '../install.sh'

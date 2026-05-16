@@ -1,0 +1,2 @@
+description = "Verify launchctl on Darwin. Linux is not applicable and exits 0."
+run = "../check-launchd.sh"

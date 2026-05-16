@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+.gc/
+.work/
+.venv/
+logs/
+_logs/
+.scratch/
+claude/.venv/
+codex/.venv/
+project_analyzer/.venv/
+project_analyzer/.work/
+project_analyzer/logs/
+*/.env
+.DS_Store

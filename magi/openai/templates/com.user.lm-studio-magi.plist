@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.__USER__.lm-studio-magi</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__LMS_PATH__</string>
+        <string>server</string>
+        <string>start</string>
+        <string>--port</string>
+        <string>__LM_STUDIO_PORT__</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>/Users/__USER__</string>
+    <key>StandardOutPath</key>
+    <string>/Users/__USER__/Library/Logs/lm-studio-magi.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/__USER__/Library/Logs/lm-studio-magi.stderr.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>

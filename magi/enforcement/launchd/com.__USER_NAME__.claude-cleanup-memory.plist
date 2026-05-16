@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.__USER_NAME__.claude-cleanup-memory</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/bash</string>
+        <string>__CLAUDE_HOME__/enforcement/cleanup/quarter-hourly-memory-sync.sh</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>StandardOutPath</key>
+    <string>__CLAUDE_HOME__/_logs/cleanup/launchd-memory.out</string>
+    <key>StandardErrorPath</key>
+    <string>__CLAUDE_HOME__/_logs/cleanup/launchd-memory.err</string>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>

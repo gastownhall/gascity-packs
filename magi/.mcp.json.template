@@ -1,0 +1,228 @@
+{
+  "mcpServers": {
+    "guidelines-retriever": {
+      "command": "node",
+      "args": [
+        "__CLAUDE_HOME__/mcp-servers/guidelines-retriever/index.js"
+      ]
+    },
+    "project-memory": {
+      "command": "node",
+      "args": [
+        "__CLAUDE_HOME__/mcp-servers/project-memory/index.js"
+      ]
+    },
+    "system-info": {
+      "command": "node",
+      "args": [
+        "__CLAUDE_HOME__/mcp-servers/system-info/index.js"
+      ]
+    },
+    "remote-shell": {
+      "command": "node",
+      "args": [
+        "__CLAUDE_HOME__/mcp-servers/remote-shell/index.js"
+      ],
+      "env": {
+        "MCP_SSH_TIMEOUT": "30000"
+      }
+    },
+    "filesystem-local": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "__USER_HOME__"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "memory-local": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ]
+    },
+    "everything-local": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-everything"
+      ]
+    },
+    "remote-filesystem": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-filesystem __LSP_REMOTE_HOME__\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-memory": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-memory\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-fetch": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-server-fetch\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-git": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-server-git\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-sqlite": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-server-sqlite\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-sequential-thinking": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-sequential-thinking\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-everything": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-everything\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-brave-search": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"BRAVE_API_KEY=${BRAVE_API_KEY} __LSP_REMOTE_HOME__/.local/bin/mcp-brave-search\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__",
+        "BRAVE_API_KEY": "__BRAVE_API_KEY__"
+      }
+    },
+    "remote-github": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN} __LSP_REMOTE_HOME__/.local/bin/mcp-github\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__",
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "__GITHUB_PERSONAL_ACCESS_TOKEN__"
+      }
+    },
+    "remote-puppeteer": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-puppeteer\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-postgres": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"POSTGRES_CONNECTION_STRING=postgresql://${LSP_USER}:${LSP_PASS}@localhost:5432/claude_mcp __LSP_REMOTE_HOME__/.local/bin/mcp-postgres postgresql://${LSP_USER}:${LSP_PASS}@localhost:5432/claude_mcp\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "remote-gitea": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"GITEA_ACCESS_TOKEN=${MY_GITEA_API_TOKEN} GITEA_HOST=http://${MY_GITEA_HOST}:${MY_GITEA_PORT} __LSP_REMOTE_HOME__/.local/bin/mcp-gitea -t stdio --token ${MY_GITEA_API_TOKEN} --host http://${MY_GITEA_HOST}:${MY_GITEA_PORT}\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__",
+        "MY_GITEA_API_TOKEN": "__MY_GITEA_API_TOKEN__",
+        "MY_GITEA_HOST": "__MY_GITEA_HOST__",
+        "MY_GITEA_PORT": "__MY_GITEA_PORT__"
+      }
+    },
+    "remote-context7": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec sshpass -p \"${LSP_PASS}\" ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \"${LSP_USER}@${LSP_IP}\" \"__LSP_REMOTE_HOME__/.local/bin/mcp-context7\""
+      ],
+      "env": {
+        "LSP_IP": "__LSP_IP__",
+        "LSP_USER": "__LSP_USER__",
+        "LSP_PASS": "__LSP_PASS__"
+      }
+    },
+    "tree-sitter": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-tree-sitter"
+      ],
+      "env": {}
+    }
+  }
+}

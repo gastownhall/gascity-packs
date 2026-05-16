@@ -1,0 +1,136 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2d3748', 'primaryTextColor': '#e2e8f0', 'primaryBorderColor': '#4a5568', 'lineColor': '#63b3ed', 'secondaryColor': '#1a365d', 'tertiaryColor': '#2a4365', 'noteTextColor': '#e2e8f0', 'noteBkgColor': '#2d3748', 'noteBorderColor': '#4a5568'}}}%%
+
+graph TB
+    subgraph DISCOVERY["Plugin Discovery (Startup)"]
+        direction TB
+        S1["1. Claude Code reads ${MAGI_PACK_DIR}/settings.json"]
+        S2["2. Finds enabledPlugins map<br/>(7 plugins: pyright-lsp@local-lsp, etc.)"]
+        S3["3. Finds extraKnownMarketplaces<br/>(local-lsp marketplace)"]
+        S4["4. Reads known_marketplaces.json<br/>(resolves marketplace path)"]
+        S5["5. Reads installed_plugins.json<br/>(resolves cache paths per plugin)"]
+        S1 --> S2 --> S3 --> S4 --> S5
+    end
+
+    subgraph LOADING["Plugin Loading"]
+        direction TB
+        L1["For each enabled plugin:"]
+        L2["Load ${MAGI_PACK_DIR}/plugins/cache/local-lsp/<name>/1.0.0/"]
+        L3["Read .claude-plugin/plugin.json (metadata)"]
+        L4["Read .lsp.json (server config + extension map)"]
+        L1 --> L2 --> L3 --> L4
+    end
+
+    subgraph ACTIVATION["Runtime Activation"]
+        direction TB
+        A1["User references a file (e.g., main.py)"]
+        A2["Claude Code checks file extension (.py)"]
+        A3["Matches extensionToLanguage map<br/>'.py' --> 'python' --> pyright-lsp"]
+        A4["Spawns LSP server process via stdio"]
+        A5["Communicates via Language Server Protocol"]
+        A1 --> A2 --> A3 --> A4 --> A5
+    end
+
+    subgraph LSP_PROTOCOL["LSP Protocol Messages"]
+        direction LR
+        LP1["textDocument/didOpen"]
+        LP2["textDocument/completion"]
+        LP3["textDocument/hover"]
+        LP4["textDocument/definition"]
+        LP5["textDocument/publishDiagnostics"]
+        LP6["textDocument/references"]
+    end
+
+    subgraph PLUGINS["7 LSP Plugins (local-lsp marketplace)"]
+        direction TB
+
+        subgraph NPM_PLUGINS["npm-installed (4)"]
+            direction LR
+            P_PY["pyright-lsp<br/>Binary: pyright-langserver<br/>Args: --stdio<br/>Extensions: .py, .pyi<br/>Language: python"]
+            P_TS["typescript-lsp<br/>Binary: typescript-language-server<br/>Args: --stdio<br/>Extensions: .ts, .tsx, .js,<br/>.jsx, .mjs, .mts<br/>Languages: typescript,<br/>typescriptreact, javascript,<br/>javascriptreact"]
+            P_BASH["bash-lsp<br/>Binary: bash-language-server<br/>Args: start<br/>Extensions: .sh, .bash, .zsh<br/>Language: shellscript"]
+        end
+
+        subgraph DOTNET_PLUGINS["dotnet-installed (1)"]
+            P_CS["csharp-lsp<br/>Binary: $HOME/.dotnet/tools/csharp-ls<br/>Extensions: .cs, .csx<br/>Language: csharp"]
+        end
+
+        subgraph MANUAL_PLUGINS["Manual install (3)"]
+            direction LR
+            P_RUST["rust-analyzer-lsp<br/>Binary: rust-analyzer<br/>Extensions: .rs<br/>Language: rust"]
+            P_CLANG["clangd-lsp<br/>Binary: clangd<br/>Extensions: .c, .h, .cpp,<br/>.cxx, .cc, .hpp, .hxx, .hh<br/>Languages: c, cpp"]
+            P_SWIFT["swift-lsp<br/>Binary: sourcekit-lsp<br/>Extensions: .swift<br/>Language: swift"]
+        end
+    end
+
+    subgraph MARKETPLACE["Marketplace File Structure"]
+        direction TB
+        MK_ROOT["${MAGI_PACK_DIR}/plugins/marketplaces/local-lsp/"]
+        MK_MANIFEST[".claude-plugin/marketplace.json<br/>name: local-lsp<br/>owner: __USER_NAME__<br/>version: 1.0.0<br/>pluginRoot: ./plugins"]
+        MK_PLUGINS["plugins/<name>/<br/>.claude-plugin/plugin.json<br/>.lsp.json"]
+        MK_ROOT --> MK_MANIFEST
+        MK_ROOT --> MK_PLUGINS
+    end
+
+    subgraph CACHE["Plugin Cache (Runtime)"]
+        direction TB
+        C_ROOT["${MAGI_PACK_DIR}/plugins/cache/local-lsp/"]
+        C_PLUGIN["<name>/1.0.0/<br/>.claude-plugin/plugin.json<br/>.lsp.json"]
+        C_ROOT --> C_PLUGIN
+    end
+
+    subgraph CONFIG_FILES["Configuration Registry"]
+        direction LR
+        CF1["settings.json<br/>enabledPlugins: 7 entries<br/>extraKnownMarketplaces: local-lsp"]
+        CF2["known_marketplaces.json<br/>source: directory<br/>path: marketplaces/local-lsp"]
+        CF3["installed_plugins.json<br/>version: 2<br/>plugins: 7 entries<br/>scope: user"]
+    end
+
+    subgraph INSTALL["Installation Scripts"]
+        direction TB
+        I1["${MAGI_PACK_DIR}/scripts/setup-mcp-lsp.sh<br/>(primary orchestrator)"]
+        I2["${MAGI_PACK_DIR}/scripts/install-lsp-binaries.sh<br/>(binary installer)"]
+        I1 -->|"creates marketplace dirs,<br/>writes all JSON manifests,<br/>writes .lsp.json files"| MARKETPLACE
+        I1 -->|"writes cache copies"| CACHE
+        I1 -->|"generates"| CF1
+        I1 -->|"generates"| CF2
+        I1 -->|"generates"| CF3
+        I1 -->|"delegates binary install"| I2
+        I2 -->|"npm install -g"| NPM_PLUGINS
+        I2 -->|"dotnet tool install --global"| DOTNET_PLUGINS
+        I2 -->|"status check only"| MANUAL_PLUGINS
+    end
+
+    subgraph IDE_COMPARE["Same Binaries Used By"]
+        direction LR
+        IDE1["VS Code<br/>Extensions/Pylance"]
+        IDE2["Neovim<br/>nvim-lspconfig"]
+        IDE3["JetBrains<br/>Built-in + external"]
+        IDE4["Claude Code<br/>Plugin system<br/>(this infrastructure)"]
+    end
+
+    S5 --> LOADING
+    L4 --> ACTIVATION
+    A5 --> LSP_PROTOCOL
+    CACHE -->|"read at runtime"| LOADING
+
+    classDef discovery fill:#1a365d,stroke:#63b3ed,stroke-width:2px,color:#e2e8f0
+    classDef loading fill:#2a4365,stroke:#4299e1,stroke-width:2px,color:#e2e8f0
+    classDef activation fill:#22543d,stroke:#48bb78,stroke-width:2px,color:#e2e8f0
+    classDef protocol fill:#553c9a,stroke:#9f7aea,stroke-width:1px,color:#e2e8f0
+    classDef npmPlugin fill:#2a4365,stroke:#63b3ed,stroke-width:1px,color:#e2e8f0
+    classDef dotnetPlugin fill:#44337a,stroke:#b794f4,stroke-width:1px,color:#e2e8f0
+    classDef manualPlugin fill:#742a2a,stroke:#fc8181,stroke-width:1px,color:#e2e8f0
+    classDef config fill:#2d3748,stroke:#a0aec0,stroke-width:1px,color:#e2e8f0
+    classDef install fill:#22543d,stroke:#68d391,stroke-width:2px,color:#e2e8f0
+    classDef ide fill:#1a202c,stroke:#a0aec0,stroke-width:1px,color:#e2e8f0
+
+    class S1,S2,S3,S4,S5 discovery
+    class L1,L2,L3,L4 loading
+    class A1,A2,A3,A4,A5 activation
+    class LP1,LP2,LP3,LP4,LP5,LP6 protocol
+    class P_PY,P_TS,P_BASH npmPlugin
+    class P_CS dotnetPlugin
+    class P_RUST,P_CLANG,P_SWIFT manualPlugin
+    class CF1,CF2,CF3,MK_ROOT,MK_MANIFEST,MK_PLUGINS,C_ROOT,C_PLUGIN config
+    class I1,I2 install
+    class IDE1,IDE2,IDE3,IDE4 ide

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.__USER_NAME__.claude-cleanup-history</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/bash</string>
+        <string>__CLAUDE_HOME__/enforcement/cleanup/hourly-history-partition.sh</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>StandardOutPath</key>
+    <string>__CLAUDE_HOME__/_logs/cleanup/launchd-history.out</string>
+    <key>StandardErrorPath</key>
+    <string>__CLAUDE_HOME__/_logs/cleanup/launchd-history.err</string>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>

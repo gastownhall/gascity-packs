@@ -1,0 +1,61 @@
+{
+  "name": "local-lsp",
+  "owner": {
+    "name": "__USER_NAME__"
+  },
+  "metadata": {
+    "description": "Local LSP plugins for Claude Code code intelligence",
+    "version": "1.0.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "pyright-lsp",
+      "source": "./plugins/pyright-lsp",
+      "description": "Python code intelligence via Pyright language server",
+      "version": "1.0.0"
+    },
+    {
+      "name": "typescript-lsp",
+      "source": "./plugins/typescript-lsp",
+      "description": "TypeScript and JavaScript code intelligence via typescript-language-server",
+      "version": "1.0.0"
+    },
+    {
+      "name": "rust-analyzer-lsp",
+      "source": "./plugins/rust-analyzer-lsp",
+      "description": "Rust code intelligence via rust-analyzer",
+      "version": "1.0.0"
+    },
+    {
+      "name": "clangd-lsp",
+      "source": "./plugins/clangd-lsp",
+      "description": "C and C++ code intelligence via clangd",
+      "version": "1.0.0"
+    },
+    {
+      "name": "swift-lsp",
+      "source": "./plugins/swift-lsp",
+      "description": "Swift code intelligence via sourcekit-lsp",
+      "version": "1.0.0"
+    },
+    {
+      "name": "bash-lsp",
+      "source": "./plugins/bash-lsp",
+      "description": "Bash and shell script code intelligence via bash-language-server",
+      "version": "1.0.0"
+    },
+    {
+      "name": "csharp-lsp",
+      "source": "./plugins/csharp-lsp",
+      "description": "C# code intelligence via csharp-ls",
+      "version": "1.0.0"
+    },
+    {
+      "name": "java-lsp",
+      "source": "./plugins/java-lsp",
+      "description": "Java code intelligence via Eclipse JDT Language Server",
+      "version": "1.0.0"
+    }
+  ]
+}

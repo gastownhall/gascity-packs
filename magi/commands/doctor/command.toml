@@ -1,0 +1,2 @@
+description = 'Run every magi precondition check; exits 0 ok, 1 fail, 2 warn'
+run = '../doctor.sh'

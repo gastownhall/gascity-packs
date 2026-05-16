@@ -1,0 +1,5 @@
+{
+  "name": "clangd-lsp",
+  "description": "C and C++ code intelligence via clangd",
+  "version": "1.0.0"
+}

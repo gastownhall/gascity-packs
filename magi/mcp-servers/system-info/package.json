@@ -1,0 +1,9 @@
+{
+  "name": "mcp-system-info",
+  "version": "1.0.0",
+  "description": "MCP server providing system information, process monitoring, and disk/network stats",
+  "main": "index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

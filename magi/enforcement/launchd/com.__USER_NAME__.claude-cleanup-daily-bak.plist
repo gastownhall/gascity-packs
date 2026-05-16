@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.__USER_NAME__.claude-cleanup-daily-bak</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/bash</string>
+        <string>__CLAUDE_HOME__/enforcement/cleanup/daily-bak-sweep.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>__CLAUDE_HOME__/_logs/cleanup/launchd-daily-bak.out</string>
+    <key>StandardErrorPath</key>
+    <string>__CLAUDE_HOME__/_logs/cleanup/launchd-daily-bak.err</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

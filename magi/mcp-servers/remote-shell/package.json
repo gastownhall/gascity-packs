@@ -1,0 +1,9 @@
+{
+  "name": "mcp-remote-shell",
+  "version": "1.0.0",
+  "description": "MCP server for executing shell commands on remote host via SSH",
+  "main": "index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

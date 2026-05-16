@@ -1,0 +1,122 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2d3748', 'primaryTextColor': '#e2e8f0', 'primaryBorderColor': '#4a5568', 'lineColor': '#63b3ed', 'secondaryColor': '#1a365d', 'tertiaryColor': '#2a4365', 'noteTextColor': '#e2e8f0', 'noteBkgColor': '#2d3748', 'noteBorderColor': '#4a5568'}}}%%
+
+graph TB
+    subgraph CLAUDE["Claude Code CLI (macOS)"]
+        direction TB
+        STARTUP["Startup: reads ${MAGI_PACK_DIR}/.mcp.json"]
+        LIST["ListTools / ListResources"]
+        CALL["CallTool invocations during conversations"]
+        STARTUP --> LIST --> CALL
+    end
+
+    subgraph LOCAL_CUSTOM["Local Custom Servers (Node.js)"]
+        direction TB
+        GR["guidelines-retriever<br/>5 tools | guidelines://* resources<br/>${MAGI_PACK_DIR}/mcp-servers/guidelines-retriever/index.js"]
+        PM["project-memory<br/>8 tools | 3 resources<br/>${MAGI_PACK_DIR}/mcp-servers/project-memory/index.js"]
+        SI["system-info<br/>7 tools<br/>${MAGI_PACK_DIR}/mcp-servers/system-info/index.js"]
+        RS["remote-shell<br/>5 tools: remote_exec, remote_file_read,<br/>remote_file_list, remote_service_status,<br/>remote_system_info<br/>${MAGI_PACK_DIR}/mcp-servers/remote-shell/index.js"]
+    end
+
+    subgraph LOCAL_NPX["Local npx Servers"]
+        direction TB
+        FS_L["filesystem-local<br/>@modelcontextprotocol/server-filesystem<br/>scoped to $HOME"]
+        ST_L["sequential-thinking<br/>@modelcontextprotocol/server-sequential-thinking"]
+        MEM_L["memory-local<br/>@modelcontextprotocol/server-memory"]
+        EV_L["everything-local<br/>@modelcontextprotocol/server-everything"]
+    end
+
+    subgraph CREDS["Credential Flow"]
+        direction TB
+        SC["${MAGI_PACK_DIR}/enforcement/env.remote<br/>RUNTIME ENV"]
+        SC --> |"LSP_IP, LSP_USER, LSP_PASS"| RS
+        SC --> |"sourced by each remote<br/>SSH command in .mcp.json"| SSH_CMD
+    end
+
+    subgraph SSH_LAYER["SSH Transport Layer"]
+        direction TB
+        SSH_CMD["bash -c 'set -a;<br/>source ${MAGI_PACK_DIR}/enforcement/env.remote;<br/>set +a;<br/>exec sshpass -p $LSP_PASS ssh<br/>-o ConnectTimeout=10<br/>-o StrictHostKeyChecking=no<br/>-o ServerAliveInterval=30<br/>-o ServerAliveCountMax=120<br/>$LSP_USER@$LSP_IP<br/>/home/$LSP_USER/.local/bin/mcp-*'"]
+    end
+
+    subgraph REMOTE["Remote Server (Ubuntu 24.04)<br/>/home/$LSP_USER/.local/bin/"]
+        direction TB
+
+        subgraph NPX_WRAP["npx Wrappers (9)"]
+            direction LR
+            R_FS["mcp-filesystem"]
+            R_MEM["mcp-memory"]
+            R_EV["mcp-everything"]
+            R_ST["mcp-sequential-thinking"]
+            R_BS["mcp-brave-search"]
+            R_GH["mcp-github"]
+            R_PP["mcp-puppeteer"]
+            R_PG["mcp-postgres"]
+            R_C7["mcp-context7"]
+        end
+
+        subgraph PIP_WRAP["pip Wrappers (3)"]
+            direction LR
+            R_FETCH["mcp-server-fetch<br/>python3 -m mcp_server_fetch"]
+            R_GIT["mcp-server-git<br/>python3 -m mcp_server_git"]
+            R_SQL["mcp-server-sqlite<br/>python3 -m mcp_server_sqlite"]
+        end
+
+        subgraph GO_BIN["Go Binary (1)"]
+            R_GITEA["mcp-gitea<br/>Gitea MCP v1.0.0<br/>Linux x86_64"]
+        end
+
+        subgraph PG_DB["PostgreSQL"]
+            DB["claude_mcp database<br/>owner: ${LSP_USER}"]
+        end
+    end
+
+    subgraph ENV_FWD["Environment Variable Forwarding"]
+        direction LR
+        E_BRAVE["BRAVE_API_KEY"]
+        E_GH["GITHUB_PERSONAL_ACCESS_TOKEN"]
+        E_PG["POSTGRES_CONNECTION_STRING"]
+        E_GITEA["GITEA_ACCESS_TOKEN<br/>GITEA_HOST"]
+    end
+
+    CALL -->|"stdio"| LOCAL_CUSTOM
+    CALL -->|"stdio (npx -y)"| LOCAL_NPX
+    CALL -->|"stdio via SSH"| SSH_CMD
+    SSH_CMD --> REMOTE
+
+    E_BRAVE --> R_BS
+    E_GH --> R_GH
+    E_PG --> R_PG
+    E_GITEA --> R_GITEA
+    R_PG --> DB
+
+    subgraph CONFIG["Configuration Files"]
+        direction LR
+        MCP_JSON["${MAGI_PACK_DIR}/.mcp.json<br/>21 server definitions"]
+        SETTINGS["${MAGI_PACK_DIR}/settings.json<br/>enabledMcpjsonServers (21)"]
+        REMOTE_ENV["${MAGI_PACK_DIR}/enforcement/env.remote<br/>9 required variables"]
+    end
+
+    subgraph SETUP["Installation"]
+        direction LR
+        SCRIPT["${MAGI_PACK_DIR}/scripts/setup-mcp-lsp.sh<br/>Turnkey, idempotent, self-healing"]
+        SCRIPT -->|"generates"| MCP_JSON
+        SCRIPT -->|"updates"| SETTINGS
+        SCRIPT -->|"reads"| REMOTE_ENV
+        SCRIPT -->|"installs binaries on"| REMOTE
+        SCRIPT -->|"generates"| RS
+    end
+
+    classDef localCustom fill:#2a4365,stroke:#63b3ed,stroke-width:2px,color:#e2e8f0
+    classDef localNpx fill:#1a365d,stroke:#4299e1,stroke-width:1px,color:#e2e8f0
+    classDef remote fill:#22543d,stroke:#48bb78,stroke-width:2px,color:#e2e8f0
+    classDef ssh fill:#553c9a,stroke:#9f7aea,stroke-width:2px,color:#e2e8f0
+    classDef cred fill:#742a2a,stroke:#fc8181,stroke-width:2px,color:#e2e8f0
+    classDef config fill:#2d3748,stroke:#a0aec0,stroke-width:1px,color:#e2e8f0
+    classDef claude fill:#1a202c,stroke:#63b3ed,stroke-width:3px,color:#e2e8f0
+
+    class GR,PM,SI,RS localCustom
+    class FS_L,ST_L,MEM_L,EV_L localNpx
+    class R_FS,R_MEM,R_EV,R_ST,R_BS,R_GH,R_PP,R_PG,R_C7,R_FETCH,R_GIT,R_SQL,R_GITEA,DB remote
+    class SSH_CMD ssh
+    class SC,E_BRAVE,E_GH,E_PG,E_GITEA cred
+    class MCP_JSON,SETTINGS,REMOTE_ENV config
+    class STARTUP,LIST,CALL claude

@@ -1,0 +1,130 @@
+description = """
+Magi bootstrap molecule — 5 steps from precondition probe through first analysis.
+
+Wires a fresh installation of a magi target plus a per-project .utilities/
+symlink and an initial analyze pass. The molecule root bead is the control
+bead; all run state lives in its notes via `bd update <root-id> --notes "key: value"`.
+
+## Contract
+
+1. Caller pours with `--var target=<claude|codex|gemini|openai>` and `--var project_path=<abs>`.
+2. Polecat reads steps, executes each in order.
+3. On any step failure marked `on_fail = "continue"`, the molecule keeps running and the root carries `outcome:partial`.
+4. On `on_fail = "stop"`, the chain halts and the root bead carries the failed-step's rc.
+
+## Variables
+
+| Variable | Source | Description |
+|---|---|---|
+| target | caller (default "claude") | Magi install target |
+| project_path | caller (required) | Absolute path to the project to bootstrap and analyze |
+
+## Failure modes
+
+| Situation | Action |
+|---|---|
+| doctor returns rc=1 | stop; operator fixes the failing precondition before retry |
+| install fails | stop; root bead carries outcome:1; operator inspects log under .gc/runtime/packs/magi/logs/ |
+| bootstrap-project fails | continue; remaining children remain ready; root bead notes the partial state |
+| analyze fails | continue; the install bead remains closed with outcome:0 |
+"""
+formula = "mol-magi-bootstrap"
+version = 1
+
+[vars]
+[vars.target]
+description = "Magi install target (claude | codex | gemini | openai)"
+default = "claude"
+
+[vars.project_path]
+description = "Absolute path to the project root to bootstrap and analyze"
+required = true
+
+[[steps]]
+id = "doctor"
+title = "Run magi doctor"
+description = """
+Verify every magi precondition before any deploy mutation.
+
+```bash
+gc magi doctor
+```
+
+Exit codes:
+- 0 — every check passed; proceed to install
+- 2 — one or more warns; proceed and record the partial state in root bead notes
+- 1 — at least one fail; stop and report
+
+**Exit criteria:** Doctor returned 0 or 2; rc recorded in root bead notes.
+"""
+on_fail = "stop"
+
+[[steps]]
+id = "install"
+title = "Install magi target {{target}}"
+needs = ["doctor"]
+description = """
+Install the named target. The orchestrator forwards `--target` plus every
+env-passthrough var to `<target>/deploy_*.sh`.
+
+```bash
+gc magi install --target {{target}} --non-interactive
+```
+
+On claude/codex targets, magi executes `${MAGI_UTILITIES_SOURCE}/setup_utilities.sh -y`
+against the deployed home as a post-step so the `.utilities/` symlink resolves.
+
+**Exit criteria:** Install bead closed with `outcome:0`; `state.json` `installs.{{target}}.installed=true`.
+"""
+on_fail = "stop"
+
+[[steps]]
+id = "bootstrap-project"
+title = "Wire .utilities into {{project_path}}"
+needs = ["install"]
+description = """
+Run `setup_utilities.sh -y` against the project root so the in-project `.utilities`
+symlink resolves to the per-user shared tree at `${MAGI_UTILITIES_SOURCE}`.
+
+```bash
+gc magi bootstrap-project {{project_path}}
+```
+
+When `MAGI_UTILITIES_SOURCE` is unresolved, this step exits rc=1 and the molecule
+records a partial outcome.
+
+**Exit criteria:** `{{project_path}}/.utilities` resolves to a symlink pointing at the source tree.
+"""
+on_fail = "continue"
+
+[[steps]]
+id = "status"
+title = "Report magi state"
+needs = ["bootstrap-project"]
+description = """
+Read state.json plus open `pack:magi` beads. The status verb reconciles orphaned
+`inflight.json` sentinels as its first action.
+
+```bash
+gc magi status --json
+```
+
+**Exit criteria:** state.json contents printed; orphans (if any) closed; rc=0.
+"""
+on_fail = "continue"
+
+[[steps]]
+id = "analyze"
+title = "First-pass project analyze of {{project_path}}"
+needs = ["status"]
+description = """
+Walk the project bottom-up; write `_DIRECTORY_OVERVIEW.md` into every directory.
+The analyzer requires LM Studio reachable at the configured URL.
+
+```bash
+gc magi analyze {{project_path}}
+```
+
+**Exit criteria:** Overview files present at every traversed directory; analyze bead closed.
+"""
+on_fail = "continue"

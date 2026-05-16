@@ -1,0 +1,80 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CODEX_HOME__/enforcement/bin/codex-hook.sh SessionStart",
+            "timeout": 10,
+            "statusMessage": "Loading Codex enforcement context"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CODEX_HOME__/enforcement/bin/codex-hook.sh UserPromptSubmit",
+            "timeout": 10,
+            "statusMessage": "Checking prompt policy"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CODEX_HOME__/enforcement/bin/codex-hook.sh PreToolUse",
+            "timeout": 30,
+            "statusMessage": "Checking Codex enforcement policy"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CODEX_HOME__/enforcement/bin/codex-hook.sh PermissionRequest",
+            "timeout": 30,
+            "statusMessage": "Checking escalation policy"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CODEX_HOME__/enforcement/bin/codex-hook.sh PostToolUse",
+            "timeout": 10,
+            "statusMessage": "Recording tool result"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__CODEX_HOME__/enforcement/bin/codex-hook.sh Stop",
+            "timeout": 120,
+            "statusMessage": "Running LM Studio quality verification"
+          }
+        ]
+      }
+    ]
+  }
+}

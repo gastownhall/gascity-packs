@@ -1,0 +1,15 @@
+{
+  "c_cpp": {
+    "command": "clangd",
+    "extensionToLanguage": {
+      ".c": "c",
+      ".h": "c",
+      ".cpp": "cpp",
+      ".cxx": "cpp",
+      ".cc": "cpp",
+      ".hpp": "cpp",
+      ".hxx": "cpp",
+      ".hh": "cpp"
+    }
+  }
+}

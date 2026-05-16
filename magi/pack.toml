@@ -1,0 +1,8 @@
+# Magi pack manifest.
+# Unifies the claude, codex, gemini, openai runtimes and the project_analyzer
+# tool behind a single twelve-verb surface. No long-running services.
+
+[pack]
+name = "magi"
+version = "0.1.0"
+schema = 2

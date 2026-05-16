@@ -1,0 +1,2 @@
+description = 'Report magi state.json contents and open bd beads tagged pack:magi'
+run = '../status.sh'

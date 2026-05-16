@@ -1,0 +1,2 @@
+description = 'Run project_analyzer over an absolute project path; writes _DIRECTORY_OVERVIEW.md per directory'
+run = '../analyze.sh'

@@ -1,0 +1,5 @@
+{
+  "name": "java-lsp",
+  "description": "Java code intelligence via Eclipse JDT Language Server",
+  "version": "1.0.0"
+}

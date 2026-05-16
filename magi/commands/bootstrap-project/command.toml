@@ -1,0 +1,2 @@
+description = 'Run setup_utilities.sh against a project root to wire its .utilities/ symlink'
+run = '../bootstrap-project.sh'

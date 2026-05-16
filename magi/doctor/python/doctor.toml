@@ -1,0 +1,2 @@
+description = "Verify python3 is installed and at least 3.10."
+run = "../check-python.sh"

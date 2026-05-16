@@ -1,0 +1,5 @@
+{
+  "name": "csharp-lsp",
+  "description": "C# code intelligence via csharp-ls",
+  "version": "1.0.0"
+}

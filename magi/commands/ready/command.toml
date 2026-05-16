@@ -1,0 +1,2 @@
+description = 'List magi-tagged ready work via bd ready --label pack:magi'
+run = '../ready.sh'

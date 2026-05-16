@@ -1,0 +1,24 @@
+# bd hook registrations for the magi pack.
+# Each hook reads bead state via bd_show only; hook scripts never call bd write
+# helpers, so the recursion guard is structural rather than runtime.
+
+[[hooks]]
+on = "bead.closed"
+labels = ["pack:magi:install", "outcome:0"]
+labels_not = ["role:uninstall-closure", "role:hook-trigger"]
+target = "scripts/hook_post_install.py"
+description = "Refresh state.json installs.<target> from the closed install bead. Skips beads closed as part of an uninstall."
+
+[[hooks]]
+on = "bead.created"
+labels = ["pack:magi:analyze"]
+labels_not = ["role:hook-trigger"]
+target = "scripts/hook_pre_analyze.py"
+description = "Probe LM Studio reachability before the analyze subprocess fires. Logs rc=0 ok / rc=2 warn into the verb log."
+
+[[hooks]]
+on = "bead.failed"
+labels = ["pack:magi"]
+labels_not = ["role:hook-trigger"]
+target = "scripts/hook_on_failure.py"
+description = "Append a failure record to state.json failures: []. Never calls bd write helpers; recursion-proof by construction."

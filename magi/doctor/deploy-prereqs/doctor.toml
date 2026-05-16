@@ -1,0 +1,2 @@
+description = "Verify deploy prerequisites (jq rsync sed awk find chmod) plus conditional sshpass ssh when INSTALL_REMOTE_MCP=1."
+run = "../check-deploy-prereqs.sh"

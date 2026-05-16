@@ -1,0 +1,2 @@
+description = "Verify the bd CLI is on PATH. Warn-only on missing (magi degrades gracefully without bd)."
+run = "../check-beads.sh"

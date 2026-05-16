@@ -1,0 +1,2617 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Enforcement rules for Claude Code hooks - controls blocking and guideline enforcement",
+  "stale_timeout_seconds": 7200,
+  "deny": {
+    "pyproject_any": {
+      "description": "Block ALL modifications to pyproject.toml - user manages this file manually",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "pyproject\\.toml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "pyproject\\.toml$",
+          "type": "file_path"
+        }
+      ],
+      "action": "block",
+      "message": "NEVER FUCKING DO THAT!!!!!!!!!!\nABSOLUTELY NO MODIFICATIONS TO pyproject.toml ARE ALLOWED!\nThis file is managed manually by the user.\nDO NOT attempt to write, edit, or modify pyproject.toml under any circumstances."
+    },
+    "backend_requirements": {
+      "description": "Block requirements.txt in backend subfolder - use pyproject.toml at root",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "backend/requirements\\.txt$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "backend/.*/requirements\\.txt$",
+          "type": "file_path"
+        }
+      ],
+      "action": "block",
+      "message": "DO NOT create requirements.txt in backend/ directory!\nDependencies should be managed via pyproject.toml in the PROJECT ROOT.\nUse: ./pyproject.toml with [project.dependencies]"
+    },
+    "docker_discrete": {
+      "description": "Block discrete docker commands - must use turnkey scripts",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^docker\\s",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^docker-compose\\s",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "docker compose\\s",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO USE OF DISCRETE 'docker' COMMANDS IS ALLOWED!\nDO NOT ATTEMPT ANOTHER DISCRETE docker COMMAND!\nWRITE A TURNKEY BASH SCRIPT INSTEAD.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/automation_principles.xml"
+    },
+    "mypy_discrete": {
+      "description": "Block discrete mypy commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^mypy(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/mypy(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*mypy",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*mypy",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+mypy",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "ruff_discrete": {
+      "description": "Block discrete ruff commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^ruff(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/ruff(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*ruff",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*ruff",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+ruff",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "pyright_discrete": {
+      "description": "Block discrete pyright commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^pyright(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/pyright(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*pyright",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*pyright",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+pyright",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "basedpyright_discrete": {
+      "description": "Block discrete basedpyright commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^basedpyright(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/basedpyright(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*basedpyright",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*basedpyright",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+basedpyright",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "pylint_discrete": {
+      "description": "Block discrete pylint commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^pylint(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/pylint(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*pylint",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*pylint",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+pylint",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "bandit_discrete": {
+      "description": "Block discrete bandit commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^bandit(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/bandit(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*bandit",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*bandit",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+bandit",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "pytest_discrete": {
+      "description": "Block discrete pytest commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^pytest(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/pytest(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*pytest",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*pytest",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+pytest",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "black_discrete": {
+      "description": "Block discrete black commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^black(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/black(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*black",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*black",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+black",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "isort_discrete": {
+      "description": "Block discrete isort commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^isort(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/isort(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*isort",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*isort",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+isort",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "flake8_discrete": {
+      "description": "Block discrete flake8 commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^flake8(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/flake8(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*flake8",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*flake8",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+flake8",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "autoflake_discrete": {
+      "description": "Block discrete autoflake commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^autoflake(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/autoflake(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*autoflake",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*autoflake",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+autoflake",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "autopep8_discrete": {
+      "description": "Block discrete autopep8 commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^autopep8(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/autopep8(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*autopep8",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*autopep8",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+autopep8",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "yapf_discrete": {
+      "description": "Block discrete yapf commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^yapf(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/yapf(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*yapf",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*yapf",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+yapf",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "pyflakes_discrete": {
+      "description": "Block discrete pyflakes commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^pyflakes(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/pyflakes(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*pyflakes",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*pyflakes",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+pyflakes",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "pydocstyle_discrete": {
+      "description": "Block discrete pydocstyle commands - use _preCheck.sh",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^pydocstyle(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "/pydocstyle(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "&&\\s*\\.?\\S*pydocstyle",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": ";\\s*\\.?\\S*pydocstyle",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "python3?\\s+-m\\s+pydocstyle",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "RUN `.utilities/.backend/python/_preCheck.sh` FROM THE PROJECT ROOT - **THE FUCKING RESULTS ARE FOUND IN `{PROJECT_ROOT}/project_issues` DO NOT RUN DISCRETE COMMANDS!!!!!!!!!!!!!!"
+    },
+    "npm_discrete": {
+      "description": "Block discrete npm commands - must use turnkey scripts",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^npm\\s",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO USE OF DISCRETE 'npm' COMMANDS IS ALLOWED!\nDO NOT ATTEMPT ANOTHER DISCRETE npm COMMAND!\nWRITE A TURNKEY BASH SCRIPT INSTEAD.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/automation_principles.xml AND/OR ~/.claude/enforcement/guidelines/guideline_documents/xml/python_guidelines.xml"
+    },
+    "heredoc_bash": {
+      "description": "Block heredocs in bash - use alternative approaches",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "<<['\"]?\\w+['\"]?",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "<<-['\"]?\\w+['\"]?",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "<<<",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "NO HEREDOCS ARE ALLOWED IN BASH!\nUse alternative approaches:\n- echo statements\n- printf\n- Temporary files\n- Separate script files"
+    },
+    "system_python": {
+      "description": "Block system python - use virtual environment",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^python3?\\s+(?!-m\\s+venv)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^/usr/bin/python",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^/usr/local/bin/python",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "DO NOT USE SYSTEM PYTHON!\nUse the project's virtual environment instead:\n- .venv/bin/python\n- source .venv/bin/activate && python\nIf no venv exists, create one first with: python -m venv .venv"
+    },
+    "pip_install_system": {
+      "description": "Block pip install without venv",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^pip3?\\s+install",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^/usr/bin/pip",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^/usr/local/bin/pip",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "DO NOT USE SYSTEM PIP!\nUse the project's virtual environment instead:\n- .venv/bin/pip install\n- source .venv/bin/activate && pip install"
+    },
+    "az_create": {
+      "description": "Block discrete az create commands - must use turnkey scripts",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+.*\\s+create(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+group\\s+create",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+deployment\\s+.*\\s+create",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+bicep\\s+build",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO USE OF DISCRETE 'az' COMMANDS TO CREATE RESOURCES IS ALLOWED!\nDO NOT ATTEMPT ANOTHER DISCRETE `az` COMMAND!\nWRITE A TURNKEY BASH SCRIPT INSTEAD IN `.utilities/.azure/`.\nRefer to: `.utilities/.azure/AZURE_GUIDELINES.xml` FOR ASSISTANCE!!!"
+    },
+    "az_delete": {
+      "description": "Block discrete az delete commands - must use turnkey scripts",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+.*\\s+delete(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+group\\s+delete",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO USE OF DISCRETE 'az' COMMANDS TO DELETE RESOURCES IS ALLOWED!\nDO NOT ATTEMPT ANOTHER DISCRETE `az` COMMAND!\nWRITE A TURNKEY BASH SCRIPT INSTEAD IN `.utilities/.azure/`.\nRefer to: `.utilities/.azure/AZURE_GUIDELINES.xml` FOR ASSISTANCE!!!"
+    },
+    "az_update": {
+      "description": "Block discrete az update commands - must use turnkey scripts",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+.*\\s+update(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+.*\\s+set(\\s|$)",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO USE OF DISCRETE 'az' COMMANDS TO UPDATE RESOURCES IS ALLOWED!\nDO NOT ATTEMPT ANOTHER DISCRETE `az` COMMAND!\nWRITE A TURNKEY BASH SCRIPT INSTEAD IN `.utilities/.azure/`.\nRefer to: `.utilities/.azure/AZURE_GUIDELINES.xml` FOR ASSISTANCE!!!"
+    },
+    "az_register": {
+      "description": "Block discrete az register commands - must use turnkey scripts",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+provider\\s+register",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+feature\\s+register",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+.*\\s+register(\\s|$)",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO USE OF DISCRETE 'az' COMMANDS TO REGISTER RESOURCES IS ALLOWED!\nDO NOT ATTEMPT ANOTHER DISCRETE `az` COMMAND!\nWRITE A TURNKEY BASH SCRIPT INSTEAD IN `.utilities/.azure/`.\nRefer to: `.utilities/.azure/AZURE_GUIDELINES.xml` FOR ASSISTANCE!!!"
+    },
+    "az_add": {
+      "description": "Block discrete az add commands - must use turnkey scripts",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+.*\\s+add(\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+extension\\s+add",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO USE OF DISCRETE 'az' COMMANDS TO ADD RESOURCES IS ALLOWED!\nDO NOT ATTEMPT ANOTHER DISCRETE `az` COMMAND!\nWRITE A TURNKEY BASH SCRIPT INSTEAD IN `.utilities/.azure/`.\nRefer to: `.utilities/.azure/AZURE_GUIDELINES.xml` FOR ASSISTANCE!!!"
+    },
+    "az_import": {
+      "description": "Block discrete az import commands - must use turnkey scripts",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "^az\\s+.*\\s+import(\\s|$)",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO USE OF DISCRETE 'az' COMMANDS TO IMPORT RESOURCES IS ALLOWED!\nDO NOT ATTEMPT ANOTHER DISCRETE `az` COMMAND!\nWRITE A TURNKEY BASH SCRIPT INSTEAD IN `.utilities/.azure/`.\nRefer to: `.utilities/.azure/AZURE_GUIDELINES.xml` FOR ASSISTANCE!!!"
+    },
+    "tmp_read_file": {
+      "description": "Block ALL file reads from /tmp/ and /private/tmp/ - use project directory",
+      "triggers": [
+        {
+          "tool": "Read",
+          "pattern": "^(/private)?/tmp/",
+          "type": "file_path"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO READING FROM /tmp/ OR /private/tmp/ IS ALLOWED!\nALL file operations MUST use the PROJECT DIRECTORY.\nUse a project-relative path instead."
+    },
+    "tmp_bash_read": {
+      "description": "Block bash read commands targeting /tmp/ or /private/tmp/",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\b(cat|less|more|head|tail|bat|wc|file|stat|md5|shasum|xxd|strings|od)\\s+.*(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bls\\s+.*(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bfind\\s+(/private)?/tmp(/|\\s)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "<\\s*(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bsource\\s+(/private)?/tmp/",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO READING FROM /tmp/ OR /private/tmp/ IS ALLOWED!\nDO NOT cat, read, list, or source files from /tmp/.\nUse the PROJECT DIRECTORY instead."
+    },
+    "tmp_write_file": {
+      "description": "Block ALL file writes to /tmp/ - use project directory instead",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "^(/private)?/tmp/",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "^/tmp/",
+          "type": "file_path"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO WRITING TO /tmp/ IS ALLOWED!\nALL files MUST be written into the PROJECT DIRECTORY.\nUse a project-relative path instead of /tmp/.\nExample: ./output/ or ./build/ or ./.tmp/ — NEVER /tmp/"
+    },
+    "tmp_bash_redirect": {
+      "description": "Block bash redirects and tee to /tmp/",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": ">>?\\s*(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\btee\\s+(-a\\s+)?(/private)?/tmp/",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO WRITING TO /tmp/ IS ALLOWED!\nDO NOT redirect output to /tmp/.\nWrite into the PROJECT DIRECTORY instead.\nExample: > ./output/file.txt — NEVER > /tmp/file.txt"
+    },
+    "tmp_bash_copy_move": {
+      "description": "Block cp/mv/install targeting /tmp/",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\bcp\\s+.*\\s+(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bmv\\s+.*\\s+(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\binstall\\s+.*\\s+(/private)?/tmp/",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO WRITING TO /tmp/ IS ALLOWED!\nDO NOT copy, move, or install files to /tmp/.\nUse the PROJECT DIRECTORY instead."
+    },
+    "tmp_bash_create": {
+      "description": "Block mkdir/touch/mktemp targeting /tmp/",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\bmkdir\\s+(-p\\s+)?(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\btouch\\s+(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bmktemp\\b",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO WRITING TO /tmp/ IS ALLOWED!\nDO NOT create files or directories in /tmp/.\nDO NOT use mktemp (it defaults to /tmp/).\nUse the PROJECT DIRECTORY instead: mkdir -p ./tmp/"
+    },
+    "tmp_bash_write_cmds": {
+      "description": "Block dd/wget/curl output to /tmp/",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\bdd\\s+.*of=(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bwget\\s+.*-O\\s+(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bwget\\s+.*--output-document[= ](/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bcurl\\s+.*-o\\s+(/private)?/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bcurl\\s+.*--output\\s+(/private)?/tmp/",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": " ABSOLUTELY NO WRITING TO /tmp/ NOR /private/tmp/ IS ALLOWED!\nANYTHING YOU TRY TO PUT OR READ FROM /tmp/ AND /private/tmp/ WILL BE MET WITH FAILURE!\nUse the PROJECT DIRECTORY instead."
+    },
+    "python_dash_c_ephemeral": {
+      "description": "Block python -c, python3 -c, .venv/bin/python -c ephemeral execution",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\bpython3?\\s+-c(\\s|$)",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "NO EPHEMERAL python -c EXECUTION ALLOWED!\nWrite a real script file in the project directory and run it.\nWHY: python -c invocations are non-persistent, hide logic, cannot be reviewed, debugged, or re-run, and routinely deadlock claude when they fail silently.\nDO THIS INSTEAD:\n  1. Write the code to ./scripts/<task>.py (or ./tmp/<task>.py inside the project)\n  2. Run: .venv/bin/python ./scripts/<task>.py"
+    },
+    "node_dash_e_ephemeral": {
+      "description": "Block node -e ephemeral execution",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\bnode(js)?\\s+-e(\\s|$)",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "NO EPHEMERAL node -e EXECUTION ALLOWED!\nWrite a real .js/.mjs file in the project directory and run it.\nWHY: node -e invocations are non-persistent and cannot be reviewed or re-run."
+    },
+    "perl_ruby_dash_e_ephemeral": {
+      "description": "Block perl -e and ruby -e ephemeral execution",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\b(perl|ruby)\\s+-e(\\s|$)",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "NO EPHEMERAL perl -e OR ruby -e EXECUTION ALLOWED!\nWrite a real script file in the project directory and run it."
+    },
+    "bash_dash_c_inline": {
+      "description": "Block inline bash -c / sh -c / zsh -c with quoted code",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\b(ba|z)?sh\\s+-c\\s+['\"]",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "NO EPHEMERAL bash -c / sh -c / zsh -c INLINE EXECUTION ALLOWED!\nWrite a real .sh file in the project directory and run it.\nWHY: inline -c invocations bypass shellcheck, hide logic from review, and cannot be re-run."
+    },
+    "dev_null_suppression": {
+      "description": "Block any redirection to /dev/null - it always hides valuable output",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "/dev/null",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "NO REDIRECTING TO /dev/null ALLOWED!\nThis ALWAYS hides valuable output, errors, and warnings.\nWHY: When a command fails, the error message is the most important thing to see. Suppressing it routinely deadlocks claude because the failure mode becomes invisible.\nDO THIS INSTEAD:\n  - Run the command and let it write to stdout/stderr\n  - If you must check for command existence, use: command -v <name> ; echo \"$?\" (no /dev/null)\n  - If the output is truly noisy, write it to a project-local log file: ./tmp/cmd.log"
+    },
+    "tmpdir_env_var": {
+      "description": "Block use of $TMPDIR / ${TMPDIR} - points to system tmp",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\$\\{?TMPDIR\\}?",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\bTMPDIR=",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "NO USE OF $TMPDIR ALLOWED!\nOn macOS $TMPDIR points to /var/folders/.../T/ (the system tmp directory).\nUse a project-local ./tmp/ directory instead."
+    },
+    "var_folders_macos": {
+      "description": "Block /var/folders/ paths (macOS system tmp under TMPDIR)",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "/var/folders/",
+          "type": "command"
+        },
+        {
+          "tool": "Read",
+          "pattern": "/var/folders/",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "/var/folders/",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "/var/folders/",
+          "type": "file_path"
+        }
+      ],
+      "action": "block",
+      "message": "NO USE OF /var/folders/ ALLOWED!\nThis is the macOS system temp directory ($TMPDIR backing).\nUse a project-local ./tmp/ directory instead."
+    },
+    "var_tmp_dir": {
+      "description": "Block /var/tmp/ paths",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "/var/tmp/",
+          "type": "command"
+        },
+        {
+          "tool": "Read",
+          "pattern": "/var/tmp/",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "/var/tmp/",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "/var/tmp/",
+          "type": "file_path"
+        }
+      ],
+      "action": "block",
+      "message": "NO USE OF /var/tmp/ ALLOWED!\nUse a project-local ./tmp/ directory instead."
+    },
+    "background_amp_run": {
+      "description": "Block backgrounding commands with trailing & - they orphan output and stall claude",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "[^&|]&\\s*$",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "NO BACKGROUNDING COMMANDS WITH TRAILING & ALLOWED!\nWHY: backgrounded shells orphan their output and routinely cause claude to wait forever for a result that never returns.\nDO THIS INSTEAD: use the Bash tool's run_in_background parameter — it captures output the harness can read."
+    },
+    "az_discrete_all": {
+      "description": "Block ALL discrete az commands - must use turnkey scripts in .utilities/.azure/",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "\\baz\\s+\\S+",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "ABSOLUTELY NO DISCRETE 'az' COMMANDS ALLOWED — EVER, NO EXCEPTIONS!\nThis covers show/list/get/login/logout AND every mutation verb.\nWHY: discrete az invocations are non-persistent, leave no audit trail, hide failures, and cannot be re-run by the user. They routinely deadlock claude when they hang on auth, prompt for input, or fail silently.\nDO THIS INSTEAD:\n  1. Write a turnkey bash script in `.utilities/.azure/`\n  2. The script must read credentials from the pack-root `.env`, log every action, and be re-runnable\n  3. Refer to: `.utilities/.azure/AZURE_GUIDELINES.xml`"
+    },
+    "junk_directories": {
+      "description": "Block reading/searching/editing files inside generated, cached, or vendored junk directories",
+      "triggers": [
+        {
+          "tool": "Read",
+          "pattern": "(^|/)(__pycache__|node_modules|\\.pytest_cache|\\.mypy_cache|\\.ruff_cache|\\.tox|\\.next|\\.nuxt|\\.turbo|\\.parcel-cache|\\.cache|\\.gradle|\\.terraform|target/(debug|release)|dist|build|out|coverage|htmlcov|\\.coverage|\\.nyc_output|\\.svelte-kit|\\.angular|\\.sass-cache|bower_components|vendor/bundle)(/|$)",
+          "type": "file_path"
+        },
+        {
+          "tool": "Read",
+          "pattern": "\\.(pyc|pyo|pyd|class|o|obj|so|dylib|dll|exe|a|lib|jar|war|ear|nupkg|whl|egg|map|min\\.js|min\\.css|lock)$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Read",
+          "pattern": "(^|/)(\\.DS_Store|Thumbs\\.db|desktop\\.ini)$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Read",
+          "pattern": "\\.egg-info(/|$)",
+          "type": "file_path"
+        },
+        {
+          "tool": "Read",
+          "pattern": "(^|/)\\.git/(objects|logs|refs|hooks|info|index|HEAD|FETCH_HEAD|ORIG_HEAD|packed-refs)",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "(^|/)(__pycache__|node_modules|\\.pytest_cache|\\.mypy_cache|\\.ruff_cache|\\.tox|\\.next|\\.nuxt|\\.turbo|\\.parcel-cache|\\.cache|\\.gradle|\\.terraform|target/(debug|release)|dist|build|out|coverage|htmlcov|\\.coverage|\\.nyc_output|\\.svelte-kit|\\.angular|\\.sass-cache|bower_components|vendor/bundle)(/|$)",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.(pyc|pyo|pyd|class|o|obj|so|dylib|dll|exe|a|lib|jar|war|ear|nupkg|whl|egg|map|min\\.js|min\\.css|lock)$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "(^|/)(__pycache__|node_modules|\\.pytest_cache|\\.mypy_cache|\\.ruff_cache|\\.tox|\\.next|\\.nuxt|\\.turbo|\\.parcel-cache|\\.cache|\\.gradle|\\.terraform|target/(debug|release)|dist|build|out|coverage|htmlcov|\\.coverage|\\.nyc_output|\\.svelte-kit|\\.angular|\\.sass-cache|bower_components|vendor/bundle)(/|$)",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.(pyc|pyo|pyd|class|o|obj|so|dylib|dll|exe|a|lib|jar|war|ear|nupkg|whl|egg|map|min\\.js|min\\.css|lock)$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "(^|[\\s;|&])(cat|less|more|head|tail|bat|wc|file|stat|md5|shasum|xxd|strings|od|grep|rg|find|fd|fzf|tree|sed|awk|diff)\\s+([^|;&]*\\s)?(\\.?/?)(__pycache__|node_modules|\\.pytest_cache|\\.mypy_cache|\\.ruff_cache|\\.tox|\\.next|\\.nuxt|\\.turbo|\\.parcel-cache|\\.cache|\\.gradle|\\.terraform|dist|build|coverage|htmlcov|\\.nyc_output|\\.svelte-kit|\\.angular|\\.sass-cache|bower_components)(/|\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "(^|[\\s;|&])ls\\s+([^|;&]*\\s)?(\\.?/?)(__pycache__|node_modules|\\.pytest_cache|\\.mypy_cache|\\.ruff_cache|\\.tox|\\.next|\\.nuxt|\\.turbo|\\.parcel-cache|\\.cache|\\.gradle|\\.terraform|dist|build|coverage|htmlcov|\\.nyc_output|\\.svelte-kit|\\.angular|\\.sass-cache|bower_components)(/|\\s|$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\.egg-info(/|\\s|$)",
+          "type": "command"
+        }
+      ],
+      "action": "block",
+      "message": "what the fuck are you doing looking here?\nThese aren't the droids you're looking for.....\n\nYou tried to read, search, or edit a generated/cached/vendored junk directory:\n  __pycache__/  node_modules/  dist/  build/  target/debug/  target/release/\n  .pytest_cache/  .mypy_cache/  .ruff_cache/  .tox/  .next/  .nuxt/  .turbo/\n  .gradle/  .terraform/  .cache/  .parcel-cache/  bower_components/\n  *.egg-info/  .DS_Store  .git/objects/  .git/logs/  *.pyc  *.lock  *.min.js  etc.\n\nThese files are auto-generated, vendored, compiled, or cached. They tell you NOTHING about the user's actual code. Reading them just burns context window and surfaces noise.\n\nDO THIS INSTEAD:\n  - Read the SOURCE files (src/, lib/, app/, the actual hand-written code)\n  - Run the build/tooling that produces the artifact instead of inspecting the artifact\n  - If you genuinely need a third-party library's source, install it as a dep and read from the package's published source — not from node_modules or .venv/lib"
+    },
+    "rust_build_rs_creation": {
+      "description": "Block creating new build.rs files without explicit user authorization",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "(^|/)build\\.rs$",
+          "type": "file_path"
+        }
+      ],
+      "action": "block",
+      "message": "BLOCKED: Creating build.rs is FORBIDDEN without explicit user authorization!\n\nbuild.rs has significant build-system, security, and reproducibility implications:\n  - Every println!(\"cargo::rustc-...\") alters compilation globally\n  - RUSTFLAGS injection via build.rs affects all downstream crates\n  - Build scripts execute arbitrary code at compile time\n\nIf build.rs is genuinely required, STOP and ask the user first.\nDocument every cargo directive with an inline comment explaining WHY it is needed.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "no_truncation_or_inline_tee": {
+      "description": "Block 2>&1, | tee, head, and tail in Bash commands. These indicate non-persistent logging and output truncation.",
+      "triggers": [
+        {
+          "tool": "Bash",
+          "pattern": "2>&1",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "\\| ?tee\\b",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "(^|[^a-zA-Z_-])head( |$)",
+          "type": "command"
+        },
+        {
+          "tool": "Bash",
+          "pattern": "(^|[^a-zA-Z_-])tail( |$)",
+          "type": "command"
+        }
+      ],
+      "message": "BLOCKED: 2>&1, | tee, head, and tail are UNACCEPTABLE.\n  - 2>&1 + tee: indicates the script is NOT properly persistently logging.\n    Fix: write to a real log file from inside the script (>> /path/to/script.log).\n  - head/tail: indicates output is being truncated for readability.\n    Fix: write the full output to a file, then grep/awk what you need."
+    }
+  },
+  "content_rules": {
+    "from_src_import": {
+      "description": "Block imports from src. - update __init__.py files instead",
+      "file_pattern": "\\.py$",
+      "exclude_pattern": "/tests/|^tests/",
+      "content_pattern": "from\\s+src\\.",
+      "action": "disabled",
+      "message": "DO NOT IMPORT FROM 'src.'!\nUPDATE YOUR `__init__.py` FILES SO YOU DON'T NEED TO IMPORT FROM `src.`\nUse proper package exports instead of reaching into src directly."
+    },
+    "relative_import": {
+      "description": "Block relative imports (from .)",
+      "file_pattern": "\\.py$",
+      "exclude_pattern": "/tests/|^tests/",
+      "content_pattern": "from\\s+\\.",
+      "action": "disabled",
+      "message": "DO NOT USE RELATIVE IMPORTS (from .)!\nUse absolute imports instead.\nUpdate your `__init__.py` files to export what you need."
+    },
+    "type_ignore_python": {
+      "description": "Block # type: ignore comments in Python",
+      "file_pattern": "\\.py$",
+      "content_pattern": "#\\s*type:\\s*ignore",
+      "action": "block",
+      "message": "DO NOT USE '# type: ignore' COMMENTS!\nFIX THE ACTUAL TYPE ERROR instead of suppressing it.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/python_guidelines.xml"
+    },
+    "trailing_comma": {
+      "description": "Block trailing commas in Python",
+      "file_pattern": "\\.py$",
+      "content_pattern": ",\\s*[\\n\\r]\\s*[\\]\\)\\}]",
+      "action": "block",
+      "message": "NO TRAILING COMMAS ALLOWED!\nRemove the trailing comma before the closing bracket.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/python_guidelines.xml"
+    },
+    "todo_comments": {
+      "description": "Block TODO/FIXME comments",
+      "file_pattern": "\\.(py|sh|ts|tsx|js|jsx|rs|cs)$",
+      "content_pattern": "#.*\\b(TODO|FIXME|XXX|HACK)\\b|//.*\\b(TODO|FIXME|XXX|HACK)\\b",
+      "action": "block",
+      "message": "NO TODO/FIXME/XXX/HACK COMMENTS ALLOWED!\nComplete the implementation NOW - no placeholders.\nEvery line of code must be PRODUCTION READY."
+    },
+    "unused_param_prefix": {
+      "description": "Block _unused parameter naming",
+      "file_pattern": "\\.py$",
+      "content_pattern": "\\b_unused_\\w+|\\bunused_\\w+",
+      "action": "block",
+      "message": "DO NOT PREFIX PARAMETERS WITH '_unused' OR 'unused_'!\nEither ACTUALLY USE the parameter (e.g., via logging) or REMOVE IT from the signature AND all callers."
+    },
+    "any_type_block": {
+      "description": "Block ALL use of Any type in Python - use Pydantic models instead (except in model/schema files)",
+      "file_pattern": "\\.py$",
+      "exclude_pattern": "/models/|/schemas/|_model\\.py$|_models\\.py$|_schema\\.py$|models\\.py$|schemas\\.py$",
+      "content_pattern": ":\\s*Any\\b|\\[Any\\b|,\\s*Any\\b|Any\\s*\\]|Any\\s*,|import Any|from typing import.*\\bAny\\b|:\\s*any\\b",
+      "action": "block",
+      "message": "A PYDANTIC MODEL MUST BE USED - NEVER, EVER USE `any` NOR `Any`!!!!!!!!!!!!!!!!\nREAD THE PYTHON GUIDELINES!!!!!!!!!!!!!!!!"
+    },
+    "inline_comment_python": {
+      "description": "Block inline # comments in Python (not shebangs or type hints)",
+      "file_pattern": "\\.py$",
+      "content_pattern": "^[^#\\n]+\\s+#\\s+[A-Za-z]",
+      "action": "warn",
+      "message": "WARNING: Inline # comments are discouraged!\nUse docstrings for documentation or improve naming instead."
+    },
+    "empty_lines_bash": {
+      "description": "Block empty lines in bash scripts",
+      "file_pattern": "\\.sh$",
+      "content_pattern": "\\n\\n",
+      "action": "warn",
+      "message": "WARNING: Empty lines detected in bash script!\nNO EMPTY LINES ARE PERMITTED IN BASH SCRIPTS per bash_guidelines.xml"
+    },
+    "pydantic_v1_syntax": {
+      "description": "Block Pydantic V1 syntax",
+      "file_pattern": "\\.py$",
+      "content_pattern": "class Config:|@validator\\(|@root_validator|\\.dict\\(\\)|\\.json\\(\\)",
+      "action": "warn",
+      "message": "WARNING: Pydantic V1 syntax detected!\nUse V2 syntax:\n- model_config = ConfigDict(...) not class Config\n- @field_validator not @validator\n- @model_validator not @root_validator\n- model_dump() not .dict()\n- model_dump_json() not .json()"
+    },
+    "rust_lint_suppression": {
+      "description": "Block ALL lint suppression attributes in Rust: #[allow], #![allow], #[expect]",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#!?\\[allow\\s*\\(|#!?\\[expect\\s*\\(",
+      "action": "block",
+      "message": "BLOCKED: Lint suppression attributes are FORBIDDEN!\n  #[allow(...)] / #![allow(...)] / #[expect(...)]\n\nFix the underlying issue -- do NOT silence warnings with pragmas.\nEvery lint violation must be resolved at the source.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_unsafe_code": {
+      "description": "Block ALL unsafe code: unsafe blocks, unsafe fn, unsafe impl, unsafe trait",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "\\bunsafe\\s*(\\{|fn\\s|impl\\s|trait\\s)",
+      "action": "block",
+      "message": "BLOCKED: unsafe code is FORBIDDEN!\n  unsafe { }  unsafe fn  unsafe impl  unsafe trait\n\nDesign your types and APIs to eliminate the need for unsafe.\nIf unsafe is genuinely required, STOP and escalate to the user.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_extern_ffi": {
+      "description": "Block extern FFI ABI declarations in Rust",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "extern\\s+\"(C|C\\+\\+|system|stdcall|fastcall|win64|sysv64|aapcs|cdecl|Rust)\"",
+      "action": "block",
+      "message": "BLOCKED: extern FFI declarations are FORBIDDEN!\n  extern \"C\", extern \"system\", extern \"stdcall\", etc.\n\nFFI requires unsafe and creates ABI commitments that break safety guarantees.\nEscalate to the user if FFI is genuinely required.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_unsafe_primitives": {
+      "description": "Block unsafe memory primitives: transmute, MaybeUninit, ManuallyDrop, static mut",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "\\bmem::transmute\\b|\\bstd::mem::transmute\\b|\\bMaybeUninit\\b|\\bManuallyDrop\\b|\\bstatic\\s+mut\\s",
+      "action": "block",
+      "message": "BLOCKED: Unsafe memory primitives are FORBIDDEN!\n  mem::transmute  MaybeUninit  ManuallyDrop  static mut\n\nThese bypass Rust's memory safety guarantees entirely.\nUse safe abstractions and proper ownership instead.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_panic_patterns": {
+      "description": "Block .unwrap(), .expect(), panic!, todo!, unimplemented!, unreachable!",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "\\.unwrap\\s*\\(|\\.expect\\s*\\(|\\bpanic!\\s*\\(|\\btodo!\\s*\\(|\\bunimplemented!\\s*\\(|\\bunreachable!\\s*\\(",
+      "action": "block",
+      "message": "BLOCKED: Panic-inducing patterns are FORBIDDEN!\n  .unwrap()  .expect()  panic!()  todo!()  unimplemented!()  unreachable!()\n\nUse ? operator and Result/Option propagation throughout.\ntodo!() and unimplemented!() are placeholder code -- NEVER acceptable.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_debug_macros": {
+      "description": "Block raw output macros: dbg!, println!, eprintln!, print!",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "\\bdbg!\\s*\\(|\\bprintln!\\s*\\(|\\beprintln!\\s*\\(|\\bprint!\\s*\\(",
+      "action": "block",
+      "message": "BLOCKED: Raw output macros are FORBIDDEN!\n  dbg!()  println!()  eprintln!()  print!()\n\nUse the tracing crate instead:\n  tracing::info!()  tracing::warn!()  tracing::error!()  tracing::debug!()\nRemove all debug macros before committing.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_runtime_blocking": {
+      "description": "Block process::exit and thread::sleep in Rust",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "(std::)?process::exit\\s*\\(|(std::)?thread::sleep\\s*\\(",
+      "action": "block",
+      "message": "BLOCKED: Runtime-blocking patterns are FORBIDDEN!\n  process::exit() -- propagate errors through Result to main instead\n  thread::sleep() -- use tokio::time::sleep() in async contexts\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_nightly_features": {
+      "description": "Block nightly/unstable compiler feature gates",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#!\\[feature\\s*\\(",
+      "action": "block",
+      "message": "BLOCKED: Nightly/unstable feature gates are FORBIDDEN!\n  #![feature(...)]\n\nThis project targets stable Rust only.\nDo NOT use unstable compiler features under any circumstances.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_no_std_no_main": {
+      "description": "Block #![no_std] and #![no_main] in application code",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#!\\[(no_std|no_main)\\]",
+      "action": "block",
+      "message": "BLOCKED: #![no_std] and #![no_main] are FORBIDDEN in application code!\n\nThese directives are valid only for embedded/kernel/bare-metal crates.\nThis project targets hosted environments with the full std library available.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_system_hooks": {
+      "description": "Block system-level hook attributes: panic_handler, global_allocator, alloc_error_handler",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#\\[(panic_handler|global_allocator|alloc_error_handler)\\]",
+      "action": "block",
+      "message": "BLOCKED: System hook attributes are FORBIDDEN!\n  #[panic_handler]  #[global_allocator]  #[alloc_error_handler]\n\nThese replace fundamental runtime behavior and have serious security and observability consequences.\nEscalate to the user before touching any of these.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_abi_linker_manipulation": {
+      "description": "Block ABI and linker manipulation attributes in Rust",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#\\[no_mangle\\]|#\\[export_name\\s*=|#\\[repr\\s*\\(\\s*packed|#\\[link\\s*\\(|#\\[link_name\\s*=|#\\[link_ordinal\\s*\\(|#\\[link_section\\s*=|#\\[used\\]",
+      "action": "block",
+      "message": "BLOCKED: ABI/linker manipulation attributes are FORBIDDEN!\n  #[no_mangle]  #[export_name]  #[repr(packed)]  #[link*]  #[link_name]  #[used]\n\nThese create symbol-level commitments and introduce linker-level security risks.\nFFI requirements must be escalated to the user.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_repr_layout": {
+      "description": "Block ABI layout commitment attributes: repr(C), repr(transparent), repr(align)",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#\\[repr\\s*\\(\\s*(C\\b|transparent\\b|align\\s*\\()",
+      "action": "block",
+      "message": "BLOCKED: Layout commitment attributes are FORBIDDEN without explicit user authorization!\n  #[repr(C)]  #[repr(transparent)]  #[repr(align(...))]\n\nThese create ABI/layout contracts that are valid ONLY for explicit FFI or layout-sensitive code.\nGet explicit user sign-off before using any repr layout attribute.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_codegen_overrides": {
+      "description": "Block codegen and CPU-specific override attributes in Rust",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#\\[inline\\s*\\(\\s*(always|never)\\s*\\)\\]|#\\[target_feature\\s*\\(|#\\[naked\\]|#\\[cold\\]|#\\[instruction_set\\s*\\(|#\\[track_caller\\]",
+      "action": "block",
+      "message": "BLOCKED: Codegen override attributes are FORBIDDEN!\n  #[inline(always)]  #[inline(never)]  #[target_feature]  #[naked]  #[cold]  #[track_caller]\n\nThese override compiler optimizer heuristics and create CPU/platform portability risks.\n#[inline(always/never)] requires benchmark evidence -- get user sign-off first.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_format_bypass": {
+      "description": "Block rustfmt formatting bypass in Rust",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#!?\\[rustfmt::skip\\]",
+      "action": "block",
+      "message": "BLOCKED: #[rustfmt::skip] is FORBIDDEN!\n\nFormat your code to comply with rustfmt -- do NOT bypass the formatter.\nIf generated code is causing issues, that is a codegen problem to fix at the source.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_macro_pollution": {
+      "description": "Block #[macro_use] glob macro imports in Rust",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#\\[macro_use\\]",
+      "action": "block",
+      "message": "BLOCKED: #[macro_use] is FORBIDDEN!\n\nUse explicit macro imports: use some_crate::some_macro;\nGlobal macro injection via #[macro_use] pollutes the entire crate namespace.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_cfg_non_test": {
+      "description": "Block #[cfg(...)] and cfg!() except for #[cfg(test)] and cfg!(test)",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#!?\\[cfg\\s*\\((?!test[,)\\s])|\\bcfg!\\s*\\((?!test[,)\\s])|#!?\\[cfg_attr\\s*\\(",
+      "action": "block",
+      "message": "BLOCKED: #[cfg(...)] conditional compilation is FORBIDDEN (except #[cfg(test)])!\n  #[cfg(...)]  cfg!(...)  #[cfg_attr(...)]\n\nConditional compilation must be tested across ALL supported configurations.\nIf platform/feature gating is genuinely required, escalate to the user.\n#[cfg(test)] is the sole permitted exception.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_doctest_escape": {
+      "description": "Block doctest escape hatches that hide code from tests",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "```\\s*(ignore|no_run|compile_fail|should_panic)",
+      "action": "block",
+      "message": "BLOCKED: Doctest escape hatches are FORBIDDEN!\n  ```ignore  ```no_run  ```compile_fail  ```should_panic\n\nDocumentation examples must compile and pass as-is.\nIf an example cannot compile, fix the code -- do NOT hide it from doctests.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_windows_subsystem": {
+      "description": "Block #[windows_subsystem] attribute in Rust",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#\\[windows_subsystem\\s*=",
+      "action": "block",
+      "message": "BLOCKED: #[windows_subsystem] is FORBIDDEN!\n\nThis attribute suppresses console/window behavior on Windows in non-obvious ways.\nEscalate to the user with explicit justification if Windows subsystem configuration is needed.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "rust_clippy_inline_attrs": {
+      "description": "Block inline Clippy tuning attributes in Rust code",
+      "file_pattern": "\\.rs$",
+      "content_pattern": "#!?\\[clippy::",
+      "action": "block",
+      "message": "BLOCKED: Inline Clippy tuning attributes are FORBIDDEN!\n  #[clippy::...]  #![clippy::...]\n\nClipy configuration belongs in the workspace Cargo.toml [lints] table, not scattered through source.\nDo NOT tune Clippy thresholds inline -- fix the code Clippy is warning about.\nRefer to: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    }
+  },
+  "guideline_enforcements": {
+    "api": {
+      "description": "Enforce reading API guidelines before writing API definitions",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "openapi\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "openapi\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "swagger\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "swagger\\.ya?ml$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "api_guidelines.xml",
+      "tracking_key": "api",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/api_guidelines.xml before writing API definitions.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/api_guidelines.xml"
+    },
+    "bash": {
+      "description": "Enforce reading Bash guidelines before writing shell scripts",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.sh$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.sh$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.bash$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.bash$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "bash_guidelines.xml",
+      "tracking_key": "bash",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/bash_guidelines.xml before writing Bash code.\nUse the Read tool (not Bash cat) with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/bash_guidelines.xml\nDo NOT use limit parameter or read less than 100 lines!"
+    },
+    "bicep": {
+      "description": "Enforce reading Bicep guidelines before writing Bicep/ARM templates",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.bicep$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.bicep$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "bicep_guidelines.xml",
+      "tracking_key": "bicep",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/bicep_guidelines.xml before writing Bicep templates.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/bicep_guidelines.xml"
+    },
+    "csharp": {
+      "description": "Enforce reading C# guidelines before writing C# code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.cs$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.cs$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.csproj$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.csproj$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "csharp_guidelines.xml",
+      "tracking_key": "csharp",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/csharp_guidelines.xml before writing C# code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/csharp_guidelines.xml"
+    },
+    "docker": {
+      "description": "Enforce reading Docker guidelines before writing Dockerfiles",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "Dockerfile",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "Dockerfile",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.dockerfile$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.dockerfile$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "docker-compose\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "docker-compose\\.ya?ml$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "docker_guidelines.xml",
+      "tracking_key": "docker",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/docker_guidelines.xml before writing Docker configurations.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/docker_guidelines.xml"
+    },
+    "frontend": {
+      "description": "Enforce reading Frontend guidelines before writing React/TypeScript code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.tsx$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.tsx$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.jsx$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.jsx$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.js$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.js$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "frontend_guidelines.xml",
+      "tracking_key": "frontend",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/frontend_guidelines.xml before writing frontend code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/frontend_guidelines.xml"
+    },
+    "kubernetes": {
+      "description": "Enforce reading Kubernetes guidelines before writing K8s manifests",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "k8s/.*\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "k8s/.*\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "kubernetes/.*\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "kubernetes/.*\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "helm/.*\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "helm/.*\\.ya?ml$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "kubernetes_guidelines.xml",
+      "tracking_key": "kubernetes",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/kubernetes_guidelines.xml before writing Kubernetes manifests.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/kubernetes_guidelines.xml"
+    },
+    "maven": {
+      "description": "Enforce reading Maven guidelines before writing Java/Maven files",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "pom\\.xml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "pom\\.xml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.java$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.java$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "maven_guidelines.xml",
+      "tracking_key": "maven",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/maven_guidelines.xml before writing Java/Maven code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/maven_guidelines.xml"
+    },
+    "powerquery": {
+      "description": "Enforce reading Power Query guidelines before writing M code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.pq$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.pq$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.m$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.m$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "powerquery_guidelines.xml",
+      "tracking_key": "powerquery",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/powerquery_guidelines.xml before writing Power Query/M code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/powerquery_guidelines.xml"
+    },
+    "powershell": {
+      "description": "Enforce reading PowerShell guidelines before writing PowerShell scripts",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.ps1$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.ps1$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.psm1$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.psm1$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "powershell_guidelines.xml",
+      "tracking_key": "powershell",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/powershell_guidelines.xml before writing PowerShell code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/powershell_guidelines.xml"
+    },
+    "python": {
+      "description": "Enforce reading Python guidelines before writing Python code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.py$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.py$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "python_guidelines.xml",
+      "tracking_key": "python",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/python_guidelines.xml before writing Python code.\nUse the Read tool (not Bash cat) with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/python_guidelines.xml\nDo NOT use limit parameter or read less than 100 lines!"
+    },
+    "rust": {
+      "description": "Enforce reading Rust guidelines before writing Rust code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.rs$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.rs$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "rust_guidelines.xml",
+      "tracking_key": "rust",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml before writing Rust code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/rust_guidelines.xml"
+    },
+    "sql": {
+      "description": "Enforce reading SQL guidelines before writing SQL files",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.sql$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.sql$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "sql_guidelines.xml",
+      "tracking_key": "sql",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/sql_guidelines.xml before writing SQL code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/sql_guidelines.xml"
+    },
+    "swift": {
+      "description": "Enforce reading Swift guidelines before writing Swift code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.swift$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.swift$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "swift_guidelines.xml",
+      "tracking_key": "swift",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/swift_guidelines.xml before writing Swift code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/swift_guidelines.xml"
+    },
+    "prohibited_behavior": {
+      "description": "Enforce reading prohibited behavior guidelines before ANY code generation",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.(py|sh|bash|cs|rs|java|ts|tsx|js|jsx|sql|swift|bicep|pq|m|ps1|psm1)$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.(py|sh|bash|cs|rs|java|ts|tsx|js|jsx|sql|swift|bicep|pq|m|ps1|psm1)$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "prohibited_behavior.xml",
+      "tracking_key": "prohibited",
+      "message": "BLOCKED: You must read **AND FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/prohibited_behavior.xml before writing ANY code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/prohibited_behavior.xml"
+    },
+    "writing_style": {
+      "description": "Enforce reading writing style guidelines only when editing markdown files",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.md$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.md$",
+          "type": "file_path"
+        }
+      ],
+      "exclude_patterns": [
+        "CLAUDE\\.md$"
+      ],
+      "guideline_file": "WRITING_STYLE.md",
+      "tracking_key": "writing_style",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/WRITING_STYLE.md before writing documentation.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/WRITING_STYLE.md"
+    },
+    "yew": {
+      "description": "Enforce reading Yew guidelines before writing Yew/WASM code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "src/.*\\.rs$",
+          "type": "file_path",
+          "additional_check": "yew"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "src/.*\\.rs$",
+          "type": "file_path",
+          "additional_check": "yew"
+        }
+      ],
+      "guideline_file": "yew_guidelines.xml",
+      "tracking_key": "yew",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/yew_guidelines.xml before writing Yew/WASM code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/yew_guidelines.xml"
+    },
+    "angular": {
+      "description": "Enforce reading Angular guidelines before writing Angular code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.component\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.component\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.service\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.service\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.module\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.module\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.directive\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.directive\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.pipe\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.pipe\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.guard\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.guard\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.interceptor\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.interceptor\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.resolver\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.resolver\\.ts$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "angular\\.json$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "angular\\.json$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "angular_guidelines.xml",
+      "tracking_key": "angular",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/angular_guidelines.xml before writing Angular code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/angular_guidelines.xml"
+    },
+    "auth": {
+      "description": "Enforce reading Auth guidelines before writing authentication/authorization code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "auth",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "auth",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "login",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "login",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "oauth",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "oauth",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "auth_guidelines.xml",
+      "tracking_key": "auth",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/auth_guidelines.xml before writing authentication/authorization code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/auth_guidelines.xml"
+    },
+    "cicd": {
+      "description": "Enforce reading CI/CD guidelines before writing pipeline configurations",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.github/workflows/.*\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.github/workflows/.*\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "\\.gitlab-ci\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.gitlab-ci\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "Jenkinsfile$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "Jenkinsfile$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "azure-pipelines\\.ya?ml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "azure-pipelines\\.ya?ml$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "cicd_guidelines.xml",
+      "tracking_key": "cicd",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/cicd_guidelines.xml before writing CI/CD pipeline configurations.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/cicd_guidelines.xml"
+    },
+    "netlify": {
+      "description": "Enforce reading Netlify guidelines before writing Netlify configurations",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "netlify\\.toml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "netlify\\.toml$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "_redirects$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "_redirects$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "_headers$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "_headers$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "netlify_guidelines.xml",
+      "tracking_key": "netlify",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/netlify_guidelines.xml before writing Netlify configurations.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/netlify_guidelines.xml"
+    },
+    "nginx": {
+      "description": "Enforce reading Nginx guidelines before writing Nginx configurations",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "nginx\\.conf$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "nginx\\.conf$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "nginx/.*\\.conf$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "nginx/.*\\.conf$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "sites-(available|enabled)/",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "sites-(available|enabled)/",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "nginx_guidelines.xml",
+      "tracking_key": "nginx",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/nginx_guidelines.xml before writing Nginx configurations.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/nginx_guidelines.xml"
+    },
+    "vue_nuxt": {
+      "description": "Enforce reading Vue/Nuxt guidelines before writing Vue/Nuxt code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "\\.vue$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "\\.vue$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "nuxt\\.config\\.",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "nuxt\\.config\\.",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "vue_nuxt_guidelines.xml",
+      "tracking_key": "vue_nuxt",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/vue_nuxt_guidelines.xml before writing Vue/Nuxt code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/vue_nuxt_guidelines.xml"
+    },
+    "wordpress": {
+      "description": "Enforce reading WordPress guidelines before writing WordPress code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "wp-content/",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "wp-content/",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "functions\\.php$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "functions\\.php$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Write",
+          "pattern": "wp-config\\.php$",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "wp-config\\.php$",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "wordpress_guidelines.xml",
+      "tracking_key": "wordpress",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/wordpress_guidelines.xml before writing WordPress code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/wordpress_guidelines.xml"
+    },
+    "woocommerce": {
+      "description": "Enforce reading WooCommerce guidelines before writing WooCommerce code",
+      "triggers": [
+        {
+          "tool": "Write",
+          "pattern": "woocommerce",
+          "type": "file_path"
+        },
+        {
+          "tool": "Edit",
+          "pattern": "woocommerce",
+          "type": "file_path"
+        }
+      ],
+      "guideline_file": "woocommerce_guidelines.xml",
+      "tracking_key": "woocommerce",
+      "message": "BLOCKED: You must read **AND FUCKING FOLLOW EVERY PART OF** ~/.claude/enforcement/guidelines/guideline_documents/xml/woocommerce_guidelines.xml before writing WooCommerce code.\nUse the Read tool with file_path: ~/.claude/enforcement/guidelines/guideline_documents/xml/woocommerce_guidelines.xml"
+    }
+  },
+  "advisory_guidelines": {
+    "automation_principles": {
+      "description": "Advisory: Read automation principles for self-healing scripts",
+      "keywords": [
+        "automation",
+        "self-healing",
+        "idempotent",
+        "deployment script"
+      ],
+      "guideline_file": "automation_principles.xml",
+      "tracking_key": "automation"
+    },
+    "azure_variables": {
+      "description": "Advisory: Read Azure variable guidelines for Azure deployments",
+      "keywords": [
+        "azure",
+        "arm",
+        "azure variables",
+        "azure parameters"
+      ],
+      "guideline_file": "azure_variable_guidelines.xml",
+      "tracking_key": "azure_variables"
+    },
+    "cosmosdb": {
+      "description": "Advisory: Read CosmosDB guidelines when working with Cosmos databases",
+      "keywords": [
+        "cosmosdb",
+        "cosmos",
+        "documentdb",
+        "nosql azure"
+      ],
+      "guideline_file": "cosmosdb_guidelines.xml",
+      "tracking_key": "cosmosdb"
+    },
+    "datadog": {
+      "description": "Advisory: Read Datadog guidelines when working with observability",
+      "keywords": [
+        "datadog",
+        "dd-agent",
+        "apm",
+        "observability",
+        "monitoring"
+      ],
+      "guideline_file": "datadog_observability.xml",
+      "tracking_key": "datadog"
+    },
+    "dockerization": {
+      "description": "Advisory: Read dockerization guidelines for containerizing applications",
+      "keywords": [
+        "containerize",
+        "dockerize",
+        "docker build",
+        "container image"
+      ],
+      "guideline_file": "docker_guidelines.xml",
+      "tracking_key": "dockerization"
+    },
+    "kafka": {
+      "description": "Advisory: Read Kafka guidelines when working with message streaming",
+      "keywords": [
+        "kafka",
+        "event streaming",
+        "message broker",
+        "confluent"
+      ],
+      "guideline_file": "kafka_guidelines.xml",
+      "tracking_key": "kafka"
+    },
+    "lxc": {
+      "description": "Advisory: Read LXC guidelines when working with Linux containers",
+      "keywords": [
+        "lxc",
+        "lxd",
+        "linux container",
+        "proxmox"
+      ],
+      "guideline_file": "lxc_guidelines.xml",
+      "tracking_key": "lxc"
+    },
+    "rabbitmq": {
+      "description": "Advisory: Read RabbitMQ guidelines when working with message queues",
+      "keywords": [
+        "rabbitmq",
+        "amqp",
+        "message queue",
+        "rabbit"
+      ],
+      "guideline_file": "rabbit_mq_guidelines.xml",
+      "tracking_key": "rabbitmq"
+    },
+    "redis": {
+      "description": "Advisory: Read Redis guidelines when working with caching",
+      "keywords": [
+        "redis",
+        "cache",
+        "caching",
+        "distributed cache"
+      ],
+      "guideline_file": "redis_guidelines.xml",
+      "tracking_key": "redis"
+    },
+    "snowflake": {
+      "description": "Advisory: Read Snowflake guidelines when working with data warehousing",
+      "keywords": [
+        "snowflake",
+        "data warehouse",
+        "snowsql"
+      ],
+      "guideline_file": "snowflake_guidelines.xml",
+      "tracking_key": "snowflake"
+    },
+    "storage_messaging": {
+      "description": "Advisory: Read storage/messaging principles for distributed systems",
+      "keywords": [
+        "blob storage",
+        "queue storage",
+        "message bus",
+        "event hub"
+      ],
+      "guideline_file": "storage_and_messaging_principles.xml",
+      "tracking_key": "storage_messaging"
+    },
+    "utilities": {
+      "description": "Advisory: Read utilities guidelines when working with .utilities folder",
+      "keywords": [
+        ".utilities",
+        "utilities/",
+        "portable scripts"
+      ],
+      "guideline_file": "utilities_guidelines.xml",
+      "tracking_key": "utilities"
+    },
+    "angular_js": {
+      "description": "Advisory: Read AngularJS guidelines when working with AngularJS legacy code",
+      "keywords": [
+        "angularjs",
+        "angular.js",
+        "ng-controller",
+        "ng-model",
+        "$scope",
+        "$rootScope"
+      ],
+      "guideline_file": "angular_js_guidelines.xml",
+      "tracking_key": "angular_js"
+    },
+    "auth": {
+      "description": "Advisory: Read Auth guidelines when working with authentication/authorization",
+      "keywords": [
+        "authentication",
+        "authorization",
+        "oauth",
+        "jwt",
+        "token",
+        "login",
+        "session",
+        "auth0"
+      ],
+      "guideline_file": "auth_guidelines.xml",
+      "tracking_key": "auth"
+    },
+    "cicd": {
+      "description": "Advisory: Read CI/CD guidelines when working with pipelines",
+      "keywords": [
+        "ci/cd",
+        "pipeline",
+        "github actions",
+        "gitlab ci",
+        "jenkins",
+        "azure pipelines",
+        "continuous integration",
+        "continuous deployment"
+      ],
+      "guideline_file": "cicd_guidelines.xml",
+      "tracking_key": "cicd"
+    },
+    "domain_infrastructure": {
+      "description": "Advisory: Read domain infrastructure guidelines when working with DNS/domains",
+      "keywords": [
+        "dns",
+        "domain",
+        "nameserver",
+        "a record",
+        "cname",
+        "mx record",
+        "ssl certificate",
+        "tls"
+      ],
+      "guideline_file": "domain_infrastructure_guidelines.xml",
+      "tracking_key": "domain_infrastructure"
+    },
+    "email_authentication": {
+      "description": "Advisory: Read email authentication guidelines when working with email security",
+      "keywords": [
+        "spf",
+        "dkim",
+        "dmarc",
+        "email authentication",
+        "email security",
+        "mail server",
+        "smtp"
+      ],
+      "guideline_file": "email_authentication_guidelines.xml",
+      "tracking_key": "email_authentication"
+    },
+    "netlify": {
+      "description": "Advisory: Read Netlify guidelines when working with Netlify deployments",
+      "keywords": [
+        "netlify",
+        "netlify.toml",
+        "netlify deploy",
+        "netlify functions",
+        "edge functions"
+      ],
+      "guideline_file": "netlify_guidelines.xml",
+      "tracking_key": "netlify"
+    },
+    "nginx": {
+      "description": "Advisory: Read Nginx guidelines when working with web server configuration",
+      "keywords": [
+        "nginx",
+        "reverse proxy",
+        "nginx.conf",
+        "upstream",
+        "server block",
+        "location block"
+      ],
+      "guideline_file": "nginx_guidelines.xml",
+      "tracking_key": "nginx"
+    },
+    "session_recording": {
+      "description": "Advisory: Read session recording guidelines when working with user tracking",
+      "keywords": [
+        "session recording",
+        "openreplay",
+        "hotjar",
+        "fullstory",
+        "session replay",
+        "user tracking"
+      ],
+      "guideline_file": "session_recording_guidelines.xml",
+      "tracking_key": "session_recording"
+    },
+    "stripe": {
+      "description": "Advisory: Read Stripe guidelines when working with payment processing",
+      "keywords": [
+        "stripe",
+        "payment",
+        "checkout",
+        "subscription",
+        "stripe api",
+        "payment intent"
+      ],
+      "guideline_file": "stripe_guidelines.xml",
+      "tracking_key": "stripe"
+    },
+    "vue_nuxt": {
+      "description": "Advisory: Read Vue/Nuxt guidelines when working with Vue.js or Nuxt frameworks",
+      "keywords": [
+        "vue",
+        "nuxt",
+        "vue.js",
+        "nuxt.js",
+        "composition api",
+        "pinia",
+        "vuex"
+      ],
+      "guideline_file": "vue_nuxt_guidelines.xml",
+      "tracking_key": "vue_nuxt"
+    },
+    "woocommerce": {
+      "description": "Advisory: Read WooCommerce guidelines when working with WooCommerce",
+      "keywords": [
+        "woocommerce",
+        "wc_",
+        "wc-",
+        "product listing",
+        "cart",
+        "woo"
+      ],
+      "guideline_file": "woocommerce_guidelines.xml",
+      "tracking_key": "woocommerce"
+    },
+    "wordpress": {
+      "description": "Advisory: Read WordPress guidelines when working with WordPress",
+      "keywords": [
+        "wordpress",
+        "wp-",
+        "wp_",
+        "theme",
+        "plugin",
+        "gutenberg",
+        "avada"
+      ],
+      "guideline_file": "wordpress_guidelines.xml",
+      "tracking_key": "wordpress"
+    },
+    "zenfolio_integration": {
+      "description": "Advisory: Read Zenfolio integration guidelines when working with Zenfolio",
+      "keywords": [
+        "zenfolio",
+        "photo gallery",
+        "photo hosting",
+        "zenfolio api",
+        "photo commerce"
+      ],
+      "guideline_file": "zenfolio_integration_guidelines.xml",
+      "tracking_key": "zenfolio_integration"
+    }
+  },
+  "agent_routing": {
+    "description": "Agent routing rules - enforces correct agent selection for code generation tasks",
+    "forge_agents": {
+      "python": {
+        "agent": "python-forge",
+        "patterns": [
+          "\\.py$",
+          "python",
+          "pydantic",
+          "fastapi",
+          "django",
+          "flask"
+        ],
+        "guideline": "python_guidelines.xml"
+      },
+      "rust": {
+        "agent": "rust-forge",
+        "patterns": [
+          "\\.rs$",
+          "rust",
+          "cargo",
+          "tokio"
+        ],
+        "guideline": "rust_guidelines.xml"
+      },
+      "csharp": {
+        "agent": "csharp-forge",
+        "patterns": [
+          "\\.cs$",
+          "c#",
+          "csharp",
+          "dotnet",
+          "\\.net"
+        ],
+        "guideline": "csharp_guidelines.xml"
+      },
+      "bash": {
+        "agent": "bashforge-script-generator",
+        "patterns": [
+          "\\.sh$",
+          "bash",
+          "shell script"
+        ],
+        "guideline": "bash_guidelines.xml"
+      },
+      "frontend": {
+        "agent": "frontend-developer",
+        "patterns": [
+          "\\.tsx?$",
+          "react",
+          "typescript",
+          "next\\.?js",
+          "frontend"
+        ],
+        "guideline": "frontend_guidelines.xml"
+      },
+      "yew": {
+        "agent": "yew-forge",
+        "patterns": [
+          "yew",
+          "wasm",
+          "webassembly",
+          "trunk"
+        ],
+        "guideline": "yew_guidelines.xml"
+      },
+      "java": {
+        "agent": "maven-forge",
+        "patterns": [
+          "\\.java$",
+          "maven",
+          "pom\\.xml",
+          "spring",
+          "quarkus"
+        ],
+        "guideline": "maven_guidelines.xml"
+      },
+      "angular": {
+        "agent": "frontend-developer",
+        "patterns": [
+          "\\.component\\.ts$",
+          "angular",
+          "angular\\.json",
+          "ng-"
+        ],
+        "guideline": "angular_guidelines.xml"
+      }
+    },
+    "advisory_agents": {
+      "security-auditor": [
+        "security",
+        "vulnerability",
+        "owasp",
+        "injection",
+        "xss",
+        "csrf"
+      ],
+      "database-architect": [
+        "database",
+        "schema",
+        "migration",
+        "sql",
+        "postgresql",
+        "mysql"
+      ],
+      "performance-optimizer": [
+        "performance",
+        "optimization",
+        "profiling",
+        "bottleneck",
+        "latency"
+      ],
+      "devops-engineer": [
+        "docker",
+        "kubernetes",
+        "k8s",
+        "terraform",
+        "ci/cd",
+        "pipeline"
+      ],
+      "test-engineer": [
+        "unit test",
+        "integration test",
+        "test coverage",
+        "pytest",
+        "jest"
+      ],
+      "documentation-expert": [
+        "documentation",
+        "docs",
+        "readme",
+        "api docs",
+        "runbook"
+      ]
+    },
+    "exploratory_agents": [
+      "Explore",
+      "general-purpose",
+      "Plan",
+      "claude-code-guide"
+    ],
+    "code_generation_keywords": [
+      "write",
+      "create",
+      "implement",
+      "generate",
+      "build",
+      "add",
+      "develop"
+    ],
+    "research_keywords": [
+      "find",
+      "search",
+      "explore",
+      "understand",
+      "analyze",
+      "review",
+      "investigate"
+    ]
+  },
+  "guideline_tracking": {
+    "min_lines_required": 100,
+    "track_via_read_tool": true,
+    "track_via_bash_cat": true,
+    "guidelines_base_path": "~/.claude/enforcement/guidelines/guideline_documents/xml"
+  }
+}

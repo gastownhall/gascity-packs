@@ -1,0 +1,12 @@
+{
+  "java": {
+    "command": "jdtls",
+    "args": [],
+    "extensionToLanguage": {
+      ".java": "java"
+    },
+    "startupTimeout": 120000,
+    "shutdownTimeout": 15000,
+    "maxRestarts": 3
+  }
+}

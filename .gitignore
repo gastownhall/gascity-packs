@@ -14,3 +14,9 @@
 # /home/ds/gascity-packs/.beads/config.yaml). Keep it out of repo history —
 # beads issues canonical store is the Dolt DB, not this file.
 /issues.jsonl
+
+# magi pack — exclude the local .utilities working tree (2GB of node_modules,
+# vendored frontend, and Claude worktrees). The magi pack consumes .utilities
+# via the MAGI_UTILITIES_SOURCE env var or its pack-internal fallback; the
+# tree is not shipped via the public packs repo.
+magi/.utilities/

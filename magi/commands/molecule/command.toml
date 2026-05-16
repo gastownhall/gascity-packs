@@ -1,0 +1,2 @@
+description = 'Run, pour, or wisp magi bootstrap molecules (parent bead + ordered children)'
+run = '../molecule.sh'
