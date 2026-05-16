@@ -12,8 +12,9 @@ a small set of navigation keybindings scoped to GC sessions on the socket.
   10-color palette, chosen by consistent hash of the agent name so the same
   agent always gets the same color. Matches the Go `DefaultPalette` in
   `internal/session/tmux/theme.go`.
-- **Live status-right** — refreshes every 5 seconds via `gc hook` and
-  `gc mail check`; shows pending hooks and unread mail counts per agent.
+- **Live status-right** — refreshes every 5 seconds with bounded read-only
+  Beads queries; shows pending hook nudges and unread mail counts per agent
+  without blocking tmux status rendering.
 - **Prefix keybindings** — `n` / `p` cycle through related agent sessions
   (rig ops, rig crew, town group, dog pool), `g` opens a popup menu of all
   agent sessions on the socket.
@@ -32,7 +33,8 @@ through a `gcmux` wrapper so per-city socket isolation keeps working.
 source = "../packs/tmux-theme"
 ```
 
-No prerequisites beyond `tmux` itself, which Gas City already requires.
+Requires `tmux`, `bd`, and `jq`, which Gas City local development lanes
+already install.
 
 ## Keybindings
 

@@ -21,9 +21,10 @@ guard_pattern="${3:-GC_AGENT}"
 
 [ -z "$key" ] || [ -z "$gc_command" ] && exit 1
 
-# Check if already a GC binding (idempotent).
+# Check if already a GC binding (idempotent). Theme bindings are installed as
+# run-shell wrappers, so they may not contain a literal `gc ` command string.
 existing=$(gcmux list-keys -T prefix "$key" 2>/dev/null || true)
-if printf '%s' "$existing" | grep -q 'if-shell' && printf '%s' "$existing" | grep -q 'gc '; then
+if printf '%s' "$existing" | grep -q 'if-shell' && printf '%s' "$existing" | grep -Eq 'GC_AGENT|agent-menu\.sh|cycle\.sh'; then
     exit 0
 fi
 

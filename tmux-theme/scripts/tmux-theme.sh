@@ -28,6 +28,7 @@ idx=$(printf '%s' "$AGENT" | cksum | awk "{print \$1 % $# + 1}")
 eval "theme=\${$idx}"
 bg="${theme%%:*}"
 fg="${theme##*:}"
+city="${GC_CITY:-${GT_ROOT:-${GC_DIR:-}}}"
 
 # ── Apply theme ─────────────────────────────────────────────────────────
 gcmux set-option -t "$SESSION" status-position bottom
@@ -36,7 +37,11 @@ gcmux set-option -t "$SESSION" status-left-length 25
 gcmux set-option -t "$SESSION" status-left " $AGENT "
 gcmux set-option -t "$SESSION" status-right-length 80
 gcmux set-option -t "$SESSION" status-interval 5
-gcmux set-option -t "$SESSION" status-right "#($CONFIGDIR/scripts/status-line.sh $AGENT) %H:%M"
+if [ -n "$city" ]; then
+    gcmux set-option -t "$SESSION" status-right "#($CONFIGDIR/scripts/status-line.sh $AGENT $city) %H:%M"
+else
+    gcmux set-option -t "$SESSION" status-right "#($CONFIGDIR/scripts/status-line.sh $AGENT) %H:%M"
+fi
 
 # ── Mouse + clipboard ─────────────────────────────────────────────────
 gcmux set-option -t "$SESSION" mouse on
