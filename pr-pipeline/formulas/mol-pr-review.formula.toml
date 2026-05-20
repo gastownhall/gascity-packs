@@ -54,8 +54,15 @@ title = "Fetch PR metadata and diff"
 description = """
 Resolve the PR identifier, fetch its data, and prepare the workspace.
 
+**Claim the root bead BEFORE any review work begins.** `bd update --claim`
+atomically sets assignee to your session and transitions status to
+`in_progress` (idempotent if already claimed by you). Without the claim,
+the bead stays `OPEN/assignee=none/started=no` while review work is in
+flight, and monitoring reads false stalls.
+
 ```bash
 ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+bd update "$ROOT_ID" --claim
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
     echo "Not in a git repository — cannot review PR."
     bd close "$ROOT_ID" --reason "not a git checkout"

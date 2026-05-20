@@ -51,10 +51,17 @@ description = """
 Parse the PR, fetch metadata, validate scope, checkout the branch, and record
 initial state in the root bead notes.
 
-**1. Find the root bead:**
+**1. Find the root bead and claim it (BEFORE any `git checkout`):**
 ```bash
 ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+bd update "$ROOT_ID" --claim
 ```
+
+`bd update --claim` atomically sets assignee to your session and transitions
+status to `in_progress` (idempotent if already claimed by you). The claim
+**MUST** happen before any `git checkout` of the contributor's branch.
+Otherwise the bead stays `OPEN/assignee=none/started=no` while real review
+work is in flight, and monitoring reads false stalls.
 
 **2. Parse PR identifier from `{{pr}}`:**
 - If `{{pr}}` matches `https://github.com/.*/pull/\\d+` → extract owner, repo, PR number from URL
