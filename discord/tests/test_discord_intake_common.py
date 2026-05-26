@@ -3959,6 +3959,190 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         request = urlopen.call_args.args[0]
         self.assertNotIn("Authorization", request.headers)
 
+    # --- gc_api_request connection-refused retry ---
+
+    def _make_conn_refused_url_error(self) -> urllib.error.URLError:
+        import errno as _errno
+        reason = ConnectionRefusedError(_errno.ECONNREFUSED, "Connection refused")
+        return urllib.error.URLError(reason)
+
+    def _make_urlopen_success(self, body: bytes = b'{"ok": true}') -> mock.Mock:
+        ctx = mock.Mock()
+        ctx.__enter__ = mock.Mock(return_value=mock.Mock(read=mock.Mock(return_value=body)))
+        ctx.__exit__ = mock.Mock(return_value=False)
+        return ctx
+
+    def test_gc_api_request_retries_connection_refused_up_to_limit(self) -> None:
+        os.environ["GC_API_BASE_URL"] = "http://127.0.0.1:8372"
+        retry_count = len(common.GC_API_CONNECTION_REFUSED_RETRY_DELAYS_SECONDS)
+        side_effects: list = [self._make_conn_refused_url_error()] * (retry_count + 1)
+
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=side_effects) as urlopen, \
+             mock.patch.object(common.time, "sleep"):
+            with self.assertRaises(common.GCAPIError):
+                common.gc_api_request("GET", "/v0/sessions")
+
+        self.assertEqual(urlopen.call_count, retry_count + 1)
+
+    def test_gc_api_request_succeeds_after_connection_refused_retry(self) -> None:
+        os.environ["GC_API_BASE_URL"] = "http://127.0.0.1:8372"
+        side_effects = [
+            self._make_conn_refused_url_error(),
+            self._make_conn_refused_url_error(),
+            self._make_urlopen_success(b'{"items": []}'),
+        ]
+
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=side_effects) as urlopen, \
+             mock.patch.object(common.time, "sleep"):
+            result = common.gc_api_request("GET", "/v0/sessions")
+
+        self.assertEqual(result, {"items": []})
+        self.assertEqual(urlopen.call_count, 3)
+
+    def test_gc_api_request_does_not_retry_http_errors(self) -> None:
+        os.environ["GC_API_BASE_URL"] = "http://127.0.0.1:8372"
+        http_error = common.urllib.error.HTTPError(
+            "http://127.0.0.1:8372/v0/sessions", 503, "Service Unavailable", {}, io.BytesIO(b"down")
+        )
+
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=http_error) as urlopen, \
+             mock.patch.object(common.time, "sleep") as sleep:
+            with self.assertRaises(common.GCAPIError):
+                common.gc_api_request("GET", "/v0/sessions")
+
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_gc_api_request_does_not_retry_timeout_errors(self) -> None:
+        os.environ["GC_API_BASE_URL"] = "http://127.0.0.1:8372"
+
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=TimeoutError()) as urlopen, \
+             mock.patch.object(common.time, "sleep") as sleep:
+            with self.assertRaisesRegex(common.GCAPIError, "timed out"):
+                common.gc_api_request("GET", "/v0/sessions")
+
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_gc_api_request_does_not_retry_non_connection_refused_url_error(self) -> None:
+        os.environ["GC_API_BASE_URL"] = "http://127.0.0.1:8372"
+        url_error = urllib.error.URLError(OSError("Network unreachable"))
+
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=url_error) as urlopen, \
+             mock.patch.object(common.time, "sleep") as sleep:
+            with self.assertRaises(common.GCAPIError):
+                common.gc_api_request("GET", "/v0/sessions")
+
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_gc_api_request_logs_retry_attempt_to_stderr(self) -> None:
+        os.environ["GC_API_BASE_URL"] = "http://127.0.0.1:8372"
+        side_effects = [
+            self._make_conn_refused_url_error(),
+            self._make_urlopen_success(),
+        ]
+
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=side_effects), \
+             mock.patch.object(common.time, "sleep"), \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as fake_stderr:
+            common.gc_api_request("GET", "/v0/sessions")
+
+        self.assertIn("connection refused", fake_stderr.getvalue().lower())
+        self.assertIn("retry 1/", fake_stderr.getvalue())
+
+    def test_gc_api_request_logs_exhaustion_to_stderr(self) -> None:
+        os.environ["GC_API_BASE_URL"] = "http://127.0.0.1:8372"
+        retry_count = len(common.GC_API_CONNECTION_REFUSED_RETRY_DELAYS_SECONDS)
+        side_effects = [self._make_conn_refused_url_error()] * (retry_count + 1)
+
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=side_effects), \
+             mock.patch.object(common.time, "sleep"), \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as fake_stderr:
+            with self.assertRaises(common.GCAPIError):
+                common.gc_api_request("GET", "/v0/sessions")
+
+        self.assertIn(f"after {retry_count} retries", fake_stderr.getvalue())
+
+    def test_gc_api_request_sleeps_with_correct_backoff_delays(self) -> None:
+        os.environ["GC_API_BASE_URL"] = "http://127.0.0.1:8372"
+        delays = common.GC_API_CONNECTION_REFUSED_RETRY_DELAYS_SECONDS
+        side_effects = [self._make_conn_refused_url_error()] * len(delays)
+        side_effects.append(self._make_urlopen_success())
+
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=side_effects), \
+             mock.patch.object(common.time, "sleep") as sleep:
+            common.gc_api_request("GET", "/v0/sessions")
+
+        self.assertEqual(sleep.call_count, len(delays))
+        for i, delay in enumerate(delays):
+            self.assertEqual(sleep.call_args_list[i].args[0], delay)
+
+    # --- redact_chat_ingress_record buffered_delivery ---
+
+    def test_redact_chat_ingress_record_redacts_buffered_delivery_message(self) -> None:
+        record = {
+            "ingress_id": "in-redact-1",
+            "from_display": "alice",
+            "from_user_id": "u-1",
+            "body_preview": "hello there",
+            "targets": [
+                {
+                    "session_name": "sky",
+                    "status": "failed",
+                    "idempotency_key": "ingress:in-redact-1:target:sky",
+                    "buffered_delivery": {"message": "secret content", "intent": "default"},
+                },
+            ],
+        }
+
+        redacted = common.redact_chat_ingress_record(record)
+
+        self.assertEqual(redacted["targets"][0]["buffered_delivery"]["message"], "[redacted]")
+        self.assertEqual(redacted["targets"][0]["buffered_delivery"]["intent"], "default")
+        # original is not mutated
+        self.assertEqual(record["targets"][0]["buffered_delivery"]["message"], "secret content")
+
+    def test_redact_chat_ingress_record_leaves_delivered_targets_untouched(self) -> None:
+        record = {
+            "ingress_id": "in-redact-2",
+            "from_display": "bob",
+            "from_user_id": "u-2",
+            "body_preview": "hi",
+            "targets": [
+                {
+                    "session_name": "sky",
+                    "status": "delivered",
+                    "idempotency_key": "ingress:in-redact-2:target:sky",
+                    "response": {"status": "accepted"},
+                },
+            ],
+        }
+
+        redacted = common.redact_chat_ingress_record(record)
+
+        target = redacted["targets"][0]
+        self.assertNotIn("buffered_delivery", target)
+        self.assertEqual(target["status"], "delivered")
+
+    def test_redact_chat_ingress_record_handles_target_without_buffered_delivery_key(self) -> None:
+        record = {
+            "ingress_id": "in-redact-3",
+            "from_display": "carol",
+            "body_preview": "hey",
+            "targets": [
+                {
+                    "session_name": "sky",
+                    "status": "failed",
+                    "idempotency_key": "ingress:in-redact-3:target:sky",
+                },
+            ],
+        }
+
+        redacted = common.redact_chat_ingress_record(record)
+
+        self.assertNotIn("buffered_delivery", redacted["targets"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
