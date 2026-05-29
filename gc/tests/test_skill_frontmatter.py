@@ -14,14 +14,14 @@ class SkillFrontmatterTests(unittest.TestCase):
             [path.parent.name for path in skill_files],
             [
                 "build",
-                "decompose",
-                "design",
+                "create-beads",
                 "gap-analysis",
+                "gather-requirements",
                 "gh-issue-fix",
                 "gh-issue-triage",
                 "gh-pr-review",
                 "implement",
-                "plan",
+                "plan-implementation",
                 "review",
             ],
         )

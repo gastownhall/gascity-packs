@@ -647,7 +647,7 @@ def create_from_tasks(path: Path, *, city: str | None, dry_run: bool, force: boo
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Create Gas City beads and convoys from a gc.decompose tasks.md file")
+    parser = argparse.ArgumentParser(description="Create Gas City beads and convoys from a gc.create-beads tasks.md file")
     parser.add_argument("tasks_md", help="Path to tasks.md")
     parser.add_argument("--city", help="Optional city path/name passed through to gc")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print gc commands without creating beads")

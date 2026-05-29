@@ -1,18 +1,18 @@
 ---
-name: design
-description: Turn approved requirements into a repo-grounded engineering design document.
+name: plan-implementation
+description: Turn approved requirements into a repo-grounded implementation plan document.
 ---
 
-# GC Design
+# GC Plan Implementation
 
-Use this skill after `gc.plan` has produced an approved `requirements.md`. This
+Use this skill after `gc.gather-requirements` has produced an approved `requirements.md`. This
 is a planning-only skill: inspect code and write the design document, but do not
 implement product/source changes.
 
 ## Workflow
 
 1. Confirm the target rig/root path, plan slug, and artifact root. Default to:
-   `<rig-root>/.gc/plans/<plan-slug>/`.
+   `<rig-root>/plans/<plan-slug>/`.
 2. Read `requirements.md`. Refuse to proceed if its front matter status is not
    `approved`, unless the user explicitly overrides that gate.
 3. Inspect the target codebase before writing the design. Ground the design in
@@ -21,7 +21,7 @@ implement product/source changes.
    - Provide your recommended answer with each question.
    - Ask only questions that materially affect the design.
    - Inspect the repository instead of asking when the answer is discoverable.
-5. Write or overwrite `design.md`.
+5. Write or overwrite `implementation-plan.md`.
 6. Ask the user to review. When the user explicitly approves, update
    `status: approved`. Otherwise leave `status: draft` or `status: questions`.
 7. For build-compatible designs, include the implementation context that later
@@ -30,15 +30,15 @@ implement product/source changes.
 
 ## Artifact
 
-`design.md` must begin with YAML front matter:
+`implementation-plan.md` must begin with YAML front matter:
 
 ```yaml
 ---
 plan_slug: example-slug
-phase: design
+phase: implementation-plan
 rig: backend
 rig_root: /absolute/path/to/rig
-artifact_root: /absolute/path/to/rig/.gc/plans
+artifact_root: /absolute/path/to/rig/plans
 requirements_file: /absolute/path/to/requirements.md
 status: draft
 created_at: 2026-05-10T00:00:00Z
@@ -49,7 +49,7 @@ updated_at: 2026-05-10T00:00:00Z
 Use this body structure:
 
 ```markdown
-# Design: <title>
+# Implementation Plan: <title>
 
 ## Summary
 

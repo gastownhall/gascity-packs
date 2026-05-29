@@ -11,12 +11,12 @@ review/fix loops, and an optional publish step.
 
 ## Workflow
 
-1. Create or update `requirements.md` using `gc.plan`. Build starts with no
+1. Create or update `requirements.md` using `gc.gather-requirements`. Build starts with no
    required context beyond the user's request.
 2. Stop for explicit human approval of requirements.
-3. Create or update `design.md` using `gc.design`.
+3. Create or update `implementation-plan.md` using `gc.plan-implementation`.
 4. Stop for explicit human approval of design.
-5. Create or update `tasks.md` using `gc.decompose`, then create the initial
+5. Create or update `tasks.md` using `gc.create-beads`, then create the initial
    implementation convoy.
 6. Stop for explicit human approval of the task plan/start gate.
 7. Write `context.yaml` with freeform context entries for requirements, design,
@@ -31,9 +31,9 @@ review/fix loops, and an optional publish step.
 Default to:
 
 ```text
-<rig-root>/.gc/plans/<plan-slug>/
+<rig-root>/plans/<plan-slug>/
   requirements.md
-  design.md
+  implementation-plan.md
   tasks.md
   context.yaml
   build/

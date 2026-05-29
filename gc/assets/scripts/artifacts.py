@@ -11,6 +11,11 @@ class ArtifactError(Exception):
     pass
 
 
+_GC_PLAN_ARTIFACTS = frozenset(
+    {"requirements.md", "implementation-plan.md", "tasks.md", "context.yaml"}
+)
+
+
 def resolve_artifact_root(override: str, *, rig_root: str = "") -> Path:
     raw_override = override.strip()
     if raw_override:
@@ -19,7 +24,49 @@ def resolve_artifact_root(override: str, *, rig_root: str = "") -> Path:
     raw_rig_root = rig_root.strip() or first_env("GC_RIG_ROOT", "GC_DIR", "GC_BEADS_SCOPE_ROOT")
     if not raw_rig_root:
         raise ArtifactError("artifact root override is empty and no rig root environment is available")
-    return (Path(raw_rig_root).expanduser().resolve() / ".gc" / "plans").resolve()
+    rig = Path(raw_rig_root).expanduser().resolve()
+    default_root = rig / "plans"
+    if _plans_root_is_foreign(default_root):
+        return (rig / "gc-plans").resolve()
+    return default_root.resolve()
+
+
+def _plans_root_is_foreign(plans_dir: Path) -> bool:
+    """Return True when ``plans_dir`` already exists and is used for something
+    other than gc workflow artifacts, so ``resolve_artifact_root`` should fall
+    back to ``<rig>/gc-plans`` instead of colliding with it.
+
+    Resolution must be stable across repeated runs, so a directory gc owns is
+    never reported as foreign. A ``plans`` directory counts as gc-owned when it
+    is empty, carries a ``.gc-plans`` marker, or already holds gc plan artifacts
+    (``requirements.md`` and friends) at the top level or one level down in a
+    plan-slug subdirectory. Only a non-empty directory with no gc signature --
+    or a ``plans`` entry that is not a directory at all -- is treated as
+    foreign.
+    """
+    if not plans_dir.exists():
+        return False
+    if not plans_dir.is_dir():
+        return True
+    if (plans_dir / ".gc-plans").exists():
+        return False
+    try:
+        children = list(plans_dir.iterdir())
+    except OSError:
+        # Cannot introspect the directory; be conservative and do not clobber it.
+        return True
+    if not children:
+        return False
+    for child in children:
+        if child.name in _GC_PLAN_ARTIFACTS:
+            return False
+        if child.is_dir():
+            try:
+                if any(grandchild.name in _GC_PLAN_ARTIFACTS for grandchild in child.iterdir()):
+                    return False
+            except OSError:
+                continue
+    return True
 
 
 def resolve_artifact_path(override: str, relative: str, *, rig_root: str = "") -> Path:

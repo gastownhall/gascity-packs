@@ -347,9 +347,9 @@ _Avoid_: Output directory, workspace
   path, generated context bundle path, initial implementation convoy id, drain
   policy, and loop limits.
 - **Build Workflow** orchestrates planning, design, and decomposition as phases.
-- `plan`, `design`, and `decompose` remain separately callable interactive
+- `gather-requirements`, `plan-implementation`, and `create-beads` remain separately callable interactive
   skills for humans.
-- `decompose` writes `tasks.md` and creates the approved beads/convoy after
+- `create-beads` writes `tasks.md` and creates the approved beads/convoy after
   human approval.
 - **Build Workflow** reuses the convoy id produced by decomposition.
 - **Build Workflow** generates the initial context bundle after decomposition
@@ -371,7 +371,7 @@ _Avoid_: Output directory, workspace
 - Direct **Implement Formula** does not run gap-analysis or review before
   push/PR.
 - Use **Build Workflow** for implementation with gap-analysis and review loops.
-- Standalone `decompose` does not need to emit a context bundle in v0.
+- Standalone `create-beads` does not need to emit a context bundle in v0.
 - **Build Workflow** requires explicit human approval before advancing from
   planning to design, from design to decomposition, and from decomposition to
   implementation.

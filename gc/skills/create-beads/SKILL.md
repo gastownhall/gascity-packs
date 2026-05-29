@@ -1,19 +1,19 @@
 ---
-name: decompose
-description: Turn an approved requirements/design pair into an approved bead plan and create the beads.
+name: create-beads
+description: Turn an approved requirements/implementation-plan pair into an approved bead plan and create the beads.
 ---
 
-# GC Decompose
+# GC Create Beads
 
-Use this skill after `gc.plan` and `gc.design` have approved artifacts. This is
+Use this skill after `gc.gather-requirements` and `gc.plan-implementation` have approved artifacts. This is
 a planning and task-creation skill: it may write `tasks.md` and create convoys
 and runnable beads, but it must not implement those beads.
 
 ## Workflow
 
 1. Confirm the target rig/root path, plan slug, and artifact root. Default to:
-   `<rig-root>/.gc/plans/<plan-slug>/`.
-2. Read `requirements.md` and `design.md`. Refuse to proceed unless both are
+   `<rig-root>/plans/<plan-slug>/`.
+2. Read `requirements.md` and `implementation-plan.md`. Refuse to proceed unless both are
    `approved`, unless the user explicitly overrides that gate.
 3. Inspect the target codebase enough to validate task boundaries,
    dependencies, file ownership, and test strategy.
@@ -35,9 +35,9 @@ plan_slug: example-slug
 phase: tasks
 rig: backend
 rig_root: /absolute/path/to/rig
-artifact_root: /absolute/path/to/rig/.gc/plans
+artifact_root: /absolute/path/to/rig/plans
 requirements_file: /absolute/path/to/requirements.md
-design_file: /absolute/path/to/design.md
+implementation_plan_file: /absolute/path/to/implementation-plan.md
 status: draft
 created_at: 2026-05-10T00:00:00Z
 updated_at: 2026-05-10T00:00:00Z

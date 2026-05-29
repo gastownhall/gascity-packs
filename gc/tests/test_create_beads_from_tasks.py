@@ -18,9 +18,9 @@ plan_slug: demo
 phase: tasks
 rig: backend
 rig_root: /repo
-artifact_root: /repo/.gc/plans
-requirements_file: /repo/.gc/plans/demo/requirements.md
-design_file: /repo/.gc/plans/demo/design.md
+artifact_root: /repo/plans
+requirements_file: /repo/plans/demo/requirements.md
+implementation_plan_file: /repo/plans/demo/implementation-plan.md
 status: approved
 created_at: 2026-05-10T00:00:00Z
 updated_at: 2026-05-10T00:00:00Z

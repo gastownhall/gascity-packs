@@ -3,9 +3,9 @@
 This pack provides a convoy-first planning and implementation workflow for Gas
 City work:
 
-- `gc.plan` gathers requirements and writes `requirements.md`.
-- `gc.design` turns approved requirements into an engineering design.
-- `gc.decompose` turns an approved design into a convoy/bead task plan, then
+- `gc.gather-requirements` gathers requirements and writes `requirements.md`.
+- `gc.plan-implementation` turns approved requirements into an implementation plan and writes `implementation-plan.md`.
+- `gc.create-beads` turns an approved implementation plan into a convoy/bead task plan, then
   creates convoys and runnable beads.
 - `gc.implement` runs implementation for an approved convoy without the full
   build loop.
@@ -26,9 +26,9 @@ source = "../gascity-packs/gc"
 Run the skills manually in order:
 
 ```text
-Use skill gc.plan
-Use skill gc.design
-Use skill gc.decompose
+Use skill gc.gather-requirements
+Use skill gc.plan-implementation
+Use skill gc.create-beads
 ```
 
 Then launch implementation against the created implementation convoy:
@@ -49,9 +49,9 @@ conversation is explicitly desired and core shared drain support is available.
 By default artifacts go under the target rig:
 
 ```text
-<rig-root>/.gc/plans/<plan-slug>/
+<rig-root>/plans/<plan-slug>/
   requirements.md
-  design.md
+  implementation-plan.md
   tasks.md
   context.yaml
   build/final-report.md
@@ -60,7 +60,7 @@ By default artifacts go under the target rig:
 Each skill may use a different artifact root when the user explicitly asks for
 one. The same `<plan-slug>/` structure should be used under the override root.
 
-`gc.decompose` uses `assets/scripts/create_beads_from_tasks.py` after approval.
+`gc.create-beads` uses `assets/scripts/create_beads_from_tasks.py` after approval.
 The script requires Python 3 with PyYAML available, invokes `gc bd --rig
 <target_rig>` for runnable beads, invokes `gc convoy --rig <target_rig>` for
 convoy heads and membership, and records the created mapping in `tasks.md`.

@@ -18,7 +18,7 @@ workflow pack.
 
 The pack provides:
 
-- interactive skills for `plan`, `design`, `decompose`, and the interactive
+- interactive skills for `gather-requirements`, `plan-implementation`, `create-beads`, and the interactive
   front half of `build`
 - public durable formulas for `implement`, `gap-analysis`, `review`, and
   `do-work`
@@ -47,10 +47,10 @@ The current `gc` pack is a starter implementation:
 
 - [gc/README.md](./README.md) documents three manual planning skills and one
   `implement` formula.
-- [gc/skills/plan/SKILL.md](./skills/plan/SKILL.md) writes
+- [gc/skills/gather-requirements/SKILL.md](./skills/gather-requirements/SKILL.md) writes
   `requirements.md`.
-- [gc/skills/design/SKILL.md](./skills/design/SKILL.md) writes `design.md`.
-- [gc/skills/decompose/SKILL.md](./skills/decompose/SKILL.md) writes
+- [gc/skills/plan-implementation/SKILL.md](./skills/plan-implementation/SKILL.md) writes `implementation-plan.md`.
+- [gc/skills/create-beads/SKILL.md](./skills/create-beads/SKILL.md) writes
   `tasks.md` and then runs `assets/scripts/create_beads_from_tasks.py`.
 - the legacy bead-creation script reads a payload with `epics[]` and `beads[]`,
   creates epic/task beads, and wires dependencies.
@@ -92,7 +92,7 @@ This does not match the desired v0:
 - Do not duplicate the existing bugflow or adopt-pr workflow internals in the
   GitHub adapter formulas. The GitHub workflows are thin edge adapters over
   the generic `gc` primitives.
-- Do not require standalone `decompose` to generate context bundles.
+- Do not require standalone `create-beads` to generate context bundles.
 - Do not close convoy heads as a side effect of implementation or build.
 - Do not make direct `implement` run gap-analysis or review loops.
 
@@ -148,7 +148,7 @@ missing primitive, checked phase, and next action.
 | graph.v2 targeted invocation and reserved `convoy_id` injection | `implement`, `do-work`, `same-session-implement` | formula entry | `GC_CONTRACT_GRAPH_V2_UNAVAILABLE` |
 | reserved-input collision rejection for `convoy_id`, `issue`, and `bead_id` | all graph.v2 formulas | formula entry | `GC_CONTRACT_RESERVED_INPUT` |
 | visible singleton convoy normalization for bare bead targets | `implement`, `do-work` | formula entry | `GC_CONTRACT_SINGLETON_CONVOY_UNAVAILABLE` |
-| convoy membership primitives and stable member traversal | `decompose`, `implement`, `same-session-implement` | pre-create or pre-drain | `GC_CONTRACT_CONVOY_MEMBERSHIP_UNAVAILABLE` |
+| convoy membership primitives and stable member traversal | `create-beads`, `implement`, `same-session-implement` | pre-create or pre-drain | `GC_CONTRACT_CONVOY_MEMBERSHIP_UNAVAILABLE` |
 | graph.v2 drain materialization and dispatcher wakeup | `implement`, separate-session drain, `do-work` | pre-drain | `GC_CONTRACT_DRAIN_MATERIALIZER_UNAVAILABLE` |
 | drain control beads and drain-unit convoys | `implement`, `same-session-implement` | pre-drain | `GC_CONTRACT_DRAIN_UNAVAILABLE` |
 | core shared-drain context `shared`, item formula reference, `single_lane = true`, and selected `on_item_failure` policy | `same-session-implement` | pre-drain | `GC_CONTRACT_SHARED_DRAIN_UNAVAILABLE` |
@@ -251,23 +251,23 @@ attempts to route a `type=epic` bead as a graph.v2 target.
 
 ### Interactive Skills
 
-`plan`
+`gather-requirements`
 
 - Input: freeform human idea.
 - Output: approved `requirements.md`.
 - Behavior: interview one question at a time, inspect repo for discoverable
   answers, write front matter with `status: draft|approved`.
 
-`design`
+`plan-implementation`
 
 - Input: approved `requirements.md`.
-- Output: approved `design.md`.
+- Output: approved `implementation-plan.md`.
 - Behavior: repo-grounded architecture document, concrete enough for
   decomposition.
 
-`decompose`
+`create-beads`
 
-- Input: approved `requirements.md` and `design.md`.
+- Input: approved `requirements.md` and `implementation-plan.md`.
 - Output: approved `tasks.md`, then created beads and convoys.
 - Behavior: validate the task forest against requirements/design before bead
   creation. Human approval is required before creation.
@@ -695,7 +695,7 @@ GitHub adapter artifacts live under:
     fix/
       <run-id>/
         requirements.md
-        design.md
+        implementation-plan.md
         tasks.md
         context.yaml
         status-comment.md
@@ -854,7 +854,7 @@ detect a problem, the earlier no-side-effect layer owns the public error code.
 Artifacts live under an artifact root, defaulting to:
 
 ```text
-<rig-root>/.gc/plans/<plan-slug>/
+<rig-root>/plans/<plan-slug>/
 ```
 
 Build uses a deterministic plan slug. If build creates a branch, the default
@@ -865,7 +865,7 @@ Required artifact paths:
 
 ```text
 requirements.md
-design.md
+implementation-plan.md
 tasks.md
 context/implementation-context.yaml
 implementation/summary.md
@@ -929,7 +929,7 @@ items:
     path: ../requirements.md
     description: Product requirements and acceptance criteria.
   - name: Design
-    path: ../design.md
+    path: ../implementation-plan.md
     description: Engineering design and constraints.
 ```
 
@@ -1670,7 +1670,7 @@ Approval records live under `<artifact-root>/approvals/`:
 {
   "schema": "gc.approval.v1",
   "artifact_kind": "design",
-  "artifact_path": "design.md",
+  "artifact_path": "implementation-plan.md",
   "content_hash": "sha256:<canonical-content>",
   "phase_unblocked": "decompose",
   "actor": "user@example.com",
@@ -1692,11 +1692,11 @@ approval from prose.
 Expected pack changes:
 
 - Rewrite [gc/README.md](./README.md) around the new public surface.
-- Update [gc/skills/plan/SKILL.md](./skills/plan/SKILL.md) for build-compatible
+- Update [gc/skills/gather-requirements/SKILL.md](./skills/gather-requirements/SKILL.md) for build-compatible
   artifact conventions.
-- Update [gc/skills/design/SKILL.md](./skills/design/SKILL.md) for the same
+- Update [gc/skills/plan-implementation/SKILL.md](./skills/plan-implementation/SKILL.md) for the same
   artifact conventions.
-- Rewrite [gc/skills/decompose/SKILL.md](./skills/decompose/SKILL.md) to use
+- Rewrite [gc/skills/create-beads/SKILL.md](./skills/create-beads/SKILL.md) to use
   nested convoys, not epics.
 - Add [gc/skills/build/SKILL.md](./skills/build/SKILL.md).
 - Add thin launch skills for implement/review/gap-analysis if the pack wants
@@ -1814,7 +1814,7 @@ Compatibility and rollout matrix:
 | Feature | Required capability | Validator/test gate | Rollout gate | Failure mode |
 | --- | --- | --- | --- | --- |
 | graph.v2 formula launch | reserved target injection, singleton convoy normalization | formula asset and fake-city capability tests | install formulas only after core advertises graph.v2 | fail closed before work creation |
-| task payload creation | convoy membership primitives, dependency storage | schema validator and dry-run/reload invariant checks | enable `decompose` after validator passes in temp city | reject payload before beads |
+| task payload creation | convoy membership primitives, dependency storage | schema validator and dry-run/reload invariant checks | enable `create-beads` after validator passes in temp city | reject payload before beads |
 | separate drain | graph.v2 drain materializer, drain control beads | temp-city multi-member drain test | enable `implement` separate policy | fail with no routed item work |
 | same-session drain | structured `gc hook`, continuation affinity, `gc.closed_seq` | wait/empty, stale-session, dependency-order tests | keep behind explicit `same-session` opt-in | abnormal drain summary |
 | build-run loops | conditional store primitives and durable artifact writes | checkpoint/resume and idempotent fix-convoy tests | enable `build` back half after recovery tests | final report with recovery status |
