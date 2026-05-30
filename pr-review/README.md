@@ -6,8 +6,8 @@ gate between review and merge.
 
 ## What's Included
 
-- **`mol-adopt-pr` formula** — 6-step molecule: intake, rebase-check, review,
-  human-gate, finalize, complete
+- **`mol-adopt-pr` formula** — 5-step molecule: intake, rebase-check, review,
+  human-gate, finalize
 - **`/review-pr` skill** — multi-model code review engine (overlay)
 
 ## Prerequisites
@@ -47,8 +47,7 @@ gc sling <rig>/polecat mol-adopt-pr --formula \
    ```bash
    bd close <human-gate-step-id>
    ```
-5. **Finalize** — Determine merge path, push, post synthesis comment, wait for CI, merge
-6. **Complete** — Clean up refs, update root bead
+5. **Finalize** — Resolve merge path, prepare local artifacts (squash/rebase/branch/synthesis), hand publish + merge to mayor, then clean up refs and update the root bead
 
 ## Merge Paths
 

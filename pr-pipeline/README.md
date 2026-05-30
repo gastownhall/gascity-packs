@@ -28,9 +28,9 @@ stay with the caller.
 ## Sibling pack
 
 `pr-review` (in this same repo) covers the **maintainer-side incoming-PR
-review/merge workflow** with `mol-adopt-pr` — a 6-step formula for
+review/merge workflow** with `mol-adopt-pr` — a 5-step formula for
 adopting contributor PRs (intake → rebase → review → human-gate →
-finalize → merge). The two packs are complementary:
+finalize). The two packs are complementary:
 
 - `pr-review` → reviewing PRs that arrive at your repo
 - `pr-pipeline` → planning, building, and shipping PRs your city sends out
