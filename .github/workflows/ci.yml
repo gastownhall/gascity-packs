@@ -30,6 +30,9 @@ jobs:
             slack-pack/adapter/go.sum
             slack-pack/cli/go.sum
 
+      - name: Install Python test dependencies
+        run: python3 -m pip install PyYAML
+
       - name: Validate registry
         run: python3 validate_registry.py
 
