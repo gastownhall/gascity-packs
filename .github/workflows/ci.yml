@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: slack-pack/adapter/go.mod
+          cache-dependency-path: |
+            slack-pack/adapter/go.sum
+            slack-pack/cli/go.sum
+
+      - name: Validate registry
+        run: python3 validate_registry.py
+
+      - name: Run Gas City pack tests
+        run: python3 -m unittest discover -s gascity/tests -q
+
+      - name: Run RLM pack tests
+        run: python3 -m unittest discover -s rlm/tests -q
+
+      - name: Run Slack adapter tests
+        working-directory: slack-pack/adapter
+        run: go test ./...
+
+      - name: Run Slack CLI tests
+        working-directory: slack-pack/cli
+        run: go test ./...
