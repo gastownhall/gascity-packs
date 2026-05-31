@@ -45,6 +45,11 @@ Each top-level directory is either a pack or a group of related packs:
 
 Browse the tree for the current set; each pack has its own README.
 
+### Agent context packs
+
+- [cass](./cass) adds a shared `cass-search` prompt fragment and Claude skill
+  overlay for searching past coding-agent sessions.
+
 ### Slack packs (tiered)
 
 The Slack provider ships as three tiers — pick the smallest one that covers

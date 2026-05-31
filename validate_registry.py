@@ -15,8 +15,18 @@ PACK_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)?$")
 RELEASE_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+(\.[0-9]+)?$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-REQUIRED_WAVE_1 = {"discord", "gascity", "gastown", "github", "slack-full"}
+REQUIRED_WAVE_1 = {"cass", "discord", "gascity", "gastown", "github", "slack-full"}
 FORBIDDEN_WAVE_1 = {"bd", "core", "dolt", "maintenance"}
+
+
+def source_pack_path(source: str) -> str:
+    git_subdir = re.search(r"\.git//([^#]+)", source)
+    if git_subdir:
+        return git_subdir.group(1).strip("/")
+    tree_path = re.search(r"/tree/[^/]+/([^#]+)", source)
+    if tree_path:
+        return tree_path.group(1).strip("/")
+    return ""
 
 
 def validate(path: Path) -> list[str]:
@@ -76,9 +86,8 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{label}: source must not embed a ref fragment; use [[pack.release]].ref")
             continue
 
-        match = re.search(r"\.git//([^#]+)", source)
-        if match:
-            pack_path = match.group(1)
+        pack_path = source_pack_path(source)
+        if pack_path:
             pack_toml = path.parent / pack_path / "pack.toml"
             if not pack_toml.exists():
                 errors.append(f"{label}: source path {pack_path!r} does not contain pack.toml")
