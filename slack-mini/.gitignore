@@ -1,0 +1,3 @@
+# Built adapter binary — produced by `go build` in adapter/ and read in
+# place by the [[service]] proxy_process command.
+adapter/gc-slack-mini-adapter

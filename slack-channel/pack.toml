@@ -1,0 +1,58 @@
+# slack-channel — Tier 2 of the Slack pack family. "Team channel ↔ session
+# graph."
+#
+# The middle Slack tier: built on slack-mini's single-file kernel, it adds
+# the state Tier 1 omits — channel bindings (one channel → many sessions),
+# per-session identity overrides, and "@handle" address-by-handle routing.
+# A message in a bound channel is delivered to every bound session, not just
+# @-mentions.
+#
+# Pack-shipped binary:
+#
+#   - Adapter (./adapter/gc-slack-channel-adapter, built from
+#     adapter/*.go). A Slack Events API receiver + outbound publisher that
+#     also owns three on-disk registries under
+#     <GC_CITY_PATH>/.gc/slack-channel/. The [[service]] block below has gc
+#     supervise it as a proxy_process: it binds a Unix domain socket at
+#     $GC_SERVICE_SOCKET for the verb endpoints + /healthz, and a public TCP
+#     port for /slack/events + /slack/interactions (terminate TLS in front
+#     of it, e.g. Tailscale Funnel).
+#
+# This pack ships NO operator CLI binary: every verb is a bash wrapper
+# (commands/<verb>.sh) that POSTs to the adapter through gc's
+# /svc/slack-channel reverse proxy.
+#
+# Tiering: slack-channel sits between slack-mini (Tier 1) and slack-full
+# (Tier 3). Pick exactly one Slack tier per city — they all expose a Slack
+# runtime surface and cannot coexist.
+
+[pack]
+name = "slack-channel"
+version = "0.1.0"
+schema = 2
+
+# proxy_process service: gc supervises the adapter as part of the city's
+# service set. The adapter binds a UDS at $GC_SERVICE_SOCKET for the verb
+# endpoints + /healthz; gc reverse-proxies /svc/slack-channel/* to it. The
+# adapter also binds public TCP (LISTEN_PUBLIC, default 0.0.0.0:8775) for
+# /slack/events + /slack/interactions. proxy_process owns only the UDS
+# lifecycle.
+#
+# The service is named "slack-channel" (matching the pack) so it does not
+# collide with a slack-mini or slack-full install. Per the tiering design,
+# run exactly one Slack tier per city regardless.
+#
+# Secrets (SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_WORKSPACE_ID),
+# GC_CITY_NAME, and GC_CITY_PATH are inherited from the service environment
+# at start. See README.md "Configure".
+
+[[service]]
+name = "slack-channel"
+kind = "proxy_process"
+
+[service.publication]
+visibility = "private"
+
+[service.process]
+command = ["./adapter/gc-slack-channel-adapter"]
+health_path = "/healthz"

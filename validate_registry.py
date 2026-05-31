@@ -15,7 +15,7 @@ PACK_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)?$")
 RELEASE_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+(\.[0-9]+)?$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-REQUIRED_WAVE_1 = {"discord", "gascity", "gastown", "github-intake", "slack"}
+REQUIRED_WAVE_1 = {"discord", "gascity", "gastown", "github-intake", "slack-full"}
 FORBIDDEN_WAVE_1 = {"bd", "core", "dolt", "maintenance"}
 
 

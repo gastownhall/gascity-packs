@@ -3,8 +3,8 @@
 This document is the autonomous-execution contract for every Phase 1
 leaf of the `gc-coe10` slack-cli relocation. Every leaf ports one
 `gc slack <cmd>` verb from `cmd/gc/cmd_slack_<cmd>.go` into
-`examples/slack-pack/cli/cmd/<cmd>.go` and registers it on the
-cobra root in `examples/slack-pack/cli/main.go`.
+`examples/slack-full/cli/cmd/<cmd>.go` and registers it on the
+cobra root in `examples/slack-full/cli/main.go`.
 
 Phase 0 stood up the new module skeleton (`gc-wj70y`) and copied the
 shared state helpers (`gc-nqy49`). Phase 1 leaves now copy
@@ -15,9 +15,9 @@ the originals once every verb has cut over.
 
 | Phase 1 source (read-only)                | Phase 1 target (new)                                 |
 | ----------------------------------------- | ---------------------------------------------------- |
-| `cmd/gc/cmd_slack_<cmd>.go`               | `examples/slack-pack/cli/cmd/<cmd>.go`               |
-| `cmd/gc/cmd_slack_<cmd>_test.go`          | `examples/slack-pack/cli/cmd/<cmd>_test.go`          |
-| `cmd/gc/main.go` cobra registration       | `examples/slack-pack/cli/main.go` cobra registration |
+| `cmd/gc/cmd_slack_<cmd>.go`               | `examples/slack-full/cli/cmd/<cmd>.go`               |
+| `cmd/gc/cmd_slack_<cmd>_test.go`          | `examples/slack-full/cli/cmd/<cmd>_test.go`          |
+| `cmd/gc/main.go` cobra registration       | `examples/slack-full/cli/main.go` cobra registration |
 
 The `cmd/gc/` originals stay UNTOUCHED through every Phase 1 leaf —
 Phase 2 cutover deletes them all at once after every verb has been
@@ -104,7 +104,7 @@ a `--city` flag (default: walk up from `cwd` looking for `.gc/`) OR
 via a `GC_CITY_PATH` env var. Settle the resolution policy in the
 first Phase 1 leaf that touches it (likely `enable-room-launch` or
 `import-app`); subsequent leaves reuse the same resolver helper.
-Keep the helper in `examples/slack-pack/cli/cmd/citypath.go` and
+Keep the helper in `examples/slack-full/cli/cmd/citypath.go` and
 export it as `cmd.ResolveCityPath(...)`.
 
 ## What NOT to change in Phase 1
@@ -115,12 +115,12 @@ export it as `cmd.ResolveCityPath(...)`.
 - **`cmd/gc/main.go`** subcommand registration — keep the gc CLI
   serving `gc slack <cmd>` from the original code path until every
   verb is ported.
-- **`examples/slack-pack/commands/*.sh`** wrappers — the pack still
+- **`examples/slack-full/commands/*.sh`** wrappers — the pack still
   invokes `gc slack <cmd>` through the gc binary. Phase 2 will rewrite
   these to call `gc-slack-cli <cmd>` after the cutover.
 - **`pack.toml`** — same reasoning. Pack-level wiring changes are
   Phase 2 work.
-- **`examples/slack-pack/cli/internal/state/`** — the helpers landed
+- **`examples/slack-full/cli/internal/state/`** — the helpers landed
   in `gc-nqy49` and are frozen for Phase 1. If a leaf hits a missing
   helper, file a follow-up bead under `gc-coe10` rather than mutating
   the internal-state surface mid-relocation.
@@ -129,13 +129,13 @@ export it as `cmd.ResolveCityPath(...)`.
 
 Every Phase 1 leaf MUST satisfy ALL of these before close:
 
-- `examples/slack-pack/cli/cmd/<cmd>.go` compiles
-  (`cd examples/slack-pack/cli && go build ./...` is green)
-- `examples/slack-pack/cli/cmd/<cmd>_test.go` passes
+- `examples/slack-full/cli/cmd/<cmd>.go` compiles
+  (`cd examples/slack-full/cli && go build ./...` is green)
+- `examples/slack-full/cli/cmd/<cmd>_test.go` passes
   (`go test -race ./cmd/...` is green)
-- `cd examples/slack-pack/cli && go vet ./...` clean
-- `gofmt -l examples/slack-pack/cli/cmd/` reports no diffs
-- `examples/slack-pack/cli/main.go` registers the new subcommand under
+- `cd examples/slack-full/cli && go vet ./...` clean
+- `gofmt -l examples/slack-full/cli/cmd/` reports no diffs
+- `examples/slack-full/cli/main.go` registers the new subcommand under
   `gc-slack-cli <cmd>` via a single `rootCmd.AddCommand(...)` line
   (see "Cobra subcommand registration" below)
 - `cmd/gc/cmd_slack_<cmd>.go` (the original) is untouched
@@ -150,7 +150,7 @@ Every Phase 1 leaf MUST satisfy ALL of these before close:
 
 ## Cobra subcommand registration in main.go
 
-Each Phase 1 leaf appends ONE line to `examples/slack-pack/cli/main.go`
+Each Phase 1 leaf appends ONE line to `examples/slack-full/cli/main.go`
 inside `newRootCmd()`:
 
 ```go
@@ -170,7 +170,7 @@ Conventions:
   `cmd.AddCommand(...)` line. If two leaves race on this file, merge
   resolution is trivial (accept both lines, sort alphabetically).
 - The leaf that lands the very first verb also creates
-  `examples/slack-pack/cli/cmd/` and adds the `cmdpkg` import to
+  `examples/slack-full/cli/cmd/` and adds the `cmdpkg` import to
   `main.go`. Subsequent leaves only add the `AddCommand` line.
 
 ## Common helpers checklist
@@ -201,7 +201,7 @@ the verb file.
 - Cutting `pack.toml` over to invoke `gc-slack-cli` — Phase 2.
 - Deleting `cmd/gc/cmd_slack_*.go` and `cmd/gc/slack_*.go` originals
   — Phase 2.
-- Updating `examples/slack-pack/commands/*.sh` wrappers — Phase 2.
+- Updating `examples/slack-full/commands/*.sh` wrappers — Phase 2.
 - Adding new flags or commands not present in the cmd/gc original —
   out of scope; file a follow-up bead under `gc-coe10`.
 - Refactoring the verb's logic — pure structural copy with renames

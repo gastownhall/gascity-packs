@@ -1,0 +1,2 @@
+description = "Publish a message into the channel a session is bound to"
+run = "../publish.sh"

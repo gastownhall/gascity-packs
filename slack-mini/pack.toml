@@ -1,0 +1,54 @@
+# slack-mini — Tier 1 of the Slack pack family. "Talk to mayor from Slack."
+#
+# The minimum viable Slack→gc surface: add a bot to your workspace,
+# @-mention it from any channel, and the mention bridges to your gc mayor
+# session. One outbound verb (`gc slack-mini post-message`) posts plain
+# text back to a channel/thread.
+#
+# Pack-shipped binary:
+#
+#   - Adapter (./adapter/gc-slack-mini-adapter, built from adapter/main.go).
+#     A single-file Slack webhook receiver + outbound publisher. The
+#     [[service]] block below has gc supervise it as a proxy_process. It
+#     binds a Unix domain socket at $GC_SERVICE_SOCKET for /post-message +
+#     /healthz, and a public TCP port for /slack/events (the Slack Events
+#     API receiver — terminate TLS in front of it, e.g. Tailscale Funnel).
+#
+# This pack ships NO operator CLI binary: the single outbound verb is a
+# bash wrapper (commands/post-message.sh) that POSTs to the adapter through
+# gc's /svc/slack-mini reverse proxy.
+#
+# Tiering: slack-mini strictly subsumed by slack-channel (Tier 2) and
+# slack-full (Tier 3). Pick exactly one Slack tier per city — they all
+# expose the same `gc slack` runtime surface and cannot coexist. See
+# docs/design/slack-pack-tiering.md.
+
+[pack]
+name = "slack-mini"
+version = "0.1.0"
+schema = 2
+
+# proxy_process service: gc supervises the adapter as part of the city's
+# service set. The adapter binds a UDS at $GC_SERVICE_SOCKET for
+# /post-message + /healthz; gc reverse-proxies /svc/slack-mini/* to it. The
+# adapter also binds public TCP (LISTEN_PUBLIC, default 0.0.0.0:8775) for
+# /slack/events. proxy_process owns only the UDS lifecycle.
+#
+# The service is named "slack-mini" (matching the pack) so it does not
+# collide with a slack-full install's "slack" service. Per the tiering
+# design, run exactly one Slack tier per city regardless.
+#
+# Secrets (SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_WORKSPACE_ID) and
+# GC_CITY_NAME are inherited from the service environment at start. See
+# README.md "Configure".
+
+[[service]]
+name = "slack-mini"
+kind = "proxy_process"
+
+[service.publication]
+visibility = "private"
+
+[service.process]
+command = ["./adapter/gc-slack-mini-adapter"]
+health_path = "/healthz"

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gastownhall/gascity-packs/slack-channel/schema/identities.schema.json",
+  "title": "slack-channel identities.json",
+  "description": "Authoritative schema for the per-session identity registry persisted at <GC_CITY_PATH>/.gc/slack-channel/identities.json. The slack-channel adapter is the sole writer (via the identity verb endpoint) and reader (injected into chat.postMessage on every outbound). The JSON object key is the gc session id. icon_url and icon_emoji are mutually exclusive; at least one of username / icon_url / icon_emoji is set.",
+  "type": "object",
+  "additionalProperties": { "$ref": "#/$defs/identity" },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["session_id", "created_at", "updated_at"],
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["username"] },
+        { "required": ["icon_url"] },
+        { "required": ["icon_emoji"] }
+      ],
+      "not": { "required": ["icon_url", "icon_emoji"] },
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "gc session id this identity applies to. Matches the JSON object key."
+        },
+        "username": {
+          "type": "string",
+          "description": "Display name the session posts under (Slack chat:write.customize 'username')."
+        },
+        "icon_url": {
+          "type": "string",
+          "description": "Avatar image URL (Slack 'icon_url'). Mutually exclusive with icon_emoji."
+        },
+        "icon_emoji": {
+          "type": "string",
+          "description": "Avatar emoji name without colons, e.g. 'robot_face' (Slack 'icon_emoji'). Mutually exclusive with icon_url."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of first registration. Idempotent updates preserve this value."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of the most recent update. Advances in place."
+        }
+      }
+    }
+  }
+}

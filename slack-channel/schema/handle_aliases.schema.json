@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gastownhall/gascity-packs/slack-channel/schema/handle_aliases.schema.json",
+  "title": "slack-channel handle_aliases.json",
+  "description": "Authoritative schema for the handle-alias registry persisted at <GC_CITY_PATH>/.gc/slack-channel/handle_aliases.json. The slack-channel adapter is the sole writer (via the handle-alias verb endpoint) and reader (on the inbound path). The JSON object key is the normalized handle (lowercased, leading '@' stripped). When an inbound message leads with '@<handle>[:]', it is routed to the aliased session regardless of channel binding. Single-workspace at Tier 2 — aliases are not scoped per workspace.",
+  "type": "object",
+  "additionalProperties": { "$ref": "#/$defs/handleAlias" },
+  "$defs": {
+    "handleAlias": {
+      "type": "object",
+      "required": ["handle", "session_id", "created_at", "updated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "handle": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]+$",
+          "description": "Normalized handle (lowercase, no leading '@'). Matches the JSON object key. Must match [a-z0-9_-]+."
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "description": "gc session id this handle routes to. Whitespace is not allowed."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of first registration. Idempotent updates preserve this value."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of the most recent update. Advances in place."
+        }
+      }
+    }
+  }
+}

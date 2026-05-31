@@ -1,0 +1,2 @@
+description = "Add an emoji reaction to this session's latest inbound message"
+run = "../react.sh"

@@ -1,0 +1,2 @@
+description = "Reply into the conversation of this session's latest inbound"
+run = "../reply-current.sh"

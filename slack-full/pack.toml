@@ -17,7 +17,7 @@
 # README explains the user-visible verb surface.
 
 [pack]
-name = "slack"
+name = "slack-full"
 version = "0.0.1"
 schema = 2
 

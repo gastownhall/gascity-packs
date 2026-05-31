@@ -25,10 +25,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
-          go-version-file: slack-pack/adapter/go.mod
+          go-version-file: slack-full/adapter/go.mod
           cache-dependency-path: |
-            slack-pack/adapter/go.sum
-            slack-pack/cli/go.sum
+            slack-full/cli/go.sum
 
       - name: Install Python test dependencies
         run: python3 -m pip install PyYAML
@@ -39,10 +38,10 @@ jobs:
       - name: Run Gas City pack tests
         run: python3 -m unittest discover -s gascity/tests -q
 
-      - name: Run Slack adapter tests
-        working-directory: slack-pack/adapter
+      - name: Run Slack full adapter tests
+        working-directory: slack-full/adapter
         run: go test ./...
 
-      - name: Run Slack CLI tests
-        working-directory: slack-pack/cli
+      - name: Run Slack full CLI tests
+        working-directory: slack-full/cli
         run: go test ./...

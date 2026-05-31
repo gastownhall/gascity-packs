@@ -1,0 +1,2 @@
+description = "Register a per-session Slack identity override (username + avatar)"
+run = "../identity.sh"

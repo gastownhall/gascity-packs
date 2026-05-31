@@ -45,6 +45,20 @@ Each top-level directory is either a pack or a group of related packs:
 
 Browse the tree for the current set; each pack has its own README.
 
+### Slack packs (tiered)
+
+The Slack provider ships as three tiers — pick the smallest one that covers
+your use case:
+
+| Tier | Pack | Use it when |
+| ---- | ---- | ----------- |
+| 1 | [slack-mini](./slack-mini) | The mayor only needs to post status into a single channel. No bindings, no state. |
+| 2 | [slack-channel](./slack-channel) | A few named sessions share channels with distinct identities — no slash commands or cross-rig routing. |
+| 3 | [slack-full](./slack-full) | Slash commands, interactive modals/buttons, peer fanout, launcher-mode spawning, or multi-rig channel routing. |
+
+See the [tiering design memo](./docs/design/slack-pack-tiering.md) for the
+rationale.
+
 ## Contributing
 
 Issues and pull requests are welcome. When a pack's surface changes, update

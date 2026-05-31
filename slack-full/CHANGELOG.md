@@ -1,6 +1,7 @@
 # Changelog
 
-All notable changes to slack-pack are documented in this file.
+All notable changes to slack-full (formerly slack-pack) are documented in
+this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -9,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Renamed the pack directory from `slack-pack/` to `slack-full/` and the
+  `pack.toml` name from `slack` to `slack-full` as part of the Slack pack
+  tiering split (`gc-yrw`). This pack is now **Tier 3** of the Slack
+  family; the smaller [slack-mini](../slack-mini) (Tier 1) and
+  [slack-channel](../slack-channel) (Tier 2) packs were extracted from it.
+  The user-facing verb surface (`gc slack <cmd>`) and the registered
+  `slack` service name are unchanged — only the catalog directory and pack
+  name moved, so there is no collision with `slack-mini` / `slack-channel`.
+  See the [tiering design memo](../docs/design/slack-pack-tiering.md) and
+  the README "Tiering" section for the decision tree. (`gc-yrw.5`)
 - Moved CLI commands (`gc slack import-app`, `map-channel`, `map-rig`,
   `sync-commands`, `enable-room-launch`, `post-message`) from the gc
   binary into a new in-pack Go module at `examples/slack-pack/cli/`

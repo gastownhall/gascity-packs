@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gastownhall/gascity-packs/slack-channel/schema/channel_mappings.schema.json",
+  "title": "slack-channel channel_mappings.json",
+  "description": "Authoritative schema for the channel binding registry persisted at <GC_CITY_PATH>/.gc/slack-channel/channel_mappings.json. The slack-channel adapter is the sole writer (via the bind-dm / bind-room verb endpoints) and reader (on the inbound path). The JSON object key is the composite '<workspace_id>:<channel_id>'. A message arriving in a bound channel is delivered to every session in session_ids.",
+  "type": "object",
+  "additionalProperties": { "$ref": "#/$defs/channelBinding" },
+  "$defs": {
+    "channelBinding": {
+      "type": "object",
+      "required": ["workspace_id", "channel_id", "kind", "session_ids", "created_at", "updated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Slack workspace (team) id, e.g. T0123456. Required component of the composite key."
+        },
+        "channel_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Slack channel or DM id, e.g. C0123456 or D0123456. Required component of the composite key."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["dm", "room"],
+          "description": "Conversation kind. 'dm' for direct-message bindings (bind-dm), 'room' for channel bindings (bind-room)."
+        },
+        "session_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "pattern": "^[^\\s]+$" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Sorted, deduplicated gc session ids that receive every message in the bound channel. Whitespace is not allowed in a session id. At least one is required."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of the first successful binding for this key. Idempotent re-binds preserve this value."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of the most recent successful binding for this key. Re-binds advance this in place."
+        }
+      }
+    }
+  }
+}

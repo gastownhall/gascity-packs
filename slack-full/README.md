@@ -1,14 +1,47 @@
-# Slack pack (v0.0.1 preview — scaffold)
+# slack-full (v0.0.1 preview — scaffold)
 
 A Slack provider extension for Gas City. Modeled directly on the
 upstream `discord` pack
 (https://github.com/gastownhall/gascity-packs/tree/main/discord) so
 the same primitives can be ported one at a time.
 
-This pack lives at `slack-pack/` in the
+This pack lives at `slack-full/` in the
 [`gastownhall/gascity-packs`](https://github.com/gastownhall/gascity-packs)
 catalog. A city opts in by path-importing its `pack.toml` (see
 "Install" below).
+
+## Tiering
+
+`slack-full` is **Tier 3** of the Slack pack family — workspace-grade
+orchestration. It is the original, full-surface pack; the two smaller
+tiers were later extracted from it for cities that need less.
+
+- **[slack-mini](../slack-mini)** (Tier 1) — single-file adapter, one
+  outbound verb (`gc slack-mini post-message`), `app_mention` → mayor.
+  No channel bindings, no state. Reach for it when you only need the
+  mayor to speak into one channel.
+- **[slack-channel](../slack-channel)** (Tier 2) — the "team channel ↔
+  session graph" middle tier: channel bindings, per-session identities,
+  handle aliases, reactions, threaded replies. No multi-rig routing,
+  slash commands, peer fanout, or launcher mode.
+- **slack-full** (Tier 3, this pack) — workspace-grade orchestration:
+  multi-rig routing, slash commands + interactions, peer fanout,
+  launcher mode, bidirectional file attachments, and per-session
+  identity overrides.
+
+### Choosing a tier
+
+- Need the mayor to post status into a single channel and nothing
+  else? → **slack-mini**.
+- Need a handful of named sessions sharing one or more channels with
+  distinct identities, but no slash commands or cross-rig routing? →
+  **slack-channel**.
+- Need slash commands, interactive modals/buttons, peer fanout across a
+  room, launcher-mode session spawning, or multi-rig channel routing? →
+  **slack-full** (this pack).
+
+See the [Slack pack tiering design memo](../docs/design/slack-pack-tiering.md)
+for the full rationale.
 
 > **Scope: not yet at parity with the discord pack.** The discord pack
 > ships ~350K LOC of provider-agnostic Python state-machine logic.
@@ -147,13 +180,13 @@ tracked under the gc-cby epic.
 This pack ships **two** Go binaries, each with its own `go.mod` so
 either can travel intact when the pack is mirrored upstream:
 
-- **Adapter** — `slack-pack/adapter/gc-slack-adapter`,
+- **Adapter** — `slack-full/adapter/gc-slack-adapter`,
   built from `adapter/main.go`. The public-facing webhook receiver
   (Slack → `:8775` over Tailscale Funnel) and outbound publisher
   (`/publish` over the controller-managed UDS). Long-running; gc
   supervises it via the `[[service]]` block in `pack.toml`.
 
-- **Operator CLI** — `slack-pack/cli/gc-slack-cli`, built
+- **Operator CLI** — `slack-full/cli/gc-slack-cli`, built
   from `cli/main.go` + `cli/cmd/`. Backs the `gc slack <cmd>` verb
   surface (import-app, map-channel, map-rig, sync-commands,
   sync-subteam-aliases, enable-room-launch, post-message). One-shot per invocation; not
@@ -166,7 +199,7 @@ Build commands and CI for both binaries are documented in
 
 ## Architecture (current)
 
-The Go adapter at `slack-pack/adapter/gc-slack-adapter`
+The Go adapter at `slack-full/adapter/gc-slack-adapter`
 (built from `adapter/main.go` colocated with this pack) is the
 public-facing webhook receiver and outbound publisher. This
 pack adds CLI surface around it: `bind-dm` writes to gc's
@@ -208,8 +241,8 @@ which bypasses `/publish` entirely and is unaffected by this guard.
 
 ```toml
 # city.toml
-[imports.slack]
-source = "/path/to/gascity-packs/slack-pack"
+[imports.slack-full]
+source = "/path/to/gascity-packs/slack-full"
 ```
 
 Then `gc reload` (or wait for the supervisor to pick up the change).
@@ -310,7 +343,7 @@ When `GC_SERVICE_SOCKET` is set, the adapter:
 ### Adapter env contract
 
 The full adapter env contract — what the binary at
-`slack-pack/adapter/main.go` reads — is enumerated in the
+`slack-full/adapter/main.go` reads — is enumerated in the
 package docstring at the top of that file. Summary:
 
 **Must-set** (no default; adapter exits at startup if missing):
@@ -430,7 +463,7 @@ GC_CITY_NAME=<your-city-name>
 
 ```
 # 1. Build the adapter binary in place (source colocated with the pack)
-( cd slack-pack/adapter && go build -o gc-slack-adapter )
+( cd slack-full/adapter && go build -o gc-slack-adapter )
 
 # 2. Source the secrets so the supervisor inherits them
 set -a; source "${XDG_CONFIG_HOME:-$HOME/.config}/gc-slack-adapter/env"; set +a
@@ -438,7 +471,7 @@ set -a; source "${XDG_CONFIG_HOME:-$HOME/.config}/gc-slack-adapter/env"; set +a
 # 3. Stop any manually-managed adapter that may still be running
 pkill -f gc-slack-adapter || true
 
-# 4. Reload the city so the [[service]] block from slack-pack registers
+# 4. Reload the city so the [[service]] block from slack-full registers
 gc reload   # or: gc supervisor reload
 
 # 5. Verify the service is ready
@@ -463,7 +496,7 @@ Rollback: remove (or comment out) the `[[service]]` block in
 legacy script:
 
 ```
-( cd slack-pack/adapter \
+( cd slack-full/adapter \
     && nohup ./run.sh > /tmp/gc-slack-adapter/run.log 2>&1 & disown )
 ```
 

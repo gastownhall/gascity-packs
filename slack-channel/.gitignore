@@ -1,0 +1,9 @@
+# Built adapter binary — produced by `go build` in adapter/ and read in
+# place by the [[service]] proxy_process command.
+adapter/gc-slack-channel-adapter
+
+# Python test artifacts (tests/test_schemas.py runs under pytest).
+__pycache__/
+.pytest_cache/
+*.pyc
+adapter/*.out

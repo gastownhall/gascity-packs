@@ -1,0 +1,2 @@
+description = "Post plain text to a Slack channel (optionally in a thread)"
+run = "../post-message.sh"
