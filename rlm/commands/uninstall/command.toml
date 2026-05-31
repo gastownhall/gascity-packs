@@ -1,2 +1,0 @@
-description = 'Remove the RLM runtime from this city'
-run = '../uninstall.sh'

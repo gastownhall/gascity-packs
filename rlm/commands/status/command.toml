@@ -1,2 +1,0 @@
-description = 'Show runtime, policy, and recent run status'
-run = '../status.sh'

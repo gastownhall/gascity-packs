@@ -1,2 +1,0 @@
-description = 'Import Discord app metadata and bot credentials into the pack state'
-run = '../import-app.sh'

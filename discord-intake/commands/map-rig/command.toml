@@ -1,2 +1,0 @@
-description = 'Map a Discord guild rig name to a slash-command dispatch target'
-run = '../map-rig.sh'

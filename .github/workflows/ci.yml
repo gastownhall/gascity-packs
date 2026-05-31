@@ -39,9 +39,6 @@ jobs:
       - name: Run Gas City pack tests
         run: python3 -m unittest discover -s gascity/tests -q
 
-      - name: Run RLM pack tests
-        run: python3 -m unittest discover -s rlm/tests -q
-
       - name: Run Slack adapter tests
         working-directory: slack-pack/adapter
         run: go test ./...

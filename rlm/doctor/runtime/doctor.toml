@@ -1,2 +1,0 @@
-description = 'The pack-owned RLM runtime is installed and healthy'
-run = '../check-rlm-runtime.sh'

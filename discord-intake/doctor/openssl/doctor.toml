@@ -1,2 +1,0 @@
-description = 'openssl is available for Discord Ed25519 signature verification'
-run = '../check-openssl.sh'

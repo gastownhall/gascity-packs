@@ -1,2 +1,0 @@
-description = 'Post a Discord status update for a request or channel'
-run = '../post-message.sh'
