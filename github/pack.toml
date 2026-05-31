@@ -1,0 +1,30 @@
+[pack]
+name = "github"
+version = "0.1.0"
+schema = 2
+
+[[service]]
+name = "github-webhook"
+kind = "proxy_process"
+state_root = ".gc/services/github"
+
+[service.publication]
+visibility = "public"
+hostname = "github"
+
+[service.process]
+command = ["python3", "-u", "scripts/github_intake_service.py"]
+health_path = "/healthz"
+
+[[service]]
+name = "github-admin"
+kind = "proxy_process"
+state_root = ".gc/services/github"
+
+[service.publication]
+visibility = "tenant"
+hostname = "github-admin"
+
+[service.process]
+command = ["python3", "-u", "scripts/github_intake_service.py"]
+health_path = "/healthz"

@@ -40,9 +40,9 @@ source_kind = "git"
   description = "Initial Discord pack release."
 
 [[pack]]
-name = "github-intake"
+name = "github"
 description = "GitHub webhook intake services and commands for Gas City."
-source = "https://github.com/gastownhall/gascity-packs/tree/main/github-intake"
+source = "https://github.com/gastownhall/gascity-packs/tree/main/github"
 source_kind = "git"
 
   [[pack.release]]
@@ -55,7 +55,7 @@ source_kind = "git"
 [[pack]]
 name = "slack-full"
 description = "Slack services, commands, and adapter integration for Gas City."
-source = "https://github.com/gastownhall/gascity-packs/tree/main/slack-pack"
+source = "https://github.com/gastownhall/gascity-packs/tree/main/slack-full"
 source_kind = "git"
 
   [[pack.release]]
