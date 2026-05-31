@@ -2036,10 +2036,6 @@ def _discover_supervisor_gc_api_scope_uncached(city_cfg: dict[str, Any]) -> str:
             if item.get("running") is False:
                 return ""
             return f"/v0/city/{urllib.parse.quote(workspace_name)}"
-    if not workspace_name and len(items) == 1 and isinstance(items[0], dict):
-        inferred_name = str(items[0].get("name", "")).strip()
-        if inferred_name and items[0].get("running") is not False:
-            return f"/v0/city/{urllib.parse.quote(inferred_name)}"
     return ""
 
 

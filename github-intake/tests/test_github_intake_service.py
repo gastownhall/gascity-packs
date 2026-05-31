@@ -232,7 +232,7 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         ) as close_failed_bead:
             service.process_request(request["request_id"])
 
-        close_failed_bead.assert_called_once_with("bd-9", "internal_error")
+        close_failed_bead.assert_called_once_with("bd-9", "internal_error", "")
         self.assertIsNone(service.common.load_workflow_link(request["workflow_key"]))
 
     def test_process_request_skips_reclosing_bead_already_closed_by_dispatch_failure(self) -> None:

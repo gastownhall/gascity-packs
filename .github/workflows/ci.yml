@@ -30,13 +30,13 @@ jobs:
             slack-full/cli/go.sum
 
       - name: Install Python test dependencies
-        run: python3 -m pip install PyYAML
+        run: python3 -m pip install PyYAML pytest jsonschema
 
       - name: Validate registry
         run: python3 validate_registry.py
 
-      - name: Run Gas City pack tests
-        run: python3 -m unittest discover -s gascity/tests -q
+      - name: Run Python pack tests
+        run: python3 -m pytest gascity/tests discord/tests github-intake/tests slack-full/tests slack-channel/tests -q
 
       - name: Run Slack full adapter tests
         working-directory: slack-full/adapter
@@ -44,4 +44,12 @@ jobs:
 
       - name: Run Slack full CLI tests
         working-directory: slack-full/cli
+        run: go test ./...
+
+      - name: Run Slack channel adapter tests
+        working-directory: slack-channel/adapter
+        run: go test ./...
+
+      - name: Run Slack mini adapter tests
+        working-directory: slack-mini/adapter
         run: go test ./...

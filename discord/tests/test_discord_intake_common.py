@@ -1616,6 +1616,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(common.current_session_selector(), "dc-123-sky")
 
     def test_peer_root_budget_index_tracks_root_counts(self) -> None:
+        now = common.utcnow()
         common.save_chat_publish(
             {
                 "publish_id": "discord-publish-1",
@@ -1623,7 +1624,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 "root_ingress_receipt_id": "in-1",
                 "source_session_name": "corp--sky",
                 "source_event_kind": "discord_peer_publication",
-                "created_at": "2026-04-20T00:00:00Z",
+                "created_at": now,
                 "peer_delivery": {"frozen_targets": ["corp--priya", "corp--eve"]},
             }
         )
@@ -1634,7 +1635,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 "root_ingress_receipt_id": "in-1",
                 "source_session_name": "corp--sky",
                 "source_event_kind": "discord_peer_publication",
-                "created_at": "2026-04-20T00:01:00Z",
+                "created_at": now,
                 "peer_delivery": {"frozen_targets": ["corp--lawrence"]},
             }
         )
