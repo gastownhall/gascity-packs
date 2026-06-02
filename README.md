@@ -193,3 +193,35 @@ rationale.
 
 Issues and pull requests are welcome. When a pack's surface changes, update
 its README in the same PR so the docs stay current with the code.
+
+### Publishing registry releases
+
+Registry releases are content-addressed. Use the Make targets so the release
+commit and hash are stamped by `gc` instead of hand-authored:
+
+```sh
+GC=/path/to/gc make registry-publish \
+  PACK=slack-mini \
+  VERSION=0.1.1 \
+  DESCRIPTION="Release summary."
+```
+
+`GC` defaults to `gc`, so local testing can point it at an uninstalled build.
+`REGISTRY_COMMIT` defaults to `HEAD`, and only tracked files at that commit are
+hashed; commit pack content before publishing. For new packs, also pass
+`PACK_DESCRIPTION="..."`. To withdraw a bad consumed release without rewriting
+it:
+
+```sh
+make registry-withdraw \
+  PACK=slack-mini \
+  VERSION=0.1.0 \
+  REASON="Superseded by 0.1.1."
+```
+
+Before opening a PR, run:
+
+```sh
+make registry-format-validate
+GC=/path/to/gc make registry-validate
+```
