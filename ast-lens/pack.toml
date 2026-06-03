@@ -1,0 +1,28 @@
+# ast-lens — outline-first reading for Gas City agents.
+#
+# A self-contained, clean-room implementation of the read side of the
+# "AST as LLM Lens" design (the outline-first-reading half): agents read a
+# compact Markdown structural outline of a source file instead of paying the
+# full-file read tax. Implemented straight from the paper's §5 + appendix,
+# NOT ported from Blackrim's `gt`.
+#
+# What this pack provides (all convention-discovered once the pack is imported):
+#   bin/outline                         the emitter (Python 3 + tree-sitter)
+#   skills/read-with-outline/SKILL.md   agent-facing skill: outline before Read
+#   template-fragments/                 the read-with-outline discipline fragment
+#   overlay/per-provider/claude/        PreToolUse hook (auto-prepend on Read)
+#   hooks/outline-on-read.sh            the hook script (warn-mode, never blocks)
+#
+# Wiring (after importing this pack into a city, e.g. `source = "./packs/ast-lens"`):
+#   1. Run `packs/ast-lens/setup.sh` once to build the emitter's venv.
+#   2. (recommended) add "read-with-outline" to city.toml `global_fragments`.
+#   3. The skill and the claude PreToolUse overlay are picked up automatically;
+#      gc deep-merges the overlay's hooks into the projected Claude settings.
+#
+# The pack degrades safely: with no venv/deps the emitter and hook are silent
+# (Alg 1 passthrough), so importing it can never break a Read.
+
+[pack]
+name = "ast-lens"
+schema = 2
+version = "0.1.0"

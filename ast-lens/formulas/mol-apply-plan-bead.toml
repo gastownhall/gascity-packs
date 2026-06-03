@@ -1,0 +1,172 @@
+description = """
+Apply a symbolic-edit PLAN carried by a bead, gated, and hand it to the
+merge queue. This is the ast-lens write-side realisation of the paper's
+"a plan is a bead payload" idea (packs/ast-lens/docs/WRITE-SIDE.md §5):
+a content-addressed PLAN emitted by `bin/op` is stateless, so it can be
+FILED as a bead now and EXECUTED later, by a different agent, through gc's
+normal merge path.
+
+This formula is the executor leg. It is poured for whichever agent runs the
+gated apply (a polecat in a feature-branch worktree is the canonical choice,
+so the existing refinery merges the result unchanged; an apply-capable
+refinery variant could run it inline). It does NOT reimplement the merge —
+on accept it stages + commits the change on a branch, sets the standard
+`branch` / `target` merge metadata, and assigns the bead to the refinery,
+which lands it like any other work bead (mol-refinery-patrol).
+
+The plan-bead metadata convention (packs/ast-lens/docs/REFINERY-INTEGRATION.md):
+
+  gc.symbolic_op  <op>            bare op name, e.g. strip-trailing-ws
+  gc.op_file      <relpath>       file to transform, RELATIVE to the repo root
+  gc.op_token     <64-hex>        the plan token from `bin/op <op> <file>`
+  gc.op_args      <json-object>   optional op args, e.g. {"old":"a","new":"b"}
+
+The gate is the non-bypassable floor: `bin/apply-plan-bead` runs
+`bin/op <op>! <file> <token>`, which re-derives the change from the CURRENT
+file, verifies the token (aborts "stale plan" if the file drifted), runs the
+compile gate, and writes ONLY on accept. A stale or rejected plan writes
+nothing and this formula rejects the bead back to the pool to be re-planned.
+
+Read each step's description before acting — Config values override defaults.
+
+WIRING NOTE: this is a pack-supplied example formula. To make it discoverable
+by `gc bd mol`/`gc sling --formula`, the city must include the pack's
+`formulas/` dir on its formula search path (see REFINERY-INTEGRATION.md
+"What still needs gc-side wiring"). Nothing in gc-core needs to change."""
+formula = "mol-apply-plan-bead"
+version = 1
+contract = "graph.v2"
+
+[vars]
+[vars.binding_prefix]
+description = "Import binding prefix for gastown agent identities, including trailing dot when bound."
+default = ""
+
+[vars.target_branch]
+description = "Default target branch for the eventual merge."
+default = "main"
+
+[vars.pack_bin]
+description = "Path to the ast-lens pack bin dir (holds op and apply-plan-bead). Empty = discover via `gc pack path ast-lens`/PATH."
+default = ""
+
+[[steps]]
+id = "claim-plan-bead"
+title = "Claim the plan-bead and read its symbolic-edit payload"
+description = """
+**1. Resolve the plan-bead.** Its id is the formula's spawning bead
+(`$GC_BEAD_ID` / `{{issue}}`). Read the convention metadata:
+```bash
+WORK=${GC_BEAD_ID:?plan-bead id not in environment}
+gc bd update "$WORK" --claim
+META=$(gc bd show "$WORK" --json)
+OP=$(printf '%s' "$META"   | jq -r '.[0].metadata["gc.symbolic_op"] // empty')
+FILE=$(printf '%s' "$META" | jq -r '.[0].metadata["gc.op_file"]    // empty')
+TOKEN=$(printf '%s' "$META"| jq -r '.[0].metadata["gc.op_token"]   // empty')
+```
+
+**2. Validate.** All three of `OP`, `FILE`, `TOKEN` MUST be present. If any is
+empty, this is not a plan-bead — reject it back to the pool and stop:
+```bash
+if [ -z "$OP" ] || [ -z "$FILE" ] || [ -z "$TOKEN" ]; then
+  gc bd update "$WORK" --status=open --assignee="" \\
+    --set-metadata rejection_reason="not a symbolic-edit plan-bead (missing gc.symbolic_op/op_file/op_token)"
+  echo "Not a plan-bead; rejected to pool."; gc runtime drain-ack; exit 1
+fi
+```
+
+Note the values for later steps. Close this step once the payload is read."""
+
+[[steps]]
+id = "branch"
+title = "Create the feature branch the gated change will land on"
+needs = ["claim-plan-bead"]
+description = """
+**Config: target_branch = {{target_branch}}**
+
+The gated apply writes into the working tree; the refinery merges a BRANCH.
+Create one from the freshly-fetched target so the eventual rebase is clean:
+```bash
+git fetch origin {{target_branch}}
+BRANCH="plan/$WORK"
+git checkout -B "$BRANCH" "origin/{{target_branch}}"
+gc bd update "$WORK" --set-metadata branch="$BRANCH" --set-metadata target={{target_branch}}
+```
+Close this step once the branch exists and `metadata.branch` is recorded."""
+
+[[steps]]
+id = "apply-gated"
+title = "Run apply-plan-bead (the GATED execute)"
+needs = ["branch"]
+description = """
+**Config: pack_bin = {{pack_bin}}**
+
+Resolve the pack bin dir (holds `apply-plan-bead`), then run the gated apply.
+`apply-plan-bead` reads THIS bead's metadata from the live store, runs
+`bin/op <op>! <file> <token> <args>`, and on accept writes + `git add`s the
+file. It exits 0 on accept, 3 on reject/stale, 2 on a malformed plan.
+```bash
+BIN="{{pack_bin}}"
+[ -n "$BIN" ] || BIN="$(gc pack path ast-lens 2>/dev/null)/bin"
+[ -x "$BIN/apply-plan-bead" ] || BIN="$(dirname "$(command -v apply-plan-bead)")"
+
+set +e
+"$BIN/apply-plan-bead" "$WORK" --repo "$(git rev-parse --show-toplevel)"
+APPLY_RC=$?
+set -e
+```
+
+**Branch on the verdict:**
+
+- `APPLY_RC = 0` (ACCEPT): the change is written and staged. Proceed to commit.
+- `APPLY_RC = 3` (REJECT / stale token): the plan no longer matches the file, or
+  the gate refused the change. NOTHING was written. Reject the bead so it is
+  re-planned against current state, clean up the branch, and stop:
+  ```bash
+  gc bd update "$WORK" --status=open --assignee="" \\
+    --set-metadata rejection_reason="plan rejected by gate or stale token (apply-plan-bead exit 3)"
+  git checkout {{target_branch}} && git branch -D "$BRANCH" 2>/dev/null || true
+  echo "Plan rejected/stale; bead returned to pool for re-plan."; gc runtime drain-ack; exit 1
+  ```
+- `APPLY_RC = 2` (malformed plan): same rejection path, with a payload reason.
+
+Close this step only on ACCEPT, with the change staged."""
+
+[[steps]]
+id = "commit-and-handoff"
+title = "Commit the gated change and hand the branch to the refinery"
+needs = ["apply-gated"]
+description = """
+**Config: target_branch = {{target_branch}}**
+
+The change is staged. Commit it on the branch, push, and assign to the refinery
+exactly like any other work bead — the refinery rebases, runs its own checks,
+fast-forward-merges, and closes the bead (mol-refinery-patrol). This formula
+does NOT merge.
+
+**1. Commit + push the branch:**
+```bash
+OP=$(gc bd show "$WORK" --json | jq -r '.[0].metadata["gc.symbolic_op"]')
+FILE=$(gc bd show "$WORK" --json | jq -r '.[0].metadata["gc.op_file"]')
+git commit -m "$OP: gated symbolic edit of $FILE ($WORK)" \\
+           -m "Applied via ast-lens bin/apply-plan-bead; compile gate accepted."
+BRANCH=$(git branch --show-current)
+git push origin "$BRANCH"
+```
+
+**2. Hand off to the refinery** (assignment IS the handoff; clear routing):
+```bash
+REFINERY="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
+gc bd update "$WORK" --status=open --assignee="$REFINERY" --set-metadata gc.routed_to=""
+```
+
+**3. Detach so the refinery owns the branch, then exit:**
+```bash
+git checkout --detach
+gc runtime drain-ack
+exit 0
+```
+
+The refinery now merges the gated change through the normal merge path. The
+plan-bead's `gc.symbolic_op` / `gc.op_token` metadata remain on the closed bead
+as the forensic record of exactly which content-addressed plan was committed."""

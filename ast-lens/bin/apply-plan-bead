@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# ast-lens refinery integration: execute a symbolic-edit PLAN carried by a bead.
+#
+#   bin/apply-plan-bead <bead-id> [--repo DIR] [--stage|--no-stage] [--dry-run]
+#   bin/apply-plan-bead --metadata-json @file.json|- [--repo DIR] [...]
+#
+# Reads the plan-bead metadata convention
+#     gc.symbolic_op  <op>            (bare op name)
+#     gc.op_file      <relpath>       (relative to the repo root)
+#     gc.op_token     <64-hex>        (the bin/op plan token)
+#     gc.op_args      <json-object>   (optional op args)
+# then re-derives and runs the GATED execute by shelling out to the pack's own
+#     bin/op <op>! <file> <token> [--k v ...]
+# On ACCEPT the spine writes the file and (unless --no-stage) this helper
+# `git add`s it so the change is staged for gc's normal merge path. On REJECT or
+# a stale token nothing is written and the helper exits non-zero. It is
+# self-contained, exits cleanly, and never corrupts state — bin/op owns the
+# recompute -> token-check -> gate -> write-iff-accept sequence.
+#
+# Exit codes (chosen to mirror bin/op so a formula step can branch on them):
+#   0  ACCEPT  — gate passed, file written, change staged
+#   3  REJECT  — gate rejected, or the plan was stale (token drift); nothing written
+#   2  usage / unreadable bead / malformed plan payload
+#
+# Source the metadata either from the live store (default: `gc bd show <id>
+# --json`) or, for CI and the end-to-end demo, from an explicit JSON payload via
+# --metadata-json (so this never has to touch a live city to be exercised).
+#
+# This wrapper resolves the pack's own venv python (matching bin/op) so the
+# `astlens` package and the gate's py_compile run under the same interpreter,
+# falling back to system python3.
+set -euo pipefail
+PACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export ASTLENS_PACK_DIR="$PACK_DIR"
+PY="$PACK_DIR/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || true)"
+[ -n "$PY" ] || { echo "apply-plan-bead: no python interpreter found" >&2; exit 2; }
+exec "$PY" -c 'import sys, os
+sys.path.insert(0, os.environ["ASTLENS_PACK_DIR"])
+from astlens import apply_plan_bead_cli
+raise SystemExit(apply_plan_bead_cli.main(sys.argv[1:]))' "$@"

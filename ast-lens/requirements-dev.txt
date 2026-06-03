@@ -1,0 +1,7 @@
+# ast-lens development/test dependencies (the runtime deps are in
+# requirements.txt). The behavioral test suite under tests/ uses pytest;
+# coverage is measured with pytest-cov (coverage.py) and gated at 90% line
+# coverage; ruff provides linting.
+pytest
+pytest-cov
+ruff

@@ -1,0 +1,26 @@
+# Drop standalone `console.log(...)` / `console.debug(...)` statements in
+# JS/TS so debug noise never ships. Modelled on ast-grep's rule schema.
+#
+# Safety: the rule matches an `expression_statement` only when it is DIRECTLY
+# inside a `{ … }` block or the program top level (`inside … stopBy: neighbor`).
+# That deliberately EXCLUDES a braceless body such as `if (x) console.log(y);`,
+# where deleting the call alone would leave a dangling `if (x)` — a break the
+# compile gate would reject anyway, but which we avoid by construction.
+# `strip_statement` swallows the line's indentation + trailing newline so the
+# removal leaves no blank-line residue.
+id: remove-console
+language: [js, ts, jsx, tsx]
+description: Drop standalone console.log/console.debug statements in JS/TS.
+strip_statement: true
+rule:
+  kind: expression_statement
+  inside:
+    any:
+      - kind: statement_block
+      - kind: program
+    stopBy: neighbor
+  has:
+    any:
+      - pattern: console.log($$$ARGS)
+      - pattern: console.debug($$$ARGS)
+# no `fix:` -> the matched statement is deleted.

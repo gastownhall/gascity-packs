@@ -1,0 +1,56 @@
+# ast-lens — tooling config for the test/coverage/lint pipeline.
+#
+# The emitter itself (bin/outline.py) is a single dependency-light module; this
+# file only configures the dev pipeline (pytest, coverage, ruff). Runtime deps
+# live in requirements.txt; dev deps in requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+
+[tool.coverage.run]
+branch = true
+# Measure the emitter module. The suite imports it by file path under the
+# synthetic name "ast_lens_outline" (and re-imports it under a couple of
+# throwaway names for the env-var tests), so match on the source filename.
+source = ["bin"]
+omit = ["tests/*"]
+
+[tool.coverage.paths]
+# Treat every throwaway re-import alias of outline.py as the same source file
+# so per-import coverage data is merged rather than reported separately.
+outline = ["bin/outline.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+# Industry-standard gate: fail the run if line coverage drops below 90%.
+fail_under = 90
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise SystemExit",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv", "tests/fixtures"]
+
+[tool.ruff.lint]
+# A pragmatic, non-pedantic set: pyflakes (F), pycodestyle errors (E),
+# warnings (W), import order (I), bugbear (B), comprehensions (C4),
+# pyupgrade (UP). The emitter (bin/outline.py) is a clean-room module with a
+# deliberately terse house style; the ignores below preserve that style rather
+# than rewrite a file the test suite treats as the system-under-test.
+select = ["E", "F", "W", "I", "B", "C4", "UP"]
+ignore = [
+    "E401",  # multiple imports on one line (bin/outline.py top matter)
+    "E402",  # module-level import not at top (test re-imports outline.py)
+    "E501",  # line length handled by the formatter, not enforced hard
+    "E741",  # short loop var `l` over rendered lines (emitter house style)
+    "I001",  # import-block ordering of the dense top-of-file import line
+    "B904",  # `raise ... from` in broad-except passthrough is intentional
+    "UP015", # explicit open(..., "r") mode is kept for readability
+]

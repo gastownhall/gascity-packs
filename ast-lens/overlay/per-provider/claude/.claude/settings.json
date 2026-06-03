@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && bash \"$CLAUDE_PROJECT_DIR/packs/ast-lens/hooks/outline-on-read.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# ast-lens outline wrapper. Resolves the pack's own venv if present, else falls
+# back to system python3. On ANY failure it exits 0 with no output, so a caller
+# (e.g. a PreToolUse hook) never breaks a Read — graceful passthrough per Alg 1.
+set -euo pipefail
+PACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="$PACK_DIR/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || true)"
+[ -n "$PY" ] || exit 0
+exec "$PY" "$PACK_DIR/bin/outline.py" "$@"

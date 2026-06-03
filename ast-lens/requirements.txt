@@ -1,0 +1,16 @@
+# ast-lens emitter runtime deps — canonical tree-sitter + per-language grammars
+# (standard, well-documented Node API; one wheel per language, all vendored).
+tree-sitter>=0.23,<0.26
+tree-sitter-go>=0.23
+tree-sitter-python>=0.23
+tree-sitter-javascript>=0.23
+tree-sitter-typescript>=0.23
+
+# Pattern-DSL (write-side §4.E / "Subsystem E"): author transform intents as
+# YAML instead of Python. `ast-grep-py` is the preferred structural-match
+# backend (a self-contained wheel embedding tree-sitter grammars; no external
+# binary needed); `pyyaml` parses the intent files. Both are optional at
+# runtime — the registry degrades to "no pattern intents" if they are absent —
+# but they ship by default so the bundled intents work out of the box.
+ast-grep-py>=0.39
+pyyaml>=6.0

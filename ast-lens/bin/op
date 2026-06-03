@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# ast-lens write-side CLI: plan / execute a symbolic-surgery op.
+#
+#   bin/op <op>  <file> [--k v ...]            print the PLAN (read-only)
+#   bin/op <op>! <file> <token> [--k v ...]    EXECUTE the plan (trailing ! = execute)
+#   bin/op --list                              list registered ops + availability
+#   bin/op --matrix                            print the gate's checker matrix
+#
+# A trailing `!` on the op name selects execute; otherwise the command is a
+# read-only plan. Generic `--k v` pairs become the op's args dict.
+#
+# This wrapper resolves the pack's own venv python (so `astlens` and its checker
+# matrix run under the interpreter the gate uses for py_compile), falling back
+# to system python3. It then hands off to the Python driver below via a heredoc-
+# free `-c` bootstrap that imports astlens.cli.
+set -euo pipefail
+PACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export ASTLENS_PACK_DIR="$PACK_DIR"
+PY="$PACK_DIR/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || true)"
+[ -n "$PY" ] || { echo "op: no python interpreter found" >&2; exit 2; }
+exec "$PY" -c 'import sys, os
+sys.path.insert(0, os.environ["ASTLENS_PACK_DIR"])
+from astlens import cli
+raise SystemExit(cli.main(sys.argv[1:]))' "$@"

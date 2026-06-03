@@ -1,0 +1,4 @@
+# A deliberately malformed intent (missing `id`, `description`, and any
+# `rule`/`pattern`). load_intent() must reject it cleanly with a PatternError.
+language: [js]
+fix: let

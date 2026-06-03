@@ -1,0 +1,19 @@
+# Modernise JS/TS variable declarations: rewrite the `var` keyword to `let`.
+#
+# Correct-by-construction: rather than rebuild the whole declaration from a
+# template (which would drop a trailing `;` or a second declarator in
+# `var x = 1, y = 2;`), this matches the `variable_declaration` node and uses
+# `select: var` to narrow the edit to just the leading `var` *keyword token*,
+# replacing it with `let`. Everything else — declarators, initialisers, the
+# terminator, spacing — is left byte-identical. It also covers `for (var i …)`.
+#
+# `select` is the engine's "rewrite a child of the match" knob (see
+# docs/PATTERN-DSL.md); it is the one feature beyond a bare ast-grep pattern
+# this intent needs, and it keeps the rewrite safe under the compile gate.
+id: no-var
+language: [js, ts, jsx, tsx]
+description: Replace the `var` keyword with `let` in JS/TS declarations.
+rule:
+  kind: variable_declaration
+select: var
+fix: let

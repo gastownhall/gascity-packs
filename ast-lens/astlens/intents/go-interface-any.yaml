@@ -1,0 +1,9 @@
+# Modernise Go: rewrite the empty interface type `interface{}` to the `any`
+# alias (Go 1.18+). A pure type-level rename — idiomatic, semantics-preserving,
+# and verified by the gate's `gofmt -e` check. Matches the `interface_type`
+# node for every empty-interface occurrence (params, returns, fields, casts).
+id: go-interface-any
+language: go
+description: Rewrite Go empty interface{} to the any alias (Go 1.18+).
+pattern: interface{}
+fix: any
