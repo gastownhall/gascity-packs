@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -17,6 +19,39 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 REQUIRED_WAVE_1 = {"cass", "discord", "gascity", "gastown", "github", "slack-full"}
 FORBIDDEN_WAVE_1 = {"bd", "core", "dolt", "maintenance"}
+
+
+def inside_git_worktree(root: Path) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def git_object_exists(root: Path, object_name: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "-C", str(root), "cat-file", "-e", object_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def git_archive_hash(root: Path, commit: str, pack_path: str) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(root), "archive", "--format=tar", commit, pack_path],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return "sha256:" + hashlib.sha256(result.stdout).hexdigest()
 
 
 def source_pack_path(source: str) -> str:
@@ -33,6 +68,7 @@ def validate(path: Path) -> list[str]:
     errors: list[str] = []
     with path.open("rb") as handle:
         data = tomllib.load(handle)
+    git_checks_enabled = inside_git_worktree(path.parent)
 
     if data.get("schema", 1) != 1:
         errors.append("schema must be 1")
@@ -76,6 +112,15 @@ def validate(path: Path) -> list[str]:
                 errors.append(f"{label}: release {version!r} hash must be sha256:<64 lowercase hex>")
             if not release.get("description"):
                 errors.append(f"{label}: release {version!r} description is required")
+
+            commit = release.get("commit", "")
+            if git_checks_enabled and (pack_path := source_pack_path(pack.get("source", ""))):
+                pack_toml_object = f"{commit}:{pack_path}/pack.toml"
+                if COMMIT_RE.fullmatch(commit) and not git_object_exists(path.parent, pack_toml_object):
+                    errors.append(f"{label}: release {version!r} commit does not contain {pack_path}/pack.toml")
+                expected_hash = git_archive_hash(path.parent, commit, pack_path) if COMMIT_RE.fullmatch(commit) else None
+                if expected_hash and release.get("hash", "") != expected_hash:
+                    errors.append(f"{label}: release {version!r} hash {release.get('hash', '')!r} does not match {expected_hash!r}")
 
         source = pack.get("source", "")
         parsed = urlparse(source)

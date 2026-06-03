@@ -7,11 +7,11 @@ source = "https://github.com/gastownhall/gascity-packs/tree/main/gascity"
 source_kind = "git"
 
   [[pack.release]]
-  version = "0.1.0"
+  version = "0.1.1"
   ref = "main"
-  commit = "d3617d1319a1206ac85f69ba024ec395c49c6f4b"
-  hash = "sha256:481e800b2955956b4fc4856257ec56ae1b668da2d84e8543816917ac9dc8e7c7"
-  description = "Initial Gas City planning pack release."
+  commit = "788b6e8ec224a8951c728ef6da74dab8bc04d474"
+  hash = "sha256:53d1c929e44fdf9442dd5121b2b95dd4527f58080d5900c6f2db97d4ea4c5168"
+  description = "Refresh Gas City planning pack release pin."
 
 [[pack]]
 name = "gastown"
@@ -20,11 +20,11 @@ source = "https://github.com/gastownhall/gascity-packs/tree/main/gastown"
 source_kind = "git"
 
   [[pack.release]]
-  version = "0.1.0"
+  version = "0.1.1"
   ref = "main"
-  commit = "d3617d1319a1206ac85f69ba024ec395c49c6f4b"
-  hash = "sha256:e8d987c8bea7d89eb3c5751a360b92a6c847f95fc5e5447378927e90eb3b501b"
-  description = "Initial Gas Town workflow pack release."
+  commit = "788b6e8ec224a8951c728ef6da74dab8bc04d474"
+  hash = "sha256:5fbdfaa19b646a1a1174c07c9d73e9d0d0e2ba6e3c86d6c004092dc3a3a09a85"
+  description = "Refresh Gas Town workflow pack release pin."
 
 [[pack]]
 name = "cass"
@@ -33,11 +33,11 @@ source = "https://github.com/gastownhall/gascity-packs/tree/main/cass"
 source_kind = "git"
 
   [[pack.release]]
-  version = "0.1.0"
+  version = "0.1.1"
   ref = "main"
-  commit = "d3617d1319a1206ac85f69ba024ec395c49c6f4b"
-  hash = "sha256:9849675daa3ba8a792fc1c68c727542936400687d529e5d4d231afde29d4a341"
-  description = "Initial CASS session-search pack release."
+  commit = "788b6e8ec224a8951c728ef6da74dab8bc04d474"
+  hash = "sha256:de199379e45e2482e5be91dd777c6af0fc907b3ede6c005941f64a719dfb0c4d"
+  description = "Refresh CASS session-search pack release pin."
 
 [[pack]]
 name = "discord"
@@ -46,11 +46,11 @@ source = "https://github.com/gastownhall/gascity-packs/tree/main/discord"
 source_kind = "git"
 
   [[pack.release]]
-  version = "0.1.0"
+  version = "0.1.1"
   ref = "main"
-  commit = "d3617d1319a1206ac85f69ba024ec395c49c6f4b"
-  hash = "sha256:4e3acdaf3171e8a53327ebcee9f5b9c61d191c5791e413ff61a76b457ef96394"
-  description = "Initial Discord pack release."
+  commit = "788b6e8ec224a8951c728ef6da74dab8bc04d474"
+  hash = "sha256:b3ada8ba6511187a5128fc58eea7e4a57e037ef4bb9d70707b985c6f30921585"
+  description = "Refresh Discord pack release pin."
 
 [[pack]]
 name = "github"
@@ -59,11 +59,11 @@ source = "https://github.com/gastownhall/gascity-packs/tree/main/github"
 source_kind = "git"
 
   [[pack.release]]
-  version = "0.1.0"
+  version = "0.1.1"
   ref = "main"
-  commit = "d3617d1319a1206ac85f69ba024ec395c49c6f4b"
-  hash = "sha256:5ba4e2277e1e1b434b278067704d0d977dd8f18aee496a21feab4218ee99995e"
-  description = "Initial GitHub intake pack release."
+  commit = "788b6e8ec224a8951c728ef6da74dab8bc04d474"
+  hash = "sha256:aaa2b0ba6fbd2164a52108f273bba158e7ab66639e42b8c614e796399e0f323c"
+  description = "Refresh GitHub intake pack release pin."
 
 [[pack]]
 name = "slack-full"
@@ -72,8 +72,8 @@ source = "https://github.com/gastownhall/gascity-packs/tree/main/slack-full"
 source_kind = "git"
 
   [[pack.release]]
-  version = "0.0.1"
+  version = "0.0.2"
   ref = "main"
-  commit = "d3617d1319a1206ac85f69ba024ec395c49c6f4b"
-  hash = "sha256:0d32d8da6ad57c632d4f54008bdd1bb8b822c493a709676b3d1761a5ef389387"
-  description = "Initial Slack pack release."
+  commit = "788b6e8ec224a8951c728ef6da74dab8bc04d474"
+  hash = "sha256:ca1ad4c501ca12e4a51fe5d3270ad8b1df72cd388191c90f5369834be24ff145"
+  description = "Refresh Slack pack release pin."
