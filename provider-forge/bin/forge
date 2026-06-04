@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# provider-forge CLI: list / doctor / roster / targets over the catalog.
+#
+#   bin/forge list   [--all] [--json]
+#   bin/forge doctor [--json]
+#   bin/forge roster [--out FILE] [--provider P ...]
+#   bin/forge targets [--json]
+#
+# This wrapper resolves the pack's own venv python (so forge runs under the
+# interpreter its deps are installed in), falling back to system python3, then
+# hands off to `python -m forge.cli`. It mirrors model-advisor/bin/advisor.
+#
+# Degrades gracefully: the engine is pure-stdlib (tomllib on Python >= 3.11), so
+# it runs fine with no .venv as long as some python3 is present. If NO
+# interpreter is found it prints a clear error to stderr and exits 2 — it never
+# silently no-ops.
+set -euo pipefail
+PACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="$PACK_DIR/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || true)"
+[ -n "$PY" ] || { echo "forge: no python interpreter found (no .venv, no python3)" >&2; exit 2; }
+exec env PYTHONPATH="$PACK_DIR${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m forge.cli "$@"

@@ -77,3 +77,17 @@ source_kind = "git"
   commit = "d3617d1319a1206ac85f69ba024ec395c49c6f4b"
   hash = "sha256:0d32d8da6ad57c632d4f54008bdd1bb8b822c493a709676b3d1761a5ef389387"
   description = "Initial Slack pack release."
+
+[[pack]]
+name = "provider-forge"
+description = "Multi-provider model catalog + enablement for Gas City — detect/verify provider CLIs, declare run targets, and generate model-advisor's tier roster from one source of truth."
+source = "https://github.com/gastownhall/gascity-packs/tree/main/provider-forge"
+source_kind = "git"
+
+  # commit/hash are placeholders for maintainers to finalize via release tooling on merge.
+  [[pack.release]]
+  version = "0.1.0"
+  ref = "main"
+  commit = "e5a9d3ed7bff40c4d3a671c1c63191915242135a"
+  hash = "sha256:d11f740607eb6a69aebc81f5abe2ed1f35e15eca880f376fd2fe6a0714c3dcc4"
+  description = "Initial provider-forge pack release."

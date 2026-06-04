@@ -1,0 +1,38 @@
+# provider-forge — the canonical provider × model catalog for Gas City.
+#
+# gc already ships the routing primitives: per-provider overlays
+# (.gc/system/packs/core/overlay/per-provider/<provider>/) and per-dispatch
+# metadata `gc.run_target` / `gc.provider` / `gc.model`. What gc lacks is a
+# single, machine-readable list of WHICH (provider, model) pairs exist, their
+# costs/limits, and the run_target each maps to. catalog.toml is that list — the
+# source of truth that this pack reads to:
+#   • verify each live provider's CLI + auth     (`forge doctor`),
+#   • enumerate the run targets a city should define (`forge targets`), and
+#   • GENERATE model-advisor's [[tier]] roster from one place (`forge roster`),
+#     so the model list is maintained once and the advisor consumes it.
+#
+# What this pack provides (all convention-discovered once the pack is imported):
+#   bin/forge        the list / doctor / roster / targets CLI
+#   forge/           the engine (pure-stdlib catalog reader + roster emitter)
+#   catalog.toml     the provider × model catalog (the source of truth)
+#
+# Stdlib-only (tomllib on Python >= 3.11; tomli fallback below it). No runtime
+# third-party dependencies — it mirrors model-advisor's minimal footprint.
+#
+# Wiring (after importing this pack into a city, e.g. `source = "packs/provider-forge"`):
+#   1. Run `packs/provider-forge/setup.sh` once to build the engine's venv.
+#   2. `bin/forge doctor` — confirm every live provider's CLI is on PATH + authed.
+#   3. `bin/forge roster --out packs/model-advisor/advisor.toml` regenerates the
+#      advisor's cost-ordered [[tier]] roster from the catalog (the integration:
+#      maintain the model list once, here, and the advisor consumes it).
+#   4. `bin/forge targets` lists the gc session configs (run targets) the catalog
+#      expects to exist for dispatch.
+#
+# The pack is read-only and side-effect-free at the catalog layer: `list`,
+# `doctor`, `targets`, and `roster`-to-stdout never mutate anything; only
+# `roster --out FILE` writes, and only where you point it.
+
+[pack]
+name = "provider-forge"
+schema = 2
+version = "0.1.0"

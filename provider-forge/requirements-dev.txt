@@ -1,0 +1,6 @@
+# provider-forge development/test dependencies (runtime deps live in
+# requirements.txt). The behavioural suite under tests/ uses pytest; ruff
+# provides linting. These mirror model-advisor's dev pipeline so both packs
+# test the same way.
+pytest
+ruff

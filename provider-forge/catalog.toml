@@ -1,0 +1,168 @@
+# provider-forge — canonical provider × model catalog for Gas City.
+#
+# gc already ships the routing primitives: per-provider overlays
+# (.gc/system/packs/core/overlay/per-provider/<provider>/) and per-dispatch
+# metadata `gc.run_target` / `gc.provider` / `gc.model` (see core formula
+# mol-review-quorum). What gc lacks is a single, machine-readable list of WHICH
+# (provider, model) pairs exist, their costs/limits, and the run_target each maps
+# to. This file is that list — the source of truth that:
+#   • model-advisor's [[tier]] roster is generated from (one place to edit), and
+#   • `bin/forge` reads to verify auth, build run targets, and dispatch.
+#
+# COSTS under flat-rate subscriptions: both providers run on subscriptions here
+# (Claude Max 20x + Codex), NOT per-token API billing — so in_cost/out_cost are not
+# dollars. Treat them as RELATIVE QUOTA / COMPUTE WEIGHT: bigger models burn more of
+# the 5h/weekly quota and run slower, so the advisor still rightly prefers the smallest
+# model that holds quality. (A true quota-/rate-limit-aware cost model — balancing load
+# across the two subscriptions — is a worthwhile model-advisor refinement, tracked apart.)
+# reasoning effort is captured per model; ENFORCING a non-default effort needs a
+# gc-core seam to forward it to the provider CLI (gc has no effort path today),
+# so the `reasoning` field is advisory until that lands (tracked as a gc-core PR).
+
+schema_version = "provider-forge.v1"
+default_provider = "claude"           # gc [workspace] provider
+
+# =========================================================================== #
+# LIVE providers — CLI installed + authed, runnable now.                       #
+# =========================================================================== #
+
+[providers.claude]
+cli = "claude"
+overlay = ""                          # native — gc's default provider; no overlay dir (model set via the agent `model` field / GC_AGENT_MODEL)
+status = "live"
+native = true                         # gc's default provider
+reasoning_levels = []                 # Claude tiers are flat (no effort dial)
+
+[[providers.claude.models]]
+id = "haiku"
+model = "claude-haiku-4-5"
+context = 200000
+in_cost = 0.80
+out_cost = 4.00
+run_target = "claude-haiku"
+
+[[providers.claude.models]]
+id = "sonnet"
+model = "claude-sonnet-4-5"
+context = 200000
+in_cost = 3.00
+out_cost = 15.00
+run_target = "claude-sonnet"
+
+[[providers.claude.models]]
+id = "opus"
+model = "claude-opus-4-8"
+context = 200000
+in_cost = 15.00
+out_cost = 75.00
+run_target = "claude-opus"
+
+[providers.codex]
+cli = "codex"
+overlay = "codex"
+status = "live"
+auth = "~/.codex/auth.json"
+models_cache = "~/.codex/models_cache.json"
+reasoning_levels = ["low", "medium", "high", "xhigh"]
+default_reasoning = "medium"
+
+[[providers.codex.models]]
+id = "spark"
+model = "gpt-5.3-codex-spark"
+context = 128000
+default_reasoning = "high"
+in_cost = 0.50
+out_cost = 2.00
+run_target = "codex-spark"
+note = "ultra-fast coding"
+
+[[providers.codex.models]]
+id = "mini"
+model = "gpt-5.4-mini"
+context = 272000
+default_reasoning = "medium"
+in_cost = 0.70
+out_cost = 3.00
+run_target = "codex-mini"
+note = "small / fast / cost-efficient"
+
+[[providers.codex.models]]
+id = "gpt54"
+model = "gpt-5.4"
+context = 272000
+default_reasoning = "medium"
+in_cost = 2.50
+out_cost = 10.00
+run_target = "codex-gpt54"
+note = "strong everyday coding"
+
+[[providers.codex.models]]
+id = "gpt55"
+model = "gpt-5.5"
+context = 272000
+default_reasoning = "medium"
+in_cost = 8.00
+out_cost = 30.00
+run_target = "codex-gpt55"
+note = "frontier: complex coding / research"
+
+[[providers.codex.models]]
+id = "auto-review"
+model = "codex-auto-review"
+context = 272000
+default_reasoning = "medium"
+in_cost = 3.00
+out_cost = 15.00
+run_target = "codex-auto-review"
+note = "Codex auto-approval review model — specialized; omit from a general roster unless you dispatch reviews to it"
+exclude_from_roster = true
+
+# =========================================================================== #
+# SCAFFOLD providers — gc has the overlay, CLI NOT installed. Install the CLI,  #
+# add models below, and set status = "live" to activate. Model lists/costs are  #
+# intentionally empty (fill from each provider's docs when you enable it).      #
+# =========================================================================== #
+
+[providers.gemini]
+cli = "gemini"
+overlay = "gemini"
+status = "scaffold"
+reasoning_levels = []
+# [[providers.gemini.models]]
+#   id = "..." ; model = "..." ; context = ... ; in_cost = ... ; out_cost = ... ; run_target = "gemini-..."
+
+[providers.copilot]
+cli = "copilot"
+overlay = "copilot"
+status = "scaffold"
+reasoning_levels = []
+
+[providers.cursor]
+cli = "cursor"
+overlay = "cursor"
+status = "scaffold"
+reasoning_levels = []
+
+[providers.kiro]
+cli = "kiro"
+overlay = "kiro"
+status = "scaffold"
+reasoning_levels = []
+
+[providers.omp]
+cli = "omp"
+overlay = "omp"
+status = "scaffold"
+reasoning_levels = []
+
+[providers.opencode]
+cli = "opencode"
+overlay = "opencode"
+status = "scaffold"
+reasoning_levels = []
+
+[providers.pi]
+cli = "pi"
+overlay = "pi"
+status = "scaffold"
+reasoning_levels = []

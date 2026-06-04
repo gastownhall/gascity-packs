@@ -1,0 +1,10 @@
+# provider-forge runtime deps — deliberately MINIMAL (mirrors model-advisor).
+#
+# The engine is pure-stdlib: the catalog is parsed with the stdlib `tomllib`
+# (Python >= 3.11), roster emission is plain string formatting, and `doctor`
+# uses `shutil.which` + `os.path.expanduser` — no third-party runtime deps.
+#
+# The single guarded fallback below pulls `tomli` *only* on an older interpreter,
+# so the catalog loader's `import tomllib` / `import tomli as tomllib` shim has a
+# backend everywhere without adding a dependency on a modern Python.
+tomli>=2.0 ; python_version < "3.11"

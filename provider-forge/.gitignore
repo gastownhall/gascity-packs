@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.json
+coverage.xml
+htmlcov/
+
+# install.sh / uninstall.sh leave timestamped config backups next to the files
+# they edit; never commit those.
+*.provider-forge.bak.*
