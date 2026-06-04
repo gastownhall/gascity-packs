@@ -1,0 +1,40 @@
+# model-advisor eval-schedule — Layer-4 uncertainty-triggered eval auto-dispatch.
+#
+# Runs `bin/advisor eval-schedule` on a schedule so the cells that are GATING a
+# downgrade on uncertainty get a deterministic eval probe, ranked by posterior
+# CI half-width × the spend confirming the downgrade would unlock (DESIGN §5.4).
+# This is the auto-dispatch v1 deferred (DESIGN §7.3): v1 surfaced the widest
+# gating cell in `advisor inspect`; this order acts on it. It is an EXEC order
+# (no LLM, no agent, no wisp): the wrapper script calls the pack's own CLI under
+# its venv. See docs/DESIGN.md §5.4 / §6.2 for the policy.
+#
+# SAFE BY DEFAULT: the wrapper runs in DRY-RUN unless the operator opts in by
+# exporting MODEL_ADVISOR_EVAL_SCHEDULE=1 (or 'true') in the order's environment.
+# A dry run computes + logs the ranked eval plan (the `gc bd create` commands it
+# WOULD run) but creates no beads — so importing this order without arming it
+# never mutates state.
+#
+# This file is an EXAMPLE artifact shipped with the pack. It is NOT registered
+# against any live city by the pack install; an operator copies/symlinks it into
+# a city/rig orders/ layer (or imports the pack's formula layer) to activate it.
+[order]
+description = "Schedule eval probes for the highest-value gating cells (model-advisor Layer 4)"
+
+# --- trigger: weekly cron (Mon 01:00). -----------------------------------------
+# Cron form "min hour dom mon dow". Eval probes are expensive (they spend real
+# tokens against held-out fixtures), so default to a slower cadence than
+# auto-apply. Tune to your eval budget / evidence velocity. To use a fixed
+# inter-run gap instead of a wall-clock time, swap to:
+#     trigger  = "cooldown"
+#     interval = "168h"
+trigger  = "cron"
+schedule = "0 1 * * 1"
+
+# --- action: the pack's eval-schedule wrapper (exec; no pool — exec orders can't). #
+# $PACK_DIR is expanded by the controller to this pack's directory.
+exec    = "$PACK_DIR/orders/scripts/eval-schedule.sh"
+timeout = "120s"
+
+# Active once discovered. Set to false to ship the order but keep it dormant
+# until an operator is ready (belt-and-braces with the dry-run default above).
+enabled = true

@@ -1,0 +1,224 @@
+# advisor.toml — model-advisor configuration (edit me).
+#
+# This file defines the cost-ordered model roster, the task-shape taxonomy, the
+# quality-loss tolerance classes, and per-agent defaults. Everything the CC-TS
+# engine needs to order tiers and gate downgrades lives here. Deleting this file
+# falls back to a built-in Claude haiku/sonnet/opus default with the same shape.
+#
+# Cell key = "<provider>::<agent>::<shape>::<tier_id>".
+
+[advisor]
+default_provider = "claude"
+# Baseline / reference tier (tier*). All downgrade constraints are relative to
+# it. Defaults to the highest-rank (most-capable) tier if omitted.
+baseline_tier = "opus"
+
+# --- v3 advanced backends (opt-in; default off) — see README "Advanced modes" ---
+# lcb_backend = "wilson"        # gate bound: "wilson" (default) | "conformal" (distribution-free split-conformal)
+# pooling     = "closed-form"   # partial pooling: "closed-form" (default) | "empirical-bayes" (full hierarchical)
+
+# --------------------------------------------------------------------------- #
+# Roster — the user's cost-ordered model tiers. rank 1 = cheapest.            #
+# in_cost / out_cost are $/MTok (illustrative; replace with your rate sheet). #
+# --------------------------------------------------------------------------- #
+# Mixed Claude + Codex roster, cost-ordered (rank 1 = cheapest). Codex costs are
+# ESTIMATES — replace all in_cost/out_cost with your real $/MTok rate sheet. Codex
+# tiers run at each model's DEFAULT reasoning effort until gc forwards an effort
+# flag (see the Phase-2 block below); `run_target` is the gc session config the
+# advisor's apply points the agent at (Codex run targets must exist — see README).
+[[tier]]
+id         = "spark"
+provider   = "codex"
+model      = "gpt-5.3-codex-spark"   # ultra-fast coding (128k ctx)
+run_target = "codex-spark"
+rank       = 1
+in_cost    = 0.50
+out_cost   = 2.00
+
+[[tier]]
+id         = "mini"
+provider   = "codex"
+model      = "gpt-5.4-mini"          # small / fast / cost-efficient (272k ctx)
+run_target = "codex-mini"
+rank       = 2
+in_cost    = 0.70
+out_cost   = 3.00
+
+[[tier]]
+id         = "haiku"
+provider   = "claude"
+model      = "claude-haiku-4-5"
+run_target = "claude-haiku"
+rank       = 3
+in_cost    = 0.80
+out_cost   = 4.00
+
+[[tier]]
+id         = "gpt54"
+provider   = "codex"
+model      = "gpt-5.4"               # strong everyday coding (272k ctx)
+run_target = "codex-gpt54"
+rank       = 4
+in_cost    = 2.50
+out_cost   = 10.00
+
+[[tier]]
+id         = "sonnet"
+provider   = "claude"
+model      = "claude-sonnet-4-5"
+run_target = "claude-sonnet"
+rank       = 5
+in_cost    = 3.00
+out_cost   = 15.00
+
+[[tier]]
+id         = "gpt55"
+provider   = "codex"
+model      = "gpt-5.5"               # frontier: complex coding / research (272k ctx)
+run_target = "codex-gpt55"
+rank       = 6
+in_cost    = 8.00
+out_cost   = 30.00
+
+[[tier]]
+id         = "opus"
+provider   = "claude"
+model      = "claude-opus-4-8"
+run_target = "claude-opus"
+rank       = 7
+in_cost    = 15.00
+out_cost   = 75.00
+
+# --------------------------------------------------------------------------- #
+# PHASE 2 — reasoning effort as tiers (your chosen design). gc has NO effort   #
+# config path today, so gpt-5.5-low and gpt-5.5-high would run identically     #
+# until a gc-core seam forwards `reasoning` to the Codex CLI. Once that lands,  #
+# uncomment these (and adjust ranks), and the engine will learn per-effort.    #
+# `codex-auto-review` (Codex's auto-approval review model) is omitted from the #
+# general roster — add it as a review-shape tier only if you dispatch it.      #
+# --------------------------------------------------------------------------- #
+# [[tier]]
+#   id = "gpt55-low"  ; provider = "codex" ; model = "gpt-5.5" ; reasoning = "low"
+#   run_target = "codex-gpt55-low"  ; rank = 6 ; in_cost = 8.00  ; out_cost = 30.00
+# [[tier]]
+#   id = "gpt55-high" ; provider = "codex" ; model = "gpt-5.5" ; reasoning = "high"
+#   run_target = "codex-gpt55-high" ; rank = 8 ; in_cost = 12.00 ; out_cost = 48.00
+
+# --------------------------------------------------------------------------- #
+# Tolerance classes — max allowable quality drop (q_tol) + asymmetric         #
+# multiplier M. Critical is a HARD never-downgrade rule (M = inf).            #
+# --------------------------------------------------------------------------- #
+[[tolerance]]
+name = "Critical"
+q_tol = 0.0
+multiplier = "inf"
+
+[[tolerance]]
+name = "Strict"
+q_tol = 0.02
+multiplier = 20
+
+[[tolerance]]
+name = "Moderate"
+q_tol = 0.05
+multiplier = 5
+
+[[tolerance]]
+name = "Lenient"
+q_tol = 0.10
+multiplier = 1
+
+# --------------------------------------------------------------------------- #
+# Shapes — the gc-native task taxonomy. Each shape has a default tolerance     #
+# class and an optional representative token budget (tok_in/tok_out) used for #
+# cost differentials when realised token counts are unavailable.             #
+# --------------------------------------------------------------------------- #
+[[shape]]
+name = "lookup"
+tol_class = "Lenient"
+tok_in = 800
+tok_out = 200
+
+[[shape]]
+name = "implement"
+tol_class = "Moderate"
+tok_in = 4000
+tok_out = 1500
+
+[[shape]]
+name = "judge"
+tol_class = "Moderate"
+tok_in = 1500
+tok_out = 400
+
+[[shape]]
+name = "review"
+tol_class = "Strict"
+tok_in = 3000
+tok_out = 800
+
+[[shape]]
+name = "patrol"
+tol_class = "Lenient"
+tok_in = 1000
+tok_out = 300
+
+# --------------------------------------------------------------------------- #
+# Agents — canonical shape sets + optional per-cell overrides. Cells only      #
+# exist for an agent's canonical shapes. Use [[agent.cell]] to pin a stricter #
+# tolerance, a lower baseline, or the force_baseline safety hatch.           #
+# --------------------------------------------------------------------------- #
+[[agent]]
+name = "polecat"
+shapes = ["implement", "lookup"]
+
+[[agent]]
+name = "refinery"
+shapes = ["review", "judge"]
+
+  # Refinery release-gating decisions are Critical (never downgrade).
+  [[agent.cell]]
+  shape = "judge"
+  tol_class = "Critical"
+
+[[agent]]
+name = "mayor"
+shapes = ["judge", "implement", "lookup"]
+
+[[agent]]
+name = "witness"
+shapes = ["patrol", "judge"]
+
+[[agent]]
+name = "boot"
+shapes = ["patrol", "judge"]
+
+[[agent]]
+name = "deacon"
+shapes = ["patrol", "judge"]
+
+# --------------------------------------------------------------------------- #
+# Hyperparameters (CC-TS appendix D defaults). All optional.                  #
+# --------------------------------------------------------------------------- #
+[hyperparams]
+alpha       = 0.05   # one-sided confidence (1 - alpha = 0.95)
+z           = 1.645  # z_{0.95}, matched to alpha
+theta_eval  = 0.10   # CI half-width that flags a cell for an eval probe
+pool_lambda = 0.5    # cap on cross-sibling pseudocount pooling
+s_prior     = 4.0    # cold-start pseudocount for cheaper tiers (weak)
+baseline_a  = 8.0    # optimistic baseline prior Beta(8, 2) -> mean 0.80
+baseline_b  = 2.0
+cold_m_lo   = 0.5    # cheapest-tier cold-start prior mean
+w_close     = 1.0    # quality channel weights (close < review < eval)
+w_review    = 3.0
+w_eval      = 5.0
+
+# --- v3 advanced modes (opt-in; default off) — see README "Advanced modes" ---
+# mode               = "lcb"   # selection rule: "lcb" (deterministic, default) | "thompson" (seeded sampling)
+# continuous_quality = false   # accept graded q in [0,1] outcomes (else binary pass/fail)
+# changepoint        = false   # Page-Hinkley drift detection + recency re-weighting (`advisor drift`)
+
+# --- v3 multi-tenant federation (opt-in; default: no peers) — `advisor federate` ---
+# [federation]
+# peers = ["../peer-repo/.beads/telemetry/advisor-federation.json"]  # aggregates-only peer exports to merge
+# trust = 0.3                                                         # weight on borrowed peer evidence (local always dominates)

@@ -1,0 +1,12 @@
+# model-advisor runtime deps — deliberately MINIMAL.
+#
+# The engine (DESIGN §1, §5) is pure-stdlib: the Wilson-style normal lower
+# confidence bound on the Beta posterior is plain arithmetic, the cell store is
+# JSON over `.beads/telemetry/invocations.jsonl`, and config is TOML.
+#
+# TOML parsing uses the stdlib `tomllib`, which ships in Python >= 3.11. The
+# pack targets 3.11+, so no third-party TOML library is required. The single
+# guarded fallback below pulls `tomli` *only* on an older interpreter, so the
+# config loader's `import tomllib` / `import tomli as tomllib` shim has a backend
+# everywhere without adding a dependency on a modern Python.
+tomli>=2.0 ; python_version < "3.11"

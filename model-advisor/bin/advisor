@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# model-advisor CLI: recommend / inspect / apply the cost-minimal model tier.
+#
+#   bin/advisor advise  <agent> <shape> [--json]
+#   bin/advisor inspect <agent> <shape> [--json]
+#   bin/advisor apply   <agent> [--shape S] [--city PATH] [--rig NAME] [--dry-run]
+#
+# `advise` and `inspect` are read-only surfaces over the cell store; `apply`
+# sets the agent's default `model` field in gc config (the value gc carries into
+# GC_AGENT_MODEL at spawn) to the recommended tier — per-AGENT, the v1 action.
+#
+# This wrapper resolves the pack's own venv python (so the advisor runs under
+# the interpreter its deps are installed in), falling back to system python3,
+# then hands off to `python -m modeladvisor.cli`. It mirrors ast-lens/bin/op.
+# Always-sane on a missing venv: if no interpreter is found it prints a clear
+# error to stderr and exits 2 (it never silently no-ops, because apply must not
+# pretend to have applied a change).
+set -euo pipefail
+PACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="$PACK_DIR/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || true)"
+[ -n "$PY" ] || { echo "advisor: no python interpreter found (no .venv, no python3)" >&2; exit 2; }
+exec env PYTHONPATH="$PACK_DIR${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m modeladvisor.cli "$@"

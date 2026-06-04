@@ -1,0 +1,38 @@
+# model-advisor — cost-minimal model-tier selection for Gas City agents.
+#
+# A self-contained, clean-room implementation of the Blackrim "Conservative
+# Constrained Thompson Sampling" (CC-TS) model-tier advisor, re-derived from the
+# paper's §3/§5 math and adapted to gc's agent roster and an arbitrary,
+# config-driven model roster (not a fixed haiku/sonnet/opus 3-tier). It learns
+# per-(provider, agent, shape, tier) success posteriors from bead lifecycle +
+# invocation telemetry and recommends the cheapest tier that *credibly* preserves
+# quality — never downgrading without evidence. See docs/DESIGN.md.
+#
+# What this pack provides (all convention-discovered once the pack is imported):
+#   bin/advisor                             the advise/inspect/apply CLI
+#   modeladvisor/                           the engine (pure-stdlib CC-TS rule)
+#   skills/use-model-advisor/SKILL.md       agent/operator skill: advise before dispatch
+#   template-fragments/                     the cost-aware model-selection discipline
+#   overlay/per-provider/claude/            Stop/SubagentStop telemetry hook
+#   hooks/capture-invocation.sh             the hook script (appends invocation records)
+#   advisor.toml                            the roster + shapes + tolerance classes
+#
+# Telemetry sink: .beads/telemetry/invocations.jsonl (dispatch + quality records,
+# DESIGN §5); the cell-store cache (advisor-cells.json) is rebuildable from it.
+#
+# Wiring (after importing this pack into a city, e.g. `source = "packs/model-advisor"`):
+#   1. Run `packs/model-advisor/setup.sh` once to build the engine's venv.
+#   2. (recommended, --town) add "use-model-advisor" to city.toml global_fragments.
+#   3. The skill and the claude Stop/SubagentStop overlay are picked up
+#      automatically; gc deep-merges the overlay's hook into projected settings.
+#   4. Edit advisor.toml to declare your model roster (the cost-ordered tiers),
+#      the shape taxonomy, and per-(agent, shape) tolerance classes.
+#
+# The pack degrades safely: it observes and *advises*; it never blocks or mutates
+# a dispatch. With no telemetry it cold-starts conservatively — recommending the
+# known-good baseline tier until a cheaper tier earns admission (DESIGN §3.2).
+
+[pack]
+name = "model-advisor"
+schema = 2
+version = "0.1.0"

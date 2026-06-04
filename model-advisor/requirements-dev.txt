@@ -1,0 +1,7 @@
+# model-advisor development/test dependencies (runtime deps live in
+# requirements.txt). The behavioural test suite under tests/ uses pytest;
+# coverage is measured with pytest-cov (coverage.py); ruff provides linting.
+# These mirror the read-side pack's dev pipeline so both packs test the same way.
+pytest
+pytest-cov
+ruff

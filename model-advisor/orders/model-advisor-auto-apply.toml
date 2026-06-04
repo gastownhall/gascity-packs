@@ -1,0 +1,35 @@
+# model-advisor auto-apply — scheduled, evidence-gated per-agent model tuning.
+#
+# Runs `bin/advisor auto-apply` on a schedule so each agent's `model` config
+# field is kept at its cost-optimal tier as quality evidence accrues. This is an
+# EXEC order (no LLM, no agent, no wisp): the wrapper script calls the pack's own
+# CLI under its venv. See docs/AUTO-APPLY.md for the policy and wiring.
+#
+# SAFE BY DEFAULT: the wrapper runs in DRY-RUN unless the operator opts in by
+# exporting MODEL_ADVISOR_AUTO_APPLY=1 (or 'true') in the order's environment.
+# A dry run computes + logs the plan but writes nothing — so importing this order
+# without arming it never mutates config. See docs/AUTO-APPLY.md §"Arming".
+#
+# This file is an EXAMPLE artifact shipped with the pack. It is NOT registered
+# against any live city by the pack install; an operator copies/symlinks it into
+# a city/rig orders/ layer (or imports the pack's formula layer) to activate it.
+[order]
+description = "Keep each agent's model at its evidence-justified cost-optimal tier (model-advisor)"
+
+# --- trigger: daily cron (00:30 every day). ------------------------------------
+# Cron form "min hour dom mon dow". Tune the cadence to your evidence velocity:
+# a busy town accrues telemetry fast (try @daily); a quiet one can run weekly.
+# To use a fixed inter-run gap instead of a wall-clock time, swap to:
+#     trigger  = "cooldown"
+#     interval = "24h"
+trigger  = "cron"
+schedule = "30 0 * * *"
+
+# --- action: the pack's auto-apply wrapper (exec; no pool — exec orders can't). #
+# $PACK_DIR is expanded by the controller to this pack's directory.
+exec    = "$PACK_DIR/orders/scripts/auto-apply.sh"
+timeout = "120s"
+
+# Active once discovered. Set to false to ship the order but keep it dormant
+# until an operator is ready (belt-and-braces with the dry-run default above).
+enabled = true

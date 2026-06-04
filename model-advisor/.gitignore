@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.json
+coverage.xml
+htmlcov/
+
+# Local advisor state — the materialised cell-store cache and the telemetry
+# sink are derived/runtime data, never committed. The cache is rebuildable by
+# replaying invocations.jsonl (DESIGN §5.5), so it is safe to ignore.
+advisor-cells.json
+.beads/
