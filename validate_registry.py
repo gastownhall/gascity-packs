@@ -43,15 +43,88 @@ def git_object_exists(root: Path, object_name: str) -> bool:
     )
 
 
-def git_archive_hash(root: Path, commit: str, pack_path: str) -> str | None:
+def git_bytes(root: Path, *args: str) -> bytes:
+    return subprocess.check_output(
+        [
+            "git",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.untrackedCache=false",
+            "-C",
+            str(root),
+            *args,
+        ]
+    )
+
+
+def relative_pack_content_path(git_path: str, pack_path: str) -> str:
+    if not pack_path:
+        return git_path
+    prefix = pack_path + "/"
+    if not git_path.startswith(prefix):
+        raise ValueError(f"git path {git_path!r} is outside pack path {pack_path!r}")
+    rel = git_path[len(prefix) :]
+    if not rel:
+        raise ValueError(f"empty relative path for {git_path!r}")
+    return rel
+
+
+def manifest_perm(mode: str) -> str:
+    if mode == "100644":
+        return "0644"
+    if mode == "100755":
+        return "0755"
+    if mode == "120000":
+        return "0777"
+    raise ValueError(f"unsupported git file mode {mode!r}")
+
+
+def git_pack_content_hash(root: Path, commit: str, pack_path: str) -> str | None:
+    pack_toml_object = f"{commit}:{pack_path}/pack.toml" if pack_path else f"{commit}:pack.toml"
+    if not git_object_exists(root, pack_toml_object):
+        return None
+    args = ["ls-tree", "-r", "-z", "--full-tree", commit]
+    if pack_path:
+        args.extend(["--", pack_path])
     result = subprocess.run(
-        ["git", "-C", str(root), "archive", "--format=tar", commit, pack_path],
+        [
+            "git",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.untrackedCache=false",
+            "-C",
+            str(root),
+            *args,
+        ],
         capture_output=True,
         check=False,
     )
     if result.returncode != 0:
         return None
-    return "sha256:" + hashlib.sha256(result.stdout).hexdigest()
+    entries: list[str] = []
+    for record in result.stdout.rstrip(b"\0").split(b"\0"):
+        if not record:
+            continue
+        fields, _, raw_path = record.partition(b"\t")
+        parts = fields.decode("utf-8").split()
+        if len(parts) != 3:
+            raise ValueError(f"unexpected git ls-tree metadata {fields!r}")
+        mode, object_type, object_id = parts
+        if object_type != "blob":
+            raise ValueError(f"unsupported git object type {object_type!r} for {raw_path!r}")
+        rel = relative_pack_content_path(raw_path.decode("utf-8"), pack_path)
+        data = git_bytes(root, "cat-file", "blob", object_id)
+        entries.append(f"{rel} {manifest_perm(mode)} {hashlib.sha256(data).hexdigest()}")
+    if not entries:
+        return None
+    manifest = "\n".join(sorted(entries)).encode("utf-8")
+    return "sha256:" + hashlib.sha256(manifest).hexdigest()
 
 
 def source_pack_path(source: str) -> str:
@@ -118,7 +191,7 @@ def validate(path: Path) -> list[str]:
                 pack_toml_object = f"{commit}:{pack_path}/pack.toml"
                 if COMMIT_RE.fullmatch(commit) and not git_object_exists(path.parent, pack_toml_object):
                     errors.append(f"{label}: release {version!r} commit does not contain {pack_path}/pack.toml")
-                expected_hash = git_archive_hash(path.parent, commit, pack_path) if COMMIT_RE.fullmatch(commit) else None
+                expected_hash = git_pack_content_hash(path.parent, commit, pack_path) if COMMIT_RE.fullmatch(commit) else None
                 if expected_hash and release.get("hash", "") != expected_hash:
                     errors.append(f"{label}: release {version!r} hash {release.get('hash', '')!r} does not match {expected_hash!r}")
 

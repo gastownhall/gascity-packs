@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import subprocess
 import textwrap
 
 import validate_registry
+
+
+def run_git(root, *args: str) -> str:
+    return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
 
 
 def test_source_pack_path_accepts_tree_urls() -> None:
@@ -50,3 +56,31 @@ def test_validate_tree_url_source_checks_pack_toml_name(tmp_path) -> None:
     errors = validate_registry.validate(registry)
 
     assert "cass: registry name does not match cass/pack.toml name 'wrong'" in errors
+
+
+def test_pack_content_hash_uses_relative_paths_modes_and_blob_hashes(tmp_path) -> None:
+    run_git(tmp_path, "init")
+    run_git(tmp_path, "config", "user.email", "test@example.com")
+    run_git(tmp_path, "config", "user.name", "Test User")
+    pack_dir = tmp_path / "cass"
+    pack_dir.mkdir()
+    pack_toml = b'[pack]\nname = "cass"\nschema = 2\n'
+    readme = b"CASS docs\n"
+    (pack_dir / "pack.toml").write_bytes(pack_toml)
+    (pack_dir / "README.md").write_bytes(readme)
+    run_git(tmp_path, "add", "cass")
+    run_git(tmp_path, "commit", "-m", "add cass")
+    commit = run_git(tmp_path, "rev-parse", "HEAD")
+
+    manifest = "\n".join(
+        sorted(
+            [
+                f"README.md 0644 {hashlib.sha256(readme).hexdigest()}",
+                f"pack.toml 0644 {hashlib.sha256(pack_toml).hexdigest()}",
+            ]
+        )
+    ).encode("utf-8")
+
+    expected = "sha256:" + hashlib.sha256(manifest).hexdigest()
+
+    assert validate_registry.git_pack_content_hash(tmp_path, commit, "cass") == expected
