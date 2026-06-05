@@ -77,3 +77,16 @@ source_kind = "git"
   commit = "d3617d1319a1206ac85f69ba024ec395c49c6f4b"
   hash = "sha256:0d32d8da6ad57c632d4f54008bdd1bb8b822c493a709676b3d1761a5ef389387"
   description = "Initial Slack pack release."
+
+[[pack]]
+name = "cockpit"
+description = "GasCity Cockpit: city-side enabler pack for the VS Code Cockpit (verify /v0 readiness, publish the discovery descriptor)."
+source = "https://github.com/gastownhall/gascity-packs/tree/main/cockpit"
+source_kind = "git"
+
+  [[pack.release]]
+  version = "0.1.0"
+  ref = "main"
+  commit = "f4e8b5c3b57a9a8ffc228ab60252462d18b8ed45"
+  hash = "sha256:f6c239e442d51521ce61b35ae15ad76b95db3647c4dcb707eaeb4c5af8a44bd6"
+  description = "Initial GasCity Cockpit enabler pack."
