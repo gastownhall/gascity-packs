@@ -1,0 +1,39 @@
+# cockpit — the GasCity Cockpit city-side enabler pack.
+#
+# The "GasCity Cockpit" is a VS Code extension (the client) plus this thin pack
+# (the city-side contract). The expensive part already exists: the supervisor's
+# versioned, self-documenting /v0 HTTP API (/openapi.json, SSE, the full
+# session/chat/approval surface). This pack does NOT add a backend — it makes a
+# city *Cockpit-ready* and defines the discovery handshake the extension needs.
+#
+# What this pack provides (all convention-discovered once the pack is imported):
+#   bin/cockpit                     the ready / discover / contract / adapter CLI
+#   cockpit/                        the engine (pure-stdlib probe + contract reader)
+#   contract/v0.toml                the /v0 API contract the extension pins
+#   skills/cockpit-readiness/       operator/agent skill: verify + publish discovery
+#   skills/mayor-ide-affordances/   Mayor skill: emit IDE-legible affordances
+#   docs/DESIGN.md                  cockpit-ready definition, discovery handshake,
+#                                   and the OPEN SCOPE FORKS (read before extending)
+#
+# Stdlib-only (tomllib on Python >= 3.11; tomli fallback below it; urllib for the
+# probe). No runtime third-party dependencies — it mirrors provider-forge's
+# minimal footprint.
+#
+# Wiring (after vendoring this pack into a city at packs/cockpit and importing it,
+# e.g. `source = "packs/cockpit"`):
+#   1. Run packs/cockpit/setup.sh once to build the engine's venv (optional —
+#      bin/cockpit also runs under any system python3).
+#   2. `bin/cockpit ready` — assert the live /v0 API is reachable + version-compatible.
+#   3. `bin/cockpit discover --write` — publish the discovery descriptor the
+#      extension reads to auto-find the API.
+#
+# IMPORTANT — scope forks (see docs/DESIGN.md): the supervisor /v0 API is
+# always-on (there is no per-city "enable" toggle), extmsg adapter registration
+# is a RUNTIME call (cockpit-1ll.12), and the discovery descriptor is ideally
+# written by the supervisor itself. This pack ships the verify/contract/helper
+# groundwork and flags those forks rather than hard-coding around them.
+
+[pack]
+name = "cockpit"
+schema = 2
+version = "0.1.0"

@@ -1,0 +1,10 @@
+# cockpit runtime deps — deliberately MINIMAL (mirrors provider-forge / model-advisor).
+#
+# The engine is pure-stdlib: the contract is parsed with the stdlib `tomllib`
+# (Python >= 3.11), the API probe uses `urllib.request` + `json`, and the
+# discovery descriptor is plain JSON. No third-party runtime deps.
+#
+# The single guarded fallback below pulls `tomli` *only* on an older interpreter,
+# so the contract loader's `import tomllib` / `import tomli as tomllib` shim has a
+# backend everywhere without adding a dependency on a modern Python.
+tomli>=2.0 ; python_version < "3.11"

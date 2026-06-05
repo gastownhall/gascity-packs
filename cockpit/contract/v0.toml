@@ -1,0 +1,118 @@
+# GasCity Cockpit — the /v0 API contract the extension depends on.
+#
+# Machine-readable, consumed by the `cockpit` CLI (`cockpit ready` / `contract`)
+# and by the VS Code extension. The expensive surface already exists: the
+# supervisor's versioned, self-documenting /v0 HTTP API (`/openapi.json`). This
+# file PINS the version and names the endpoints the Cockpit relies on, so a city
+# can be asserted Cockpit-ready and version drift is caught early.
+#
+# Endpoint paths below are the exact templates served by the live API
+# (confirmed against /openapi.json). The extension generates its typed client
+# from /openapi.json — this contract is the compatibility gate, not the client.
+
+schema = "cockpit.v0"
+
+[api]
+title            = "Gas City Supervisor API"
+required_version = "0.1.0"
+openapi          = "/openapi.json"
+# The /v0 surface is a MOVING dev build. `cockpit ready` asserts the live
+# info.version == required_version; bump this in lockstep with the extension.
+
+[discovery]
+# Discovery descriptor (PRD decision #4): published under GC_HOME so the
+# extension auto-finds the API without lsof/guessing. See docs/DESIGN.md fork #3.
+descriptor_path  = "runtime/cockpit/api-descriptor.json"   # relative to $GC_HOME (default ~/.gc)
+default_base_url = "http://127.0.0.1:8372"
+auth_model       = "localhost-trust"                       # v1; PRD decision #5
+
+[extmsg]
+# The Cockpit registers as an extmsg adapter at RUNTIME (cockpit-1ll.12); see
+# docs/DESIGN.md fork #2. Field casing mirrors the live ExtMsgAdapterRegisterInputBody.
+adapter_provider             = "cockpit"
+register_path                = "/v0/city/{cityName}/extmsg/adapters"   # POST
+supports_child_conversations = true
+supports_attachments         = false
+max_message_length           = 0   # 0 = unbounded
+
+# Required endpoints: `cockpit ready` asserts each is present in /openapi.json
+# before declaring a city Cockpit-ready. Kept to the load-bearing subset (health,
+# beads, chat submit/stream, approvals, events, extmsg) — the full capability map
+# is below for the extension.
+[endpoints]
+required = [
+  "/health",
+  "/v0/cities",
+  "/v0/readiness",
+  "/v0/city/{cityName}/health",
+  "/v0/city/{cityName}/beads",
+  "/v0/city/{cityName}/pending",
+  "/v0/city/{cityName}/events/stream",
+  "/v0/city/{cityName}/session/{id}/submit",
+  "/v0/city/{cityName}/session/{id}/stream",
+  "/v0/city/{cityName}/extmsg/adapters",
+]
+
+# Capability map (documentation for the extension; not part of the readiness
+# gate). Grouped by PRD user-story area; every path confirmed present in the
+# live /openapi.json.
+[endpoints.capabilities]
+health    = [
+  "/health",
+  "/v0/readiness",
+  "/v0/city/{cityName}/health",
+  "/v0/city/{cityName}/readiness",
+]
+cities    = ["/v0/cities"]
+beads     = [
+  "/v0/city/{cityName}/beads",
+  "/v0/city/{cityName}/beads/ready",
+  "/v0/city/{cityName}/beads/graph/{rootID}",
+  "/v0/city/{cityName}/bead/{id}",
+  "/v0/city/{cityName}/bead/{id}/update",
+  "/v0/city/{cityName}/bead/{id}/close",
+  "/v0/city/{cityName}/bead/{id}/reopen",
+  "/v0/city/{cityName}/bead/{id}/assign",
+  "/v0/city/{cityName}/bead/{id}/deps",
+  "/v0/city/{cityName}/sling",
+]
+agents    = [
+  "/v0/city/{cityName}/agents",
+  "/v0/city/{cityName}/agent/{base}",
+  "/v0/city/{cityName}/agent/{base}/output/stream",
+]
+sessions  = [
+  "/v0/city/{cityName}/sessions",
+  "/v0/city/{cityName}/session/{id}",
+  "/v0/city/{cityName}/session/{id}/submit",
+  "/v0/city/{cityName}/session/{id}/stream",
+  "/v0/city/{cityName}/session/{id}/transcript",
+  "/v0/city/{cityName}/session/{id}/respond",
+  "/v0/city/{cityName}/session/{id}/permission-mode",
+  "/v0/city/{cityName}/session/{id}/pending",
+  "/v0/city/{cityName}/session/{id}/stop",
+  "/v0/city/{cityName}/session/{id}/wake",
+]
+approvals = [
+  "/v0/city/{cityName}/pending",
+  "/v0/city/{cityName}/session/{id}/pending",
+  "/v0/city/{cityName}/session/{id}/respond",
+]
+events    = [
+  "/v0/events/stream",
+  "/v0/city/{cityName}/events",
+  "/v0/city/{cityName}/events/stream",
+]
+code      = [
+  "/v0/city/{cityName}/patches/agents",
+  "/v0/city/{cityName}/patches/agent/{base}",
+]
+extmsg    = [
+  "/v0/city/{cityName}/extmsg/adapters",
+  "/v0/city/{cityName}/extmsg/bind",
+  "/v0/city/{cityName}/extmsg/bindings",
+  "/v0/city/{cityName}/extmsg/inbound",
+  "/v0/city/{cityName}/extmsg/outbound",
+  "/v0/city/{cityName}/extmsg/participants",
+  "/v0/city/{cityName}/extmsg/transcript",
+]
