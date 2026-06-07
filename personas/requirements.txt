@@ -1,0 +1,10 @@
+# personas runtime deps — deliberately MINIMAL (mirrors model-advisor / provider-forge).
+#
+# The engine is pure-stdlib: the registry is parsed with the stdlib `tomllib`
+# (Python >= 3.11), the warm cache is plain JSON, and matching is `re` only. No
+# third-party runtime deps.
+#
+# The single guarded fallback below pulls `tomli` *only* on an older interpreter, so the
+# registry loader's `import tomllib` / `import tomli as tomllib` shim has a backend
+# everywhere without adding a dependency on a modern Python.
+tomli>=2.0 ; python_version < "3.11"

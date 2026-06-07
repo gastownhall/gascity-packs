@@ -1,0 +1,36 @@
+# personas — dynamic principal-engineer persona equip for Gas City agents.
+#
+# When a polecat picks up a task, it equips a principal-engineer persona matched to
+# that task, performs the work at that level, then dematerializes. Recently-used
+# personas stay warm in a shared cache so other agents reuse them without paying the
+# materialize cost, and they age out of the cache after a period of disuse. This
+# composes with the rest of the blackrim toolchain — model-advisor picks the model
+# tier, provider-forge picks the provider/model, and personas picks the role.
+#
+# What this pack provides (all convention-discovered once the pack is imported):
+#   bin/personas                            list / show / lint / match / equip / cache / evict / sweep CLI
+#   personas/                               the engine (registry + match + warm-cache)
+#   personas.toml                           the roster + warm-cache TTL policy (edit me)
+#   hooks/equip-on-task-pickup.sh           the gas-town equip-on-task-pickup hook
+#   overlay/per-provider/claude/            SessionStart hook that equips on pickup
+#   template-fragments/use-personas.*       the equip-a-persona discipline fragment
+#   skills/equip-persona/SKILL.md           agent/operator skill: equip + inspect
+#   docs/DESIGN.md                          registry shape, match rule, TTL reasoning
+#
+# Stdlib-only (tomllib on Python >= 3.11; tomli fallback below it). No runtime
+# third-party dependencies — it mirrors model-advisor / provider-forge's minimal
+# footprint.
+#
+# Wiring (after vendoring this pack into a city at packs/personas and importing it,
+# e.g. `source = "packs/personas"`):
+#   1. Run packs/personas/setup.sh once to build the engine's venv (optional —
+#      bin/personas also runs under any system python3).
+#   2. `bin/personas list` — inspect the roster.
+#   3. `bin/personas match "<task description>"` — see the equip decision.
+#   4. The SessionStart equip hook is materialized + merged into projected settings
+#      by `gc reload`, so a polecat equips a persona as it picks up its work.
+
+[pack]
+name = "personas"
+schema = 2
+version = "0.1.0"

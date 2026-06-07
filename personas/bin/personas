@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# personas CLI: list / show / match / equip / cache / sweep over the persona registry.
+#
+#   bin/personas list                       the roster
+#   bin/personas show <id>                   one persona's definition + playbook
+#   bin/personas lint                        registry integrity check (exit 1 if issues)
+#   bin/personas match <task...>             the equip decision for a task (read-only)
+#       [--from-bead ID]
+#   bin/personas equip <task...>             match + materialize into the warm cache
+#       [--from-bead ID] [--emit-context]
+#   bin/personas cache                       the warm cache: what's materialized + TTL
+#   bin/personas evict <id>                  dematerialize one persona from the warm cache
+#   bin/personas sweep [--all]               evict expired (or all) warm personas
+#
+# This wrapper resolves the pack's own venv python (so personas runs under the
+# interpreter its deps are installed in), falling back to system python3, then hands
+# off to `python -m personas.cli`. It mirrors model-advisor/bin/advisor and
+# cockpit/bin/cockpit.
+#
+# Degrades gracefully: the engine is pure-stdlib (tomllib on Python >= 3.11), so it
+# runs fine with no .venv as long as some python3 is present. If NO interpreter is
+# found it prints a clear error to stderr and exits 2 — it never silently no-ops.
+set -euo pipefail
+PACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="$PACK_DIR/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || true)"
+[ -n "$PY" ] || { echo "personas: no python interpreter found (no .venv, no python3)" >&2; exit 2; }
+exec env PYTHONPATH="$PACK_DIR${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m personas.cli "$@"

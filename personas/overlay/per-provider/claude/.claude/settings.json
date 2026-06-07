@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$HOME/go/bin:$HOME/.local/bin:$PATH\" && d=\"$CLAUDE_PROJECT_DIR\"; while [ -n \"$d\" ] && [ \"$d\" != \"/\" ]; do h=\"$d/packs/personas/hooks/equip-on-task-pickup.sh\"; [ -f \"$h\" ] && { bash \"$h\"; break; }; d=\"$(dirname \"$d\")\"; done; true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.json
+coverage.xml
+htmlcov/
+
+# the local warm cache, if a dev points it at the pack dir
+warm-cache.json
+
+# install.sh / uninstall.sh leave timestamped config backups next to the files they
+# edit; never commit those.
+*.personas.bak.*
