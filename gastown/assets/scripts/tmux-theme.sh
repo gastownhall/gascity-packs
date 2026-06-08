@@ -15,6 +15,7 @@
 # including custom packs whose role taxonomy differs from gastown's. Same
 # pattern as cycle.sh (#1571) and bind-key.sh (#1573).
 SESSION="$1" AGENT="$2" CONFIGDIR="$3"
+city="${GC_CITY:-${GT_ROOT:-${GC_DIR:-}}}"
 
 # Socket-aware tmux command (uses GC_TMUX_SOCKET when set).
 gcmux() { tmux ${GC_TMUX_SOCKET:+-L "$GC_TMUX_SOCKET"} "$@"; }
@@ -50,7 +51,11 @@ gcmux set-option -t "$SESSION" status-left-length 25
 gcmux set-option -t "$SESSION" status-left "$icon $AGENT "
 gcmux set-option -t "$SESSION" status-right-length 80
 gcmux set-option -t "$SESSION" status-interval 5
-gcmux set-option -t "$SESSION" status-right "#($CONFIGDIR/assets/scripts/status-line.sh $AGENT) %H:%M"
+if [ -n "$city" ]; then
+    gcmux set-option -t "$SESSION" status-right "#($CONFIGDIR/assets/scripts/status-line.sh $AGENT $city) %H:%M"
+else
+    gcmux set-option -t "$SESSION" status-right "#($CONFIGDIR/assets/scripts/status-line.sh $AGENT) %H:%M"
+fi
 
 # Mouse + clipboard.
 gcmux set-option -t "$SESSION" mouse on
