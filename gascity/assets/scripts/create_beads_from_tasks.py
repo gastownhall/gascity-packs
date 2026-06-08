@@ -25,6 +25,11 @@ CREATED_RE = re.compile(r"^## Created Beads\s*?\n.*?(?=^## |\Z)", re.MULTILINE |
 FRONT_MATTER_RE = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 VALID_TYPES = {"feature", "bug", "task", "chore", "docs"}
 VALID_PRIORITIES = {"0", "1", "2", "3", "4", "P0", "P1", "P2", "P3", "P4"}
+LEGACY_WORK_OPTION_METADATA = {
+    "gc.model": "opt_model",
+    "gc.reasoning": "opt_effort",
+    "gc.effort": "opt_effort",
+}
 
 
 class PlanError(Exception):
@@ -158,7 +163,11 @@ def metadata_map(value: Any, field_name: str) -> dict[str, str]:
     for key, val in value.items():
         if not isinstance(key, str) or not key.strip():
             raise PlanError(f"{field_name} keys must be non-empty strings")
-        out[key.strip()] = str(val)
+        raw_key = key.strip()
+        normalized_key = LEGACY_WORK_OPTION_METADATA.get(raw_key, raw_key)
+        if raw_key in LEGACY_WORK_OPTION_METADATA and normalized_key in out:
+            continue
+        out[normalized_key] = str(val)
     return out
 
 
