@@ -20,6 +20,12 @@ city="${GC_CITY:-${GT_ROOT:-${GC_DIR:-}}}"
 # Socket-aware tmux command (uses GC_TMUX_SOCKET when set).
 gcmux() { tmux ${GC_TMUX_SOCKET:+-L "$GC_TMUX_SOCKET"} "$@"; }
 
+shell_quote() {
+    printf "'"
+    printf '%s' "$1" | sed "s/'/'\\\\''/g"
+    printf "'"
+}
+
 # Determine theme tier by session-name shape.
 case "$SESSION" in
     *--*)       tier="rig" ;;
@@ -51,11 +57,11 @@ gcmux set-option -t "$SESSION" status-left-length 25
 gcmux set-option -t "$SESSION" status-left "$icon $AGENT "
 gcmux set-option -t "$SESSION" status-right-length 80
 gcmux set-option -t "$SESSION" status-interval 5
+status_cmd="$(shell_quote "$CONFIGDIR/assets/scripts/status-line.sh") $(shell_quote "$AGENT")"
 if [ -n "$city" ]; then
-    gcmux set-option -t "$SESSION" status-right "#($CONFIGDIR/assets/scripts/status-line.sh $AGENT $city) %H:%M"
-else
-    gcmux set-option -t "$SESSION" status-right "#($CONFIGDIR/assets/scripts/status-line.sh $AGENT) %H:%M"
+    status_cmd="$status_cmd $(shell_quote "$city")"
 fi
+gcmux set-option -t "$SESSION" status-right "#($status_cmd) %H:%M"
 
 # Mouse + clipboard.
 gcmux set-option -t "$SESSION" mouse on

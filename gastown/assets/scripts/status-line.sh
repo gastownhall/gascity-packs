@@ -31,7 +31,15 @@ json_array_count() {
         return 0
     fi
 
-    n=$(run_bounded "$@" 2>/dev/null | jq 'length' 2>/dev/null || true)
+    n=$(run_bounded "$@" 2>/dev/null | jq 'if type == "array" then length else 0 end' 2>/dev/null || true)
+    case "$n" in
+        ''|*[!0-9]*) printf '0' ;;
+        *) printf '%s' "$n" ;;
+    esac
+}
+
+first_number() {
+    n=$(run_bounded "$@" 2>/dev/null | awk '{print $1+0; exit}' || true)
     case "$n" in
         ''|*[!0-9]*) printf '0' ;;
         *) printf '%s' "$n" ;;
@@ -51,7 +59,15 @@ is_number() {
 
 cache_ttl="${GC_STATUSLINE_TTL:-30}"
 is_number "$cache_ttl" || cache_ttl=30
-cache_dir="${GC_STATUSLINE_CACHE_DIR:-${TMPDIR:-/tmp}}"
+if [ -n "${GC_STATUSLINE_CACHE_DIR:-}" ]; then
+    cache_dir="$GC_STATUSLINE_CACHE_DIR"
+    cache_private=0
+else
+    cache_base="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
+    uid=$(id -u 2>/dev/null || printf 'unknown')
+    cache_dir="$cache_base/gc-statusline-$uid"
+    cache_private=1
+fi
 cache_city=$(pwd -P 2>/dev/null || pwd)
 safe_agent=$(printf '%s' "$agent" | tr -c 'A-Za-z0-9._-' '_')
 cache_key=$(printf '%s\n%s\n' "$cache_city" "$agent" | cksum | awk '{print $1}')
@@ -64,15 +80,16 @@ if is_number "$now" && is_number "$mtime" && [ "$mtime" -gt 0 ] && [ "$((now - m
     is_number "${w:-}" || w=0
     is_number "${m:-}" || m=0
 else
-    # Count pending hook nudges with a bounded read-only Beads query. `gc hook`
-    # can block long enough for tmux to suppress status output.
-    w=$(json_array_count bd list --include-infra --label gc:nudge --status open --metadata-field "agent=$agent" --json --limit 0)
+    # Preserve gc hook ready-work semantics while bounding tmux refreshes.
+    w=$(json_array_count gc hook "$agent")
 
-    # Count unread/open message beads with a bounded read-only Beads query.
-    # `gc mail check` can be too slow for tmux status-right refreshes.
-    m=$(json_array_count bd list --include-infra --type message --status open --assignee "$agent" --json --limit 0)
+    # Preserve gc mail check unread/recipient-route semantics while caching.
+    m=$(first_number gc mail check "$agent")
 
     mkdir -p "$cache_dir" 2>/dev/null || true
+    if [ "$cache_private" = 1 ]; then
+        chmod 700 "$cache_dir" 2>/dev/null || true
+    fi
     printf '%s %s\n' "${w:-0}" "${m:-0}" > "$cache" 2>/dev/null || true
 fi
 
