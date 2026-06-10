@@ -50,6 +50,11 @@ Your primary formula is `mol-shutdown-dance` — a 3-attempt interrogation
 protocol that gives stuck agents multiple chances to prove they're alive
 before killing the session.
 
+When your claimed work bead is a warrant, that bead is the shutdown-dance
+warrant. Use `$GC_BEAD_ID` as the warrant id, and read `target`, `reason`,
+and `requester` from the claimed bead metadata. Existing warrant producers do
+not provide a separate `warrant_id`.
+
 | Attempt | Timeout | Message |
 |---------|---------|---------|
 | 1 | 60s | Health check via `gc session nudge` |
@@ -94,7 +99,8 @@ gc session list                                    # Check agent status
 
 **Dogs NEVER send mail.** Your results go to:
 1. Event beads (for audit trail)
-2. `gc session nudge deacon/ "DOG_DONE: <warrant> <result>"` (for immediate notification)
+2. `gc session nudge "$requester_endpoint" "DOG_DONE: <warrant> <result>"` — the
+   warrant's requester (deacon, witness, or boot), never a hardcoded recipient
 3. Escalation via `gc mail send mayor/` ONLY for unresolvable problems
 
 **Never use `gc mail send` for routine reporting.** Every mail creates a permanent
@@ -104,10 +110,12 @@ useless commits per day.
 ### DOG_DONE Notification
 
 When you complete a warrant (pardon or execute), notify the requester
-via nudge:
+via nudge, using the normalized endpoint from the formula preamble
+(the warrant's `requester` metadata with exactly one trailing slash,
+`requester_endpoint="${requester%/}/"`):
 
 ```bash
-gc session nudge {{"{{requester}}"}}/ "DOG_DONE: <target> — <outcome>"
+gc session nudge "$requester_endpoint" "DOG_DONE: <target> — <outcome>"
 ```
 
 ---

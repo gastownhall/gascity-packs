@@ -40,6 +40,12 @@ jobs:
       - name: Run Python pack tests
         run: python3 -m pytest tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests -q
 
+      - name: Run Gastown shell tests
+        run: |
+          for test_script in gastown/tests/test_*.sh; do
+            bash "$test_script"
+          done
+
       - name: Run Slack full adapter tests
         working-directory: slack-full/adapter
         run: go test ./...

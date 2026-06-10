@@ -1,12 +1,19 @@
 # Gas Town — domain-specific coding workflow pack.
 #
 # Gastown roles: mayor (coordinator), deacon (patrol), boot (watchdog),
-# plus rig-scoped agents (witness, refinery, polecat).
+# dog (utility recovery), plus rig-scoped agents (witness, refinery, polecat).
 # The host Gas City runtime supplies the implicit maintenance/core utility
-# layer that provides dog workers and mechanical housekeeping.
+# layer for mechanical housekeeping outside the pack-local dog pool. Compose
+# maintenance or an equivalent exec-order provider for JSONL export, stale
+# cleanup, and Dolt housekeeping. Schema-2 import cities must rely on the
+# implicit maintenance injection: adding [imports.maintenance] alongside
+# [imports.gastown] makes the legacy maintenance mol-shutdown-dance win
+# last-wins resolution. Legacy workspace.includes cities composing
+# maintenance explicitly must list it before gastown (see README
+# "Composition Ordering").
 #
 # Referenced by both workspace.pack and rigs[].pack:
-#   workspace.pack → expands city-scoped agents only (mayor, deacon, boot)
+#   workspace.pack → expands city-scoped agents only (mayor, deacon, boot, dog)
 #   rigs[].pack    → expands rig agents only (witness, refinery, polecat)
 #
 # Crew members are individually named and declared inline in city.toml.
@@ -20,11 +27,6 @@ session_live = [
     "{{.ConfigDir}}/assets/scripts/tmux-theme.sh {{.Session}} {{.Agent}} {{.ConfigDir}}",
     "{{.ConfigDir}}/assets/scripts/tmux-keybindings.sh {{.ConfigDir}}",
 ]
-
-[[patches.agent]]
-name = "dog"
-wake_mode = "fresh"
-work_dir = ".gc/agents/dogs/{{.AgentBase}}"
 
 [[named_session]]
 template = "mayor"
