@@ -1,0 +1,145 @@
+beads:
+  - title: "Repair tasksmith launch metadata"
+    type: task
+    priority: 1
+    description: |
+      Fix the tasksmith launch path so LazyJJ work can be seeded from bead
+      metadata before pre_start. The prompt template should stop relying on an
+      undefined `{{issue}}` variable and the workspace setup path should keep
+      the bead title and description as the initial jj change description.
+    acceptance_criteria:
+      - `gc prime` completes without the prompt template function error.
+      - The workspace setup path records bead-derived title and description.
+      - Resumed workspaces can reconstruct the initial change description
+        from bead metadata.
+    dependencies: []
+    files:
+      - agents/tasksmith/prompt.template.md
+      - agents/tasksmith/agent.toml
+      - assets/scripts/workspace-setup.sh
+      - skills/lazyjj-workspace/SKILL.md
+    verification:
+      - Run `gc prime` and confirm the template error is gone.
+      - Confirm the workspace setup path can seed title and description from a bead.
+
+  - title: "Add the create-PR tutorial bead"
+    type: task
+    priority: 2
+    description: |
+      Align the create-PR tutorial workflow with LazyJJ's single-PR path so the
+      pack has a clean bead that teaches `jj stack-start`, `jj describe`,
+      `jj create`, `jj pr-stack-create`, and `jj stack-submit`.
+    acceptance_criteria:
+      - The bead uses the create-PR tutorial language from the source skill.
+      - The workflow mentions the bookmark and PR publication steps explicitly.
+      - The guidance stays narrow enough for a single claim-and-finish slice.
+    dependencies:
+      - "Repair tasksmith launch metadata"
+    files:
+      - formulas/mol-lazyjj-create-pr.toml
+      - skills/lazyjj-create-pr/SKILL.md
+      - agents/tasksmith/prompt.template.md
+      - README.md
+    verification:
+      - `rg -n "jj pr-stack-create|jj stack-submit" README.md agents/tasksmith/prompt.template.md`
+
+  - title: "Add the create-stack tutorial bead"
+    type: task
+    priority: 2
+    description: |
+      Turn the stack-creation tutorial into a bead that teaches how to build a
+      small, reviewable stack with `jj stack-start`, `jj describe`, `jj create`,
+      `jj new`, `jj stack-view`, and `jj pr-stack-create`.
+    acceptance_criteria:
+      - The bead follows the tutorial order for creating a stacked PR chain.
+      - The workflow names the checkpoint and bookmark steps clearly.
+      - The bead can be claimed independently from the single-PR bead.
+    dependencies:
+      - "Add the create-PR tutorial bead"
+    files:
+      - formulas/mol-lazyjj-create-stack.toml
+      - skills/lazyjj-create-stack/SKILL.md
+      - agents/tasksmith/prompt.template.md
+      - README.md
+    verification:
+      - `rg -n "jj stack-start|jj stack-view|jj pr-stack-create" README.md agents/tasksmith/prompt.template.md`
+
+  - title: "Add the navigate-stack tutorial bead"
+    type: task
+    priority: 2
+    description: |
+      Add a bead for moving around inside a LazyJJ stack so the tutorial covers
+      `jj stack-view`, `jj stack-top`, `jj edit`, `jj stacks-all`, and
+      `jj status` as the core navigation tools.
+    acceptance_criteria:
+      - The bead explains how to jump to a commit by change ID.
+      - The tutorial describes how to return to the top of the stack.
+      - The stack model is described as moving within one mutable graph.
+    dependencies:
+      - "Add the create-stack tutorial bead"
+    files:
+      - formulas/mol-lazyjj-navigate-stack.toml
+      - skills/lazyjj-navigate-stack/SKILL.md
+      - template-fragments/lazyjj-learning.template.md
+    verification:
+      - `rg -n "jj stack-view|jj stack-top|jj edit|jj stacks-all" template-fragments/lazyjj-learning.template.md`
+
+  - title: "Add the edit-mid-stack tutorial bead"
+    type: task
+    priority: 2
+    description: |
+      Capture the mid-stack edit workflow as a bead so LazyJJ users can update
+      older commits with `jj edit`, verify the result with `jj diff` and
+      `jj status`, then return to the stack top with `jj stack-top`.
+    acceptance_criteria:
+      - The bead shows how descendant commits are rebased automatically.
+      - The workflow includes the return-to-top and submit steps.
+      - The description explicitly avoids Git-style amend/rebase language.
+    dependencies:
+      - "Add the navigate-stack tutorial bead"
+    files:
+      - formulas/mol-lazyjj-edit-mid-stack.toml
+      - skills/lazyjj-edit-mid-stack/SKILL.md
+      - template-fragments/lazyjj-learning.template.md
+    verification:
+      - `rg -n "jj edit|jj diff|jj stack-top|jj stack-submit" template-fragments/lazyjj-learning.template.md`
+
+  - title: "Add the resolve-conflicts tutorial bead"
+    type: task
+    priority: 2
+    description: |
+      Create a bead for LazyJJ's first-class conflict workflow so the pack can
+      explain conflict state, `jj resolve`, and the way resolutions propagate
+      through dependent stack commits.
+    acceptance_criteria:
+      - The bead treats conflicts as data, not as a blocking error.
+      - The workflow includes the resolve-later and resolve-now options.
+      - The tutorial makes the descendant propagation behavior explicit.
+    dependencies:
+      - "Add the edit-mid-stack tutorial bead"
+    files:
+      - formulas/mol-lazyjj-resolve-conflicts.toml
+      - skills/lazyjj-resolve-conflicts/SKILL.md
+      - template-fragments/lazyjj-learning.template.md
+    verification:
+      - `rg -n "jj resolve|conflicts are first-class|descendant" skills/lazyjj-resolve-conflicts/SKILL.md`
+
+  - title: "Add the sync-remote tutorial bead"
+    type: task
+    priority: 2
+    description: |
+      Add the remote-sync tutorial bead so LazyJJ users can keep a stack current
+      with trunk using `jj stack-sync`, `jj git fetch`, `jj restack`, and
+      `jj stack-submit` without falling back to a Git-only recovery flow.
+    acceptance_criteria:
+      - The bead explains the fast path and the manual fetch/restack path.
+      - Conflict handling during sync is documented as recoverable.
+      - The guidance ends with the stack submission step after rebasing.
+    dependencies:
+      - "Add the resolve-conflicts tutorial bead"
+    files:
+      - formulas/mol-lazyjj-sync-remote.toml
+      - skills/lazyjj-sync-remote/SKILL.md
+      - template-fragments/lazyjj-learning.template.md
+    verification:
+      - `rg -n "jj stack-sync|jj git fetch|jj restack|jj stack-submit" skills/lazyjj-sync-remote/SKILL.md`
