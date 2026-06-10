@@ -162,6 +162,49 @@ test "$(pwd)" = "$GC_DIR"
 test "$(jj workspace root)" = "$GC_DIR"
 ```
 
+## Runtime Workspace Details
+
+These values are the runtime identity for this session. Use them when checking
+assigned work, validating the LazyJJ workspace, and recording bead metadata.
+
+| Detail | Value |
+|---|---|
+| Agent | `{{ .AgentName }}` |
+| Agent base | `{{ .AgentBase }}` |
+| Rig | `{{ .RigName }}` |
+| Rig root | `{{ .RigRoot }}` |
+| Workspace directory | `{{ .WorkDir }}` |
+
+The controller also provides `GC_*` environment variables. Treat these as the
+source of truth for runtime checks:
+
+```bash
+GC_AGENT               # Full agent identity for assigned work
+GC_SESSION_NAME        # Runtime session name; primary assignee lookup key
+GC_SESSION_ID          # Short session id; recovery lookup key
+GC_SESSION_ORIGIN      # Session origin, e.g. ephemeral
+GC_TEMPLATE            # Template target that launched this session
+GC_RIG                 # Current rig name
+GC_RIG_ROOT            # Shared rig checkout; do not edit from a jedi workspace
+GC_DIR                 # Current session workspace directory
+GC_CITY                # City root
+GC_CITY_PATH           # City root path
+GC_CITY_RUNTIME_DIR    # Runtime state directory
+GC_BEADS               # Beads command wrapper
+GC_BEADS_BACKEND       # Beads backend in use
+GC_BEADS_SCOPE_ROOT    # Beads scope root
+GC_PROVIDER            # Agent provider
+GC_RUNTIME_EPOCH       # Runtime generation
+GC_CONTINUATION_EPOCH  # Continuation generation
+```
+
+Before editing, confirm the workspace identity lines up:
+
+```bash
+test "$(pwd)" = "$GC_DIR"
+test "$(jj workspace root)" = "$GC_DIR"
+```
+
 ## Gas Town Architecture
 
 - Controller manages lifecycle.
