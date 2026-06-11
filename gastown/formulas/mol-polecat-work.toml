@@ -375,22 +375,19 @@ git checkout --detach                 # Detach so we can delete the branch
 git branch -D "$BRANCH"              # Branch is pushed; refinery owns it now
 ```
 
-**5. Update metadata on the work bead:**
-```bash
-gc bd update "$WORK_BEAD_ID" \
-  --set-metadata target={{base_branch}} \
-  --notes "Implemented: <brief summary>"
-```
-Branch was recorded in workspace-setup and is already in metadata.
-This adds the target for the refinery. If an existing pull request was
-provided by the caller, `metadata.existing_pr` is preserved for refinery
-validation. The refinery records canonical `pr_url` only after verifying
-the PR is open and matches the branch, base, and origin repository.
-
-**6. Reassign to refinery:**
+**5. Reassign to refinery (atomic — target, routing, and assignment in one update):**
 ```bash
 REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
-gc bd update "$WORK_BEAD_ID" --status=open --assignee="$REFINERY_TARGET" --set-metadata gc.routed_to=""
+if [ -z "$REFINERY_TARGET" ]; then
+  echo "FATAL: REFINERY_TARGET is empty — pool route preserved, escalating." >&2
+  gc runtime drain-ack
+  exit 1
+fi
+gc bd update "$WORK_BEAD_ID" \
+  --status=open --assignee="$REFINERY_TARGET" \
+  --set-metadata target={{base_branch}} \
+  --set-metadata gc.routed_to="$REFINERY_TARGET" \
+  --notes "Implemented: <brief summary>"
 ```
 
 `${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery` resolves to
@@ -399,30 +396,40 @@ or `{{binding_prefix}}refinery` when running in an HQ-only city where
 the workspace is the rig. Writing a rendered empty rig prefix produces
 `/{{binding_prefix}}refinery` and strands beads outside the refinery pool.
 
-Set `assignee` to the configured refinery named-session identity and clear
-`gc.routed_to` because the direct assignment is the handoff. Generic pool
-demand is represented by unassigned work with `gc.routed_to=<target>`, so
-named-session work should not retain pool-demand metadata.
+The fail-closed guard ensures the routing is never cleared to nowhere: if
+`$REFINERY_TARGET` resolves empty (misconfigured rig prefix), the bead
+stays on the pool with its existing routing instead of becoming a
+fully-detached orphan.
+
+Set `assignee` and `gc.routed_to` both to the configured refinery
+identity in a single atomic update. Setting `gc.routed_to` to the
+refinery (rather than clearing it) makes the handoff crash-safe: if
+the bead becomes unassigned before the refinery picks it up, the
+refinery's orphan-fallback patrol can recover it via `gc.routed_to`.
+If an existing pull request was provided by the caller, `metadata.existing_pr`
+is preserved for refinery validation. The refinery records canonical
+`pr_url` only after verifying the PR is open and matches the branch,
+base, and origin repository.
 
 The refinery will pick this up, rebase onto {{base_branch}}, run tests,
 merge, and close the bead. If there's a conflict, the refinery puts the
 bead back in the pool with `rejection_reason` metadata — a new polecat
 picks it up and resumes from the existing branch.
 
-**7. Signal refinery to check for work immediately (belt-and-suspenders):**
+**6. Signal refinery to check for work immediately (belt-and-suspenders):**
 ```bash
 REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
 gc session wake "$REFINERY_TARGET" || true
 gc session nudge "$REFINERY_TARGET" "Run 'gc prime' to check merge queue and begin processing." || true
 ```
 
-The `gc bd update` in step 6 generates a `bead.updated` event the refinery's
+The `gc bd update` in step 5 generates a `bead.updated` event the refinery's
 event-watch will see, but that can take up to `event_timeout` seconds. Wake
 starts a stopped on_demand session; nudge leaves a visible prompt for a running
 one as soon as it is ready for input. Failure is non-fatal: the refinery finds
 the work on its next poll.
 
-**8. Signal reconciler and exit.**
+**7. Signal reconciler and exit.**
 ```bash
 gc runtime drain-ack
 exit

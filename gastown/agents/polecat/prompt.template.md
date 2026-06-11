@@ -270,12 +270,18 @@ if [ "$AUTO_PUSH" = "false" ]; then
   exit 0
 fi
 git push origin HEAD
+REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}refinery"
+if [ -z "$REFINERY_TARGET" ]; then
+  echo "FATAL: REFINERY_TARGET is empty — pool route preserved, escalating." >&2
+  gc runtime drain-ack
+  exit 1
+fi
 gc bd update <work-bead> \
+  --status=open --assignee="$REFINERY_TARGET" \
   --set-metadata branch=$(git branch --show-current) \
   --set-metadata target={{ .DefaultBranch }} \
+  --set-metadata gc.routed_to="$REFINERY_TARGET" \
   --notes "Implemented: <brief summary>"
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}refinery"
-gc bd update <work-bead> --status=open --assignee="$REFINERY_TARGET" --set-metadata gc.routed_to=""
 gc session wake "$REFINERY_TARGET" || true
 gc session nudge "$REFINERY_TARGET" "Run 'gc prime' to check merge queue and begin processing." || true
 gc runtime drain-ack
