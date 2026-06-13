@@ -1,0 +1,464 @@
+description = """
+LazyJJ implementation workflow for an approved Gas City plan.
+
+This formula starts from the task DAG produced by `lazyjj-implementation.decompose`,
+routes the implementation beads through `mol-polecat-lazyjj-work`, waits for
+the DAG to close through natural bead dependencies, then runs two Ralph loops:
+
+1. gap analysis against the approved requirements/design/tasks artifacts
+2. code review and fix iteration until no critical/blocker/major findings remain
+
+It is for LazyJJ rigs. The consuming city supplies its LazyJJ jedi target and
+repository commands; the formula defines the coordination contract and durable
+artifacts.
+"""
+formula = "implement-lazyjj"
+version = 1
+contract = "graph.v2"
+
+[vars]
+[vars.plan_slug]
+description = "Plan slug whose approved requirements/design/tasks artifacts should be implemented"
+required = true
+
+[vars.artifact_root]
+description = "Plan artifact root. Defaults to .gc/plans relative to the target rig root."
+default = ".gc/plans"
+
+[vars.tasks_file]
+description = "Explicit tasks.md path. If empty, use <artifact_root>/<plan_slug>/tasks.md."
+default = ""
+
+[vars.design_file]
+description = "Explicit design.md path. If empty, use <artifact_root>/<plan_slug>/design.md."
+default = ""
+
+[vars.requirements_file]
+description = "Explicit requirements.md path. If empty, use <artifact_root>/<plan_slug>/requirements.md."
+default = ""
+
+[vars.work_beads]
+description = "Optional comma-separated implementation bead IDs. If empty, read the Created Beads table from tasks.md."
+default = ""
+
+[vars.worker_target]
+description = "LazyJJ jedi target passed to gc sling for cooked implementation workflow beads."
+default = ""
+
+[vars.base_revset]
+description = "Base jj revset used for diff and review context."
+default = "branch_off"
+
+[vars.lazyjj_work_formula]
+description = "Formula attached to each implementation bead for LazyJJ jedi execution."
+default = "mol-polecat-lazyjj-work"
+
+[vars.publish_mode]
+description = "Passed to mol-polecat-lazyjj-work; handoff records local bookmarks, push publishes them."
+default = "handoff"
+enum = ["handoff", "push"]
+
+[vars.pack_root]
+description = "Absolute path to the imported gc pack root. Required so Ralph check scripts resolve without local path assumptions."
+required = true
+
+[[steps]]
+id = "prepare"
+title = "Resolve plan artifacts and implementation state"
+description = """
+Resolve the approved plan artifacts and create durable implementation state.
+
+Rules:
+1. Resolve paths:
+   - tasks: `{{tasks_file}}`, or `{{artifact_root}}/{{plan_slug}}/tasks.md`
+   - design: `{{design_file}}`, or `{{artifact_root}}/{{plan_slug}}/design.md`
+   - requirements: `{{requirements_file}}`, or `{{artifact_root}}/{{plan_slug}}/requirements.md`
+2. Refuse to continue unless requirements and design front matter are
+   `status: approved`.
+3. Refuse to continue unless tasks front matter is `status: created`, or unless
+   `{{work_beads}}` explicitly names the implementation bead set.
+4. Resolve the implementation bead IDs:
+   - if `{{work_beads}}` is non-empty, split it on commas
+   - otherwise read the `## Created Beads` table in tasks.md and use its bead IDs
+5. Create `.gc/plans/{{plan_slug}}/implementation/`.
+6. Write `.gc/plans/{{plan_slug}}/implementation/state.json` with:
+   - artifact paths
+   - implementation bead IDs
+   - worker target
+   - base revset
+   - LazyJJ work formula
+   - LazyJJ worker target
+   - initial jj workspace and stack summary when available
+
+Close this step with:
+
+```bash
+bd update "$GC_BEAD_ID" \
+  --set-metadata gc.outcome=pass \
+  --set-metadata gc.work_dir="$(pwd)" \
+  --set-metadata work_dir="$(pwd)" \
+  --status closed
+```
+
+On validation failure, close with `gc.outcome=fail`,
+`gc.failure_class=hard`, and a short `gc.failure_reason`.
+"""
+
+[steps.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps]]
+id = "route-work"
+title = "Attach and route the implementation DAG to LazyJJ workers"
+needs = ["prepare"]
+description = """
+Attach the LazyJJ work formula to each implementation bead, then route the
+resulting formula workflow to the configured LazyJJ worker target.
+
+Use the implementation bead IDs recorded in
+`.gc/plans/{{plan_slug}}/implementation/state.json`.
+
+Routing contract:
+1. Verify every bead exists and is not closed before routing.
+2. Verify `bd dep cycles` is clean for the target store.
+3. Compute current DAG heads: implementation beads with no open blockers.
+4. For each implementation bead, cook `{{lazyjj_work_formula}}` with
+   `--attach "$BEAD_ID"` so the implementation bead blocks on the LazyJJ
+   workflow DAG.
+5. Route the cooked LazyJJ workflow root/current ready heads to
+   `{{worker_target}}`, preserving existing task dependencies.
+6. Nudge the worker target after routing. If `{{worker_target}}` is empty, use
+   the bead rig's default sling target via the single-argument `gc sling <bead>`
+   form, then nudge the configured default when one is discoverable.
+
+Example command shapes:
+
+```bash
+# Attach the LazyJJ formula to an implementation bead:
+gc formula cook "{{lazyjj_work_formula}}" \
+  --attach "$BEAD_ID" \
+  --var publish_mode="{{publish_mode}}" \
+  --json
+
+# Route the cooked LazyJJ workflow bead returned by formula cook:
+gc sling "{{worker_target}}" "$LAZYJJ_WORKFLOW_BEAD_ID" --reassign --nudge
+```
+
+Record in state.json:
+- routed_at
+- routed_beads
+- lazyjj_formula_roots
+- initial_ready_heads
+
+Do not mark unrelated beads ready, update sibling workflow beads, or claim the
+implementation beads yourself. This step only expands and routes LazyJJ work.
+"""
+
+[steps.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps]]
+id = "wait-for-work"
+title = "Wait for the implementation DAG to close"
+needs = ["route-work"]
+description = """
+Wait until all implementation beads are closed.
+
+Completion source of truth is live bead state, not files, jj workspace state,
+or worker claims. Repeatedly inspect the implementation bead IDs from
+state.json:
+
+```bash
+bd list --id "$CSV_BEAD_IDS" --all --json
+```
+
+Loop behavior:
+1. If all implementation beads are closed, record `work_completed_at` and close
+   this step.
+2. If some beads are open and currently ready, make sure they remain routed to
+   the worker target and nudge the target.
+3. If open beads are blocked only by other implementation beads, keep waiting.
+4. If an open bead is blocked by a bead outside the implementation set, stop
+   with `gc.outcome=fail`, `gc.failure_class=hard`, and a reason naming the
+   external blocker.
+5. If a bead is closed with an explicit failure outcome, stop and surface that
+   bead as the blocker.
+
+Use bounded sleeps and periodic status output. Do not create status files and
+do not infer completion from Git state.
+"""
+
+[steps.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps]]
+id = "prepare-gap-context"
+title = "Prepare implementation gap context"
+needs = ["wait-for-work"]
+description = """
+Create `.gc/plans/{{plan_slug}}/implementation/gap-context.md`.
+
+The context must include:
+- requirements/design/tasks artifact paths
+- implementation bead IDs and closure summaries
+- LazyJJ workspace, review bookmark, and stack metadata recorded on completed beads
+- `jj diff --from {{base_revset}}` summary when the coordinator runs inside a jj workspace
+- files changed
+- test commands reported by worker beads
+- known caveats from worker bead notes
+
+This is the durable input to the gap-analysis Ralph loop. Keep it concise:
+include enough evidence for the reviewer to compare design intent to code, but
+do not copy large source files or full transcripts into the artifact.
+"""
+
+[steps.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps]]
+id = "gap-analysis-loop"
+title = "Gap analysis and fix loop"
+needs = ["prepare-gap-context"]
+description = "Ralph loop that checks whether the approved design is fully represented in the implementation."
+
+[steps.ralph]
+max_attempts = 999
+
+[steps.ralph.check]
+mode = "exec"
+path = "{{pack_root}}/scripts/checks/gap-analysis-approved.sh"
+timeout = "10m"
+
+[[steps.children]]
+id = "analyze-gaps"
+title = "Analyze implementation gaps"
+description = """
+Read requirements.md, design.md, tasks.md, gap-context.md, and the completed
+LazyJJ stack evidence from worker bead metadata. Produce:
+
+`.gc/plans/{{plan_slug}}/implementation/gap-analysis-attempt-$GC_ITERATION.md`
+
+The report must answer:
+- Which design obligations are implemented?
+- Which obligations are partially implemented?
+- Which obligations are missing?
+- Which task acceptance criteria remain unproven?
+- Which files/tests demonstrate coverage?
+
+Classify every finding as `critical`, `blocker`, `major`, `minor`, or `nit`.
+Critical/blocker/major findings require another Ralph iteration. Minor/nit
+findings may be recorded without blocking if they do not violate the approved
+requirements/design.
+
+Close with `gc.outcome=pass` and set `gap_analysis.report_path`.
+"""
+
+[steps.children.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps.children]]
+id = "apply-gap-fixes"
+title = "Apply missing implementation work"
+needs = ["analyze-gaps"]
+description = """
+Read the gap-analysis report for this attempt.
+
+If the report contains no critical/blocker/major findings:
+
+```bash
+bd update "$GC_BEAD_ID" \
+  --set-metadata gap_analysis.verdict=done \
+  --set-metadata gc.outcome=pass \
+  --status closed
+```
+
+If the report contains critical/blocker/major findings:
+1. Apply the smallest code/test/doc changes needed to close those gaps.
+2. Run the relevant verification commands.
+3. If changing code directly, do it through the relevant LazyJJ workspace and
+   keep the stack described.
+4. Close with:
+
+```bash
+bd update "$GC_BEAD_ID" \
+  --set-metadata gap_analysis.verdict=iterate \
+  --set-metadata gc.outcome=pass \
+  --status closed
+```
+
+Do not expand scope beyond the approved design. If a required fix contradicts
+the design or requirements, stop with `gc.outcome=fail`,
+`gc.failure_class=hard`, and a concise reason.
+"""
+
+[steps.children.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps]]
+id = "prepare-review-context"
+title = "Prepare final review context"
+needs = ["gap-analysis-loop"]
+description = """
+Create `.gc/plans/{{plan_slug}}/implementation/review-context.md`.
+
+The context must include:
+- approved artifact paths
+- final implementation bead list and closure status
+- gap-analysis final report path
+- LazyJJ workspaces, review bookmarks, and stack revsets for completed beads
+- changed files
+- verification commands and outcomes
+- any known residual risks
+
+This context is the stable input to the review Ralph loop.
+"""
+
+[steps.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps]]
+id = "review-loop"
+title = "Review and fix loop"
+needs = ["prepare-review-context"]
+description = "Ralph loop that reviews the completed implementation and fixes critical/blocker/major findings."
+
+[steps.ralph]
+max_attempts = 999
+
+[steps.ralph.check]
+mode = "exec"
+path = "{{pack_root}}/scripts/checks/implementation-review-approved.sh"
+timeout = "10m"
+
+[[steps.children]]
+id = "review-implementation"
+title = "Review the implementation"
+description = """
+Review the current implementation using the completed LazyJJ stack metadata.
+If a dedicated review formula, skill, or command exists, use it; otherwise
+review the recorded `lazyjj_review_bookmark` / `lazyjj_stack_revset` evidence
+against:
+
+- behavioral correctness
+- design/requirements fidelity
+- dependency and integration impact
+- concurrency and state safety
+- error handling and resilience
+- security surface
+- resource lifecycle
+- release safety
+- test evidence
+- architectural consistency
+- debuggability
+
+Write:
+
+`.gc/plans/{{plan_slug}}/implementation/review-attempt-$GC_ITERATION.md`
+
+Every finding must include severity `critical`, `blocker`, `major`, `minor`,
+or `nit`, evidence, and a required fix or explicit non-action rationale.
+
+Close with `gc.outcome=pass` and set `code_review.report_path`.
+"""
+
+[steps.children.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps.children]]
+id = "apply-review-fixes"
+title = "Apply review fixes and set verdict"
+needs = ["review-implementation"]
+description = """
+Read the review report for this attempt.
+
+If there are no critical/blocker/major findings:
+
+```bash
+bd update "$GC_BEAD_ID" \
+  --set-metadata code_review.verdict=done \
+  --set-metadata gc.outcome=pass \
+  --status closed
+```
+
+If critical/blocker/major findings remain:
+1. Fix them in-place.
+2. Run relevant verification.
+3. If changing code directly, do it through the relevant LazyJJ workspace and
+   keep the stack described.
+4. Close with:
+
+```bash
+bd update "$GC_BEAD_ID" \
+  --set-metadata code_review.verdict=iterate \
+  --set-metadata gc.outcome=pass \
+  --status closed
+```
+
+Do not suppress findings by editing the report. The next review attempt must
+inspect the actual code state.
+"""
+
+[steps.children.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps]]
+id = "finalize"
+title = "Summarize LazyJJ implementation state"
+needs = ["review-loop"]
+description = """
+Summarize the final LazyJJ implementation state.
+
+Rules:
+1. Run the verification commands named in the design/tasks artifacts, plus any
+   repo-standard checks that apply to changed files.
+2. Verify every implementation bead has completed LazyJJ handoff metadata:
+   `lazyjj_workspace`, `lazyjj_workspace_dir`, `lazyjj_review_bookmark`, and
+   `lazyjj_stack_revset`.
+3. Write `.gc/plans/{{plan_slug}}/implementation/final-summary.md` with:
+   - implementation bead IDs
+   - LazyJJ workspaces and review bookmarks
+   - stack revsets
+   - changed files summary
+   - verification commands and results
+   - gap-analysis final verdict
+   - review final verdict
+   - publish status from each worker handoff
+4. Close with `gc.outcome=pass`.
+"""
+
+[steps.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
+
+[[steps]]
+id = "handoff-summary"
+title = "Record LazyJJ handoff summary"
+needs = ["finalize"]
+description = """
+Do not push or open PRs from this coordinator. LazyJJ publication belongs to the
+worker formula and refinery path.
+
+Record on the coordinator bead:
+
+- final-summary path
+- implementation bead IDs
+- LazyJJ review bookmarks
+- LazyJJ stack revsets
+- `gc.outcome=pass`
+
+If any implementation bead lacks LazyJJ handoff metadata, fail hard and name the
+bead that did not complete the LazyJJ workflow.
+"""
+
+[steps.retry]
+max_attempts = 3
+on_exhausted = "hard_fail"
