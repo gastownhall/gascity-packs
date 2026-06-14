@@ -688,23 +688,51 @@ branch_has_real_change "origin/$TARGET" temp || \
   halt_false_completion "$BRANCH" "$(git merge-base "origin/$TARGET" temp 2>/dev/null || printf '%s' "origin/$TARGET")"
 ```
 
-**1. Merge and push target branch:**
-```bash
-git checkout $TARGET
-git merge --ff-only temp
-git push origin $TARGET
-```
+**1. Push via refspec and verify origin moved:**
 
-**2. Verify push:**
+No local checkout of `$TARGET` — `git checkout $TARGET` fails with
+"already used by worktree" when another worktree in the repo holds the
+target branch, and a run that continues past that failure fabricates its
+merge metadata from a stale local HEAD. The refspec push needs no local
+checkout, and the PRE/POST capture proves origin actually moved. (A
+branch that is already an ancestor of `$TARGET` never reaches this step:
+its diff against the merge-base is empty, so step 0's
+`branch_has_real_change` guard halts it.)
+
 ```bash
+git fetch --prune origin
+PRE_MERGE_SHA=$(git rev-parse origin/$TARGET)
+BRANCH_TIP=$(git rev-parse temp)
+if [ -z "$PRE_MERGE_SHA" ] || [ -z "$BRANCH_TIP" ]; then
+  echo "FATAL: could not resolve SHAs for origin/$TARGET or temp."
+  gc runtime drain-ack
+  exit 1
+fi
+git push origin temp:$TARGET || {
+  echo "FATAL: refspec push to origin/$TARGET failed."
+  gc runtime drain-ack
+  exit 1
+}
 git fetch origin
-LOCAL=$(git rev-parse $TARGET)
-REMOTE=$(git rev-parse origin/$TARGET)
-[ "$LOCAL" = "$REMOTE" ] || echo "PUSH FAILED — do not proceed"
+POST_MERGE_SHA=$(git rev-parse origin/$TARGET)
+if [ "$POST_MERGE_SHA" = "$PRE_MERGE_SHA" ]; then
+  echo "FATAL: origin/$TARGET did not advance after push."
+  gc runtime drain-ack
+  exit 1
+fi
+if [ "$POST_MERGE_SHA" != "$BRANCH_TIP" ]; then
+  echo "FATAL: origin/$TARGET ($POST_MERGE_SHA) != branch tip ($BRANCH_TIP) after push."
+  gc runtime drain-ack
+  exit 1
+fi
+MERGED_SHA=$POST_MERGE_SHA
+MERGED_SHORT=$(git rev-parse --short $POST_MERGE_SHA)
 ```
-If SHAs differ: STOP. Debug and retry. Do NOT continue.
 
-**3. Record merge metadata and close work bead:**
+`MERGED_SHA` is the verified origin tip — never `git rev-parse HEAD`,
+which records a fabricated SHA when the push silently no-ops.
+
+**2. Record merge metadata and close work bead:**
 
 Run as a single chained command so the metadata write cannot be skipped
 when the close-reason already names the SHA. Both the `--set-metadata`
@@ -715,8 +743,6 @@ clears any stale rejection field from an earlier rejected/reworked
 attempt before the successful close.
 
 ```bash
-MERGED_SHA=$(git rev-parse HEAD) && \
-MERGED_SHORT=$(git rev-parse --short HEAD) && \
 gc bd update $WORK \
   --set-metadata merge_result=merged \
   --set-metadata merged_sha=$MERGED_SHA \
@@ -725,7 +751,7 @@ gc bd update $WORK \
 gc bd close $WORK --reason "Merged to $TARGET at $MERGED_SHORT"
 ```
 
-**4. Cleanup:**
+**3. Cleanup:**
 ```bash
 git branch -d temp
 ```
