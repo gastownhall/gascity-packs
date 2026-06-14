@@ -107,6 +107,8 @@ The following LazyJJ reference sections are embedded from same-named files in
 {{ template "lazyjj-workspace-refresh" . }}
 {{ template "doltlite-gascity-city-basics" . }}
 
+{{ template "doltlite-gascity-city-basics" . }}
+
 {{ template "lazyjj-common-mistakes" . }}
 
 {{ template "lazyjj-config-reference" . }}

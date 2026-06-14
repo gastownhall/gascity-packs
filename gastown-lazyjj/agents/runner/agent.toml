@@ -4,4 +4,3 @@ wake_mode = "fresh"
 work_dir = "{{.RigRoot}}"
 nudge = "Run integration checks from the rig root/default jj workspace."
 idle_timeout = "2h"
-max_active_sessions = 1

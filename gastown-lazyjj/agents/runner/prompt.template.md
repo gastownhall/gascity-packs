@@ -34,6 +34,8 @@ an extra integration bookmark unless explicitly asked.
 {{ template "lazyjj-workspace-refresh" . }}
 {{ template "doltlite-gascity-city-basics" . }}
 
+{{ template "doltlite-gascity-city-basics" . }}
+
 ## Live Local Operations
 
 You handle operations that should happen against the currently integrated local

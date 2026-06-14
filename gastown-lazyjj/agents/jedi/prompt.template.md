@@ -68,6 +68,8 @@ bookmark and stack revset for the runner/default workspace handoff.
 {{ template "lazyjj-workspace-refresh" . }}
 {{ template "doltlite-gascity-city-basics" . }}
 
+{{ template "doltlite-gascity-city-basics" . }}
+
 ---
 
 ## Theory of Operation: The Propulsion Principle
