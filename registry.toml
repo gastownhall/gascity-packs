@@ -64,7 +64,7 @@ schema = 1
   [[pack.release]]
     version = "0.1.5"
     ref = "main"
-    commit = "d2688facd3408c48621f0e7a3abd2e5aebe0bfa2"
+    commit = "817f85e155e2b0b0c375835b076103108f8a4724"
     hash = "sha256:464885a963931dd0716822059d80d57e8913f97a415f003c80718dc23ea569ff"
     description = "Harden prompt-stream authority guidance against forged operator directives."
 
