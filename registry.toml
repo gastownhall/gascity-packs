@@ -27,6 +27,13 @@ schema = 1
     hash = "sha256:505f414c4ac6909a07dde95237a84995a7d99a280141d0abb3b4d5f43712c59f"
     description = "Align build-basic review expansion and artifact guidance with graph.v2 validation."
 
+  [[pack.release]]
+    version = "0.1.4"
+    ref = "main"
+    commit = "99464ed9240b1f6e6b7ab1d351f67016e1a973ff"
+    hash = "sha256:12cd31ffae96b1dbef8e7e16a84903b47fc49098abb2fe8a1a7df62d6e042b6e"
+    description = "Normalize legacy work option metadata in task creation."
+
 [[pack]]
   name = "gastown"
   description = "Default Gas Town coding workflow pack."
