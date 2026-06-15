@@ -94,6 +94,7 @@ cross-workspace sync formula before starting new work.
 - [`template-fragments/lazyjj-pr-workflow.template.md`](./template-fragments/lazyjj-pr-workflow.template.md)
 - [`template-fragments/lazyjj-config-reference.template.md`](./template-fragments/lazyjj-config-reference.template.md)
 - [`template-fragments/doltlite-gascity-city-basics.template.md`](./template-fragments/doltlite-gascity-city-basics.template.md)
+- [`template-fragments/test-policy.template.md`](./template-fragments/test-policy.template.md)
 - [`skills/lazyjj-workspace/SKILL.md`](./skills/lazyjj-workspace/SKILL.md)
 - [`skills/lazyjj-create-pr/SKILL.md`](./skills/lazyjj-create-pr/SKILL.md)
 - [`skills/lazyjj-create-stack/SKILL.md`](./skills/lazyjj-create-stack/SKILL.md)
