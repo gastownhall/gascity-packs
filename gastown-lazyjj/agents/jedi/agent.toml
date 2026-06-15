@@ -1,8 +1,10 @@
 scope = "rig"
 provider = "codex-gpt-5-5"
 wake_mode = "fresh"
+formula = "mol-polecat-lazyjj-work"
 work_dir = ".gc/workspaces/{{.Rig}}/jedi/{{.AgentBase}}"
 nudge = "Run gc hook; it checks assigned work first, then routed pool work."
 pre_start = ["{{.ConfigDir}}/../jjw/assets/scripts/workspace-setup.sh {{.RigRoot}} {{.WorkDir}} {{.AgentBase}} --sync"]
 idle_timeout = "2h"
+min_active_sessions = 0
 max_active_sessions = 5

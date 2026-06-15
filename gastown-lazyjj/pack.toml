@@ -17,11 +17,6 @@ base = "builtin:codex"
 option_defaults = { model = "gpt-5.5", effort = "medium" }
 
 [[named_session]]
-template = "jedi"
-scope = "rig"
-mode = "always"
-
-[[named_session]]
 template = "tasksmith"
 scope = "rig"
 mode = "always"

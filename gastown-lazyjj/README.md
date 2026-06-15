@@ -4,7 +4,8 @@ LazyJJ workspace and stack workflow pack for Gas Town jj workers.
 
 ## What this pack adds
 
-- `jedi` named sessions for rig-scoped LazyJJ workers
+- `jedi` pool workers, shaped like canonical `gastown` polecats, for
+  rig-scoped LazyJJ implementation work
 - `tasksmith` named sessions for LazyJJ-aligned task and bead authoring
 - the `mol-polecat-lazyjj-work` formula for workspace-bound stack work
 - the `mol-lazyjj-release` formula for publishing a pack release from a jedi

@@ -24,9 +24,9 @@ single Bash command. Do not rewrite it, compress it into an `&&` chain, or
 debug it if it returns no work. Do not run `gc prime`, load skills, inspect
 runtime state, read repository files, explain the codebase, or gather any
 other context until a bead has been claimed. If the command prints
-`NO_ROUTED_WORK` or `CONFIG_REJECTED`, it has already drain-acked; stop
+`NO_ROUTED_WORK` or `CONFIG_REJECTED`, stop
 immediately and exit. If it prints `CLAIM_REJECTED`, the command is handling a
-claim race internally; wait for it to either claim a bead or drain on no work.
+claim race internally; wait for it to either claim a bead or report no work.
 
 ```bash
 bash <<'GC_CLAIM'
@@ -37,13 +37,11 @@ EXPECTED_ROUTE="${GC_TEMPLATE:-${GC_AGENT:-}}"
 
 if [ -z "$EXPECTED_ASSIGNEE" ]; then
   echo "CONFIG_REJECTED missing expected assignee"
-  gc runtime drain-ack
   exit 0
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "CONFIG_REJECTED missing python3"
-  gc runtime drain-ack
   exit 0
 fi
 
@@ -94,7 +92,6 @@ while true; do
 
   if [ "$CLAIM_ACTION" = "drain" ]; then
     echo "NO_ROUTED_WORK"
-    gc runtime drain-ack
     exit 0
   fi
 
@@ -198,19 +195,14 @@ Important metadata:
 - `gc.continuation_group` - beads that prefer the same live session
 - `gc.scope_role=teardown` - cleanup/finalizer work; always execute when ready
 
-After closing a claimed bead, check for more routed work before draining unless
-the bead's result contract explicitly says the final action is to drain and
-exit. Continue by running the same `GC_CLAIM` block again. The block uses
-`gc hook --claim --json`; if it returns no work, it drain-acks and exits.
-
-If you must drain explicitly, run this as your final command and exit:
-
-```bash
-gc runtime drain-ack
-```
+After closing a claimed bead, check for more routed work, but do not acknowledge
+runtime drain from this worker template while the final workflow steps are being
+settled. Continue by running the same `GC_CLAIM` block again. The block uses
+`gc hook --claim --json`; if it returns no work, stop without running
+`gc runtime drain-ack`.
 
 When the bead you just closed had a `gc.continuation_group`, continue only for
-work in that same continuation group or same `gc.root_bead_id`; otherwise drain
+work in that same continuation group or same `gc.root_bead_id`; otherwise stop
 instead of hopping to unrelated workflow work. If the next ready bead is
 teardown work, run it even if earlier work failed.
 
@@ -220,5 +212,5 @@ teardown work, run it even if earlier work failed.
   receive them as normal work.
 - `gc.kind=check|fanout|scope-check|workflow-finalize` are handled by the
   implicit `workflow-control` lane. Normal workers should not receive them.
-- Do not say "drained" without actually running `gc runtime drain-ack`.
+- Do not run or claim that you ran `gc runtime drain-ack` from this template.
 {{- end }}

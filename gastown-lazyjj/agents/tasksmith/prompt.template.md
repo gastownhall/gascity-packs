@@ -166,32 +166,19 @@ as the source of the initial `jj` change summary and body.
 ## LazyJJ Workspace Seed
 
 When dispatching LazyJJ work, prefer `gc formula cook mol-polecat-lazyjj-work
---attach <bead-id>` or an equivalent launcher path that can pass task metadata
-before `pre_start`. The workspace setup script accepts the bead title and
-description directly, so the initial `jj` change mirrors the bead:
+--attach <bead-id>` or an equivalent launcher path that preserves the formula
+metadata on the work bead. The `jjw` workspace setup script runs in `pre_start`,
+before claim, so it only creates or refreshes the jj workspace. It deliberately
+does not seed the initial `jj` change from bead title or description.
 
-```bash
-LAZYJJ_WORK_BEAD_ID=<bead-id> \
-LAZYJJ_WORK_TITLE=<title> \
-LAZYJJ_WORK_DESCRIPTION=<description> \
-  <config-dir>/../jjw/assets/scripts/workspace-setup.sh <rig-root> <workspace-dir> <agent-name> --sync
-```
-
-If shell quoting is awkward, write the description to a file and pass:
-
-```bash
-<config-dir>/../jjw/assets/scripts/workspace-setup.sh <rig-root> <workspace-dir> <agent-name> --sync \
-  --bead <bead-id> \
-  --title "<title>" \
-  --description-file <description-file>
-```
+The formula's `workspace-setup` step is the guaranteed post-claim seed point:
+it records `lazyjj_workspace` and `lazyjj_workspace_dir`, verifies any existing
+metadata still points at the current workspace, and describes a fresh empty
+workspace change from the bead title and description.
 
 The bead id is job context, not workspace identity. LazyJJ workspaces are
-persistent per agent workspace, so the script uses `LAZYJJ_WORK_BEAD_ID` or
-`--bead <bead-id>` only to look up the title and description from Beads. Do not
-make the setup script guess from routed pool work: `pre_start` runs before
-claim, so the formula workspace-setup step is the guaranteed place to seed
-resumed or freshly claimed work from the bead metadata.
+persistent per agent workspace. Do not make `pre_start` guess from routed pool
+work: routed work is known only after `gc hook` claims or recovers the bead.
 
 ## Example Beads
 
