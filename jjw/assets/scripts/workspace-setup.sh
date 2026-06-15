@@ -11,19 +11,47 @@ AGENT="${3:?missing agent-name}"
 shift 3
 
 SYNC=""
+WORK_BEAD_ID=""
+WORK_TITLE=""
+WORK_DESCRIPTION_FILE=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --sync)
             SYNC="--sync"
             shift
             ;;
-        --bead|--title|--description|--description-file)
-            # Accepted for compatibility with LazyJJ launchers that pass bead
-            # metadata to older workspace setup scripts. jjw only owns
-            # workspace lifecycle; work seeding stays with the formula layer.
+        --bead)
+            WORK_BEAD_ID="${2:-}"
             shift 2
             ;;
-        --bead=*|--title=*|--description=*|--description-file=*)
+        --title)
+            WORK_TITLE="${2:-}"
+            shift 2
+            ;;
+        --description)
+            WORK_DESCRIPTION_FILE=$(mktemp)
+            printf '%s\n' "${2:-}" > "$WORK_DESCRIPTION_FILE"
+            shift 2
+            ;;
+        --description-file)
+            WORK_DESCRIPTION_FILE="${2:-}"
+            shift 2
+            ;;
+        --bead=*)
+            WORK_BEAD_ID="${1#--bead=}"
+            shift
+            ;;
+        --title=*)
+            WORK_TITLE="${1#--title=}"
+            shift
+            ;;
+        --description=*)
+            WORK_DESCRIPTION_FILE=$(mktemp)
+            printf '%s\n' "${1#--description=}" > "$WORK_DESCRIPTION_FILE"
+            shift
+            ;;
+        --description-file=*)
+            WORK_DESCRIPTION_FILE="${1#--description-file=}"
             shift
             ;;
         *)
@@ -121,6 +149,52 @@ JJIGNORE
     fi
 }
 
+write_work_seed_description() {
+    desc_file="$1"
+    title="$WORK_TITLE"
+    if [ -z "$title" ]; then
+        title="$WORK_BEAD_ID"
+    fi
+
+    {
+        if [ -n "$WORK_BEAD_ID" ]; then
+            printf 'work: %s %s\n' "$WORK_BEAD_ID" "$title"
+        elif [ -n "$title" ]; then
+            printf 'work: %s\n' "$title"
+        else
+            return 1
+        fi
+        if [ -n "$WORK_DESCRIPTION_FILE" ] && [ -s "$WORK_DESCRIPTION_FILE" ]; then
+            printf '\n'
+            sed '/^[[:space:]]*$/d' "$WORK_DESCRIPTION_FILE"
+            printf '\n'
+        fi
+    } > "$desc_file"
+}
+
+seed_current_change_from_work_metadata() {
+    if [ -z "$WORK_BEAD_ID" ] && [ -z "$WORK_TITLE" ]; then
+        return 0
+    fi
+    if ! jj -R "$WT" root >/dev/null 2>&1; then
+        return 0
+    fi
+
+    current_change=$(jj -R "$WT" log -r @ --no-graph --template 'change_id' 2>/dev/null || true)
+    if [ -z "$current_change" ]; then
+        return 0
+    fi
+    if ! jj -R "$WT" log -r 'no_description' --no-graph --template 'change_id ++ "\n"' 2>/dev/null | grep -q "$current_change"; then
+        return 0
+    fi
+
+    desc_file=$(mktemp)
+    if write_work_seed_description "$desc_file"; then
+        jj -R "$WT" describe --stdin < "$desc_file"
+    fi
+    rm -f "$desc_file"
+}
+
 install_workspace_excludes() {
     if ! jj -R "$WT" root >/dev/null 2>&1; then
         return 0
@@ -200,6 +274,7 @@ refresh_existing_workspace() {
     write_workspace_runtime_files
     install_workspace_excludes
     run_best_effort "update stale workspace state" jj -R "$WT" workspace update-stale >/dev/null 2>&1
+    seed_current_change_from_work_metadata
     if [ "$SYNC" = "--sync" ]; then
         run_best_effort "sync workspace git state" jj -R "$WT" git fetch 2>/dev/null
     fi
@@ -241,6 +316,7 @@ restore_stage
 trap - EXIT HUP INT TERM
 write_workspace_runtime_files
 install_workspace_excludes
+seed_current_change_from_work_metadata
 
 if [ "$SYNC" = "--sync" ]; then
     run_best_effort "sync workspace git state" jj -R "$WT" git fetch 2>/dev/null

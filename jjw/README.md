@@ -26,8 +26,10 @@ The helper creates/uses a `.jjw.yaml` in the rig root. It writes that file only
 when missing or when it already contains the Gas City marker.
 
 The helper also accepts LazyJJ metadata flags such as `--bead`, `--title`, and
-`--description-file` for compatibility, but it does not seed work content. Work
-seeding remains a formula responsibility.
+`--description-file`. When title metadata is present, it describes an
+undescribed current workspace change so fresh and resumed workspaces start with
+bead-derived context. The formula remains responsible for validating and
+recording workspace metadata.
 
 ## Configuration
 
