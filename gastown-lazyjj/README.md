@@ -132,3 +132,16 @@ cross-workspace sync formula before starting new work.
 - [`skills/lazyjj-navigate-stack/SKILL.md`](./skills/lazyjj-navigate-stack/SKILL.md)
 - [`skills/lazyjj-resolve-conflicts/SKILL.md`](./skills/lazyjj-resolve-conflicts/SKILL.md)
 - [`skills/lazyjj-sync-remote/SKILL.md`](./skills/lazyjj-sync-remote/SKILL.md)
+
+## Focused Verification
+
+Run the LazyJJ pack smoke when changing tasksmith routing, workspace seeding,
+or the `mol-polecat-lazyjj-work` contract:
+
+```bash
+bash packer/commands/pack-check/run.sh gastown-lazyjj --focused
+```
+
+That check stays narrow: it validates tasksmith formula selection, the
+workspace title/description seed path, `lazyjj_workspace` metadata recording,
+and the jjw workspace setup argument contract without running broad suites.
