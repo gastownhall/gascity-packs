@@ -461,11 +461,13 @@ Target: $TARGET"
     echo "Could not resolve current wisp; not burning."
     echo "$reason"
     echo "STOP. Existing PR metadata needs human correction."
+    cleanup_temp_only
     gc runtime drain-ack
     exit 1
   fi
   echo "$reason"
   echo "STOP. Existing PR metadata needs human correction."
+  cleanup_temp_only
   gc runtime drain-ack
   exit 1
 }
@@ -513,8 +515,28 @@ halt_false_completion() {
   gc session nudge "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness" "FALSE-COMPLETION HALT: $WORK — branch $fc_branch no verified change vs $fc_base; refused close-as-merged."
   echo "REFUSED close-as-merged: $WORK branch $fc_branch introduces no real change vs $fc_base."
   echo "STOP. Bead left blocked + escalated to mayor/witness. NEVER silent retry."
+  cleanup_branch
   gc runtime drain-ack
   exit 1
+}
+
+cleanup_branch() {
+  # Idempotent cleanup: always delete local temp; conditionally delete remote
+  # $BRANCH when delete_merged_branches=true. Errors suppressed — this is
+  # best-effort; the caller's exit path takes precedence.
+  git checkout "$TARGET" 2>/dev/null || true
+  git branch -D temp 2>/dev/null || true
+  if [ "{{delete_merged_branches}}" = "true" ] && [ -n "${BRANCH:-}" ]; then
+    git push origin --delete "$BRANCH" 2>/dev/null || true
+  fi
+}
+
+cleanup_temp_only() {
+  # Like cleanup_branch but never deletes the remote source branch.
+  # Use when $BRANCH must be preserved (e.g. an open PR depends on it,
+  # or the branch is needed for a retry).
+  git checkout "$TARGET" 2>/dev/null || true
+  git branch -D temp 2>/dev/null || true
 }
 
 pr_lookup_missing() {
@@ -621,6 +643,7 @@ if [ "$MERGE_STRATEGY" = "mr" ] && [ -n "$EXISTING_PR" ]; then
   if [ -z "$ORIGIN_REPO" ]; then
     [ -n "$ORIGIN_REPO_ERROR" ] && echo "$ORIGIN_REPO_ERROR"
     echo "Could not resolve origin repository for existing PR validation. STOP. Debug and retry without mutating bead state."
+    cleanup_temp_only
     gc runtime drain-ack
     exit 1
   fi
@@ -639,6 +662,7 @@ if [ "$MERGE_STRATEGY" = "mr" ] && [ -n "$EXISTING_PR" ]; then
     fi
     echo "Could not resolve existing PR $EXISTING_PR. STOP. Debug and retry without mutating bead state."
     [ -n "$EXISTING_PR_ERROR" ] && echo "$EXISTING_PR_ERROR"
+    cleanup_temp_only
     gc runtime drain-ack
     exit 1
   fi
@@ -670,6 +694,7 @@ fi
 if [ "$MERGE_STRATEGY" = "mr" ] && [ -z "$ORIGIN_REPO" ]; then
   [ -n "$ORIGIN_REPO_ERROR" ] && echo "$ORIGIN_REPO_ERROR"
   echo "Could not resolve origin repository for pull-request handoff. STOP. Debug and retry without mutating bead state."
+  cleanup_temp_only
   gc runtime drain-ack
   exit 1
 fi
@@ -740,12 +765,15 @@ closed bead to its merge commit on `$TARGET`. `--unset-metadata
 rejection_reason` clears any stale rejection field from an earlier
 rejected/reworked attempt before the successful close.
 
-**2. Cleanup:**
+**2. Cleanup — run as a single sequence so interruption cannot strand a branch:**
 ```bash
 git checkout --detach "origin/$TARGET" >/dev/null 2>&1 || true
 git branch -d temp || git branch -D temp || true
+[ "{{delete_merged_branches}}" = "true" ] && git push origin --delete "$BRANCH" || true
 ```
-If delete_merged_branches = "true": `git push origin --delete $BRANCH`
+Always delete the local `temp` branch. The remote source branch is deleted when
+`delete_merged_branches = "{{delete_merged_branches}}"` (i.e. the substituted value is `"true"`).
+Run both in the same turn.
 
 **If MERGE_STRATEGY = "mr":**
 
@@ -831,6 +859,7 @@ else
     if ! init_github_rest 2>"$PR_ERR"; then
       cat "$PR_ERR"
       rm -f "$PR_ERR"
+      cleanup_temp_only
       gc runtime drain-ack
       exit 1
     fi
@@ -845,6 +874,7 @@ else
       echo "GitHub API request failed while checking for an existing PR for $BRANCH."
       [ -n "$PR_ERROR" ] && echo "$PR_ERROR"
       rm -f "$PR_ERR"
+      cleanup_temp_only
       gc runtime drain-ack
       exit 1
     fi
@@ -865,6 +895,7 @@ else
         echo "GitHub API request failed while creating a PR for $BRANCH."
         [ -n "$PR_ERROR" ] && echo "$PR_ERROR"
         rm -f "$PR_ERR"
+        cleanup_temp_only
         gc runtime drain-ack
         exit 1
       fi
@@ -872,6 +903,7 @@ else
       if [ -z "$PR_NUMBER" ]; then
         echo "GitHub API response did not include a pull request number."
         rm -f "$PR_ERR"
+        cleanup_temp_only
         gc runtime drain-ack
         exit 1
       fi
@@ -883,6 +915,7 @@ else
     if [ "$PR_STATUS" -ne 0 ]; then
       echo "GitHub API request failed while reading PR $PR_NUMBER."
       [ -n "$PR_ERROR" ] && echo "$PR_ERROR"
+      cleanup_temp_only
       gc runtime drain-ack
       exit 1
     fi
@@ -907,6 +940,7 @@ if [ "$PR_STATUS" -ne 0 ] || [ -z "$PR_INFO" ]; then
   fi
   echo "Pull request $PR_REF was not found."
   [ -n "$PR_ERROR" ] && echo "$PR_ERROR"
+  cleanup_temp_only
   gc runtime drain-ack
   exit 1
 fi
@@ -923,6 +957,7 @@ if [ "$PR_STATE" != "OPEN" ]; then
     block_existing_pr "Existing PR $EXISTING_PR is $PR_STATE, want OPEN."
   fi
   echo "Pull request $PR_REF is $PR_STATE, want OPEN."
+  cleanup_temp_only
   gc runtime drain-ack
   exit 1
 fi
@@ -931,6 +966,7 @@ if [ "$PR_HEAD" != "$BRANCH" ]; then
     block_existing_pr "Existing PR $EXISTING_PR targets branch $PR_HEAD, want $BRANCH."
   fi
   echo "Pull request $PR_REF targets branch $PR_HEAD, want $BRANCH."
+  cleanup_temp_only
   gc runtime drain-ack
   exit 1
 fi
@@ -939,6 +975,7 @@ if [ "$PR_BASE" != "$TARGET" ]; then
     block_existing_pr "Existing PR $EXISTING_PR targets base $PR_BASE, want $TARGET."
   fi
   echo "Pull request $PR_REF targets base $PR_BASE, want $TARGET."
+  cleanup_temp_only
   gc runtime drain-ack
   exit 1
 fi
@@ -947,6 +984,7 @@ if [ "$PR_REPO" != "$ORIGIN_REPO" ]; then
     block_existing_pr "Existing PR $EXISTING_PR belongs to repo $PR_REPO, want $ORIGIN_REPO."
   fi
   echo "Pull request $PR_REF belongs to repo $PR_REPO, want $ORIGIN_REPO."
+  cleanup_temp_only
   gc runtime drain-ack
   exit 1
 fi
@@ -955,6 +993,7 @@ if [ "$PR_HEAD_REPO" != "$ORIGIN_REPO" ]; then
     block_existing_pr "Existing PR $EXISTING_PR head repo $PR_HEAD_REPO, want $ORIGIN_REPO."
   fi
   echo "Pull request $PR_REF head repo $PR_HEAD_REPO, want $ORIGIN_REPO."
+  cleanup_temp_only
   gc runtime drain-ack
   exit 1
 fi
