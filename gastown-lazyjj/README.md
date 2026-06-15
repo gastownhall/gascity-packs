@@ -48,6 +48,36 @@ The tutorial this pack follows boils down to:
 8. open GitHub PRs with `gh pr create` using the stack order
 9. land in order and keep the workspace clean
 
+## Canonical idea-to-live-test path
+
+The normal pack workflow is one path, not a set of independent scaffold tasks:
+
+1. A human gives Tasksmith a concrete LazyJJ pack request.
+2. Tasksmith creates one claim-sized implementation bead for routine pack work
+   and targets `mol-polecat-lazyjj-work`.
+3. A jedi claims that bead, records `lazyjj_workspace` and
+   `lazyjj_workspace_dir`, and implements the change in its assigned jj
+   workspace stack.
+4. The submit step records `lazyjj_review_bookmark`,
+   `lazyjj_stack_revset`, and `lazyjj_stack_head` so the exact graph state is
+   inspectable after handoff.
+5. Runner/default workspace testing uses the recorded metadata through
+   `mol-lazyjj-cross-workspace-sync` or an equivalent runner-facing handoff:
+   move `default@` to the stack head, run focused checks, then align the source
+   workspace to the same tested head.
+6. Live smoke observations and any corrections are recorded back on the work
+   bead before the operator or formula owner closes it.
+
+Checklist child beads may be useful as review boundaries, but routine pack
+work must not expand into independently claimable setup, docs, test, and submit
+beads. The implementation bead owns the coherent stack.
+
+`jjw` is the workspace lifecycle layer. Its hooks may provide `JJW_NAME`,
+`JJW_PATH`, `JJW_BOOKMARK`, and related workspace facts while the workspace is
+created. LazyJJ should use those values when present, then write the durable
+`lazyjj_*` metadata onto the bead. Runner handoff and resumed sessions read the
+bead metadata, not hook-local environment variables.
+
 ## Workspace Sync Contract
 
 LazyJJ uses two live views of the same graph:

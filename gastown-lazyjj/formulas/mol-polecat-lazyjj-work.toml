@@ -64,12 +64,24 @@ RECORDED_WORKSPACE_NAME=$(printf '%s' "$WORK_JSON" | jq -r '.[0].metadata.lazyjj
 RECORDED_WORKSPACE_DIR=$(printf '%s' "$WORK_JSON" | jq -r '.[0].metadata.lazyjj_workspace_dir // empty')
 BEAD_TITLE=$(printf '%s' "$WORK_JSON" | jq -r '.[0].title // empty' | tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')
 BEAD_BODY=$(printf '%s' "$WORK_JSON" | jq -r '.[0].description // .[0].notes // empty' | sed '/^[[:space:]]*$/d')
-WORKSPACE_DIR=$(jj workspace root)
-WORKSPACE_NAME=$(jj workspace list | awk -v root="$WORKSPACE_DIR" '$0 ~ root { sub(":$", "", $1); print $1; exit }')
+WORKSPACE_DIR=${JJW_PATH:-}
+WORKSPACE_NAME=${JJW_NAME:-}
+if [ -z "$WORKSPACE_DIR" ]; then
+  WORKSPACE_DIR=$(jj workspace root)
+fi
+if [ -z "$WORKSPACE_NAME" ]; then
+  WORKSPACE_NAME=$(jj workspace list | awk -v root="$WORKSPACE_DIR" '$0 ~ root { sub(":$", "", $1); print $1; exit }')
+fi
 if [ -z "$WORKSPACE_NAME" ]; then
   WORKSPACE_NAME=$(basename "$WORKSPACE_DIR")
 fi
 ```
+
+`jjw` lifecycle hooks provide `JJW_NAME` and `JJW_PATH` while the workspace is
+created. Prefer those values when the session preserves them; otherwise derive
+the same facts from jj. Always persist the result to the bead because runner
+handoff, recovery, and future sessions cannot depend on hook-local environment
+variables still being present.
 
 **3. Refuse to drift from existing bead metadata.**
 
@@ -279,7 +291,8 @@ fi
 jj bookmark set "$BOOKMARK" -r "$STACK_HEAD"
 bd update {{issue}} \
   --set-metadata lazyjj_review_bookmark="$BOOKMARK" \
-  --set-metadata lazyjj_stack_revset="stack"
+  --set-metadata lazyjj_stack_revset="stack" \
+  --set-metadata lazyjj_stack_head="$STACK_HEAD"
 ```
 
 If `publish_mode` is `push`, publish the review bookmark and try the LazyJJ
@@ -309,14 +322,17 @@ bd update {{issue}} --append-notes "LazyJJ stack ready for runner integration.
 Workspace: $(bd show {{issue}} --json | jq -r '.[0].metadata.lazyjj_workspace')
 Workspace dir: $(bd show {{issue}} --json | jq -r '.[0].metadata.lazyjj_workspace_dir')
 Bookmark: $BOOKMARK
+Stack head: $STACK_HEAD
 Publish mode: {{publish_mode}}
-Stack: jj log -r 'trunk() | stack'"
+Stack: jj log -r 'trunk() | stack'
+Runner handoff: gc formula cook mol-lazyjj-cross-workspace-sync --var source_workspace_dir=$(bd show {{issue}} --json | jq -r '.[0].metadata.lazyjj_workspace_dir') --var stack_head=$STACK_HEAD --var verification_command='<focused command>'"
 ```
 
 Exit criteria:
 
 - review bookmark points at the non-empty stack head
-- bead metadata contains the workspace, workspace dir, bookmark, and stack revset
+- bead metadata contains the workspace, workspace dir, bookmark, stack revset,
+  and concrete stack head
 - runner/operator has enough information to inspect and publish the exact stack
 """
 metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }

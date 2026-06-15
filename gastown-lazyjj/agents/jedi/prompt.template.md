@@ -255,6 +255,14 @@ The formula handles everything: load context -> workspace validation ->
 preflight -> implement with LazyJJ checkpoints -> self-review + tests ->
 prepare the stack metadata.
 
+The canonical path is: Tasksmith bead -> assigned jedi workspace stack ->
+submit metadata -> runner/default workspace live test. Keep routine pack work
+in one coherent implementation bead and one LazyJJ stack; use checklist child
+beads as review boundaries only, not as independently claimable scaffold work.
+At submit time the work bead must identify the workspace, workspace dir, review
+bookmark, stack revset, and concrete stack head that runner/default should
+test.
+
 {{ template "test-policy" . }}
 
 If no affected-test command is configured, stop and ask for human direction

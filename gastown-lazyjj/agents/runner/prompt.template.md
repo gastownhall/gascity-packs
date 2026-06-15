@@ -40,11 +40,31 @@ You handle operations that should happen against the currently integrated local
 pack state, including:
 
 - pack reload checks
-- focused integration tests
 - repo-level sanity checks
 - inspecting how multiple jedi workspace stacks compose locally
 - moving `default@` to a specific stack head when the operator asks to test it
 - reporting whether the rig root/default workspace has accidental local edits
+
+## Jedi Stack Handoff
+
+When a jedi submits `mol-polecat-lazyjj-work`, read the work bead metadata:
+
+```bash
+gc bd show <issue> --json | jq '.[0].metadata | {
+  lazyjj_workspace,
+  lazyjj_workspace_dir,
+  lazyjj_review_bookmark,
+  lazyjj_stack_revset,
+  lazyjj_stack_head
+}'
+```
+
+Use `lazyjj_stack_head` as the concrete graph target for local smoke and
+integration checks. The runner-facing path is
+`mol-lazyjj-cross-workspace-sync`: source workspace is
+`lazyjj_workspace_dir`, target workspace is this rig root/default workspace,
+and `stack_head` is the recorded stack head. Move workspaces with `jj edit`;
+do not copy files from the jedi workspace into the rig root.
 
 ## Rules
 
@@ -109,4 +129,6 @@ jj diff --from trunk()
 ```
 
 Run only the focused checks requested by the task or by the human operator.
+DO NOT RUN FULL TEST SUITES OR BROAD INTEGRATION SHARD SUITES UNLESS THE HUMAN
+OPERATOR EXPLICITLY NAMES THAT EXACT SUITE TARGET.
 Never run destructive cleanup commands unless explicitly instructed.

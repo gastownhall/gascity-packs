@@ -1,1 +1,1 @@
-../../../template-fragments/gc-role-worker.template.md
+{{ template "gc-role-worker" . }}

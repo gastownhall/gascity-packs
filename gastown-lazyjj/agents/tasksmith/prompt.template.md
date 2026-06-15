@@ -81,6 +81,24 @@ For routine pack requests that do not require one of those specific workflow
 shapes, write the bead so it is claim-sized, stack-aware, and ready to run
 through `mol-polecat-lazyjj-work` by default.
 
+## Canonical Idea-To-Live-Test Path
+
+Routine LazyJJ pack work follows one canonical path:
+
+1. human idea or request
+2. Tasksmith creates one focused implementation bead
+3. jedi claims it and works in the assigned LazyJJ workspace
+4. `mol-polecat-lazyjj-work` submit records the review bookmark, stack revset,
+   stack head, workspace name, and workspace dir
+5. runner/default workspace tests the recorded stack through
+   `mol-lazyjj-cross-workspace-sync` or an equivalent runner-facing handoff
+6. live smoke observations and adjustments are recorded on the same work bead
+
+Do not explode routine pack work into independently claimable scaffold beads
+for setup, docs, tests, submit, or smoke. If the user asks for review
+boundaries, record them as a checklist on the implementation bead and keep the
+work in one coherent LazyJJ stack.
+
 ## LazyJJ Reference
 
 The following LazyJJ reference sections are embedded from same-named files in

@@ -6,6 +6,9 @@ Use this when a jedi workspace has work that must be tested from the rig
 `default` workspace, or when a conflict appears resolved in one workspace but
 still exists on a side stack. The bead supplies the concrete stack, workspaces,
 and verification command. This formula supplies the graph-first procedure.
+`mol-polecat-lazyjj-work` submit records the values this runner-facing formula
+needs: `lazyjj_workspace_dir` becomes `source_workspace_dir`, and
+`lazyjj_stack_head` becomes `stack_head`.
 
 The handoff must leave the source workspace and the target workspace on the
 same tested head unless the bead explicitly records why they are intentionally
