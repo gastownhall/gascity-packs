@@ -1,0 +1,218 @@
+description = """
+Convert an existing repository, tutorial, or workflow notes into a Gas City
+pack.
+
+This formula is for pack authors who need a repeatable way to turn source
+material into pack artifacts without dumping everything into one prompt. It
+classifies source material into skills, template fragments, assets, commands,
+agents, and formulas, then validates the resulting pack surface.
+"""
+formula = "mol-packer-convert-repo-to-pack"
+version = 1
+
+[vars]
+[vars.source_path]
+description = "Path or URL for the source repository, tutorial, or notes."
+required = true
+
+[vars.pack_name]
+description = "New or existing pack directory/name to create or update."
+required = true
+
+[vars.target_rig]
+description = "Optional rig where the pack should be imported for live checks."
+default = ""
+
+[vars.primary_agent]
+description = "Optional primary agent to render with gc prime --strict."
+default = ""
+
+[vars.primary_formula]
+description = "Optional primary formula to compile with gc formula show."
+default = ""
+
+[vars.test_command]
+description = "Optional focused test command for the converted pack."
+default = ""
+
+[[steps]]
+id = "inventory"
+title = "Inventory source material"
+description = """
+Inspect the source without copying it wholesale into prompts.
+
+```bash
+test -n "{{source_path}}"
+find "{{source_path}}" -maxdepth 3 -type f | sort
+```
+
+Classify each source item:
+
+- procedures, guardrails, and model-facing workflow knowledge -> `skills/`
+- repeated role or prompt sections -> `template-fragments/`
+- scripts, examples, fixtures, generated files, and static data -> `assets/`
+- direct operator entry points -> `commands/`
+- multi-step operational workflows -> `formulas/`
+- runtime roles -> `agents/`
+
+Exit criteria:
+
+- source inventory is understood
+- conversion scope is small enough for one pack iteration
+"""
+
+[[steps]]
+id = "design-pack-surface"
+title = "Design the pack surface"
+needs = ["inventory"]
+description = """
+Decide the minimal pack surface before writing files.
+
+Required decisions:
+
+1. pack purpose and short `pack.toml` description
+2. agent templates and whether each is always-on, on-demand named, or
+   polecat-style pool capacity in `agent.toml`
+3. skills and any reference files they route to
+4. template fragments shared by agents
+5. formulas needed for validation, import, live test, release, or core workflow
+6. commands needed for operator ergonomics
+7. assets and fixtures needed by commands, formulas, or tests
+
+Exit criteria:
+
+- each source item has one artifact destination
+- no large tutorial or repo dump is embedded directly in an agent prompt
+"""
+
+[[steps]]
+id = "scaffold"
+title = "Scaffold or update pack files"
+needs = ["design-pack-surface"]
+description = """
+Create the pack skeleton using schema 2 and existing pack naming conventions.
+
+Minimum shape:
+
+```text
+{{pack_name}}/pack.toml
+{{pack_name}}/README.md
+{{pack_name}}/skills/<skill>/SKILL.md
+{{pack_name}}/formulas/mol-{{pack_name}}-validate.toml
+{{pack_name}}/tests/
+```
+
+Add agents, template fragments, commands, and assets only when the design step
+requires them.
+
+Exit criteria:
+
+- pack files exist
+- generated names are stable and specific
+"""
+
+[[steps]]
+id = "write-guidance"
+title = "Write skills, prompts, and references"
+needs = ["scaffold"]
+description = """
+Move source knowledge into the right model-facing artifacts.
+
+Guidelines:
+
+- skills should explain when to use the capability and the workflow to follow
+- template fragments should be reusable prompt sections, not one-off docs
+- long tutorial excerpts should live in references or assets and be routed from
+  the skill
+- assets should hold executable or static content that prompts should not inline
+
+Exit criteria:
+
+- skills are concise and actionable
+- prompts render through fragments instead of duplicating large blocks
+"""
+
+[[steps]]
+id = "write-workflows"
+title = "Write formulas and commands"
+needs = ["scaffold"]
+description = """
+Turn repeatable multi-step work into formulas and direct operator actions into
+commands.
+
+Suggested formulas:
+
+```text
+mol-{{pack_name}}-validate
+mol-{{pack_name}}-import-local
+mol-{{pack_name}}-live-city-test
+mol-{{pack_name}}-release
+```
+
+Use `gc formula show` for compile checks. Use `gc formula cook` only when the
+test intentionally creates beads.
+
+Exit criteria:
+
+- formulas have clear vars, steps, needs, and exit criteria
+- commands are script-backed and narrow
+"""
+
+[[steps]]
+id = "validate"
+title = "Validate the converted pack"
+needs = ["write-guidance", "write-workflows"]
+description = """
+Run focused validation.
+
+```bash
+gc lint "{{pack_name}}"
+```
+
+If `{{primary_agent}}` is non-empty:
+
+```bash
+gc prime "{{primary_agent}}" --strict
+```
+
+If `{{primary_formula}}` is non-empty:
+
+```bash
+gc formula show "{{primary_formula}}"
+```
+
+If `{{test_command}}` is non-empty:
+
+```bash
+{{test_command}}
+```
+
+Exit criteria:
+
+- lint passes
+- requested prompt/formula/test checks pass or failures are recorded
+"""
+
+[[steps]]
+id = "live-import-plan"
+title = "Plan optional live import"
+needs = ["validate"]
+description = """
+If `{{target_rig}}` is empty, record that live import was skipped.
+
+Otherwise import the pack into the target rig and verify the live surface:
+
+```bash
+gc import add <pack-source> --name "{{pack_name}}" --rig "{{target_rig}}"
+gc import install
+gc import check
+gc prime "{{target_rig}}/{{primary_agent}}" --strict
+```
+
+For published pack releases, prefer a dereferenceable GitHub tree URL plus
+`--version sha:<commit>` so the live city is reproducible.
+
+Exit criteria:
+
+- live import is verified or deliberately deferred
+"""

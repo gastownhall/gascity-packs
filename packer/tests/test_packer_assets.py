@@ -25,11 +25,29 @@ class PackerAssetTests(unittest.TestCase):
         self.assertEqual(
             formulas,
             {
+                "mol-packer-convert-repo-to-pack.toml": "mol-packer-convert-repo-to-pack",
                 "mol-packer-import-local-pack.toml": "mol-packer-import-local-pack",
                 "mol-packer-live-city-test.toml": "mol-packer-live-city-test",
                 "mol-packer-validate.toml": "mol-packer-validate",
             },
         )
+
+    def test_conversion_formula_captures_artifact_decisions(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        formula = root / "formulas" / "mol-packer-convert-repo-to-pack.toml"
+        data = tomllib.loads(formula.read_text(encoding="utf-8"))
+        text = formula.read_text(encoding="utf-8")
+
+        self.assertEqual(data["formula"], "mol-packer-convert-repo-to-pack")
+        for term in [
+            "skills/",
+            "template-fragments/",
+            "assets/",
+            "commands/",
+            "formulas/",
+            "agents/",
+        ]:
+            self.assertIn(term, text)
 
     def test_command_script_is_executable(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
