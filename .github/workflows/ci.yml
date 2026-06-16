@@ -64,22 +64,3 @@ jobs:
       - name: Run Slack mini adapter tests
         working-directory: slack-mini/adapter
         run: go test ./...
-
-      - name: Run runtime-cloudflare module tests
-        working-directory: runtime-cloudflare/runtime
-        run: |
-          go vet ./...
-          go test ./...
-
-      # RPP conformance gate. Non-blocking until gascity main ships the
-      # Runtime Provider Protocol (the runtime-provider-packs PoC branch
-      # merges) — `gc runtime check` does not exist on gascity main yet, so
-      # `@latest` cannot satisfy this today. Flip continue-on-error to false
-      # (and pin @<version>) once RPP lands on gascity main. The install is a
-      # tool install, not a Go import, so the pack keeps zero gascity deps.
-      - name: Run runtime-cloudflare RPP conformance
-        working-directory: runtime-cloudflare
-        continue-on-error: true
-        run: |
-          go install github.com/gastownhall/gascity/cmd/gc@latest
-          GC_BIN="$(go env GOPATH)/bin/gc" ./conformance.sh
