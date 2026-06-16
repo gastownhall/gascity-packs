@@ -12,9 +12,22 @@ Close with `gc.outcome=pass`,
 `code_review.simplicity_verdict=approve|iterate`, and
 `code_review.output_path=<simplicity review report path>`.
 
+Use explicit close metadata so the review loop can detect the lane result:
+
+```bash
+bd update "$CLAIMED_BEAD_ID" \
+  --set-metadata 'gc.outcome=pass' \
+  --set-metadata 'code_review.simplicity_verdict=approve' \
+  --set-metadata 'code_review.output_path=<simplicity review report path>'
+bd close "$CLAIMED_BEAD_ID" --reason 'Build-basic simplicity review approved.'
+```
+
+If you find required fixes, set
+`code_review.simplicity_verdict=iterate` instead of `approve` and explain the
+smallest required fix in the report and close reason.
+
 Do not set `code_review.verdict` or `code_review.report_path`; synthesis and
 fix application own the final review verdict.
 
 Do not invoke provider-native subagents. You are the starter factory simplicity
 review lane.
-

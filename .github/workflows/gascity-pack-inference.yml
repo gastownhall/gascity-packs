@@ -1,0 +1,177 @@
+name: Supported Pack Inference
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - gascity/**
+      - superpowers/**
+      - compound-engineering/**
+      - gstack/**
+      - bmad/**
+      - gastown/**
+      - scripts/gascity_pack_inference_gate.py
+      - tests/test_gascity_pack_inference_gate.py
+      - .github/workflows/gascity-pack-inference.yml
+      - .github/workflows/supported-pack-nightly.yml
+  workflow_dispatch:
+    inputs:
+      gascity_ref:
+        description: "Gas City module ref/version to install, such as latest, main, or v1.2.1."
+        required: false
+        default: latest
+      gascity_setup_ref:
+        description: "Gas City repo ref used only for shared CI installer scripts."
+        required: false
+        default: main
+      pack_ref:
+        description: "Optional gascity-packs git ref to check out before testing."
+        required: false
+        default: ""
+      timeout:
+        description: "Per-gate workflow completion timeout."
+        required: false
+        default: 75m
+      gate:
+        description: "Inference gate to run."
+        required: false
+        type: choice
+        options:
+          - all
+          - review
+          - build
+          - build-basic
+          - gastown-orchestration
+        default: all
+      pack:
+        description: "Supported pack or group to exercise."
+        required: false
+        type: choice
+        options:
+          - all-supported
+          - methodology
+          - gascity
+          - superpowers
+          - compound-engineering
+          - gstack
+          - bmad
+          - gastown
+        default: all-supported
+  repository_dispatch:
+    types:
+      - gascity-pack-inference
+      - gascity-release-inference
+      - pack-release-inference
+
+permissions:
+  contents: read
+
+env:
+  DOLT_VERSION: "2.1.0"
+  BD_VERSION: "v1.0.4"
+  CLAUDE_VERSION: "2.1.123"
+  ANTHROPIC_BASE_URL: https://ollama.com
+  ANTHROPIC_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+  ANTHROPIC_AUTH_TOKEN: ${{ secrets.OLLAMA_API_KEY }}
+  OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_OLLAMA_HAIKU_MODEL }}
+  ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_OLLAMA_SONNET_MODEL }}
+  ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_OLLAMA_OPUS_MODEL }}
+  CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_OLLAMA_SUBAGENT_MODEL }}
+  CLAUDE_CODE_EFFORT_LEVEL: auto
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+
+jobs:
+  supported-pack-formulas:
+    name: supported pack formula inference gates
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out gascity-packs
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.client_payload.pack_ref || github.event.inputs.pack_ref || github.ref }}
+
+      - name: Check out Gas City CI scripts
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gastownhall/gascity
+          path: .gascity-ci
+          ref: ${{ github.event.client_payload.gascity_setup_ref || github.event.inputs.gascity_setup_ref || 'main' }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: "1.25.10"
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y tmux jq
+
+      - name: Install Gas City test tools
+        run: |
+          .gascity-ci/.github/scripts/install-dolt-archive.sh "${DOLT_VERSION}" --cache
+          .gascity-ci/.github/scripts/install-bd-archive.sh "${BD_VERSION}" --cache
+          .gascity-ci/.github/scripts/install-claude-native.sh "${CLAUDE_VERSION}" --cache
+
+      - name: Install Python test dependencies
+        run: python3 -m pip install PyYAML pytest
+
+      - name: Install Gas City
+        env:
+          GASCITY_REF: ${{ github.event.client_payload.gascity_ref || github.event.inputs.gascity_ref || 'latest' }}
+        run: |
+          go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_REF}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          "$(go env GOPATH)/bin/gc" version
+
+      - name: Run inference runner unit tests
+        run: python3 -m pytest tests/test_gascity_pack_inference_gate.py -q
+
+      - name: Validate Ollama Claude configuration
+        run: |
+          test -n "$OLLAMA_API_KEY" || { echo "Missing OLLAMA_API_KEY GitHub secret" >&2; exit 1; }
+          test -n "$ANTHROPIC_API_KEY" || { echo "ANTHROPIC_API_KEY resolved empty" >&2; exit 1; }
+          test -n "$ANTHROPIC_AUTH_TOKEN" || { echo "ANTHROPIC_AUTH_TOKEN resolved empty" >&2; exit 1; }
+          test -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" || { echo "ANTHROPIC_DEFAULT_HAIKU_MODEL resolved empty" >&2; exit 1; }
+          test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo "ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty" >&2; exit 1; }
+          test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo "ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty" >&2; exit 1; }
+          test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo "CLAUDE_CODE_SUBAGENT_MODEL resolved empty" >&2; exit 1; }
+          printf 'ANTHROPIC_BASE_URL=%s\n' "$ANTHROPIC_BASE_URL"
+          printf 'ANTHROPIC_DEFAULT_HAIKU_MODEL=%s\n' "$ANTHROPIC_DEFAULT_HAIKU_MODEL"
+          printf 'ANTHROPIC_DEFAULT_SONNET_MODEL=%s\n' "$ANTHROPIC_DEFAULT_SONNET_MODEL"
+          printf 'ANTHROPIC_DEFAULT_OPUS_MODEL=%s\n' "$ANTHROPIC_DEFAULT_OPUS_MODEL"
+          printf 'CLAUDE_CODE_SUBAGENT_MODEL=%s\n' "$CLAUDE_CODE_SUBAGENT_MODEL"
+
+      - name: Run supported pack inference gates
+        env:
+          GATE_TIMEOUT: ${{ github.event.client_payload.timeout || github.event.inputs.timeout || '75m' }}
+          GATE: ${{ github.event.client_payload.gate || github.event.inputs.gate || 'all' }}
+          PACK: ${{ github.event.client_payload.pack || github.event.inputs.pack || 'all-supported' }}
+        run: |
+          python3 scripts/gascity_pack_inference_gate.py \
+            --gc-bin "$(go env GOPATH)/bin/gc" \
+            --workdir "$RUNNER_TEMP/gascity-pack-inference" \
+            --pack "${PACK:-all-supported}" \
+            --gate "${GATE:-all}" \
+            --timeout "${GATE_TIMEOUT:-75m}"
+
+      - name: Upload inference gate diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gascity-pack-inference
+          path: ${{ runner.temp }}/gascity-pack-inference
+          if-no-files-found: ignore
+          include-hidden-files: true

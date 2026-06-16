@@ -141,7 +141,7 @@ this ledger against the `FORMULAS` constant and formula directory.
 
 | ID | Formula | Type | Required behavior | Evidence |
 | --- | --- | --- | --- | --- |
-| GC-BF-008 | `build-basic` | Cataloged concrete default | Extends `build-base`, preserves the full stage sequence, declares methodology metadata, uses built-in Gas City planning/decomposition/implementation helpers, exposes stable path-shadow overrides, validates artifacts through shared checks, and expands review through `build-basic-review`. | `build-basic.formula.toml`; `../tests/test_formula_assets.py`; `../tests/test_formula_assets.py::FormulaAssetTests::test_producer_stages_gate_artifacts_with_bounded_repair` |
+| GC-BF-008 | `build-basic` | Cataloged concrete default | Extends `build-base`, preserves the full stage sequence, declares methodology metadata, uses built-in Gas City planning/decomposition/implementation helpers, writes a validated canonical implementation summary before review, exposes stable path-shadow overrides, validates artifacts through shared checks, and expands review through `build-basic-review`. | `build-basic.formula.toml`; `../tests/test_formula_assets.py`; `../tests/test_formula_assets.py::FormulaAssetTests::test_producer_stages_gate_artifacts_with_bounded_repair` |
 | GC-BF-009 | `build-basic-review` | Expansion review loop | Runs starter review fanout across acceptance/correctness, test evidence, and simplicity/maintainability lanes, provides one override file per lane, synthesizes findings, applies required fixes, validates review/fix artifacts, and loops until approved, blocked, or attempts exhaust. | `build-basic-review.formula.toml`; `../tests/test_formula_assets.py` |
 
 ### Continuation Entrypoints

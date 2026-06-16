@@ -1,0 +1,92 @@
+name: Pack Release Compatibility
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - registry.toml
+      - scripts/pack_release_compat.py
+      - tests/test_pack_release_compat.py
+      - .github/workflows/pack-release-compatibility.yml
+      - "*/pack.toml"
+  push:
+    branches: [main]
+    paths:
+      - registry.toml
+      - scripts/pack_release_compat.py
+      - tests/test_pack_release_compat.py
+      - .github/workflows/pack-release-compatibility.yml
+      - "*/pack.toml"
+  schedule:
+    - cron: "23 8 * * *"
+  workflow_dispatch:
+    inputs:
+      gascity_ref:
+        description: "Gas City module ref/version to install, such as latest, main, or v0.3.0."
+        required: false
+        default: latest
+      registry_ref:
+        description: "Optional gascity-packs git ref to check out before testing."
+        required: false
+        default: ""
+      pack:
+        description: "Optional registry pack name to test instead of all latest releases."
+        required: false
+        default: ""
+      exercise:
+        description: "Which compatibility shape to run."
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - combined
+          - each
+  repository_dispatch:
+    types:
+      - gascity-release-compatibility
+      - pack-release-compatibility
+
+permissions:
+  contents: read
+
+jobs:
+  latest-pack-releases:
+    name: Latest pack releases
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.client_payload.registry_ref || github.event.inputs.registry_ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: "1.22"
+
+      - name: Install Gas City
+        env:
+          GASCITY_REF: ${{ github.event.client_payload.gascity_ref || github.event.inputs.gascity_ref || 'latest' }}
+        run: |
+          go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_REF}"
+          "$(go env GOPATH)/bin/gc" version
+
+      - name: Run pack release compatibility smoke
+        env:
+          EXERCISE: ${{ github.event.client_payload.exercise || github.event.inputs.exercise || 'both' }}
+          PACK: ${{ github.event.client_payload.pack || github.event.inputs.pack }}
+        run: |
+          args=(--gc-bin "$(go env GOPATH)/bin/gc" --exercise "${EXERCISE:-both}")
+          if [ -n "${PACK:-}" ]; then
+            args+=(--pack "$PACK")
+          fi
+          python3 scripts/pack_release_compat.py "${args[@]}"

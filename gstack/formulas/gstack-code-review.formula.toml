@@ -18,6 +18,10 @@ default = "gstack.implementer"
 description = "Review authority: report, agent, or interactive."
 default = "interactive"
 
+[vars.artifact_path_keys]
+description = "Comma-separated artifact metadata keys accepted by the terminal review report validator."
+default = "gc.build.code_review_report_path,gc.build.review_report_path,gc.var.report_path"
+
 [[template]]
 id = "{target}.setup-gstack-code-review"
 title = "Prepare gstack code review"
@@ -79,6 +83,7 @@ description_file = "../assets/workflows/gstack-code-review/{target}.synthesize-c
 id = "{target}.apply-review-findings"
 title = "Apply gstack review findings"
 needs = ["{target}.synthesize-code-review"]
+condition = "{{review_mode}} != report"
 metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group" = "gstack-review-fixes" }
 description_file = "../assets/workflows/gstack-code-review/{target}.apply-review-findings.md"
 
@@ -86,5 +91,13 @@ description_file = "../assets/workflows/gstack-code-review/{target}.apply-review
 id = "{target}"
 title = "Finalize gstack code review"
 needs = ["{target}.gstack-code-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
 description_file = "../assets/workflows/gstack-code-review/{target}.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

@@ -121,19 +121,11 @@ single_lane = true
 [[steps]]
 id = "review"
 title = "Compound code review"
-needs = ["implement", "implement-same-session"]
+needs = ["summarize-implementation"]
 metadata = { "gc.run_target" = "compound-engineering.ce-code-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
 expand = "compound-code-review"
-expand_vars = { implementation_target = "{{implementation_target}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
 description_file = "../assets/workflows/compound-build/review.md"
-
-[steps.check]
-max_attempts = 3
-
-[steps.check.check]
-mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
-timeout = "5m"
 
 [[steps]]
 id = "finalize"
@@ -142,12 +134,3 @@ needs = ["review"]
 metadata = { "gc.run_target" = "compound-engineering.ce-compound", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
 expand = "compound-resolution"
 description_file = "../assets/workflows/compound-build/finalize.md"
-
-[steps.check]
-max_attempts = 3
-
-[steps.check.check]
-mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
-timeout = "5m"
-

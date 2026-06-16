@@ -20,14 +20,5 @@ title = "Run Compound Engineering review"
 needs = ["validate-context"]
 metadata = { "gc.run_target" = "compound-engineering.ce-code-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path,gc.var.report_path" }
 expand = "compound-code-review"
-expand_vars = { implementation_target = "{{implementation_target}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}" }
 description_file = "../assets/workflows/compound-review/write-report.md"
-
-[steps.check]
-max_attempts = 3
-
-[steps.check.check]
-mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
-timeout = "5m"
-

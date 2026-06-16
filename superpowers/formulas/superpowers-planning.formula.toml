@@ -22,14 +22,6 @@ expand = "superpowers-brainstorming"
 expand_vars = { brainstorming_approval_mode = "{{brainstorming_approval_mode}}" }
 description_file = "../assets/workflows/superpowers-planning/requirements.md"
 
-[steps.check]
-max_attempts = 3
-
-[steps.check.check]
-mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
-timeout = "5m"
-
 [[steps]]
 id = "plan"
 title = "Superpowers write plan"

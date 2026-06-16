@@ -19,6 +19,15 @@ Do not copy the plan checkbox steps into the implementation bead. The drained
 Superpowers implementation workflow supplies that procedure for each convoy
 member.
 
+Hard scoping rule: do not create implementation beads for Superpowers build
+lifecycle phases. Skip or reject task sections whose title or scope is prepare,
+requirements, brainstorming, written spec, plan, plan-review, decompose,
+implementation workflow plumbing, review, finalization, publish, or artifact
+validation. Those phases are already upstream or downstream formula steps. If a
+plan accidentally includes lifecycle phases as `### Task N` sections, create
+beads only for actual source-code work from the original input task or convoy
+member and record the skipped lifecycle sections in the decomposition artifact.
+
 Create or update the implementation convoy with those beads and dependency
 edges. Record the implementation convoy ID on the workflow root bead as
 `gc.input_convoy_id=<implementation-convoy-id>` with

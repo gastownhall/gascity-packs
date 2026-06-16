@@ -75,6 +75,53 @@ def resolved_build_formula(pack_name: str, expected: dict) -> dict:
     )
 
 
+def expansion_default_vars(formula: dict) -> dict[str, str]:
+    defaults: dict[str, str] = {}
+    for name, definition in formula.get("vars", {}).items():
+        if isinstance(definition, dict) and "default" in definition:
+            defaults[name] = definition["default"]
+    return defaults
+
+
+def render_expansion_placeholders(value: str, variables: dict[str, str]) -> str:
+    for name, variable_value in variables.items():
+        value = value.replace(f"{{{name}}}", variable_value)
+    return value
+
+
+def artifact_validation_node(pack_name: str, step: dict) -> dict:
+    if "check" in step:
+        return step
+    expansion = step.get("expand")
+    if not expansion:
+        return step
+
+    formula = base_contract.resolve_formula_from_dirs(
+        pack_formula_dirs(pack_name),
+        expansion,
+    )
+    terminal = next(
+        (
+            template
+            for template in formula.get("template", [])
+            if template.get("id") == "{target}"
+        ),
+        None,
+    )
+    if terminal is None:
+        return step
+
+    variables = expansion_default_vars(formula)
+    variables.update(step.get("expand_vars", {}))
+    rendered = dict(terminal)
+    metadata = dict(terminal.get("metadata", {}))
+    rendered["metadata"] = {
+        key: render_expansion_placeholders(value, variables)
+        for key, value in metadata.items()
+    }
+    return rendered
+
+
 def pack_methodology_metadata(pack_name: str, expected: dict) -> dict:
     data = base_contract.load_formula(PACKS_ROOT / pack_name, expected["formula"])
     methodology = data.get("metadata", {}).get("gc", {}).get("methodology")
@@ -378,6 +425,13 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
             "finalize": base_contract.FINAL_REPORT_GATE,
         }
         for pack_name, expected in DERIVED_PACKS.items():
+            review_report_gate = base_contract.REVIEW_REPORT_GATE
+            if pack_name in {"superpowers", "compound-engineering", "gstack", "bmad"}:
+                review_report_gate = (
+                    base_contract.REVIEW_REPORT_GATE[0],
+                    "gc.build.code_review_report_path,"
+                    + base_contract.REVIEW_REPORT_GATE[1],
+                )
             formula_gates = {
                 expected["formula"]: build_gates,
                 expected["planning_formula"]: {
@@ -388,7 +442,7 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
                     "decompose": base_contract.DECOMPOSITION_GATE,
                 },
                 expected["code_review_entry_formula"]: {
-                    "write-report": base_contract.REVIEW_REPORT_GATE,
+                    "write-report": review_report_gate,
                 },
             }
             if pack_name != "bmad":
@@ -406,7 +460,7 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
                 for step_id, (schema, path_keys) in gates.items():
                     if step_id not in steps:
                         continue
-                    step = steps[step_id]
+                    step = artifact_validation_node(pack_name, steps[step_id])
                     with self.subTest(
                         pack=pack_name, formula=formula_name, step=step_id
                     ):

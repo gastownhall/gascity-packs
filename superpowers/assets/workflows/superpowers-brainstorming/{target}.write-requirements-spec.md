@@ -33,10 +33,18 @@ metadata. If the target repo can safely mirror a design doc under
 `docs/superpowers/specs/`, record that mirror path in the artifact, but do not
 commit from this lane unless the routed bead explicitly asks for it.
 
-Close with `gc.outcome=pass`,
-`design_review.output_path=<requirements artifact path>`, and metadata noting
-that the self-review passed. Do not set `design_review.verdict`; the approval
-lane owns the loop verdict.
+Before closing, update the exact claimed bead id with the lane metadata:
+
+```bash
+bd update "$CLAIMED_BEAD_ID" \
+  --set-metadata 'gc.outcome=pass' \
+  --set-metadata 'design_review.output_path=<requirements artifact path>' \
+  --set-metadata 'design_review.self_review_passed=true'
+bd close "$CLAIMED_BEAD_ID" --reason 'Superpowers requirements spec written and self-reviewed.'
+```
+
+Do not pass `--metadata` or `--set-metadata` to `bd close`. Do not set
+`design_review.verdict`; the approval lane owns the loop verdict.
 
 Do not invoke provider-native subagents or upstream plugin runtime commands.
 This Gas City lane owns the written spec pass.

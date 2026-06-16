@@ -1,0 +1,305 @@
+name: Supported Pack Nightly
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - gascity/**
+      - superpowers/**
+      - compound-engineering/**
+      - gstack/**
+      - bmad/**
+      - gastown/**
+      - scripts/gascity_pack_inference_gate.py
+      - tests/test_gascity_pack_inference_gate.py
+      - .github/workflows/gascity-pack-inference.yml
+      - .github/workflows/supported-pack-nightly.yml
+  schedule:
+    - cron: "47 7 * * *"
+  workflow_dispatch:
+    inputs:
+      gascity_ref:
+        description: "Gas City module ref/version to install, such as main, latest, or v1.2.1."
+        required: false
+        default: main
+      gascity_setup_ref:
+        description: "Gas City repo ref used only for shared CI installer scripts."
+        required: false
+        default: main
+      pack_ref:
+        description: "Optional gascity-packs git ref to check out before testing."
+        required: false
+        default: ""
+      timeout:
+        description: "Optional override for every pack gate timeout, such as 90m."
+        required: false
+        default: ""
+      gate:
+        description: "Inference gate to run for manual subset checks."
+        required: false
+        type: choice
+        options:
+          - all
+          - review
+          - build
+          - build-basic
+          - gastown-orchestration
+        default: all
+      pack:
+        description: "Supported pack or group to exercise for manual subset checks."
+        required: false
+        type: choice
+        options:
+          - all-supported
+          - methodology
+          - gascity
+          - superpowers
+          - compound-engineering
+          - gstack
+          - bmad
+          - gastown
+        default: all-supported
+
+permissions:
+  contents: read
+
+env:
+  DOLT_VERSION: "2.1.0"
+  BD_VERSION: "v1.0.4"
+  CLAUDE_VERSION: "2.1.123"
+
+jobs:
+  static-contracts:
+    name: static pack flow contracts
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - name: Check out gascity-packs
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.pack_ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install Python test dependencies
+        run: python3 -m pip install PyYAML pytest
+
+      - name: Run supported-pack contract tests
+        run: python3 -m pytest tests/test_gascity_pack_inference_gate.py gascity/tests/test_formula_assets.py -q
+
+  inference:
+    name: ${{ matrix.pack }} / ${{ matrix.gate }}
+    needs: static-contracts
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - pack: gascity
+            gate: review
+            timeout_minutes: 45
+            gate_timeout: 30m
+          - pack: gascity
+            gate: build-basic
+            timeout_minutes: 110
+            gate_timeout: 90m
+          - pack: superpowers
+            gate: review
+            timeout_minutes: 60
+            gate_timeout: 45m
+          - pack: superpowers
+            gate: build
+            timeout_minutes: 120
+            gate_timeout: 100m
+          - pack: compound-engineering
+            gate: review
+            timeout_minutes: 60
+            gate_timeout: 45m
+          - pack: compound-engineering
+            gate: build
+            timeout_minutes: 120
+            gate_timeout: 100m
+          - pack: gstack
+            gate: review
+            timeout_minutes: 75
+            gate_timeout: 60m
+          - pack: gstack
+            gate: build
+            timeout_minutes: 150
+            gate_timeout: 130m
+          - pack: bmad
+            gate: review
+            timeout_minutes: 60
+            gate_timeout: 45m
+          - pack: bmad
+            gate: build
+            timeout_minutes: 120
+            gate_timeout: 100m
+          - pack: gastown
+            gate: gastown-orchestration
+            timeout_minutes: 120
+            gate_timeout: 110m
+    env:
+      ANTHROPIC_BASE_URL: https://ollama.com
+      ANTHROPIC_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.OLLAMA_API_KEY }}
+      OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_OLLAMA_HAIKU_MODEL }}
+      ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_OLLAMA_SONNET_MODEL }}
+      ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_OLLAMA_OPUS_MODEL }}
+      CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_OLLAMA_SUBAGENT_MODEL }}
+      CLAUDE_CODE_EFFORT_LEVEL: auto
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Decide manual subset
+        id: subset
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PACK: ${{ github.event.inputs.pack }}
+          INPUT_GATE: ${{ github.event.inputs.gate }}
+          MATRIX_PACK: ${{ matrix.pack }}
+          MATRIX_GATE: ${{ matrix.gate }}
+        run: |
+          run_gate=false
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            run_gate=true
+          else
+            case "${INPUT_PACK:-all-supported}" in
+              ""|all-supported)
+                pack_match=true
+                ;;
+              methodology)
+                if [ "$MATRIX_PACK" != "gastown" ]; then
+                  pack_match=true
+                else
+                  pack_match=false
+                fi
+                ;;
+              "$MATRIX_PACK")
+                pack_match=true
+                ;;
+              *)
+                pack_match=false
+                ;;
+            esac
+
+            case "${INPUT_GATE:-all}" in
+              ""|all)
+                gate_match=true
+                ;;
+              "$MATRIX_GATE")
+                gate_match=true
+                ;;
+              *)
+                gate_match=false
+                ;;
+            esac
+
+            if [ "$pack_match" = true ] && [ "$gate_match" = true ]; then
+              run_gate=true
+            fi
+          fi
+
+          echo "run_gate=$run_gate" >> "$GITHUB_OUTPUT"
+          echo "manual subset decision: pack=$MATRIX_PACK gate=$MATRIX_GATE run_gate=$run_gate"
+
+      - name: Check out gascity-packs
+        if: steps.subset.outputs.run_gate == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.pack_ref || github.ref }}
+
+      - name: Check out Gas City CI scripts
+        if: steps.subset.outputs.run_gate == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gastownhall/gascity
+          path: .gascity-ci
+          ref: ${{ github.event.inputs.gascity_setup_ref || 'main' }}
+
+      - name: Set up Python
+        if: steps.subset.outputs.run_gate == 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        if: steps.subset.outputs.run_gate == 'true'
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: "1.25.10"
+
+      - name: Set up Node
+        if: steps.subset.outputs.run_gate == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+
+      - name: Install system dependencies
+        if: steps.subset.outputs.run_gate == 'true'
+        run: sudo apt-get update && sudo apt-get install -y tmux jq
+
+      - name: Install Gas City test tools
+        if: steps.subset.outputs.run_gate == 'true'
+        run: |
+          .gascity-ci/.github/scripts/install-dolt-archive.sh "${DOLT_VERSION}" --cache
+          .gascity-ci/.github/scripts/install-bd-archive.sh "${BD_VERSION}" --cache
+          .gascity-ci/.github/scripts/install-claude-native.sh "${CLAUDE_VERSION}" --cache
+
+      - name: Install Python test dependencies
+        if: steps.subset.outputs.run_gate == 'true'
+        run: python3 -m pip install PyYAML pytest
+
+      - name: Install Gas City
+        if: steps.subset.outputs.run_gate == 'true'
+        env:
+          GASCITY_REF: ${{ github.event.inputs.gascity_ref || 'main' }}
+        run: |
+          go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_REF}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          "$(go env GOPATH)/bin/gc" version
+
+      - name: Validate Ollama Claude configuration
+        if: steps.subset.outputs.run_gate == 'true'
+        run: |
+          test -n "$OLLAMA_API_KEY" || { echo "Missing OLLAMA_API_KEY GitHub secret" >&2; exit 1; }
+          test -n "$ANTHROPIC_API_KEY" || { echo "ANTHROPIC_API_KEY resolved empty" >&2; exit 1; }
+          test -n "$ANTHROPIC_AUTH_TOKEN" || { echo "ANTHROPIC_AUTH_TOKEN resolved empty" >&2; exit 1; }
+          test -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" || { echo "ANTHROPIC_DEFAULT_HAIKU_MODEL resolved empty" >&2; exit 1; }
+          test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo "ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty" >&2; exit 1; }
+          test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo "ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty" >&2; exit 1; }
+          test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo "CLAUDE_CODE_SUBAGENT_MODEL resolved empty" >&2; exit 1; }
+          printf 'ANTHROPIC_BASE_URL=%s\n' "$ANTHROPIC_BASE_URL"
+          printf 'ANTHROPIC_DEFAULT_HAIKU_MODEL=%s\n' "$ANTHROPIC_DEFAULT_HAIKU_MODEL"
+          printf 'ANTHROPIC_DEFAULT_SONNET_MODEL=%s\n' "$ANTHROPIC_DEFAULT_SONNET_MODEL"
+          printf 'ANTHROPIC_DEFAULT_OPUS_MODEL=%s\n' "$ANTHROPIC_DEFAULT_OPUS_MODEL"
+          printf 'CLAUDE_CODE_SUBAGENT_MODEL=%s\n' "$CLAUDE_CODE_SUBAGENT_MODEL"
+
+      - name: Run supported-pack nightly inference gate
+        if: steps.subset.outputs.run_gate == 'true'
+        env:
+          GATE_TIMEOUT: ${{ github.event.inputs.timeout || matrix.gate_timeout }}
+        run: |
+          python3 scripts/gascity_pack_inference_gate.py \
+            --gc-bin "$(go env GOPATH)/bin/gc" \
+            --workdir "$RUNNER_TEMP/supported-pack-nightly/${{ matrix.pack }}" \
+            --pack "${{ matrix.pack }}" \
+            --gate "${{ matrix.gate }}" \
+            --timeout "$GATE_TIMEOUT"
+
+      - name: Upload inference gate diagnostics
+        if: always() && steps.subset.outputs.run_gate == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: supported-pack-nightly-${{ matrix.pack }}-${{ matrix.gate }}
+          path: ${{ runner.temp }}/supported-pack-nightly/${{ matrix.pack }}
+          if-no-files-found: ignore
+          include-hidden-files: true

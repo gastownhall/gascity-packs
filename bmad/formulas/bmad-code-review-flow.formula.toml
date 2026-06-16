@@ -14,6 +14,14 @@ contract = "graph.v2"
 description = "BMAD task implementation role used for the review-fix lane."
 default = "bmad.story-implementer"
 
+[vars.artifact_path_keys]
+description = "Comma-separated artifact metadata keys accepted by the terminal review report validator."
+default = "gc.build.code_review_report_path,gc.build.review_report_path,gc.var.report_path"
+
+[vars.review_mode]
+description = "Review authority: report, agent, or interactive."
+default = "agent"
+
 [[template]]
 id = "{target}.gather-bmad-review-context"
 title = "Gather BMAD review context"
@@ -75,6 +83,7 @@ description_file = "../assets/workflows/bmad-code-review-flow/{target}.synthesiz
 id = "{target}.apply-bmad-review-findings"
 title = "Apply BMAD code review findings"
 needs = ["{target}.synthesize-bmad-review"]
+condition = "{{review_mode}} != report"
 metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group" = "bmad-code-review-fixes" }
 description_file = "../assets/workflows/bmad-code-review-flow/{target}.apply-bmad-review-findings.md"
 
@@ -82,5 +91,13 @@ description_file = "../assets/workflows/bmad-code-review-flow/{target}.apply-bma
 id = "{target}"
 title = "Finalize BMAD code review"
 needs = ["{target}.bmad-code-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
 description_file = "../assets/workflows/bmad-code-review-flow/{target}.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

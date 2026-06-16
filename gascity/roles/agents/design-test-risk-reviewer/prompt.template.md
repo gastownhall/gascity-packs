@@ -177,6 +177,21 @@ Close it with the requested `gc.outcome` metadata. If the bead does not specify
 a failure contract, mark an unrecoverable failure with `gc.outcome=fail` and a
 concise `gc.failure_class`/reason before closing it.
 
+Never use a bare `bd close` for a bead that asks for close metadata. First set
+the requested metadata on the claimed bead, then close the same bead id:
+
+```bash
+bd update "$GC_BEAD_ID" \
+  --set-metadata 'gc.outcome=pass' \
+  --set-metadata 'example.key=example-value'
+bd close "$GC_BEAD_ID"
+```
+
+Finding review issues, missing tests, or required follow-up is usually the
+bead's output, not a task execution failure. When a review bead asks for
+`gc.outcome=pass` plus verdict metadata, set `gc.outcome=pass` even when the
+verdict is `iterate`, `changes_required`, or similar.
+
 If later terminal commands do not inherit shell variables, use the explicit
 `CLAIMED_BEAD_ID`, `CLAIMED_ROOT_BEAD_ID`, and
 `CLAIMED_CONTINUATION_GROUP` printed by the claim command. Never run `bd

@@ -85,6 +85,7 @@ BUILD_BASE_STEPS = [
     "decompose",
     "implement",
     "implement-same-session",
+    "summarize-implementation",
     "review",
     "finalize",
     "publish",
@@ -238,6 +239,10 @@ REVIEW_REPORT_GATE = (
 FIX_LOOP_REVIEW_GATE = ("gc.build.review.v1", "gc.build.review_report_path")
 BUILD_REVIEW_GATE = ("gc.build.review.v1", "gc.build.review_report_path")
 FINAL_REPORT_GATE = ("gc.build.final-report.v1", "gc.build.final_report_path")
+ROOT_IMPLEMENTATION_SUMMARY_GATE = (
+    "gc.build.implementation-summary.v1",
+    "gc.build.implementation_summary_path",
+)
 ITEM_SUMMARY_GATE = (
     "gc.build.implementation-summary.v1",
     "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path",
@@ -253,6 +258,7 @@ BUILD_ARTIFACT_VALIDATION_GATES = {
     ("build-base", "requirements"): REQUIREMENTS_GATE,
     ("build-base", "plan"): PLAN_GATE,
     ("build-base", "decompose"): DECOMPOSITION_GATE,
+    ("build-base", "summarize-implementation"): ROOT_IMPLEMENTATION_SUMMARY_GATE,
     ("build-base", "review"): BUILD_REVIEW_GATE,
     ("build-base", "finalize"): FINAL_REPORT_GATE,
     ("planning-base", "requirements"): REQUIREMENTS_GATE,
@@ -364,6 +370,9 @@ THIRD_PARTY_BUILD_PACKS = {
             "review": "superpowers-code-review",
         },
         "review_expansion": "superpowers-code-review",
+        "code_review_entry_expand_vars": {
+            "artifact_path_keys": "gc.build.code_review_report_path,gc.build.review_report_path,gc.var.report_path",
+        },
         "gap_analysis_target": "superpowers.code-quality-reviewer",
         "review_fix_asset": "assets/workflows/superpowers-code-review/{target}.process-code-review.md",
         "prompt_assets": {
@@ -706,6 +715,9 @@ class FormulaAssetTests(unittest.TestCase):
             "gc runtime drain-ack",
             "gc.continuation_group",
             "gc.scope_role=teardown",
+            "Never use a bare `bd close` for a bead that asks for close metadata",
+            'bd update "$GC_BEAD_ID"',
+            "Finding review issues, missing tests, or required follow-up is usually the\nbead's output",
             "check for more routed work before draining",
             "running the same `GC_CLAIM` block again",
         ):
@@ -1340,7 +1352,20 @@ class FormulaAssetTests(unittest.TestCase):
                 "implementation_target": "{{implementation_target}}",
             },
         )
+        self.assertEqual(review_step["needs"], ["summarize-implementation"])
         self.assertNotIn("check", review_step)
+
+        summary_step = next(step for step in resolved["steps"] if step["id"] == "summarize-implementation")
+        self.assertEqual(summary_step["metadata"]["gc.run_target"], "gc.run-operator")
+        self.assertEqual(
+            summary_step["metadata"]["gc.build.artifact_schema"],
+            "gc.build.implementation-summary.v1",
+        )
+        self.assertEqual(
+            summary_step["metadata"]["gc.build.artifact_path_keys"],
+            "gc.build.implementation_summary_path",
+        )
+        self.assertEqual(summary_step["needs"], ["implement", "implement-same-session"])
         text = effective_formula_text(root, "build-basic")
         for fragment in (
             "generate-requirements",
@@ -1350,6 +1375,7 @@ class FormulaAssetTests(unittest.TestCase):
             "implementation summary path",
             "guided starter factory",
             "factory-run.md",
+            "summarize-implementation",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, text)
@@ -1419,6 +1445,14 @@ class FormulaAssetTests(unittest.TestCase):
             "starter factory",
             "three review lanes",
             "code_review.verdict=done|iterate",
+            "code_review.acceptance_verdict=approve",
+            "code_review.test_evidence_verdict=approve",
+            "code_review.simplicity_verdict=approve",
+            "bd update \"$CLAIMED_BEAD_ID\"",
+            "source anchor/worktree",
+            "launcher rig root may remain unchanged",
+            "not to the launcher rig root",
+            "normalized `gc.build.review.v1` artifact with `status: approved`",
             "Do not invoke provider-native subagents",
         ):
             with self.subTest(fragment=fragment):
@@ -1465,6 +1499,8 @@ class FormulaAssetTests(unittest.TestCase):
                     self.assertIn(fragment, text)
 
         finalize_text = (root / "assets/workflows/build-basic/finalize.md").read_text(encoding="utf-8")
+        publish_text = (root / "assets/workflows/build-basic/publish.md").read_text(encoding="utf-8")
+        summary_text = (root / "assets/workflows/build-base/summarize-implementation.md").read_text(encoding="utf-8")
         for fragment in (
             "factory-run.md",
             "methodology",
@@ -1474,14 +1510,40 @@ class FormulaAssetTests(unittest.TestCase):
             "`gc.build.implementation_summary_path`",
             "`implementation-summary.md`",
             "`gc.build.implementation-summary.v1`",
+            "source anchor/worktree",
+            "not a partial build",
+            "Use `status: approved`",
         ):
             with self.subTest(asset="finalize", fragment=fragment):
                 self.assertIn(fragment, finalize_text)
+        for fragment in (
+            "approved source anchor/worktree",
+            "Do not mark publish failed or downgrade the workflow",
+            "preserving the approved build outcome",
+            "Never set\n`gc.outcome=noop`",
+            "--set-metadata 'gc.outcome=pass'",
+            "--set-metadata 'gc.publish_outcome=noop'",
+            "--set-metadata 'gc.publish_mode=disabled'",
+        ):
+            with self.subTest(asset="publish", fragment=fragment):
+                self.assertIn(fragment, publish_text)
+        for fragment in (
+            "canonical build implementation summary",
+            "`gc.build.implementation_summary_path`",
+            "`implementation-summary.md`",
+            "`gc.build.implementation-summary.v1`",
+            "accepted requirement IDs",
+            "source anchor ids",
+            "per-item summary paths",
+        ):
+            with self.subTest(asset="summarize-implementation", fragment=fragment):
+                self.assertIn(fragment, summary_text)
 
         for relative_path in (
             "assets/workflows/build-basic/requirements.md",
             "assets/workflows/build-basic/plan.md",
             "assets/workflows/build-basic/decompose.md",
+            "assets/workflows/build-base/summarize-implementation.md",
             "assets/workflows/build-basic/finalize.md",
             "assets/workflows/build-basic-review/{target}.md",
             "assets/workflows/do-work/implement.md",
@@ -1506,6 +1568,16 @@ class FormulaAssetTests(unittest.TestCase):
                     self.assertIn(fragment, text)
 
         for relative_path in (
+            "assets/workflows/build-basic/finalize.md",
+            "assets/workflows/build-basic-review/{target}.md",
+        ):
+            text = (root / relative_path).read_text(encoding="utf-8")
+            self.assertIn(
+                "Do not create any additional Markdown table with both an `ID` column and a",
+                text,
+            )
+
+        for relative_path in (
             "assets/workflows/do-work/implement.md",
             "assets/workflows/do-work-item/implement-item.md",
             "assets/workflows/implement/summarize.md",
@@ -1526,6 +1598,7 @@ class FormulaAssetTests(unittest.TestCase):
             "assets/workflows/implementation-base/implement.md",
             "assets/workflows/implementation-item-base/implement-item.md",
             "assets/workflows/implement/summarize.md",
+            "assets/workflows/build-base/summarize-implementation.md",
         ):
             text = (root / relative_path).read_text(encoding="utf-8")
             for fragment in (
@@ -1542,6 +1615,7 @@ class FormulaAssetTests(unittest.TestCase):
             "assets/workflows/build-base/requirements.md": ["gc.build.requirements_path"],
             "assets/workflows/build-base/plan.md": ["gc.build.plan_path"],
             "assets/workflows/build-base/decompose.md": ["gc.build.decomposition_path"],
+            "assets/workflows/build-base/summarize-implementation.md": ["gc.build.implementation_summary_path"],
             "assets/workflows/build-base/review.md": ["gc.build.review_report_path"],
             "assets/workflows/build-base/finalize.md": ["gc.build.final_report_path"],
             "assets/workflows/build-basic/requirements.md": ["gc.build.requirements_path"],
@@ -1643,9 +1717,12 @@ class FormulaAssetTests(unittest.TestCase):
                 )
                 self.assertTrue(step_by_id["implement-same-session"]["drain"]["item"]["single_lane"])
                 review_step = step_by_id["review"]
+                self.assertEqual(review_step["needs"], ["summarize-implementation"])
                 self.assertEqual(review_step["expand"], expected["review_expansion"])
                 expected_review_expand_vars = {
                     "implementation_target": "{{implementation_target}}",
+                    "review_mode": "{{review_mode}}",
+                    "artifact_path_keys": "gc.build.review_report_path",
                 }
                 expected_review_expand_vars.update(expected.get("review_expand_vars", {}))
                 self.assertEqual(
@@ -1963,8 +2040,14 @@ class FormulaAssetTests(unittest.TestCase):
                 self.assertEqual(write_report["expand"], expected["review_expansion"])
                 expected_review_expand_vars = {
                     "implementation_target": "{{implementation_target}}",
+                    "review_mode": "{{review_mode}}",
                 }
-                expected_review_expand_vars.update(expected.get("review_expand_vars", {}))
+                expected_review_expand_vars.update(
+                    expected.get(
+                        "code_review_entry_expand_vars",
+                        expected.get("review_expand_vars", {}),
+                    )
+                )
                 self.assertEqual(
                     write_report["expand_vars"],
                     expected_review_expand_vars,
@@ -2272,6 +2355,8 @@ class FormulaAssetTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         for fragment in (
             "Do not copy the plan checkbox steps into the implementation bead",
+            "do not create implementation beads for Superpowers build",
+            "actual source-code work from the original input task",
             "gc.input_convoy_id",
             "implementation convoy",
             "workflow root bead",
@@ -2279,6 +2364,32 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, decompose_text)
+
+        plan_text = (
+            pack_root / "assets" / "workflows" / "superpowers-build" / "plan.md"
+        ).read_text(encoding="utf-8")
+        for fragment in (
+            "Do not write `prepare`, `requirements`, `plan`",
+            "Only `### Task N` sections are decomposed into implementation beads",
+            "input task or convoy member",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, plan_text)
+
+        plan_review_text = (
+            pack_root
+            / "assets"
+            / "workflows"
+            / "superpowers-plan-review"
+            / "{target}.plan-document-review.md"
+        ).read_text(encoding="utf-8")
+        for fragment in (
+            "Reject with `design_review.review_verdict=iterate`",
+            "must not become implementation beads",
+            "original input task or convoy member",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, plan_review_text)
 
         for formula_name in ("superpowers-development", "superpowers-development-item"):
             formula = load_formula(pack_root, formula_name)
@@ -2445,6 +2556,13 @@ class FormulaAssetTests(unittest.TestCase):
             / "superpowers-brainstorming"
             / "{target}.confirm-spec-approval.md"
         ).read_text(encoding="utf-8")
+        apply_spec_feedback = (
+            pack_root
+            / "assets"
+            / "workflows"
+            / "superpowers-brainstorming"
+            / "{target}.apply-spec-feedback.md"
+        ).read_text(encoding="utf-8")
         final_requirements = (
             pack_root
             / "assets"
@@ -2465,12 +2583,16 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertIn("re-opens the design loop", design_approval)
         self.assertIn("revision summary", design_approval)
         self.assertIn("specific design sections", design_approval)
+        self.assertIn('bd update "$CLAIMED_BEAD_ID"', design_approval)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", design_approval)
         self.assertIn("stock Superpowers checklist items 6-7", write_spec)
         self.assertIn("Spec self-review", write_spec)
         self.assertIn("stock design-doc state", write_spec)
         self.assertIn("docs/superpowers/specs/", write_spec)
         self.assertIn("On repeated attempts", write_spec)
         self.assertIn("without clobbering loop feedback", write_spec)
+        self.assertIn('bd update "$CLAIMED_BEAD_ID"', write_spec)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", write_spec)
         self.assertIn("written spec", spec_approval)
         self.assertIn("stock `User reviews spec?` approval gate", spec_approval)
         self.assertIn("stock checklist item 8", spec_approval)
@@ -2485,6 +2607,21 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertIn("waiting-human", spec_approval)
         self.assertIn("silence", spec_approval)
         self.assertIn("spec revision summary", spec_approval)
+        self.assertIn("Do not run `.gc/scripts/checks/design-review-approved.sh`", spec_approval)
+        self.assertIn("Do not use\n`bd update --metadata`", spec_approval)
+        self.assertIn("--metadata-field gc.step_id=requirements.review-written-spec", spec_approval)
+        self.assertIn("--metadata-field gc.step_id=requirements.apply-spec-feedback", spec_approval)
+        self.assertIn("--metadata-field gc.scope_role=member", spec_approval)
+        self.assertIn("Do not use `bd list --root`", spec_approval)
+        self.assertIn('bd update "$CLAIMED_BEAD_ID"', spec_approval)
+        self.assertIn('bd show "$CLAIMED_BEAD_ID" --json', spec_approval)
+        self.assertIn("design_review.approval_mode=autonomous", spec_approval)
+        self.assertIn("design_review.output_path=<approval-summary path>", spec_approval)
+        self.assertIn('if type == "array" then .[0] else . end', spec_approval)
+        self.assertIn('design_review.verdict == "done"', spec_approval)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", spec_approval)
+        self.assertIn('bd update "$CLAIMED_BEAD_ID"', apply_spec_feedback)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", apply_spec_feedback)
         self.assertIn("stock brainstorming terminal state", final_requirements)
         self.assertIn("where Superpowers\nwould invoke `writing-plans`", final_requirements)
         self.assertIn("stock checklist item 9", final_requirements)
@@ -2513,6 +2650,8 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, brainstorm_design)
+        self.assertIn('bd update "$CLAIMED_BEAD_ID"', brainstorm_design)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", brainstorm_design)
 
         review_written_spec = (
             pack_root
@@ -2523,6 +2662,8 @@ class FormulaAssetTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("stock spec reviewer subagent as a Gas City graph lane", review_written_spec)
         self.assertIn("spec-document-reviewer-prompt.md", review_written_spec)
+        self.assertIn('bd update "$CLAIMED_BEAD_ID"', review_written_spec)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", review_written_spec)
 
         vendor_skill_root = pack_root / "vendor" / "superpowers" / "skills" / "brainstorming"
         installed_skill_root = pack_root / "skills" / "brainstorming"
@@ -3477,6 +3618,348 @@ description = "Override sink that writes the base triage report contract."
                 check=False,
             )
 
+    def _run_implementation_review_check(
+        self,
+        *,
+        show_json: str,
+        list_json: str,
+        parent_show_json: str | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            show_path = tmp / "show.json"
+            parent_show_path = tmp / "parent-show.json"
+            list_path = tmp / "list.json"
+            show_path.write_text(show_json, encoding="utf-8")
+            parent_show_path.write_text(parent_show_json or show_json, encoding="utf-8")
+            list_path.write_text(list_json, encoding="utf-8")
+            fake_bd = bin_dir / "bd"
+            fake_bd.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "case \"$1\" in\n"
+                "  show)\n"
+                "    if [ \"${2:-}\" = \"root\" ]; then\n"
+                "      cat \"$BD_PARENT_SHOW_JSON\"\n"
+                "    else\n"
+                "      cat \"$BD_SHOW_JSON\"\n"
+                "    fi\n"
+                "    ;;\n"
+                "  list) cat \"$BD_LIST_JSON\" ;;\n"
+                "  *) exit 2 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            fake_bd.chmod(0o755)
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "BD_SHOW_JSON": str(show_path),
+                "BD_PARENT_SHOW_JSON": str(parent_show_path),
+                "BD_LIST_JSON": str(list_path),
+                "GC_BEAD_ID": "loop",
+                "GC_ITERATION": "1",
+                **(extra_env or {}),
+            }
+            return subprocess.run(
+                [str(script)],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+    def test_implementation_review_check_accepts_approved_build_basic_lanes(self) -> None:
+        show_json = """[
+  {
+    "id": "loop",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.step_id": "review.build-basic-review-loop",
+      "gc.step_ref": "build-basic.review.build-basic-review-loop"
+    }
+  }
+]"""
+        list_json = """[
+  {
+    "id": "acceptance",
+    "updated_at": "2026-06-15T01:00:00Z",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.attempt": "1",
+      "gc.ralph_step_id": "review.build-basic-review-loop",
+      "gc.scope_ref": "review.build-basic-review-loop.iteration.1",
+      "code_review.acceptance_verdict": "approve"
+    }
+  },
+  {
+    "id": "test-evidence",
+    "updated_at": "2026-06-15T01:00:01Z",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.attempt": "1",
+      "gc.ralph_step_id": "review.build-basic-review-loop",
+      "gc.scope_ref": "review.build-basic-review-loop.iteration.1",
+      "code_review.test_evidence_verdict": "approve"
+    }
+  },
+  {
+    "id": "simplicity",
+    "updated_at": "2026-06-15T01:00:02Z",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.attempt": "1",
+      "gc.ralph_step_id": "review.build-basic-review-loop",
+      "gc.scope_ref": "review.build-basic-review-loop.iteration.1",
+      "code_review.simplicity_verdict": "approve"
+    }
+  }
+]"""
+
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Implementation review approved from lane verdicts", result.stdout)
+
+    def test_implementation_review_check_accepts_resolved_critical_findings(self) -> None:
+        show_json = """[
+  {
+    "id": "loop",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.step_id": "superpowers-review.write-report.superpowers-code-review-loop"
+    }
+  }
+]"""
+        list_json = """[
+  {
+    "id": "review-fixes",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.attempt": "1",
+      "gc.ralph_step_id": "superpowers-review.write-report.superpowers-code-review-loop",
+      "code_review.verdict": "done",
+      "code_review.report_path": "review-fix-summary.md"
+    }
+  }
+]"""
+
+        with tempfile.TemporaryDirectory() as td:
+            work_dir = pathlib.Path(td)
+            (work_dir / "review-fix-summary.md").write_text(
+                "# Review Fix Summary\n\n"
+                "## Findings\n\n"
+                "### [ALREADY RESOLVED] R-001\n\n"
+                "**Severity**: Critical\n\n"
+                "The critical command-injection finding was fixed and verified.\n",
+                encoding="utf-8",
+            )
+
+            result = self._run_implementation_review_check(
+                show_json=show_json,
+                list_json=list_json,
+                extra_env={"GC_WORK_DIR": str(work_dir)},
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Implementation review approved", result.stdout)
+
+    def test_implementation_review_check_accepts_report_mode_with_report_path(self) -> None:
+        show_json = """[
+  {
+    "id": "loop",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.step_id": "write-report.bmad-code-review-loop"
+    }
+  }
+]"""
+        parent_show_json = """[
+  {
+    "id": "root",
+    "metadata": {
+      "gc.var.review_mode": "report",
+      "gc.build.code_review_report_path": ".gc/inference-gate/code-review/review-report.md"
+    }
+  }
+]"""
+        list_json = "[]"
+
+        result = self._run_implementation_review_check(
+            show_json=show_json,
+            parent_show_json=parent_show_json,
+            list_json=list_json,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Implementation review report mode satisfied", result.stdout)
+
+    def test_methodology_code_review_expansions_are_report_mode_aware(self) -> None:
+        repo = pathlib.Path(__file__).resolve().parents[2]
+        cases = {
+            "bmad": {
+                "pack_dir": repo / "bmad",
+                "review_formula": "bmad-review",
+                "build_formula": "bmad-build",
+                "expansion": "bmad-code-review-flow",
+                "fix_child": "{target}.apply-bmad-review-findings",
+                "synthesis": "bmad-code-review-flow/{target}.synthesize-bmad-review.md",
+                "finalize": "bmad-code-review-flow/{target}.md",
+            },
+            "compound-engineering": {
+                "pack_dir": repo / "compound-engineering",
+                "review_formula": "compound-review",
+                "build_formula": "compound-build",
+                "expansion": "compound-code-review",
+                "fix_child": "{target}.apply-review-findings",
+                "synthesis": "compound-code-review/{target}.synthesize-code-review.md",
+                "finalize": "compound-code-review/{target}.md",
+            },
+            "gstack": {
+                "pack_dir": repo / "gstack",
+                "review_formula": "gstack-review",
+                "build_formula": "gstack-build",
+                "expansion": "gstack-code-review",
+                "fix_child": "{target}.apply-review-findings",
+                "synthesis": "gstack-code-review/{target}.synthesize-code-review.md",
+                "finalize": "gstack-code-review/{target}.md",
+            },
+            "superpowers": {
+                "pack_dir": repo / "superpowers",
+                "review_formula": "superpowers-review",
+                "build_formula": "superpowers-build",
+                "expansion": "superpowers-code-review",
+                "fix_child": "{target}.process-code-review",
+                "synthesis": None,
+                "finalize": "superpowers-code-review/{target}.md",
+            },
+        }
+
+        def expanded_steps(formula_data: dict) -> list[dict]:
+            return [
+                step
+                for step in formula_data.get("steps", [])
+                if step.get("expand") in {case["expansion"] for case in cases.values()}
+            ]
+
+        def child_by_id(formula_data: dict, child_id: str) -> dict:
+            for template in formula_data.get("template", []):
+                for child in template.get("children", []):
+                    if child.get("id") == child_id:
+                        return child
+            raise AssertionError(f"missing child {child_id}")
+
+        for pack_name, case in cases.items():
+            pack_dir = case["pack_dir"]
+            expansion_data = tomllib.loads(
+                (pack_dir / "formulas" / f"{case['expansion']}.formula.toml").read_text(encoding="utf-8")
+            )
+            with self.subTest(pack=pack_name, check="expansion-var"):
+                self.assertIn("review_mode", expansion_data.get("vars", {}))
+                self.assertEqual(
+                    expansion_data.get("vars", {}).get("artifact_path_keys", {}).get("default"),
+                    "gc.build.code_review_report_path,gc.build.review_report_path,gc.var.report_path",
+                )
+                self.assertEqual(
+                    child_by_id(expansion_data, case["fix_child"]).get("condition"),
+                    "{{review_mode}} != report",
+                )
+
+            for formula_name in (case["review_formula"], case["build_formula"]):
+                formula_data = tomllib.loads(
+                    (pack_dir / "formulas" / f"{formula_name}.formula.toml").read_text(encoding="utf-8")
+                )
+                matching_steps = expanded_steps(formula_data)
+                self.assertTrue(matching_steps, f"{pack_name}/{formula_name} has no review expansion")
+                for step in matching_steps:
+                    with self.subTest(pack=pack_name, formula=formula_name, step=step["id"]):
+                        self.assertEqual(step["expand_vars"].get("review_mode"), "{{review_mode}}")
+
+            finalize_text = (pack_dir / "assets" / "workflows" / case["finalize"]).read_text(encoding="utf-8")
+            with self.subTest(pack=pack_name, check="finalize-report-mode"):
+                self.assertIn("gc.var.review_mode=report", finalize_text)
+                self.assertIn("code_review.verdict=reported", finalize_text)
+
+            if case["synthesis"]:
+                synthesis_text = (pack_dir / "assets" / "workflows" / case["synthesis"]).read_text(
+                    encoding="utf-8"
+                )
+                with self.subTest(pack=pack_name, check="synthesis-schema"):
+                    self.assertIn("schema: gc.build.review.v1", synthesis_text)
+                    self.assertIn("workflow:\n", synthesis_text)
+                    self.assertIn("methodology:\n", synthesis_text)
+                    self.assertIn("producer:\n", synthesis_text)
+                    self.assertIn("trace:\n", synthesis_text)
+                    self.assertIn("upstream:\n", synthesis_text)
+                    self.assertIn("coverage:\n", synthesis_text)
+                    self.assertIn("status: changes_required", synthesis_text)
+                    self.assertIn("Do not use dotted YAML keys", synthesis_text)
+                    self.assertIn("do not make `trace` a list", synthesis_text)
+                    self.assertIn("`ID` and `Status` columns", synthesis_text)
+
+        context_prompt = (repo / "gascity" / "assets" / "workflows" / "code-review-base" / "validate-context.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("rendered values in this prompt are authoritative", context_prompt)
+        self.assertIn("interaction_mode: `{{interaction_mode}}`", context_prompt)
+        self.assertIn("review_mode: `{{review_mode}}`", context_prompt)
+        self.assertIn("Do not require the `report_path` file to exist before review", context_prompt)
+        self.assertIn("Do not require", context_prompt)
+        self.assertIn("review-config.yaml", context_prompt)
+
+    def test_implementation_review_check_rejects_incomplete_build_basic_lanes(self) -> None:
+        show_json = """[
+  {
+    "id": "loop",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.step_id": "review.build-basic-review-loop"
+    }
+  }
+]"""
+        list_json = """[
+  {
+    "id": "acceptance",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.attempt": "1",
+      "gc.ralph_step_id": "review.build-basic-review-loop",
+      "code_review.acceptance_verdict": "approve"
+    }
+  },
+  {
+    "id": "test-evidence",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.attempt": "1",
+      "gc.ralph_step_id": "review.build-basic-review-loop",
+      "code_review.test_evidence_verdict": "iterate"
+    }
+  },
+  {
+    "id": "simplicity",
+    "metadata": {
+      "gc.root_bead_id": "root",
+      "gc.attempt": "1",
+      "gc.ralph_step_id": "review.build-basic-review-loop",
+      "code_review.simplicity_verdict": "approve"
+    }
+  }
+]"""
+
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Implementation review needs another iteration", result.stdout)
+        self.assertIn("test_evidence=iterate", result.stdout)
+
     @staticmethod
     def _valid_requirements_artifact() -> str:
         sections = []
@@ -3929,6 +4412,22 @@ description = "Override sink that writes the base triage report contract."
             / "workflows"
             / "superpowers-code-review"
         )
+        expansion_formula = tomllib.loads(
+            (
+                packs_root
+                / "superpowers"
+                / "formulas"
+                / "superpowers-code-review.formula.toml"
+            ).read_text(encoding="utf-8")
+        )
+        review_formula = tomllib.loads(
+            (
+                packs_root
+                / "superpowers"
+                / "formulas"
+                / "superpowers-review.formula.toml"
+            ).read_text(encoding="utf-8")
+        )
         setup = (workflow_dir / "{target}.setup-superpowers-code-review.md").read_text(
             encoding="utf-8"
         )
@@ -3954,22 +4453,62 @@ description = "Override sink that writes the base triage report contract."
 
         self.assertIn("code_review.review_verdict", request)
         self.assertIn("code_review.review_report_path", request)
+        self.assertIn("valid for `gc.build.review.v1`", request)
+        self.assertIn("schema: gc.build.review.v1", request)
+        self.assertIn("producer:", request)
+        self.assertIn("stage: request-code-review", request)
+        self.assertIn("| ID | Status |", request)
+        self.assertIn("Use only schema\nallowed coverage statuses", request)
+        self.assertIn("For `status: changes_required`, use\n`blocked`", request)
+        self.assertIn("include\n`rationale: <why this id is blocked>`", request)
+        self.assertIn("not use `violated`, `resolved`, `approved`, or `changes_required`", request)
         self.assertNotIn("code_review.verdict=done", request)
         self.assertNotIn("code_review.report_path=<", request)
 
         self.assertIn("code_review.gap_verdict", gap)
         self.assertIn("code_review.gap_report_path", gap)
+        self.assertIn("valid for `gc.build.review.v1`", gap)
+        self.assertIn("schema: gc.build.review.v1", gap)
+        self.assertIn("stage: gap-analysis-review", gap)
+        self.assertIn("| ID | Status |", gap)
+        self.assertIn("include\n`rationale: <why this id is blocked>`", gap)
+        self.assertIn("not use `violated`, `resolved`, `approved`, or `changes_required`", gap)
         self.assertNotIn("code_review.verdict=done", gap)
         self.assertNotIn("code_review.report_path=<", gap)
 
         self.assertIn("code_review.verdict=done|iterate", process)
         self.assertIn("code_review.report_path=<review fix summary path>", process)
+        self.assertIn("Use `covered` for resolved\nfindings", process)
+        self.assertIn("Include `rationale: <why this id is not covered>`", process)
         self.assertIn("gc.build.code_review_status=approved", process)
         self.assertIn("gc.build.code_review_status=draft", process)
 
         self.assertIn("gc.build.code_review_status=approved", finalize)
         self.assertIn("gc.build.code_review_approved_at", finalize)
         self.assertIn("gc.build.code_review_status=failed", finalize)
+
+        artifact_keys = (
+            "gc.build.code_review_report_path,"
+            "gc.build.review_report_path,"
+            "gc.var.report_path"
+        )
+        self.assertEqual(
+            expansion_formula["vars"]["artifact_path_keys"]["default"],
+            artifact_keys,
+        )
+        write_report_step = next(
+            step
+            for step in review_formula["steps"]
+            if step["id"] == "write-report"
+        )
+        self.assertEqual(
+            write_report_step["metadata"]["gc.build.artifact_path_keys"],
+            artifact_keys,
+        )
+        self.assertEqual(
+            write_report_step["expand_vars"]["artifact_path_keys"],
+            artifact_keys,
+        )
 
 
 if __name__ == "__main__":

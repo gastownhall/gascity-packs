@@ -199,9 +199,24 @@ member_access = "exclusive"
 single_lane = true
 
 [[steps]]
+id = "summarize-implementation"
+title = "Write canonical implementation summary"
+needs = ["implement", "implement-same-session"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.build.implementation_summary_path" }
+description_file = "../assets/workflows/build-base/summarize-implementation.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
 id = "review"
 title = "Review implementation"
-needs = ["implement", "implement-same-session"]
+needs = ["summarize-implementation"]
 metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
 description_file = "../assets/workflows/build-base/review.md"
 

@@ -34,5 +34,13 @@ description_file = "../assets/workflows/compound-resolution/{target}.synthesize-
 id = "{target}"
 title = "Finalize Compound Engineering build result"
 needs = ["{target}.synthesize-resolution"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
 description_file = "../assets/workflows/compound-resolution/{target}.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

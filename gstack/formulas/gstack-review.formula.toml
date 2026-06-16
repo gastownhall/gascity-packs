@@ -26,12 +26,3 @@ metadata = { "gc.run_target" = "gstack.review-synthesizer", "gc.build.artifact_s
 expand = "gstack-code-review"
 expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}" }
 description_file = "../assets/workflows/gstack-review/write-report.md"
-
-[steps.check]
-max_attempts = 3
-
-[steps.check.check]
-mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
-timeout = "5m"
-

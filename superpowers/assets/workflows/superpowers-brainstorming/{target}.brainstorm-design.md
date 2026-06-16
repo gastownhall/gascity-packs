@@ -30,8 +30,16 @@ This artifact represents the stock written design-doc state. The downstream
 spec lane may mirror it to `docs/superpowers/specs/` when the target repo and
 run instructions make that safe.
 
-Close with `gc.outcome=pass` and
-`design_review.output_path=<design-candidate path>`. Do not set
+Before closing, update the exact claimed bead id with the lane metadata:
+
+```bash
+bd update "$CLAIMED_BEAD_ID" \
+  --set-metadata 'gc.outcome=pass' \
+  --set-metadata 'design_review.output_path=<design-candidate path>'
+bd close "$CLAIMED_BEAD_ID" --reason 'Superpowers design candidate written.'
+```
+
+Do not pass `--metadata` or `--set-metadata` to `bd close`. Do not set
 `design_review.verdict`; the approval lane owns the loop verdict.
 
 Do not invoke provider-native subagents or upstream plugin runtime commands.

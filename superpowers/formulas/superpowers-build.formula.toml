@@ -62,14 +62,6 @@ expand = "superpowers-brainstorming"
 expand_vars = { brainstorming_approval_mode = "{{brainstorming_approval_mode}}" }
 description_file = "../assets/workflows/superpowers-build/requirements.md"
 
-[steps.check]
-max_attempts = 3
-
-[steps.check.check]
-mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
-timeout = "5m"
-
 [[steps]]
 id = "plan"
 title = "Superpowers write plan"
@@ -141,19 +133,11 @@ single_lane = true
 [[steps]]
 id = "review"
 title = "Superpowers request code review"
-needs = ["implement", "implement-same-session"]
+needs = ["summarize-implementation"]
 metadata = { "gc.run_target" = "superpowers.code-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
 expand = "superpowers-code-review"
-expand_vars = { implementation_target = "{{implementation_target}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
 description_file = "../assets/workflows/superpowers-build/review.md"
-
-[steps.check]
-max_attempts = 3
-
-[steps.check.check]
-mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
-timeout = "5m"
 
 [[steps]]
 id = "finalize"
@@ -169,4 +153,3 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
-

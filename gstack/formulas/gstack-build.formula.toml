@@ -144,19 +144,11 @@ single_lane = true
 [[steps]]
 id = "review"
 title = "gstack review fanout"
-needs = ["implement", "implement-same-session"]
+needs = ["summarize-implementation"]
 metadata = { "gc.run_target" = "gstack.review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
 expand = "gstack-code-review"
-expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
 description_file = "../assets/workflows/gstack-build/review.md"
-
-[steps.check]
-max_attempts = 3
-
-[steps.check.check]
-mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
-timeout = "5m"
 
 [[steps]]
 id = "finalize"

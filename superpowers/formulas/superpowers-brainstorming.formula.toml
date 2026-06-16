@@ -96,5 +96,13 @@ description_file = "../assets/workflows/superpowers-brainstorming/{target}.confi
 id = "{target}"
 title = "Finalize approved Superpowers requirements"
 needs = ["{target}.superpowers-written-spec-loop"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
 description_file = "../assets/workflows/superpowers-brainstorming/{target}.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
