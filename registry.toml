@@ -37,7 +37,7 @@ schema = 1
   [[pack.release]]
     version = "0.1.6"
     ref = "main"
-    commit = "d8b9e3388a49d11713a0621401f7b5c487bfbf78"
+    commit = "3b3b89f2011e06d84459aa7bea1552382f13930a"
     hash = "sha256:149772065f9f2862965146e74d853d17e432628f57d25a4386bbef0fb6744e33"
     description = "Release graph.v2 review/build prompt fixes validated by gascity RC gates."
 
