@@ -64,7 +64,7 @@
 #   WATCHDOG_FRESH_MIN     merge-freshness window, minutes    (default: 60)
 #   WATCHDOG_COOLDOWN_MIN  min minutes between re-alerts of the same
 #                          (rig, incident-type)               (default: 45)
-#   WATCHDOG_WITNESS_STALE_MIN witness heartbeat staleness, minutes (default: 15)
+#   WATCHDOG_WITNESS_STALE_MIN witness heartbeat staleness, minutes (default: 30)
 #   WATCHDOG_STARTUP_GRACE_MIN how long a transient 'creating' / startup state is
 #                          tolerated before it counts as dead  (default: 10)
 #   WATCHDOG_MIN_QUEUE     minimum routed merge-queue depth to call a merge-stall
@@ -87,7 +87,7 @@ RIG="${GC_RIG:-}"
 ESCALATE_TO="${WATCHDOG_ESCALATE_TO:-mayor}"
 FRESH_MIN="${WATCHDOG_FRESH_MIN:-60}"
 COOLDOWN_MIN="${WATCHDOG_COOLDOWN_MIN:-45}"
-WITNESS_STALE_MIN="${WATCHDOG_WITNESS_STALE_MIN:-15}"
+WITNESS_STALE_MIN="${WATCHDOG_WITNESS_STALE_MIN:-30}"
 STARTUP_GRACE_MIN="${WATCHDOG_STARTUP_GRACE_MIN:-10}"
 MIN_QUEUE="${WATCHDOG_MIN_QUEUE:-2}"
 

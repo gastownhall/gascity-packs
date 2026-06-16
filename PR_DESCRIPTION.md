@@ -128,5 +128,5 @@ Existing ledgers with bare-integer values are automatically coerced to the new
 | `WATCHDOG_STARTUP_GRACE_MIN` | 10 | How long a transient startup state is tolerated before alerting |
 | `WATCHDOG_MIN_QUEUE` | 2 | Min routed merge-queue depth required to call a merge stall |
 | `WATCHDOG_FRESH_MIN` | 60 | Merge-freshness window in minutes |
-| `WATCHDOG_WITNESS_STALE_MIN` | 15 | Witness heartbeat staleness threshold in minutes |
+| `WATCHDOG_WITNESS_STALE_MIN` | 30 | Witness heartbeat staleness threshold in minutes |
 | `WATCHDOG_ESCALATE_TO` | mayor | Recipient for incident mail |
