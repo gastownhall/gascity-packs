@@ -70,6 +70,10 @@ default = "main"
 description = "Whether to delete source branches after merge"
 default = "true"
 
+[vars.delete_merged_worktrees]
+description = "Whether to delete the polecat worktree after a successful merge"
+default = "true"
+
 [vars.integration_branch_auto_land]
 description = "Auto-create work beads to land completed integration branches"
 default = "false"
@@ -804,6 +808,16 @@ Always delete the local `temp` branch. The remote source branch is deleted when
 `delete_merged_branches = "{{delete_merged_branches}}"` (i.e. the substituted value is `"true"`).
 Run both in the same turn.
 
+If delete_merged_worktrees = "true":
+```bash
+WORKTREE=$(gc bd show $WORK --json | jq -r '.[0].metadata.work_dir // empty')
+if [ -n "$WORKTREE" ] && [ -d "$WORKTREE" ]; then
+  git worktree remove --force "$WORKTREE" || rm -rf "$WORKTREE"
+  git worktree prune
+fi
+gc bd update $WORK --unset-metadata work_dir
+```
+
 **If MERGE_STRATEGY = "mr":**
 
 Refinery does NOT land the branch directly. Instead it publishes a pull
@@ -1055,6 +1069,16 @@ git checkout "$TARGET"
 git branch -d temp
 ```
 Do NOT delete `$BRANCH` in mr mode — GitHub pull requests need the source branch.
+
+If delete_merged_worktrees = "true":
+```bash
+WORKTREE=$(gc bd show $WORK --json | jq -r '.[0].metadata.work_dir // empty')
+if [ -n "$WORKTREE" ] && [ -d "$WORKTREE" ]; then
+  git worktree remove --force "$WORKTREE" || rm -rf "$WORKTREE"
+  git worktree prune
+fi
+gc bd update $WORK --unset-metadata work_dir
+```
 
 **If MERGE_STRATEGY = "local":**
 
