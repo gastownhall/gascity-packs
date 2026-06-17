@@ -1,0 +1,9 @@
+issue_prefix: gp
+issue-prefix: gp
+dolt.auto-start: false
+dolt:
+  disable-event-flush: true
+export.auto: false
+gc.endpoint_origin: inherited_city
+gc.endpoint_status: verified
+types.custom: molecule,convoy,message,event,gate,merge-request,agent,role,rig,session,spec,convergence,step
