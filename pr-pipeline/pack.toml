@@ -1,0 +1,45 @@
+# PR Pipeline — author-side and review-side PR discipline as a pack.
+#
+# Distributes the planning, blast-radius, scorecard-review, pre-push
+# gating, and issue-triage workflows that careful contributors run by
+# hand, so any city that imports this pack gets the same discipline as
+# platform-native formulas and commands.
+#
+# v0.1.0 ships five formulas:
+#   - mol-pr-start          author-side issue → plan workflow
+#   - mol-pr-blast-radius   composable impact-surface mapping
+#   - mol-pr-review         outgoing-PR self-review (11-category scorecard)
+#   - mol-pr-ship           pre-push gate (simplify → multi-reviewer panel → check)
+#   - mol-pr-triage         scan/classify open issues into a ranked work-queue
+#
+# The first four have wrapper `pr` commands (plan/blast-radius/review/ship);
+# mol-pr-triage is dispatched on demand by the maintenance PL.
+#
+# (mol-pr-from-issue — author-side issue → branch-ready PR — is ported into
+#  this pack by the gate-4 port on this same publish branch; not in this commit.)
+#
+# Sibling pack `pr-review` covers the maintainer-side incoming-PR
+# review/merge workflow (`mol-adopt-pr`); this pack focuses on the
+# contributor authoring side, with the scorecard available standalone
+# for outgoing-PR self-review.
+#
+# Usage in your city's pack.toml:
+#   [imports.pr-pipeline]
+#   source = "../packs/pr-pipeline"
+#
+# Plan a PR for an issue:
+#   gc pr-pipeline pr plan 1234 --rig <rig-name>
+#
+# Map blast radius:
+#   gc pr-pipeline pr blast-radius "FuncXYZ in pkg/foo" --rig <rig>
+#
+# Self-review an outgoing PR:
+#   gc pr-pipeline pr review 1234 --rig <rig>
+#
+# Run the pre-push gate:
+#   gc pr-pipeline pr ship --rig <rig>
+
+[pack]
+name = "pr-pipeline"
+version = "0.1.0"
+schema = 2

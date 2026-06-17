@@ -1,0 +1,452 @@
+description = """
+PR start workflow — front-load the analysis a maintainer's adoption review
+will check, before any code is written.
+
+A coding agent (polecat or equivalent) follows the steps in order. The
+planner reads the issue, runs BLOCKING gates (competing-PR and
+architectural-refactor), maps blast radius, checks the repo's conventions,
+and produces a structured plan saved to `.gc/pr-pipeline/plans/issue-<N>.md`.
+**No code is written.** A separate sling (or human) picks up the plan to
+implement it.
+
+The molecule root bead IS the control bead — run state is recorded in its
+notes via `bd update <root-id> --notes "<key>: <value>"`.
+
+## Contract
+
+1. Caller slings with `--var issue=<number>` to a generic worker agent
+2. Agent works through 6 sequential steps; BLOCKING gates can early-exit
+3. Plan written to `.gc/pr-pipeline/plans/issue-<N>.md`
+4. Root-bead notes record `plan_path:` (or block reason)
+5. Agent exits — no implementation work happens here
+
+## Failure Modes
+
+| Situation | Action |
+|-----------|--------|
+| BLOCKING gate triggers | Record reason in root-bead notes, close bead, exit |
+| Issue does not exist | gh fails; record error, close bead |
+| Repo is not a git checkout | Record cwd, close bead |
+| Repo has no remote | Use local-only analysis; note limitation in plan |"""
+formula = "mol-pr-start"
+version = 1
+
+[vars]
+[vars.issue]
+description = "Issue number to plan a PR for"
+required = true
+
+[[steps]]
+id = "intake"
+title = "Read issue and record initial state"
+description = """
+Establish working state and read the issue.
+
+**1. Find the root bead and confirm we're in a git repo:**
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    echo "Not in a git repository — cannot plan."
+    bd close "$ROOT_ID" --reason "not a git checkout"
+    exit 1
+}
+cd "$REPO_ROOT"
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+```
+
+**2. Read the issue:**
+```bash
+gh issue view {{issue}} --repo "$REPO" --json title,body,labels,comments,state
+```
+
+If the state is `CLOSED`, the work may already be done — surface this and
+let the gates step decide whether to STOP. Continue to step 2 either way
+so a single record of the issue + closure ends up in bead notes.
+
+**3. Record initial state in root-bead notes:**
+```bash
+bd update "$ROOT_ID" --notes "issue: {{issue}}
+repo: $REPO
+repo_root: $REPO_ROOT
+status: in_progress"
+```
+
+**Exit criteria:** In repo root, issue read, root-bead notes initialized.
+"""
+
+[[steps]]
+id = "gates"
+title = "Run BLOCKING gates — competing PR + architectural refactor"
+needs = ["intake"]
+description = """
+Two gates that, if triggered, cause early exit. The point: don't waste
+time planning an issue someone else is fixing or whose area is being
+consolidated by a refactor that'll supersede the work.
+
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+```
+
+### Gate 1 — Competing PR
+
+Any open PR already targeting this issue, or already-merged fix?
+
+```bash
+COMPETING_PRS=$(gh pr list --repo "$REPO" --state open \\
+    --search "{{issue}}" --json number,title,author,createdAt)
+
+ISSUE_STATE=$(gh issue view {{issue}} --repo "$REPO" --json state -q .state)
+```
+
+**If `COMPETING_PRS` is non-empty OR `ISSUE_STATE` is `CLOSED`, STOP:**
+
+```bash
+REASON="competing PR exists or issue already closed"
+DETAIL=$(echo "$COMPETING_PRS" | jq -c '.')
+bd update "$ROOT_ID" --notes "status: blocked
+gate: competing_pr
+detail: $DETAIL
+issue_state: $ISSUE_STATE"
+echo "[pr-plan] BLOCKED — $REASON"
+echo "[pr-plan]   Detail: $DETAIL"
+echo "[pr-plan]   Caller options: pivot to a different issue, review the"
+echo "[pr-plan]                   competing PR, or coordinate with author."
+bd close "$ROOT_ID" --reason "$REASON"
+exit 0
+```
+
+### Gate 2 — Architectural refactor
+
+The competing-PR check catches issue-level duplicates; this catches
+area-level ones. A narrow fix inside an active architectural refactor
+gets superseded — the time is wasted.
+
+The agent looks for three signals; any one is enough to flag the area:
+
+1. **Active design docs** with Status of Accepted / Implementing /
+   Implemented in standard locations:
+
+   ```bash
+   ACTIVE_DOCS=""
+   for d in engdocs/design docs/architecture docs/design rfcs; do
+       if [ -d "$d" ]; then
+           found=$(grep -lE "^\\| Status \\|.*\\b(Accepted|Implementing|Implemented)\\b" "$d"/*.md 2>/dev/null || true)
+           if [ -n "$found" ]; then
+               ACTIVE_DOCS="$ACTIVE_DOCS $found"
+           fi
+       fi
+   done
+   ```
+
+2. **Open consolidation PRs** from repo maintainers:
+
+   ```bash
+   MAINT=$(gh repo view --json owner -q .owner.login)
+   CONSOLIDATIONS=$(gh pr list --repo "$REPO" --state open --author "$MAINT" \\
+       --search "in:title refactor OR consolidation OR phase OR boundary" \\
+       --json number,title)
+   ```
+
+3. **Recent supersedes-pattern PRs** (signals area is consolidating):
+
+   ```bash
+   SUPERSEDES=$(gh pr list --repo "$REPO" --state merged \\
+       --search "supersedes in:body" --limit 5 --json number,title)
+   ```
+
+The agent uses semantic judgment to decide whether any of these signals
+genuinely overlaps the issue's area. **If the agent determines yes:**
+
+```bash
+bd update "$ROOT_ID" --notes "status: blocked
+gate: architectural_refactor
+active_docs: $ACTIVE_DOCS
+consolidations: $CONSOLIDATIONS
+supersedes: $SUPERSEDES"
+echo "[pr-plan] BLOCKED — area is being consolidated by an active refactor."
+echo "[pr-plan]   Active docs: $ACTIVE_DOCS"
+echo "[pr-plan]   Caller options: a) point-fix the refactor can absorb"
+echo "[pr-plan]                   (ask in the issue first);"
+echo "[pr-plan]                   b) wait for refactor + rebase;"
+echo "[pr-plan]                   c) pivot to an issue outside the area."
+bd close "$ROOT_ID" --reason "active refactor in area"
+exit 0
+```
+
+If neither gate triggers, record clearance and proceed:
+
+```bash
+bd update "$ROOT_ID" --notes "gates: cleared"
+```
+
+**Exit criteria:** Both gates cleared (or formula already exited via gate
+trigger). Root-bead notes record gates: cleared.
+"""
+
+[[steps]]
+id = "blast-radius"
+title = "Map blast radius — callers, configs, concurrency"
+needs = ["gates"]
+description = """
+Map the impact surface of the proposed change. Some of this becomes the
+test plan; some surfaces architectural risks.
+
+For each function or symbol the change will touch:
+
+```bash
+# Direct callers in the codebase:
+git grep -n "FuncName"                  # all references
+grep -rn "FuncName(" .                  # invocation sites
+git log --oneline --all -S "FuncName"   # historical usage
+```
+
+For each config struct field touched:
+
+```bash
+git grep -n "FieldName"
+```
+
+For each file that will be modified:
+
+```bash
+git log --oneline -20 -- <file>
+ls "$(dirname <file>)"
+```
+
+Capture:
+
+- **Direct callers**: where modified code is invoked
+- **Execution contexts**: which goroutines, async tasks, request paths
+- **Config field chains**: every layer reading or writing touched fields
+- **Domain boundaries**: which packages/layers the change crosses
+- **Concurrency**: shared state, goroutine lifecycle, cleanup paths
+
+Save the analysis as a heredoc into the bead notes for downstream steps:
+
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+bd update "$ROOT_ID" --notes "blast_radius: <one-line summary>"
+```
+
+**Exit criteria:** Blast-radius summary recorded in root-bead notes.
+"""
+
+[[steps]]
+id = "conventions"
+title = "Verify plan follows repo conventions"
+needs = ["blast-radius"]
+description = """
+The planner cannot know every convention in every consumer. Before
+producing the plan, surface the conventions that apply.
+
+**1. Read the repo's contributor docs:**
+
+```bash
+for f in CONTRIBUTING.md AGENTS.md CONVENTIONS.md CLAUDE.md; do
+    [ -f "$f" ] && echo "=== $f ===" && cat "$f"
+done
+```
+
+**2. Inspect siblings of the files you'll touch.** Test files
+(`*_test.go`, `*.test.ts`, etc.), naming conventions, doc comments —
+match what the surrounding code does.
+
+**3. Read active design docs that govern the area.** Use the lists
+gathered in the gates step.
+
+**4. Look at the last 5 merged PRs that touched these files for style
+cues:**
+
+```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+gh pr list --repo "$REPO" --state merged --limit 5 \\
+    --search "<file path>" --json number,title,url
+```
+
+**5. Decide on the test strategy** before writing code. Tier the
+behaviors:
+
+- "Does the store handle corrupt X?" → unit
+- "Does `<cli> foo` print the right output?" → testscript / golden
+- "Does this work with real <runtime>?" → integration
+- "Does the provider shim handle this correctly?" → acceptance
+- "Are components called in the right order?" → coordination
+
+Prefer fakes over mocks. New fakes go next to the interface with a
+compile-time conformance assertion (e.g. in Go,
+`var _ Interface = (*Fake)(nil)`).
+
+**Exit criteria:** Conventions list ready, test strategy chosen.
+"""
+
+[[steps]]
+id = "produce-plan"
+title = "Write the structured plan"
+needs = ["conventions"]
+description = """
+Produce the structured plan as a markdown file. This is the deliverable.
+
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+mkdir -p .gc/pr-pipeline/plans
+PLAN_PATH=".gc/pr-pipeline/plans/issue-{{issue}}.md"
+```
+
+Plan structure (write into `$PLAN_PATH`):
+
+```markdown
+# Plan — issue #{{issue}}: <title>
+
+## Root cause
+
+<one sentence>
+
+## Files to change
+
+- `<file>:<function>` — <what changes>
+
+## Blast radius
+
+<summary from blast-radius step>
+
+## Convention notes
+
+<which patterns apply, from conventions step>
+
+## Test plan
+
+- Unit:        <what to test, which fakes>
+- Integration: <if needed>
+- E2E:         <if needed>
+
+## Risks
+
+<what could go wrong, what a careful reviewer will scrutinize>
+
+## Branch
+
+- Name: `<prefix>/<issue-short>`
+- Base: `<main or other>`
+```
+
+Branch prefixes: `fix/`, `feat/`, `refactor/`, `docs/`, `test/`,
+`perf/`, `chore/`, `ci/`. Pick the best fit for the issue.
+
+After writing the file:
+
+```bash
+bd update "$ROOT_ID" --notes "plan_path: $PLAN_PATH
+plan_status: draft"
+```
+
+**Exit criteria:** Plan file written, root-bead notes updated.
+"""
+
+[[steps]]
+id = "themes-audit"
+title = "Audit plan against recurring review findings"
+needs = ["produce-plan"]
+description = """
+The 19 adoption themes below are the recurring findings that maintainer
+reviews flag. Audit the plan against each one. Where a theme applies,
+either ensure the plan addresses it or note explicitly why it does not.
+
+For any theme whose answer is "the plan needs to address this and
+currently doesn't," update the plan file with the addition.
+
+1. **Silent error handling.** `_ = store.Write()` patterns, or `bool`
+   returns that don't fire `false` on write error. Errors must propagate.
+
+2. **Shared code paths leaking into siblings.** Timeouts, semaphores, and
+   guards added for one subsystem bleeding into unintended ones. Scope
+   narrowly; check sibling call sites.
+
+3. **Nil/empty distinction.** Config fields where "not set" vs "empty"
+   carry different semantics. Use pointers or sentinels; document the
+   invariant.
+
+4. **Infrastructure agent contamination.** Loops applying work-loop
+   config to control/dispatcher agents. Infrastructure agents should not
+   participate in worker reconciliation.
+
+5. **Goroutine lifecycle on all return paths.** Fire-and-forget
+   goroutines in CLI/handler paths; callers must defer-block done
+   channels on EVERY return path, including error and early-exit paths.
+
+6. **Startup vs reload safety.** One-time operations wired into reload
+   paths execute on every config change. Distinguish init from reload.
+
+7. **Test specificity — no pass-for-wrong-reason assertions.** Each
+   assertion should discriminate exactly one bug path.
+
+8. **Raw string literals.** Constants defined for one usage but the raw
+   literal still occurs elsewhere. Grep the entire codebase after
+   introducing a constant.
+
+9. **Dead code introduced by the PR.** Helper methods/functions added
+   "for completeness" but never called. Grep new functions for zero
+   callers; delete or fold them in.
+
+10. **Incomplete state coverage.** Fix only handles one state but the
+    bug also manifests in others. Enumerate all states; verify each path.
+
+11. **Verify-before-delete.** Pruning/closing records without confirming
+    the successor state exists. Fail open: store errors retain the
+    record rather than silently advancing.
+
+12. **Missing regression test branches.** Fix introduces multiple code
+    paths but only tests the happy path.
+
+13. **Parallel call-path siblings (most common finding).** Fixing one
+    call site while identical sibling sites have the same bug. Grep all
+    callers of modified functions AND all instances of the fixed pattern.
+
+14. **Env var hermeticity.** Tests using `os.Setenv` instead of
+    `t.Setenv()` (Go) leak state. Equivalent rules in other languages:
+    scoped/fixture-managed env, never global mutation.
+
+15. **Golden snapshot / doc output drift.** Changing CLI output, log
+    lines, or error messages without updating tutorial golden files and
+    test fixtures that contain hardcoded old output.
+
+16. **Package-level mutable state races.** Package-scope mutable vars
+    written by reload and read by request paths. Must use atomic with
+    accessor methods; never the bare variable.
+
+17. **Hard-fail conversions without examples audit.** Converting silent
+    degradation to a hard error breaks any example config that relied on
+    the old behavior. Grep `examples/`, release notes, tutorials.
+
+18. **Test cleanup that hardcodes state.** `t.Cleanup(SetFoo(false))`
+    corrupts subsequent tests. Capture and restore:
+    `prev := IsFoo(); SetFoo(x); t.Cleanup(SetFoo(prev))`.
+
+19. **Env projection inlined into command handlers.** Subprocess env
+    construction belongs in a dedicated env-projection layer
+    (`cmd/.../bd_env.go` or equivalent), not interleaved into per-command
+    handlers.
+
+After the audit, mark the plan finalized:
+
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+PLAN_PATH=".gc/pr-pipeline/plans/issue-{{issue}}.md"
+bd update "$ROOT_ID" --notes "plan_status: finalized
+themes_audit: complete"
+```
+
+Display summary:
+
+```
+[pr-plan] Plan finalized for issue #{{issue}}
+[pr-plan]   Path: $PLAN_PATH
+[pr-plan]   Status: finalized
+[pr-plan] Next: hand off to an implementing agent or human reviewer.
+```
+
+Then exit. The molecule completes; a separate sling picks up the plan
+to implement it. No code was written by this formula.
+
+**Exit criteria:** Plan finalized, root-bead notes updated, agent exits.
+"""

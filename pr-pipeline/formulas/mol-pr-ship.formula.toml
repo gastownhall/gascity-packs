@@ -1,0 +1,408 @@
+description = """
+Pre-push gate for outgoing PRs. Runs three stages — simplify, iterate
+self-review until clean, mechanical contributor checks — and produces a
+combined readiness report. **STOPS at the report.** Does NOT push, does
+NOT open a PR.
+
+The point: catch the structural and correctness defects before the
+maintainer's review cycle, so the contributor PR lands with zero or
+near-zero review comments.
+
+A coding agent (polecat or equivalent) follows the steps in order. The
+agent CAN modify files in stages 1 and 2 (simplify + review fixes); all
+other stages are read-only.
+
+## Contract
+
+1. Caller slings with `--var branch=<name>` (or omits to use current branch)
+2. Agent works through 4 sequential stages
+3. Combined readiness report written to `.gc/pr-pipeline/ship/<branch>.md`
+4. Root-bead notes record `readiness:` (ready | blocked) + `blockers:`
+5. Agent exits — no push, no PR open
+
+The caller decides whether to push based on the report. This formula
+never runs `git push` or `gh pr create`.
+
+## Failure Modes
+
+| Situation | Action |
+|-----------|--------|
+| Stage 1 simplify breaks the build | Revert simplify, note in report, continue |
+| Stage 2 doesn't converge in 3 iterations | Report as blocked, list remaining findings |
+| Stage 3 mechanical gate fails | Report as blocked, list which gate |
+| All review models rate-limited | Report as blocked, no shipping |"""
+formula = "mol-pr-ship"
+version = 1
+
+[vars]
+[vars.branch]
+description = "Branch to gate (defaults to current branch)"
+default = ""
+
+[vars.skip_simplify]
+description = "Set to 'true' to skip Stage 1 simplify pass"
+default = "false"
+
+[[steps]]
+id = "intake"
+title = "Resolve branch and prepare report path"
+description = """
+Confirm we're in a git repo, resolve the branch, and prepare workspace.
+
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    echo "Not in a git repository — cannot ship."
+    bd close "$ROOT_ID" --reason "not a git checkout"
+    exit 1
+}
+cd "$REPO_ROOT"
+
+BRANCH="{{branch}}"
+if [ -z "$BRANCH" ]; then
+    BRANCH=$(git branch --show-current)
+fi
+if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then
+    echo "On detached HEAD or no branch — cannot ship."
+    bd close "$ROOT_ID" --reason "no branch resolved"
+    exit 1
+fi
+
+# Refuse to ship from main / default branch.
+DEFAULT=$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p' || echo "main")
+if [ "$BRANCH" = "$DEFAULT" ] || [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
+    echo "Cannot ship from default branch ($BRANCH). Create a feature branch first."
+    bd close "$ROOT_ID" --reason "on default branch"
+    exit 1
+fi
+
+mkdir -p .gc/pr-pipeline/ship
+SAFE=$(echo "$BRANCH" | tr '/' '_')
+REPORT_PATH=".gc/pr-pipeline/ship/${SAFE}.md"
+bd update "$ROOT_ID" --notes "branch: $BRANCH
+report_path: $REPORT_PATH
+status: in_progress"
+```
+
+**Exit criteria:** Branch resolved, report path set, not on default branch.
+"""
+
+[[steps]]
+id = "simplify"
+title = "Stage 1 — simplify the diff"
+needs = ["intake"]
+description = """
+Clean up the diff — remove dead code, consolidate duplicates, improve
+readability. This stage CAN modify files; if changes break the build,
+revert.
+
+If `{{skip_simplify}}` is `true`, record `simplify: skipped` and
+proceed to the next step.
+
+Otherwise, walk the diff and look for:
+
+- **Dead code**: helpers added but never called; commented-out blocks
+- **Duplicated logic**: the same operation in two places that could be
+  one function
+- **Over-abstracted code**: interfaces with one implementation,
+  excessive indirection
+- **Naming improvements**: variables/functions whose names hide their
+  purpose
+- **Unused imports / dependencies**
+
+Apply changes in-place (small commits OK):
+
+```bash
+# After each simplification commit:
+git diff --stat HEAD~1 HEAD
+```
+
+Verify the build still passes:
+
+```bash
+# The exact build command depends on the repo's stack. Try in order:
+if [ -f Makefile ] && grep -q "^build:" Makefile; then
+    make build
+elif [ -f go.mod ]; then
+    go build ./...
+elif [ -f package.json ] && [ -f tsconfig.json ]; then
+    npx tsc --noEmit
+elif [ -f Cargo.toml ]; then
+    cargo build
+elif [ -f setup.py ] || [ -f pyproject.toml ]; then
+    python -c "import compileall; compileall.compile_dir('.', quiet=1)"
+fi
+```
+
+If the build breaks after simplify, revert the simplify commits:
+
+```bash
+git reset --hard HEAD~<N>  # N = number of simplify commits
+echo "[ship] Stage 1 reverted — simplify broke the build"
+```
+
+Record stage outcome:
+
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+bd update "$ROOT_ID" --notes "simplify: <complete | reverted | skipped>
+simplify_commits: <sha1>,<sha2>,..."
+```
+
+**Exit criteria:** Diff simplified (or skipped/reverted), build green,
+outcome recorded.
+"""
+
+[[steps]]
+id = "review-iterate"
+title = "Stage 2 — iterate adversarial multi-reviewer panel until no blockers/majors"
+needs = ["simplify"]
+description = """
+Iterate an independent multi-reviewer panel against the diff until there
+are no blocker or major findings. This is the load-bearing stage.
+
+Each iteration spawns a panel of independent reviewer subagents (via the
+standard Agent tool — no experimental gate), collects their findings, runs
+an adversarial synthesis pass that keeps only findings surviving scrutiny,
+then fixes blockers/majors in place. Independent reviewers catch blind
+spots a single self-review pass misses; the adversarial synthesis is the
+debate a panel would have, performed by the lead at synthesis time.
+
+The loop:
+
+1. Prepare the diff context for this iteration:
+
+   ```bash
+   ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+   git diff origin/main..HEAD > "/tmp/pr-ship-${BRANCH//\\//-}-iter${ITER_N}.patch"
+   ```
+
+2. Spawn the reviewer panel in a SINGLE message with parallel Agent
+   calls (one per reviewer, so they run concurrently):
+
+   - `code-reviewer`      — correctness, maintainability, contracts
+   - `security-reviewer`  — secrets, injection, auth, OWASP
+   - `codex:codex-rescue` — independent grounded second opinion;
+     consistently catches semantic bugs pattern-matching reviewers miss
+   - a language reviewer matching the diff (`go-reviewer`,
+     `typescript-reviewer`, `python-reviewer`, …); omit if no code of
+     that language changed (e.g. a docs- or config-only diff)
+
+   Give each reviewer the patch path and this rubric. Score every
+   finding by category + severity + confidence:
+   - Categories: Cat 1 Behavioral Correctness, Cat 2 Contract Fidelity,
+     Cat 3 Blast Radius, Cat 4 Concurrency, Cat 5 Error Handling,
+     Cat 6 Security, Cat 7 Resource Lifecycle, Cat 8 Release Safety,
+     Cat 9 Test Evidence, Cat 10 Architectural Consistency,
+     Cat 11 Debuggability.
+   - Severity: blocker | major | minor | nit
+   - Confidence: high | medium | low
+
+   Pre-flag the seven recurring themes (see `mol-pr-review` for the
+   full list — test isolation, test retry, stale-state guards,
+   fail-closed, bootstrap init, API contract, transient retry).
+
+3. Adversarial synthesis (you, the polecat lead). Merge the panel's
+   reports and dedupe overlapping findings. Then CHALLENGE every blocker
+   and major before accepting it: for each high-severity flag, try to
+   refute it against the actual diff. Keep only findings that survive —
+   a flag no reviewer can ground in the diff is dropped and the drop is
+   noted. This is the debate phase, done once at synthesis instead of
+   inter-agent messaging.
+
+4. Classify the surviving findings as **blocker**, **major**, or
+   **minor**:
+   - blocker: correctness/safety defect that must be fixed before merge
+   - major:   design/precision defect a careful reviewer will flag
+   - minor:   style or nice-to-have
+
+5. If any blocker or major remains:
+   - Fix in-place
+   - Commit (`git commit -m "fix: ..."`)
+   - Increment ITER_N and go to step 1 of the loop
+
+6. Exit the loop when no blockers/majors remain (minors OK to ship).
+
+**Cap at 3 iterations.** If iteration 3 still has blockers or majors,
+report as **blocked — review not converging** and stop the formula.
+
+Record per-iteration state:
+
+```bash
+ITER_N=<1|2|3>
+bd update "$ROOT_ID" --notes "review_iter_$ITER_N: blockers=<n>, majors=<n>, minors=<n>
+review_panel_$ITER_N: <reviewers run>; dropped=<n high-severity flags refuted in synthesis>
+review_fix_commits_$ITER_N: <sha>,<sha>,..."
+```
+
+After convergence (or 3-iter cap):
+
+```bash
+bd update "$ROOT_ID" --notes "review_status: <converged | not_converged>
+review_final: blockers=<n>, majors=<n>, minors=<n>"
+```
+
+**Exit criteria:** Either converged (no blockers/majors) or hit 3-iter
+cap (formula reports blocked and stops at Stage 4).
+"""
+
+[[steps]]
+id = "contributor-check"
+title = "Stage 3 — mechanical gates"
+needs = ["review-iterate"]
+description = """
+Read-only mechanical checks. The exact gate set depends on the repo's
+stack; run what's available.
+
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+GATES_PASSED=""
+GATES_FAILED=""
+```
+
+### Build
+
+```bash
+if [ -f Makefile ] && grep -q "^build:" Makefile; then
+    make build && GATES_PASSED="$GATES_PASSED build" || GATES_FAILED="$GATES_FAILED build"
+elif [ -f go.mod ]; then
+    go build ./... && GATES_PASSED="$GATES_PASSED build" || GATES_FAILED="$GATES_FAILED build"
+elif [ -f package.json ] && [ "$(jq -r '.scripts.build // ""' package.json 2>/dev/null)" != "" ]; then
+    npm run build && GATES_PASSED="$GATES_PASSED build" || GATES_FAILED="$GATES_FAILED build"
+fi
+```
+
+### Lint / static analysis
+
+```bash
+if [ -f Makefile ] && grep -q "^lint:" Makefile; then
+    make lint && GATES_PASSED="$GATES_PASSED lint" || GATES_FAILED="$GATES_FAILED lint"
+elif [ -f go.mod ]; then
+    go vet ./... && GATES_PASSED="$GATES_PASSED vet" || GATES_FAILED="$GATES_FAILED vet"
+fi
+```
+
+### Tests
+
+```bash
+if [ -f Makefile ] && grep -q "^test:" Makefile; then
+    make test && GATES_PASSED="$GATES_PASSED test" || GATES_FAILED="$GATES_FAILED test"
+elif [ -f go.mod ]; then
+    go test ./... && GATES_PASSED="$GATES_PASSED test" || GATES_FAILED="$GATES_FAILED test"
+fi
+```
+
+### Docs (if Makefile has the target)
+
+```bash
+if grep -q "^check-docs:" Makefile 2>/dev/null; then
+    # Resolve the default branch — handles main / master / no-origin repos.
+    DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEFAULT_BRANCH=""
+    if [ -n "$DEFAULT_BRANCH" ]; then
+        # Only if docs were touched on this branch vs. its base.
+        if git diff --name-only "$DEFAULT_BRANCH..HEAD" | grep -qE "\\.md$|/docs/"; then
+            make check-docs && GATES_PASSED="$GATES_PASSED docs" || GATES_FAILED="$GATES_FAILED docs"
+        fi
+    fi
+    # If no default branch is resolvable (no origin remote, detached, etc.)
+    # the docs gate is skipped — better than a false fail on a real misroute.
+fi
+```
+
+Record outcomes:
+
+```bash
+bd update "$ROOT_ID" --notes "gates_passed:$GATES_PASSED
+gates_failed:$GATES_FAILED"
+```
+
+**Note on test failures:** if a failure is documented as a baseline
+flake (in repo's CI docs), classify it as baseline-noise rather than a
+new regression. Surface the distinction in the report. The formula
+trusts the agent's judgment here; record the classification reasoning.
+
+**Exit criteria:** All available gates run; pass/fail per gate recorded.
+"""
+
+[[steps]]
+id = "report"
+title = "Stage 4 — combined readiness report and STOP"
+needs = ["contributor-check"]
+description = """
+Combine all stages into a single report and STOP. This formula does NOT
+push, does NOT open a PR. The caller decides next steps.
+
+```bash
+ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes')
+```
+
+Write the report to `$REPORT_PATH`:
+
+```markdown
+# Ship readiness — branch `<branch>`
+
+## Verdict
+
+**<READY | BLOCKED>** — <one-sentence reason>
+
+## Stage 1 — Simplify
+
+- Status: <complete | reverted | skipped>
+- Commits: <sha1>, <sha2>, ...
+
+## Stage 2 — Self-review iteration
+
+- Iterations: <N> (max 3)
+- Final: blockers=<n>, majors=<n>, minors=<n>
+- Status: <converged | not_converged>
+- Fix commits: <sha1>, <sha2>, ...
+- Key remaining findings (minors only, if any):
+  - <one-line summary>
+  - <one-line summary>
+
+## Stage 3 — Mechanical gates
+
+- Build: <pass | fail>
+- Vet/Lint: <pass | fail>
+- Tests: <pass | fail | baseline-flake-only>
+- Docs: <pass | fail | not-touched>
+
+<gate output snippets if anything failed>
+
+## Recommended next steps
+
+If READY:
+- Push to your fork: `git push <fork-remote> <branch>`
+- Open a PR: `gh pr create ...`
+- After PR opens, watch for inline review comments and address them.
+
+If BLOCKED:
+- <action to unblock first gate>
+- <action for second gate>
+```
+
+Decide verdict mechanically:
+
+- READY only when: simplify ∈ {complete, skipped} AND review_status =
+  converged AND no required gate failed
+- Otherwise: BLOCKED
+
+```bash
+VERDICT="<READY | BLOCKED>"
+BLOCKERS="<one-line summary of what blocks, or 'none'>"
+bd update "$ROOT_ID" --notes "readiness: $VERDICT
+blockers: $BLOCKERS
+status: complete"
+echo "[ship] Pipeline complete for branch $BRANCH"
+echo "[ship]   Verdict: $VERDICT"
+echo "[ship]   Path: $REPORT_PATH"
+echo "[ship] STOP — push and PR open are the caller's call, not this formula's."
+```
+
+**Critical:** The formula MUST NOT run `git push` or `gh pr create`
+under any circumstances. Push and PR open are explicit caller actions
+gated on human review of this report.
+
+**Exit criteria:** Report written, verdict recorded, formula stops.
+"""
