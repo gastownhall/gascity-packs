@@ -6,7 +6,7 @@
 set -eu
 
 RIG_ROOT="${1:?usage: workspace-setup.sh <rig-root> <target-dir> <agent-name> [--sync]}"
-WT="${2:?missing target-dir}"
+REQUESTED_WT="${2:?missing target-dir}"
 AGENT="${3:?missing agent-name}"
 shift 3
 
@@ -107,6 +107,35 @@ relpath() {
 import os, sys
 print(os.path.relpath(os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])))
 PY
+}
+
+abspath_from_root() {
+    python3 - "$RIG_ROOT" "$1" <<'PY'
+import os, sys
+root, path = sys.argv[1], sys.argv[2]
+if os.path.isabs(path):
+    print(os.path.normpath(path))
+else:
+    print(os.path.normpath(os.path.join(root, path)))
+PY
+}
+
+read_config_workspace_dir() {
+    config_path="$1"
+    if [ ! -f "$config_path" ]; then
+        return 1
+    fi
+    awk -F: '
+        /^[[:space:]]*workspace_dir[[:space:]]*:/ {
+            value = $2
+            sub(/^[[:space:]]*/, "", value)
+            sub(/[[:space:]]*$/, "", value)
+            sub(/^"/, "", value)
+            sub(/"$/, "", value)
+            print value
+            exit
+        }
+    ' "$config_path"
 }
 
 workspace_name_component() {
@@ -239,7 +268,11 @@ restore_stage() {
 
 prepare_jjw_config() {
     config_path="$RIG_ROOT/.jjw.yaml"
-    workspace_dir="${GC_JJW_WORKSPACE_DIR:-$(relpath "$(dirname "$WT")" "$RIG_ROOT")}"
+    configured_workspace_dir=$(read_config_workspace_dir "$config_path" || true)
+    workspace_dir="${GC_JJW_WORKSPACE_DIR:-$configured_workspace_dir}"
+    if [ -z "$workspace_dir" ]; then
+        workspace_dir=$(relpath "$(dirname "$REQUESTED_WT")" "$RIG_ROOT")
+    fi
     default_branch="${GC_JJW_DEFAULT_BRANCH:-main}"
     bookmark_pattern="${GC_JJW_BOOKMARK_PATTERN:-gc/{name}}"
     manage="${GC_JJW_MANAGE_CONFIG:-true}"
@@ -282,8 +315,19 @@ refresh_existing_workspace() {
 
 ensure_jjw
 REVSET=$(resolve_base_revset)
-WORKSPACE_NAME=$(workspace_name_component "$(basename "$WT")")
+WORKSPACE_NAME=$(workspace_name_component "$(basename "$REQUESTED_WT")")
 prepare_jjw_config
+
+CONFIGURED_WORKSPACE_DIR=$(read_config_workspace_dir "$RIG_ROOT/.jjw.yaml")
+WT=$(abspath_from_root "$CONFIGURED_WORKSPACE_DIR/$WORKSPACE_NAME")
+REQUESTED_WT_ABS=$(abspath_from_root "$REQUESTED_WT")
+if [ "$REQUESTED_WT_ABS" != "$WT" ]; then
+    echo "jjw workspace-setup: refusing to create workspace outside jjw config" >&2
+    echo "jjw workspace-setup: requested target: $REQUESTED_WT_ABS" >&2
+    echo "jjw workspace-setup: .jjw.yaml target: $WT" >&2
+    echo "jjw workspace-setup: update agent work_dir or GC_JJW_WORKSPACE_DIR so they match" >&2
+    exit 1
+fi
 
 if [ -d "$WT/.jj" ]; then
     refresh_existing_workspace
