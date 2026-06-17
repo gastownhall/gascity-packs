@@ -139,6 +139,19 @@ source_kind = "git"
   description = "Initial jj-spr workflow pack release."
 
 [[pack]]
+name = "jj-hunk"
+description = "Agent-safe jj hunk selection workflows and subagent workspace tasking."
+source = "https://github.com/gastownhall/gascity-packs/tree/main/jj-hunk"
+source_kind = "git"
+
+  [[pack.release]]
+  version = "0.1.0"
+  ref = "main"
+  commit = "4756b3fd4b385f5c3141b21441992ef0a7458dd0"
+  hash = "sha256:f02b003a667bbced8184137f182df13483844d40a753b3e643080a93e96c4b29"
+  description = "Initial jj-hunk workflow pack release."
+
+[[pack]]
 name = "lazyjj-implementation"
 description = "Gas City planning and implementation workflow pack for LazyJJ-backed work."
 source = "https://github.com/gastownhall/gascity-packs/tree/main/lazyjj-implementation"
