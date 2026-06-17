@@ -10,7 +10,8 @@ on demand. The deliverable is a markdown report at
 competing-PR detection, maintainer-decision-gate fires, and a recommended
 next pick. **No code is written. No labels/comments are applied.** The
 human caller reviews the report and decides which issue to dispatch via
-`mol-pr-start`, which incoming PR to review via `mol-adopt-pr`, etc.
+`mol-pr-start`, which incoming PRs to route to a maintainer-side review,
+etc.
 
 The molecule root bead IS the control bead — run state is recorded in its
 notes via `bd update <root-id> --notes "<key>: <value>"`.

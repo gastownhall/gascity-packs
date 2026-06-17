@@ -9,8 +9,9 @@ commands.
 
 ## Status
 
-**v0.1.0** — initial release. Ships four formulas and matching wrapper
-commands:
+**v0.1.0** — initial release. Ships six formulas: four with matching
+wrapper commands, plus two dispatched on demand. The four wrapper-command
+formulas:
 
 | Formula | Command | Purpose |
 |---------|---------|---------|
@@ -19,11 +20,11 @@ commands:
 | `mol-pr-review`       | `gc <binding> pr review <pr-number>`   | Outgoing-PR self-review against an 11-category scorecard |
 | `mol-pr-ship`         | `gc <binding> pr ship`                 | Pre-push gate (simplify → review-iterate → contributor check); STOPS at report |
 
-All four are read-only by default for filesystem changes outside their
-own output paths. `mol-pr-ship` may modify the diff during simplify and
-review-iteration stages; everything else writes only to
-`.gc/pr-pipeline/<sub>/`. None of them push or open PRs — those decisions
-stay with the caller.
+All four wrapper-command formulas are read-only by default for filesystem
+changes outside their own output paths. `mol-pr-ship` may modify the diff
+during simplify and review-iteration stages; everything else writes only
+to `.gc/pr-pipeline/<sub>/`. None of them push or open PRs — those
+decisions stay with the caller.
 
 Two further formulas ship without a wrapper command — they are dispatched
 on demand (typically by a maintenance PL) rather than run by hand:
@@ -40,20 +41,17 @@ would be clobbered. It defaults to halt-at-branch-ready (`auto_push`
 absent → no push, no PR); pass `--var auto_push=true` to authorize the
 eligibility-gated push.
 
-## Sibling pack
+## Scope
 
-`pr-review` (in this same repo) covers the **maintainer-side incoming-PR
-review/merge workflow** with `mol-adopt-pr` — a 6-step formula for
-adopting contributor PRs (intake → rebase → review → human-gate →
-finalize → merge). The two packs are complementary:
+This pack is the **author side** — planning, building, and shipping the
+PRs your city sends out. Reviewing and merging **incoming** PRs that
+arrive at your repo is a separate, maintainer-side concern and out of
+scope here.
 
-- `pr-review` → reviewing PRs that arrive at your repo
-- `pr-pipeline` → planning, building, and shipping PRs your city sends out
-
-A city that does both ("we contribute to repos and we accept contributions
-from others") imports both. Both packs use the same 11-category scorecard
-in their review steps, so feedback shape stays consistent regardless of
-direction.
+The one maintainer-side artifact shipped here is the adoption-review
+comment template (`templates/adoption-review-comment.md`); it reuses the
+same 11-category scorecard `mol-pr-review` applies, so review feedback
+keeps a consistent shape in both directions.
 
 ## Usage
 
@@ -153,7 +151,7 @@ pr-pipeline/
 
 `templates/adoption-review-comment.md` is the canonical structure for the
 synthesis comment a maintainer posts when adopting a contributor PR. Two
-forms cover all four merge paths the `pr-review` pack's `mol-adopt-pr`
+forms cover all four merge paths a maintainer-side adoption workflow
 distinguishes (no maintainer changes vs. maintainer fixups present).
 
 The template documents:

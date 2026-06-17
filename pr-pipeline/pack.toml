@@ -19,10 +19,10 @@
 # GitHub-issue input is named `issue_number` (the bare `issue` var name is a
 # reserved formulas-v2 alias for the routed work bead).
 #
-# Sibling pack `pr-review` covers the maintainer-side incoming-PR
-# review/merge workflow (`mol-adopt-pr`); this pack focuses on the
-# contributor authoring side, with the scorecard available standalone
-# for outgoing-PR self-review.
+# This pack focuses on the contributor authoring side — planning,
+# building, and shipping the PRs your city sends out. Maintainer-side
+# incoming-PR review/merge is a separate concern, out of scope here; the
+# scorecard is available standalone for outgoing-PR self-review.
 #
 # Usage in your city's pack.toml:
 #   [imports.pr-pipeline]

@@ -4,11 +4,10 @@ against your own PR (or current branch's draft PR) before requesting
 external review. The goal: catch the structural and correctness defects
 that a careful maintainer review will flag, before the maintainer has to.
 
-Sibling formula: `pr-review` pack's `mol-adopt-pr` covers the
-**incoming**-PR review/merge workflow (review someone else's PR and
-merge it). `mol-pr-review` is the **outgoing**-PR self-review (review
-your own PR before submitting it). Same scorecard categories, different
-direction.
+Scope: `mol-pr-review` is the **outgoing**-PR self-review (review your
+own PR before submitting it). The **incoming**-PR review/merge workflow
+(review someone else's PR and merge it) is a separate, maintainer-side
+concern, not covered by this pack.
 
 Reviewer-side comment template: this pack ships
 `templates/adoption-review-comment.md` — the canonical structure a

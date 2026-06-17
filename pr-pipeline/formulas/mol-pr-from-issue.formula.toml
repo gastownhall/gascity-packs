@@ -1,7 +1,7 @@
 description = """
 From a triaged issue to an open PR. Runs pr-start → ship → open-PR with
-halt-on-flag gates between steps. This is the outbound-PR analogue of
-mol-adopt-pr (which is for INCOMING PRs).
+halt-on-flag gates between steps. This is the outbound-PR (author-side)
+analogue of the maintainer-side incoming-PR adoption workflow.
 
 A coding agent (polecat or equivalent) follows the chain. Each gate step
 inspects the prior step's evidence and either halts the chain or proceeds.

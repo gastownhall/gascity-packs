@@ -8,9 +8,9 @@ pre-flags 7 recurring fixup themes, and writes a scorecard report to
 `.gc/pr-pipeline/reviews/pr-<N>.md`. **No fixes are applied** — apply
 fixes by re-iterating the development loop, not by extending this formula.
 
-Sibling: the `pr-review` pack's `mol-adopt-pr` formula reviews **incoming**
-PRs (someone else's PR; review + merge). `mol-pr-review` reviews
-**outgoing** PRs (your own PR before submitting it).
+Scope: `mol-pr-review` reviews **outgoing** PRs (your own PR before
+submitting it). Reviewing **incoming** PRs (someone else's PR; review +
+merge) is a separate, maintainer-side concern, not covered here.
 
 Usage:
   gc <binding> pr review <pr-number-or-url> [flags]

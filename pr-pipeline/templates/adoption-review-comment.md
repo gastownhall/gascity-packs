@@ -4,7 +4,7 @@ The canonical structure for the synthesis comment a maintainer posts when
 adopting a contributor PR — running multi-model review on someone else's
 PR, optionally pushing maintainer fixups, then merging.
 
-Two forms cover all four merge paths the `pr-review` pack's `mol-adopt-pr`
+Two forms cover all four merge paths a maintainer-side adoption workflow
 distinguishes:
 
 - **Form 1** (Path A): contributor's branch landed as-is, no maintainer commits.
@@ -203,5 +203,5 @@ A formula or skill that wants to render and post this comment should:
    `gh pr comment <number> --body-file <path>`.
 6. On fail: write rejected text and STOP per the failure-fallback rule.
 
-The `pr-review` pack's `mol-adopt-pr` formula's `finalize` step uses this
-template for all four merge paths via this exact procedure.
+A maintainer-side adoption workflow's finalize step uses this template
+for all four merge paths via this exact procedure.
