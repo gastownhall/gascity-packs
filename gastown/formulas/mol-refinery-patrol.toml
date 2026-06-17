@@ -189,12 +189,41 @@ The bead MUST have `metadata.branch`. If `metadata.target` is missing,
 use {{target_branch}} as default. Note the work bead ID and close this step.
 
 If NO work found:
-Write exactly:
+Pour the next patrol iteration and transition before exiting:
+```bash
+CURRENT_WISP=${GC_BEAD_ID:-}
+if [ -z "$CURRENT_WISP" ]; then
+  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=wisp --limit=1 --json | jq -r '.[0].id // empty')
+fi
+NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
+if [ -z "$NEXT" ]; then
+  echo "Could not pour next refinery wisp when idle; will exit without transition."
+  echo "IDLE: no work, exiting turn."
+  gc runtime drain-ack
+  exit 1
+fi
+if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
+  echo "Could not assign next refinery wisp; exiting without proper transition."
+  echo "IDLE: no work, exiting turn."
+  gc runtime drain-ack
+  exit 1
+fi
+if [ -n "$CURRENT_WISP" ]; then
+  gc bd mol burn "$CURRENT_WISP" --force
+else
+  echo "Could not resolve current wisp for burning."
+  echo "IDLE: no work, exiting turn."
+  gc runtime drain-ack
+  exit 1
+fi
+```
+
+Then write exactly:
 ```
 IDLE: no work, exiting turn.
 ```
 Then stop immediately. Do NOT sleep, call ScheduleWakeup, or use Monitor.
-The session_sleep policy will restart this session after the configured idle interval.
+The next wisp is ready and will be re-read on session restart by the session_sleep policy.
 When restarted, re-read formula steps — this step stays open until a work bead is found.
 
 **Do not close this step until you have a work bead with branch metadata.**"""
