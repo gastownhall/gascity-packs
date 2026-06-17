@@ -59,5 +59,41 @@ class MolPrFromIssueVarBindingTests(unittest.TestCase):
         self.assertIn("auto_push", variables)
 
 
+class MolPrFromIssueConfigPurityTests(unittest.TestCase):
+    """Graduation blocker (gpk-4l3q): a published pack must be configuration-pure.
+
+    Author-absolute host paths (`/home/ds/...`) do not resolve in a consumer
+    city, and a baked-in target-repo layout is not portable. These guard the
+    fixes from PR #117's review (report .gc/pr-pipeline/reviews/pr-117.md).
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.text = (FORMULAS / "mol-pr-from-issue.formula.toml").read_text(encoding="utf-8")
+
+    def test_no_author_absolute_paths(self) -> None:
+        self.assertNotIn("/home/ds", self.text)
+
+    def test_sibling_formula_refs_are_pack_relative(self) -> None:
+        # Sibling-formula citations resolve via the pack's own GC_PACK_DIR.
+        for sibling in ("mol-pr-start", "mol-pr-ship", "mol-pr-review"):
+            self.assertIn(
+                f"${{GC_PACK_DIR}}/formulas/{sibling}.formula.toml",
+                self.text,
+                f"{sibling} reference must be pack-relative via GC_PACK_DIR",
+            )
+
+    def test_kill_switch_flag_is_home_relative(self) -> None:
+        # The auto-push kill-switch lives in the operator's gc home, not a
+        # hardcoded host path.
+        self.assertIn("${HOME}/.gc/auto-push-armed.flag", self.text)
+
+    def test_protected_paths_are_configurable(self) -> None:
+        # Repo-specific protected surfaces come from the GC_PROTECTED_PATHS
+        # env override, not a baked-in target-repo layout.
+        self.assertIn("GC_PROTECTED_PATHS", self.text)
+        self.assertNotIn("'^cmd/gc/dispatch_runtime", self.text)
+
+
 if __name__ == "__main__":
     unittest.main()

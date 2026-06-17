@@ -105,7 +105,7 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 **2. Run the mol-pr-start planning pipeline against issue {{issue_number}}.**
 
 Follow mol-pr-start's six step bodies in order (copy-with-prune from
-`/home/ds/gascity-packs/pr-pipeline/formulas/mol-pr-start.formula.toml`):
+`${GC_PACK_DIR}/formulas/mol-pr-start.formula.toml`):
 
   a. **intake** — read the issue via `gh issue view {{issue_number}}`; record
      `issue: {{issue_number}}`, `repo: $REPO`, `repo_root: $REPO_ROOT` on the
@@ -237,7 +237,7 @@ needs = ["gate-after-pr-start"]
 description = """
 Run mol-pr-ship's pre-push gate against the implemented branch.
 Copy-with-prune from
-`/home/ds/gascity-packs/pr-pipeline/formulas/mol-pr-ship.formula.toml`.
+`${GC_PACK_DIR}/formulas/mol-pr-ship.formula.toml`.
 
 **1. Find the root bead and resolve the branch:**
 ```bash
@@ -271,7 +271,7 @@ REPORT_PATH=".gc/pr-pipeline/ship/${SAFE}.md"
      isolation, test retry, stale-state guards, fail-closed, bootstrap
      init, API contract, transient retry — see mol-pr-review for the
      canonical descriptions in
-     `/home/ds/gascity-packs/pr-pipeline/formulas/mol-pr-review.formula.toml`).
+     `${GC_PACK_DIR}/formulas/mol-pr-review.formula.toml`).
      Fix blockers and majors in-place; commit each fix. Cap at 3
      iterations. If iteration 3 still has blockers/majors →
      readiness=BLOCKED.
@@ -363,8 +363,8 @@ id = "gate-auto-push-eligibility"
 title = "Gate: mechanical eligibility check before push"
 needs = ["gate-after-ship"]
 description = """
-Mechanical eligibility gate per the autonomous-pr-ship design
-(`/home/ds/gas-city/docs/design/autonomous-pr-ship.md`, dr-1l9hc4). This step
+Mechanical eligibility gate per the autonomous-pr-ship design decision
+(dr-1l9hc4). This step
 is the carve-out that lets a polecat actually push when — and only when — a
 positive `auto_push=true` signal arrived with the dispatch AND every
 mechanical check below passes.
@@ -420,12 +420,12 @@ halt_gate() {
 
   a. **kill-switch** (checked first so the gate fails fast when disarmed):
   ```bash
-  if [ ! -e /home/ds/.gc/auto-push-armed.flag ]; then
+  if [ ! -e "${HOME}/.gc/auto-push-armed.flag" ]; then
       bd update "$ROOT_ID" \\
         --set-metadata "evidence.review_required=true" \\
         --set-metadata "gc.halt_chain=true" \\
         --set-metadata "gc.escalate_to=mayor" \\
-        --set-metadata "summary_for_human=Auto-push kill-switch /home/ds/.gc/auto-push-armed.flag is absent. Halting at branch-ready for issue #${ISSUE_NUM}. Mayor must arm the flag before any auto-push proceeds."
+        --set-metadata "summary_for_human=Auto-push kill-switch ${HOME}/.gc/auto-push-armed.flag is absent. Halting at branch-ready for issue #${ISSUE_NUM}. Mayor must arm the flag before any auto-push proceeds."
       bd close "$ROOT_ID" --reason "auto-push gate halt: kill-switch absent"
       exit 0
   fi
@@ -447,22 +447,20 @@ halt_gate() {
   fi
   ```
 
-  d. **path-protection** — no paths matching `.github/**`,
-  `cmd/gc/dispatch_runtime.go`, `cmd/gc/session_lifecycle_*.go`,
-  `internal/api/**`, `internal/config/**`, `**/secrets/**`, `hooks/**`,
-  `.beads/**`, `**/migrations/**`, `bin/gc-*`:
+  d. **path-protection** — no paths matching the repo-agnostic baseline
+  (`.github/**`, `**/secrets/**`, `.beads/**`, `**/migrations/**`,
+  `hooks/**`) plus any city-supplied patterns in `GC_PROTECTED_PATHS`
+  (a `|`-delimited list of POSIX extended-regex patterns matched against
+  `git diff --name-only` output). The baseline covers paths that are
+  sensitive in any repo; a city whose target repo has its own critical
+  surfaces extends it via the env var — e.g. a Go control-plane city
+  protects its runtime with
+  `GC_PROTECTED_PATHS='^cmd/[^/]+/dispatch_runtime\\.go$|^cmd/[^/]+/session_lifecycle_[^/]+\\.go$|^internal/api/|^internal/config/|^bin/'`:
   ```bash
-  PROTECTED=$(git diff origin/main...HEAD --name-only | grep -E \\
-      -e '^\\.github/' \\
-      -e '^cmd/gc/dispatch_runtime\\.go$' \\
-      -e '^cmd/gc/session_lifecycle_[^/]+\\.go$' \\
-      -e '^internal/api/' \\
-      -e '^internal/config/' \\
-      -e '(^|/)secrets/' \\
-      -e '^hooks/' \\
-      -e '^\\.beads/' \\
-      -e '(^|/)migrations/' \\
-      -e '^bin/gc-' || true)
+  BASELINE='^\\.github/|(^|/)secrets/|^\\.beads/|(^|/)migrations/|^hooks/'
+  PATTERN="$BASELINE"
+  [ -n "${GC_PROTECTED_PATHS:-}" ] && PATTERN="${PATTERN}|${GC_PROTECTED_PATHS}"
+  PROTECTED=$(git diff origin/main...HEAD --name-only | grep -E "$PATTERN" || true)
   if [ -n "$PROTECTED" ]; then
       OFFENDERS=$(echo "$PROTECTED" | tr '\\n' ',' | sed 's/,$//')
       halt_gate "path-protection" "touches protected paths: ${OFFENDERS}"
