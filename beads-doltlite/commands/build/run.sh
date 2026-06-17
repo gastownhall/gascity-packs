@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: gc beads-doltlite build [gc|bd|client|all] [options]
+usage: gc beads-doltlite build [gc|bd|all] [options]
 
 Builds DoltLite-linked binaries from the Gas City and beads-doltlite source trees.
 The default target is gc.
@@ -17,18 +17,13 @@ Options:
   --output FILE      Build output path for the selected single target.
   --gc-output FILE   Build output path for gc. Default: <gc-source>/bin/gc.
   --bd-output FILE   Build output path for bd. Default: <bd-source>/bin/bd.
-  --client-output FILE
-                     Build output path for doltlite-client.
-                     Default: <build-details-dir>/bin/doltlite-client.
   --install          Install built binaries after link verification.
   --install-dir DIR  Install directory for both binaries.
-                     Default: existing supervisor gc path, active binary under $HOME,
-                     else $HOME/.local/bin.
+                     Default: active binary under $HOME, else $HOME/.local/bin.
   --gc-install FILE  Install path for gc.
   --bd-install FILE  Install path for bd.
   --build-details-dir DIR
-                     Directory for last-build-*.json.
-                     Default: runtime pack state dir.
+                     Directory for last-build-*.json. Default: pack folder.
   --restart          Stop supervisor/city before building gc, then start after install. Default.
   --no-restart       Do not restart supervisor/city after installing gc.
   --version VALUE    Version string embedded in gc. Default: dev.
@@ -41,7 +36,6 @@ Environment overrides:
   OUTPUT, GC_DOLTLITE_GC_OUTPUT, BD_OUTPUT, GC_DOLTLITE_BD_OUTPUT
   GC_DOLTLITE_INSTALL, GC_DOLTLITE_INSTALL_DIR
   GC_DOLTLITE_GC_INSTALL, GC_DOLTLITE_BD_INSTALL
-  GC_DOLTLITE_CLIENT_OUTPUT
   GC_DOLTLITE_BUILD_DETAILS_DIR
   GC_DOLTLITE_GO_CACHE_ROOT, GOCACHE, GOMODCACHE, GOTMPDIR
   GC_DOLTLITE_RESTART_AFTER_INSTALL, GC_DOLTLITE_RESTART_WAIT_SECONDS
@@ -164,51 +158,6 @@ verify_linked_binary() {
   fi
 }
 
-path_under_home() {
-  local path="$1"
-  [ -n "$path" ] && [ -n "${HOME:-}" ] && [[ "$path" == "$HOME"/* ]]
-}
-
-supervisor_gc_path() {
-  local unit="gascity-supervisor.service"
-  local value path candidate
-
-  for candidate in \
-    "${XDG_CONFIG_HOME:-${HOME:-}/.config}/systemd/user/$unit" \
-    "${HOME:-}/.local/share/systemd/user/$unit"; do
-    if [ -r "$candidate" ]; then
-      value="$(awk -F= '$1 == "ExecStart" { print substr($0, index($0, "=") + 1); exit }' "$candidate")"
-      if [ -n "$value" ]; then
-        case "$value" in
-          \"*) path="${value#\"}"; path="${path%%\"*}" ;;
-          *) path="${value%% *}" ;;
-        esac
-        if [ -n "$path" ]; then
-          echo "$path"
-          return 0
-        fi
-      fi
-    fi
-  done
-
-  if command -v systemctl >/dev/null 2>&1; then
-    value="$(systemctl --user show "$unit" -p ExecStart --value 2>/dev/null || true)"
-    if [ -n "$value" ]; then
-      path="${value#*path=}"
-      if [ "$path" != "$value" ]; then
-        path="${path%% ;*}"
-        path="${path%%;*}"
-        if [ -n "$path" ]; then
-          echo "$path"
-          return 0
-        fi
-      fi
-    fi
-  fi
-
-  return 1
-}
-
 default_install_path() {
   local name="$1"
   local current=""
@@ -216,17 +165,14 @@ default_install_path() {
     echo "$INSTALL_DIR/$name"
     return 0
   fi
-  if [ "$name" = "gc" ]; then
-    current="$(supervisor_gc_path || true)"
-    if path_under_home "$current"; then
-      echo "$current"
-      return 0
-    fi
-  fi
   current="$(command -v "$name" 2>/dev/null || true)"
-  if path_under_home "$current"; then
-    echo "$current"
-    return 0
+  if [ -n "$current" ] && [ -n "${HOME:-}" ]; then
+    case "$current" in
+      "$HOME"/*)
+        echo "$current"
+        return 0
+        ;;
+    esac
   fi
   if [ -n "${HOME:-}" ]; then
     echo "$HOME/.local/bin/$name"
@@ -366,25 +312,6 @@ controller_field_for_city() {
   local status_file
   status_file="$(mktemp "${TMPDIR:-/tmp}/gc-status.XXXXXX")"
   if ! "$gc_bin" status --json "$CITY_ROOT" >"$status_file" 2>/dev/null && [ ! -s "$status_file" ]; then
-    rm -f "$status_file"
-    return 0
-  fi
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "$field" "$status_file" <<'PY'
-import json
-import sys
-
-field, path = sys.argv[1], sys.argv[2]
-try:
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-except Exception:
-    sys.exit(0)
-value = (data.get("controller") or {}).get(field, "")
-if value is None:
-    value = ""
-print(value)
-PY
     rm -f "$status_file"
     return 0
   fi
@@ -653,49 +580,6 @@ build_bd() {
   write_build_details "bd" "$BD_SRC" "$BD_OUTPUT" "$installed_to" "$commit" "$BD_BUILD_VALUE" "$branch" "libsqlite3" "$date"
 }
 
-build_client() {
-  if [ -z "$GASCITY_SRC" ]; then
-    GASCITY_SRC="$(find_gascity_source || true)"
-  fi
-  if [ -z "$GASCITY_SRC" ] || ! has_gascity_source "$GASCITY_SRC"; then
-    die "could not find Gas City source; set GASCITY_SRC=/path/to/gascity or pass --gc-source"
-  fi
-  GASCITY_SRC="$(abs_dir "$GASCITY_SRC")"
-
-  if [ ! -f "$GASCITY_SRC/tools/doltlite-client/main.go" ]; then
-    die "could not find doltlite-client source under $GASCITY_SRC/tools/doltlite-client"
-  fi
-
-  if [ -z "$CLIENT_OUTPUT" ]; then
-    CLIENT_OUTPUT="$BUILD_DETAILS_DIR/bin/doltlite-client"
-  fi
-
-  local commit="${GC_COMMIT:-}"
-  if [ -z "$commit" ]; then
-    commit="$(revision_for "$GASCITY_SRC")"
-  fi
-  commit="${commit:-unknown}"
-  local date="${GC_BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
-
-  mkdir -p "$(dirname "$CLIENT_OUTPUT")"
-  common_env_prefix "gascity_doltlite_lib,libsqlite3"
-
-  echo "building doltlite-client from $GASCITY_SRC"
-  echo "linking libdoltlite from $DOLTLITE_LIB"
-  echo "writing $CLIENT_OUTPUT"
-
-  (
-    cd "$GASCITY_SRC"
-    go build \
-      -o "$CLIENT_OUTPUT" \
-      ./tools/doltlite-client
-  )
-
-  verify_linked_binary "$CLIENT_OUTPUT" "doltlite-client"
-  echo "built libdoltlite-linked doltlite-client: $CLIENT_OUTPUT"
-  write_build_details "doltlite-client" "$GASCITY_SRC" "$CLIENT_OUTPUT" "$CLIENT_OUTPUT" "$commit" "dev" "" "gascity_doltlite_lib,libsqlite3" "$date"
-}
-
 CITY_ROOT="${GC_CITY_PATH:-$(pwd)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACK_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -712,7 +596,6 @@ BD_SRC="${BD_SRC:-${BEADS_DOLTLITE_SRC:-${GC_BEADS_DOLTLITE_SRC:-}}}"
 DOLTLITE_LIB="${DOLTLITE_LIB:-${GC_DOLTLITE_LIB:-}}"
 GC_OUTPUT="${GC_DOLTLITE_GC_OUTPUT:-}"
 BD_OUTPUT="${BD_OUTPUT:-${GC_DOLTLITE_BD_OUTPUT:-}}"
-CLIENT_OUTPUT="${GC_DOLTLITE_CLIENT_OUTPUT:-}"
 INSTALL_BUILT="${GC_DOLTLITE_INSTALL:-0}"
 INSTALL_DIR="${GC_DOLTLITE_INSTALL_DIR:-}"
 GC_INSTALL="${GC_DOLTLITE_GC_INSTALL:-}"
@@ -727,7 +610,7 @@ BD_BUILD_VALUE="${BD_BUILD:-dev}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    gc|bd|client|all)
+    gc|bd|all)
       TARGET="$1"
       shift
       ;;
@@ -801,15 +684,6 @@ while [ "$#" -gt 0 ]; do
       ;;
     --bd-output=*)
       BD_OUTPUT="${1#*=}"
-      shift
-      ;;
-    --client-output)
-      require_value "$1" "${2:-}"
-      CLIENT_OUTPUT="$2"
-      shift 2
-      ;;
-    --client-output=*)
-      CLIENT_OUTPUT="${1#*=}"
       shift
       ;;
     --install)
@@ -895,7 +769,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$TARGET" in
-  gc|bd|client|all) ;;
+  gc|bd|all) ;;
   *) usage_error "unknown target: $TARGET" ;;
 esac
 
@@ -903,7 +777,6 @@ if [ -n "$COMMON_SOURCE" ]; then
   case "$TARGET" in
     gc) GASCITY_SRC="$COMMON_SOURCE" ;;
     bd) BD_SRC="$COMMON_SOURCE" ;;
-    client) GASCITY_SRC="$COMMON_SOURCE" ;;
     all) usage_error "--source is ambiguous with target all; use --gc-source and --bd-source" ;;
   esac
 fi
@@ -912,8 +785,7 @@ if [ -n "$COMMON_OUTPUT" ]; then
   case "$TARGET" in
     gc) GC_OUTPUT="$COMMON_OUTPUT" ;;
     bd) BD_OUTPUT="$COMMON_OUTPUT" ;;
-    client) CLIENT_OUTPUT="$COMMON_OUTPUT" ;;
-    all) usage_error "--output is ambiguous with target all; use --gc-output, --bd-output, and --client-output" ;;
+    all) usage_error "--output is ambiguous with target all; use --gc-output and --bd-output" ;;
   esac
 fi
 
@@ -943,7 +815,7 @@ fi
 DOLTLITE_LIB="$(abs_dir "$DOLTLITE_LIB")"
 
 if [ -z "$BUILD_DETAILS_DIR" ]; then
-  BUILD_DETAILS_DIR="${GC_PACK_STATE_DIR:-$CITY_ROOT/.gc/runtime/packs/beads-doltlite}"
+  BUILD_DETAILS_DIR="$PACK_DIR"
 fi
 if [ -z "$GO_CACHE_ROOT" ]; then
   GO_CACHE_ROOT="$CITY_ROOT/.cache/go"
@@ -973,12 +845,8 @@ case "$TARGET" in
   bd)
     build_bd
     ;;
-  client)
-    build_client
-    ;;
   all)
     build_bd
-    build_client
     build_gc
     ;;
 esac
