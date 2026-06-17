@@ -5,18 +5,19 @@
 # hand, so any city that imports this pack gets the same discipline as
 # platform-native formulas and commands.
 #
-# v0.1.0 ships five formulas:
+# v0.1.0 ships six formulas:
 #   - mol-pr-start          author-side issue → plan workflow
 #   - mol-pr-blast-radius   composable impact-surface mapping
 #   - mol-pr-review         outgoing-PR self-review (11-category scorecard)
 #   - mol-pr-ship           pre-push gate (simplify → multi-reviewer panel → check)
 #   - mol-pr-triage         scan/classify open issues into a ranked work-queue
+#   - mol-pr-from-issue     author-side issue → branch-ready PR (macro chain)
 #
 # The first four have wrapper `pr` commands (plan/blast-radius/review/ship);
-# mol-pr-triage is dispatched on demand by the maintenance PL.
-#
-# (mol-pr-from-issue — author-side issue → branch-ready PR — is ported into
-#  this pack by the gate-4 port on this same publish branch; not in this commit.)
+# mol-pr-triage and mol-pr-from-issue are dispatched on demand by the
+# maintenance PL. mol-pr-from-issue is slung as a routed molecule, so its
+# GitHub-issue input is named `issue_number` (the bare `issue` var name is a
+# reserved formulas-v2 alias for the routed work bead).
 #
 # Sibling pack `pr-review` covers the maintainer-side incoming-PR
 # review/merge workflow (`mol-adopt-pr`); this pack focuses on the

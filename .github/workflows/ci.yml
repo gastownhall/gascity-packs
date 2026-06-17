@@ -38,7 +38,7 @@ jobs:
         run: python3 validate_registry.py
 
       - name: Run Python pack tests
-        run: python3 -m pytest tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests -q
+        run: python3 -m pytest tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests pr-pipeline/tests -q
 
       - name: Run Gastown shell tests
         run: |

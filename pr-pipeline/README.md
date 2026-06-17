@@ -25,6 +25,21 @@ review-iteration stages; everything else writes only to
 `.gc/pr-pipeline/<sub>/`. None of them push or open PRs — those decisions
 stay with the caller.
 
+Two further formulas ship without a wrapper command — they are dispatched
+on demand (typically by a maintenance PL) rather than run by hand:
+
+| Formula | Dispatch | Purpose |
+|---------|----------|---------|
+| `mol-pr-triage`     | `gc sling <rig>/<agent> mol-pr-triage --formula` | Scan/classify open issues into a ranked work-queue |
+| `mol-pr-from-issue` | `gc sling <rig>/<agent> mol-pr-from-issue --formula --var issue_number=<N>` | Author-side macro chain: issue → plan → implement → ship gate → (optional) open PR |
+
+`mol-pr-from-issue` is slung as a routed molecule, so its GitHub-issue
+input is named **`issue_number`** rather than `issue` — the bare `issue`
+var name is a reserved formulas-v2 alias for the routed work bead and
+would be clobbered. It defaults to halt-at-branch-ready (`auto_push`
+absent → no push, no PR); pass `--var auto_push=true` to authorize the
+eligibility-gated push.
+
 ## Sibling pack
 
 `pr-review` (in this same repo) covers the **maintainer-side incoming-PR
@@ -118,7 +133,9 @@ pr-pipeline/
 │   ├── mol-pr-start.formula.toml          6-step planner
 │   ├── mol-pr-blast-radius.formula.toml   5-step impact mapper
 │   ├── mol-pr-review.formula.toml         4-step outgoing-PR scorecard
-│   └── mol-pr-ship.formula.toml           5-step pre-push gate
+│   ├── mol-pr-ship.formula.toml           5-step pre-push gate
+│   ├── mol-pr-triage.formula.toml         issue scan → ranked work-queue
+│   └── mol-pr-from-issue.formula.toml     7-step issue → branch-ready PR
 ├── commands/
 │   └── pr/
 │       ├── plan/         (run.sh + help.md)
