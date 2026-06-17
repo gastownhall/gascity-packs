@@ -1,0 +1,40 @@
+description = """
+Shape hunk-level work into claim-sized beads for isolated jj subagent
+workspaces.
+
+Use this formula for tasksmith sessions that turn a user request into beads
+that can be implemented by `mol-jj-hunk-work`.
+"""
+formula = "mol-jj-hunk-subagent-task"
+version = 1
+
+[[steps]]
+id = "inspect-request"
+title = "Inspect request and repository context"
+description = """
+Read the user request and inspect only the pack or repository surfaces needed
+to scope the hunk-level work.
+
+Exit criteria:
+
+- the target operation is identified
+- the parent/base revision or workspace expectation is explicit
+- affected files are known
+"""
+
+[[steps]]
+id = "shape-beads"
+title = "Shape hunk-surgery beads"
+needs = ["inspect-request"]
+description = """
+Create the fewest claim-sized beads that preserve stack order and ownership.
+Each bead must name `formula: mol-jj-hunk-work`, target files, verification
+steps, dependencies, and whether the implementation should split, commit, or
+squash selected hunks.
+
+Exit criteria:
+
+- every bead is independently claimable
+- dependencies encode only real stack order
+- each bead can be dispatched with `gc formula cook mol-jj-hunk-work --attach <id>`
+"""

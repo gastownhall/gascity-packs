@@ -1,0 +1,96 @@
+description = """
+Implement one hunk-level jj task using jj-hunk specs and non-interactive
+verification.
+
+Use this for beads that require selecting, splitting, committing, or squashing
+specific hunks without an interactive UI.
+"""
+formula = "mol-jj-hunk-work"
+version = 1
+
+[[steps]]
+id = "load-context"
+title = "Load bead and jj context"
+description = """
+Read the attached bead, its acceptance criteria, file targets, dependencies,
+and verification steps. Inspect the current jj workspace before making changes.
+
+```bash
+gc hook
+jj status
+jj log -r 'trunk()..@'
+```
+
+Exit criteria:
+
+- the target hunk operation is clear
+- the current workspace and stack are understood
+- missing or conflicting bead details are reported before editing
+"""
+
+[[steps]]
+id = "list-hunks"
+title = "List hunks and prepare a spec"
+needs = ["load-context"]
+description = """
+List the available hunks and write a spec file for the intended operation.
+
+```bash
+jj-hunk list --spec-template --format yaml > /tmp/jj-hunk-spec.yaml
+jj-hunk list --files
+```
+
+Edit the spec file so it selects only the hunks required by the bead. Prefer
+stable ids when the tool exposes them.
+
+Exit criteria:
+
+- the spec file exists
+- the selected files and hunks match the bead
+- default handling for unselected hunks is explicit
+"""
+
+[[steps]]
+id = "apply-operation"
+title = "Apply the hunk operation"
+needs = ["list-hunks"]
+description = """
+Run the operation requested by the bead using the spec file.
+
+Examples:
+
+```bash
+jj-hunk split --spec-file /tmp/jj-hunk-spec.yaml "change summary"
+jj-hunk commit --spec-file /tmp/jj-hunk-spec.yaml "change summary"
+jj-hunk squash --spec-file /tmp/jj-hunk-spec.yaml
+```
+
+If the operation produces the wrong diff or graph, run `jj undo` before trying
+again.
+
+Exit criteria:
+
+- the requested hunk operation completed
+- no unintended files or hunks moved
+"""
+
+[[steps]]
+id = "verify"
+title = "Verify result"
+needs = ["apply-operation"]
+description = """
+Verify the stack and run the bead-specific checks.
+
+```bash
+jj status
+jj diff --git
+```
+
+Run every verification command listed on the bead.
+
+Exit criteria:
+
+- `jj status` is understood
+- the final diff matches the bead
+- required checks pass or failures are reported with context
+"""

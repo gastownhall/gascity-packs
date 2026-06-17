@@ -1,0 +1,1 @@
+description = "Split selected hunks into a new jj change using a jj-hunk spec"

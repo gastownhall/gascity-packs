@@ -1,0 +1,10 @@
+scope = "rig"
+provider = "codex-gpt-5-5"
+wake_mode = "fresh"
+formula = "mol-jj-hunk-work"
+work_dir = ".gc/workspaces/{{.Rig}}/surgeon/{{.AgentBase}}"
+nudge = "Run gc hook; it checks assigned hunk-surgery work first, then routed pool work."
+pre_start = ["{{.ConfigDir}}/assets/scripts/workspace-setup.sh {{.RigRoot}} {{.WorkDir}} {{.AgentBase}} --sync${JJ_HUNK_WORK_BEAD_ID:+ --bead \"$JJ_HUNK_WORK_BEAD_ID\"}"]
+idle_timeout = "2h"
+min_active_sessions = 0
+max_active_sessions = 5

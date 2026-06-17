@@ -1,0 +1,22 @@
+[pack]
+name = "jj-hunk"
+version = "0.1.0"
+schema = 2
+description = "Agent-safe jj hunk selection workflows and subagent workspace tasking."
+
+[imports.jjw]
+source = "../jjw"
+
+[providers.codex-gpt-5-5]
+base = "builtin:codex"
+option_defaults = { model = "gpt-5.5", effort = "medium" }
+
+[[named_session]]
+template = "tasksmith"
+scope = "rig"
+mode = "always"
+
+[[named_session]]
+template = "surgeon"
+scope = "rig"
+mode = "on_demand"

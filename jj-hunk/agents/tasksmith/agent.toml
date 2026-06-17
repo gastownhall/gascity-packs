@@ -1,0 +1,7 @@
+scope = "rig"
+provider = "codex-gpt-5-5"
+wake_mode = "fresh"
+formula = "mol-jj-hunk-subagent-task"
+work_dir = ".gc/workspaces/{{.Rig}}/jj-hunk-tasksmith/{{.AgentBase}}"
+nudge = "Await a concrete jj-hunk task-shaping request. Do not create beads from startup alone."
+idle_timeout = "2h"
