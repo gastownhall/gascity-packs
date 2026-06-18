@@ -5,4 +5,4 @@ nudge = "Run gc hook --claim --json now; if it returns work, execute the claimed
 pre_start = ["{{.ConfigDir}}/assets/scripts/worktree-setup.sh {{.RigRoot}} {{.WorkDir}} {{.AgentBase}} --sync"]
 idle_timeout = "2h"
 min_active_sessions = 0
-max_active_sessions = 5
+max_active_sessions = 8
