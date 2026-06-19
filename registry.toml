@@ -207,3 +207,16 @@ schema = 1
     commit = "26614e665705b33f586c8bc41ef73592548114fd"
     hash = "sha256:92b4debf702222eb5fbb516e78ebd6397b1bdb98c67df2e542522a8faaa337fe"
     description = "Initial pr-pipeline release: four author-side formulas (mol-pr-start, mol-pr-blast-radius, mol-pr-review, mol-pr-ship) + wrapper commands."
+
+[[pack]]
+  name = "contributing"
+  description = "The external-contributor lifecycle for gastownhall/gascity — write a good issue, find priority work, open a PR, and self-review before pushing. Composes pr-pipeline."
+  source = "https://github.com/gastownhall/gascity-packs//contributing"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "main"
+    commit = "16f8297d4e62e143456bfbe4a00e0980a7d9400e"
+    hash = "sha256:8ee58fba7a87a2390fe707ccb593eec3f25b303782696d836d800e68992beeef"
+    description = "Initial contributing pack release."
