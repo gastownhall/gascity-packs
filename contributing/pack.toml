@@ -1,0 +1,32 @@
+# Contributing — the external-contributor lifecycle for gastownhall/gascity,
+# distributed as a Gas City pack.
+#
+# Gives an outside contributor the full journey of landing work in
+# https://github.com/gastownhall/gascity:
+#
+#   1. write a best-practice issue        (this pack's write-issue skill)
+#   2. find priority work                  (pr-pipeline: mol-pr-triage)
+#   3. plan & open a PR for an issue        (pr-pipeline: pr plan + pr blast-radius)
+#   4. self-review before pushing           (pr-pipeline: pr review + pr ship)
+#
+# Only step 1 is net-new here. Steps 2-4 are ALREADY delivered by the
+# pr-pipeline pack, so this pack composes pr-pipeline rather than
+# re-implementing it. The contributing skill stitches the four steps into a
+# single lifecycle and routes each one to the right command.
+#
+# Usage in your city's pack.toml:
+#   [imports.contributing]
+#   source = "../packs/contributing"   # path; or git URL when published
+#
+# This pack pairs with pr-pipeline. The import below resolves the sibling
+# pack so `gc pr-pipeline pr ...` commands are available alongside the
+# contributing skills. Repoint `source` to wherever your city vendors
+# pr-pipeline (a git URL once both packs are published).
+
+[pack]
+name = "contributing"
+version = "0.1.0"
+schema = 2
+
+[imports.pr-pipeline]
+source = "../pr-pipeline"

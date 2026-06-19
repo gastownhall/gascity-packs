@@ -1,0 +1,2 @@
+description = 'GitHub CLI is available for duplicate search and issue/PR filing'
+run = '../check-gh.sh'

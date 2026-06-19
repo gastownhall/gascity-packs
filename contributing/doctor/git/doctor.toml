@@ -1,0 +1,2 @@
+description = 'git is available for verifying bugs against origin/main'
+run = '../check-git.sh'

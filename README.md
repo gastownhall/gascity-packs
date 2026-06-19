@@ -197,6 +197,20 @@ your use case:
 See the [tiering design memo](./docs/design/slack-pack-tiering.md) for the
 rationale.
 
+### Contributor workflow packs
+
+Discipline for sending good work *to* another repo — planning, building,
+reviewing, and shipping the PRs your city authors.
+
+- [pr-pipeline](./pr-pipeline) ships the author-side PR workflows as formulas
+  (and four wrapper `pr` commands): plan an issue into a structured plan, map a
+  change's blast radius, self-review an outgoing PR against an 11-category
+  scorecard, and run a pre-push gate. None of them push or open PRs.
+- [contributing](./contributing) stitches the full external-contributor
+  lifecycle for `gastownhall/gascity` — write a good issue, find priority work,
+  open a PR, self-review — into one map. It imports `pr-pipeline` for steps 2-4
+  and adds the net-new `write-issue` issue-authoring discipline for step 1.
+
 ## Contributing
 
 Issues and pull requests are welcome. When a pack's surface changes, update
