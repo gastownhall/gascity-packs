@@ -1,0 +1,3 @@
+description = "City-scope run operator for deterministic setup, validation, gates, metadata, and finalization at city root"
+scope = "city"
+fallback = true
