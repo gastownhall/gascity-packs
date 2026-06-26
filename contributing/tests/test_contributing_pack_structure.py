@@ -9,12 +9,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 EXPECTED_SKILLS = {
-    "blast-radius",
-    "check",
     "contributing",
     "find-work",
-    "plan-pr",
-    "ship",
+    "fine-tune",
+    "map-blast-radius",
+    "plan-implementation",
+    "review",
     "write-issue",
 }
 

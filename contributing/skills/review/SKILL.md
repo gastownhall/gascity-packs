@@ -1,16 +1,18 @@
 ---
-name: check
-description: Verify a change against gastownhall/gascity's actual quality bar before you push a PR. Runs the mechanical gates (make build + make check + make check-docs if docs touched), classifies test failures as pre-existing noise vs new regressions, and audits the diff against the full Gas City adoption-review checklist (B1-B36) — zero hardcoded roles, ZFC, the Bitter Lesson, the test tiers, the code conventions, config-nil semantics, store-write errors, timeout isolation, startup-vs-reload safety, goroutine lifecycle, do*/cmd* split, env hermeticity, and more. Self-contained — you (or your coding agent) run every check by reading this skill; no internal tools required. Use before opening any PR to gastownhall/gascity.
+name: review
+description: Review a diff against gastownhall/gascity's actual quality bar — a read-only code review you can run on any branch, including before a PR exists. Runs the mechanical gates (make build + make check + make check-docs if docs touched), classifies test failures as pre-existing noise vs new regressions, and audits the diff against the full Gas City adoption-review checklist (B1-B36) — zero hardcoded roles, ZFC, the Bitter Lesson, the test tiers, the code conventions, config-nil semantics, store-write errors, timeout isolation, startup-vs-reload safety, goroutine lifecycle, do*/cmd* split, env hermeticity, and more. Self-contained — you (or your coding agent) run every check by reading this skill; no internal tools required. Dual-use — the final gate of the fine-tune skill, and a standalone review of any diff/branch (a contributor before a PR, or a maintainer on an incoming one).
 ---
 
-# Run the Gas City Codebase Check
+# Review a Gas City Diff
 
-You are an external contributor about to open a PR to
-[gastownhall/gascity](https://github.com/gastownhall/gascity). This skill is the
-audit a Gas City maintainer's adoption review will run on your diff — front-loaded
-so you fix the findings before they cost you a review round-trip.
+You are reviewing a diff against
+[gastownhall/gascity](https://github.com/gastownhall/gascity) — your own branch
+before you push, or someone else's incoming contribution. This skill is the audit
+a Gas City maintainer's adoption review runs on a diff, front-loaded so the
+findings get fixed before they cost a review round-trip. It is read-only and needs
+no PR to exist; run it on any branch.
 
-Run it on your branch from inside your local checkout of `gastownhall/gascity`.
+Run it on the branch from inside a local checkout of `gastownhall/gascity`.
 Two parts: **Part A** is the mechanical gates (build/lint/vet/test/docs); **Part
 B** is the codebase audit (the B-rules). Do both. Produce the Part C report.
 
@@ -312,7 +314,7 @@ Output exactly this format. Keep each B-line to one concern with a `file:line`
 ref.
 
 ```
-Gas City check — <branch>
+Gas City review — <branch>
 
 Part A — Mechanical gates:
   make build       : ✅ / ❌
@@ -369,12 +371,16 @@ Verdict: READY TO PUSH / NEEDS FIXES
 
 ## When to use
 
-- Before opening any PR to `gastownhall/gascity`.
-- After fixing issues a previous run of this check flagged.
-- Whenever you're unsure a change meets the codebase bar.
+This skill is **dual-use** — a phase of a parent skill AND a standalone utility:
+
+- As the **final gate of [`fine-tune`](../fine-tune/SKILL.md)** (its Stage 3),
+  run automatically before a push.
+- **Standalone**, to review any diff/branch against the Gas City standard —
+  before opening a PR, after fixing findings a previous run flagged, when you're
+  unsure a change meets the bar, or as a maintainer reviewing an incoming
+  contribution (it needs no PR to exist).
 
 Mechanical-gate failures and B-rule findings are not equal: `fmt-check`/`lint`/`vet`
 and a real test regression are hard blockers; B-rule `⚠️` findings are things a
 maintainer will flag — fix them, or consciously decide to leave one and say why
-in the PR body. The [`ship`](../ship/SKILL.md) skill runs this check as its final
-gate.
+in the PR body.

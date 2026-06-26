@@ -32,7 +32,7 @@ notes via `bd update <root-id> --notes "<key>: <value>"`.
 | Repo is not gastownhall/gascity | Record error, close bead |
 | `gh` not authenticated | Record error, close bead |
 | No open issues match category | Write empty-queue report, close bead with note |"""
-formula = "mol-contributing-triage"
+formula = "mol-contributing-find-work"
 version = 1
 
 [vars]
@@ -144,7 +144,7 @@ needs = ["find-work"]
 description = """
 Display the report path and recommended pick on stdout for the caller, then
 close the root bead. No further work happens — the caller reviews the
-report and decides which issue to dispatch via `mol-contributing-start`.
+report and decides which issue to dispatch via `mol-contributing-plan-implementation`.
 
 ```bash
 ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
@@ -152,10 +152,10 @@ NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 REPORT_PATH=$(echo "$NOTES" | grep -m1 '^report_path:' | sed 's/^report_path: //')
 RECOMMENDED=$(echo "$NOTES" | grep -m1 '^recommended:' | sed 's/^recommended: //')
 cat <<EOF
-[contributing-triage] Work-queue report ready
-[contributing-triage]   Path: $REPORT_PATH
-[contributing-triage]   Recommended next pick: #$RECOMMENDED
-[contributing-triage] Next: review the report, then dispatch mol-contributing-start --var issue=<N>.
+[contributing-find-work] Work-queue report ready
+[contributing-find-work]   Path: $REPORT_PATH
+[contributing-find-work]   Recommended next pick: #$RECOMMENDED
+[contributing-find-work] Next: review the report, then dispatch mol-contributing-plan-implementation --var issue=<N>.
 EOF
 bd update "$ROOT_ID" --notes "status: complete"
 bd close "$ROOT_ID" --reason "contributor triage report written: $REPORT_PATH"

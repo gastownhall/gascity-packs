@@ -1,9 +1,9 @@
 ---
-name: ship
-description: The pre-push self-review gate for a gastownhall/gascity PR. Runs in sequence — design-capture gate, a simplify pass, a self-review against the recurring adoption-review findings (iterate until clean), optional performance measurement, then the full check skill (mechanical gates + B1-B36 audit) — and produces a readiness report. It STOPS at the report; pushing the branch and opening the PR are your call. Self-contained — no internal hooks or tooling required. Use right before you open a PR to gastownhall/gascity.
+name: fine-tune
+description: The pre-push fine-tuning loop for a gastownhall/gascity PR — the mutating polish pass that ends by reviewing the diff. Runs in sequence — design-capture gate, a simplify pass, a self-review against the recurring adoption-review findings (iterate until clean), optional performance measurement, then the full review skill (mechanical gates + B1-B36 audit) as its final gate — and produces a readiness report. It STOPS at the report; pushing the branch and opening the PR are your call. Self-contained — no internal hooks or tooling required. Use right before you open a PR to gastownhall/gascity.
 ---
 
-# Ship — Pre-Push Self-Review
+# Fine-Tune — Pre-Push Polish Loop
 
 Your code is written and you're about to open a PR to
 [gastownhall/gascity](https://github.com/gastownhall/gascity). This skill runs the
@@ -23,8 +23,8 @@ The cheapest finding to fix is the one captured before review. Architectural wor
 on Gas City lands *with* a design artifact under `engdocs/design/`; a missing one
 is the most common reason an architectural PR costs an extra "what's the intent?"
 round-trip. This gate catches it before push — it's read-only and never authors
-the doc (authoring belongs in [`plan-pr`](../plan-pr/SKILL.md) Phase 3.5, before
-the code).
+the doc (authoring belongs in [`plan-implementation`](../plan-implementation/SKILL.md)
+Phase 3.5, before the code).
 
 ```bash
 git diff --stat main...HEAD
@@ -34,7 +34,7 @@ git diff --name-only main...HEAD -- 'engdocs/design/**' 'release-gates/**'
 git log main..HEAD --format='%B' | grep -iE 'engdocs/design|release-gates'
 ```
 
-Apply the same trigger test as `plan-pr` Phase 3.5:
+Apply the same trigger test as `plan-implementation` Phase 3.5:
 
 - **Point fix / test-only / docs-only / behavior-preserving refactor** → design
   capture **N/A**. Pass.
@@ -53,8 +53,8 @@ git ls-files 'engdocs/design/**' 'release-gates/**' | grep -iE '<pkg-or-feature-
   in a commit/PR body). Cheap; do it and pass.
 - **None exists, none added** → report `Design capture: ⚠️ MISSING`. Don't silently
   block, but the default recommendation is **stop and add the doc** via
-  [`plan-pr`](../plan-pr/SKILL.md) Phase 3.5 — adding it after review fragments the
-  PR.
+  [`plan-implementation`](../plan-implementation/SKILL.md) Phase 3.5 — adding it
+  after review fragments the PR.
 
 ## Stage 1 — Simplify
 
@@ -147,18 +147,19 @@ A perf-touching PR is **not ready** until it captures:
 If perf-touching and any of 1–4 is missing → report `Performance: ⚠️ UNMEASURED`
 (a conscious waive, never a silent pass).
 
-## Stage 3 — Run the check
+## Stage 3 — Run the review
 
-Run the full [`check`](../check/SKILL.md) skill: mechanical gates (`make build` /
+Run the full [`review`](../review/SKILL.md) skill: mechanical gates (`make build` /
 `make check` / `make check-docs`) with baseline-vs-regression classification, plus
-the B1–B36 codebase audit. This stage is read-only.
+the B1–B36 codebase audit. This stage is read-only — it is the review skill's
+standalone audit, run here as fine-tune's final gate.
 
 ## Stage 4 — Readiness report
 
 Combine the stages into one report:
 
 ```
-Gas City ship readiness — <branch>
+Gas City fine-tune readiness — <branch>
 
 Stage 0 — Design capture:
   Change class: <point-fix | test/docs-only | refactor | architectural>
@@ -183,11 +184,11 @@ Stage 2.5 — Performance (perf-touching only):
   Residual / deferred:   <un-optimized fraction>
   Correctness guard:     ✅ same-answer / ⚠️ <risk> / N/A
 
-Stage 3 — Check:
+Stage 3 — Review:
   Part A (mechanical gates): ✅ / ❌
   Part B (codebase audit):   ✅ / ⚠️ <count> findings
 
-  <paste the check skill's report>
+  <paste the review skill's report>
 
 Overall: READY / BLOCKED (<what needs fixing>)
 ```
@@ -218,7 +219,7 @@ catch before push next time.
 ## Handling failures
 
 - **Stage 0 design capture MISSING (architectural)** → warning. Default: stop and
-  add the doc via `plan-pr` Phase 3.5. Never auto-author it here.
+  add the doc via `plan-implementation` Phase 3.5. Never auto-author it here.
 - **Stage 1 breaks the build** → revert the simplify changes, note it, continue.
 - **Stage 2 won't converge in ~3 iterations** → report BLOCKED; decide consciously.
 - **Stage 3 fails mechanical gates** → BLOCKED; fix before push.

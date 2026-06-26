@@ -1,6 +1,6 @@
 ---
-name: blast-radius
-description: Map the full impact surface of a change to gastownhall/gascity before you commit — callers and their execution contexts (startup/tick/reload/CLI/API/shutdown), downward callees and their risky patterns (stale config, swallowed store errors, leaked goroutines), config-field sync chains, the domain-boundary crossings, concurrency, and cross-repo contracts (gastown/beads). Self-contained — runs on plain git + grep + gh, no internal tooling. Use before committing anything that touches the reconciler, controller, lifecycle, dispatch, config, or any cross-subsystem code, and as Phase 2 of the plan-pr skill.
+name: map-blast-radius
+description: Map the full impact surface of a change to gastownhall/gascity before you commit — callers and their execution contexts (startup/tick/reload/CLI/API/shutdown), downward callees and their risky patterns (stale config, swallowed store errors, leaked goroutines), config-field sync chains, the domain-boundary crossings, concurrency, and cross-repo contracts (gastown/beads). Self-contained — runs on plain git + grep + gh, no internal tooling. Dual-use — Phase 2 of the plan-implementation skill, and a standalone impact map (scoping a refactor, ad-hoc impact mapping, mapping a change for someone else). Use before committing anything that touches the reconciler, controller, lifecycle, dispatch, config, or any cross-subsystem code.
 ---
 
 # Map the Blast Radius
@@ -171,13 +171,17 @@ Recommendation: PROCEED / FIX BEFORE COMMIT
 ```
 
 Keep findings to one line each, with a `file:line` ref. The HIGH/MED items feed
-the `Risks` section of your [`plan-pr`](../plan-pr/SKILL.md) plan and the audit in
-[`check`](../check/SKILL.md).
+the `Risks` section of your [`plan-implementation`](../plan-implementation/SKILL.md)
+plan and the audit in [`review`](../review/SKILL.md).
 
 ## When to use
 
-- Before committing a change that touches the reconciler, controller, or
-  lifecycle code.
-- When a change spans multiple subsystems (config + runtime, beads + dispatch).
-- When you're unsure whether a function runs on startup only or also on reload.
-- As **Phase 2** of [`plan-pr`](../plan-pr/SKILL.md), before you write code.
+This skill is **dual-use** — a phase of a parent skill AND a standalone utility:
+
+- As **Phase 2 of [`plan-implementation`](../plan-implementation/SKILL.md)**,
+  before you write code.
+- **Standalone**, for ad-hoc impact mapping — before committing a change that
+  touches the reconciler, controller, or lifecycle code; when a change spans
+  multiple subsystems (config + runtime, beads + dispatch); when you're unsure
+  whether a function runs on startup only or also on reload; when scoping a
+  refactor or mapping a change for someone else.

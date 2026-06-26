@@ -4,12 +4,14 @@
 # Gives an outside contributor the full journey of landing work in
 # https://github.com/gastownhall/gascity:
 #
-#   1. write a best-practice issue        (write-issue skill)
-#   2. find priority work                  (find-work skill)
-#   3. plan a PR for an issue              (plan-pr skill)
-#   4. map the impact surface             (blast-radius skill)
-#   5. verify against the codebase audit  (check skill)
-#   6. self-review before pushing          (ship skill)
+#   1. write a best-practice issue   (write-issue skill)
+#   2. find priority work            (find-work skill)
+#   3. plan the implementation       (plan-implementation skill)
+#   4. fine-tune the diff            (fine-tune skill)
+#
+# Two sub-skills are a phase of a parent AND a standalone utility (not steps):
+#   - map-blast-radius  Phase 2 of plan-implementation; standalone impact map
+#   - review            final gate of fine-tune; standalone diff/branch review
 #
 # SELF-CONTAINED by design. Every step carries Gas City's ACTUAL standards
 # baked into the skill text — the full adoption-review audit (B1-B36), the
@@ -27,19 +29,19 @@
 # TWO MODES, ONE SET OF STANDARDS:
 #   - skills/   — agent-read: your coding agent applies the standards by
 #                 READING the skill text. The default for a contributor with a
-#                 coding agent. (write-issue, find-work, plan-pr, blast-radius,
-#                 check, ship)
+#                 coding agent. (write-issue, find-work, plan-implementation,
+#                 fine-tune, map-blast-radius, review)
 #   - formulas/ — gc-orchestrated: thin `mol-contributing-*` wrappers that drive
 #                 the same lifecycle as gc formulas, for a city that wants to
 #                 dispatch the steps to a polecat session. Each wrapper DELEGATES
 #                 all standards to its sibling skill — the skill stays the single
 #                 source of truth; the formula adds only the gc orchestration
 #                 (root-bead run state, output paths, blocking early-exit).
-#       mol-contributing-triage       -> find-work skill
-#       mol-contributing-start        -> plan-pr skill
-#       mol-contributing-blast-radius -> blast-radius skill
-#       mol-contributing-review       -> check skill
-#       mol-contributing-ship         -> ship skill
+#       mol-contributing-find-work            -> find-work skill
+#       mol-contributing-plan-implementation  -> plan-implementation skill
+#       mol-contributing-map-blast-radius     -> map-blast-radius skill
+#       mol-contributing-review               -> review skill
+#       mol-contributing-fine-tune            -> fine-tune skill
 #     (write-issue has no formula peer — issue authoring sits upstream of the
 #     PR flow; use the skill directly.)
 #

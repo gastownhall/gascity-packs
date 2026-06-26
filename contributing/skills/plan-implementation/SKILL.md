@@ -1,14 +1,14 @@
 ---
-name: plan-pr
-description: Plan a PR for a gastownhall/gascity issue before writing code — front-loading the analysis a maintainer's adoption review will check. Runs the competing-PR and architectural-refactor gates (don't start work that's already in flight or about to be superseded), maps blast radius, aligns the plan to repo conventions and the right test tier, and applies the design-capture discipline (land architectural work with an engdocs/design artifact). Produces a structured plan and the B-rule convention-trigger checklist. Self-contained — git + gh + the sibling skills, no internal tooling. Use when starting a new fix/feature branch.
+name: plan-implementation
+description: Plan the implementation for a gastownhall/gascity issue before writing code — front-loading the analysis a maintainer's adoption review will check. Runs the competing-PR and architectural-refactor gates (don't start work that's already in flight or about to be superseded), maps blast radius (Phase 2), aligns the plan to repo conventions and the right test tier, and applies the design-capture discipline (land architectural work with an engdocs/design artifact). Produces a structured plan and the B-rule convention-trigger checklist. Self-contained — git + gh + the sibling skills, no internal tooling. Use when starting a new fix/feature branch.
 ---
 
-# Plan a PR
+# Plan the Implementation
 
 You have an issue number (from [`find-work`](../find-work/SKILL.md), or one you
-filed with [`write-issue`](../write-issue/SKILL.md)) and you're about to build a
-PR for [gastownhall/gascity](https://github.com/gastownhall/gascity). This skill
-front-loads the analysis the maintainer's adoption review will run — so you
+filed with [`write-issue`](../write-issue/SKILL.md)) and you're about to implement
+a change for [gastownhall/gascity](https://github.com/gastownhall/gascity). This
+skill front-loads the analysis the maintainer's adoption review will run — so you
 address the concerns *before* writing code, when they're cheap.
 
 The output is a written plan. **No code is written until the plan is done and you
@@ -78,8 +78,8 @@ PRs.)
 
 ## Phase 2 — Blast radius
 
-Map the impact surface with the [`blast-radius`](../blast-radius/SKILL.md) skill:
-enumerate the functions you'll touch, their callers and execution contexts, the
+Map the impact surface with the [`map-blast-radius`](../map-blast-radius/SKILL.md)
+skill: enumerate the functions you'll touch, their callers and execution contexts, the
 config-field sync chain, domain-boundary crossings, and concurrency. Carry its
 `HIGH`/`MED` findings into the plan's `Risks` and `Blast radius` sections.
 
@@ -217,7 +217,7 @@ Root cause: <one sentence>
 Files to change:
   <file>:<function> — <what changes>
 
-Blast radius: <summary from the blast-radius skill>
+Blast radius: <summary from the map-blast-radius skill>
 
 Design capture:
   Change class: <point-fix | test/docs-only | refactor | architectural>
@@ -260,7 +260,7 @@ Risks:
 ## Phase 5 — What the maintainer will check
 
 Gas City adoption reviews run a multi-model automated pass and consistently flag these. Address them proactively — each maps to a
-B-rule in [`check`](../check/SKILL.md):
+B-rule in [`review`](../review/SKILL.md):
 
 1. **Silent error handling** — `_ = store.Write()` or a `bool` return that doesn't fire `false` on write error (B12)
 2. **Shared code paths** — timeouts/semaphores bleeding into unintended subsystems (B13)
@@ -282,5 +282,5 @@ B-rule in [`check`](../check/SKILL.md):
 18. **Test cleanup that hardcodes state** instead of restoring it (B33)
 19. **Env projection inlined** into command handlers instead of `cmd/gc/bd_env.go` (B29)
 
-After the code is written, run [`check`](../check/SKILL.md) and
-[`ship`](../ship/SKILL.md) to verify against the full list before you push.
+After the code is written, run [`fine-tune`](../fine-tune/SKILL.md) (which ends by
+running [`review`](../review/SKILL.md)) to verify against the full list before you push.

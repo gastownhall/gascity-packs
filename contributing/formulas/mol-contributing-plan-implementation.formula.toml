@@ -1,14 +1,14 @@
 description = """
 Contributor PR-start workflow — front-load the analysis a maintainer's
 adoption review will check, before any code is written. The gc-orchestrated
-mode of the `plan-pr` skill: produces the same structured plan a
+mode of the `plan-implementation` skill: produces the same structured plan a
 contributor's coding agent makes by reading the skill, run inside a polecat
 session so a city operator can dispatch it on an issue.
 
 THIN WRAPPER. This formula is orchestration only. ALL planning standards —
 the competing-PR and architectural-refactor gates, the blast-radius
 dimensions, the convention triggers, the test-tier strategy, the
-design-capture discipline, the B-rule checklist — live in the `plan-pr`
+design-capture discipline, the B-rule checklist — live in the `plan-implementation`
 skill, which is the single source of truth. The steps below say *apply the
 skill*; they do not restate it. The one thing the formula owns is the
 BLOCKING early-exit: when a gate the skill defines fires, the orchestration
@@ -20,7 +20,7 @@ notes via `bd update <root-id> --notes "<key>: <value>"`.
 ## Contract
 
 1. Caller slings with `--var issue=<number>`
-2. Agent applies the `plan-pr` skill across three sequential steps; the
+2. Agent applies the `plan-implementation` skill across three sequential steps; the
    BLOCKING gates step can early-exit
 3. Plan written to `.gc/contributing/plans/issue-<N>.md`
 4. Root-bead notes record `plan_path:` (or the block reason)
@@ -30,10 +30,10 @@ notes via `bd update <root-id> --notes "<key>: <value>"`.
 
 | Situation | Action |
 |-----------|--------|
-| A plan-pr gate fires (competing PR / active refactor) | Record reason in root-bead notes, close bead, exit |
+| A plan-implementation gate fires (competing PR / active refactor) | Record reason in root-bead notes, close bead, exit |
 | Issue does not exist | gh fails; record error, close bead |
 | Repo is not a git checkout | Record cwd, close bead |"""
-formula = "mol-contributing-start"
+formula = "mol-contributing-plan-implementation"
 version = 1
 
 [vars]
@@ -69,14 +69,14 @@ status: in_progress"
 
 [[steps]]
 id = "gates"
-title = "Run the BLOCKING gates the plan-pr skill defines"
+title = "Run the BLOCKING gates the plan-implementation skill defines"
 needs = ["intake"]
 description = """
-The `plan-pr` skill defines two gates that should stop the work before any
+The `plan-implementation` skill defines two gates that should stop the work before any
 plan is written — a competing open/merged PR for the issue, and an active
 architectural refactor consolidating the issue's area. Apply those gates as
 the skill specifies them (read
-`${GC_PACK_DIR}/skills/plan-pr/SKILL.md` — do not restate the criteria
+`${GC_PACK_DIR}/skills/plan-implementation/SKILL.md` — do not restate the criteria
 here). Use the skill's own `gh`/`git` checks to decide whether either fires.
 
 The formula owns only the early-exit mechanic. If a gate fires, record the
@@ -87,7 +87,7 @@ ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
 bd update "$ROOT_ID" --notes "status: blocked
 gate: <competing_pr | architectural_refactor>
 detail: <one-line: which PR / which refactor and why>"
-echo "[contributing-start] BLOCKED — <gate>: <detail>"
+echo "[contributing-plan-implementation] BLOCKED — <gate>: <detail>"
 bd close "$ROOT_ID" --reason "<gate> for issue #{{issue}}"
 exit 0
 ```
@@ -103,11 +103,11 @@ bd update "$ROOT_ID" --notes "gates: cleared"
 
 [[steps]]
 id = "plan"
-title = "Apply the plan-pr skill and write the structured plan"
+title = "Apply the plan-implementation skill and write the structured plan"
 needs = ["gates"]
 description = """
-Apply the pack's own `plan-pr` skill — read
-`${GC_PACK_DIR}/skills/plan-pr/SKILL.md` and follow it end to end against
+Apply the pack's own `plan-implementation` skill — read
+`${GC_PACK_DIR}/skills/plan-implementation/SKILL.md` and follow it end to end against
 issue #{{issue}}. The skill is the single source of truth for the
 blast-radius mapping, the repo conventions, the test-tier strategy, the
 design-capture discipline (Phase 3.5), and the B-rule convention-trigger
@@ -119,16 +119,16 @@ Write the skill's structured plan output to the plan path:
 ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
 mkdir -p .gc/contributing/plans
 PLAN_PATH=".gc/contributing/plans/issue-{{issue}}.md"
-# (write the plan-pr skill's plan into $PLAN_PATH)
+# (write the plan-implementation skill's plan into $PLAN_PATH)
 bd update "$ROOT_ID" --notes "plan_path: $PLAN_PATH
 plan_status: finalized
 status: complete"
 cat <<EOF
-[contributing-start] Plan finalized for issue #{{issue}}
-[contributing-start]   Path: $PLAN_PATH
-[contributing-start] Next: hand off to an implementing agent or human. No code was written here.
+[contributing-plan-implementation] Plan finalized for issue #{{issue}}
+[contributing-plan-implementation]   Path: $PLAN_PATH
+[contributing-plan-implementation] Next: hand off to an implementing agent or human. No code was written here.
 EOF
 ```
 
-**Exit criteria:** Plan file written per the plan-pr skill, root-bead notes updated, agent exits.
+**Exit criteria:** Plan file written per the plan-implementation skill, root-bead notes updated, agent exits.
 """

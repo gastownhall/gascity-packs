@@ -1,14 +1,14 @@
 ---
 name: contributing
-description: The full external-contributor lifecycle for gastownhall/gascity — write a good issue, find priority work, plan a PR, map its blast radius, run the codebase audit, and self-review before pushing. Use when someone wants to contribute to Gas City and needs to know which step they're on and which skill runs it. Self-contained — every step is a skill in this pack with Gas City's actual standards baked in — no internal tooling, no sibling pack.
+description: The full external-contributor lifecycle for gastownhall/gascity — write a good issue, find priority work, plan the implementation (which maps blast radius as its Phase 2), and fine-tune the diff (which reviews it as its final gate). Use when someone wants to contribute to Gas City and needs to know which step they're on and which skill runs it. Self-contained — every step is a skill in this pack with Gas City's actual standards baked in — no internal tooling, no sibling pack.
 ---
 
 # Contributing to Gas City
 
 You are an external contributor to
 [gastownhall/gascity](https://github.com/gastownhall/gascity). This skill is the
-map of the whole journey — from "I noticed something" to "my PR is ready to
-push" — and which skill runs each step.
+map of the whole journey — from "I noticed something" to "my implementation/fix is
+ready to push" — and which skill runs each step.
 
 Everything lives in this one pack. Each step carries Gas City's **actual**
 standards (the adoption-review audit, the blast-radius dimensions, the
@@ -21,88 +21,92 @@ call. Each step produces an artifact (an issue, a plan, a report) you act on.
 
 ## The lifecycle
 
+Three steps — but the first has two variants: you do **1a or 1b** depending on
+what you're starting from, and both converge on step 2. The two later steps each
+carry a sub-skill that is *both* a phase of the step and a standalone utility —
+not extra steps in the line.
+
 ```
-   ┌─ 1. write a good issue ───────────────┐   (write-issue)
-   │                                        │
-   │   ┌─ 2. find priority work ────────┐   │   (find-work)
-   │   │                                │   │
-   ▼   ▼                                │   │
-   3. plan the PR ──────────────────────┘   │   (plan-pr)
-   │                                        │
-   ▼                                        │
-   4. map blast radius                      │   (blast-radius)
-   │                                        │
-   ▼                                        │
-   5. run the codebase check                │   (check)
-   │                                        │
-   ▼                                        │
-   6. self-review before pushing ◀──────────┘   (ship)
+   1a. find priority work ──┐   (find-work)     someone else's issue / triage pick
+        ── or ──            │
+   1b. write a good issue ──┤   (write-issue)   something you found
+                            ▼
+   2. plan the implementation   (plan-implementation)
+        └ Phase 2: map blast radius   (map-blast-radius — also standalone)
+                            │
+                            ▼
+   3. fine-tune the diff         (fine-tune)
+        └ final gate: review the diff   (review — also standalone)
 ```
 
 | Step | What you do | Skill |
 |------|-------------|-------|
-| 1 | Write a high-quality issue | [write-issue](../write-issue/SKILL.md) |
-| 2 | Find a priority issue to work on | [find-work](../find-work/SKILL.md) |
-| 3 | Plan the PR (adoption-review-aware) | [plan-pr](../plan-pr/SKILL.md) |
-| 4 | Map the impact surface | [blast-radius](../blast-radius/SKILL.md) |
-| 5 | Run mechanical gates + the B1–B36 audit | [check](../check/SKILL.md) |
-| 6 | Self-review and produce a readiness report | [ship](../ship/SKILL.md) |
+| 1a | Find a priority issue to work on (someone else's, or a triage pick) | [find-work](../find-work/SKILL.md) |
+| 1b | Write a high-quality issue (something you found) | [write-issue](../write-issue/SKILL.md) |
+| 2 | Plan the implementation (incl. blast-radius mapping as Phase 2) | [plan-implementation](../plan-implementation/SKILL.md) |
+| 3 | Fine-tune the diff (incl. the review as its final gate) | [fine-tune](../fine-tune/SKILL.md) |
 
-## Two entry points
+Two sub-skills are **a phase of a parent AND a standalone utility** — not pipeline
+steps of their own:
 
-The lifecycle is one loop; you join it at different places depending on what
-you're starting from.
+- [map-blast-radius](../map-blast-radius/SKILL.md) — Phase 2 of
+  `plan-implementation`; run standalone for ad-hoc impact mapping (scoping a
+  refactor, mapping a change for someone else).
+- [review](../review/SKILL.md) — the final gate of `fine-tune`; run standalone to
+  review any diff/branch against the Gas City standard (incl. before a PR exists,
+  or as a maintainer on an incoming contribution).
 
-### A. PR a priority issue (someone else's issue, or a triage pick)
+## Step 1 — start where you are (1a or 1b)
 
-You want to help but don't have a specific bug in mind. Start at **step 2**.
+The lifecycle is one loop; you join it at 1a or 1b depending on what you're
+starting from. They are mutually exclusive — pick one, then both lead to step 2.
 
-1. **Find work** — run [find-work](../find-work/SKILL.md) to scan open issues,
-   rank them into a contributor work-queue, and filter out anything already
-   covered by an open PR or blocked on a maintainer decision. Pick an unassigned,
-   in-scope issue that passes the decision gates.
-2. **Plan the PR** for the issue you picked — go to **step 3**.
+### 1a — implement/fix a priority issue (someone else's issue, or a triage pick)
 
-### B. PR your own issue (something you found)
+You want to help but don't have a specific bug in mind. Run
+[find-work](../find-work/SKILL.md) to scan open issues, rank them into a
+contributor work-queue, and filter out anything already covered by an open PR or
+blocked on a maintainer decision. Pick an unassigned, in-scope issue that passes
+the decision gates, then go to **step 2**.
 
-You hit a bug or have a change in mind. Start at **step 1**.
+### 1b — implement/fix your own issue (something you found)
 
-1. **Write the issue** first with [write-issue](../write-issue/SKILL.md). Filing
-   it before you code gives a maintainer a chance to redirect the approach, flag a
-   duplicate, or point at a design constraint — far cheaper than finding that out
-   on the PR.
-2. **Plan the PR** on the issue you just filed — go to **step 3**.
+You hit a bug or have a change in mind. Write the issue first with
+[write-issue](../write-issue/SKILL.md). Filing it before you code gives a
+maintainer a chance to redirect the approach, flag a duplicate, or point at a
+design constraint — far cheaper than finding that out on the PR. Then go to
+**step 2**.
 
-## Step 3 — plan the PR
+## Step 2 — plan the implementation
 
-Both entry points converge here; you have an issue number. Run
-[plan-pr](../plan-pr/SKILL.md). It front-loads the analysis the maintainer's
-review will check — the competing-PR and architectural-refactor gates, blast
-radius, convention alignment, the design-capture decision, and a plan audited
-against the recurring review findings. **No code is written until the plan is
-confirmed.**
+Both variants converge here; you have an issue number. Run
+[plan-implementation](../plan-implementation/SKILL.md). It front-loads the analysis
+the maintainer's review will check — the competing-PR and architectural-refactor
+gates, blast radius, convention alignment, the design-capture decision, and a plan
+audited against the recurring review findings. **No code is written until the plan
+is confirmed.**
 
-## Step 4 — map blast radius
+Its **Phase 2** maps the blast radius with the
+[map-blast-radius](../map-blast-radius/SKILL.md) skill — callers, execution
+contexts, config-field sync chains, domain boundaries, and concurrency. That same
+skill runs standalone too: reach for it any time you need an ad-hoc impact map
+(scoping a refactor, anything touching shared state, lifecycle, config, or
+dispatch), even outside this lifecycle.
 
-For any change that isn't trivially local — refactors, anything touching shared
-state, lifecycle, config, or dispatch — run [blast-radius](../blast-radius/SKILL.md)
-to map callers, execution contexts, config-field sync chains, domain boundaries,
-and concurrency before you write the code. (plan-pr calls this in as its Phase 2.)
+## Step 3 — implement, then fine-tune the diff
 
-## Step 5 — implement, then check
+Implement against the plan, keeping the change scoped to what the issue asks (note
+anything adjacent as out-of-scope). Then run [fine-tune](../fine-tune/SKILL.md):
+the design-capture gate, a simplify pass, a self-review loop against the recurring
+adoption-review findings, optional performance measurement, and — as its final
+gate — the review skill. It combines them into one readiness report. **It stops at
+the report. Pushing the branch and opening the PR are your call.**
 
-Implement against the plan, keeping the change scoped to what the issue asks
-(note anything adjacent as out-of-scope). Then run [check](../check/SKILL.md): the
-mechanical gates (`make build` / `make check` / `make check-docs`) with
-baseline-vs-regression classification, plus the full B1–B36 codebase audit.
-
-## Step 6 — self-review before pushing
-
-Run [ship](../ship/SKILL.md): the design-capture gate, a simplify pass, a
-self-review loop against the recurring adoption-review findings, optional
-performance measurement, and the check skill — combined into one readiness
-report. **It stops at the report. Pushing the branch and opening the PR are your
-call.**
+Fine-tune's final gate is the [review](../review/SKILL.md) skill: the mechanical
+gates (`make build` / `make check` / `make check-docs`) with baseline-vs-regression
+classification, plus the full B1–B36 codebase audit. That skill runs standalone
+too — review any diff/branch against the Gas City standard before a PR exists, or
+as a maintainer on an incoming contribution.
 
 ## Notes
 

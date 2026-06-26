@@ -1,7 +1,7 @@
 description = """
 Pre-push codebase audit — verify a local gastownhall/gascity change against
 the project's actual quality bar before pushing. The gc-orchestrated mode of
-the `check` skill: produces the same audit a contributor's coding agent runs
+the `review` skill: produces the same audit a contributor's coding agent runs
 by reading the skill, inside a polecat session so a city operator can
 dispatch it on a branch.
 
@@ -12,7 +12,7 @@ targeting — the mechanical gates (`make build` / `make check` /
 
 THIN WRAPPER. This formula is orchestration only. ALL audit standards — the
 mechanical gate set, the baseline-vs-regression classification, and the full
-B1-B36 checklist — live in the `check` skill, which is the single source of
+B1-B36 checklist — live in the `review` skill, which is the single source of
 truth. The steps below say *apply the skill*; they do not restate it.
 
 The molecule root bead IS the control bead — run state is recorded in its
@@ -21,14 +21,14 @@ notes via `bd update <root-id> --notes "<key>: <value>"`.
 ## Contract
 
 1. Caller slings with optional `--var base=<ref>` (the baseline to diff
-   against; default: the upstream main the check skill resolves) and
+   against; default: the upstream main the review skill resolves) and
    `--var key=<id>` (output filename; default: the current branch name)
-2. Agent applies the `check` skill across three sequential steps
+2. Agent applies the `review` skill across three sequential steps
 3. Audit report written to `.gc/contributing/reviews/<key>.md`
 4. Root-bead notes record `verdict:` (block | request_changes | approve)
 5. Agent exits — no fixes are applied
 
-Apply fixes by re-iterating the development loop (or `mol-contributing-ship`),
+Apply fixes by re-iterating the development loop (or `mol-contributing-fine-tune`),
 not by extending this formula.
 
 ## Failure Modes
@@ -43,7 +43,7 @@ version = 1
 
 [vars]
 [vars.base]
-description = "Baseline ref to diff against (e.g. origin/main or upstream/main). Default empty — the check skill resolves the upstream main it's targeting."
+description = "Baseline ref to diff against (e.g. origin/main or upstream/main). Default empty — the review skill resolves the upstream main it's targeting."
 default = ""
 
 [vars.key]
@@ -83,12 +83,12 @@ status: in_progress"
 """
 
 [[steps]]
-id = "check"
-title = "Apply the check skill and write the audit report"
+id = "review"
+title = "Apply the review skill and write the audit report"
 needs = ["intake"]
 description = """
-Apply the pack's own `check` skill — read
-`${GC_PACK_DIR}/skills/check/SKILL.md` and follow it end to end against this
+Apply the pack's own `review` skill — read
+`${GC_PACK_DIR}/skills/review/SKILL.md` and follow it end to end against this
 branch's diff (use `BASE` as the baseline if set; otherwise let the skill
 resolve the upstream main it targets). The skill is the single source of
 truth for Part A (mechanical gates + baseline-vs-regression classification)
@@ -106,13 +106,13 @@ bd update "$ROOT_ID" --notes "verdict: $VERDICT
 status: report_written"
 ```
 
-**Exit criteria:** Report written per the check skill, verdict recorded in bead notes.
+**Exit criteria:** Report written per the review skill, verdict recorded in bead notes.
 """
 
 [[steps]]
 id = "finalize"
 title = "Surface the verdict and exit"
-needs = ["check"]
+needs = ["review"]
 description = """
 Display the report path and verdict on stdout for the caller, then close the
 root bead. No fixes are applied here.
@@ -123,12 +123,12 @@ NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 REPORT_PATH=$(echo "$NOTES" | grep -m1 '^report_path:' | sed 's/^report_path: //')
 VERDICT=$(echo "$NOTES" | grep -m1 '^verdict:' | sed 's/^verdict: //')
 cat <<EOF
-[contributing-review] Codebase check complete
+[contributing-review] Codebase review complete
 [contributing-review]   Verdict: $VERDICT
 [contributing-review]   Path: $REPORT_PATH
 EOF
 bd update "$ROOT_ID" --notes "status: complete"
-bd close "$ROOT_ID" --reason "contributor codebase check written: $REPORT_PATH"
+bd close "$ROOT_ID" --reason "contributor codebase review written: $REPORT_PATH"
 ```
 
 **Exit criteria:** Report path + verdict printed, root bead closed with status:complete.

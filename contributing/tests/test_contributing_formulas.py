@@ -13,11 +13,11 @@ SKILLS = ROOT / "skills"
 # orchestration. write-issue is intentionally absent: issue authoring sits
 # upstream of the PR flow, so it has no formula peer (use the skill directly).
 FORMULA_TO_SKILL = {
-    "mol-contributing-triage": "find-work",
-    "mol-contributing-start": "plan-pr",
-    "mol-contributing-blast-radius": "blast-radius",
-    "mol-contributing-review": "check",
-    "mol-contributing-ship": "ship",
+    "mol-contributing-find-work": "find-work",
+    "mol-contributing-plan-implementation": "plan-implementation",
+    "mol-contributing-map-blast-radius": "map-blast-radius",
+    "mol-contributing-review": "review",
+    "mol-contributing-fine-tune": "fine-tune",
 }
 
 
@@ -120,12 +120,13 @@ class FormulaSelfContainmentTests(unittest.TestCase):
                 self.assertNotIn("/home/", path.read_text(encoding="utf-8"))
 
 
-class ShipStopGuardTests(unittest.TestCase):
-    """mol-contributing-ship must carry the explicit STOP guard — its load-bearing
-    safety contract is that it ends at the readiness report and never pushes."""
+class FineTuneStopGuardTests(unittest.TestCase):
+    """mol-contributing-fine-tune must carry the explicit STOP guard — its
+    load-bearing safety contract is that it ends at the readiness report and
+    never pushes."""
 
-    def test_ship_formula_declares_the_stop_guard(self) -> None:
-        text = (FORMULAS / "mol-contributing-ship.formula.toml").read_text(encoding="utf-8")
+    def test_fine_tune_formula_declares_the_stop_guard(self) -> None:
+        text = (FORMULAS / "mol-contributing-fine-tune.formula.toml").read_text(encoding="utf-8")
         self.assertIn(
             "MUST NOT run `git push` or `gh pr create`",
             text,

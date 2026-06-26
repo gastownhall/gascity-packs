@@ -1,13 +1,13 @@
 description = """
-Pre-push ship gate for a gastownhall/gascity contributor PR. The
-gc-orchestrated mode of the `ship` skill: runs the skill's staged self-review
+Pre-push fine-tune gate for a gastownhall/gascity contributor PR. The
+gc-orchestrated mode of the `fine-tune` skill: runs the skill's staged self-review
 pipeline (design-capture gate, simplify, self-review until clean, optional
-performance, then the full check) and produces one readiness report.
+performance, then the full review) and produces one readiness report.
 **STOPS at the report.** Does NOT push, does NOT open a PR.
 
-THIN WRAPPER. This formula is orchestration only. ALL ship standards — the
+THIN WRAPPER. This formula is orchestration only. ALL fine-tune standards — the
 stage sequence, the recurring-finding patterns, the convergence rule, the
-performance gate, and the embedded check — live in the `ship` skill, which is
+performance gate, and the embedded review — live in the `fine-tune` skill, which is
 the single source of truth. The steps below say *apply the skill*; they do
 not restate it. The one thing the formula enforces is the hard STOP: push
 and PR open are caller actions gated on human review of the report.
@@ -20,8 +20,8 @@ read-only.
 ## Contract
 
 1. Caller slings with `--var branch=<name>` (or omits to use current branch)
-2. Agent applies the `ship` skill across three sequential steps
-3. Readiness report written to `.gc/contributing/ship/<branch>.md`
+2. Agent applies the `fine-tune` skill across three sequential steps
+3. Readiness report written to `.gc/contributing/fine-tune/<branch>.md`
 4. Root-bead notes record `readiness:` (ready | blocked) + `blockers:`
 5. Agent exits — no push, no PR open
 
@@ -29,10 +29,10 @@ read-only.
 
 | Situation | Action |
 |-----------|--------|
-| ship skill reports the review won't converge | readiness: blocked, list remaining findings |
-| ship skill's check fails a mechanical gate | readiness: blocked, list which gate |
+| fine-tune skill reports the review won't converge | readiness: blocked, list remaining findings |
+| fine-tune skill's review fails a mechanical gate | readiness: blocked, list which gate |
 | On the default branch | Refuse — create a feature branch first |"""
-formula = "mol-contributing-ship"
+formula = "mol-contributing-fine-tune"
 version = 1
 
 [vars]
@@ -41,7 +41,7 @@ description = "Branch to gate (defaults to current branch)"
 default = ""
 
 [vars.skip_simplify]
-description = "Set to 'true' to skip the ship skill's Stage 1 simplify pass"
+description = "Set to 'true' to skip the fine-tune skill's Stage 1 simplify pass"
 default = "false"
 
 [[steps]]
@@ -55,7 +55,7 @@ skill's job.
 ```bash
 ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
-    echo "Not in a git repository — cannot ship."
+    echo "Not in a git repository — cannot fine-tune."
     bd close "$ROOT_ID" --reason "not a git checkout"
     exit 1
 }
@@ -68,13 +68,13 @@ if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then
 fi
 DEFAULT=$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p' || echo "main")
 if [ "$BRANCH" = "$DEFAULT" ] || [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
-    echo "Cannot ship from default branch ($BRANCH). Create a feature branch first."
+    echo "Cannot fine-tune from default branch ($BRANCH). Create a feature branch first."
     bd close "$ROOT_ID" --reason "on default branch"
     exit 1
 fi
-mkdir -p .gc/contributing/ship
+mkdir -p .gc/contributing/fine-tune
 SAFE=$(echo "$BRANCH" | tr '/' '_')
-REPORT_PATH=".gc/contributing/ship/${SAFE}.md"
+REPORT_PATH=".gc/contributing/fine-tune/${SAFE}.md"
 bd update "$ROOT_ID" --notes "branch: $BRANCH
 report_path: $REPORT_PATH
 status: in_progress"
@@ -84,17 +84,17 @@ status: in_progress"
 """
 
 [[steps]]
-id = "ship"
-title = "Apply the ship skill and write the readiness report"
+id = "fine-tune"
+title = "Apply the fine-tune skill and write the readiness report"
 needs = ["intake"]
 description = """
-Apply the pack's own `ship` skill — read
-`${GC_PACK_DIR}/skills/ship/SKILL.md` and follow it end to end against
+Apply the pack's own `fine-tune` skill — read
+`${GC_PACK_DIR}/skills/fine-tune/SKILL.md` and follow it end to end against
 `$BRANCH`. The skill is the single source of truth for every stage:
 Stage 0 design-capture gate, Stage 1 simplify (skip it if
 `{{skip_simplify}}` is `true`), Stage 2 self-review iterated to convergence,
 Stage 2.5 performance (perf-touching changes only), and Stage 3 the embedded
-`check`. Do not restate any of that here; run it from the skill, and write
+`review`. Do not restate any of that here; run it from the skill, and write
 the skill's Stage 4 readiness report to `$REPORT_PATH`.
 
 Record the readiness verdict the skill produces:
@@ -108,13 +108,13 @@ blockers: $BLOCKERS
 status: report_written"
 ```
 
-**Exit criteria:** Readiness report written per the ship skill, verdict recorded.
+**Exit criteria:** Readiness report written per the fine-tune skill, verdict recorded.
 """
 
 [[steps]]
 id = "stop"
 title = "Surface readiness and STOP"
-needs = ["ship"]
+needs = ["fine-tune"]
 description = """
 Display the report path and readiness verdict, then close the bead. The
 caller decides whether to push based on the report.
@@ -125,17 +125,17 @@ NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 REPORT_PATH=$(echo "$NOTES" | grep -m1 '^report_path:' | sed 's/^report_path: //')
 READINESS=$(echo "$NOTES" | grep -m1 '^readiness:' | sed 's/^readiness: //')
 cat <<EOF
-[contributing-ship] Ship pipeline complete for branch $BRANCH
-[contributing-ship]   Readiness: $READINESS
-[contributing-ship]   Path: $REPORT_PATH
-[contributing-ship] STOP — push and PR open are the caller's call, not this formula's.
+[contributing-fine-tune] Fine-tune pipeline complete for branch $BRANCH
+[contributing-fine-tune]   Readiness: $READINESS
+[contributing-fine-tune]   Path: $REPORT_PATH
+[contributing-fine-tune] STOP — push and PR open are the caller's call, not this formula's.
 EOF
 bd update "$ROOT_ID" --notes "status: complete"
-bd close "$ROOT_ID" --reason "contributor ship report written: $REPORT_PATH"
+bd close "$ROOT_ID" --reason "contributor fine-tune report written: $REPORT_PATH"
 ```
 
 **Critical:** This formula MUST NOT run `git push` or `gh pr create` under
-any circumstances — exactly as the ship skill's Stage 5 requires. Push and
+any circumstances — exactly as the fine-tune skill's Stage 5 requires. Push and
 PR open are explicit caller actions gated on human review of this report.
 
 **Exit criteria:** Report written, readiness recorded, formula stops without pushing.

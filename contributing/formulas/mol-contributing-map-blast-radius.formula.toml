@@ -1,7 +1,7 @@
 description = """
 Blast-radius mapping — describe the full impact surface of a proposed
 gastownhall/gascity change without making any modifications. The
-gc-orchestrated mode of the `blast-radius` skill: produces the same
+gc-orchestrated mode of the `map-blast-radius` skill: produces the same
 impact-surface map a contributor's coding agent makes by reading the skill,
 run inside a polecat session so a city operator can dispatch it on a
 free-text scope. **No code is written.**
@@ -10,7 +10,7 @@ THIN WRAPPER. This formula is orchestration only — it resolves the root
 bead, decomposes the scope, and records the output path. ALL analysis
 dimensions (callers and their execution contexts, downward callees, config
 sync chains, domain boundaries, concurrency, cross-repo contracts) live in
-the `blast-radius` skill, which is the single source of truth. The steps
+the `map-blast-radius` skill, which is the single source of truth. The steps
 below say *apply the skill*; they do not restate it.
 
 The molecule root bead IS the control bead — run state is recorded in its
@@ -31,7 +31,7 @@ notes via `bd update <root-id> --notes "<key>: <value>"`.
 | Repo is not a git checkout | Record cwd, close bead |
 | `scope` is empty or unparseable | Record error, close bead |
 | No callers found for any symbol | Note in report; not a failure |"""
-formula = "mol-contributing-blast-radius"
+formula = "mol-contributing-map-blast-radius"
 version = 1
 
 [vars]
@@ -76,11 +76,11 @@ status: in_progress"
 
 [[steps]]
 id = "map"
-title = "Apply the blast-radius skill and write the report"
+title = "Apply the map-blast-radius skill and write the report"
 needs = ["intake"]
 description = """
-Apply the pack's own `blast-radius` skill — read
-`${GC_PACK_DIR}/skills/blast-radius/SKILL.md` and follow it end to end
+Apply the pack's own `map-blast-radius` skill — read
+`${GC_PACK_DIR}/skills/map-blast-radius/SKILL.md` and follow it end to end
 against `{{scope}}`. The skill is the single source of truth for every
 analysis dimension. Do not restate them here; run them from the skill, and
 write the skill's structured impact-surface report to `$REPORT_PATH`.
@@ -90,8 +90,8 @@ After writing the report, finalize:
 ```bash
 ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
 bd update "$ROOT_ID" --notes "status: complete"
-echo "[contributing-blast-radius] Complete for: {{scope}}"
-echo "[contributing-blast-radius]   Path: $REPORT_PATH"
+echo "[contributing-map-blast-radius] Complete for: {{scope}}"
+echo "[contributing-map-blast-radius]   Path: $REPORT_PATH"
 ```
 
 **Exit criteria:** Report written per the blast-radius skill, root-bead notes finalized.

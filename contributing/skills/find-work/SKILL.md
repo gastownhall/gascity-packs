@@ -106,7 +106,7 @@ Recommended next pick: #<n> — <rationale; confirm it passes all four gates>
 ## 6. Hand off to planning
 
 Once you've picked an issue, plan the PR with
-[`plan-pr`](../plan-pr/SKILL.md) — it runs the competing-PR and
+[`plan-implementation`](../plan-implementation/SKILL.md) — it runs the competing-PR and
 architectural-refactor gates again at code-time (the landscape may have changed),
 maps blast radius, and aligns the plan to repo conventions before you write code.
 
