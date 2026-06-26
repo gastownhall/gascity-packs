@@ -25,11 +25,13 @@ coding agent reading the skills; that's it.
 
 ## The lifecycle
 
-Three steps — the first has two variants (do **1a or 1b** depending on what
-you're starting from); both converge on step 2.
+It starts at a **router** — GATE 0, *"a priority issue, or your own?"* — that
+feeds two step-1 variants (do **1a or 1b** depending on what you're starting
+from); both converge on step 2.
 
 | Step | What you do | Skill |
 |------|-------------|-------|
+| 0 | **Start here.** Route on entry: priority issue → 1a; your own issue/bug → 1b | [`start-contribution`](skills/start-contribution/SKILL.md) |
 | 1a | Find a priority issue to work on (someone else's, or a triage pick) | [`find-work`](skills/find-work/SKILL.md) |
 | 1b | Write a high-quality issue (something you found) | [`write-issue`](skills/write-issue/SKILL.md) |
 | 2 | Plan the implementation (incl. blast-radius mapping as Phase 2) | [`plan-implementation`](skills/plan-implementation/SKILL.md) |
@@ -45,27 +47,37 @@ pipeline steps of their own. Run each as part of its parent, or directly:
   to review any diff/branch against the Gas City standard (incl. before a PR
   exists, or as a maintainer on an incoming contribution).
 
-Step 1 has two mutually-exclusive variants — pick one, then both lead to step 2:
+Step 1 has two mutually-exclusive variants — the router (step 0) picks one, then
+both lead to step 2:
 
 - **Implement/fix a priority issue** — step 1a (`find-work` to triage), then plan it (step 2).
 - **Implement/fix your own issue** — step 1b (`write-issue`), then plan it (step 2).
 
-The [`contributing`](skills/contributing/SKILL.md) skill is the operational map;
-it explains both variants and links each step to its skill.
+The [`start-contribution`](skills/start-contribution/SKILL.md) skill is the
+operational map and the entry router: it runs GATE 0, branches to 1a or 1b, and
+links each step to its skill.
 
-## Two ways to run it
+## Three ways to run it
 
-The same lifecycle, the same standards, two delivery modes:
+The same lifecycle, the same standards, three delivery modes:
 
 - **Skills (agent-read)** — your coding agent applies a step by *reading* the
   skill text. This is the default for a contributor working with a coding agent:
-  no orchestration, no city required.
+  no orchestration, no city required. Start at
+  [`start-contribution`](skills/start-contribution/SKILL.md).
 - **Formulas (gc-orchestrated)** — thin `mol-contributing-*` wrappers let a city
-  *dispatch* a step to a transient worker session as a gc formula. Each wrapper is
-  orchestration only: it resolves the run's root bead, records state, writes the
-  output artifact, and enforces blocking early-exits — then **delegates every
-  standard to its sibling skill**. The skill stays the single source of truth; the
-  formula never restates the audit, the gates, or the dimensions.
+  *dispatch* a single step to a transient worker session as a gc formula. Each
+  wrapper is orchestration only: it resolves the run's root bead, records state,
+  writes the output artifact, and enforces blocking early-exits — then **delegates
+  every standard to its sibling skill**. The skill stays the single source of
+  truth; the formula never restates the audit, the gates, or the dimensions.
+- **Mayor-orchestrated lifecycle (whole-process)** — the
+  [`orchestrate-contribution`](skills/orchestrate-contribution/SKILL.md) skill
+  drives the *whole* lifecycle as a **mayor loop**: it dispatches the per-step
+  formulas in order and **pauses at each of the four human gates** (see [The
+  gating model](#the-gating-model)). It owns only dispatch + gate; every standard
+  stays in the skills, every step's mechanics stay in the formulas. No formula is
+  modified — the loop consumes the root-bead notes the formulas already emit.
 
 | Formula                                | Applies skill                                                  | Models on (pr-pipeline) |
 | -------------------------------------- | -------------------------------------------------------------- | ----------------------- |
@@ -83,6 +95,51 @@ review, and fine-tune reports), and run state is recorded in the molecule's
 root-bead notes. Like the skills, the formulas stop before pushing —
 `mol-contributing-fine-tune` ends at the readiness report and never runs
 `git push` or `gh pr create`.
+
+## The gating model
+
+The lifecycle has **four human gates** — pick an issue (GATE 1), confirm the plan
+before any code (GATE 2), review the readiness report (GATE 3), and the entry
+branch itself (GATE 0). Those gates are **real**, but there is deliberately **no
+single end-to-end formula** that runs the whole lifecycle unattended. Here's why.
+
+A `mol-contributing-*` formula runs in an **unattended transient worker session** —
+nobody is at the keyboard. A formula gate can only *auto-proceed* or
+*halt-and-stop*; it cannot interactively pause and resume the same run. But the
+contributor gates are interactive human decisions, and one step (implementation)
+is done by a human by hand. So the gates are realized at **formula boundaries / the
+mayor layer**, not inside a worker:
+
+- In **per-step formula** mode, each formula ends by writing its artifact and
+  printing `Next: dispatch mol-contributing-<X>`. That handoff line **is** a gate —
+  a city operator reads the artifact and decides whether to dispatch the next step.
+- In **mayor-orchestrated** mode, [`orchestrate-contribution`](skills/orchestrate-contribution/SKILL.md)
+  formalizes the same boundary into a loop: dispatch a step → read the root-bead
+  notes the worker wrote → surface the artifact + recommended action to the human →
+  **wait for the decision** → dispatch the next step. The pause works because the
+  mayor is the attended agent actually talking to the human. Across long waits it
+  uses `gc handoff`, and a fresh mayor resumes from the bead notes.
+
+The mayor loop never auto-pushes, never opens a PR, and never auto-implements —
+GATE 2, GATE 3, and the final stop are preserved.
+
+## Why two map skills
+
+Two skills describe the same lifecycle, one per audience:
+
+- [`start-contribution`](skills/start-contribution/SKILL.md) — the **contributor
+  entry**. A coding agent reads each step's skill and **implements by hand**. No
+  city, no `gc`.
+- [`orchestrate-contribution`](skills/orchestrate-contribution/SKILL.md) — the
+  **mayor umbrella**. A city operator **dispatches** the steps to transient workers
+  and gates each one.
+
+They are split because a single skill would carry one `description` for two very
+different trigger contexts and two registers — "apply by hand" vs. "dispatch +
+gate" — and would mis-route both. Keeping them separate makes each `description`
+precise. `orchestrate-contribution` **reuses `start-contribution`'s GATE 0 branch
+logic rather than restating it**, so the entry skill stays the single source of
+truth for the map.
 
 ## Nothing here pushes for you
 
@@ -106,23 +163,24 @@ this directory — they're self-contained Markdown.
 
 ```
 contributing/
-├── pack.toml                       schema=2; no imports (self-contained)
+├── pack.toml                                    schema=2; no imports (self-contained)
 ├── README.md
-├── skills/                         agent-read mode
-│   ├── contributing/SKILL.md       the lifecycle map (both step-1 variants)
-│   ├── write-issue/SKILL.md        file a maintainer-grade issue
-│   ├── find-work/SKILL.md          triage open issues into a work-queue
-│   ├── plan-implementation/SKILL.md   adoption-review-aware implementation planning
-│   ├── map-blast-radius/SKILL.md   map the impact surface of a change
-│   ├── fine-tune/SKILL.md          pre-push fine-tuning loop (ends with review)
-│   └── review/SKILL.md             mechanical gates + the B1–B36 audit
-├── formulas/                       gc-orchestrated mode (thin wrappers over the skills)
+├── skills/                                      agent-read + mayor-mode maps
+│   ├── start-contribution/SKILL.md              entry router (GATE 0); the lifecycle map
+│   ├── orchestrate-contribution/SKILL.md        mayor loop: dispatch the steps, gate each
+│   ├── write-issue/SKILL.md                     file a maintainer-grade issue
+│   ├── find-work/SKILL.md                       triage open issues into a work-queue
+│   ├── plan-implementation/SKILL.md             adoption-review-aware implementation planning
+│   ├── map-blast-radius/SKILL.md                map the impact surface of a change
+│   ├── fine-tune/SKILL.md                       pre-push fine-tuning loop (ends with review)
+│   └── review/SKILL.md                          mechanical gates + the B1–B36 audit
+├── formulas/                                    gc-orchestrated mode (thin wrappers over the skills)
 │   ├── mol-contributing-find-work.formula.toml            -> find-work
 │   ├── mol-contributing-plan-implementation.formula.toml  -> plan-implementation
 │   ├── mol-contributing-map-blast-radius.formula.toml     -> map-blast-radius
 │   ├── mol-contributing-review.formula.toml               -> review
 │   └── mol-contributing-fine-tune.formula.toml            -> fine-tune
-├── doctor/                         preflight checks (gc, gh, git present)
+├── doctor/                                      preflight checks (gc, gh, git present)
 │   ├── check-gc.sh   + gc/doctor.toml
 │   ├── check-gh.sh   + gh/doctor.toml
 │   └── check-git.sh  + git/doctor.toml

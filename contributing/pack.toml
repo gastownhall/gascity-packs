@@ -4,10 +4,11 @@
 # Gives an outside contributor the full journey of landing work in
 # https://github.com/gastownhall/gascity:
 #
-#   1. write a best-practice issue   (write-issue skill)
-#   2. find priority work            (find-work skill)
-#   3. plan the implementation       (plan-implementation skill)
-#   4. fine-tune the diff            (fine-tune skill)
+#   0. start here — route on entry  (start-contribution skill; GATE 0)
+#   1. find priority work, OR        (find-work skill)
+#      write a best-practice issue   (write-issue skill)
+#   2. plan the implementation       (plan-implementation skill)
+#   3. fine-tune the diff            (fine-tune skill)
 #
 # Two sub-skills are a phase of a parent AND a standalone utility (not steps):
 #   - map-blast-radius  Phase 2 of plan-implementation; standalone impact map
@@ -26,14 +27,15 @@
 # discipline without gas-city's particular standards; this pack bakes those
 # standards in.
 #
-# TWO MODES, ONE SET OF STANDARDS:
+# THREE MODES, ONE SET OF STANDARDS:
 #   - skills/   — agent-read: your coding agent applies the standards by
 #                 READING the skill text. The default for a contributor with a
-#                 coding agent. (write-issue, find-work, plan-implementation,
-#                 fine-tune, map-blast-radius, review)
+#                 coding agent. Enter at start-contribution (the GATE 0 router).
+#                 (start-contribution, write-issue, find-work,
+#                 plan-implementation, fine-tune, map-blast-radius, review)
 #   - formulas/ — gc-orchestrated: thin `mol-contributing-*` wrappers that drive
-#                 the same lifecycle as gc formulas, for a city that wants to
-#                 dispatch the steps to a transient worker session. Each wrapper DELEGATES
+#                 a SINGLE step as a gc formula, for a city that wants to
+#                 dispatch it to a transient worker session. Each wrapper DELEGATES
 #                 all standards to its sibling skill — the skill stays the single
 #                 source of truth; the formula adds only the gc orchestration
 #                 (root-bead run state, output paths, blocking early-exit).
@@ -44,6 +46,17 @@
 #       mol-contributing-fine-tune            -> fine-tune skill
 #     (write-issue has no formula peer — issue authoring sits upstream of the
 #     PR flow; use the skill directly.)
+#   - mayor mode — orchestrate-contribution: a mayor loop that drives the WHOLE
+#                 lifecycle, dispatching the per-step formulas in order and
+#                 PAUSING at each of the four human gates. It owns only
+#                 dispatch + gate; no formula is modified.
+#
+# WHY TWO MAP SKILLS. start-contribution and orchestrate-contribution describe
+# the same lifecycle for two audiences — a contributor applying steps BY HAND
+# vs. a mayor DISPATCHING them to transient workers and gating each. Splitting
+# them keeps each skill's `description` precise for its trigger context;
+# orchestrate-contribution reuses start-contribution's GATE 0 branch rather
+# than restating it, so the entry skill stays the single source of truth.
 #
 # Usage in your city's pack.toml:
 #   [imports.contributing]
@@ -55,5 +68,5 @@
 
 [pack]
 name = "contributing"
-version = "0.3.0"
+version = "0.4.0"
 schema = 2

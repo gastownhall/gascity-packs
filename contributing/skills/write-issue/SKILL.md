@@ -243,8 +243,8 @@ Once the issue exists, you can pick it up yourself: run
 [plan-implementation](../plan-implementation/SKILL.md) on the issue number to plan the implementation (it re-runs the
 competing-PR and architectural-refactor gates at code-time, maps blast radius, and
 aligns the plan to repo conventions before you write code). The
-[contributing](../contributing/SKILL.md) skill is the full lifecycle map if you
-want the whole journey from here to a ready-to-push PR.
+[start-contribution](../start-contribution/SKILL.md) skill is the full lifecycle
+map if you want the whole journey from here to a ready-to-push PR.
 
 ## Anti-patterns
 
