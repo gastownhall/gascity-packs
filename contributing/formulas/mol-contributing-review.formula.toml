@@ -2,7 +2,7 @@ description = """
 Pre-push codebase audit — verify a local gastownhall/gascity change against
 the project's actual quality bar before pushing. The gc-orchestrated mode of
 the `review` skill: produces the same audit a contributor's coding agent runs
-by reading the skill, inside a polecat session so a city operator can
+by reading the skill, inside a transient worker session so a city operator can
 dispatch it on a branch.
 
 Scope note: unlike the maintainer-side review of an incoming GitHub PR, this

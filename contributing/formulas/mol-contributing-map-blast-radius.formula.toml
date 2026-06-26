@@ -3,7 +3,7 @@ Blast-radius mapping — describe the full impact surface of a proposed
 gastownhall/gascity change without making any modifications. The
 gc-orchestrated mode of the `map-blast-radius` skill: produces the same
 impact-surface map a contributor's coding agent makes by reading the skill,
-run inside a polecat session so a city operator can dispatch it on a
+run inside a transient worker session so a city operator can dispatch it on a
 free-text scope. **No code is written.**
 
 THIN WRAPPER. This formula is orchestration only — it resolves the root

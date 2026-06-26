@@ -3,7 +3,7 @@ Contributor triage workflow — scan open issues on gastownhall/gascity,
 classify them into the contributor-actionability tiers, and produce a
 ranked work-queue report. The gc-orchestrated mode of the `find-work`
 skill: same output a contributor's coding agent produces by reading the
-skill, but run inside a polecat session so a city operator can dispatch it
+skill, but run inside a transient worker session so a city operator can dispatch it
 on demand.
 
 THIN WRAPPER. This formula is orchestration only — it resolves the root
@@ -78,8 +78,8 @@ gate: gh_not_authed"
 
 Resolve vars and the report path. The report is written to a city-scope
 path (via `$GC_CITY_PATH`) when available, so the caller can read it after
-the transient polecat worktree is cleaned up; otherwise fall back to the
-polecat-local relative path.
+the transient worker worktree is cleaned up; otherwise fall back to the
+worker-local relative path.
 
 ```bash
 LIMIT="{{limit}}"

@@ -61,7 +61,7 @@ The same lifecycle, the same standards, two delivery modes:
   skill text. This is the default for a contributor working with a coding agent:
   no orchestration, no city required.
 - **Formulas (gc-orchestrated)** — thin `mol-contributing-*` wrappers let a city
-  *dispatch* a step to a polecat session as a gc formula. Each wrapper is
+  *dispatch* a step to a transient worker session as a gc formula. Each wrapper is
   orchestration only: it resolves the run's root bead, records state, writes the
   output artifact, and enforces blocking early-exits — then **delegates every
   standard to its sibling skill**. The skill stays the single source of truth; the

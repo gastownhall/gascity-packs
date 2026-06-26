@@ -2,8 +2,8 @@ description = """
 Contributor PR-start workflow — front-load the analysis a maintainer's
 adoption review will check, before any code is written. The gc-orchestrated
 mode of the `plan-implementation` skill: produces the same structured plan a
-contributor's coding agent makes by reading the skill, run inside a polecat
-session so a city operator can dispatch it on an issue.
+contributor's coding agent makes by reading the skill, run inside a transient
+worker session so a city operator can dispatch it on an issue.
 
 THIN WRAPPER. This formula is orchestration only. ALL planning standards —
 the competing-PR and architectural-refactor gates, the blast-radius

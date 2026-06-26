@@ -33,7 +33,7 @@
 #                 fine-tune, map-blast-radius, review)
 #   - formulas/ — gc-orchestrated: thin `mol-contributing-*` wrappers that drive
 #                 the same lifecycle as gc formulas, for a city that wants to
-#                 dispatch the steps to a polecat session. Each wrapper DELEGATES
+#                 dispatch the steps to a transient worker session. Each wrapper DELEGATES
 #                 all standards to its sibling skill — the skill stays the single
 #                 source of truth; the formula adds only the gc orchestration
 #                 (root-bead run state, output paths, blocking early-exit).
