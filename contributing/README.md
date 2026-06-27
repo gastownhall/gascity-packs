@@ -159,6 +159,39 @@ source = "../packs/contributing"   # path; or git URL when published
 Then the skills load for your coding agent. You can also read them directly from
 this directory — they're self-contained Markdown.
 
+## Migrating from the previous version
+
+The current pack is **0.4.0**. If you adopted an earlier version, the skill and
+formula **names** changed during the lifecycle rework — nothing else about how a
+step behaves did. Every standard baked into the skills (the B1–B36 adoption
+audit, the blast-radius dimensions, the five test tiers, the gating model) is
+unchanged, outputs still land under `.gc/contributing/`, and nothing here pushes
+a branch or opens a PR. **The only break is the names**, so update any reference
+that pins one:
+
+| Old name | New name |
+|----------|----------|
+| `contributing` (entry skill) | [`start-contribution`](skills/start-contribution/SKILL.md) |
+| `plan-pr` | [`plan-implementation`](skills/plan-implementation/SKILL.md) |
+| `blast-radius` | [`map-blast-radius`](skills/map-blast-radius/SKILL.md) |
+| `ship` | [`fine-tune`](skills/fine-tune/SKILL.md) |
+| `check` | [`review`](skills/review/SKILL.md) |
+| `mol-contributing-triage` | `mol-contributing-find-work` |
+| `mol-contributing-start` | `mol-contributing-plan-implementation` |
+| `mol-contributing-blast-radius` | `mol-contributing-map-blast-radius` |
+| `mol-contributing-ship` | `mol-contributing-fine-tune` |
+
+(`mol-contributing-review` keeps its name.) To upgrade:
+
+- **Skills (agent-read):** enter at [`start-contribution`](skills/start-contribution/SKILL.md)
+  instead of `contributing`; the renamed steps link from there.
+- **Formulas (gc-orchestrated):** update any `gc sling mol-contributing-*` call
+  that uses an old formula name per the table above.
+- **New in 0.4.0:** the [`orchestrate-contribution`](skills/orchestrate-contribution/SKILL.md)
+  mayor-mode umbrella, which drives the whole lifecycle by dispatching the
+  per-step formulas and gating each one. It's additive — existing per-step and
+  agent-read usage keeps working unchanged.
+
 ## Pack contents
 
 ```

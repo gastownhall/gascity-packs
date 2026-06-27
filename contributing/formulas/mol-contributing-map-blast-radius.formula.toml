@@ -83,12 +83,15 @@ Apply the pack's own `map-blast-radius` skill — read
 `${GC_PACK_DIR}/skills/map-blast-radius/SKILL.md` and follow it end to end
 against `{{scope}}`. The skill is the single source of truth for every
 analysis dimension. Do not restate them here; run them from the skill, and
-write the skill's structured impact-surface report to `$REPORT_PATH`.
+write the skill's structured impact-surface report to the path the intake
+step recorded (`report_path:` in the root-bead notes) — do not assume
+`$REPORT_PATH` is still set; this step runs in its own shell.
 
 After writing the report, finalize:
 
 ```bash
 ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+REPORT_PATH=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""' | grep -m1 '^report_path:' | sed 's/^report_path: //')
 bd update "$ROOT_ID" --notes "status: complete"
 echo "[contributing-map-blast-radius] Complete for: {{scope}}"
 echo "[contributing-map-blast-radius]   Path: $REPORT_PATH"

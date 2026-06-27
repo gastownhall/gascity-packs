@@ -86,14 +86,19 @@ LIMIT="{{limit}}"
 [ -z "$LIMIT" ] && LIMIT=10
 CATEGORY="{{category}}"
 [ -z "$CATEGORY" ] && CATEGORY="all"
-TS=$(date +%Y%m%d-%H%M%S)
 if [ -n "${GC_CITY_PATH:-}" ]; then
     REPORT_DIR="${GC_CITY_PATH}/.gc/contributing/find-work"
 else
     REPORT_DIR=".gc/contributing/find-work"
 fi
 mkdir -p "$REPORT_DIR"
-REPORT_PATH="$REPORT_DIR/$TS.md"
+# Resume-safe: reuse the report path already recorded in the root-bead notes;
+# only mint a fresh timestamp on the first run, so re-running setup after an
+# interruption does not orphan a partial report under a new path.
+REPORT_PATH=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""' | grep -m1 '^report_path:' | sed 's/^report_path: //')
+if [ -z "$REPORT_PATH" ]; then
+    REPORT_PATH="$REPORT_DIR/$(date +%Y%m%d-%H%M%S).md"
+fi
 bd update "$ROOT_ID" --notes "category: $CATEGORY
 limit: $LIMIT
 repo: $REPO
@@ -117,8 +122,10 @@ those rules here; run them from the skill.
 
 Scope the run to this formula's vars: evaluate at most `LIMIT` candidates
 per tier, and filter the open-issue scan to `CATEGORY` (the skill's plain
-`gh` queries take a label/priority filter). Write the skill's ranked
-work-queue output to `$REPORT_PATH`.
+`gh` queries take a label/priority filter). Resolve the output path the
+setup step recorded (`report_path:` in the root-bead notes) and write the
+skill's ranked work-queue output there — do not assume `$REPORT_PATH` is
+still set; this step runs in its own shell.
 
 After writing the report, record the tier counts and the single
 recommended next pick in the root-bead notes so the caller can act without
@@ -126,6 +133,7 @@ re-reading the file:
 
 ```bash
 ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+REPORT_PATH=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""' | grep -m1 '^report_path:' | sed 's/^report_path: //')
 bd update "$ROOT_ID" --notes "tier1: <n>
 tier2: <n>
 tier3: <n>
