@@ -206,7 +206,7 @@ reviewing, and shipping the PRs your city authors.
   (and four wrapper `pr` commands): plan an issue into a structured plan, map a
   change's blast radius, self-review an outgoing PR against an 11-category
   scorecard, and run a pre-push gate. None of them push or open PRs.
-- [contributing](./contributing) stitches the full external-contributor
+- [contributing-to-gascity](./contributing-to-gascity) stitches the full external-contributor
   lifecycle for `gastownhall/gascity` — write a good issue, find priority work,
   open a PR, self-review — into one map. It imports `pr-pipeline` for steps 2-4
   and adds the net-new `write-issue` issue-authoring discipline for step 1.
