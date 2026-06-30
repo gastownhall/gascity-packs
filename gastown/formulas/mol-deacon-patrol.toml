@@ -293,7 +293,18 @@ This step surfaces problems that individual patrol steps won't catch:
 commit bloat (compactor dog may have failed), stale backups (backup dog
 may have failed), orphan databases, and zombie Dolt server processes.
 
-**Step 1: Run the health check**
+**Step 1: Check whether this city uses Dolt metadata**
+```bash
+gc status --json
+```
+
+If `.beads.native_store_eligible == false` and `.beads.preflight_reason`
+contains `Metadata backend "doltlite" is unsupported`, skip this entire
+step and log `Dolt health: skipped for doltlite city`. `gc dolt health`
+targets Dolt-backed cities only; on doltlite cities it emits a known
+preflight warning and provides no useful patrol signal.
+
+**Step 2: Run the health check**
 ```bash
 gc dolt health --json
 ```
@@ -310,7 +321,7 @@ state is signalled in-band. Key decisions off `server.reachable`, not
 `server.running` — a process can hold the port while its goroutines
 are wedged (the latter is what first prompted this check to exist).
 
-**Step 2: Evaluate thresholds**
+**Step 3: Evaluate thresholds**
 
 | Signal | Threshold | Meaning |
 |--------|-----------|---------|
@@ -321,7 +332,7 @@ are wedged (the latter is what first prompted this check to exist).
 | `processes.zombie_count > 0` | any | Zombie Dolt servers detected |
 | `orphans` non-empty | any | Advisory only — NEVER act on this count directly; verify with `gc dolt-cleanup` (hyphen, dry-run) first |
 
-**Step 3: React to alerts**
+**Step 4: React to alerts**
 
 **Server down (CRITICAL):** `server.reachable == false` — either no
 process is listening on the port, or a process is listening but not
@@ -376,7 +387,8 @@ Reclaim confirmed orphans only via human-approved
 **If everything is healthy:**
 Log `Dolt health: OK` and move on.
 
-**Exit criteria:** Health check run, alerts handled or escalated."""
+**Exit criteria:** Dolt-backed cities: health check run, alerts handled or
+escalated. Doltlite cities: step explicitly skipped and logged."""
 
 [[steps]]
 id = "system-health"
