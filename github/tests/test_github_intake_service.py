@@ -17,6 +17,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 import github_intake_service as service
 
 
+def assert_gc_command(testcase: unittest.TestCase, actual: list[str], expected_tail: list[str]) -> None:
+    testcase.assertTrue(actual, "expected non-empty command")
+    testcase.assertEqual(pathlib.Path(actual[0]).name, "gc")
+    testcase.assertEqual(actual[1:], expected_tail)
+
+
 class DummyWebhookHandler:
     def __init__(self, body: bytes, headers: dict[str, str]) -> None:
         self.headers = headers
@@ -884,9 +890,10 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertEqual(outcome["started"][0]["rig_launch_bead_id"], "ga-launch")
         self.assertEqual(outcome["started"][0]["workflow_root_id"], "ga-root")
         commands = [call.args[0] for call in run_subprocess.call_args_list]
-        self.assertEqual(
+        assert_gc_command(
+            self,
             commands[2][:6],
-            ["gc", "--rig", "github-owner-repo", "bd", "create", "GitHub addressed message @mayor in owner/repo#42"],
+            ["--rig", "github-owner-repo", "bd", "create", "GitHub addressed message @mayor in owner/repo#42"],
         )
         create_metadata = json.loads(commands[2][commands[2].index("--metadata") + 1])
         self.assertEqual(create_metadata["addressed.city_source_bead_id"], "ga-src1")
@@ -896,9 +903,10 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertNotIn("addressed.router_reason", create_metadata)
         self.assertNotIn("addressed.workflow_store", create_metadata)
         self.assertEqual(commands[2][-1], "--json")
-        self.assertEqual(
+        assert_gc_command(
+            self,
             commands[3][:8],
-            ["gc", "--rig", "github-owner-repo", "sling", "--json", "github-owner-repo/mayor", "ga-launch", "--force"],
+            ["--rig", "github-owner-repo", "sling", "--json", "github-owner-repo/mayor", "ga-launch", "--force"],
         )
         self.assertIn("--var", commands[3])
         sling_vars = {
@@ -1294,8 +1302,12 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertEqual(outcome["bead_id"], "mc-source")
         self.assertEqual(outcome["workflow_root_id"], "ga-root")
         commands = [call.args[0] for call in run_subprocess.call_args_list]
-        self.assertEqual(commands[0], ["gc", "workflows", "bugflow", "create", "https://github.com/owner/repo/issues/42"])
-        self.assertEqual(commands[1], ["gc", "workflows", "bugflow", "router-scan"])
+        assert_gc_command(
+            self,
+            commands[0],
+            ["workflows", "bugflow", "create", "https://github.com/owner/repo/issues/42"],
+        )
+        assert_gc_command(self, commands[1], ["workflows", "bugflow", "router-scan"])
         self.assertEqual(run_subprocess.call_args_list[0].kwargs["env"]["GH_TOKEN"], "token-123")
         self.assertEqual(run_subprocess.call_args_list[1].kwargs["env"]["GH_TOKEN"], "token-123")
 
