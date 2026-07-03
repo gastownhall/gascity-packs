@@ -228,6 +228,12 @@ IDLE: no work, exiting turn.
 ```
 Then stop immediately. Do NOT sleep, call ScheduleWakeup, or use Monitor.
 The next wisp is ready and will be re-read on session restart by the session_sleep policy.
+This normal idle path depends on `sleep_after_idle` in
+`agents/refinery/agent.toml`; session_sleep will restart this session after
+that configured idle interval. Heavy-context recycling uses
+`gc runtime request-restart` from the earlier step instead. Do not clear or
+blank `sleep_after_idle` unless this wake contract is redesigned here and in
+the refinery prompt.
 When restarted, re-read formula steps — this step stays open until a work bead is found.
 
 **Do not close this step until you have a work bead with branch metadata.**"""
