@@ -45,6 +45,23 @@ transcript into `.gc/runtime/profiles/_transcripts/` at close. Transcripts
 are the one volatile source retroactive profiling depends on; archiving them
 keeps per-turn timing evidence available for runs profiled later.
 
+## Agent + analysis formula
+
+`profile-analyze` (routed to the pack's `gc.profile-analyst` role) reads a
+collected capture and writes `analysis.md` beside it: a narrative
+interpretation of the mechanical report — why the slow steps were slow,
+model-vs-tool-vs-dispatch attribution from transcripts, per-finding fixable
+layer, and concrete suggested formula edits. Launch:
+
+```
+gc sling gc.profile-analyst profile-analyze --formula --var root=<root-bead-id>
+```
+
+Profiles cover **latency and cost**: the report rolls up tokens / wall /
+estimated cost per step and per run from `usage.jsonl` when the city's usage
+sink is enabled (transcript token usage is the fallback; the manifest
+discloses a missing cost dimension).
+
 ## Formula
 
 `bench-nullop` — a chain of trivial steps plus a parallel fan-out that close

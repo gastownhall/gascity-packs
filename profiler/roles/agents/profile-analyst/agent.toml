@@ -1,0 +1,3 @@
+description = "Profile analyst: interprets formula-run profile captures and writes layer-tagged latency/cost analyses"
+scope = "rig"
+fallback = true
