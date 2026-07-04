@@ -3698,6 +3698,192 @@ func TestSlackHTTPClientRejectsRedirectEndToEnd(t *testing.T) {
 	}
 }
 
+func TestRedactSlackURL(t *testing.T) {
+	// redactSlackURL must strip every token-bearing component — query,
+	// fragment, and userinfo (password AND bare username) — from both
+	// parseable and unparseable URLs, while preserving host/path so log
+	// scanners can still correlate on the CDN link. gpk-la1y.
+	const tok = "xoxe-supersecret-token"
+	cases := []struct {
+		name       string
+		raw        string
+		mustAbsent []string
+		mustHave   []string
+	}{
+		{
+			name:       "query token stripped, host/path preserved",
+			raw:        "https://files.slack.com/files-pri/T1-F2/plot.png?t=" + tok,
+			mustAbsent: []string{tok},
+			mustHave:   []string{"files.slack.com", "/files-pri/T1-F2/plot.png"},
+		},
+		{
+			name:       "fragment token stripped",
+			raw:        "https://files.slack.com/plot.png#t=" + tok,
+			mustAbsent: []string{tok},
+		},
+		{
+			name:       "query and fragment token stripped",
+			raw:        "https://files.slack.com/plot.png?a=" + tok + "#b=" + tok,
+			mustAbsent: []string{tok},
+		},
+		{
+			name:       "userinfo password stripped",
+			raw:        "https://alice:" + tok + "@files.slack.com/p",
+			mustAbsent: []string{tok},
+		},
+		{
+			name:       "bare username stripped",
+			raw:        "https://" + tok + "@files.slack.com/p",
+			mustAbsent: []string{tok},
+		},
+		{
+			name:       "unparseable query token stripped (fallback)",
+			raw:        "https://files.slack.com/p%zz?t=" + tok,
+			mustAbsent: []string{tok},
+		},
+		{
+			name:       "unparseable fragment token stripped (fallback)",
+			raw:        "https://files.slack.com/p%zz#t=" + tok,
+			mustAbsent: []string{tok},
+		},
+		{
+			name:       "unparseable userinfo token stripped (fallback)",
+			raw:        "https://" + tok + "@files.slack.com/p%zz",
+			mustAbsent: []string{tok},
+		},
+		{
+			// url.Parse accepts "scheme:opaque" (no "//") as an opaque URI:
+			// the credential text lands in u.Opaque, which the field clears
+			// never touch. The slackTokenRe backstop must still catch it.
+			name:       "opaque-form token stripped (backstop)",
+			raw:        "https:" + tok + "@evil.example.com/x?t=" + tok,
+			mustAbsent: []string{tok},
+		},
+		{
+			// Backslash-delimited pseudo-URL: no "://" for the fallback to
+			// key on, so again only the backstop saves it.
+			name:       "backslash-form token stripped (backstop)",
+			raw:        `https:\\` + tok + `@evil.example.com\x?t=` + tok,
+			mustAbsent: []string{tok},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactSlackURL(tc.raw)
+			for _, s := range tc.mustAbsent {
+				if strings.Contains(got, s) {
+					t.Errorf("redactSlackURL(%q) = %q; must not contain %q", tc.raw, got, s)
+				}
+			}
+			for _, s := range tc.mustHave {
+				if !strings.Contains(got, s) {
+					t.Errorf("redactSlackURL(%q) = %q; must contain %q", tc.raw, got, s)
+				}
+			}
+		})
+	}
+}
+
+func TestSlackDownloadToFileRedactsTokenOnMalformedRedirectLocation(t *testing.T) {
+	// net/http parses a 3xx Location header BEFORE CheckRedirect runs; on a
+	// malformed header it returns a *url.Error whose .Err text interpolates
+	// the RAW, token-bearing Location verbatim, so redactTransport is the
+	// only line of defense. The header is set raw here (http.Redirect would
+	// sanitize it). Covers an absolute Location (scrubbed by the URL pass)
+	// and a relative one (no scheme://, scrubbed only by the bare-token
+	// backstop). gpk-la1y.
+	testAllowAnyURL(t)
+	cases := []struct {
+		name     string
+		location string
+		token    string
+	}{
+		{
+			name:     "absolute malformed Location",
+			location: "https://evil.example.com/%zz?t=xoxe-supersecret-abs-redirect",
+			token:    "xoxe-supersecret-abs-redirect",
+		},
+		{
+			name:     "relative malformed Location",
+			location: "/steal%zz?t=xoxe-supersecret-rel-redirect",
+			token:    "xoxe-supersecret-rel-redirect",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Location", tc.location)
+				w.WriteHeader(http.StatusFound)
+			}))
+			defer srv.Close()
+
+			dest := filepath.Join(t.TempDir(), "out")
+			err := slackDownloadToFile("xoxb-fake-bot-token", withDownloadToken(srv.URL), dest)
+			if err == nil {
+				t.Fatal("expected error from malformed redirect Location, got nil")
+			}
+			if strings.Contains(err.Error(), tc.token) {
+				t.Errorf("redirect Location token leaked: %v", err)
+			}
+			if _, statErr := os.Stat(dest); !errors.Is(statErr, os.ErrNotExist) {
+				t.Errorf("dest %q should not exist after failed redirect, stat err: %v", dest, statErr)
+			}
+		})
+	}
+}
+
+func TestSlackDownloadToFileSanitizes4xxBody(t *testing.T) {
+	// A 4xx response body is untrusted origin content. It must not carry a
+	// reflected Slack token into logs/receipts (an allowlisted origin can be
+	// compromised, or echo the token-bearing request URL), and embedded
+	// CR/LF must be stripped so a malicious body cannot forge extra log
+	// lines. gpk-la1y.
+	testAllowAnyURL(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("denied\nFORGED-LOG-LINE url=https://files.slack.com/x?token=xoxe-reflected-body-token bare=xoxb-reflected-bare-token"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "out")
+	err := slackDownloadToFile("xoxb-fake-bot-token", withDownloadToken(srv.URL), dest)
+	if err == nil {
+		t.Fatal("expected error from 403 server, got nil")
+	}
+	msg := err.Error()
+	for _, leak := range []string{"xoxe-reflected-body-token", "xoxb-reflected-bare-token"} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("reflected token %q leaked from 4xx body: %v", leak, err)
+		}
+	}
+	if strings.Contains(msg, "\n") {
+		t.Errorf("un-stripped newline enables log-line injection: %q", msg)
+	}
+	if !strings.Contains(msg, "GET") {
+		t.Errorf("expected 'GET' in error, got: %v", err)
+	}
+}
+
+func TestSlackHTTPClientCheckRedirectHopLimitOmitsToken(t *testing.T) {
+	// The redirect hop-limit branch names the current target, which carries
+	// the same token-bearing query as any Slack CDN link. It must redact the
+	// query before the abort message reaches log.Printf. gpk-la1y.
+	client := buildSlackHTTPClient()
+	tokURL := mustParseURL(t, "https://files.slack.com/files-pri/T1-F2/plot.png?t=xoxe-supersecret-hoplimit-token")
+	req := &http.Request{URL: tokURL}
+	manyVia := make([]*http.Request, 11)
+	for i := range manyVia {
+		manyVia[i] = &http.Request{URL: tokURL}
+	}
+	err := client.CheckRedirect(req, manyVia)
+	if err == nil {
+		t.Fatal("expected hop-limit abort, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-supersecret-hoplimit-token") {
+		t.Errorf("hop-limit error leaked query token: %v", err)
+	}
+}
+
 func mustParseURL(t *testing.T, s string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(s)
