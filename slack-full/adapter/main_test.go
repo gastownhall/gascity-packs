@@ -3254,6 +3254,233 @@ func TestSlackPutFileBytesRedactsTokenInError(t *testing.T) {
 	}
 }
 
+// withDownloadToken appends the CDN-style auth token Slack embeds in
+// url_private links (?t=xoxe-...) to a test server URL.
+func withDownloadToken(base string) string {
+	return base + "/files-pri/T123-F456/plot.png?t=xoxe-supersecret-download-token"
+}
+
+func TestSlackDownloadToFileRedactsTokenOn4xx(t *testing.T) {
+	// Slack CDN url_private links carry a t=xoxe-... user token in the
+	// query string. The 4xx error path previously used url.URL.Redacted(),
+	// which masks userinfo passwords only and leaves the query intact, so
+	// the token reached log.Printf upstream. The error must strip the
+	// query string entirely.
+	testAllowAnyURL(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("forbidden"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "out")
+	err := slackDownloadToFile("xoxb-fake-bot-token", withDownloadToken(srv.URL), dest)
+	if err == nil {
+		t.Fatal("expected error from 403 download server, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-supersecret-download-token") {
+		t.Errorf("url_private token leaked in 4xx error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "GET") {
+		t.Errorf("expected error to contain 'GET', got: %v", err)
+	}
+}
+
+func TestSlackDownloadToFileRedactsTokenOnTransportError(t *testing.T) {
+	// A transport failure (DNS, connection refused, timeout, TLS) makes
+	// http.Client.Do return a *url.Error whose Error() embeds the full
+	// request URL — query token and all (net/http's stripPassword redacts
+	// userinfo only). Returning that error raw — or wrapped with %w, which
+	// preserves the inner string — leaks the token into log.Printf
+	// upstream. slackDownloadToFile must unwrap the *url.Error and report
+	// a query-stripped URL instead. Exercise it by closing the listener
+	// before the request (connection refused).
+	testAllowAnyURL(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	unreachable := srv.URL
+	srv.Close() // listener closed → connection refused
+
+	dest := filepath.Join(t.TempDir(), "out")
+	err := slackDownloadToFile("xoxb-fake-bot-token", withDownloadToken(unreachable), dest)
+	if err == nil {
+		t.Fatal("expected transport error from closed server, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-supersecret-download-token") {
+		t.Errorf("url_private token leaked in transport-error path: %v", err)
+	}
+	if !strings.Contains(err.Error(), "GET") {
+		t.Errorf("expected error to contain 'GET', got: %v", err)
+	}
+}
+
+func TestSlackGetUploadURLDecodeErrorOmitsBody(t *testing.T) {
+	// A truncated/partial getUploadURLExternal response can fail JSON
+	// decoding while still containing the pre-signed upload_url — token
+	// included. Embedding the raw body in the decode error leaked that
+	// token to both log.Printf and the HTTP receipt body upstream. The
+	// error must describe the failure (status, size, unmarshal error)
+	// without reproducing any body content.
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "truncated JSON with upload_url",
+			body: `{"ok":true,"upload_url":"https://files.slack.com/upload/v1/ABC?token=xoxe-supersecret-upload-token","file_id":"F1`,
+		},
+		{
+			name: "HTML error page echoing upload_url",
+			body: `<html>error: https://files.slack.com/upload/v1/ABC?token=xoxe-supersecret-upload-token</html>`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			origBase := slackAPIBase
+			slackAPIBase = srv.URL
+			t.Cleanup(func() { slackAPIBase = origBase })
+
+			resp, err := slackGetUploadURL("xoxb-fake-bot-token", "plot.png", 42)
+			if err == nil {
+				t.Fatalf("expected decode error, got resp=%+v", resp)
+			}
+			if strings.Contains(err.Error(), "xoxe-supersecret-upload-token") {
+				t.Errorf("upload_url token leaked in decode error: %v", err)
+			}
+			if strings.Contains(err.Error(), "files.slack.com") {
+				t.Errorf("response body content leaked in decode error: %v", err)
+			}
+			if !strings.Contains(err.Error(), "decode slack") {
+				t.Errorf("expected error to mention 'decode slack', got: %v", err)
+			}
+		})
+	}
+}
+
+func TestSlackCompleteUploadDecodeErrorOmitsBody(t *testing.T) {
+	// completeUploadExternal responses embed full file objects whose
+	// url_private / url_private_download URLs can bear auth tokens. A
+	// truncated response fails JSON decoding while still containing those
+	// URLs, so the decode error must not reproduce any body content —
+	// same class as the slackGetUploadURL leak above.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"files":[{"id":"F123","url_private":"https://files.slack.com/files-pri/T123-F123/plot.png?t=xoxe-supersecret-file-token"`))
+	}))
+	defer srv.Close()
+	origBase := slackAPIBase
+	slackAPIBase = srv.URL
+	t.Cleanup(func() { slackAPIBase = origBase })
+
+	resp, err := slackCompleteUpload("xoxb-fake-bot-token", slackCompleteUploadReq{})
+	if err == nil {
+		t.Fatalf("expected decode error, got resp=%+v", resp)
+	}
+	if strings.Contains(err.Error(), "xoxe-supersecret-file-token") {
+		t.Errorf("url_private token leaked in decode error: %v", err)
+	}
+	if strings.Contains(err.Error(), "files.slack.com") {
+		t.Errorf("response body content leaked in decode error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "decode slack") {
+		t.Errorf("expected error to mention 'decode slack', got: %v", err)
+	}
+}
+
+func TestIsSlackFileURLErrorsOmitToken(t *testing.T) {
+	// isSlackFileURL's own error messages propagate verbatim into
+	// slackDownloadToFile's "validating url_private" error and adapter
+	// logs. A parse failure previously %w-wrapped the *url.Error, whose
+	// text embeds the full raw URL; the not-absolute branch embedded
+	// rawURL via %q. Both must report a query-stripped form only.
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "parse failure with token in query",
+			raw:  "https://files.slack.com/files-pri/T1-F1/plot.png?t=xoxe-supersecret-download-token&x=\x7f",
+		},
+		{
+			name: "protocol-relative URL with token in query",
+			raw:  "//attacker.example.com/files-pri/T1-F1/plot.png?t=xoxe-supersecret-download-token",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := isSlackFileURL(tc.raw)
+			if ok || err == nil {
+				t.Fatalf("expected validation error, got ok=%v err=%v", ok, err)
+			}
+			if strings.Contains(err.Error(), "xoxe-supersecret-download-token") {
+				t.Errorf("url_private token leaked in validation error: %v", err)
+			}
+		})
+	}
+}
+
+func TestSlackDownloadToFileValidationErrorOmitsToken(t *testing.T) {
+	// End-to-end variant of TestIsSlackFileURLErrorsOmitToken: the
+	// validateSlackFileURL error branch in slackDownloadToFile returns
+	// before safeURL is consulted, so redaction must already have
+	// happened inside isSlackFileURL. Uses the production validator —
+	// no testAllowAnyURL override.
+	dest := filepath.Join(t.TempDir(), "out")
+	err := slackDownloadToFile("xoxb-fake-bot-token",
+		"//attacker.example.com/files-pri/T1-F1/plot.png?t=xoxe-supersecret-download-token", dest)
+	if err == nil {
+		t.Fatal("expected validation error for protocol-relative url_private, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-supersecret-download-token") {
+		t.Errorf("url_private token leaked in validation error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "validating url_private") {
+		t.Errorf("expected validation-error message, got: %v", err)
+	}
+}
+
+func TestSlackDownloadToFileRedirectRejectionOmitsToken(t *testing.T) {
+	// CheckRedirect's rejection message names the redirect target, which
+	// carries the same token-bearing query as any Slack CDN link. That
+	// message becomes the inner cause of the *url.Error returned by
+	// Client.Do, so redactTransport cannot sanitize it — CheckRedirect
+	// itself must. Previously it used req.URL.Redacted(), which keeps
+	// the query. The validator override allows only the origin server so
+	// the redirect target is rejected; CheckRedirect fires before any
+	// connection to the target is attempted.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r,
+			"https://evil.example.com/steal?t=xoxe-supersecret-redirect-token",
+			http.StatusFound)
+	}))
+	defer srv.Close()
+
+	prevURL := validateSlackFileURL
+	validateSlackFileURL = func(u string) (bool, error) {
+		return strings.HasPrefix(u, srv.URL), nil
+	}
+	prevIP := slackDialIPGuard
+	slackDialIPGuard = func(net.IP) bool { return false }
+	t.Cleanup(func() {
+		validateSlackFileURL = prevURL
+		slackDialIPGuard = prevIP
+	})
+
+	dest := filepath.Join(t.TempDir(), "out")
+	err := slackDownloadToFile("xoxb-fake-bot-token", srv.URL+"/files-pri/T1-F1/plot.png", dest)
+	if err == nil {
+		t.Fatal("expected redirect-rejection error, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-supersecret-redirect-token") {
+		t.Errorf("redirect-target token leaked: %v", err)
+	}
+	if !strings.Contains(err.Error(), "refusing redirect") {
+		t.Errorf("expected redirect-rejection message, got: %v", err)
+	}
+}
+
 func TestSlackDownloadToFileRejectsNonSlackHostHTTPS(t *testing.T) {
 	// Forged url_private pointing at a local TLS server. If the SSRF gate
 	// works, slackDownloadToFile must NOT make the HTTP request — verified
