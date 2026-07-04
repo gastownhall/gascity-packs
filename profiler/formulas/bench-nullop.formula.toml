@@ -1,0 +1,63 @@
+description = """
+Orchestration-overhead benchmark: a chain of trivial steps plus a parallel
+fan-out, all closing immediately with no real work. Profiling a bench-nullop
+run isolates pure platform/dispatch cost (routing, session spawn/wake, claim,
+close) from LLM working time — the noise floor for `gc profile compare`.
+
+Launch: gc sling <operator-target> bench-nullop --formula
+"""
+formula = "bench-nullop"
+version = 2
+contract = "graph.v2"
+
+[catalog]
+name = "bench-nullop"
+description = "Measure per-step orchestration overhead with no-op steps (profiler noise floor)."
+
+[[steps]]
+id = "seq-1"
+title = "nullop seq 1"
+description = "No-op benchmark step. Do no work: immediately set gc.outcome=pass on this bead and close it. Do not inspect the repository, run tools, or read other beads."
+metadata = { "gc.run_target" = "gc.run-operator" }
+
+[[steps]]
+id = "seq-2"
+title = "nullop seq 2"
+needs = ["seq-1"]
+description = "No-op benchmark step. Do no work: immediately set gc.outcome=pass on this bead and close it. Do not inspect the repository, run tools, or read other beads."
+metadata = { "gc.run_target" = "gc.run-operator" }
+
+[[steps]]
+id = "seq-3"
+title = "nullop seq 3"
+needs = ["seq-2"]
+description = "No-op benchmark step. Do no work: immediately set gc.outcome=pass on this bead and close it. Do not inspect the repository, run tools, or read other beads."
+metadata = { "gc.run_target" = "gc.run-operator" }
+
+[[steps]]
+id = "par-a"
+title = "nullop parallel a"
+needs = ["seq-3"]
+description = "No-op benchmark step. Do no work: immediately set gc.outcome=pass on this bead and close it."
+metadata = { "gc.run_target" = "gc.run-operator" }
+
+[[steps]]
+id = "par-b"
+title = "nullop parallel b"
+needs = ["seq-3"]
+description = "No-op benchmark step. Do no work: immediately set gc.outcome=pass on this bead and close it."
+metadata = { "gc.run_target" = "gc.run-operator" }
+
+[[steps]]
+id = "par-c"
+title = "nullop parallel c"
+needs = ["seq-3"]
+description = "No-op benchmark step. Do no work: immediately set gc.outcome=pass on this bead and close it."
+metadata = { "gc.run_target" = "gc.run-operator" }
+
+[[steps]]
+id = "join"
+title = "nullop join"
+needs = ["par-a", "par-b", "par-c"]
+description = "No-op benchmark step. Do no work: immediately set gc.outcome=pass on this bead and close it."
+metadata = { "gc.run_target" = "gc.run-operator" }

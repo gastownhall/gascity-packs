@@ -1,0 +1,2 @@
+description = 'Diff two profile reports: totals and per-step wait/active deltas'
+run = '../compare.sh'

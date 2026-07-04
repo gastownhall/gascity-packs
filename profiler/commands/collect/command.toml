@@ -1,0 +1,2 @@
+description = 'Assemble a formula-run profile capture (beads, sessions, events, transcripts, usage) from a workflow root bead id'
+run = '../collect.sh'

@@ -1,0 +1,4 @@
+[pack]
+name = "profiler"
+version = "0.1.0"
+schema = 2

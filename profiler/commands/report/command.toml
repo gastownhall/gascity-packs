@@ -1,0 +1,2 @@
+description = 'Render the timing analysis (text/json/html) for a collected profile capture'
+run = '../report.sh'
