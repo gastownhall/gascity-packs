@@ -2493,7 +2493,6 @@ func redactSlackURL(raw string) string {
 	if u, err := url.Parse(raw); err == nil && u.Opaque == "" {
 		u.RawQuery = ""
 		u.Fragment = ""
-		u.RawFragment = ""
 		u.User = nil
 		safe = u.String()
 	} else {
