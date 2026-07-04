@@ -1700,6 +1700,13 @@ func slackGetUploadURL(token, filename string, length int) (*slackGetUploadURLRe
 // multipart-with-filename pattern as the canonical shape; raw PUT silently
 // degrades to a "ghost upload" the channel post step can't bind to.
 func slackPutFileBytes(uploadURL string, filename string, body []byte) error {
+	// uploadURL is a pre-signed, token-bearing URL (see doc above). Every
+	// error below reports safeURL — never the raw uploadURL — so its embedded
+	// auth never reaches log.Printf or the HTTP receipt at the publishFile
+	// handler's sink. This mirrors slackDownloadToFile's redaction; the two
+	// sibling upload steps (slackGetUploadURL, slackCompleteUpload) already
+	// redact, and this one must too. gpk-la1y.
+	safeURL := redactSlackURL(uploadURL)
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	part, err := mw.CreateFormFile("filename", filename)
@@ -1714,26 +1721,19 @@ func slackPutFileBytes(uploadURL string, filename string, body []byte) error {
 	}
 	req, err := http.NewRequest(http.MethodPost, uploadURL, &buf)
 	if err != nil {
-		return err
+		return redactTransportError("build upload request to", safeURL, err)
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return redactTransportError("upload POST to", safeURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		// Redact the pre-signed upload URL — its query string carries a
-		// short-lived auth token; strip RawQuery so it does not reach adapter
-		// logs verbatim. url.Redacted() alone only handles userinfo passwords
-		// and would leave query-string tokens intact.
-		safeURL := uploadURL
-		if u, perr := url.Parse(uploadURL); perr == nil {
-			u.RawQuery = ""
-			safeURL = u.String()
-		}
-		return fmt.Errorf("upload POST %s: %s — %s", safeURL, resp.Status, string(respBody))
+		// respBody is untrusted origin content: sanitize control chars
+		// (log-line injection) and scrub any reflected URL/token. gpk-la1y.
+		return fmt.Errorf("upload POST %s: %s — %s", safeURL, resp.Status, sanitizeSlackErrorBody(respBody))
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
@@ -2588,6 +2588,30 @@ func unwrapURLError(err error) error {
 	return err
 }
 
+// redactTransportError re-wraps a net/http transport failure so no
+// token-bearing URL reaches adapter logs or HTTP receipts, reporting safeURL
+// (a redactSlackURL form) in place of the raw target. unwrapURLError strips
+// the *url.Error wrapper — whose Error() embeds the full request URL —
+// then scrubSlackSecrets removes any token the bare cause still carries.
+// The critical case: net/http parses a redirect Location BEFORE
+// CheckRedirect runs and, on a malformed header, returns a *url.Error whose
+// .Err text interpolates the raw, token-bearing Location verbatim (absolute
+// or relative). Safety rests on unwrapURLError reading only .Err (never
+// .URL, which net/http also sets to the raw redirect target) and on
+// scrubSlackSecrets as the redaction of last resort. The %w wrap is kept
+// when scrubbing is a no-op so errors.Is still matches plain transport
+// errors (e.g. connection-refused); it degrades to %s only on the
+// URL-bearing path. Shared by slackDownloadToFile (GET) and
+// slackPutFileBytes (upload POST). gpk-la1y.
+func redactTransportError(action, safeURL string, e error) error {
+	cause := unwrapURLError(e)
+	causeText := cause.Error()
+	if scrubbed := scrubSlackSecrets(causeText); scrubbed != causeText {
+		return fmt.Errorf("%s %s: %s", action, safeURL, scrubbed)
+	}
+	return fmt.Errorf("%s %s: %w", action, safeURL, cause)
+}
+
 // validateSlackFileURL is the SSRF gate applied to inbound url_private
 // values before slackDownloadToFile sends the bot token. Indirected through
 // a package var so tests of unrelated download mechanics (atomic write,
@@ -2622,28 +2646,10 @@ func slackDownloadToFile(token, urlPrivate, dest string) error {
 	// validateSlackFileURL branch is covered too: isSlackFileURL redacts
 	// its own error messages. gpk-la1y.
 	safeURL := redactSlackURL(urlPrivate)
-	// redactTransport re-wraps a net/http transport failure against
-	// safeURL. unwrapURLError strips the *url.Error wrapper (whose Error()
-	// embeds the full request URL); scrubSlackSecrets then removes any
-	// token the bare cause still carries. The critical case: net/http
-	// parses a redirect Location BEFORE CheckRedirect runs and, on a
-	// malformed header, returns a *url.Error whose .Err text interpolates
-	// the raw, token-bearing Location verbatim — absolute or relative.
-	// Safety rests on unwrapURLError reading only .Err (never .URL, which
-	// net/http also sets to the raw redirect target) and on scrubSlackSecrets
-	// as the redaction of last resort. Keep the %w wrap when scrubbing is a
-	// no-op so errors.Is still matches plain transport errors (e.g.
-	// connection-refused); degrade to %s only on the URL-bearing path.
+	// Transport failures below route through redactTransportError, which
+	// unwraps the *url.Error (whose Error() embeds the full token-bearing
+	// request URL, including a raw redirect Location) and reports safeURL.
 	// gpk-la1y.
-	redactTransport := func(action string, e error) error {
-		cause := unwrapURLError(e)
-		causeText := cause.Error()
-		if scrubbed := scrubSlackSecrets(causeText); scrubbed != causeText {
-			return fmt.Errorf("%s %s: %s", action, safeURL, scrubbed)
-		}
-		return fmt.Errorf("%s %s: %w", action, safeURL, cause)
-	}
-
 	ok, err := validateSlackFileURL(urlPrivate)
 	if err != nil {
 		return fmt.Errorf("validating url_private: %w", err)
@@ -2655,12 +2661,12 @@ func slackDownloadToFile(token, urlPrivate, dest string) error {
 	}
 	req, err := http.NewRequest(http.MethodGet, urlPrivate, nil)
 	if err != nil {
-		return redactTransport("build download request to", err)
+		return redactTransportError("build download request to", safeURL, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := slackHTTPClientSingleton().Do(req)
 	if err != nil {
-		return redactTransport("GET", err)
+		return redactTransportError("GET", safeURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {

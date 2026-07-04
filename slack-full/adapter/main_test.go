@@ -3864,6 +3864,87 @@ func TestSlackDownloadToFileSanitizes4xxBody(t *testing.T) {
 	}
 }
 
+// withUploadToken appends the auth token a pre-signed Slack upload URL
+// carries in its query (?t=xoxe-...) to a test server URL. The upload URL
+// "itself encodes auth" (see slackPutFileBytes doc), so a leaked upload URL
+// is a leaked credential.
+func withUploadToken(base string) string {
+	return base + "/upload/T123-F456?t=xoxe-supersecret-upload-token"
+}
+
+func TestSlackPutFileBytesRedactsTokenOn4xx(t *testing.T) {
+	// A non-2xx upload response must not leak the pre-signed URL's token into
+	// the error that reaches log.Printf and the publish-file HTTP receipt.
+	// gpk-la1y.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("forbidden"))
+	}))
+	defer srv.Close()
+
+	err := slackPutFileBytes(withUploadToken(srv.URL), "plot.png", []byte("data"))
+	if err == nil {
+		t.Fatal("expected error from 403 upload server, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-supersecret-upload-token") {
+		t.Errorf("upload URL token leaked in 4xx error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "upload POST") {
+		t.Errorf("expected error to contain 'upload POST', got: %v", err)
+	}
+}
+
+func TestSlackPutFileBytesRedactsTokenOnTransportError(t *testing.T) {
+	// A transport failure makes http.Client.Do return a *url.Error whose
+	// Error() embeds the full token-bearing upload URL. slackPutFileBytes
+	// must unwrap it and report a query-stripped URL instead. Exercise it by
+	// closing the listener before the request (connection refused). gpk-la1y.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	unreachable := srv.URL
+	srv.Close() // listener closed → connection refused
+
+	err := slackPutFileBytes(withUploadToken(unreachable), "plot.png", []byte("data"))
+	if err == nil {
+		t.Fatal("expected transport error from closed server, got nil")
+	}
+	if strings.Contains(err.Error(), "xoxe-supersecret-upload-token") {
+		t.Errorf("upload URL token leaked in transport-error path: %v", err)
+	}
+	if !strings.Contains(err.Error(), "upload POST") {
+		t.Errorf("expected error to contain 'upload POST', got: %v", err)
+	}
+}
+
+func TestSlackPutFileBytesSanitizes4xxBody(t *testing.T) {
+	// The upload endpoint's error body is untrusted origin content: a
+	// reflected token or URL must not reach logs/receipts, and embedded CR/LF
+	// must be stripped so a malicious body cannot forge extra log lines.
+	// gpk-la1y.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("denied\nFORGED-LOG-LINE url=https://files.slack.com/x?token=xoxe-reflected-upload-body-token bare=xoxb-reflected-upload-bare-token"))
+	}))
+	defer srv.Close()
+
+	err := slackPutFileBytes(withUploadToken(srv.URL), "plot.png", []byte("data"))
+	if err == nil {
+		t.Fatal("expected error from 403 upload server, got nil")
+	}
+	msg := err.Error()
+	for _, leak := range []string{
+		"xoxe-reflected-upload-body-token",
+		"xoxb-reflected-upload-bare-token",
+		"xoxe-supersecret-upload-token",
+	} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("token %q leaked from upload 4xx path: %v", leak, err)
+		}
+	}
+	if strings.Contains(msg, "\n") {
+		t.Errorf("un-stripped newline enables log-line injection: %q", msg)
+	}
+}
+
 func TestSlackHTTPClientCheckRedirectHopLimitOmitsToken(t *testing.T) {
 	// The redirect hop-limit branch names the current target, which carries
 	// the same token-bearing query as any Slack CDN link. It must redact the
