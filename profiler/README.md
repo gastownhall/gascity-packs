@@ -38,13 +38,6 @@ and per-step wait/active deltas for steps whose titles match.
 Run `collect` from the rig root (or pass `--rig`); the root bead must be
 resolvable in that rig's store.
 
-## Order
-
-`transcript-archive` (on `session.stopped`) gzips each managed session's
-transcript into `.gc/runtime/profiles/_transcripts/` at close. Transcripts
-are the one volatile source retroactive profiling depends on; archiving them
-keeps per-turn timing evidence available for runs profiled later.
-
 ## Agent + analysis formula
 
 `profile-analyze` (routed to the pack's `gc.profile-analyst` role) reads a
@@ -76,6 +69,9 @@ platform latency.
   not yet scanned.
 - Only Claude Code transcript layout is resolved (`~/.claude/projects`);
   other providers fall through to a manifest gap entry.
-- Sessions whose beads lack `work_dir`/`session_key`, or whose transcript
-  files were cleaned before archival, are listed as gaps rather than copied.
+- Transcripts are read from the provider's own storage at collect time; this
+  pack deliberately does not back them up (profiling reads what the user's
+  existing storage holds). Sessions whose transcript files are already gone
+  are listed as manifest gaps. Durable transcript correlation is a core
+  enabler (E3 in the proposal), not pack scope.
 - Reconciler trace slices are not captured (7-day/1-GiB retention upstream).
