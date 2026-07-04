@@ -58,7 +58,9 @@ notes and metadata. Crash-safe: `bd mol current` resumes at the right step.
 formula = "mol-pr-from-issue"
 phase = "vapor"
 version = 1
-contract = "graph.v2"
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [vars]
 [vars.issue_number]
