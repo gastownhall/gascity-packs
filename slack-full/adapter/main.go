@@ -2435,15 +2435,10 @@ func safeFilename(name string) string {
 func isSlackFileURL(rawURL string) (bool, error) {
 	u, err := url.ParseRequestURI(rawURL)
 	if err != nil {
-		// The *url.Error text embeds the full raw URL — token-bearing
-		// query included — and this error propagates verbatim into
-		// slackDownloadToFile's returned error and adapter logs. Unwrap
-		// to the bare cause and report a redacted form instead. gpk-la1y.
-		var uerr *url.Error
-		if errors.As(err, &uerr) {
-			err = uerr.Err
-		}
-		return false, fmt.Errorf("parse url_private %q: %w", redactSlackURL(rawURL), err)
+		// This error propagates verbatim into slackDownloadToFile's
+		// returned error and adapter logs — see unwrapURLError for why
+		// it cannot be wrapped raw. gpk-la1y.
+		return false, fmt.Errorf("parse url_private %q: %w", redactSlackURL(rawURL), unwrapURLError(err))
 	}
 	if !u.IsAbs() {
 		// ParseRequestURI accepts absolute paths (e.g. "/files-pri/...") and
@@ -2490,6 +2485,19 @@ func redactSlackURL(raw string) string {
 	return safe
 }
 
+// unwrapURLError returns the underlying cause of a *url.Error, or err
+// unchanged. A *url.Error's Error() text embeds the full request URL —
+// token-bearing query included — so wrapping one with %w leaks the URL
+// even when the surrounding message is redacted. Callers unwrap here and
+// re-wrap the bare cause against a redactSlackURL form. gpk-la1y.
+func unwrapURLError(err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		return uerr.Err
+	}
+	return err
+}
+
 // validateSlackFileURL is the SSRF gate applied to inbound url_private
 // values before slackDownloadToFile sends the bot token. Indirected through
 // a package var so tests of unrelated download mechanics (atomic write,
@@ -2524,18 +2532,11 @@ func slackDownloadToFile(token, urlPrivate, dest string) error {
 	// validateSlackFileURL branch is covered too: isSlackFileURL redacts
 	// its own error messages. gpk-la1y.
 	safeURL := redactSlackURL(urlPrivate)
-	// redactTransport re-wraps a net/http transport failure. Such
-	// failures arrive as a *url.Error whose Error() text embeds the full
-	// request URL (token included), so wrapping it directly with %w would
-	// still leak; unwrap to the underlying cause and report it against
-	// safeURL instead. gpk-la1y.
+	// redactTransport re-wraps a net/http transport failure against
+	// safeURL — see unwrapURLError for why the *url.Error cannot be
+	// wrapped raw. gpk-la1y.
 	redactTransport := func(action string, e error) error {
-		cause := e
-		var uerr *url.Error
-		if errors.As(e, &uerr) {
-			cause = uerr.Err
-		}
-		return fmt.Errorf("%s %s: %w", action, safeURL, cause)
+		return fmt.Errorf("%s %s: %w", action, safeURL, unwrapURLError(e))
 	}
 
 	ok, err := validateSlackFileURL(urlPrivate)
