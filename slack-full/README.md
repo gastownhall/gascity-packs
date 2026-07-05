@@ -194,8 +194,50 @@ either can travel intact when the pack is mirrored upstream:
   `$GC_PACK_DIR/cli/gc-slack-cli` so operator command-line ergonomics
   stay identical to the pre-relocation gc-binary verbs.
 
-Build commands and CI for both binaries are documented in
+Both binaries are **gitignored build artifacts**: a fresh pack cache
+clone — `gc import install`, a repin, `gc pack fetch` — does not contain
+them, and gc runs **no pack build hook on import**. After any such clone
+the `[[service]]` command and the `commands/<cmd>.sh` wrappers point at
+binaries that do not exist (this is the root cause of the 2026-07-05
+~16.6h Slack outage). Rebuild both in place with the pack's build script:
+
+```
+./scripts/build-binaries.sh
+# equivalent to: (cd adapter && go build -o gc-slack-adapter) && (cd cli && go build -o gc-slack-cli .)
+```
+
+The script is idempotent and fails loudly on a partial build; the pack's
+`binaries` doctor check (`doctor/check-binaries.sh`) verifies both are
+present in place. Build commands and CI are documented in
 [CONTRIBUTING.md](./CONTRIBUTING.md#build-flow).
+
+## Canonical gc 1.3.3 parity
+
+The deployed **canonical gc 1.3.3** exposes an *older* snapshot of this
+pack's verb surface than the source in this tree. Two gaps bite the
+oversight loop; both are **already implemented here** and land when this
+pack is repinned + rebuilt:
+
+- **`gc slack react` verb.** The adapter serves `POST /react`
+  (`reactions.add` passthrough) and the pack ships `commands/react/` +
+  `scripts/slack_chat_react.py`, so an agent can eyes-react on the latest
+  inbound (`gc slack react --emoji eyes`) or an explicit `(channel, ts)`.
+  Canonical 1.3.3 may not surface the verb — if `gc slack react` is
+  absent, the reaction step is skipped (inbounds still deliver); post the
+  reply and note "no eyes-react on this build" until the repin lands.
+- **`reply-current --thread-current` threading.** `slack_chat_reply_current.py`
+  resolves the latest inbound's thread anchor and sends it as
+  `reply_to_message_id`, which the adapter maps to Slack `thread_ts`
+  (`main.go`, `PublishRequest.ReplyToMessageID → thread_ts`) — so replies
+  land *in-thread*. On canonical 1.3.3 `--thread-current` was silently
+  swallowed (un-threaded replies). Interim workaround until the repin: POST
+  `/v0/city/<city>/extmsg/outbound` directly with an explicit
+  `reply_to_message_id` (the thread root), which threads correctly on every
+  build.
+
+Neither is a code change in this batch — they are documented here so an
+operator on canonical 1.3.3 knows what to expect and which workaround to
+reach for before the pack is repinned.
 
 ## Architecture (current)
 
@@ -463,8 +505,11 @@ GC_CITY_NAME=<your-city-name>
 ### Cutover sequence
 
 ```
-# 1. Build the adapter binary in place (source colocated with the pack)
-( cd slack-full/adapter && go build -o gc-slack-adapter )
+# 1. Build the pack's Go binaries in place (adapter + operator CLI). They
+#    are gitignored artifacts: a fresh cache clone / repin loses them and
+#    gc runs no build hook on import, so rebuild after every import/repin.
+#    build-binaries.sh builds both and verifies they landed.
+( cd slack-full && ./scripts/build-binaries.sh )
 
 # 2. Source the secrets so the supervisor inherits them
 set -a; source "${XDG_CONFIG_HOME:-$HOME/.config}/gc-slack-adapter/env"; set +a
@@ -521,6 +566,16 @@ TCP-only mode, so the same binary serves both deployments.
   declared in the city. If you reboot the host or `tailscale funnel
 reset`, traffic stops landing at the adapter. Re-add the rule
   manually until Phase C lands.
+- **Binaries vanish on repin.** The adapter and CLI are gitignored build
+  artifacts; `gc import install` / a repin / `gc pack fetch` clones a
+  fresh copy *without* them, and gc runs no build hook on import. Symptom:
+  the `slack` service fails to start (missing `./adapter/gc-slack-adapter`)
+  and `gc slack <cmd>` wrappers cannot find `$GC_PACK_DIR/cli/gc-slack-cli`.
+  Fix: rerun `./scripts/build-binaries.sh` after any import/repin (this was
+  the 2026-07-05 ~16.6h outage). **Bindings do not rehydrate on their own
+  either** — but as of this pack version the adapter replays them from
+  `config.json` on (re-)registration, so a manual `gc slack bind-room` is
+  only needed if that rehydration logs a failure.
 
 ## Where the work that's still missing comes from
 

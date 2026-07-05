@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Binding rehydration on adapter (re-)registration.** After the adapter
+  registers with gc it now replays every room binding recorded in
+  `.gc/services/slack/data/config.json` back to gc (`/extmsg/groups` →
+  `/extmsg/participants` → `/extmsg/bind`), restoring bindings that a
+  from-dead recovery (fresh pack cache clone / gc restart) would otherwise
+  drop as "no active binding" 422s — with no manual `gc slack bind-room`.
+  Best-effort and loud; a bind conflict (already-bound) is tolerated as the
+  desired state. See `adapter/rehydrate.go`. (`dip-klkcl`)
+- **`scripts/build-binaries.sh`** — one-command, idempotent, self-verifying
+  rebuild of both gitignored Go binaries in place. gc runs no pack build
+  hook on `import install`, so the binaries vanish on every repin (root
+  cause of the 2026-07-05 outage); run this after any import/repin. The
+  `binaries` doctor check's remediation message now points at it. (`dip-klkcl`)
+- **"Canonical gc 1.3.3 parity"** README section documenting the
+  `gc slack react` verb and `reply-current --thread-current` threading that
+  the deployed canonical lacks but this pack already provides, with interim
+  workarounds until a repin lands. (`dip-klkcl`)
+
+### Fixed
+
+- **Inbound silently dropped on a transient gc 5xx.** `postInbound` treated
+  a gc 500 as terminal, so a dolt "begin read tx: invalid connection"
+  hiccup on the bindings-resolution path dropped the Slack event — on the
+  oversight channel that can eat a page reply. It now retries transport
+  errors and 5xx with bounded backoff (idempotent via the inbound
+  `DedupKey`, so no double-delivery); 4xx stays terminal. On exhaustion the
+  failure log carries the event id (`ts`) + channel so the drop is
+  correlatable — the old `inbound POST failed:` line had neither. See
+  `adapter/main.go` `gcPostWithRetry`. (`dip-klkcl`)
+
 ### Changed
 
 - Renamed the pack directory from `slack-pack/` to `slack-full/` and the

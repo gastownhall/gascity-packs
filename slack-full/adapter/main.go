@@ -1060,6 +1060,14 @@ func main() {
 		}
 		log.Printf("registered with gc as provider=%s account=%s callback=%s/publish (%s)",
 			cfg.provider, cfg.accountID, cfg.internalCallbackURL, mode)
+
+		// Replay locally-recorded room bindings to gc. On a from-dead
+		// recovery (fresh pack cache clone / gc restart) the gc-side
+		// groups/participants/bindings are gone; this restores them from
+		// the pack's config.json so an operator no longer has to re-run
+		// `gc slack bind-room` after every such restart. Best-effort and
+		// loud — never fatal (see rehydrate.go).
+		rehydrateBindings(cfg)
 	}
 
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
@@ -2190,7 +2198,14 @@ func processSlackEvent(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 		ReceivedAt:       time.Now().UTC(),
 	}
 	if err := postInbound(cfg, inbound); err != nil {
-		log.Printf("inbound POST failed: %v", err)
+		// Loud, greppable, message-dropped log carrying the event id (ts)
+		// and channel — the old "inbound POST failed: %v" line had neither,
+		// so failures could not be correlated to a specific Slack message.
+		// Diagnose with an unfiltered time-window scan of the adapter log
+		// (this line has no "inbound:" token by design; the id-grep is for
+		// deliveries). Fields mirror the success line below.
+		log.Printf("inbound POST FAILED (message dropped): chan=%s user=%s ts=%s thread=%s target=%q files=%d text=%dch: %v",
+			msg.Channel, msg.User, msg.TS, msg.ThreadTS, target, len(attachments), len(text), err)
 		return
 	}
 	log.Printf("inbound: chan=%s user=%s ts=%s thread=%s target=%q files=%d text=%dch",
@@ -3472,26 +3487,114 @@ func handleIdentityDelete(reg *identityRegistry) http.HandlerFunc {
 	}
 }
 
+// gcRetryConfig bounds retry-with-backoff for idempotent gc API calls.
+//
+// Inbound POSTs to gc can transiently fail with a 5xx when gc's bindings
+// resolution path hits a dolt "begin read tx: invalid connection" hiccup
+// (Chris hit it live 2026-07-02 17:23:58 ET). The adapter used to treat
+// that 500 as terminal and silently drop the inbound — on the oversight
+// channel a dropped inbound can eat a page reply and hang the escalation
+// loop. Retries are safe because every inbound carries a stable DedupKey
+// ("slack-"+ts) that gc dedups on, so retrying a delivered-but-500'd POST
+// does not double-deliver. gc-side transient-retry on the same path is
+// filed separately (overseer sc-wisp-wul353); this adapter retry is
+// defense-in-depth. maxAttempts=5 with base 250ms → ~3.75s worst-case
+// backoff, a bounded hold on the dispatch slot.
+type gcRetryConfig struct {
+	maxAttempts int           // total attempts including the first (min 1)
+	baseBackoff time.Duration // backoff before the 2nd attempt; doubles each retry
+	maxBackoff  time.Duration // cap on any single backoff sleep
+}
+
+func defaultGCRetryConfig() gcRetryConfig {
+	return gcRetryConfig{
+		maxAttempts: 5,
+		baseBackoff: 250 * time.Millisecond,
+		maxBackoff:  3 * time.Second,
+	}
+}
+
+// backoffFor returns the sleep before the retry that follows attempt n
+// (1-indexed). Exponential from baseBackoff, capped at maxBackoff.
+func (rc gcRetryConfig) backoffFor(attempt int) time.Duration {
+	d := rc.baseBackoff
+	for i := 1; i < attempt; i++ {
+		if d >= rc.maxBackoff {
+			return rc.maxBackoff
+		}
+		d *= 2
+	}
+	if d > rc.maxBackoff {
+		return rc.maxBackoff
+	}
+	return d
+}
+
+// retryableStatus reports whether an HTTP status warrants a retry. 5xx is
+// server-side and typically transient; 4xx means the same request will
+// fail again, so it is terminal and returned immediately.
+func retryableStatus(code int) bool {
+	return code >= 500
+}
+
+// gcPostWithRetry POSTs jsonBody to target with the gc CSRF header,
+// retrying transport errors and 5xx responses with bounded backoff (rc).
+// label appears in log lines only. sleep is injected so tests run without
+// real delay (pass time.Sleep in production). On success (<400) it returns
+// the response body. A 4xx is returned immediately as a terminal error
+// (no retry). After the final attempt it returns an error naming the
+// attempt count and the last failure.
+func gcPostWithRetry(client *http.Client, rc gcRetryConfig, sleep func(time.Duration), target, label string, jsonBody []byte) ([]byte, error) {
+	if rc.maxAttempts < 1 {
+		rc.maxAttempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= rc.maxAttempts; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(jsonBody))
+		if err != nil {
+			// A malformed request will not fix itself — terminal.
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-GC-Request", "gc-slack-adapter")
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			if attempt < rc.maxAttempts {
+				d := rc.backoffFor(attempt)
+				log.Printf("WARN: %s POST transport error (attempt %d/%d), retrying in %s: %v", label, attempt, rc.maxAttempts, d, err)
+				sleep(d)
+				continue
+			}
+			break
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode < 400 {
+			return respBody, nil
+		}
+		if !retryableStatus(resp.StatusCode) {
+			return nil, fmt.Errorf("%s: %s: %s", label, resp.Status, string(respBody))
+		}
+		lastErr = fmt.Errorf("%s: %s: %s", label, resp.Status, string(respBody))
+		if attempt < rc.maxAttempts {
+			d := rc.backoffFor(attempt)
+			log.Printf("WARN: %s POST %s (attempt %d/%d), retrying in %s", label, resp.Status, attempt, rc.maxAttempts, d)
+			sleep(d)
+			continue
+		}
+	}
+	return nil, fmt.Errorf("%s failed after %d attempts: %w", label, rc.maxAttempts, lastErr)
+}
+
 func postInbound(cfg config, msg externalInboundMessage) error {
 	body, _ := json.Marshal(map[string]any{
 		"message": msg,
 	})
 	// PathEscape cityName for the same reason as registerAdapter (gc-cby.28).
 	target := fmt.Sprintf("%s/v0/city/%s/extmsg/inbound", cfg.gcAPIBase, url.PathEscape(cfg.cityName))
-	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GC-Request", "gc-slack-adapter")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s: %s", resp.Status, string(respBody))
-	}
-	return nil
+	// Bounded retry on transport errors + 5xx (idempotent via DedupKey);
+	// see gcRetryConfig. A 4xx returns immediately as terminal.
+	_, err := gcPostWithRetry(http.DefaultClient, defaultGCRetryConfig(), time.Sleep, target, "inbound", body)
+	return err
 }
