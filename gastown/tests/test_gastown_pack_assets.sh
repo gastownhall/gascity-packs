@@ -214,6 +214,20 @@ if verify >= metadata:
 PY
 }
 
+test_operational_awareness_has_no_hardcoded_dolt_connection_literals() {
+    local fragment="$GASTOWN/template-fragments/operational-awareness.template.md"
+    [[ -f "$fragment" ]] || fail "missing operational-awareness fragment"
+    # The Dolt port and connection ceiling are runtime values; hardcoding them
+    # makes agents emit false Dolt-health pages when the real config differs.
+    ! grep -nE 'port[[:space:]]+3307' "$fragment" >/dev/null ||
+        fail "operational-awareness must not hardcode Dolt port 3307"
+    ! grep -nE 'conn_max[[:space:]]+50' "$fragment" >/dev/null ||
+        fail "operational-awareness must not hardcode conn_max 50"
+    # And it must point agents at the real, dynamic source of truth instead.
+    grep -F '$GC_DOLT_PORT' "$fragment" >/dev/null ||
+        fail "operational-awareness should reference \$GC_DOLT_PORT for the live Dolt port"
+}
+
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
@@ -222,5 +236,6 @@ test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_operational_awareness_has_no_hardcoded_dolt_connection_literals
 
 echo "gastown pack asset tests passed"
