@@ -348,16 +348,17 @@ BODY
 This is a belt-and-suspenders check — self-review should have caught this,
 but we never push with untracked work left behind.
 
-**3. Push your branch:**
+**3. Rebase onto latest target, re-run checks, then push:**
 ```bash
 AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
+TARGET_BRANCH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.target // "{{base_branch}}"')
 if [ "$AUTO_PUSH" = "false" ]; then
   echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"
   BRANCH=$(git branch --show-current)
   gc bd update "$WORK_BEAD_ID" \
     --status=open --assignee="" \
     --set-metadata branch="$BRANCH" \
-    --set-metadata target={{base_branch}} \
+    --set-metadata target="$TARGET_BRANCH" \
     --set-metadata branch_ready=true \
     --set-metadata halt_reason=auto_push_false \
     --set-metadata gc.routed_to="" \
@@ -365,6 +366,30 @@ if [ "$AUTO_PUSH" = "false" ]; then
   gc runtime drain-ack
   exit 0
 fi
+
+# Rebase onto latest target to avoid stale-base conflicts with siblings
+git fetch origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"
+if ! git rebase "origin/$TARGET_BRANCH"; then
+    echo "FINAL REBASE FAILED. Resolve conflict locally, then re-run submit-and-exit."
+    gc runtime drain-ack
+    exit 1
+fi
+
+# Re-run affected tests after rebase (catches issues from stale base)
+if [ -n "{{affected_tests_command}}" ]; then
+    {{affected_tests_command}} || {
+        echo "Tests failed after rebase — fix and commit"
+        gc runtime drain-ack
+        exit 1
+    }
+else
+    {{test_command}} || {
+        echo "Tests failed after rebase — fix and commit"
+        gc runtime drain-ack
+        exit 1
+    }
+fi
+
 git push origin HEAD
 PUSH_EXIT=$?
 if [ $PUSH_EXIT -ne 0 ]; then
@@ -394,6 +419,11 @@ if [ "$REMOTE_REF" != "$LOCAL_HEAD" ]; then
     gc runtime drain-ack
     exit 1
 fi
+
+# Death-safety: mark the branch as pushed immediately, so witness recovery
+# can detect orphaned branches (pushed to origin but reassignment not yet sent
+# to refinery) and route them directly to refinery instead of starving in pool.
+gc bd update "$WORK_BEAD_ID" --set-metadata branch_pushed=true
 ```
 
 **4. Clean up local branch (prevent stale branch accumulation):**

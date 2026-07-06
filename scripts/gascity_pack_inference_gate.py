@@ -105,6 +105,8 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "{{lint_command}}",
         "{{build_command}}",
         "{{test_command}}",
+        'git fetch origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"',
+        'git rebase "origin/$TARGET_BRANCH"',
         "git push origin HEAD",
         "gc bd update \"$WORK_BEAD_ID\" \\",
         "--set-metadata target={{base_branch}}",
