@@ -69,7 +69,12 @@ external observers (witness, mayor) only catch on a slow patrol cycle.
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  # Patrol wisps are ephemeral and poured with status=open (never in_progress);
+  # `gc bd list` does not surface ephemeral beads, so resolve via `gc bd query`.
+  # Without this the burn below silently no-ops and a wisp leaks each idle
+  # cycle. Pick the newest matching wisp for this agent.
+  CURRENT_WISP=$(gc bd query --json 'ephemeral=true AND status=open' --limit=0 2>/dev/null \
+    | jq -r --arg agent "$GC_AGENT" '[.[] | select(.assignee==$agent) | select(.title=="mol-refinery-patrol")] | sort_by(.created_at // "") | .[-1].id // empty')
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -114,7 +119,12 @@ assign the next wisp, burn the current wisp, THEN request restart**:
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  # Patrol wisps are ephemeral and poured with status=open (never in_progress);
+  # `gc bd list` does not surface ephemeral beads, so resolve via `gc bd query`.
+  # Without this the burn below silently no-ops and a wisp leaks each idle
+  # cycle. Pick the newest matching wisp for this agent.
+  CURRENT_WISP=$(gc bd query --json 'ephemeral=true AND status=open' --limit=0 2>/dev/null \
+    | jq -r --arg agent "$GC_AGENT" '[.[] | select(.assignee==$agent) | select(.title=="mol-refinery-patrol")] | sort_by(.created_at // "") | .[-1].id // empty')
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
