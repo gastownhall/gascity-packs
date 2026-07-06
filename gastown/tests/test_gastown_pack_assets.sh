@@ -212,6 +212,18 @@ metadata = block.index('--set-metadata merge_result=merged')
 if verify >= metadata:
     raise SystemExit(1)
 PY
+
+    [[ "$direct_block" == *'cleanup_stale_polecat_refs()'* ]] ||
+        fail "direct refinery merge must define stale polecat ref cleanup"
+    [[ "$direct_block" == *'git for-each-ref --format='\''%(refname:short)'\'' refs/heads/polecat/'* ]] ||
+        fail "direct refinery merge must scan local polecat heads before cleanup"
+    [[ "$direct_block" == *'git update-ref -d "refs/heads/$ref"'* ]] ||
+        fail "direct refinery merge must delete stale local polecat refs"
+
+    grep -F 'cleanup_stale_polecat_ref()' "$formula" >/dev/null ||
+        fail "mr refinery merge must define stale polecat ref cleanup"
+    grep -F 'git update-ref -d "$branch_ref"' "$formula" >/dev/null ||
+        fail "mr refinery merge must delete the matching stale local polecat ref"
 }
 
 test_refinery_idle_contract_is_explicit_and_guarded() {

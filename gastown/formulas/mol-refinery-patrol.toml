@@ -805,6 +805,24 @@ rejection_reason` clears any stale rejection field from an earlier
 rejected/reworked attempt before the successful close.
 
 **2. Cleanup — run as a single sequence so interruption cannot strand a branch:**
+After the close is confirmed, prune stale local polecat refs that no longer
+correspond to active work:
+```bash
+cleanup_stale_polecat_refs() {
+  git for-each-ref --format='%(refname:short)' refs/heads/polecat/ \
+    | while IFS= read -r ref; do
+        [ -n "$ref" ] || continue
+        bead_id=${ref#polecat/}
+        bead_json=$(gc bd show "$bead_id" --json 2>/dev/null || true)
+        bead_status=$(printf '%s\n' "$bead_json" | jq -r '.[0].status // empty')
+        if [ "$bead_status" = "closed" ] || [ "$bead_status" = "rejected" ] || [ "$bead_status" = "abandoned" ]; then
+          git update-ref -d "refs/heads/$ref" || true
+        fi
+      done
+}
+cleanup_stale_polecat_refs
+```
+
 ```bash
 git checkout --detach "origin/$TARGET" >/dev/null 2>&1 || true
 git branch -d temp || git branch -D temp || true
@@ -1067,6 +1085,21 @@ gc bd update $WORK \
   --set-metadata merged_target="$TARGET" \
   --unset-metadata rejection_reason && \
 gc bd close $WORK --reason "Pull request ready: $PR_URL"
+```
+
+After the close is confirmed, prune the matching local polecat ref if it
+now points at completed work:
+```bash
+cleanup_stale_polecat_ref() {
+  local branch_ref="refs/heads/$BRANCH"
+  local bead_json bead_status
+  bead_json=$(gc bd show "$WORK" --json 2>/dev/null || true)
+  bead_status=$(printf '%s\n' "$bead_json" | jq -r '.[0].status // empty')
+  if [ "$bead_status" = "closed" ] || [ "$bead_status" = "rejected" ] || [ "$bead_status" = "abandoned" ]; then
+    git update-ref -d "$branch_ref" || true
+  fi
+}
+cleanup_stale_polecat_ref
 ```
 
 **5. Cleanup:**
