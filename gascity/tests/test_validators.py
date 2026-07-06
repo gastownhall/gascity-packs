@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import os
 import pathlib
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 import io
+
+import yaml
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "assets" / "scripts"))
 
@@ -423,6 +428,113 @@ trace:
             self.assertEqual(code, 1)
             self.assertIn("error:", stderr.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_build_artifact_embedded_schemas_match_schema_source_files(self) -> None:
+        embedded = build_artifact_validator.EMBEDDED_SCHEMAS
+
+        self.assertEqual(set(embedded), set(self.SCHEMA_FILES))
+        for schema_id, filename in self.SCHEMA_FILES.items():
+            with self.subTest(schema=schema_id):
+                source = yaml.safe_load((self.SCHEMA_ROOT / filename).read_text(encoding="utf-8"))
+                self.assertEqual(embedded[schema_id], source)
+
+    def test_build_artifact_cli_validates_when_vendored_without_schemas_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            vendored = root / ".gc" / "scripts" / "validate_build_artifact.py"
+            vendored.parent.mkdir(parents=True)
+            shutil.copy2(self.VALIDATOR_SCRIPT, vendored)
+            artifact = root / "requirements.md"
+            artifact.write_text(self.valid_artifact(), encoding="utf-8")
+
+            result = subprocess.run(
+                [sys.executable, str(vendored), "--schema", "gc.build.requirements.v1", "--path", str(artifact)],
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('"ok": true', result.stdout)
+
+    def test_build_artifact_cli_recovers_pyyaml_from_user_site_packages(self) -> None:
+        yaml_package_dir = pathlib.Path(yaml.__file__).resolve().parent
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "requirements.md"
+            artifact.write_text(self.valid_artifact(), encoding="utf-8")
+            user_base = root / "user-base"
+            env = {key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONUSERBASE"}}
+            env["PYTHONUSERBASE"] = str(user_base)
+            env["PYTHONNOUSERSITE"] = "1"
+            user_site = subprocess.run(
+                [sys.executable, "-S", "-c", "import site; print(site.getusersitepackages())"],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            shutil.copytree(yaml_package_dir, pathlib.Path(user_site) / "yaml")
+            default_import = subprocess.run(
+                [sys.executable, "-S", "-c", "import yaml"], env=env, capture_output=True, text=True
+            )
+            self.assertNotEqual(default_import.returncode, 0, "expected PyYAML to be unimportable under -S")
+
+            provenance = subprocess.run(
+                [
+                    sys.executable,
+                    "-S",
+                    "-c",
+                    f"import sys; sys.path.insert(0, {str(self.VALIDATOR_SCRIPT.parent)!r}); "
+                    "import validate_build_artifact as v; print(v.yaml.__file__)",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            result = subprocess.run(
+                [sys.executable, "-S", str(self.VALIDATOR_SCRIPT), "--schema", "gc.build.requirements.v1", "--path", str(artifact)],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(provenance.returncode, 0, provenance.stderr)
+            self.assertTrue(
+                provenance.stdout.strip().startswith(str(user_base)),
+                f"expected PyYAML recovered from {user_base}, got {provenance.stdout!r}",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('"ok": true', result.stdout)
+
+    def test_build_artifact_cli_names_site_roots_when_pyyaml_missing_everywhere(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "requirements.md"
+            artifact.write_text(self.valid_artifact(), encoding="utf-8")
+            poison = root / "poison" / "yaml"
+            poison.mkdir(parents=True)
+            (poison / "__init__.py").write_text('raise ImportError("PyYAML not installed for test")\n', encoding="utf-8")
+            env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+            env["PYTHONPATH"] = str(root / "poison")
+            expected_root = subprocess.run(
+                [sys.executable, "-c", "import site; print(site.getusersitepackages())"],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+            result = subprocess.run(
+                [sys.executable, str(self.VALIDATOR_SCRIPT), "--schema", "gc.build.requirements.v1", "--path", str(artifact)],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("PyYAML", result.stderr)
+            self.assertIn(expected_root, result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
 
 
 class VerdictReportValidatorTests(unittest.TestCase):
