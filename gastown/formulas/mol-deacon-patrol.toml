@@ -239,12 +239,22 @@ gc session nudge "$STUCK_SESSION" "Queue has $ASSIGNED open beads, no bead activ
 ```
 
 If the nudge doesn't unstick within the next patrol cycle, escalate
-by filing a warrant for the dog pool:
+by filing a warrant for the dog pool. Check for an existing open warrant
+against the same target first — a duplicate warrant spawns a second shutdown
+dance racing the first:
 
 ```bash
-gc bd create --type=task --label=warrant \\
-    --title="Stuck queue: <session> — $ASSIGNED beads, no activity $duration" \\
-    --metadata '{"target":"<session>","reason":"queue starvation: N beads, no bead.updated_at progress","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+TARGET_SESSION="<session>"
+EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \\
+    | jq -r --arg t "$TARGET_SESSION" \\
+        '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
+    echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
+else
+    gc bd create --type=task --label=warrant \\
+        --title="Stuck queue: <session> — $ASSIGNED beads, no activity $duration" \\
+        --metadata '{"target":"<session>","reason":"queue starvation: N beads, no bead.updated_at progress","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+fi
 ```
 
 The dog runs `mol-shutdown-dance` and the controller respawns a fresh
@@ -281,11 +291,22 @@ will naturally take longer than a quick dep propagation.
 
 No hardcoded thresholds. Use judgment.
 
-**Step 3: For stuck utility agents, file a warrant:**
+**Step 3: For stuck utility agents, file a warrant (deduped).**
+
+Check for an existing open warrant against the same target first — a duplicate
+warrant spawns a second shutdown dance racing the first:
 ```bash
-gc bd create --type=task --label=warrant \
-  --title="Stuck dog: <agent>" \
-  --metadata '{"target":"<session>","reason":"<reason>","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+TARGET_SESSION="<session>"
+EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
+  | jq -r --arg t "$TARGET_SESSION" \
+      '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
+  echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
+else
+  gc bd create --type=task --label=warrant \
+    --title="Stuck dog: <agent>" \
+    --metadata '{"target":"<session>","reason":"<reason>","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+fi
 ```
 
 A different dog from the pool picks up the warrant and runs the
