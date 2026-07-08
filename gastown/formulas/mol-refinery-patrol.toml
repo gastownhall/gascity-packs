@@ -681,8 +681,11 @@ fi
 
 Two failure modes share this gate, so evaluate them in one script that shares
 shell state — an early `exit` in the already-merged branch below then provably
-prevents the false-completion guard and the merge script from running on a
-closed bead.
+prevents the false-completion guard in this same script from running on a
+closed bead. That `exit` does NOT drain: an already-merged close is a real
+completion, so it skips the merge script and joins the normal path's
+Cleanup -> patrol-summary -> next-iteration tail (pour next wisp, burn this
+one), exactly like a normal merge. Only genuine errors drain-ack.
 
 - **Already merged (close, do NOT halt):** a previous refinery pass merged this
   branch and the polecat crashed before the bead closed. That is a real
@@ -721,8 +724,7 @@ case "$ANCESTOR_STATUS" in
         --set-metadata merged_target="$TARGET" \
         --unset-metadata rejection_reason && \
       gc bd close "$WORK" --reason "Already merged to $TARGET at $ALREADY_SHORT (branch is an ancestor of target; closed instead of halting)"
-      echo "ALREADY_MERGED: origin/$BRANCH is an ancestor of origin/$TARGET with $REAL_COMMITS commit(s) since fork — closed $WORK as merged; draining."
-      gc runtime drain-ack
+      echo "ALREADY_MERGED: origin/$BRANCH is an ancestor of origin/$TARGET with $REAL_COMMITS commit(s) since fork — closed $WORK as merged. Skip the merge script; run Cleanup, then patrol-summary + next-iteration."
       exit 0
     fi
     # Ancestor but no recorded real commits: a 0-commit branch. Fall through to
@@ -748,9 +750,12 @@ case "$BHRC_STATUS" in
     ;;
 esac
 ```
-If this block closed the bead as already-merged it drain-acked and exited, so
-neither the guard above nor the merge script below runs. Otherwise the branch
-has a verified real change and you continue to the merge.
+If this block closed the bead as already-merged, the merge is already done:
+SKIP the merge script (step 1 below) and go straight to **2. Cleanup**, then
+let this step complete so **patrol-summary** and **next-iteration** run (they
+pour the next wisp and burn this one) — the same tail a normal merge takes. Do
+NOT drain-ack here; that would strand the loop and leak the merged branch.
+Otherwise the branch has a verified real change and you continue to the merge.
 
 **1. Merge, push, verify, and close work bead:**
 
