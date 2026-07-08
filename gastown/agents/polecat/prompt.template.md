@@ -408,7 +408,7 @@ while [ "$READ_TRY" -lt 3 ]; do
     SHOW_CODE=$?
     WORK_STATUS=$(printf '%s' "$WORK_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
     WORK_ASSIGNEE=$(printf '%s' "$WORK_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
-    if [ "$SHOW_CODE" -eq 0 ] && [ -n "$WORK_STATUS" ] && [ -n "$WORK_ASSIGNEE" ]; then
+    if [ "$SHOW_CODE" -eq 0 ] && [ -n "$WORK_STATUS" ]; then
       READ_OK=1
       break
     fi
