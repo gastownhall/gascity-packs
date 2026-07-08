@@ -23,29 +23,31 @@ The `mol-polecat-work` `submit-and-exit` step is the single source of truth for
 handoff — branch-shape gate, push + push-verify, metadata, refinery
 reassignment, wake/nudge, and drain. **Run that step.**
 
-**If you have already run submit-and-exit, do NOT run it again** — drain and
-exit. Running the done sequence twice is a bug:
+**Do NOT run submit-and-exit twice** — running the done sequence twice is a bug.
+Do not trust memory for this; check mechanically. Derive the work bead from your
+convoy exactly as the formula's workspace-setup step does — never pass a bare or
+guessed id to `bd`, which fuzzy-matches and can reassign the wrong bead.
+`$GC_BEAD_ID` is the convoy the molecule was poured on. If the work bead is no
+longer `in_progress` for this session, submit-and-exit already reassigned it —
+drain and exit. Otherwise run it:
 
 ```bash
-gc runtime drain-ack
-exit
-```
-
-The only opt-out worth checking inline is `auto_push=false` (mol-pr-from-issue's
-halt-at-branch-ready). Derive the work bead from your convoy exactly as the
-formula's workspace-setup step does — never pass a bare or guessed id to `bd`,
-which fuzzy-matches and can reassign the wrong bead. `$GC_BEAD_ID` is the convoy
-the molecule was poured on:
-
-```bash
+EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
 CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json)
 WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
-AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
+WORK_JSON=$(gc bd show "$WORK_BEAD_ID" --json)
+WORK_STATUS=$(printf '%s' "$WORK_JSON" | jq -r '.[0].status // empty')
+WORK_ASSIGNEE=$(printf '%s' "$WORK_JSON" | jq -r '.[0].assignee // empty')
+if [ "$WORK_STATUS" != "in_progress" ] || [ "$WORK_ASSIGNEE" != "$EXPECTED_ASSIGNEE" ]; then
+  echo "ALREADY_SUBMITTED $WORK_BEAD_ID status=$WORK_STATUS assignee=$WORK_ASSIGNEE — draining."
+  gc runtime drain-ack
+  exit
+fi
 ```
 
-When `AUTO_PUSH` is `false`, submit-and-exit halts at branch-ready (no push, no
-refinery handoff). Otherwise it pushes and reassigns to the refinery — the
-mutation is the formula's, the check above is read-only.
+The `auto_push=false` opt-out (mol-pr-from-issue's halt-at-branch-ready) is
+handled inside submit-and-exit itself: when set, it halts at branch-ready (no
+push, no refinery handoff); otherwise it pushes and reassigns to the refinery.
 
 Polecats do not push to main, close beads, create MR beads, or wait around. If
 work appears already merged, still let submit-and-exit reassign it to the
