@@ -172,8 +172,8 @@ schema = 1
   [[pack.release]]
     version = "0.0.3"
     ref = "main"
-    commit = "0d4bcb98416fb1e3bbc1e4a58070def0c86c4da9"
-    hash = "sha256:0a82cd34281a9f14149606b7e468d250f879ed7aed1f7f0184e48f3db847426d"
+    commit = "23605740d0dd0d7dcd0bfcedbac347980547648c"
+    hash = "sha256:2d2255e68175b7d464845100654839a0956e8cd6fefa259e85cd03915213186b"
     description = "Ship idempotent reply-current (stops delivered-but-timed-out double-post) and mark pack scripts/tests executable to align release hash with materialized modes."
 
 [[pack]]
@@ -192,7 +192,7 @@ schema = 1
   [[pack.release]]
     version = "0.1.1"
     ref = "main"
-    commit = "0d4bcb98416fb1e3bbc1e4a58070def0c86c4da9"
+    commit = "23605740d0dd0d7dcd0bfcedbac347980547648c"
     hash = "sha256:e8da9a9dab6e6d3ce8a3cded94104a1c64d88f39130e63b09653ce3e7457dd36"
     description = "Ship idempotent reply-current (stops delivered-but-timed-out double-post) and mark schema test executable to align release hash with materialized modes."
 
