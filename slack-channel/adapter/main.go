@@ -136,8 +136,11 @@ func main() {
 	}
 
 	if cfg.registerOnStart {
-		regCtx, cancel := context.WithTimeout(context.Background(), gcCallTimeout)
-		err := srv.registerAdapter(regCtx)
+		regCtx, cancel := context.WithTimeout(context.Background(), registerDeadline)
+		err := srv.registerAdapterWithRetry(regCtx, retryPolicy{
+			initialBackoff: registerInitialBackoff,
+			maxBackoff:     registerMaxBackoff,
+		})
 		cancel()
 		if err != nil {
 			log.Fatalf("register adapter: %v", err)

@@ -33,6 +33,16 @@ const (
 	// cannot pin an inbound-bridge goroutine (or block startup
 	// registration) forever.
 	gcCallTimeout = 15 * time.Second
+
+	// Startup registration retry: on a supervisor/city restart the adapter
+	// can come up before the city has finished adopting sessions, so the
+	// first registration gets a 404 "city not found or not running". The
+	// adapter retries with exponential backoff (initial→max) until
+	// registerDeadline rather than exiting on the first 404 and killing all
+	// Slack comms until a manual restart; past the deadline it fails loudly.
+	registerInitialBackoff = 1 * time.Second
+	registerMaxBackoff     = 30 * time.Second
+	registerDeadline       = 5 * time.Minute
 )
 
 // config holds the adapter's resolved runtime configuration. It extends
