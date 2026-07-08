@@ -239,7 +239,8 @@ fi
 
 # Ownership confirmed. Stamp a stable session identity so the churn-watcher and
 # the resume re-verify can key on metadata.polecat_session.
-gc bd update "$WORK_ID" --set-metadata polecat_session="$EXPECTED_ASSIGNEE"
+gc bd update "$WORK_ID" --set-metadata polecat_session="$EXPECTED_ASSIGNEE" \
+  || echo "WARN metadata stamp failed for $WORK_ID; churn-watcher/resume lose session keying (proceeding — the claim is valid)"
 
 printf 'CLAIMED_BEAD_ID=%s\n' "$WORK_ID"
 printf '%s' "$SHOW_JSON" | jq '.[0].metadata'
