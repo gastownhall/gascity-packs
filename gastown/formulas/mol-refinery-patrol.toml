@@ -677,7 +677,32 @@ fi
 
 **If MERGE_STRATEGY = "direct" (default):**
 
-**0. Refuse a 0-diff branch (false-completion guard):**
+**0a. Already-merged short-circuit (close as merged, do NOT halt):**
+
+If the source branch is already an ancestor of the target, a previous refinery
+pass merged it and the polecat crashed before the bead closed. That is a real
+completion, not a false one — but the 0-diff guard below would see an empty
+diff and escalate a done bead to a human. Catch it first and close the bead as
+merged, with `merged_sha` forensics:
+```bash
+git fetch origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" "+refs/heads/${TARGET}:refs/remotes/origin/${TARGET}"
+if git merge-base --is-ancestor "origin/$BRANCH" "origin/$TARGET"; then
+  ALREADY_SHA=$(git rev-parse "origin/$BRANCH")
+  ALREADY_SHORT=$(git rev-parse --short "origin/$BRANCH")
+  gc bd update "$WORK" \
+    --set-metadata merge_result=already_merged \
+    --set-metadata merged_sha="$ALREADY_SHA" \
+    --set-metadata merged_target="$TARGET" \
+    --unset-metadata rejection_reason && \
+  gc bd close "$WORK" --reason "Already merged to $TARGET at $ALREADY_SHORT (branch is an ancestor of target; closed instead of halting)"
+  echo "ALREADY_MERGED: origin/$BRANCH is an ancestor of origin/$TARGET — closed $WORK as merged."
+  echo "Skip the rest of merge-push; go to the Cleanup step, then patrol-summary."
+fi
+```
+If this closed the bead, do NOT run the 0-diff guard or the merge script below
+— skip straight to **2. Cleanup**.
+
+**0b. Refuse a 0-diff branch (false-completion guard):**
 
 A close-as-merged asserts "work was merged"; a branch that introduces no
 change vs its merge-base merging is definitionally false. Refuse it before

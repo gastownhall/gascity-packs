@@ -3,13 +3,21 @@
 #
 # What it watches:
 #   - $GC_CITY/.gc/nudges/pollers/polecat-*.pid   (live polecat sessions)
-#   - rig bd: open beads with metadata.work_dir set OR
-#             metadata.polecat_session set                (claimed work)
+#   - rig bd: open AND UNASSIGNED beads whose metadata.polecat_session
+#             exactly matches a dead session identity                (churned claim)
 #
 # What it logs:
 #   When a polecat PID file disappears AND a bead it had claimed is back
-#   in OPEN/no-assignee state — that's churn. The pool reconciler killed
+#   in OPEN + UNASSIGNED state — that's churn. The pool reconciler killed
 #   a polecat mid-claim and silently recycled.
+#
+#   A normal refinery handoff is NOT churn: it leaves the bead open but
+#   assigned to the refinery (with work_dir still set), so requiring
+#   assignee=="" excludes it. Detection keys on an EXACT
+#   metadata.polecat_session match, not a work_dir substring, so a path that
+#   merely contains a session name no longer false-positives. Beads must
+#   record metadata.polecat_session = <session identity> matching the poller
+#   name for a churn event to be attributable.
 #
 # Output: appends one JSON line per detected churn event to LOG_FILE.
 #
@@ -73,9 +81,11 @@ printf "%s\n" "$current_pids" > "$STATE_FILE"
 
 [ -z "$disappeared" ] && exit 0
 
-# For each disappeared polecat session, check rig bd for orphan-claim.
-# We look at OPEN beads whose metadata.work_dir mentions the dead session,
-# OR whose metadata.polecat_session equals it (if the field is set).
+# For each disappeared polecat session, check rig bd for a churned claim.
+# Churn = an OPEN + UNASSIGNED bead whose metadata.polecat_session EXACTLY
+# matches the dead session. Requiring assignee=="" excludes a normal refinery
+# handoff (open, assigned to refinery, work_dir still set). Exact-match on the
+# recorded session identity avoids the old work_dir-substring false positives.
 ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 open_beads_json=$(gc --rig "$GC_RIG" bd list --status=open --json 2>/dev/null || echo "[]")
@@ -84,7 +94,7 @@ for dead in $disappeared; do
   orphans=$(printf '%s' "$open_beads_json" \
     | jq -r --arg s "$dead" '
         .[] | select(
-          (.metadata.work_dir // "" | contains($s)) or
+          ((.assignee // "") == "") and
           ((.metadata.polecat_session // "") == $s)
         ) | .id' 2>/dev/null || true)
 
