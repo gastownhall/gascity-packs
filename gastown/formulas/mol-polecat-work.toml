@@ -158,7 +158,9 @@ if [ -n "$REJECTION" ]; then
     git rebase origin/{{base_branch}}
     # If conflicts: resolve them (this is likely the rejection reason)
     # After resolving: git rebase --continue
-    gc bd update "$WORK_BEAD_ID" --unset-metadata rejection_reason
+    gc bd update "$WORK_BEAD_ID" \
+      --unset-metadata rejection_reason \
+      --set-metadata fork_sha="$(git rev-parse "origin/{{base_branch}}")"
 fi
 ```
 
@@ -175,13 +177,20 @@ git fetch origin {{base_branch}}                     # ensure origin ref is curr
 BRANCH="polecat/$WORK_BEAD_ID"
 git branch -D "$BRANCH" 2>/dev/null || true          # drop any stale local branch with the same name
 git checkout -B "$BRANCH" "origin/{{base_branch}}"   # force-create from the freshly-fetched remote tip
-gc bd update "$WORK_BEAD_ID" --set-metadata branch="$BRANCH"
+gc bd update "$WORK_BEAD_ID" \
+  --set-metadata branch="$BRANCH" \
+  --set-metadata fork_sha="$(git rev-parse "origin/{{base_branch}}")"
 ```
 
 Recording the branch early means:
 - Witness can find and salvage your work if you crash
 - Rejection-aware resume knows which branch to check out
 - The submit step updates the metadata (branch may change after rebase)
+
+`fork_sha` is the base commit this branch was cut from. The refinery uses it to
+tell a genuine already-merged branch (>=1 commit since fork) from a starved
+0-commit branch (tip still at the fork point) when both look like ancestors of
+the target.
 
 **4. Ensure clean working state:**
 ```bash

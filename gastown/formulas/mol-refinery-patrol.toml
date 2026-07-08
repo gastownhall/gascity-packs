@@ -677,41 +677,80 @@ fi
 
 **If MERGE_STRATEGY = "direct" (default):**
 
-**0a. Already-merged short-circuit (close as merged, do NOT halt):**
+**0. Merge-state gate (already-merged short-circuit + false-completion guard):**
 
-If the source branch is already an ancestor of the target, a previous refinery
-pass merged it and the polecat crashed before the bead closed. That is a real
-completion, not a false one — but the 0-diff guard below would see an empty
-diff and escalate a done bead to a human. Catch it first and close the bead as
-merged, with `merged_sha` forensics:
+Two failure modes share this gate, so evaluate them in one script that shares
+shell state — an early `exit` in the already-merged branch below then provably
+prevents the false-completion guard and the merge script from running on a
+closed bead.
+
+- **Already merged (close, do NOT halt):** a previous refinery pass merged this
+  branch and the polecat crashed before the bead closed. That is a real
+  completion, so close it as merged with `merged_sha` forensics rather than let
+  the 0-diff guard escalate a done bead to a human. An ancestor check alone is
+  not enough: a 0-commit branch is trivially an ancestor of the target (its tip
+  is still the fork point), so gate the close on the branch also carrying >=1
+  commit since its recorded `metadata.fork_sha`. Without `fork_sha` recorded,
+  stay conservative and fall through to the false-completion guard.
+- **False completion (halt):** a branch that introduces no change vs its
+  merge-base is definitionally not a merge. Refuse it before touching `$TARGET`.
+  Legit no-op resolutions use wontfix/duplicate/not-planned, never merged — so
+  this never blocks a real merge.
+
 ```bash
-git fetch origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" "+refs/heads/${TARGET}:refs/remotes/origin/${TARGET}"
-if git merge-base --is-ancestor "origin/$BRANCH" "origin/$TARGET"; then
-  ALREADY_SHA=$(git rev-parse "origin/$BRANCH")
-  ALREADY_SHORT=$(git rev-parse --short "origin/$BRANCH")
-  gc bd update "$WORK" \
-    --set-metadata merge_result=already_merged \
-    --set-metadata merged_sha="$ALREADY_SHA" \
-    --set-metadata merged_target="$TARGET" \
-    --unset-metadata rejection_reason && \
-  gc bd close "$WORK" --reason "Already merged to $TARGET at $ALREADY_SHORT (branch is an ancestor of target; closed instead of halting)"
-  echo "ALREADY_MERGED: origin/$BRANCH is an ancestor of origin/$TARGET — closed $WORK as merged."
-  echo "Skip the rest of merge-push; go to the Cleanup step, then patrol-summary."
+FORK_SHA=$(gc bd show "$WORK" --json | jq -r '.[0].metadata.fork_sha // empty')
+if ! git fetch origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" "+refs/heads/${TARGET}:refs/remotes/origin/${TARGET}"; then
+  echo "git fetch failed; cannot evaluate merge state. STOP. Do not mutate bead state."
+  gc runtime drain-ack
+  exit 1
 fi
-```
-If this closed the bead, do NOT run the 0-diff guard or the merge script below
-— skip straight to **2. Cleanup**.
+git merge-base --is-ancestor "origin/$BRANCH" "origin/$TARGET"
+ANCESTOR_STATUS=$?
+case "$ANCESTOR_STATUS" in
+  0)
+    REAL_COMMITS=0
+    if [ -n "$FORK_SHA" ]; then
+      REAL_COMMITS=$(git rev-list --count "$FORK_SHA..origin/$BRANCH" 2>/dev/null || echo 0)
+    fi
+    if [ -n "$FORK_SHA" ] && [ "$REAL_COMMITS" -ge 1 ]; then
+      ALREADY_SHA=$(git rev-parse "origin/$BRANCH")
+      ALREADY_SHORT=$(git rev-parse --short "origin/$BRANCH")
+      gc bd update "$WORK" \
+        --set-metadata merge_result=already_merged \
+        --set-metadata merged_sha="$ALREADY_SHA" \
+        --set-metadata merged_target="$TARGET" \
+        --unset-metadata rejection_reason && \
+      gc bd close "$WORK" --reason "Already merged to $TARGET at $ALREADY_SHORT (branch is an ancestor of target; closed instead of halting)"
+      echo "ALREADY_MERGED: origin/$BRANCH is an ancestor of origin/$TARGET with $REAL_COMMITS commit(s) since fork — closed $WORK as merged; draining."
+      gc runtime drain-ack
+      exit 0
+    fi
+    # Ancestor but no recorded real commits: a 0-commit branch. Fall through to
+    # the false-completion guard, which refuses to close it as merged.
+    ;;
+  1) : ;;  # not an ancestor -> a normal merge candidate; fall through
+  *)
+    echo "git merge-base --is-ancestor errored (status $ANCESTOR_STATUS); cannot evaluate already-merged. STOP. Do not mutate bead state."
+    gc runtime drain-ack
+    exit 1
+    ;;
+esac
 
-**0b. Refuse a 0-diff branch (false-completion guard):**
-
-A close-as-merged asserts "work was merged"; a branch that introduces no
-change vs its merge-base merging is definitionally false. Refuse it before
-touching `$TARGET`. Legit no-op resolutions MUST use wontfix/duplicate/
-not-planned, never merged — so this never blocks a real merge.
-```bash
-branch_has_real_change "origin/$TARGET" temp || \
-  halt_false_completion "$BRANCH" "$(git merge-base "origin/$TARGET" temp 2>/dev/null || printf '%s' "origin/$TARGET")"
+branch_has_real_change "origin/$TARGET" temp
+BHRC_STATUS=$?
+case "$BHRC_STATUS" in
+  0) : ;;  # verified real change -> continue to the merge script below
+  1) halt_false_completion "$BRANCH" "$(git merge-base "origin/$TARGET" temp 2>/dev/null || printf '%s' "origin/$TARGET")" ;;
+  *)
+    echo "branch_has_real_change could not evaluate temp vs origin/$TARGET (tool error, status $BHRC_STATUS). STOP. Do not mutate bead state."
+    gc runtime drain-ack
+    exit 1
+    ;;
+esac
 ```
+If this block closed the bead as already-merged it drain-acked and exited, so
+neither the guard above nor the merge script below runs. Otherwise the branch
+has a verified real change and you continue to the merge.
 
 **1. Merge, push, verify, and close work bead:**
 
@@ -782,10 +821,20 @@ request and treats PR creation as the terminal handoff for this work bead.
 The same predicate covers the empty-PR / 0-commit concern: do not publish a
 pull request for a branch that introduces no change vs its merge-base. The
 PR handoff closes the bead, so an empty PR is the same false completion as
-an empty direct merge.
+an empty direct merge. A tool error (status 2) is not an empty branch — stop
+without mutating bead state rather than halt-escalating a healthy branch.
 ```bash
-branch_has_real_change "origin/$TARGET" temp || \
-  halt_false_completion "$BRANCH" "$(git merge-base "origin/$TARGET" temp 2>/dev/null || printf '%s' "origin/$TARGET")"
+branch_has_real_change "origin/$TARGET" temp
+BHRC_STATUS=$?
+case "$BHRC_STATUS" in
+  0) : ;;  # verified real change -> continue to publish the PR
+  1) halt_false_completion "$BRANCH" "$(git merge-base "origin/$TARGET" temp 2>/dev/null || printf '%s' "origin/$TARGET")" ;;
+  *)
+    echo "branch_has_real_change could not evaluate temp vs origin/$TARGET (tool error, status $BHRC_STATUS). STOP. Do not mutate bead state."
+    gc runtime drain-ack
+    exit 1
+    ;;
+esac
 ```
 
 **1. Push the rebased branch back to origin:**
