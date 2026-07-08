@@ -718,14 +718,20 @@ case "$ANCESTOR_STATUS" in
     if [ -n "$FORK_SHA" ] && [ "$REAL_COMMITS" -ge 1 ]; then
       ALREADY_SHA=$(git rev-parse "origin/$BRANCH")
       ALREADY_SHORT=$(git rev-parse --short "origin/$BRANCH")
-      gc bd update "$WORK" \
-        --set-metadata merge_result=already_merged \
-        --set-metadata merged_sha="$ALREADY_SHA" \
-        --set-metadata merged_target="$TARGET" \
-        --unset-metadata rejection_reason && \
-      gc bd close "$WORK" --reason "Already merged to $TARGET at $ALREADY_SHORT (branch is an ancestor of target; closed instead of halting)"
-      echo "ALREADY_MERGED: origin/$BRANCH is an ancestor of origin/$TARGET with $REAL_COMMITS commit(s) since fork — closed $WORK as merged. Skip the merge script; run Cleanup, then patrol-summary + next-iteration."
-      exit 0
+      if gc bd update "$WORK" \
+           --set-metadata merge_result=already_merged \
+           --set-metadata merged_sha="$ALREADY_SHA" \
+           --set-metadata merged_target="$TARGET" \
+           --unset-metadata rejection_reason && \
+         gc bd close "$WORK" --reason "Already merged to $TARGET at $ALREADY_SHORT (branch is an ancestor of target; closed instead of halting)"; then
+        echo "ALREADY_MERGED: origin/$BRANCH is an ancestor of origin/$TARGET with $REAL_COMMITS commit(s) since fork — closed $WORK as merged. Skip the merge script; run Cleanup, then patrol-summary + next-iteration."
+        exit 0
+      fi
+      # The update/close did not land (transient API failure). Do NOT report
+      # merged with the bead still open; STOP so a later patrol retries.
+      echo "ALREADY_MERGED close failed for $WORK; bead still open. STOP; a later patrol will retry."
+      gc runtime drain-ack
+      exit 1
     fi
     # Ancestor but no recorded real commits: a 0-commit branch. Fall through to
     # the false-completion guard, which refuses to close it as merged.
