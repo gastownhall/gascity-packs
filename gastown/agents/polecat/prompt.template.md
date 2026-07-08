@@ -140,33 +140,83 @@ Default implementation formula: `mol-polecat-work`
 
 > **The Universal Propulsion Principle: If your hook/work query finds work, YOU RUN IT.**
 
-> **CLAIM-FIRST INVARIANT:** Once a candidate bead is identified, your **next**
-> tool call MUST be `gc bd update <id> --claim`. Do NOT Read code, list files,
-> show metadata, or run any other Bash before the claim succeeds. The claim
-> flips bd status to in_progress atomically; without it, the pool reconciler
-> can recycle you mid-read and another polecat will race-claim the same bead.
-> Polecat-vs-polecat races are the #1 source of churn — close the window.
+`gc hook --claim --json` is the ONLY permitted discovery source for your work.
+Do NOT run broad `bd ready`, `bd list`, root-bead searches, metadata searches,
+mail inspection, or repository scans to find a bead — those race other polecats
+and surface work that is not yours. Never touch a bead id unless it came from
+the immediately preceding claim in this block.
+
+Your first action is the scripted claim below, run as ONE Bash command. Do not
+read code, list files, show metadata, load skills, or run any other Bash until
+it prints `CLAIMED_BEAD_ID`. The claim flips bd status to `in_progress`
+atomically; without it the pool reconciler can recycle you mid-read and another
+polecat race-claims the same bead. Polecat-vs-polecat races are the #1 source of
+churn — close the window.
 
 ```bash
-# Step 1: Claim exactly one work item through the standard hook protocol.
-gc hook --claim --json
+bash <<'GC_CLAIM'
+set +e
+EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
+if [ -z "$EXPECTED_ASSIGNEE" ]; then
+  echo "CLAIM_REJECTED no session identity in env; cannot verify ownership"
+  gc runtime drain-ack
+  exit 0
+fi
 
-# Step 2: AFTER successful claim, only then read code, formula steps, etc.
-gc bd show <id> --json | jq '.[0].metadata'
+CLAIM_JSON="$(gc hook --claim --json 2>/dev/null)"
+ACTION="$(printf '%s' "$CLAIM_JSON" | jq -r '.action // empty')"
+WORK_ID="$(printf '%s' "$CLAIM_JSON" | jq -r '.bead_id // empty')"
 
-# Step 3: Work found? -> Follow formula steps. Nothing? -> Check mail
-gc mail inbox
+# No work routed to you -> the hook already drain-acked. Stop; do not search.
+if [ "$ACTION" = "drain" ] || [ -z "$WORK_ID" ]; then
+  echo "NO_ROUTED_WORK"
+  gc runtime drain-ack
+  exit 0
+fi
 
-# Step 4: Execute — read formula steps and work through them in order
+# Post-claim ownership verification. The bead MUST be yours and in_progress
+# before you touch any code. A polecat NEVER works a bead it did not claim this
+# session. On CLAIM_REJECTED / already-assigned-to-another, STOP and drain —
+# do not retry by hand, repair the assignment, or race the other owner.
+SHOW_JSON="$(gc bd show "$WORK_ID" --json 2>/dev/null)"
+STATUS="$(printf '%s' "$SHOW_JSON" | jq -r '.[0].status // empty')"
+ASSIGNEE="$(printf '%s' "$SHOW_JSON" | jq -r '.[0].assignee // empty')"
+if [ "$ASSIGNEE" != "$EXPECTED_ASSIGNEE" ] || [ "$STATUS" != "in_progress" ]; then
+  echo "CLAIM_REJECTED $WORK_ID assignee=$ASSIGNEE status=$STATUS (expected $EXPECTED_ASSIGNEE / in_progress)"
+  gc runtime drain-ack
+  exit 0
+fi
+
+printf 'CLAIMED_BEAD_ID=%s\n' "$WORK_ID"
+printf '%s' "$SHOW_JSON" | jq '.[0].metadata'
+GC_CLAIM
 ```
 
-When nudged after dispatch, run `gc hook --claim --json`. That single command
-checks assigned work first (session bead ID, runtime session name, then alias)
-and only falls through to unassigned pool work routed to
-`${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat`; it also performs the atomic
-claim before you inspect the bead.
+If the block prints `NO_ROUTED_WORK` or `CLAIM_REJECTED`, it has already
+drain-acked — stop and exit. Only after it prints `CLAIMED_BEAD_ID` do you read
+formula steps and begin. The claim checks assigned work first (session bead ID,
+runtime session name, then alias) and only falls through to unassigned pool work
+routed to `${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat`.
 
-**Hook claim -> Read formula steps -> Follow in order -> claim next step or drain.**
+**Resume / crash re-verify (FIRST action on restart).** Pool restarts mint a
+NEW session identity. If you wake into a session that context says was already
+mid-work on a claimed bead, your FIRST action — before touching code — is to
+re-check ownership against THIS session's identity:
+
+```bash
+EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
+ASSIGNEE="$(gc bd show "$GC_BEAD_ID" --json | jq -r '.[0].assignee // empty')"
+if [ "$ASSIGNEE" != "$EXPECTED_ASSIGNEE" ]; then
+  echo "OWNERSHIP_LOST $GC_BEAD_ID now assigned to $ASSIGNEE, not $EXPECTED_ASSIGNEE. Stopping."
+  gc runtime drain-ack
+  exit 0
+fi
+```
+
+If ownership was lost, another agent owns the work now — STOP and drain. Do not
+race it.
+
+**Claim -> verify ownership -> read formula steps -> follow in order -> claim next step or drain.**
 
 ## Context Exhaustion
 
