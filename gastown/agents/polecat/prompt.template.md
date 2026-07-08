@@ -305,52 +305,40 @@ Nudges from other agents may arrive via your hook. When working:
 
 ---
 
-## FINAL REMINDER: RUN THE DONE SEQUENCE
+## FINAL REMINDER: RUN THE FORMULA'S SUBMIT-AND-EXIT
 
-**Before your session ends, you MUST run the done sequence.**
+**Before your session ends, hand off through the formula.** The
+`mol-polecat-work` `submit-and-exit` step is the single source of truth for the
+done sequence — branch-shape gate, push + push-verify, metadata, refinery
+reassignment, wake/nudge, and drain all live there. Run that step.
+
+**If you have already run submit-and-exit, do NOT run it again** — drain and
+exit. Running the done sequence twice (double push, double reassign, double
+refinery wake) is a bug:
 
 ```bash
-# Explicit opt-out gate: respect mol-pr-from-issue auto_push=false (halt-at-branch-ready).
-# mol-pr-from-issue writes metadata.auto_push on the work bead. Other formulas
-# (mol-polecat-work) leave it unset — those flow through unchanged.
-AUTO_PUSH=$(gc bd show <work-bead> --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
-if [ "$AUTO_PUSH" = "false" ]; then
-  echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"
-  BRANCH=$(git branch --show-current)
-  gc bd update <work-bead> \
-    --status=open --assignee="" \
-    --set-metadata branch="$BRANCH" \
-    --set-metadata target={{ .DefaultBranch }} \
-    --set-metadata branch_ready=true \
-    --set-metadata halt_reason=auto_push_false \
-    --set-metadata gc.routed_to="" \
-    --notes "Branch ready: auto_push=false (no push, no refinery handoff)"
-  gc runtime drain-ack
-  exit 0
-fi
-git push origin HEAD && {
-  BRANCH=$(git branch --show-current)
-  REMOTE_REF=$(git ls-remote origin "refs/heads/$BRANCH" 2>/dev/null | awk '{print $1}')
-  LOCAL_HEAD=$(git rev-parse HEAD)
-  if [ -z "$REMOTE_REF" ] || [ "$REMOTE_REF" != "$LOCAL_HEAD" ]; then
-    echo "PUSH VERIFICATION FAILED: origin/$BRANCH does not match local HEAD. Aborting handoff."
-    gc runtime drain-ack
-    exit 1
-  fi
-} || { echo "PUSH FAILED. Aborting handoff — bead stays with polecat."; gc runtime drain-ack; exit 1; }
-gc bd update <work-bead> \
-  --set-metadata branch=$(git branch --show-current) \
-  --set-metadata target={{ .DefaultBranch }} \
-  --notes "Implemented: <brief summary>"
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}refinery"
-gc bd update <work-bead> --status=open --assignee="$REFINERY_TARGET" --set-metadata gc.routed_to=""
-gc session wake "$REFINERY_TARGET" || true
-gc session nudge "$REFINERY_TARGET" "Run 'gc prime' to check merge queue and begin processing." || true
 gc runtime drain-ack
 exit
 ```
 
-Your work is not complete until you run these commands. `gc runtime drain-ack`
+The one thing worth checking before you hand off is the `auto_push=false`
+opt-out (mol-pr-from-issue's halt-at-branch-ready; mol-polecat-work leaves it
+unset). Derive the work bead from your convoy exactly as the formula's
+workspace-setup step does — never pass a bare or guessed id to `bd`, which
+fuzzy-matches and can reassign the wrong bead. `$GC_BEAD_ID` is the convoy the
+molecule was poured on:
+
+```bash
+CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json)
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
+```
+
+If `AUTO_PUSH` is `false`, submit-and-exit halts at branch-ready (no push, no
+refinery handoff). Otherwise it pushes and reassigns to the refinery. Either
+way, submit-and-exit performs the mutation — the check above is read-only.
+
+Your work is not complete until submit-and-exit runs. `gc runtime drain-ack`
 signals the reconciler to kill this session — it will only restart you if the
 pool check command finds more work. Sitting idle after finishing implementation
 is the "Idle Polecat heresy."
@@ -363,7 +351,7 @@ is the "Idle Polecat heresy."
 
 | Want to... | Correct command |
 |------------|----------------|
-| Signal work complete | Done sequence (push, set metadata, reassign, wake refinery, nudge refinery, `gc runtime drain-ack`, exit) |
+| Signal work complete | Run the `mol-polecat-work` `submit-and-exit` step (its single source of truth); if already run, `gc runtime drain-ack` + exit |
 | Read formula steps | `gc bd show <wisp-id>` (shows formula ref) |
 | Escalate blocker | `WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"; gc mail send "$WITNESS_TARGET" -s "ESCALATION: desc [HIGH]" -m "..."` |
 | Context exhaustion | `gc runtime request-restart` |

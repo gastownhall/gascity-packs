@@ -13,54 +13,41 @@ When work is done, finish the cycle. Do not summarize and wait for permission.
 {{ define "approval-fallacy-polecat" }}
 ## No Idle Polecats
 
-When implementation and checks are done, run the done sequence immediately.
-There is no approval wait. An idle polecat blocks the refinery and wastes the
-pool slot.
+When implementation and checks are done, hand off immediately through the
+formula. There is no approval wait. An idle polecat blocks the refinery and
+wastes the pool slot.
 
-### The Done Sequence
+### The Done Sequence Lives in the Formula
+
+The `mol-polecat-work` `submit-and-exit` step is the single source of truth for
+handoff — branch-shape gate, push + push-verify, metadata, refinery
+reassignment, wake/nudge, and drain. **Run that step.**
+
+**If you have already run submit-and-exit, do NOT run it again** — drain and
+exit. Running the done sequence twice is a bug:
 
 ```bash
-# Explicit opt-out gate: respect mol-pr-from-issue auto_push=false (halt-at-branch-ready).
-AUTO_PUSH=$(gc bd show <work-bead> --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
-if [ "$AUTO_PUSH" = "false" ]; then
-  echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"
-  BRANCH=$(git branch --show-current)
-  gc bd update <work-bead> \
-    --status=open --assignee="" \
-    --set-metadata branch="$BRANCH" \
-    --set-metadata target={{ .DefaultBranch }} \
-    --set-metadata branch_ready=true \
-    --set-metadata halt_reason=auto_push_false \
-    --set-metadata gc.routed_to="" \
-    --notes "Branch ready: auto_push=false (no push, no refinery handoff)"
-  gc runtime drain-ack
-  exit 0
-fi
-git push origin HEAD && {
-  BRANCH=$(git branch --show-current)
-  REMOTE_REF=$(git ls-remote origin "refs/heads/$BRANCH" 2>/dev/null | awk '{print $1}')
-  LOCAL_HEAD=$(git rev-parse HEAD)
-  if [ -z "$REMOTE_REF" ] || [ "$REMOTE_REF" != "$LOCAL_HEAD" ]; then
-    echo "PUSH VERIFICATION FAILED: origin/$BRANCH does not match local HEAD. Aborting handoff."
-    gc runtime drain-ack
-    exit 1
-  fi
-} || { echo "PUSH FAILED. Aborting handoff — bead stays with polecat."; gc runtime drain-ack; exit 1; }
-gc bd update <work-bead> \
-  --set-metadata branch=$(git branch --show-current) \
-  --set-metadata target={{ .DefaultBranch }} \
-  --notes "Implemented: <brief summary>"
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}refinery"
-gc bd update <work-bead> --status=open --assignee="$REFINERY_TARGET" --set-metadata gc.routed_to=""
 gc runtime drain-ack
 exit
 ```
 
-This pushes your branch, sets metadata so the Refinery knows what to merge,
-reassigns the work bead to the Refinery, and signals the reconciler to kill
-this session. `gc runtime drain-ack` makes the shutdown immediate. Polecats
-do not push to main, close beads, create MR beads, or wait around.
+The only opt-out worth checking inline is `auto_push=false` (mol-pr-from-issue's
+halt-at-branch-ready). Derive the work bead from your convoy exactly as the
+formula's workspace-setup step does — never pass a bare or guessed id to `bd`,
+which fuzzy-matches and can reassign the wrong bead. `$GC_BEAD_ID` is the convoy
+the molecule was poured on:
 
-If work appears already merged, still reassign it to the Refinery with a note.
-Only the Refinery verifies patch identity and closes beads.
+```bash
+CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json)
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
+```
+
+When `AUTO_PUSH` is `false`, submit-and-exit halts at branch-ready (no push, no
+refinery handoff). Otherwise it pushes and reassigns to the refinery — the
+mutation is the formula's, the check above is read-only.
+
+Polecats do not push to main, close beads, create MR beads, or wait around. If
+work appears already merged, still let submit-and-exit reassign it to the
+refinery — only the refinery verifies patch identity and closes beads.
 {{ end }}
