@@ -160,11 +160,23 @@ Check refinery patrol wisp freshness + queue state:
 the nature of the current work. Make a judgment call about whether
 something is stuck. This is exactly why an LLM does it, not Go code.
 
-**For stuck coordination agents, file a warrant:**
+**For stuck coordination agents, file a warrant (deduped).**
+
+Check for an existing open warrant against the same target first — a duplicate
+warrant spawns a second shutdown dance racing the first (duplicate kills,
+wasted dog cycles). Skip filing if one is already open or in progress:
 ```bash
-gc bd create --type=task --label=warrant \
-  --title="Stuck: <rig>/<role>" \
-  --metadata '{"target":"<session>","reason":"<reason>","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+TARGET_SESSION="<session>"
+EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
+  | jq -r --arg t "$TARGET_SESSION" \
+      '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
+  echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
+else
+  gc bd create --type=task --label=warrant \
+    --title="Stuck: <session>" \
+    --metadata '{"target":"<session>","reason":"<reason>","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+fi
 ```
 
 The dog pool runs `mol-shutdown-dance` for due process.

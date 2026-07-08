@@ -239,7 +239,53 @@ id = "execute"
 title = "Execute warrant — kill session"
 needs = ["interrogate-3"]
 description = """
-Three attempts, no response. Execute the warrant.
+Three attempts, no response. Before killing, prove the target is actually dead.
+
+**0. Final progress check — pardon a working agent (BEFORE the kill).**
+
+Three nudges went unanswered, but an agent deep inside one long tool call (a
+full test suite, a large rebase) is alive and simply not reading nudges.
+Killing it discards real work mid-flight. Check for objective progress on the
+target's claimed work before executing — its bead `updated_at` and the newest
+file under its worktree:
+
+```bash
+target_bead="$(gc bd list --assignee="$target" --status=in_progress --json --limit=1 | jq -r '.[0].id // empty')"
+progress="none"
+now_epoch="$(date -u +%s)"
+if [ -n "$target_bead" ]; then
+  bead_json="$(gc bd show "$target_bead" --json)"
+  bead_updated="$(printf '%s' "$bead_json" | jq -r '.[0].updated_at // empty')"
+  work_dir="$(printf '%s' "$bead_json" | jq -r '.[0].metadata.work_dir // empty')"
+  echo "target_bead=$target_bead updated_at=$bead_updated work_dir=$work_dir"
+  # Bead moved within the 7-minute interrogation window (60s+120s+240s = 420s)?
+  bead_epoch="$(date -u -d "$bead_updated" +%s 2>/dev/null || echo 0)"
+  if [ "$bead_epoch" -gt 0 ] && [ $((now_epoch - bead_epoch)) -lt 420 ]; then
+    progress="bead"
+  fi
+  # Newest worktree file touched within the same window?
+  if [ -n "$work_dir" ] && [ -d "$work_dir" ]; then
+    recent_file="$(find "$work_dir" -type f -newermt '-7 minutes' 2>/dev/null | head -n 1)"
+    [ -n "$recent_file" ] && progress="worktree:$recent_file"
+  fi
+fi
+echo "progress_signal=$progress"
+```
+
+The 7-minute window is the interrogation budget the three attempts already
+spent. If either signal shows movement inside it, the target is progressing —
+PARDON it instead of killing. A polecat inside a full test suite is not dead:
+```bash
+if [ "$progress" != "none" ]; then
+  gc bd close "$GC_BEAD_ID" --reason "PARDONED: $target showed work progress within the interrogation window ($progress)"
+  gc session nudge "$requester_endpoint" "DOG_DONE: $target - PARDONED (progress within interrogation window; likely inside one long tool call)"
+  gc runtime drain-ack
+  exit 0
+fi
+```
+
+Only when neither signal shows recent progress do you proceed to the kill.
+This is judgment work — an LLM weighs the signals, not a hardcoded Go check.
 
 **1. Capture final pane output for forensics:**
 ```bash

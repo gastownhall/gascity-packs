@@ -466,16 +466,28 @@ There are no hardcoded thresholds. Consider the nature of the work, the
 time elapsed, and whether the agent shows any signs of activity. This is
 judgment work — exactly why an LLM does it, not Go code.
 
-**Step 3: For stuck polecats, file a warrant:**
+**Step 3: For stuck polecats, file a warrant (deduped).**
 
 Do NOT kill the agent directly. File a warrant bead and let the dog pool
-handle the shutdown dance (multi-stage interrogation with due process):
+handle the shutdown dance (multi-stage interrogation with due process).
+
+First check for an existing open warrant against the same target — a second
+warrant spawns a second shutdown dance racing the first (duplicate kills,
+wasted dog cycles). Skip filing if one is already open or in progress:
 
 ```bash
-gc bd create --type=task \
-  --title="Stuck: <agent>" \
-  --metadata '{"target":"<session-name>","reason":"No progress on <bead> for <duration>","requester":"witness","gc.routed_to":"{{binding_prefix}}dog"}' \
-  --label=warrant
+TARGET_SESSION="<session-name>"
+EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
+  | jq -r --arg t "$TARGET_SESSION" \
+      '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
+  echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
+else
+  gc bd create --type=task \
+    --title="Stuck: <session-name>" \
+    --metadata '{"target":"<session-name>","reason":"No progress on <bead> for <duration>","requester":"witness","gc.routed_to":"{{binding_prefix}}dog"}' \
+    --label=warrant
+fi
 ```
 
 The dog pool picks up the warrant and runs `mol-shutdown-dance`, which
