@@ -264,13 +264,14 @@ Nudges from other agents may arrive via your hook. When working:
 # mol-pr-from-issue writes metadata.auto_push on the work bead. Other formulas
 # (mol-polecat-work) leave it unset — those flow through unchanged.
 AUTO_PUSH=$(gc bd show <work-bead> --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
+TARGET_BRANCH=$(gc bd show <work-bead> --json | jq -r '.[0].metadata.target // "{{ .DefaultBranch }}"')
 if [ "$AUTO_PUSH" = "false" ]; then
   echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"
   BRANCH=$(git branch --show-current)
   gc bd update <work-bead> \
     --status=open --assignee="" \
     --set-metadata branch="$BRANCH" \
-    --set-metadata target={{ .DefaultBranch }} \
+    --set-metadata target="$TARGET_BRANCH" \
     --set-metadata branch_ready=true \
     --set-metadata halt_reason=auto_push_false \
     --set-metadata gc.routed_to="" \
@@ -278,6 +279,12 @@ if [ "$AUTO_PUSH" = "false" ]; then
   gc runtime drain-ack
   exit 0
 fi
+git fetch origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"
+git rebase "origin/$TARGET_BRANCH" || {
+  echo "FINAL REBASE FAILED. Resolve conflict locally, then re-run submit-and-exit."
+  gc runtime drain-ack
+  exit 1
+}
 git push origin HEAD && {
   BRANCH=$(git branch --show-current)
   REMOTE_REF=$(git ls-remote origin "refs/heads/$BRANCH" 2>/dev/null | awk '{print $1}')

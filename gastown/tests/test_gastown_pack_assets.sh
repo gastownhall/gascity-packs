@@ -175,6 +175,36 @@ test_review_leg_contract_forbids_synthetic_mutation() {
         fail "polecat prompt must not globally forbid review-leg close steps"
 }
 
+test_polecat_submit_rebases_latest_target_before_push() {
+    local formula prompt formula_fetch_line formula_rebase_line formula_push_line
+    formula="$GASTOWN/formulas/mol-polecat-work.toml"
+    prompt="$GASTOWN/agents/polecat/prompt.template.md"
+
+    grep -F 'TARGET_BRANCH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '\''.[0].metadata.target // "{{base_branch}}"'\'' )' "$formula" >/dev/null && \
+        fail "formula target lookup grep should not include a stray space-sensitive variant"
+    grep -F 'TARGET_BRANCH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '\''.[0].metadata.target // "{{base_branch}}"'\'')' "$formula" >/dev/null ||
+        fail "submit-and-exit must resolve target branch from bead metadata before push"
+    grep -F 'git fetch origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"' "$formula" >/dev/null ||
+        fail "submit-and-exit must refresh origin target branch before push"
+    grep -F 'if ! git rebase "origin/$TARGET_BRANCH"; then' "$formula" >/dev/null ||
+        fail "submit-and-exit must rebase onto latest origin target branch before push"
+    grep -F 'FINAL REBASE FAILED' "$formula" >/dev/null ||
+        fail "submit-and-exit must surface final rebase failures clearly"
+
+    formula_fetch_line=$(grep -nF 'git fetch origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"' "$formula" | cut -d: -f1)
+    formula_rebase_line=$(grep -nF 'if ! git rebase "origin/$TARGET_BRANCH"; then' "$formula" | cut -d: -f1)
+    formula_push_line=$(grep -nF 'git push origin HEAD' "$formula" | cut -d: -f1)
+    [[ "$formula_fetch_line" -lt "$formula_rebase_line" && "$formula_rebase_line" -lt "$formula_push_line" ]] ||
+        fail "submit-and-exit must fetch and rebase before git push origin HEAD"
+
+    grep -F 'TARGET_BRANCH=$(gc bd show <work-bead> --json | jq -r '\''.[0].metadata.target // "{{ .DefaultBranch }}"'\'')' "$prompt" >/dev/null ||
+        fail "polecat prompt done sequence must document the final target-branch rebase"
+    grep -F 'git fetch origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"' "$prompt" >/dev/null ||
+        fail "polecat prompt done sequence must document target refresh before push"
+    grep -F 'git rebase "origin/$TARGET_BRANCH" || {' "$prompt" >/dev/null ||
+        fail "polecat prompt done sequence must document conflict surfacing before push"
+}
+
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed() {
     local formula direct_block
     formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
@@ -221,6 +251,7 @@ test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
+test_polecat_submit_rebases_latest_target_before_push
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 
 echo "gastown pack asset tests passed"
