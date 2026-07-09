@@ -72,14 +72,10 @@ per-item summary paths, changed files, first verification commands, final proof
 commands, observed pass/fail results, and remaining risks. Keep the root
 summary concise, but do not omit accepted requirement IDs.
 
-Before closing this step, read the launcher rig root from the workflow root bead's `gc.work_dir`, then run the same validator locally from that launcher rig root:
-
-`GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh`
-
-fix every reported validation error before setting `gc.outcome=pass`. Then set
+Before closing this step, make sure the summary passes the `build-artifact-valid.sh` gate; the validation loop runs it automatically and fails the attempt on any error, so fix every reported validation error before setting `gc.outcome=pass`. Then set
 the claimed step outcome with
 `bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, and close
 with `bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
 `--metadata` or `--set-metadata` to `bd close`.
 
-Artifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.implementation_summary_path` against schema `gc.build.implementation-summary.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the summary in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.
+Artifact validation: this stage is gated by `../assets/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.implementation_summary_path` against schema `gc.build.implementation-summary.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the summary in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.

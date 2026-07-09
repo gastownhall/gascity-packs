@@ -218,7 +218,7 @@ MODE_VAR_DEFAULTS = {
     "github-pr-review": {"interaction_mode": "interactive", "review_mode": "report"},
 }
 
-BUILD_ARTIFACT_CHECK_SCRIPT = ".gc/scripts/checks/build-artifact-valid.sh"
+BUILD_ARTIFACT_CHECK_SCRIPT = "../assets/scripts/checks/build-artifact-valid.sh"
 
 # One produce attempt plus two bounded schema-repair attempts per artifact stage.
 BUILD_ARTIFACT_GATE_MAX_ATTEMPTS = 3
@@ -1602,8 +1602,7 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             text = (root / relative_path).read_text(encoding="utf-8")
             for fragment in (
-                "read the launcher rig root from the workflow root bead's `gc.work_dir`",
-                "GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh",
+                "the validation loop runs it automatically and fails the attempt on any error",
                 "fix every reported validation error before setting `gc.outcome=pass`",
             ):
                 with self.subTest(asset=relative_path, fragment=fragment):
@@ -2497,7 +2496,7 @@ class FormulaAssetTests(unittest.TestCase):
             design_loop["check"]["check"],
             {
                 "mode": "exec",
-                "path": ".gc/scripts/checks/design-review-approved.sh",
+                "path": "../assets/scripts/checks/design-review-approved.sh",
                 "timeout": "10m",
             },
         )
@@ -2517,7 +2516,7 @@ class FormulaAssetTests(unittest.TestCase):
             spec_loop["check"]["check"],
             {
                 "mode": "exec",
-                "path": ".gc/scripts/checks/design-review-approved.sh",
+                "path": "../assets/scripts/checks/design-review-approved.sh",
                 "timeout": "10m",
             },
         )
@@ -2607,7 +2606,7 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertIn("waiting-human", spec_approval)
         self.assertIn("silence", spec_approval)
         self.assertIn("spec revision summary", spec_approval)
-        self.assertIn("Do not run `.gc/scripts/checks/design-review-approved.sh`", spec_approval)
+        self.assertIn("Do not run `../assets/scripts/checks/design-review-approved.sh`", spec_approval)
         self.assertIn("Do not use\n`bd update --metadata`", spec_approval)
         self.assertIn("--metadata-field gc.step_id=requirements.review-written-spec", spec_approval)
         self.assertIn("--metadata-field gc.step_id=requirements.apply-spec-feedback", spec_approval)
@@ -4087,7 +4086,7 @@ description = "Override sink that writes the base triage report contract."
                 step = next(step for step in formula["steps"] if step["id"] == step_id)
                 self.assertEqual(
                     step["check"]["check"]["path"],
-                    ".gc/scripts/checks/implementation-review-approved.sh",
+                    "../assets/scripts/checks/implementation-review-approved.sh",
                 )
 
         story_root = bmad_root / "assets" / "workflows" / "bmad-story-development"
