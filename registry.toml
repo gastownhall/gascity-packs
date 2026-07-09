@@ -223,9 +223,9 @@ schema = 1
     description = "Initial pr-pipeline release: four author-side formulas (mol-pr-start, mol-pr-blast-radius, mol-pr-review, mol-pr-ship) + wrapper commands."
 
 [[pack]]
-  name = "contributing"
+  name = "contributing-to-gascity"
   description = "The external-contributor lifecycle for gastownhall/gascity — write a good issue, find priority work, plan a PR, map its blast radius, and self-review against the codebase audit. Each step produces an artifact you act on; the pack stops before pushing — opening the PR is your call. Self-contained: gas-city's actual standards (the B-rule adoption-review audit, blast-radius dimensions, test tiers) are baked into the skills; no imports."
-  source = "https://github.com/gastownhall/gascity-packs//contributing"
+  source = "https://github.com/gastownhall/gascity-packs//contributing-to-gascity"
   source_kind = "git"
 
   [[pack.release]]
