@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from contextlib import redirect_stderr
 import pathlib
 import socket
 import tempfile
@@ -549,6 +550,61 @@ class DiscordIntakeCommonTests(unittest.TestCase):
 
         with mock.patch.object(common.urllib.request, "urlopen", return_value=response):
             self.assertEqual(common.gc_api_base_url(), "http://127.0.0.1:9555")
+
+    def test_scope_mismatch_warns_once_to_stderr(self) -> None:
+        pathlib.Path(self.tempdir.name, "city.toml").write_text(
+            '[workspace]\nname = "gc"\n[api]\nbind = "0.0.0.0"\nport = 9555\n',
+            encoding="utf-8",
+        )
+        common._supervisor_scope_cache.clear()
+        common._warned_scope_messages.clear()
+
+        def make_response(*_args, **_kwargs):
+            response = mock.Mock()
+            response.__enter__ = mock.Mock(
+                return_value=mock.Mock(
+                    read=mock.Mock(return_value=b'{"items":[{"name":"other-city","running":true}]}')
+                )
+            )
+            response.__exit__ = mock.Mock(return_value=False)
+            return response
+
+        stderr = io.StringIO()
+        with mock.patch.object(common.urllib.request, "urlopen", side_effect=make_response):
+            with redirect_stderr(stderr):
+                # Empty scope is NOT cached, so each call re-runs uncached discovery.
+                self.assertEqual(common.discover_supervisor_gc_api_scope(common.load_city_toml()), "")
+                self.assertEqual(common.discover_supervisor_gc_api_scope(common.load_city_toml()), "")
+
+        output = stderr.getvalue()
+        self.assertIn("does not match any running city", output)
+        self.assertIn("'gc'", output)
+        self.assertIn("other-city", output)
+        # warn-once: a persistent misconfig must not flood the log across calls.
+        self.assertEqual(output.count("does not match any running city"), 1)
+
+    def test_scope_match_emits_no_warning(self) -> None:
+        pathlib.Path(self.tempdir.name, "city.toml").write_text(
+            '[workspace]\nname = "gc"\n',
+            encoding="utf-8",
+        )
+        common._supervisor_scope_cache.clear()
+        common._warned_scope_messages.clear()
+        response = mock.Mock()
+        response.__enter__ = mock.Mock(
+            return_value=mock.Mock(read=mock.Mock(return_value=b'{"items":[{"name":"gc","running":true}]}'))
+        )
+        response.__exit__ = mock.Mock(return_value=False)
+
+        stderr = io.StringIO()
+        with mock.patch.object(common.urllib.request, "urlopen", return_value=response):
+            with redirect_stderr(stderr):
+                self.assertEqual(
+                    common.discover_supervisor_gc_api_scope(common.load_city_toml()),
+                    "/v0/city/gc",
+                )
+
+        self.assertEqual(stderr.getvalue(), "")
 
     def test_gc_api_request_routes_through_supervisor_city_scope(self) -> None:
         pathlib.Path(self.tempdir.name, "city.toml").write_text(

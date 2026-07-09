@@ -12,6 +12,7 @@ import pathlib
 import re
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import tomllib
@@ -1983,6 +1984,19 @@ def normalize_gc_api_bind(value: Any) -> str:
 
 _supervisor_scope_cache: dict[str, tuple[float, str]] = {}  # workspace_name → (timestamp, scope)
 _SCOPE_CACHE_TTL = 60.0  # seconds
+_warned_scope_messages: set[str] = set()
+
+
+def _warn_scope_once(message: str) -> None:
+    """Emit a scope-misconfig warning to stderr at most once per distinct message.
+
+    Scope discovery runs on every API call (after a 60s cache miss), so warn-once
+    dedup keeps a persistent misconfig from flooding the gateway log.
+    """
+    if message in _warned_scope_messages:
+        return
+    _warned_scope_messages.add(message)
+    print(f"warning: {message}", file=sys.stderr, flush=True)
 
 
 def resolved_workspace_name(city_cfg: dict[str, Any]) -> str:
@@ -2061,6 +2075,29 @@ def _discover_supervisor_gc_api_scope_uncached(city_cfg: dict[str, Any]) -> str:
             if item.get("running") is False:
                 return ""
             return f"/v0/city/{urllib.parse.quote(workspace_name)}"
+        # A workspace name resolved, but no RUNNING city in /v0/cities matches it.
+        # Scope stays empty, so callers fall back to the unscoped API base — whose
+        # /v0/sessions returns 404. That 404 wedges the discord-gateway health probe
+        # at 503, so inbound DMs/mentions silently stop delivering with no other
+        # signal. Warn (once) so the operator can correct the name instead of
+        # debugging a dead gateway from scratch.
+        running_names = sorted(
+            name
+            for name in (
+                str(it.get("name", "")).strip()
+                for it in items
+                if isinstance(it, dict) and it.get("running") is not False
+            )
+            if name
+        )
+        _warn_scope_once(
+            f"discord-gateway: resolved workspace name {workspace_name!r} does not match "
+            f"any running city in the supervisor (running: {', '.join(running_names) or 'none'}). "
+            "The gateway will health-probe the unscoped /v0/sessions (404) and stay 503, so "
+            "inbound DMs/mentions will not deliver. Set [workspace] name in city.toml (or "
+            "workspace_name in .gc/site.toml) to a running city, or rename the city directory "
+            "to match, then restart the discord-gateway service."
+        )
     return ""
 
 

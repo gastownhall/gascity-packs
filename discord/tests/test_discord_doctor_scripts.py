@@ -36,6 +36,16 @@ class DiscordDoctorScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("legacy discord-intake state detected", result.stdout)
 
+    def test_workspace_scope_check_flags_unmatched_name(self) -> None:
+        # GC_CITY_ROOT is an empty tempdir, so the resolved workspace name (its
+        # basename) will not match any running city (whether or not a supervisor
+        # is reachable). The check must exit 2 with actionable guidance.
+        script = pathlib.Path(__file__).resolve().parents[1] / "doctor" / "check-workspace-scope.sh"
+        result = subprocess.run([str(script)], capture_output=True, text=True, check=False)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("discord scope", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
