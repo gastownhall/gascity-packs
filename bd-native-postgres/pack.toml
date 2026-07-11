@@ -1,0 +1,19 @@
+[pack]
+name = "bd-native-postgres"
+schema = 2
+
+[[backend_plugins]]
+backend = "postgres"
+kind = "native"
+driver = "postgres"
+capabilities = ["provider", "metadata", "postgres-auth", "sql-backend", "no-version-control"]
+
+[backend_plugins.scope]
+model = "per_scope"
+resource = "schema"
+namespace_from = "city_or_prefix"
+inherits_city_connection = true
+metadata_owner = "bd"
+routes = "gc-prefix-routes"
+adopt = "validate_or_repair"
+remove = "preserve"

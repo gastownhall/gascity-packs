@@ -1,0 +1,20 @@
+[pack]
+name = "bd-native-sqlite"
+schema = 2
+
+[[backend_plugins]]
+backend = "sqlite"
+kind = "native"
+driver = "sqlite"
+sqlite_path = "beads.db"
+capabilities = ["provider", "metadata", "sql-backend", "no-version-control"]
+
+[backend_plugins.scope]
+model = "per_scope"
+resource = "file"
+namespace_from = "prefix"
+inherits_city_connection = false
+metadata_owner = "bd"
+routes = "gc-prefix-routes"
+adopt = "validate_or_repair"
+remove = "preserve"
