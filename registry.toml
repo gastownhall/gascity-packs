@@ -274,12 +274,6 @@ schema = 1
   source = "https://github.com/duncan4123/gascity-packs/tree/bd-gc-postgres-publish/bd-gc-postgres"
   source_kind = "git"
 
-  [[pack.plugin]]
-    kind = "beads-backend"
-    backend = "postgres"
-    display_name = "Postgres"
-    capabilities = ["setup", "provider", "metadata", "backend-plugin", "postgres-auth", "sql-backend", "fastpath", "gascity-fastpath", "native-read-store", "no-version-control"]
-
   [[pack.release]]
     version = "0.1.0"
     ref = "bd-gc-postgres-publish"
@@ -328,6 +322,44 @@ schema = 1
     commit = "4470e13c26870477054b6a4b4de28c3b3c47bde4"
     hash = "sha256:926ee2235e6136e736a138cd582dbc3deb8f5f2a48ebf1db814ee90c25c87d74"
     description = "Uses separate physical Postgres databases for rig scopes, matching the default Gas City rig model."
+
+[[pack]]
+  name = "bd-native-postgres"
+  description = "Stock upstream bd with its native PostgreSQL backend, using a separate schema for each Gas City bead scope."
+  source = "https://github.com/duncan4123/gascity-packs.git//bd-native-postgres"
+  source_kind = "git"
+
+  [[pack.plugin]]
+    kind = "beads-backend"
+    backend = "postgres"
+    display_name = "PostgreSQL (native bd)"
+    capabilities = ["provider", "metadata", "native", "postgres-auth", "sql-backend", "no-version-control"]
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "native-beads-backend-packs"
+    commit = "b4e734092febc4b903bbb301e36b9eaa518fefce"
+    hash = "sha256:f977d3dfacbdc83702f16b13817a50e87ec81b5cf3805fed6e7fdd8c97e13423"
+    description = "Selects the PostgreSQL backend built into stock upstream bd and isolates Gas City scopes by schema."
+
+[[pack]]
+  name = "bd-native-sqlite"
+  description = "Stock upstream bd with its native SQLite backend, using a separate database file for each Gas City bead scope."
+  source = "https://github.com/duncan4123/gascity-packs.git//bd-native-sqlite"
+  source_kind = "git"
+
+  [[pack.plugin]]
+    kind = "beads-backend"
+    backend = "sqlite"
+    display_name = "SQLite (native bd)"
+    capabilities = ["provider", "metadata", "native", "sql-backend", "no-version-control"]
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "native-beads-backend-packs"
+    commit = "b4e734092febc4b903bbb301e36b9eaa518fefce"
+    hash = "sha256:e9b802a4ef94eb3a2995847d5c03da85ae945d3566834788d000ae8cb4586955"
+    description = "Selects the SQLite backend built into stock upstream bd and isolates Gas City scopes by database file."
 
 [[pack]]
   name = "beads-doltlite"
