@@ -214,7 +214,8 @@ class FormulaAssetTests(unittest.TestCase):
         for fragment in (
             "GC_CLAIM",
             "`gc hook` is the only permitted discovery source",
-            "bd update \"$WORK_ID\" --claim --json",
+            "gc hook --claim --json",
+            "gc bd show \"$GC_BEAD_ID\"",
             "CLAIM_REJECTED",
             "gc runtime drain-ack",
             "gc.continuation_group",
@@ -224,6 +225,12 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, expected)
+
+        self.assertNotIn(
+            '\nbd show "$GC_BEAD_ID"\n',
+            f"\n{expected}\n",
+            "claimed graph work must be read through the store-aware gc bd wrapper",
+        )
 
         for agent_name in ROLE_AGENTS:
             prompt = root / "roles" / "agents" / agent_name / "prompt.template.md"
