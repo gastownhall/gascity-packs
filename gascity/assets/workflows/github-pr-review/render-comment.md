@@ -1,9 +1,13 @@
 
 Read workflow root metadata from `gc bd show <root-bead-id> --json`. Validate the
 generic review verdict report at `gc.github.review_report_path` and map it with
-`{{pack_root}}/assets/scripts/github_reports.py review-outcome`:
+`{{pack_root}}/assets/scripts/github_reports.py review-outcome`. Both review
+report schemas are accepted. For `gc.verdict-report.v1`:
 `pass/none -> approve`, `fail/minor -> comment`, `fail/major -> request_changes`,
-and `fail/blocker -> block`.
+and `fail/blocker -> block`. For `gc.build.review.v1` (what the generic `review`
+formula emits): `approved -> approve`, `questions -> comment`,
+`changes_required -> request_changes`, and `blocked -> block`; non-final
+statuses (`draft`, `superseded`) are rejected.
 
 If workflow root metadata has `gc.github.reused_current_output=true`, validate
 that `gc.github.comment_path` points to an existing `comment.md` under

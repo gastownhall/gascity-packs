@@ -47,6 +47,9 @@ If the selected formula does not declare the mode vars, omit the two mode
 
 Do not close this step until `REPORT_PATH` exists and validates through
 `{{pack_root}}/assets/scripts/github_reports.py review-outcome "$REPORT_PATH"`.
+The validator accepts either review report schema (`gc.verdict-report.v1` or
+`gc.build.review.v1`, the latter being what the generic `review` formula
+emits) and returns the mapped outcome.
 Persist the review handoff and result on workflow root metadata:
 `gc bd update <root-bead-id> --set-metadata gc.github.review_subject_path="$SUBJECT_PATH" --set-metadata gc.github.review_report_path="$REPORT_PATH" --set-metadata gc.github.review_outcome=<approve|comment|request_changes|block>`.
 

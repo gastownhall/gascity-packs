@@ -12,6 +12,40 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "assets" / 
 import github_reports
 
 
+def build_review_report(status: str) -> str:
+    return (
+        "---\n"
+        "schema: gc.build.review.v1\n"
+        "workflow:\n"
+        "  id: wf-1\n"
+        "  formula: review\n"
+        "methodology:\n"
+        "  pack: gascity\n"
+        "  name: implementation-review\n"
+        "producer:\n"
+        "  formula: review\n"
+        "  stage: write-report\n"
+        "  attempt: 1\n"
+        f"status: {status}\n"
+        "trace:\n"
+        "  upstream: []\n"
+        "  coverage: []\n"
+        "---\n"
+        "\n"
+        "## Verdict\n"
+        "\n"
+        "Verdict text.\n"
+        "\n"
+        "## Findings\n"
+        "\n"
+        "Findings text.\n"
+        "\n"
+        "## Verification\n"
+        "\n"
+        "Verification text.\n"
+    )
+
+
 class GitHubReportsTests(unittest.TestCase):
     def test_validate_triage_report_accepts_expected_front_matter(self) -> None:
         report = """---
@@ -79,6 +113,71 @@ recommended_next_action: ask_reporter
 
         with self.assertRaises(github_reports.ValidationError):
             github_reports.review_outcome("pass", "minor")
+
+    def test_load_review_outcome_maps_build_review_statuses(self) -> None:
+        expected = {
+            "approved": "approve",
+            "questions": "comment",
+            "changes_required": "request_changes",
+            "blocked": "block",
+        }
+        for status, outcome in expected.items():
+            report = github_reports.load_review_outcome(build_review_report(status))
+            self.assertEqual(report.outcome, outcome)
+            self.assertEqual(report.schema, "gc.build.review.v1")
+            self.assertEqual(report.report_label, status)
+
+    def test_load_review_outcome_rejects_non_final_build_review_statuses(self) -> None:
+        for status in ("draft", "superseded"):
+            with self.assertRaisesRegex(github_reports.ValidationError, "final review status"):
+                github_reports.load_review_outcome(build_review_report(status))
+
+    def test_load_review_outcome_rejects_unknown_schema(self) -> None:
+        report = "---\nschema: gc.some-other.v1\n---\n\nBody.\n"
+        with self.assertRaisesRegex(github_reports.ValidationError, "gc.build.review.v1"):
+            github_reports.load_review_outcome(report)
+
+    def test_load_review_outcome_accepts_verdict_report_schema(self) -> None:
+        report = (
+            "---\n"
+            "schema: gc.verdict-report.v1\n"
+            "kind: review\n"
+            "verdict: pass\n"
+            "severity: none\n"
+            "---\n"
+        )
+        parsed = github_reports.load_review_outcome(report)
+        self.assertEqual(parsed.outcome, "approve")
+        self.assertEqual(parsed.report_label, "pass/none")
+
+    def test_render_pr_review_comment_accepts_build_review_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review_path = pathlib.Path(tmp) / "review.md"
+            review_path.write_text(build_review_report("approved"), encoding="utf-8")
+            comment = github_reports.render_pr_review_comment(
+                review_path,
+                outcome="approve",
+                head_sha="abc123",
+                artifact_ref="artifact",
+            )
+            with self.assertRaisesRegex(github_reports.ValidationError, "does not match"):
+                github_reports.render_pr_review_comment(review_path, outcome="block")
+
+        self.assertIn("<!-- gc:github-pr-review", comment)
+        self.assertIn("outcome: approve", comment)
+        self.assertIn("report: approved", comment)
+
+    def test_review_outcome_cli_accepts_build_review_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review_path = pathlib.Path(tmp) / "review.md"
+            review_path.write_text(build_review_report("changes_required"), encoding="utf-8")
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = github_reports.main(["review-outcome", str(review_path)])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"outcome": "request_changes"', stdout.getvalue())
+        self.assertIn('"schema": "gc.build.review.v1"', stdout.getvalue())
 
     def test_renderers_write_sticky_marker_comments(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

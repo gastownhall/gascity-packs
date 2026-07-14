@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import validate_build_artifact
 import validate_verdict_report
 
 try:
@@ -45,7 +46,13 @@ class ValidationError(Exception):
 
 
 YAML_ERROR_TYPES = (yaml.YAMLError,) if yaml is not None else ()
-CLI_ERROR_TYPES = (OSError, UnicodeDecodeError, ValidationError, validate_verdict_report.ValidationError) + YAML_ERROR_TYPES
+CLI_ERROR_TYPES = (
+    OSError,
+    UnicodeDecodeError,
+    ValidationError,
+    validate_verdict_report.ValidationError,
+    validate_build_artifact.ValidationError,
+) + YAML_ERROR_TYPES
 
 
 @dataclass(frozen=True)
@@ -137,6 +144,60 @@ def review_outcome(verdict: str, severity: str) -> str:
     raise ValidationError(f"unsupported review verdict/severity combination: {verdict}/{severity}")
 
 
+REVIEW_REPORT_SCHEMAS = {"gc.verdict-report.v1", "gc.build.review.v1"}
+BUILD_REVIEW_STATUS_OUTCOMES = {
+    "approved": "approve",
+    "questions": "comment",
+    "changes_required": "request_changes",
+    "blocked": "block",
+}
+
+
+@dataclass(frozen=True)
+class ReviewOutcome:
+    schema: str
+    outcome: str
+    report_label: str
+
+
+def build_review_outcome(status: str) -> str:
+    outcome = BUILD_REVIEW_STATUS_OUTCOMES.get(status)
+    if outcome is None:
+        raise ValidationError(
+            f"review report status must be a final review status "
+            f"{sorted(BUILD_REVIEW_STATUS_OUTCOMES)}, got {status!r}"
+        )
+    return outcome
+
+
+def peek_report_schema(text: str) -> str:
+    if yaml is None:
+        raise ValidationError("PyYAML is required to parse review reports")
+    match = FRONT_MATTER_RE.match(text)
+    if not match:
+        raise ValidationError("review report must start with YAML front matter")
+    data = yaml.safe_load(match.group("body")) or {}
+    if not isinstance(data, dict):
+        raise ValidationError("review report front matter must be a mapping")
+    return required_string(data, "schema")
+
+
+def load_review_outcome(text: str) -> ReviewOutcome:
+    schema = peek_report_schema(text)
+    if schema == "gc.verdict-report.v1":
+        report = validate_verdict_report.validate_report_text(text, expected_kind="review")
+        return ReviewOutcome(
+            schema=schema,
+            outcome=review_outcome(report.verdict, report.severity),
+            report_label=f"{report.verdict}/{report.severity}",
+        )
+    if schema == "gc.build.review.v1":
+        artifact = validate_build_artifact.validate_artifact_text(text, expected_schema=schema)
+        status = str(artifact.front_matter["status"]).strip()
+        return ReviewOutcome(schema=schema, outcome=build_review_outcome(status), report_label=status)
+    raise ValidationError(f"review report schema must be one of {sorted(REVIEW_REPORT_SCHEMAS)}, got {schema!r}")
+
+
 def render_pr_review_comment(
     report_path: Path,
     *,
@@ -145,9 +206,9 @@ def render_pr_review_comment(
     artifact_ref: str = "",
     human_approved: bool = False,
 ) -> str:
-    report = validate_verdict_report.validate_report_text(report_path.read_text(encoding="utf-8"), expected_kind="review")
-    if outcome != review_outcome(report.verdict, report.severity):
-        raise ValidationError(f"outcome {outcome!r} does not match review report {report.verdict}/{report.severity}")
+    report = load_review_outcome(report_path.read_text(encoding="utf-8"))
+    if outcome != report.outcome:
+        raise ValidationError(f"outcome {outcome!r} does not match review report {report.report_label}")
     head_sha = marker_value("head_sha", head_sha)
     artifact = public_line("artifact_ref", artifact_ref or str(report_path))
     gate_text = "human approved" if human_approved else "not human approved"
@@ -155,7 +216,7 @@ def render_pr_review_comment(
         f"<!-- gc:github-pr-review head_sha={head_sha} outcome={outcome} -->\n"
         "## GC PR Review\n\n"
         f"- outcome: {outcome}\n"
-        f"- report: {report.verdict}/{report.severity}\n"
+        f"- report: {report.report_label}\n"
         f"- gate: {gate_text}\n"
         f"- artifact: {artifact}\n"
     )
@@ -328,11 +389,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             output = {"ok": True, "verdict": report.verdict, "recommended_next_action": report.recommended_next_action}
         elif args.command == "review-outcome":
-            report = validate_verdict_report.validate_report_text(args.path.read_text(encoding="utf-8"), expected_kind="review")
-            output = {"ok": True, "outcome": review_outcome(report.verdict, report.severity)}
+            report = load_review_outcome(args.path.read_text(encoding="utf-8"))
+            output = {"ok": True, "outcome": report.outcome, "schema": report.schema}
         elif args.command == "render-review-comment":
-            report = validate_verdict_report.validate_report_text(args.report_path.read_text(encoding="utf-8"), expected_kind="review")
-            outcome = review_outcome(report.verdict, report.severity)
+            outcome = load_review_outcome(args.report_path.read_text(encoding="utf-8")).outcome
             args.output.write_text(
                 render_pr_review_comment(
                     args.report_path,
