@@ -45,10 +45,24 @@ gc sling gc.run-operator {{code_review_formula}} --formula \
 If the selected formula does not declare the mode vars, omit the two mode
 `--var` arguments rather than failing the launch.
 
-Do not close this step until `REPORT_PATH` exists and validates through
-`{{pack_root}}/assets/scripts/github_reports.py review-outcome "$REPORT_PATH"`.
+`REPORT_PATH` is a `gc.build.review.v1` artifact (the generic review formula's
+own artifact contract) and never validates directly against
+`github_reports.py review-outcome`, which requires `gc.verdict-report.v1`. Do
+not pass `REPORT_PATH` to `review-outcome` directly. Instead, once
+`REPORT_PATH` exists, translate it into the verdict shape this adapter needs:
+
+```bash
+VERDICT_PATH=<gc.github.review_dir>/verdict-report.md
+python3 {{pack_root}}/assets/scripts/github_reports.py translate-build-review \
+  "$REPORT_PATH" --output "$VERDICT_PATH"
+```
+
+Do not close this step until `VERDICT_PATH` exists and validates through
+`{{pack_root}}/assets/scripts/github_reports.py review-outcome "$VERDICT_PATH"`.
 Persist the review handoff and result on workflow root metadata:
-`bd update <root-bead-id> --set-metadata gc.github.review_subject_path="$SUBJECT_PATH" --set-metadata gc.github.review_report_path="$REPORT_PATH" --set-metadata gc.github.review_outcome=<approve|comment|request_changes|block>`.
+`bd update <root-bead-id> --set-metadata gc.github.review_subject_path="$SUBJECT_PATH" --set-metadata gc.github.review_report_path="$VERDICT_PATH" --set-metadata gc.github.review_outcome=<approve|comment|request_changes|block>`.
+Record `REPORT_PATH` too, for traceability back to the untranslated report:
+`bd update <root-bead-id> --set-metadata gc.github.build_review_report_path="$REPORT_PATH"`.
 
 The adapter does not check out a mutation worktree, push commits, amend
 contributor branches, submit formal GitHub review events, or create follow-up

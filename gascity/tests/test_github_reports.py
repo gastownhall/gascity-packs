@@ -10,6 +10,43 @@ import io
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "assets" / "scripts"))
 
 import github_reports
+import validate_build_artifact
+import validate_verdict_report
+
+
+def build_review_artifact(*, status: str, findings_body: str) -> str:
+    return f"""---
+schema: gc.build.review.v1
+workflow:
+  id: build-20260716-001
+  formula: build-basic
+methodology:
+  pack: gascity
+  name: build-basic
+producer:
+  formula: review
+  stage: write-report
+  attempt: 1
+status: {status}
+trace:
+  upstream:
+    - path: subject.md
+      hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  coverage: []
+---
+
+## Verdict
+
+Verdict content.
+
+## Findings
+
+{findings_body}
+
+## Verification
+
+Verification content.
+"""
 
 
 class GitHubReportsTests(unittest.TestCase):
@@ -79,6 +116,117 @@ recommended_next_action: ask_reporter
 
         with self.assertRaises(github_reports.ValidationError):
             github_reports.review_outcome("pass", "minor")
+
+    def test_raw_build_review_report_cannot_be_validated_as_a_verdict_report(self) -> None:
+        # This is the schema-contract collision itself: the `review` formula's
+        # write-report step produces gc.build.review.v1, but the github-pr-review
+        # adapter's consumer (github_reports.py review-outcome) hard-requires
+        # gc.verdict-report.v1. Posting the raw build-review artifact straight to
+        # review-outcome must fail with a schema mismatch until it is translated.
+        report = build_review_artifact(status="approved", findings_body="None")
+
+        with self.assertRaises(validate_verdict_report.ValidationError):
+            validate_verdict_report.validate_report_text(report, expected_kind="review")
+
+    def test_translate_build_review_to_verdict_converts_approved_report(self) -> None:
+        report = build_review_artifact(status="approved", findings_body="None")
+
+        translated = github_reports.translate_build_review_to_verdict(report)
+        parsed = validate_verdict_report.validate_report_text(translated, expected_kind="review")
+
+        self.assertEqual(parsed.verdict, "pass")
+        self.assertEqual(parsed.severity, "none")
+        self.assertEqual(parsed.findings, [])
+        self.assertEqual(github_reports.review_outcome(parsed.verdict, parsed.severity), "approve")
+
+    def test_translate_build_review_to_verdict_converts_changes_required_report(self) -> None:
+        findings_body = (
+            "- id: REVIEW-001\n"
+            "  severity: major\n"
+            "  title: SQL injection in query builder\n"
+            "  evidence: apps/foo/src/db.ts:42 concatenates user input into SQL\n"
+            "  required_fix: Use parameterized queries via the existing sql tag helper\n"
+        )
+        report = build_review_artifact(status="changes_required", findings_body=findings_body)
+
+        translated = github_reports.translate_build_review_to_verdict(report)
+        parsed = validate_verdict_report.validate_report_text(translated, expected_kind="review")
+
+        self.assertEqual(parsed.verdict, "fail")
+        self.assertEqual(parsed.severity, "major")
+        self.assertEqual(len(parsed.findings), 1)
+        self.assertEqual(parsed.findings[0]["id"], "REVIEW-001")
+        self.assertEqual(github_reports.review_outcome(parsed.verdict, parsed.severity), "request_changes")
+
+    def test_translate_build_review_to_verdict_uses_max_finding_severity(self) -> None:
+        findings_body = (
+            "- id: REVIEW-001\n"
+            "  severity: minor\n"
+            "  title: Missing test\n"
+            "  evidence: No regression test added.\n"
+            "  required_fix: Add a regression test.\n"
+            "- id: REVIEW-002\n"
+            "  severity: blocker\n"
+            "  title: Unauthenticated admin route\n"
+            "  evidence: apps/foo/src/admin.ts:10 has no auth check.\n"
+            "  required_fix: Wrap the handler with withAdminAuth.\n"
+        )
+        report = build_review_artifact(status="blocked", findings_body=findings_body)
+
+        translated = github_reports.translate_build_review_to_verdict(report)
+        parsed = validate_verdict_report.validate_report_text(translated, expected_kind="review")
+
+        self.assertEqual(parsed.severity, "blocker")
+        self.assertEqual(github_reports.review_outcome(parsed.verdict, parsed.severity), "block")
+
+    def test_translate_build_review_to_verdict_rejects_approved_report_with_findings(self) -> None:
+        findings_body = (
+            "- id: REVIEW-001\n"
+            "  severity: minor\n"
+            "  title: Nit\n"
+            "  evidence: nit evidence\n"
+            "  required_fix: fix the nit\n"
+        )
+        report = build_review_artifact(status="approved", findings_body=findings_body)
+
+        with self.assertRaisesRegex(github_reports.ValidationError, "approved"):
+            github_reports.translate_build_review_to_verdict(report)
+
+    def test_translate_build_review_to_verdict_rejects_changes_required_with_no_findings(self) -> None:
+        report = build_review_artifact(status="changes_required", findings_body="None")
+
+        with self.assertRaisesRegex(github_reports.ValidationError, "changes_required"):
+            github_reports.translate_build_review_to_verdict(report)
+
+    def test_translate_build_review_to_verdict_rejects_non_terminal_status(self) -> None:
+        report = build_review_artifact(status="questions", findings_body="None")
+
+        with self.assertRaisesRegex(github_reports.ValidationError, "questions"):
+            github_reports.translate_build_review_to_verdict(report)
+
+    def test_translate_build_review_to_verdict_rejects_malformed_findings_yaml(self) -> None:
+        findings_body = "- id: REVIEW-001\n  severity: major\n  title: Missing fields\n"
+        report = build_review_artifact(status="changes_required", findings_body=findings_body)
+
+        with self.assertRaisesRegex(github_reports.ValidationError, "evidence"):
+            github_reports.translate_build_review_to_verdict(report)
+
+    def test_translate_build_review_cli_writes_verdict_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            build_review_path = root / "review-report.md"
+            build_review_path.write_text(build_review_artifact(status="approved", findings_body="None"), encoding="utf-8")
+            output_path = root / "verdict-report.md"
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
+                code = github_reports.main(
+                    ["translate-build-review", str(build_review_path), "--output", str(output_path)]
+                )
+
+            self.assertEqual(code, 0)
+            parsed = validate_verdict_report.validate_report_text(output_path.read_text(encoding="utf-8"), expected_kind="review")
+            self.assertEqual(parsed.verdict, "pass")
 
     def test_renderers_write_sticky_marker_comments(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

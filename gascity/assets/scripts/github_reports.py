@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import validate_build_artifact
 import validate_verdict_report
 
 try:
@@ -20,6 +21,12 @@ except ImportError:  # pragma: no cover
 FRONT_MATTER_RE = re.compile(r"\A---\n(?P<body>.*?)\n---(?:\n|\Z)", re.DOTALL)
 BODY_HASH_RE = re.compile(r"\Asha256:[0-9a-f]{64}\Z")
 UNSAFE_MARKER_RE = re.compile(r"<!--|--!?>|[\r\n]")
+SECTION_HEADING_RE = r"^##\s+{name}\s*$"
+BUILD_REVIEW_TERMINAL_VERDICTS = {
+    "approved": "pass",
+    "changes_required": "fail",
+    "blocked": "fail",
+}
 VALID_TRIAGE_VERDICTS = {
     "reproduced",
     "not_reproduced",
@@ -45,7 +52,13 @@ class ValidationError(Exception):
 
 
 YAML_ERROR_TYPES = (yaml.YAMLError,) if yaml is not None else ()
-CLI_ERROR_TYPES = (OSError, UnicodeDecodeError, ValidationError, validate_verdict_report.ValidationError) + YAML_ERROR_TYPES
+CLI_ERROR_TYPES = (
+    OSError,
+    UnicodeDecodeError,
+    ValidationError,
+    validate_verdict_report.ValidationError,
+    validate_build_artifact.ValidationError,
+) + YAML_ERROR_TYPES
 
 
 @dataclass(frozen=True)
@@ -135,6 +148,93 @@ def review_outcome(verdict: str, severity: str) -> str:
     if verdict == "fail" and severity == "blocker":
         return "block"
     raise ValidationError(f"unsupported review verdict/severity combination: {verdict}/{severity}")
+
+
+def extract_section(body: str, name: str) -> str:
+    pattern = re.compile(SECTION_HEADING_RE.format(name=re.escape(name)), re.MULTILINE)
+    match = pattern.search(body)
+    if not match:
+        raise ValidationError(f"missing required body section {name!r}")
+    start = match.end()
+    next_heading = re.search(r"^##\s+\S", body[start:], re.MULTILINE)
+    end = start + next_heading.start() if next_heading else len(body)
+    return body[start:end].strip()
+
+
+def parse_build_review_findings(section_text: str) -> list[dict[str, str]]:
+    stripped = section_text.strip()
+    if not stripped or stripped.lower().rstrip(".") in {"none", "no findings"}:
+        return []
+    if yaml is None:
+        raise ValidationError("PyYAML is required to parse review findings")
+    try:
+        data = yaml.safe_load(stripped)
+    except yaml.YAMLError as exc:
+        raise ValidationError(f"Findings section must be a YAML list of finding mappings: {exc}") from exc
+    if not isinstance(data, list):
+        raise ValidationError(
+            "Findings section must be a YAML list of finding mappings, or `None` when there are no findings"
+        )
+    findings: list[dict[str, str]] = []
+    for index, raw in enumerate(data):
+        if not isinstance(raw, dict):
+            raise ValidationError(f"Findings[{index}] must be a mapping")
+        finding: dict[str, str] = {}
+        missing = []
+        for field in sorted(validate_verdict_report.REQUIRED_FINDING_FIELDS):
+            value = raw.get(field)
+            if not isinstance(value, str) or not value.strip():
+                missing.append(field)
+            else:
+                finding[field] = value.strip()
+        if missing:
+            raise ValidationError(f"Findings[{index}] missing fields: {missing}")
+        if finding["severity"] not in validate_verdict_report.VALID_SEVERITIES - {"none"}:
+            raise ValidationError(f"Findings[{index}].severity must be minor, major, or blocker")
+        findings.append(finding)
+    return findings
+
+
+def translate_build_review_to_verdict(build_review_text: str) -> str:
+    """Translate a gc.build.review.v1 report into a gc.verdict-report.v1 report.
+
+    The `review` formula's write-report step is gated against gc.build.review.v1
+    (workflow/methodology/producer/trace front matter, Verdict/Findings/Verification
+    sections). The github-pr-review adapter's review-outcome consumer hard-requires
+    gc.verdict-report.v1 (kind/verdict/severity/findings[]). No single front-matter
+    schema can satisfy both, so this translator is the adapter boundary between them.
+    """
+    artifact = validate_build_artifact.validate_artifact_text(build_review_text, expected_schema="gc.build.review.v1")
+    status = required_string(artifact.front_matter, "status")
+    findings = parse_build_review_findings(extract_section(artifact.body, "Findings"))
+
+    if status not in BUILD_REVIEW_TERMINAL_VERDICTS:
+        raise ValidationError(
+            f"cannot translate review status {status!r} into a PR verdict; "
+            f"status must be one of {sorted(BUILD_REVIEW_TERMINAL_VERDICTS)}"
+        )
+
+    if status == "approved":
+        if findings:
+            raise ValidationError("approved review must have no findings")
+        verdict, severity = "pass", "none"
+    else:
+        if not findings:
+            raise ValidationError(f"{status} review must include at least one finding")
+        verdict = "fail"
+        severity = max(findings, key=lambda finding: validate_verdict_report.SEVERITY_ORDER[finding["severity"]])[
+            "severity"
+        ]
+
+    front_matter = {
+        "schema": "gc.verdict-report.v1",
+        "kind": "review",
+        "verdict": verdict,
+        "severity": severity,
+        "findings": findings,
+    }
+    front_yaml = yaml.safe_dump(front_matter, sort_keys=False, default_flow_style=False)
+    return f"---\n{front_yaml}---\n\nTranslated from gc.build.review.v1 (status: {status}).\n"
 
 
 def render_pr_review_comment(
@@ -293,6 +393,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     outcome_parser = subparsers.add_parser("review-outcome")
     outcome_parser.add_argument("path", type=Path)
 
+    translate_parser = subparsers.add_parser("translate-build-review")
+    translate_parser.add_argument("path", type=Path)
+    translate_parser.add_argument("--output", type=Path, required=True)
+
     review_comment_parser = subparsers.add_parser("render-review-comment")
     review_comment_parser.add_argument("report_path", type=Path)
     review_comment_parser.add_argument("--output", type=Path, required=True)
@@ -330,6 +434,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "review-outcome":
             report = validate_verdict_report.validate_report_text(args.path.read_text(encoding="utf-8"), expected_kind="review")
             output = {"ok": True, "outcome": review_outcome(report.verdict, report.severity)}
+        elif args.command == "translate-build-review":
+            translated = translate_build_review_to_verdict(args.path.read_text(encoding="utf-8"))
+            args.output.write_text(translated, encoding="utf-8")
+            report = validate_verdict_report.validate_report_text(translated, expected_kind="review")
+            output = {"ok": True, "verdict": report.verdict, "severity": report.severity, "output": str(args.output)}
         elif args.command == "render-review-comment":
             report = validate_verdict_report.validate_report_text(args.report_path.read_text(encoding="utf-8"), expected_kind="review")
             outcome = review_outcome(report.verdict, report.severity)

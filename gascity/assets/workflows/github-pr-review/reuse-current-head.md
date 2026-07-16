@@ -6,13 +6,15 @@ root metadata with `bd show <root-bead-id> --json`. Use `gc.github.repo`,
 hard-fail and report that the snapshot handoff metadata is incomplete.
 
 Look for the current head-SHA review artifacts under `gc.github.review_dir`.
-If a validated `review-report.md` and current `comment.md` or waiting human
-gate already exists for the same repo, PR number, and head SHA, resume that
-attempt by refreshing workflow root metadata and stamping
+If a validated `verdict-report.md` (the run-review step's translated
+`gc.verdict-report.v1` artifact, not the raw `review-report.md` the generic
+review formula produces) and current `comment.md` or waiting human gate
+already exists for the same repo, PR number, and head SHA, resume that attempt
+by refreshing workflow root metadata and stamping
 `gc.github.reused_current_output=true`.
 
 When reusing, set at least `gc.github.review_report_path=<absolute
-review-report.md path>`, `gc.github.comment_path=<absolute comment.md path>`,
+verdict-report.md path>`, `gc.github.comment_path=<absolute comment.md path>`,
 and `gc.github.review_outcome=<approve|comment|request_changes|block>` on the
 workflow root. Validate the report with
 `{{pack_root}}/assets/scripts/github_reports.py review-outcome` before stamping
