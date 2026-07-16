@@ -141,7 +141,7 @@ METHODOLOGY_STAGE_CONTRACTS = {
         "vars": {"context_path", "plan_path", "decomposition_path"},
     },
     "implementation-base": {
-        "steps": ["prepare-worktree", "implement", "close-source-anchor"],
+        "steps": ["prepare-worktree", "implement", "close-source-anchor", "body", "teardown-worktree"],
         "target_required": True,
         "vars": {"context_path", "implementation_target", "summary_path"},
     },
@@ -2206,6 +2206,8 @@ class FormulaAssetTests(unittest.TestCase):
                             "task-review",
                             "record-item-result",
                             "close-source-anchor",
+                            "body",
+                            "teardown-worktree",
                         },
                     )
                     self.assertEqual(
@@ -2220,12 +2222,14 @@ class FormulaAssetTests(unittest.TestCase):
                             "task-review": ["verify-test-passes"],
                             "record-item-result": ["task-review"],
                             "close-source-anchor": ["record-item-result"],
+                            "body": ["prepare-worktree", "implement", "close-source-anchor"],
+                            "teardown-worktree": ["body"],
                         },
                     )
                 else:
                     self.assertEqual(
                         [step["id"] for step in resolved_item["steps"]],
-                        ["prepare-worktree", "implement", "close-source-anchor"],
+                        ["prepare-worktree", "implement", "close-source-anchor", "body", "teardown-worktree"],
                     )
                 self.assertTrue(any(step["id"] == "implement" for step in item_formula["steps"]))
                 text = effective_formula_text_from_dirs(

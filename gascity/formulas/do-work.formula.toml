@@ -30,14 +30,14 @@ default = ""
 [[steps]]
 id = "prepare-worktree"
 title = "Prepare item worktree"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/do-work/prepare-worktree.md"
 
 [[steps]]
 id = "implement"
 title = "Implement owned work"
 needs = ["prepare-worktree"]
-metadata = { "gc.run_target" = "{{implementation_target}}", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path", "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/do-work/implement.md"
 
 [steps.check]
@@ -52,5 +52,19 @@ timeout = "5m"
 id = "close-source-anchor"
 title = "Close owned source anchor"
 needs = ["implement"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/do-work/close-source-anchor.md"
+
+[[steps]]
+id = "body"
+title = "Worktree lifecycle scope"
+needs = ["prepare-worktree", "implement", "close-source-anchor"]
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "worktree", "gc.scope_role" = "body" }
+description_file = "../assets/workflows/do-work/body.md"
+
+[[steps]]
+id = "teardown-worktree"
+title = "Tear down item worktree"
+needs = ["body"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.kind" = "cleanup", "gc.scope_ref" = "body", "gc.scope_role" = "teardown" }
+description_file = "../assets/workflows/do-work/teardown-worktree.md"
