@@ -5,6 +5,14 @@ and implementation plan. Preserve traceability from each work item back to the
 relevant acceptance criteria and plan section, and record the implementation convoy
 that the `implement` formula will drain.
 
+Drain topology constraint: every work item runs in its own isolated,
+non-integrated source-anchor worktree. Therefore each work item must be a
+complete, independently verifiable vertical product slice. Do not create
+package-only, implementation-only, test-only, or cleanup-only members whose
+correctness depends on another member's unmerged commit. If the requested
+change is one smallest coherent behavior, create one work item instead of an
+artificial horizontal split.
+
 Create the decomposition artifact at the path recorded on the workflow root
 bead as `gc.build.decomposition_path` (fallback
 `gc.var.decomposition_path`). The artifact must be Markdown with YAML front
@@ -27,7 +35,9 @@ Use mapping objects for front matter; do not use scalar shortcuts such as
 - `workflow: {id: <workflow-root-id>, formula: build-basic}`
 - `methodology: {pack: gascity, name: build-basic}`
 - `producer: {formula: build-basic, stage: decompose, attempt: <positive integer>}`
-- `status: approved` or another schema-allowed status
+- Set `producer.attempt` to the current `gc.attempt` on every write or repair.
+- Use `status: approved` before closing; unresolved decomposition work must
+  keep the producer stage open or fail its bounded validation loop.
 - `trace: {upstream: [...], coverage: [...]}`
 
 Trace front matter must use the validator shape exactly:

@@ -202,7 +202,7 @@ single_lane = true
 id = "summarize-implementation"
 title = "Write canonical implementation summary"
 needs = ["implement", "implement-same-session"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.build.implementation_summary_path" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.build.implementation_summary_path", "gc.build.require_approved_status" = "true", "gc.build.require_current_producer_attempt" = "true" }
 description_file = "../assets/workflows/build-base/summarize-implementation.md"
 
 [steps.check]

@@ -602,7 +602,8 @@ func TestThreadTeardownSubscriberEscapesCityName(t *testing.T) {
 	}
 	select {
 	case decodedPath = <-decodedPathCh:
-	default:
+	case <-time.After(2 * time.Second):
+		t.Fatal("gc stub did not publish the decoded request path within 2s")
 	}
 
 	wantRawCity := "city%2Fwith%20slash"

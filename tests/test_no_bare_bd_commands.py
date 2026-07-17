@@ -146,9 +146,13 @@ GC_BD_ARGV_TAIL_MARKER = "gc-bd-argv-tail"
 GC_BD_ARGV_TAIL_FIXTURE = Path("tests/test_gascity_pack_inference_gate.py")
 GC_BD_ARGV_TAIL_LINES = {
     '*"bd show fi-root --json"*) # gc-bd-argv-tail: fake gc receives the wrapper\'s argv tail',
-    '*"bd list --json --limit 1000"*) # gc-bd-argv-tail: fake gc receives the wrapper\'s argv tail',
+    '*"bd list --all --json --limit 1000"*) # gc-bd-argv-tail: fake gc receives the wrapper\'s argv tail',
     'assert "bd show fi-root --json" in args_path.read_text(encoding="utf-8")  # gc-bd-argv-tail',
 }
+STANDALONE_BD_VERSION_PREFLIGHT_FIXTURE = Path(".github/workflows/supported-pack-nightly.yml")
+STANDALONE_BD_VERSION_PREFLIGHT_LINE = (
+    'bd_cli_version="$(bd version | awk \'{ print $3 }\')" # standalone-bd-version-preflight'
+)
 
 
 def tracked_files() -> list[Path]:
@@ -208,6 +212,9 @@ def intentional_gc_bd_argv_tail(relative: Path, line: str) -> bool:
         relative == GC_BD_ARGV_TAIL_FIXTURE
         and GC_BD_ARGV_TAIL_MARKER in line
         and line.strip() in GC_BD_ARGV_TAIL_LINES
+    ) or (
+        relative == STANDALONE_BD_VERSION_PREFLIGHT_FIXTURE
+        and line.strip() == STANDALONE_BD_VERSION_PREFLIGHT_LINE
     )
 
 
@@ -270,3 +277,8 @@ def test_detector_covers_shell_multiline_and_serialized_argv_forms() -> None:
     assert not bare_bd_violations(fixture, 'command = ["gc", "bd", "show"]')
     assert not bare_bd_violations(fixture, "gc --city /tmp/city bd list --json")
     assert not bare_bd_violations(fixture, "gc --rig demo bd show demo-1")
+    assert not bare_bd_violations(
+        REPO_ROOT / STANDALONE_BD_VERSION_PREFLIGHT_FIXTURE,
+        STANDALONE_BD_VERSION_PREFLIGHT_LINE,
+    )
+    assert bare_bd_violations(fixture, STANDALONE_BD_VERSION_PREFLIGHT_LINE)

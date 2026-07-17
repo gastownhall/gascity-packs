@@ -24,6 +24,8 @@ Read its single JSON result:
   - `bead_id` as `CLAIMED_BEAD_ID`
   - `root_bead_id` as `CLAIMED_ROOT_BEAD_ID`
   - `continuation_group` as `CLAIMED_CONTINUATION_GROUP`
+- These `CLAIMED_*` identifiers are local shell notation, never tool or function names.
+  Do not emit tool calls to save them; retain their literal values for later commands.
 - `action=drain`: already drain-acked. Exit now.
 - Non-zero exit or malformed result: report failure. Do not search, hand-repair
   assignment, or retry forever. Do not drain or mutate claim state; the command

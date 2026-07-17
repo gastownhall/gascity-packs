@@ -69,7 +69,7 @@ max_attempts = 3
 
 [steps.check.check]
 mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
+path = "../assets/scripts/checks/gstack-build-state-valid.sh"
 timeout = "5m"
 
 [[steps]]
@@ -108,7 +108,7 @@ max_attempts = 3
 
 [steps.check.check]
 mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
+path = "../assets/scripts/checks/gstack-build-state-valid.sh"
 timeout = "5m"
 
 [[steps]]
@@ -142,6 +142,21 @@ member_access = "exclusive"
 single_lane = true
 
 [[steps]]
+id = "summarize-implementation"
+title = "Verify and summarize gstack implementation"
+needs = ["implement", "implement-same-session"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.build.implementation_summary_path" }
+description_file = "../assets/workflows/gstack-build/summarize-implementation.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/gstack-build-state-valid.sh"
+timeout = "5m"
+
+[[steps]]
 id = "review"
 title = "gstack review fanout"
 needs = ["summarize-implementation"]
@@ -162,7 +177,7 @@ max_attempts = 3
 
 [steps.check.check]
 mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
+path = "../assets/scripts/checks/gstack-build-state-valid.sh"
 timeout = "5m"
 
 [[steps]]
@@ -178,7 +193,7 @@ title = "gstack QA fanout"
 needs = ["review"]
 metadata = { "gc.run_target" = "gstack.qa-lead" }
 expand = "gstack-qa-review"
-expand_vars = { implementation_target = "{{implementation_target}}", interaction_mode = "{{interaction_mode}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", interaction_mode = "{{interaction_mode}}", review_mode = "{{review_mode}}" }
 description_file = "../assets/workflows/gstack-build/qa.md"
 
 [[steps]]

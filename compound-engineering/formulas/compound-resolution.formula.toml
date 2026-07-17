@@ -27,7 +27,7 @@ description_file = "../assets/workflows/compound-resolution/{target}.review-reso
 id = "{target}.synthesize-resolution"
 title = "Synthesize Compound Engineering resolution"
 needs = ["{target}.review-resolution"]
-metadata = { "gc.run_target" = "compound-engineering.ce-compound" }
+metadata = { "gc.run_target" = "compound-engineering.ce-compound", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
 description_file = "../assets/workflows/compound-resolution/{target}.synthesize-resolution.md"
 
 [[template]]

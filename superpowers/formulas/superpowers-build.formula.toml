@@ -66,7 +66,7 @@ description_file = "../assets/workflows/superpowers-build/requirements.md"
 id = "plan"
 title = "Superpowers write plan"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "superpowers.writing-plans", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+metadata = { "gc.run_target" = "superpowers.writing-plans", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path", "gc.build.expected_producer_formula" = "superpowers-build", "gc.build.expected_producer_stage" = "plan", "gc.build.require_current_producer_attempt" = "true" }
 description_file = "../assets/workflows/superpowers-build/plan.md"
 
 [steps.check]
@@ -89,7 +89,7 @@ description_file = "../assets/workflows/superpowers-build/plan-review.md"
 id = "decompose"
 title = "Create Superpowers implementation convoy"
 needs = ["plan-review"]
-metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path", "gc.build.expected_producer_formula" = "superpowers-build", "gc.build.expected_producer_stage" = "decompose", "gc.build.require_approved_status" = "true", "gc.build.require_current_producer_attempt" = "true" }
 description_file = "../assets/workflows/superpowers-build/decompose.md"
 
 [steps.check]

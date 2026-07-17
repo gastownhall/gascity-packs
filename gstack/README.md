@@ -102,8 +102,9 @@ These steps go from a fresh machine to a completed gstack sprint.
 
 6. Artifacts land under your `artifact_root` (here
    `plans/csv-export/build/` in the rig): requirements, plan, decomposition,
-   review report, QA summary, release-readiness summary, and the final sprint
-   report. Inspect the formula surface at any time with:
+   implementation summary, review report, QA summary, release-readiness
+   summary, and the final sprint report. Inspect the formula surface at any
+   time with:
 
    ```sh
    gc formula catalog --json
@@ -114,8 +115,9 @@ These steps go from a fresh machine to a completed gstack sprint.
 
 `gstack-build` extends `build-base` and keeps the inherited anchor order
 `prepare -> requirements -> plan -> plan-review -> decompose ->
-implement/implement-same-session -> review -> finalize -> publish`. No base
-anchor is renamed, skipped, or reordered; `prepare` stays inherited.
+implement/implement-same-session -> summarize-implementation -> review ->
+finalize -> publish`. No base anchor is renamed, skipped, or reordered;
+`prepare` stays inherited.
 
 | Stage | gstack behavior | Route |
 | --- | --- | --- |
@@ -124,6 +126,7 @@ anchor is renamed, skipped, or reordered; `prepare` stays inherited.
 | `plan-review` | `gstack-plan-review` fanout: founder scope, design, engineering, developer-experience lanes | `gstack.review-synthesizer` |
 | `decompose` | Implementation convoy creation | `gstack.decomposer` |
 | `implement` / `implement-same-session` | Drains `gstack-work` (separate) or `gstack-work-item` (same-session) | `{implementation_target}` |
+| `summarize-implementation` | Verifies exact convoy closure and worktree-bound commit evidence, then writes the canonical implementation summary | `gc.run-operator` |
 | `review` | `gstack-code-review` fanout: staff, QA-evidence, CSO-security, gap-analysis lanes | `gstack.review-synthesizer` |
 | `qa` (pack-added) | `gstack-qa-review` fanout: browser QA and regression-test evidence | `gstack.qa-lead` |
 | `release-readiness` (pack-added) | `gstack-release-readiness` fanout: documentation, ship readiness, deployment readiness | `gstack.release-engineer` |
@@ -135,20 +138,31 @@ anchor is renamed, skipped, or reordered; `prepare` stays inherited.
 `qa`, `finalize` is rewired to need `release-readiness`, and `publish` still
 needs `finalize`. Each expands a check-gated loop
 (`implementation-review-approved.sh`; QA allows 6 attempts, release-readiness
-4) whose final lane (`synthesize-qa`, `synthesize-release-readiness`) owns the
-`code_review.verdict=done|iterate` loop verdict. Their outputs are the
-approved QA summary recorded on the workflow root at
-`gc.build.qa_summary_path` before release readiness begins and the approved
-readiness summary at `gc.build.release_readiness_summary_path` before finalize
-begins.
+4). QA synthesis owns the semantic `approve|iterate` result, followed by one
+mode-selected terminal: agent/interactive mode may apply fixes and owns
+`done|iterate`, while report mode records findings without mutation and owns
+`reported`. Release-readiness synthesis owns `done|iterate` in
+agent/interactive mode and feeds a current-attempt `reported` terminal in
+report mode. Their outputs are the QA summary recorded on the workflow root at
+`gc.build.qa_summary_path` before release readiness begins and the readiness
+summary at `gc.build.release_readiness_summary_path` before finalize begins.
+Each summary preserves `approved`, `changes_required`, or `blocked`; the final
+gate requires a blocked final report whenever report-mode findings remain.
 
 The `review` anchor works the same way: `gstack-code-review` records the
 review context, fans out the staff, QA-evidence, CSO-security, and
 gap-analysis lanes, fans in at `synthesize-code-review`, and loops an
 `apply-review-findings` lane (routed to the caller-selected implementation
 target) through a bounded graph check until `code_review.verdict=done` lands
-on the workflow root. `gstack-fix-loop` carries the same review-fix contract
-for standalone adapter use.
+on the workflow root. In report mode a separate read-only terminal records
+`reported`, and the loop check requires that terminal from the current attempt
+instead of accepting a pre-existing root report path. `gstack-fix-loop`
+carries the same review-fix contract for standalone adapter use.
+
+The QA and release-readiness expansion finalizers run a second executable
+binding check after they update root metadata. It requires each selected root
+path to equal the one report terminal from the current loop epoch and rejects
+missing, duplicate, stale, non-canonical, or outside-artifact-root evidence.
 
 Supported modes and drain policies, as declared in
 `[metadata.gc.methodology]` of `gstack-build`:
@@ -162,7 +176,9 @@ Supported modes and drain policies, as declared in
 - `implementation_strategy`: `drain` with `allowed_drain_policies` of
   `separate` (drains `gstack-work` item formulas with exclusive member access)
   and `same-session` (drains `gstack-work-item` in one shared single-lane
-  session with `on_item_failure = "skip_remaining"`)
+  session with `on_item_failure = "skip_remaining"`; a machine-gated prepare
+  step creates or reuses a deterministic sibling worktree and records it on
+  every source member before implementation)
 
 The native stage formulas extend the matching base methodology contracts:
 `gstack-planning` (`planning-base`), `gstack-decomposition`

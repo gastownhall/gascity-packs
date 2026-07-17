@@ -12,6 +12,13 @@ Approval path:
   `gc.build.plan_review_report_path`.
 - Confirm the apply summary exists at workflow root metadata
   `gc.build.plan_review_apply_summary_path`.
+- Read the canonical plan at workflow root metadata `gc.build.plan_path`
+  (fallback `gc.var.plan_path`) and require its top-level front-matter value to
+  be `status: approved`. Plan-review approval metadata is not sufficient when
+  the artifact remains draft.
+- From the launcher rig root, run the terminal's canonical artifact check with
+  `GC_BEAD_ID="$CLAIMED_BEAD_ID" .gc/scripts/checks/build-artifact-valid.sh`.
+  Repair only the canonical plan and rerun until the check passes.
 - Update workflow root metadata:
   - `gc.build.plan_review_status=approved`
   - `gc.build.plan_status=approved`

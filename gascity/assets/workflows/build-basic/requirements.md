@@ -1,5 +1,23 @@
 Use the built-in Gas City guided starter factory requirements flow.
 
+Resolve the actual build request before drafting requirements. Read the
+workflow root bead's reserved `gc.var.convoy_id` as `<launch-convoy-id>`, then
+run `gc convoy status <launch-convoy-id> --json`. Treat every direct
+launch-convoy member as a source target. Run `gc bd show <source-target-id> --json`
+for each source target and use its title, description, acceptance
+criteria, and constraints as the authoritative requested outcome. The workflow
+root and formula descriptions define process, not product scope. A supplied
+`gc.var.context_path` may supplement the source targets, but it never replaces
+them. If the launch convoy is missing, empty, ambiguous, or unreadable, fail closed
+instead of inventing requirements.
+
+Trace every direct launch-convoy member exactly once in `trace.upstream` using
+`path: beads/<source-target-id>` and `hash: bead:<source-target-id>`. Do not
+trace only the workflow root, prepare step, launch convoy, or an empty context
+file. Preserve requirement IDs declared by a source target verbatim. Do not
+invent source IDs or attribute generated IDs to a source that did not declare
+them.
+
 Create the requirements artifact at the path recorded on the workflow root bead
 as `gc.build.requirements_path` (fallback `gc.var.requirements_path`). The
 artifact must be Markdown with YAML front matter, not JSON. Its front matter
@@ -21,7 +39,9 @@ Use mapping objects for front matter; do not use scalar shortcuts such as
 - `workflow: {id: <workflow-root-id>, formula: build-basic}`
 - `methodology: {pack: gascity, name: build-basic}`
 - `producer: {formula: build-basic, stage: requirements, attempt: <positive integer>}`
-- `status: approved` or another schema-allowed status
+- Set `producer.attempt` to the current `gc.attempt` on every write or repair.
+- Use `status: approved` before closing; unresolved questions must keep the
+  producer stage open or fail its bounded validation loop.
 - `trace: {upstream: [...], coverage: [...]}`
 
 Trace front matter must use the validator shape exactly:
@@ -71,4 +91,4 @@ Before closing this step, set the claimed step outcome with
 with `gc bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
 `--metadata` or `--set-metadata` to `gc bd close`.
 
-Artifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.requirements_path` (fallback `gc.var.requirements_path`) against schema `gc.build.requirements.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.
+Artifact validation: this stage is gated by `.gc/scripts/checks/build-requirements-source-valid.sh`, which validates the artifact recorded at `gc.build.requirements_path` (fallback `gc.var.requirements_path`) against schema `gc.build.requirements.v1` and requires an exact trace for every direct launch-convoy source. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.

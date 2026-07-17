@@ -62,7 +62,7 @@ max_attempts = 3
 
 [steps.check.check]
 mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
+path = ".gc/scripts/checks/build-requirements-source-valid.sh"
 timeout = "5m"
 
 [[steps]]
@@ -147,3 +147,18 @@ metadata = { "gc.run_target" = "bmad.bmad-review-synthesizer", "gc.build.artifac
 expand = "bmad-code-review-flow"
 expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
 description_file = "../assets/workflows/bmad-build/review.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize BMAD build"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/bmad-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

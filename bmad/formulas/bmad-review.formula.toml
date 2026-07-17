@@ -18,7 +18,7 @@ default = "bmad.story-implementer"
 id = "write-report"
 title = "Run BMAD review"
 needs = ["validate-context"]
-metadata = { "gc.run_target" = "bmad.bmad-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path,gc.var.report_path" }
+metadata = { "gc.run_target" = "bmad.bmad-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.var.report_path" }
 expand = "bmad-code-review-flow"
-expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.var.report_path" }
 description_file = "../assets/workflows/bmad-review/write-report.md"

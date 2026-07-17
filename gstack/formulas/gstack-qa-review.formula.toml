@@ -18,6 +18,10 @@ default = "gstack.implementer"
 description = "Workflow interaction posture: interactive, autonomous, or headless."
 default = "interactive"
 
+[vars.review_mode]
+description = "Review authority: report, agent, or interactive."
+default = "interactive"
+
 [[template]]
 id = "{target}.setup-gstack-qa"
 title = "Prepare gstack QA"
@@ -28,7 +32,7 @@ description_file = "../assets/workflows/gstack-qa-review/{target}.setup-gstack-q
 id = "{target}.gstack-qa-loop"
 title = "Run gstack QA until approved"
 needs = ["{target}.setup-gstack-qa"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.review.require_current_report_terminal" = "true" }
 description_file = "../assets/workflows/gstack-qa-review/{target}.gstack-qa-loop.md"
 
 [template.check]
@@ -52,22 +56,39 @@ metadata = { "gc.run_target" = "gstack.staff-reviewer" }
 description_file = "../assets/workflows/gstack-qa-review/{target}.regression-test-review.md"
 
 [[template.children]]
+id = "{target}.synthesize-qa"
+title = "Synthesize gstack QA"
+needs = ["{target}.browser-qa", "{target}.regression-test-review"]
+metadata = { "gc.run_target" = "gstack.review-synthesizer" }
+description_file = "../assets/workflows/gstack-qa-review/{target}.synthesize-qa.md"
+
+[[template.children]]
 id = "{target}.qa-fix-findings"
 title = "Apply gstack QA findings"
-needs = ["{target}.browser-qa", "{target}.regression-test-review"]
+needs = ["{target}.synthesize-qa"]
+condition = "{{review_mode}} != report"
 metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group" = "gstack-qa-fixes" }
 description_file = "../assets/workflows/gstack-qa-review/{target}.qa-fix-findings.md"
 
 [[template.children]]
-id = "{target}.synthesize-qa"
-title = "Synthesize gstack QA"
-needs = ["{target}.qa-fix-findings"]
-metadata = { "gc.run_target" = "gstack.review-synthesizer" }
-description_file = "../assets/workflows/gstack-qa-review/{target}.synthesize-qa.md"
+id = "{target}.qa-report-findings"
+title = "Record gstack QA findings"
+needs = ["{target}.synthesize-qa"]
+condition = "{{review_mode}} == report"
+metadata = { "gc.run_target" = "gstack.review-synthesizer", "gc.review.report_terminal" = "true" }
+description_file = "../assets/workflows/gstack-qa-review/{target}.qa-report-findings.md"
 
 [[template]]
 id = "{target}"
 title = "Finalize gstack QA"
 needs = ["{target}.gstack-qa-loop"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.gstack.report_loop_step" = "{target}.gstack-qa-loop", "gc.gstack.report_path_key" = "gc.build.qa_summary_path", "gc.gstack.synthesis_step" = "{target}.synthesize-qa", "gc.gstack.synthesis_path_key" = "gstack.qa.summary_path", "gc.gstack.synthesis_verdict_key" = "code_review.review_verdict", "gc.gstack.synthesis_approved_verdict" = "approve", "gc.gstack.synthesis_schema" = "gc.gstack.qa-summary.v1", "gc.gstack.synthesis_stage" = "synthesize-qa", "gc.gstack.terminal_path_key" = "gstack.qa.report_path", "gc.gstack.report_schema" = "gc.gstack.qa-report.v1", "gc.gstack.report_stage" = "qa-report-findings" }
 description_file = "../assets/workflows/gstack-qa-review/{target}.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/gstack-report-stage-valid.sh"
+timeout = "5m"

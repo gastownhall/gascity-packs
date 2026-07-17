@@ -11,24 +11,14 @@ that another pass is needed until `design_review.verdict` is present. Do not use
 `gc bd update --metadata` for this lane. Use `--set-metadata` exactly as shown
 below so the workflow step outcome and approval metadata are all present.
 
-If autonomous approval conditions are satisfied, the final action must be this
-shape. Replace only `<approval-summary path>` after writing the summary:
-
-```bash
-gc bd update "$CLAIMED_BEAD_ID" \
-  --set-metadata 'gc.outcome=pass' \
-  --set-metadata 'design_review.verdict=done' \
-  --set-metadata 'design_review.output_path=<approval-summary path>' \
-  --set-metadata 'design_review.approval_mode=autonomous' \
-  --set-metadata 'gc.continuation_group=superpowers-spec-fixes'
-gc bd show "$CLAIMED_BEAD_ID" --json | jq -e '
-  (if type == "array" then .[0] else . end) as $bead |
-  $bead.metadata["gc.outcome"] == "pass" and
-  $bead.metadata["design_review.verdict"] == "done" and
-  ($bead.metadata["design_review.output_path"] | type == "string" and length > 0)
-'
-gc bd close "$CLAIMED_BEAD_ID" --reason 'Superpowers spec approved.'
-```
+If autonomous approval conditions are satisfied, complete the approval
+transaction in this order: write the approval summary; resolve the exact
+canonical requirements path from the workflow root; edit the canonical
+requirements artifact's top-level `status` to `approved`; verify the artifact
+now reports `status: approved` before writing approval metadata; update the
+workflow root approval metadata; and only then write and verify this bead's
+terminal metadata and close it. Never close based on the approval summary or
+metadata alone.
 
 This lane represents the stock `User reviews spec?` approval gate after the
 spec review and feedback pass, corresponding to stock checklist item 8. A
@@ -106,9 +96,10 @@ When iterating, write a concise spec revision summary that the next
 specific requirements sections, ambiguity, contradiction, or scope issue that
 caused the loopback.
 
-On approval, write an approval summary, mark the requirements artifact approved,
-and update workflow root
-metadata with `gc.build.requirements_status=approved`,
+On approval, write an approval summary and edit the canonical requirements
+artifact's top-level `status` to `approved`. Read the file back and verify the
+artifact now reports `status: approved` before writing approval metadata. Then
+update workflow root metadata with `gc.build.requirements_status=approved`,
 `gc.build.requirements_path=<absolute path>`,
 `gc.build.spec_gate_status=approved`, and a short requirements summary. For a
 human-requested iteration, update `gc.build.spec_gate_status=revision_requested`.
@@ -119,6 +110,11 @@ metadata is `design_review.verdict=done|iterate`; for approval, verify
 `design_review.verdict == "done"`:
 
 ```bash
+gc bd update "$CLAIMED_ROOT_BEAD_ID" \
+  --set-metadata 'gc.build.requirements_status=approved' \
+  --set-metadata 'gc.build.requirements_path=<absolute requirements path>' \
+  --set-metadata 'gc.build.spec_gate_status=approved' \
+  --set-metadata 'gc.build.spec_gate_summary=<short requirements summary>'
 gc bd update "$CLAIMED_BEAD_ID" \
   --set-metadata 'gc.outcome=pass' \
   --set-metadata 'design_review.verdict=done' \

@@ -1,9 +1,13 @@
 
-Resolve `<source-anchor-id>` using the same rules as `prepare-worktree`. Read `work_dir` from the source anchor and verify the implementation commit and
-summary evidence are present in that worktree. Write per-item summary to
-{{summary_path}} when set. If `summary_path` is not set, first use
-`gc.implementation.summary_path` from the preceding implementation step when it
-is present; otherwise use `{{artifact_root}}/task-<source-anchor-id>-summary.md`.
+Resolve `<source-anchor-id>` using the same rules as `prepare-worktree`.
+Read `work_dir` from the source anchor. Read the source anchor bead back and
+require its absolute `work_dir`,
+`gc.implementation.worktree_path`, `gc.implementation.commit`, and
+`gc.implementation.summary_path`. Require both worktree paths to name the same
+worktree, the recorded commit to equal that worktree's `HEAD`, and the summary
+to exist inside that worktree. Never choose a commit with `git log --all`, from
+a sibling worktree, or from repository-wide history. If any proof is missing
+or mismatched, leave the source anchor open and fail this step.
 
 On success, close only `<source-anchor-id>` with `gc.outcome=pass`. Include the
 verified commit and summary path in the source-anchor close reason. Read the

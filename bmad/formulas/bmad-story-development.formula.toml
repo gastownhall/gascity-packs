@@ -14,7 +14,7 @@ target_required = true
 id = "implement"
 title = "Run BMAD story development until clean"
 needs = ["prepare-worktree"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path" }
 description_file = "../assets/workflows/bmad-story-development/implement.md"
 
 [steps.check]
@@ -35,7 +35,7 @@ description_file = "../assets/workflows/bmad-story-development/setup-bmad-story-
 id = "implement-story"
 title = "BMAD implement story"
 needs = ["setup-bmad-story-development"]
-metadata = { "gc.run_target" = "bmad.story-implementer" }
+metadata = { "gc.run_target" = "bmad.story-implementer", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path" }
 description_file = "../assets/workflows/bmad-story-development/implement-story.md"
 
 [[steps.children]]
@@ -56,5 +56,5 @@ description_file = "../assets/workflows/bmad-story-development/acceptance-audit.
 id = "apply-story-findings"
 title = "Apply BMAD story findings"
 needs = ["acceptance-audit"]
-metadata = { "gc.run_target" = "bmad.story-implementer", "gc.continuation_group" = "bmad-story-fixes" }
+metadata = { "gc.run_target" = "bmad.story-implementer", "gc.continuation_group" = "bmad-story-fixes", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path" }
 description_file = "../assets/workflows/bmad-story-development/apply-story-findings.md"

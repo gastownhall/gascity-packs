@@ -4,6 +4,36 @@ Summarize requirements, implementation-plan, design-review, create-beads,
 implementation, and review artifacts. Record the final outcome, artifact paths,
 and remaining follow-up beads on the workflow root bead.
 
+Before reading or writing build artifacts, inspect every direct dependency
+control. Require each dependency control to be closed with `gc.outcome=pass`.
+If any dependency failed or lacks that exact outcome, do not write a final
+report or attempt infrastructure repair. Record `gc.build.status=failed`,
+`gc.failure_class=upstream_validation`, and a concise `gc.blocked_reason` on the
+workflow root; set the claimed step to `gc.outcome=fail`, close it, and stop.
+
+Read the validated review artifact before finalizing. In report mode,
+`status: changes_required` is successful review delivery but not implementation
+approval. Write the configured final artifact using the schema and trace shape
+below with `status: blocked`, record both final-report paths, and run the
+installed artifact check. After it passes, atomically record these failure-only
+values on the workflow root: `gc.outcome=fail`, `gc.build.status=blocked`,
+`gc.build.finalize_status=failed`, `gc.build.finalize_outcome=failure`,
+`gc.build.repair_status=repairable`,
+`gc.restart.entrypoint=build-from-review`,
+`gc.restart.reason=review_changes_required`,
+`gc.restart.review_report_path=<canonical review report path>`,
+`gc.blocked_reason=code_review_changes_required`, and
+`gc.failure_class=review_iteration_needed`. Set the claimed finalize step to
+`gc.outcome=fail`, close it, and stop without running the success update below.
+Any other non-approved review status is invalid for this expansion; fail with a
+precise blocked reason and never invent approval. A validated review with
+remaining findings must never become a completed build.
+
+Treat installed validation code as immutable infrastructure. Never create,
+reconstruct, or modify `.gc/scripts`. If an installed validator or helper is
+missing, record `gc.failure_class=validation_infrastructure`, close with
+`gc.outcome=fail`, and stop; never author a substitute validator.
+
 The build-basic implementation result may live in a source anchor/worktree. A
 launcher rig root that still contains the original fixture is not a partial build
 when the canonical implementation summary and review artifact show the source
@@ -27,25 +57,19 @@ The validator only recognizes a Markdown table with an `ID` column and a
 Before writing `factory-run.md`, ensure the canonical implementation summary
 exists at the path recorded on the workflow root bead as
 `gc.build.implementation_summary_path`, normally `implementation-summary.md`.
-If that path is missing, absent on disk, or not a valid
-`gc.build.implementation-summary.v1` artifact, synthesize the canonical
-`implementation-summary.md` from closed implementation source anchors and their
-recorded per-item `gc.implementation.summary_path` values. The synthesized
-artifact must be Markdown with YAML front matter, schema
-`gc.build.implementation-summary.v1`, the same trace shape and `ID`/`Status`
-coverage matrix described here, and these sections:
+It must already be an approved `gc.build.implementation-summary.v1` artifact
+whose current bytes match the selected review trace. Treat the canonical summary
+and validated review as immutable inputs. If either is missing, invalid, or
+mismatched, fail this stage and record a healable restart at review. Never
+synthesize, mutate, replace, or repoint either artifact during finalization.
+
+The existing canonical summary has these sections:
 
 - Summary
 - Intended Behavior
 - Changed Files
 - Verification
 - Remaining Risks
-
-Record the canonical path on the workflow root bead before validating or
-writing the final report. Use
-`gc bd update "<workflow-root-id>" --set-metadata "gc.build.implementation_summary_path=<absolute path>"`.
-Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
-object.
 
 Use mapping objects for front matter; do not use scalar shortcuts such as
 `workflow: build-basic`. The top-level YAML shape must be:
@@ -54,8 +78,24 @@ Use mapping objects for front matter; do not use scalar shortcuts such as
 - `workflow: {id: <workflow-root-id>, formula: build-basic}`
 - `methodology: {pack: gascity, name: build-basic}`
 - `producer: {formula: build-basic, stage: finalize, attempt: <positive integer>}`
-- `status: approved` or another schema-allowed status
+- Set `producer.attempt` to the current `gc.attempt` on every write or repair.
+- `status: approved` for successful finalization; use `status: blocked` only for
+  the failure branch above
+- `implementation_snapshot: <exact review snapshot>`
+- `review_input_snapshot: <exact review-input snapshot>`
+- `reviewed_attempt: <exact positive reviewed attempt>`
 - `trace: {upstream: [...], coverage: [...]}`
+
+Trace the exact canonical implementation summary once at its absolute path with
+a freshly computed `sha256:<digest>`. Trace the validated review artifact once
+at its absolute path with its own freshly computed digest. The extra
+`implementation_snapshot: <exact review snapshot>` must equal the root and
+review artifact snapshots; repeat it in Artifacts.
+The review-input snapshot and reviewed attempt must exactly equal the validated
+review artifact and the still-closed lane/synthesis/selected-terminal group.
+Recompute the live combined value from the immutable summary and review context
+before writing the final report. The review must still trace that context
+exactly once; finalization verifies it transitively and never repoints it.
 
 Trace front matter must use the validator shape exactly:
 
@@ -98,10 +138,43 @@ Record the final report path on the workflow root bead as both
 Use `gc bd update "<workflow-root-id>" --set-metadata "gc.build.final_report_path=<absolute path>" --set-metadata "gc.build.factory_run_path=<absolute path>"`.
 Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
 object.
-Before closing this step, set the claimed step outcome with
-`gc bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close
+
+Before recording lifecycle success, resolve the launcher rig root from workflow
+root metadata `gc.work_dir`. If it names an attempt worktree without the check,
+walk to the nearest ancestor containing
+`.gc/scripts/checks/build-artifact-valid.sh`. Read the exact claimed step ID
+from the startup claim output and substitute it literally in the same shell
+call; shell variables from earlier tool calls do not persist. Run:
+
+```bash
+CLAIMED_BEAD_ID=<exact-claimed-bead-id>; GC_BEAD_ID="$CLAIMED_BEAD_ID" <launcher-rig>/.gc/scripts/checks/build-artifact-valid.sh
+```
+
+Repair the canonical final report until this check passes. Only after it passes
+and the implementation and review evidence are approved, reconcile the
+workflow root's successful lifecycle state in one update:
+
+```bash
+gc bd update <workflow-root-id> \
+  --set-metadata 'gc.build.status=completed' \
+  --set-metadata 'gc.build.finalize_status=completed' \
+  --set-metadata 'gc.build.finalize_outcome=success' \
+  --unset-metadata gc.blocked_reason \
+  --unset-metadata gc.failure_class \
+  --unset-metadata gc.build.repair_status \
+  --unset-metadata gc.restart.entrypoint \
+  --unset-metadata gc.restart.reason \
+  --unset-metadata gc.restart.review_report_path \
+  --unset-metadata gc.restart.review_fix_formula \
+  --unset-metadata gc.restart.implementation_target
+```
+
+Then set the claimed step outcome with
+`gc bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"` and close
 with `gc bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
-`--metadata` or `--set-metadata` to `gc bd close`.
+`--metadata` or `--set-metadata` to `gc bd close`. If validation or required
+evidence fails, do not emit completed/success lifecycle metadata; close with
+`gc.outcome=fail` and machine-readable failure state.
 
 Do not publish from this step.
 

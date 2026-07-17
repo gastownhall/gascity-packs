@@ -24,7 +24,7 @@ description_file = "../assets/workflows/gstack-release-readiness/{target}.setup-
 id = "{target}.gstack-release-readiness-loop"
 title = "Run gstack release readiness"
 needs = ["{target}.setup-gstack-release"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.review.require_current_report_terminal" = "true" }
 description_file = "../assets/workflows/gstack-release-readiness/{target}.gstack-release-readiness-loop.md"
 
 [template.check]
@@ -64,9 +64,25 @@ needs = [
 metadata = { "gc.run_target" = "gstack.review-synthesizer" }
 description_file = "../assets/workflows/gstack-release-readiness/{target}.synthesize-release-readiness.md"
 
+[[template.children]]
+id = "{target}.report-release-findings"
+title = "Record gstack release-readiness findings"
+needs = ["{target}.synthesize-release-readiness"]
+condition = "{{review_mode}} == report"
+metadata = { "gc.run_target" = "gstack.review-synthesizer", "gc.review.report_terminal" = "true" }
+description_file = "../assets/workflows/gstack-release-readiness/{target}.report-release-findings.md"
+
 [[template]]
 id = "{target}"
 title = "Finalize gstack release readiness"
 needs = ["{target}.gstack-release-readiness-loop"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.gstack.report_loop_step" = "{target}.gstack-release-readiness-loop", "gc.gstack.report_path_key" = "gc.build.release_readiness_summary_path", "gc.gstack.synthesis_step" = "{target}.synthesize-release-readiness", "gc.gstack.synthesis_path_key" = "gstack.release.summary_path", "gc.gstack.synthesis_verdict_key" = "code_review.verdict", "gc.gstack.synthesis_approved_verdict" = "done", "gc.gstack.synthesis_schema" = "gc.gstack.release-readiness-summary.v1", "gc.gstack.synthesis_stage" = "synthesize-release-readiness", "gc.gstack.terminal_path_key" = "gstack.release.report_path", "gc.gstack.report_schema" = "gc.gstack.release-readiness-report.v1", "gc.gstack.report_stage" = "report-release-findings" }
 description_file = "../assets/workflows/gstack-release-readiness/{target}.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/gstack-report-stage-valid.sh"
+timeout = "5m"

@@ -51,21 +51,245 @@ permissions:
   contents: read
 
 env:
-  DOLT_VERSION: "2.1.0"
-  BD_VERSION: "v1.0.4"
+  DOLT_VERSION: "2.1.7"
+  BD_VERSION: "v1.1.0"
   CLAUDE_VERSION: "2.1.123"
+  SUPPORTED_PACK_GATES: >-
+    gascity:review gascity:build-basic
+    superpowers:review superpowers:build
+    compound-engineering:review compound-engineering:build
+    gstack:review gstack:build
+    bmad:review bmad:build
+    gastown:gastown-orchestration
 
 jobs:
+  resolve-nightly-inputs:
+    name: resolve nightly inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      selected_gates: ${{ steps.inputs.outputs.selected_gates }}
+      gate_timeout: ${{ steps.inputs.outputs.gate_timeout }}
+      job_timeout_minutes: ${{ steps.inputs.outputs.job_timeout_minutes }}
+      runtime_ref: ${{ steps.refs.outputs.runtime_ref }}
+      setup_ref: ${{ steps.refs.outputs.setup_ref }}
+      pack_ref: ${{ steps.refs.outputs.pack_ref }}
+    steps:
+      - name: Select gates and validate timeout
+        id: inputs
+        env:
+          INPUT_PACK: ${{ github.event.inputs.pack }}
+          INPUT_GATE: ${{ github.event.inputs.gate }}
+          INPUT_TIMEOUT: ${{ github.event.inputs.timeout }}
+        run: |
+          selected_pack="${INPUT_PACK:-all-supported}"
+          selected_gate="${INPUT_GATE:-all}"
+
+          pack_matches() {
+            candidate_pack="$1"
+            case "$selected_pack" in
+              all-supported)
+                return 0
+                ;;
+              methodology)
+                case "$candidate_pack" in
+                  superpowers|compound-engineering|gstack|bmad) return 0 ;;
+                  *) return 1 ;;
+                esac
+                ;;
+              "$candidate_pack")
+                return 0
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          gate_matches() {
+            candidate_pack="$1"
+            candidate_gate="$2"
+            case "$selected_gate" in
+              all)
+                return 0
+                ;;
+              build)
+                if [ "$candidate_gate" = "build" ] || {
+                  [ "$candidate_pack" = "gascity" ] && [ "$candidate_gate" = "build-basic" ];
+                }; then
+                  return 0
+                fi
+                return 1
+                ;;
+              "$candidate_gate")
+                return 0
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          selected=()
+          for entry in $SUPPORTED_PACK_GATES; do
+            candidate_pack="${entry%%:*}"
+            candidate_gate="${entry#*:}"
+            if pack_matches "$candidate_pack" && gate_matches "$candidate_pack" "$candidate_gate"; then
+              selected+=("$entry")
+            fi
+          done
+          if [ "${#selected[@]}" -eq 0 ]; then
+            echo "Manual selection pack=$selected_pack gate=$selected_gate selects no supported pack gates" >&2
+            exit 1
+          fi
+
+          gate_timeout=""
+          job_timeout_minutes=""
+          if [ -n "$INPUT_TIMEOUT" ]; then
+            if [[ ! "$INPUT_TIMEOUT" =~ ^([0-9]+([.][0-9]+)?)([smh]?)$ ]]; then
+              echo "Invalid timeout override '$INPUT_TIMEOUT'; use seconds, 30s, 5m, or 1h up to 330m" >&2
+              exit 1
+            fi
+            amount="${BASH_REMATCH[1]}"
+            unit="${BASH_REMATCH[3]:-s}"
+            if ! job_timeout_minutes="$(
+              awk -v amount="$amount" -v unit="$unit" 'BEGIN {
+                multiplier = unit == "h" ? 3600 : (unit == "m" ? 60 : 1)
+                seconds = amount * multiplier
+                if (seconds <= 0 || seconds > 19800) exit 1
+                minutes = int(seconds / 60)
+                if (seconds > minutes * 60) minutes++
+                print minutes + 30
+              }'
+            )"; then
+              echo "Invalid timeout override '$INPUT_TIMEOUT'; use seconds, 30s, 5m, or 1h up to 330m" >&2
+              exit 1
+            fi
+            gate_timeout="$INPUT_TIMEOUT"
+          fi
+
+          selected_csv="$(IFS=,; echo "${selected[*]}")"
+          {
+            echo "selected_gates=$selected_csv"
+            echo "gate_timeout=$gate_timeout"
+            echo "job_timeout_minutes=$job_timeout_minutes"
+          } >> "$GITHUB_OUTPUT"
+          echo "Selected nightly gates: $selected_csv"
+
+      - name: Resolve immutable refs
+        id: refs
+        env:
+          GASCITY_REMOTE: https://github.com/gastownhall/gascity.git
+          PACK_REMOTE: https://github.com/${{ github.repository }}.git
+          REQUESTED_RUNTIME_REF: ${{ github.event.inputs.gascity_ref || 'main' }}
+          REQUESTED_SETUP_REF: ${{ github.event.inputs.gascity_setup_ref || 'main' }}
+          REQUESTED_PACK_REF: ${{ github.event.inputs.pack_ref }}
+          DEFAULT_PACK_SHA: ${{ github.sha }}
+        run: |
+          resolve_branch() {
+            remote="$1"
+            requested="$2"
+            resolved="$(git ls-remote --heads "$remote" "refs/heads/$requested" | awk 'NR == 1 { print $1 }')"
+            [ -n "$resolved" ] || return 1
+            printf '%s\n' "$resolved"
+          }
+
+          resolve_tag() {
+            remote="$1"
+            requested="$2"
+            tag_lines="$(git ls-remote --tags "$remote" "refs/tags/$requested" "refs/tags/$requested^{}")"
+            [ -n "$tag_lines" ] || return 1
+            resolved="$(printf '%s\n' "$tag_lines" | awk '$2 ~ /\^\{\}$/ { print $1; exit }')"
+            if [ -z "$resolved" ]; then
+              resolved="$(printf '%s\n' "$tag_lines" | awk '$2 !~ /\^\{\}$/ { print $1; exit }')"
+            fi
+            [ -n "$resolved" ] || return 1
+            printf '%s\n' "$resolved"
+          }
+
+          resolve_sha() {
+            remote="$1"
+            requested="$2"
+            scratch="$(mktemp -d)"
+            git -C "$scratch" init -q
+            if ! git -C "$scratch" fetch --quiet --depth=1 "$remote" "$requested"; then
+              rm -rf -- "$scratch"
+              return 1
+            fi
+            resolved="$(git -C "$scratch" rev-parse --verify 'FETCH_HEAD^{commit}')"
+            rm -rf -- "$scratch"
+            [ "$resolved" = "$requested" ] || return 1
+            printf '%s\n' "$resolved"
+          }
+
+          resolve_remote_ref() {
+            remote="$1"
+            requested="$2"
+            allow_latest="$3"
+            if [ "$requested" = "latest" ]; then
+              [ "$allow_latest" = true ] || return 1
+              requested="$(
+                git ls-remote --tags "$remote" |
+                  awk '{
+                    ref = $2
+                    sub(/^refs\/tags\//, "", ref)
+                    sub(/\^\{\}$/, "", ref)
+                    if (ref ~ /^v?[0-9]+\.[0-9]+\.[0-9]+$/) {
+                      version = ref
+                      sub(/^v/, "", version)
+                      print version, ref
+                    }
+                  }' |
+                  LC_ALL=C sort -k1,1V -k2,2 -u |
+                  tail -n 1 |
+                  awk '{ print $2 }'
+              )"
+              [ -n "$requested" ] || return 1
+            fi
+
+            if [[ "$requested" =~ ^[0-9a-f]{40}$ ]]; then
+              resolve_sha "$remote" "$requested"
+            elif [[ "$requested" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              resolve_tag "$remote" "$requested"
+            elif git check-ref-format --branch "$requested" >/dev/null 2>&1; then
+              resolve_branch "$remote" "$requested"
+            else
+              return 1
+            fi
+          }
+
+          if ! runtime_ref="$(resolve_remote_ref "$GASCITY_REMOTE" "$REQUESTED_RUNTIME_REF" true)"; then
+            echo "Could not resolve Gas City runtime ref: $REQUESTED_RUNTIME_REF" >&2
+            exit 1
+          fi
+          if ! setup_ref="$(resolve_remote_ref "$GASCITY_REMOTE" "$REQUESTED_SETUP_REF" false)"; then
+            echo "Could not resolve Gas City setup ref: $REQUESTED_SETUP_REF" >&2
+            exit 1
+          fi
+          requested_pack_ref="${REQUESTED_PACK_REF:-$DEFAULT_PACK_SHA}"
+          if ! pack_ref="$(resolve_remote_ref "$PACK_REMOTE" "$requested_pack_ref" false)"; then
+            echo "Could not resolve gascity-packs ref: $requested_pack_ref" >&2
+            exit 1
+          fi
+
+          {
+            echo "runtime_ref=$runtime_ref"
+            echo "setup_ref=$setup_ref"
+            echo "pack_ref=$pack_ref"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved immutable refs: runtime=$runtime_ref setup=$setup_ref pack=$pack_ref"
+
   static-contracts:
     name: static pack flow contracts
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    needs: resolve-nightly-inputs
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out gascity-packs
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.pack_ref || github.ref }}
+          ref: ${{ needs.resolve-nightly-inputs.outputs.pack_ref }}
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -76,13 +300,19 @@ jobs:
         run: python3 -m pip install PyYAML pytest
 
       - name: Run supported-pack contract tests
-        run: python3 -m pytest tests/test_gascity_pack_inference_gate.py gascity/tests/test_formula_assets.py -q
+        run: >-
+          python3 -m pytest
+          tests/test_gascity_pack_inference_gate.py
+          gascity/tests/test_formula_assets.py
+          gascity/tests/test_derived_pack_compatibility.py
+          gascity/tests/test_validators.py
+          -q
 
   inference:
     name: ${{ matrix.pack }} / ${{ matrix.gate }}
-    needs: static-contracts
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    timeout-minutes: ${{ matrix.timeout_minutes }}
+    needs: [resolve-nightly-inputs, static-contracts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(needs.resolve-nightly-inputs.outputs.job_timeout_minutes || '0') || matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -148,61 +378,45 @@ jobs:
       - name: Decide manual subset
         id: subset
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_PACK: ${{ github.event.inputs.pack }}
-          INPUT_GATE: ${{ github.event.inputs.gate }}
+          SELECTED_GATES: ${{ needs.resolve-nightly-inputs.outputs.selected_gates }}
           MATRIX_PACK: ${{ matrix.pack }}
           MATRIX_GATE: ${{ matrix.gate }}
         run: |
           run_gate=false
-          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-            run_gate=true
-          else
-            case "${INPUT_PACK:-all-supported}" in
-              ""|all-supported)
-                pack_match=true
-                ;;
-              methodology)
-                if [ "$MATRIX_PACK" != "gastown" ]; then
-                  pack_match=true
-                else
-                  pack_match=false
-                fi
-                ;;
-              "$MATRIX_PACK")
-                pack_match=true
-                ;;
-              *)
-                pack_match=false
-                ;;
-            esac
-
-            case "${INPUT_GATE:-all}" in
-              ""|all)
-                gate_match=true
-                ;;
-              "$MATRIX_GATE")
-                gate_match=true
-                ;;
-              *)
-                gate_match=false
-                ;;
-            esac
-
-            if [ "$pack_match" = true ] && [ "$gate_match" = true ]; then
-              run_gate=true
-            fi
-          fi
+          case ",$SELECTED_GATES," in
+            *",$MATRIX_PACK:$MATRIX_GATE,"*) run_gate=true ;;
+          esac
 
           echo "run_gate=$run_gate" >> "$GITHUB_OUTPUT"
-          echo "manual subset decision: pack=$MATRIX_PACK gate=$MATRIX_GATE run_gate=$run_gate"
+          echo "nightly subset decision: pack=$MATRIX_PACK gate=$MATRIX_GATE run_gate=$run_gate"
+
+      - name: Initialize inference diagnostics
+        if: steps.subset.outputs.run_gate == 'true'
+        env:
+          MATRIX_PACK: ${{ matrix.pack }}
+          MATRIX_GATE: ${{ matrix.gate }}
+          RUNTIME_REF: ${{ needs.resolve-nightly-inputs.outputs.runtime_ref }}
+          SETUP_REF: ${{ needs.resolve-nightly-inputs.outputs.setup_ref }}
+          PACK_REF: ${{ needs.resolve-nightly-inputs.outputs.pack_ref }}
+        run: |
+          diagnostics_dir="$RUNNER_TEMP/supported-pack-nightly/$MATRIX_PACK"
+          mkdir -p "$diagnostics_dir"
+          {
+            printf 'run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+            printf 'pack=%s\n' "$MATRIX_PACK"
+            printf 'gate=%s\n' "$MATRIX_GATE"
+            printf 'runtime_ref=%s\n' "$RUNTIME_REF"
+            printf 'setup_ref=%s\n' "$SETUP_REF"
+            printf 'pack_ref=%s\n' "$PACK_REF"
+          } > "$diagnostics_dir/run-context.txt"
 
       - name: Check out gascity-packs
         if: steps.subset.outputs.run_gate == 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.pack_ref || github.ref }}
+          ref: ${{ needs.resolve-nightly-inputs.outputs.pack_ref }}
 
       - name: Check out Gas City CI scripts
         if: steps.subset.outputs.run_gate == 'true'
@@ -210,7 +424,7 @@ jobs:
         with:
           repository: gastownhall/gascity
           path: .gascity-ci
-          ref: ${{ github.event.inputs.gascity_setup_ref || 'main' }}
+          ref: ${{ needs.resolve-nightly-inputs.outputs.setup_ref }}
 
       - name: Set up Python
         if: steps.subset.outputs.run_gate == 'true'
@@ -222,7 +436,7 @@ jobs:
         if: steps.subset.outputs.run_gate == 'true'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
-          go-version: "1.25.10"
+          go-version: "1.26.5"
 
       - name: Set up Node
         if: steps.subset.outputs.run_gate == 'true'
@@ -248,11 +462,24 @@ jobs:
       - name: Install Gas City
         if: steps.subset.outputs.run_gate == 'true'
         env:
-          GASCITY_REF: ${{ github.event.inputs.gascity_ref || 'main' }}
+          GASCITY_REF: ${{ needs.resolve-nightly-inputs.outputs.runtime_ref }}
         run: |
           go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_REF}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           "$(go env GOPATH)/bin/gc" version
+
+      - name: Verify Beads compatibility
+        if: steps.subset.outputs.run_gate == 'true'
+        run: |
+          gc_beads_version="$(go version -m "$(go env GOPATH)/bin/gc" | awk '$1 == "dep" && $2 == "github.com/steveyegge/beads" { print $3 }')"
+          bd_cli_version="$(bd version | awk '{ print $3 }')" # standalone-bd-version-preflight
+          test -n "$gc_beads_version" || { echo "Gas City binary does not report its Beads dependency" >&2; exit 1; }
+          test -n "$bd_cli_version" || { echo "Could not determine the bd CLI version" >&2; exit 1; }
+          if [ "v${bd_cli_version#v}" != "$gc_beads_version" ]; then
+            echo "bd CLI v${bd_cli_version#v} does not match Gas City Beads dependency $gc_beads_version" >&2
+            exit 1
+          fi
+          echo "Verified Beads compatibility: bd v${bd_cli_version#v} = Gas City $gc_beads_version"
 
       - name: Validate Ollama Claude configuration
         if: steps.subset.outputs.run_gate == 'true'
@@ -270,10 +497,21 @@ jobs:
           printf 'ANTHROPIC_DEFAULT_OPUS_MODEL=%s\n' "$ANTHROPIC_DEFAULT_OPUS_MODEL"
           printf 'CLAUDE_CODE_SUBAGENT_MODEL=%s\n' "$CLAUDE_CODE_SUBAGENT_MODEL"
 
+      - name: Prepare inference gate workdir
+        if: steps.subset.outputs.run_gate == 'true'
+        env:
+          MATRIX_PACK: ${{ matrix.pack }}
+        run: |
+          diagnostics_dir="$RUNNER_TEMP/supported-pack-nightly/$MATRIX_PACK"
+          staged_context_dir="$RUNNER_TEMP/supported-pack-nightly-run-context/$MATRIX_PACK"
+          mkdir -p "$staged_context_dir"
+          mv "$diagnostics_dir/run-context.txt" "$staged_context_dir/run-context.txt"
+          rmdir "$diagnostics_dir"
+
       - name: Run supported-pack nightly inference gate
         if: steps.subset.outputs.run_gate == 'true'
         env:
-          GATE_TIMEOUT: ${{ github.event.inputs.timeout || matrix.gate_timeout }}
+          GATE_TIMEOUT: ${{ needs.resolve-nightly-inputs.outputs.gate_timeout || matrix.gate_timeout }}
         run: |
           python3 scripts/gascity_pack_inference_gate.py \
             --gc-bin "$(go env GOPATH)/bin/gc" \
@@ -282,11 +520,31 @@ jobs:
             --gate "${{ matrix.gate }}" \
             --timeout "$GATE_TIMEOUT"
 
+      - name: Restore inference run context
+        if: always() && steps.subset.outputs.run_gate == 'true'
+        env:
+          MATRIX_PACK: ${{ matrix.pack }}
+        run: |
+          diagnostics_dir="$RUNNER_TEMP/supported-pack-nightly/$MATRIX_PACK"
+          staged_context="$RUNNER_TEMP/supported-pack-nightly-run-context/$MATRIX_PACK/run-context.txt"
+          mkdir -p "$diagnostics_dir"
+          if [ -f "$staged_context" ]; then
+            mv "$staged_context" "$diagnostics_dir/run-context.txt"
+          else
+            test -f "$diagnostics_dir/run-context.txt" || {
+              echo "inference run context is missing" >&2
+              exit 1
+            }
+          fi
+
       - name: Upload inference gate diagnostics
         if: always() && steps.subset.outputs.run_gate == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: supported-pack-nightly-${{ matrix.pack }}-${{ matrix.gate }}
-          path: ${{ runner.temp }}/supported-pack-nightly/${{ matrix.pack }}
-          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/supported-pack-nightly/${{ matrix.pack }}
+            !${{ runner.temp }}/supported-pack-nightly/${{ matrix.pack }}/gc-home/.dolt/eventsData/**
+            !${{ runner.temp }}/supported-pack-nightly/${{ matrix.pack }}/**/.beads/eventsData/**
+          if-no-files-found: error
           include-hidden-files: true

@@ -1,6 +1,9 @@
 # Base build artifact schema. Schema IDs are immutable once published;
 # breaking changes require a new version ID (for example gc.build.review.v2).
 # Base schemas must not require owner, stage-owner, persona, or role fields.
+# Status/coverage coherence is producer policy, not a v1 schema invariant.
+# Producer gates may opt into the stricter policy without changing this
+# published schema's compatibility contract.
 schema_id: gc.build.review.v1
 artifact: review
 allowed_statuses:

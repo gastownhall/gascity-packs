@@ -25,7 +25,7 @@ review_modes = ["report", "agent", "interactive"]
 id = "requirements"
 title = "Generate requirements"
 needs = ["prepare"]
-metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path", "gc.build.require_approved_status" = "true", "gc.build.require_current_producer_attempt" = "true" }
 description_file = "../assets/workflows/build-basic/requirements.md"
 
 [steps.check]
@@ -33,14 +33,14 @@ max_attempts = 3
 
 [steps.check.check]
 mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
+path = ".gc/scripts/checks/build-requirements-source-valid.sh"
 timeout = "5m"
 
 [[steps]]
 id = "plan"
 title = "Write implementation plan"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path", "gc.build.require_approved_status" = "true", "gc.build.require_current_producer_attempt" = "true" }
 description_file = "../assets/workflows/build-basic/plan.md"
 
 [steps.check]
@@ -62,7 +62,7 @@ description_file = "../assets/workflows/build-basic/plan-review.md"
 id = "decompose"
 title = "Create task beads"
 needs = ["plan-review"]
-metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path", "gc.build.require_approved_status" = "true", "gc.build.require_current_producer_attempt" = "true" }
 description_file = "../assets/workflows/build-basic/decompose.md"
 
 [steps.check]
@@ -107,16 +107,16 @@ single_lane = true
 id = "review"
 title = "Run starter implementation review"
 needs = ["summarize-implementation"]
-metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path", "gc.build.require_implementation_provenance" = "true" }
 expand = "build-basic-review"
-expand_vars = { implementation_target = "{{implementation_target}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}" }
 description_file = "../assets/workflows/build-basic/review.md"
 
 [[steps]]
 id = "finalize"
 title = "Finalize build-basic"
 needs = ["review"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path", "gc.build.require_implementation_provenance" = "true", "gc.build.require_current_producer_attempt" = "true" }
 description_file = "../assets/workflows/build-basic/finalize.md"
 
 [steps.check]

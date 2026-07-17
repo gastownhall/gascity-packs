@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,7 @@ except ImportError:  # pragma: no cover
 
 
 FRONT_MATTER_RE = re.compile(r"\A---\n(?P<front>.*?)\n---(?:\n|\Z)(?P<body>.*)\Z", re.DOTALL)
+SHA256_RE = re.compile(r"sha256:[0-9a-fA-F]{64}\Z")
 SCHEMA_ROOT = Path(__file__).resolve().parents[2] / "schemas" / "build"
 FORBIDDEN_REQUIRED_FIELD_NAMES = {"owner", "stage-owner", "stage_owner", "persona", "role"}
 
@@ -37,7 +40,15 @@ class BuildArtifact:
     coverage: list[dict[str, Any]]
 
 
-def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArtifact:
+def validate_artifact_text(
+    text: str,
+    *,
+    expected_schema: str = "",
+    verify_absolute_upstreams: bool = False,
+    enforce_review_status_coverage: bool = False,
+    artifact_path: Path | None = None,
+    upstream_roots: Iterable[Path] = (),
+) -> BuildArtifact:
     schema_id, front_matter, body = parse_front_matter(text)
     if expected_schema and schema_id != expected_schema:
         raise ValidationError(f"schema must be {expected_schema!r}, got {schema_id!r}")
@@ -47,8 +58,16 @@ def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArti
     validate_status(front_matter, schema)
     trace = validate_trace(front_matter)
     upstream = validate_upstream(trace)
+    if verify_absolute_upstreams:
+        validate_absolute_sha256_upstreams(
+            upstream,
+            artifact_path=artifact_path,
+            upstream_roots=upstream_roots,
+        )
     coverage = validate_coverage(trace, schema)
     validate_coverage_completeness(upstream, coverage)
+    if enforce_review_status_coverage:
+        validate_status_coverage(front_matter, schema, coverage)
     validate_markdown_coverage(body, coverage)
     validate_required_sections(body, schema)
     return BuildArtifact(
@@ -147,12 +166,100 @@ def validate_upstream(trace: dict[str, Any]) -> list[dict[str, Any]]:
         validate_upstream_path(path, index)
         if ":" not in hash_value:
             raise ValidationError(f"trace.upstream[{index}].hash must include a hash or revision scheme")
+        if hash_value.lower().startswith("sha256:") and not SHA256_RE.fullmatch(hash_value):
+            raise ValidationError(
+                f"trace.upstream[{index}].hash with sha256 scheme must contain exactly 64 hexadecimal digits"
+            )
         ids = raw.get("ids")
         if ids is not None:
             if not isinstance(ids, list) or not all(isinstance(item, str) and item.strip() for item in ids):
                 raise ValidationError(f"trace.upstream[{index}].ids must be a list of non-empty strings")
-        upstream.append(raw)
+        normalized = dict(raw)
+        normalized["path"] = path
+        normalized["hash"] = hash_value
+        trace["upstream"][index] = normalized
+        upstream.append(normalized)
     return upstream
+
+
+def validate_absolute_sha256_upstreams(
+    upstream: list[dict[str, Any]],
+    *,
+    artifact_path: Path | None = None,
+    upstream_roots: Iterable[Path] = (),
+) -> None:
+    upstream_roots = tuple(upstream_roots)
+    for index, entry in enumerate(upstream):
+        hash_value = str(entry["hash"])
+        if not hash_value.lower().startswith("sha256:"):
+            continue
+        path = Path(str(entry["path"]))
+        if not path.is_absolute():
+            path = resolve_relative_sha256_upstream(
+                path,
+                index=index,
+                artifact_path=artifact_path,
+                upstream_roots=upstream_roots,
+            )
+        if not path.is_file():
+            raise ValidationError(
+                f"trace.upstream[{index}] sha256 path is not a file: {path}"
+            )
+        actual = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+        if actual.lower() != hash_value.lower():
+            raise ValidationError(
+                f"trace.upstream[{index}] sha256 digest does not match {path}: "
+                f"expected {hash_value}, got {actual}"
+            )
+
+
+def resolve_relative_sha256_upstream(
+    path: Path,
+    *,
+    index: int,
+    artifact_path: Path | None,
+    upstream_roots: Iterable[Path],
+) -> Path:
+    roots: list[Path] = []
+    if artifact_path is not None:
+        roots.append(Path(artifact_path).resolve(strict=False).parent)
+    roots.extend(Path(root).resolve(strict=False) for root in upstream_roots)
+
+    unique_roots = list(dict.fromkeys(roots))
+    if not unique_roots:
+        raise ValidationError(
+            f"trace.upstream[{index}] relative sha256 path requires an artifact path or explicit upstream root: {path}"
+        )
+
+    matches: dict[Path, Path] = {}
+    for root in unique_roots:
+        if not root.is_dir():
+            raise ValidationError(
+                f"trace.upstream[{index}] sha256 upstream root is not a directory: {root}"
+            )
+        candidate = (root / path).resolve(strict=False)
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValidationError(
+                f"trace.upstream[{index}] relative sha256 path escapes upstream root {root}: {path}"
+            ) from exc
+        if candidate.is_file():
+            matches[candidate] = candidate
+
+    if not matches:
+        rendered_roots = ", ".join(str(root) for root in unique_roots)
+        raise ValidationError(
+            f"trace.upstream[{index}] relative sha256 path does not resolve to a file under approved roots "
+            f"[{rendered_roots}]: {path}"
+        )
+    if len(matches) > 1:
+        rendered_matches = ", ".join(str(candidate) for candidate in matches)
+        raise ValidationError(
+            f"trace.upstream[{index}] relative sha256 path is ambiguous across approved roots: "
+            f"{path} -> [{rendered_matches}]"
+        )
+    return next(iter(matches.values()))
 
 
 def validate_coverage_completeness(upstream: list[dict[str, Any]], coverage: list[dict[str, Any]]) -> None:
@@ -194,6 +301,30 @@ def validate_coverage(trace: dict[str, Any], schema: dict[str, Any]) -> list[dic
             required_string(raw, "rationale", prefix=f"trace.coverage[{index}]")
         coverage.append(raw)
     return coverage
+
+
+def validate_status_coverage(
+    front_matter: dict[str, Any],
+    schema: dict[str, Any],
+    coverage: list[dict[str, Any]],
+) -> None:
+    if schema.get("artifact") != "review":
+        return
+
+    status = required_string(front_matter, "status")
+    has_blocked_coverage = any(
+        item.get("status") == "blocked" for item in coverage
+    )
+    if (
+        status in {"changes_required", "blocked"}
+        and coverage
+        and not has_blocked_coverage
+    ):
+        raise ValidationError(
+            f"review status {status!r} requires at least one blocked coverage entry"
+        )
+    if status == "approved" and has_blocked_coverage:
+        raise ValidationError("approved review must not include blocked coverage")
 
 
 def validate_markdown_coverage(body: str, coverage: list[dict[str, Any]]) -> None:
@@ -286,13 +417,37 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate a gc build artifact")
     parser.add_argument("--schema", required=True, help="Expected schema id")
     parser.add_argument("--path", required=True, type=Path, help="Artifact markdown path")
+    parser.add_argument(
+        "--verify-absolute-upstreams",
+        action="store_true",
+        help="Require sha256 upstream paths to exist under approved roots and match their current bytes",
+    )
+    parser.add_argument(
+        "--upstream-root",
+        action="append",
+        default=[],
+        type=Path,
+        help="Additional approved root for resolving relative sha256 upstream paths (repeatable)",
+    )
+    parser.add_argument(
+        "--enforce-review-status-coverage",
+        action="store_true",
+        help="Apply producer policy requiring top-level review status to agree with blocked coverage",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     try:
-        artifact = validate_artifact_text(args.path.read_text(encoding="utf-8"), expected_schema=args.schema)
+        artifact = validate_artifact_text(
+            args.path.read_text(encoding="utf-8"),
+            expected_schema=args.schema,
+            verify_absolute_upstreams=args.verify_absolute_upstreams,
+            enforce_review_status_coverage=args.enforce_review_status_coverage,
+            artifact_path=args.path,
+            upstream_roots=args.upstream_root,
+        )
     except CLI_ERROR_TYPES as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

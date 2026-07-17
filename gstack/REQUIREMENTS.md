@@ -18,11 +18,12 @@ for every derived pack.
 - Formula contract: `gstack/formulas/gstack-build.formula.toml` declares
   `extends = ["build-base"]` and preserves the inherited anchor order
   `prepare -> requirements -> plan -> plan-review -> decompose ->
-  implement/implement-same-session -> review -> finalize -> publish`. The
-  child overrides `requirements`, `plan`, `plan-review`, `decompose`,
-  `implement`, `implement-same-session`, `review`, `finalize`, and `publish`
-  under their base ids in the base sequence; `prepare` remains inherited. No
-  base anchor is renamed, skipped, or reordered.
+  implement/implement-same-session -> summarize-implementation -> review ->
+  finalize -> publish`. The child overrides `requirements`, `plan`,
+  `plan-review`, `decompose`, `implement`, `implement-same-session`,
+  `summarize-implementation`, `review`, `finalize`, and `publish` under their
+  base ids in the base sequence; `prepare` remains inherited. No base anchor
+  is renamed, skipped, or reordered.
 - QA and release-readiness anchors: `qa` and `release-readiness` are the only
   pack-added steps in `gstack-build`, and they stay anchored after `review`
   and before `finalize`. The declared insertion points are `qa` after the
@@ -30,14 +31,23 @@ for every derived pack.
   (`needs = ["qa"]`); `finalize` is rewired to need `release-readiness`, and
   `publish` still needs `finalize`. Each anchor expands a check-gated loop
   (`implementation-review-approved.sh`; QA allows 6 attempts,
-  release-readiness 4) whose final lane owns `code_review.verdict=done|iterate`
-  for the loop: `synthesize-qa` for QA and `synthesize-release-readiness` for
-  release readiness. Their outputs are the approved QA summary recorded on the
+  release-readiness 4). QA synthesis records the semantic result; a
+  mode-selected terminal owns `done|iterate` for agent/interactive mode or
+  `reported` for non-mutating report mode. Release-readiness synthesis owns
+  `done|iterate` in agent/interactive mode and feeds a current-attempt
+  `reported` terminal in report mode. Their outputs are the QA summary recorded on the
   workflow root at `gc.build.qa_summary_path` before release readiness begins
-  and the approved readiness summary at
-  `gc.build.release_readiness_summary_path` before finalize begins
+  and the readiness summary at `gc.build.release_readiness_summary_path` before
+  finalize begins. Those summaries preserve `approved`, `changes_required`, or
+  `blocked`, and the final gate maps any report-mode findings to a blocked final
+  report
   (`gstack/assets/workflows/gstack-build/qa.md`,
   `gstack/assets/workflows/gstack-build/release-readiness.md`).
+  Each expansion finalizer is executable-check-gated so its root summary path
+  must equal the sole report terminal from the current loop epoch; stale,
+  duplicate, or non-canonical terminal evidence is rejected. The code-review
+  loop uses the same current-attempt terminal contract in report mode rather
+  than accepting a pre-existing workflow-root report path.
 - Methodology selectors: the pack ships one derived formula per base
   methodology contract, each declared with `extends` on the matching base:
   `gstack-planning` (`planning-base`), `gstack-decomposition`
@@ -68,7 +78,10 @@ for every derived pack.
   path drains `gstack-work` item formulas with exclusive member access; the
   `same-session` path drains `gstack-work-item` in one shared single-lane
   session with `on_item_failure = "skip_remaining"`. Both preserve the
-  build-base drain lifecycle, convoy identity, and per-item evidence.
+  build-base drain lifecycle, convoy identity, and per-item evidence. The
+  shared item formula first runs a machine-gated worktree preparation step
+  that creates or reuses a deterministic sibling worktree, verifies common
+  repository identity, and persists that path on each source anchor.
 - Providerless routes: every step in the pack's formulas routes via
   `gc.run_target` to a providerless pack-local agent (`gstack.*`, declared in
   `agents/*/agent.toml` with no provider pin), to the `gc.run-operator` or
@@ -156,7 +169,8 @@ assert [s for s in child_order if s not in added] == \
     [s for s in base_order if s in child_order]
 assert set(child_order) - added == {
     'requirements', 'plan', 'plan-review', 'decompose',
-    'implement', 'implement-same-session', 'review', 'finalize', 'publish',
+    'implement', 'implement-same-session', 'summarize-implementation',
+    'review', 'finalize', 'publish',
 }
 assert set(base_order) - set(child_order) == {'prepare'}
 steps = {step['id']: step for step in child['steps']}

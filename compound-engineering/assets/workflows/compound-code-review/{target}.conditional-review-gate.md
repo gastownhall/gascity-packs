@@ -2,7 +2,10 @@ Gate one Compound Engineering conditional code-review lane.
 
 Read the claimed bead metadata `ce.review_key`, `ce.review_step_suffix`, and
 `ce.review_artifact_name`. Read the reviewer manifest from workflow root
-metadata `gc.build.reviewer_selection_path`.
+metadata `gc.build.reviewer_selection_path` and read the canonical absolute
+review directory from `gc.build.code_review_artifact_root`. Require the
+manifest to be contained by that root. Require `ce.review_artifact_name` to be
+a leaf filename with no slash or `..` component.
 
 If the manifest selects `ce.review_key`, close only this gate bead with
 `gc.outcome=pass`, `code_review.gate_decision=selected`, and
@@ -16,7 +19,9 @@ paired step ref is this gate's `gc.step_ref` without the trailing `-gate`. If
 the current bead does not expose `gc.step_ref`, derive the paired step ref from
 `ce.review_step_suffix` and verify the candidate title and route before updating
 it. Write a no-op lane artifact to
-`{{artifact_root}}/code-review/<ce.review_artifact_name>`, update the paired
+the paired reviewer's existing `code_review.lane_report_path` when that path is
+non-empty and contained by `gc.build.code_review_artifact_root`; otherwise use
+`<code-review-artifact-root>/<ce.review_artifact_name>`. Update the paired
 reviewer bead with `gc.outcome=pass`,
 `code_review.review_verdict=approve`,
 `code_review.lane_report_path=<no-op artifact path>`,

@@ -11,8 +11,9 @@ workflow artifact recorded as `gc.build.implementation_summary_path`, normally
 
 Resolve the workflow root bead and artifact root from root metadata. If
 `gc.build.implementation_summary_path` is empty, derive an absolute path under
-`gc.var.artifact_root` or `gc.build.artifact_root` as
-`implementation-summary.md`, then record it on the workflow root:
+the canonical absolute `gc.build.artifact_root` as `implementation-summary.md`,
+then record it on the workflow root. Never reinterpret a relative
+`gc.var.artifact_root` against this later stage's `gc.work_dir`:
 
 `gc bd update "<workflow-root-id>" --set-metadata "gc.build.implementation_summary_path=<absolute path>"`
 
@@ -28,6 +29,16 @@ read the requirements, decomposition, review context, and verification evidence
 before writing the canonical root summary. The canonical summary must cover all
 accepted requirement IDs that the build finalized.
 
+Resolve every exact member of the implementation convoy independently of the
+drain's claimed result, and require the drain manifest to account for that same
+set exactly once. For every exact member, read its current absolute recorded per-item
+`gc.implementation.summary_path` from the source anchor; require it to exist
+inside that member's authoritative worktree. Compute the `sha256` digest of its current bytes
+immediately before writing the canonical summary. Add one
+and only one `trace.upstream` entry with that exact absolute path and
+`hash: sha256:<current-digest>`. Never reuse a path or digest from another
+member, an earlier attempt, an artifact report, or a repository-wide search.
+
 Write the artifact as Markdown with YAML front matter, not JSON. Use mapping objects for front matter; do not use scalar shortcuts such as
 `workflow: build-basic`. The top-level YAML shape must be:
 
@@ -35,7 +46,9 @@ Write the artifact as Markdown with YAML front matter, not JSON. Use mapping obj
 - `workflow: {id: <workflow-root-id>, formula: <root-workflow-formula>}`
 - `methodology: {pack: <pack-name>, name: <build-formula>}`
 - `producer: {formula: <build-formula>, stage: summarize-implementation, attempt: <positive integer>}`
-- `status: approved` or another schema-allowed status
+- Set `producer.attempt` to the current `gc.attempt` on every write or repair.
+- Use `status: approved` before closing; a successful canonical implementation
+  proof must be approved.
 - `trace: {upstream: [...], coverage: [...]}`
 
 Trace front matter must use the validator shape exactly:

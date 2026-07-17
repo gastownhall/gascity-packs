@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import pathlib
 import sys
 import tempfile
@@ -12,6 +13,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "assets" / 
 import validate_context_bundle as context_validator
 import validate_build_artifact as build_artifact_validator
 import validate_verdict_report as verdict_validator
+import verify_implementation_provenance as provenance_validator
 
 
 class ContextBundleValidatorTests(unittest.TestCase):
@@ -337,6 +339,134 @@ trace:
         with self.assertRaisesRegex(build_artifact_validator.ValidationError, "hash"):
             build_artifact_validator.validate_artifact_text(text, expected_schema="gc.build.requirements.v1")
 
+    def test_build_artifact_rejects_malformed_sha256_upstream_hash(self) -> None:
+        text = self.valid_artifact().replace(
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sha256:review-subject-v1",
+        )
+
+        with self.assertRaisesRegex(build_artifact_validator.ValidationError, "sha256"):
+            build_artifact_validator.validate_artifact_text(text, expected_schema="gc.build.requirements.v1")
+
+    def test_build_artifact_rejects_sha256_for_different_absolute_upstream_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            upstream = root / "requirements.md"
+            different = root / "different.md"
+            upstream.write_text("# Actual requirements\n", encoding="utf-8")
+            different.write_text("# Different requirements\n", encoding="utf-8")
+            correct_hash = f"sha256:{hashlib.sha256(upstream.read_bytes()).hexdigest()}"
+            different_hash = f"sha256:{hashlib.sha256(different.read_bytes()).hexdigest()}"
+            text = self.valid_artifact().replace(
+                "    - path: requirements.after.md\n"
+                "      hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+                f"    - path: {upstream}\n"
+                f"      hash: {correct_hash}\n",
+            )
+
+            artifact = build_artifact_validator.validate_artifact_text(
+                text,
+                expected_schema="gc.build.requirements.v1",
+                verify_absolute_upstreams=True,
+            )
+            self.assertEqual(artifact.upstream[0]["hash"], correct_hash)
+
+            mismatched = text.replace(correct_hash, different_hash)
+            with self.assertRaisesRegex(build_artifact_validator.ValidationError, "sha256|digest|hash"):
+                build_artifact_validator.validate_artifact_text(
+                    mismatched,
+                    expected_schema="gc.build.requirements.v1",
+                    verify_absolute_upstreams=True,
+                )
+
+            relative = mismatched.replace(str(upstream), upstream.name)
+            with self.assertRaisesRegex(build_artifact_validator.ValidationError, "sha256|digest|hash"):
+                build_artifact_validator.validate_artifact_text(
+                    relative,
+                    expected_schema="gc.build.requirements.v1",
+                    verify_absolute_upstreams=True,
+                    artifact_path=root / "artifact.md",
+                )
+
+            padded_correct = text.replace(
+                f"path: {upstream}", f'path: "  {upstream}  "'
+            ).replace(
+                f"hash: {correct_hash}", f'hash: "  {correct_hash}  "'
+            )
+            normalized = build_artifact_validator.validate_artifact_text(
+                padded_correct,
+                expected_schema="gc.build.requirements.v1",
+                verify_absolute_upstreams=True,
+            )
+            self.assertEqual(normalized.upstream[0]["path"], str(upstream))
+            self.assertEqual(normalized.upstream[0]["hash"], correct_hash)
+            self.assertEqual(
+                normalized.front_matter["trace"]["upstream"][0],
+                normalized.upstream[0],
+            )
+
+            for padded in (
+                mismatched.replace(f"path: {upstream}", f'path: " {upstream}"'),
+                mismatched.replace(f"hash: {different_hash}", f'hash: " {different_hash}"'),
+            ):
+                with self.subTest(padded=padded), self.assertRaisesRegex(
+                    build_artifact_validator.ValidationError, "sha256|digest|hash"
+                ):
+                    build_artifact_validator.validate_artifact_text(
+                        padded,
+                        expected_schema="gc.build.requirements.v1",
+                        verify_absolute_upstreams=True,
+                    )
+
+    def test_build_artifact_resolves_relative_sha256_from_explicit_upstream_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact_dir = root / "artifacts"
+            upstream = root / "inputs" / "requirements.md"
+            artifact_dir.mkdir()
+            upstream.parent.mkdir()
+            upstream.write_text("# Approved requirements\n", encoding="utf-8")
+            correct_hash = f"sha256:{hashlib.sha256(upstream.read_bytes()).hexdigest()}"
+            text = self.valid_artifact().replace(
+                "    - path: requirements.after.md\n"
+                "      hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+                "    - path: inputs/requirements.md\n"
+                f"      hash: {correct_hash}\n",
+            )
+
+            artifact = build_artifact_validator.validate_artifact_text(
+                text,
+                expected_schema="gc.build.requirements.v1",
+                verify_absolute_upstreams=True,
+                artifact_path=artifact_dir / "plan.md",
+                upstream_roots=[root],
+            )
+
+            self.assertEqual(artifact.upstream[0]["path"], "inputs/requirements.md")
+            with self.assertRaisesRegex(
+                build_artifact_validator.ValidationError, "relative sha256 path|resolve"
+            ):
+                build_artifact_validator.validate_artifact_text(
+                    text,
+                    expected_schema="gc.build.requirements.v1",
+                    verify_absolute_upstreams=True,
+                    artifact_path=artifact_dir / "plan.md",
+                )
+
+            shadow = artifact_dir / "inputs" / "requirements.md"
+            shadow.parent.mkdir()
+            shadow.write_bytes(upstream.read_bytes())
+            with self.assertRaisesRegex(
+                build_artifact_validator.ValidationError, "ambiguous"
+            ):
+                build_artifact_validator.validate_artifact_text(
+                    text,
+                    expected_schema="gc.build.requirements.v1",
+                    verify_absolute_upstreams=True,
+                    artifact_path=artifact_dir / "plan.md",
+                    upstream_roots=[root],
+                )
+
     def test_build_artifact_rejects_invalid_coverage_status_and_missing_rationale(self) -> None:
         invalid_status = self.valid_artifact().replace("status: deferred", "status: waiting", 1)
         missing_rationale = self.valid_artifact().replace(
@@ -393,6 +523,74 @@ trace:
             build_artifact_validator.validate_artifact_text(
                 summary_complete, expected_schema="gc.build.implementation-summary.v1"
             )
+
+    def test_review_status_coverage_is_an_opt_in_producer_policy(self) -> None:
+        approved = self.valid_artifact("gc.build.review.v1")
+        changes_without_blocker = approved.replace(
+            "\nstatus: approved\n", "\nstatus: changes_required\n"
+        )
+        blocked_without_blocker = approved.replace(
+            "\nstatus: approved\n", "\nstatus: blocked\n"
+        )
+        approved_with_blocker = approved.replace(
+            "      status: deferred\n", "      status: blocked\n"
+        ).replace("| GC-METH-012 | deferred |", "| GC-METH-012 | blocked |")
+        changes_with_blocker = approved_with_blocker.replace(
+            "\nstatus: approved\n", "\nstatus: changes_required\n"
+        )
+        changes_without_source_ids = changes_without_blocker.replace(
+            "  coverage:\n"
+            "    - id: GC-METH-001\n"
+            "      status: covered\n"
+            "    - id: GC-METH-012\n"
+            "      status: deferred\n"
+            "      rationale: Derived-pack compatibility is verified by a later work item.\n",
+            "  coverage: []\n",
+        )
+
+        for text in (changes_without_blocker, blocked_without_blocker):
+            front_matter = build_artifact_validator.parse_front_matter(text)[1]
+            with self.subTest(status=front_matter["status"]):
+                compatible = build_artifact_validator.validate_artifact_text(
+                    text, expected_schema="gc.build.review.v1"
+                )
+                self.assertEqual(compatible.front_matter["status"], front_matter["status"])
+                with self.assertRaisesRegex(
+                    build_artifact_validator.ValidationError,
+                    "requires at least one blocked coverage entry",
+                ):
+                    build_artifact_validator.validate_artifact_text(
+                        text,
+                        expected_schema="gc.build.review.v1",
+                        enforce_review_status_coverage=True,
+                    )
+
+        compatible_blocked = build_artifact_validator.validate_artifact_text(
+            approved_with_blocker, expected_schema="gc.build.review.v1"
+        )
+        self.assertEqual(compatible_blocked.front_matter["status"], "approved")
+        with self.assertRaisesRegex(
+            build_artifact_validator.ValidationError,
+            "approved review must not include blocked coverage",
+        ):
+            build_artifact_validator.validate_artifact_text(
+                approved_with_blocker,
+                expected_schema="gc.build.review.v1",
+                enforce_review_status_coverage=True,
+            )
+
+        artifact = build_artifact_validator.validate_artifact_text(
+            changes_with_blocker,
+            expected_schema="gc.build.review.v1",
+            enforce_review_status_coverage=True,
+        )
+        self.assertEqual(artifact.front_matter["status"], "changes_required")
+        no_id_artifact = build_artifact_validator.validate_artifact_text(
+            changes_without_source_ids,
+            expected_schema="gc.build.review.v1",
+            enforce_review_status_coverage=True,
+        )
+        self.assertEqual(no_id_artifact.coverage, [])
 
     def test_build_artifact_requires_coverage_for_declared_upstream_ids(self) -> None:
         declared = self.valid_artifact().replace(
@@ -550,6 +748,65 @@ findings:
             self.assertEqual(code, 1)
             self.assertIn("error:", stderr.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
+
+
+class ImplementationProvenanceValidatorTests(unittest.TestCase):
+    def test_implementation_snapshot_uses_exact_canonical_array_payload(self) -> None:
+        members = [{"id": "fi-r0k.1", "commit": "f" * 40}]
+        canonical_payload = (
+            b'[{"commit":"ffffffffffffffffffffffffffffffffffffffff",'
+            b'"id":"fi-r0k.1"}]'
+        )
+        bare_object_payload = canonical_payload[1:-1]
+        newline_payload = canonical_payload + b"\n"
+
+        snapshot = provenance_validator.implementation_snapshot(members)
+
+        self.assertEqual(
+            snapshot,
+            f"sha256:{hashlib.sha256(canonical_payload).hexdigest()}",
+        )
+        self.assertNotEqual(
+            snapshot,
+            f"sha256:{hashlib.sha256(bare_object_payload).hexdigest()}",
+        )
+        self.assertNotEqual(
+            snapshot,
+            f"sha256:{hashlib.sha256(newline_payload).hexdigest()}",
+        )
+
+    def test_provenance_parser_allows_emit_current_without_expected_snapshot(self) -> None:
+        args = provenance_validator.parse_args(
+            [
+                "--root-id",
+                "fi-r0k",
+                "--emit-current",
+                "--expected-summary",
+                "/tmp/implementation-summary.md",
+                "--validator",
+                "/tmp/validate-build-artifact.py",
+            ]
+        )
+
+        self.assertTrue(args.emit_current)
+        self.assertIsNone(args.expected_snapshot)
+
+    def test_provenance_parser_requires_expected_snapshot_for_verification(self) -> None:
+        stderr = io.StringIO()
+
+        with redirect_stderr(stderr), self.assertRaises(SystemExit):
+            provenance_validator.parse_args(
+                [
+                    "--root-id",
+                    "fi-r0k",
+                    "--expected-summary",
+                    "/tmp/implementation-summary.md",
+                    "--validator",
+                    "/tmp/validate-build-artifact.py",
+                ]
+            )
+
+        self.assertIn("--expected-snapshot", stderr.getvalue())
 
 
 if __name__ == "__main__":

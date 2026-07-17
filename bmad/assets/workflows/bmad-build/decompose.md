@@ -1,15 +1,107 @@
-Use the assigned BMAD epic/story decomposition skill materialized for this agent.
+Create BMAD epics, stories, and the implementation convoy.
 
-Create epics and stories from the approved PRD and architecture. Preserve
-traceability to BMAD artifacts, create story beads for implementation, and
-translate the resulting story set into the build-base decomposition output and
-implementation convoy.
+Treat the installed `bmad-create-epics-and-stories` skill as a methodology reference only.
+Gas City owns bead and convoy creation. Do not greet or present menus, and do not
+wait for user input in headless mode. Never wait for an interactive selection;
+use the approved requirements and architecture as authoritative inputs and record
+ambiguity in the artifact.
 
-Record the implementation convoy ID on the workflow root bead as
-`gc.input_convoy_id=<implementation-convoy-id>` with
-`gc bd update <workflow-root-id> --set-metadata gc.input_convoy_id=<implementation-convoy-id>`
-before closing.
+Drain topology constraint: every work item runs in its own isolated,
+non-integrated source-anchor worktree. Therefore each work item must be a
+complete, independently verifiable vertical product slice. Do not create
+package-only, implementation-only, test-only, or cleanup-only members whose
+correctness depends on another member's unmerged commit. If the requested
+change is one smallest coherent behavior, create one work item instead of an
+artificial horizontal split.
+
+Create the implementation story beads first, then create one new non-empty
+implementation convoy from those actual bead IDs. Do not reuse the workflow's
+launch or source convoy. Record the new convoy ID on the workflow root bead as
+both `gc.input_convoy_id=<implementation-convoy-id>` and
+`gc.build.implementation_convoy_id=<implementation-convoy-id>` before closing.
+Verify both values identify the new implementation convoy. Do not record them
+only on the current step.
+
+Read the exact canonical output path from workflow root metadata
+`gc.build.decomposition_path` (fallback `gc.var.decomposition_path`), write the
+artifact there, and record its absolute path on the workflow root as
+`gc.build.decomposition_path`.
+
+Write Markdown with YAML front matter valid for
+`gc.build.decomposition.v1`, not JSON. The artifact's first line must be `---`, followed
+by a closing `---` before the Markdown body. Use nested mappings with this
+top-level shape:
+
+```yaml
+---
+schema: gc.build.decomposition.v1
+workflow:
+  id: <workflow-root-id>
+  formula: bmad-build
+methodology:
+  pack: bmad
+  name: bmad-create-epics-and-stories
+producer:
+  formula: bmad-build
+  stage: decompose
+  attempt: <positive integer>
+status: approved
+trace:
+  upstream:
+    - path: <approved-plan-path>
+      hash: sha256:<plan-digest>
+      ids: [<actual-source-id>]
+  coverage:
+    - id: <actual-source-id>
+      status: covered
+---
+```
+
+Every `trace.upstream` entry must contain `path` and a scheme-qualified `hash`.
+Preserve actual source IDs verbatim; never invent, substitute, or renumber
+them. Every declared ID must appear exactly once in `trace.coverage`; when no
+source declares IDs, omit `ids` and use `coverage: []`. Give every
+non-`covered` row a rationale.
+
+Include one Markdown coverage table whose `ID` and `Status` pairs exactly match
+the YAML coverage:
+
+| ID | Status |
+| --- | --- |
+| <actual-source-id> | covered |
+
+Only include the example data row when coverage is non-empty, replacing the
+placeholder with an actual ID. When coverage is empty, omit the table or use
+only its header and separator; do not add a placeholder data row.
+
+Use these schema-required second-level headings in this exact order:
+
+- `## Summary`
+- `## Selected Downstream Formulas`
+- `## Implementation Convoy`
+- `## Work Items`
+
+Under `## Work Items`, record each actual story bead ID, dependency, accepted
+requirement IDs, plan section, affected files or modules, first verification
+command, and expected proof command. Under `## Implementation Convoy`, record
+the new convoy ID and its exact members.
+
+Before closing, resolve the launcher rig root from workflow root metadata
+`gc.work_dir`. If it names an attempt worktree without the validator, walk to
+the nearest ancestor containing
+`.gc/scripts/checks/build-artifact-valid.sh`. Read the exact current bead ID
+from the startup claim output and assign it literally in the same shell call;
+shell variables from earlier tool calls do not persist. Run:
+
+```bash
+CLAIMED_BEAD_ID=<exact-claimed-bead-id>; GC_BEAD_ID="$CLAIMED_BEAD_ID" <launcher-rig>/.gc/scripts/checks/build-artifact-valid.sh
+```
+
+Fix every validation error at the canonical path and verify both convoy
+metadata fields before setting `gc.outcome=pass`. On repair attempts
+(`gc.attempt` greater than 1), read validator errors from `gc.attempt_log` on
+the dependent validation-loop control bead and repair the same artifact in
+place. Two bounded repair attempts follow the first failure; exhaustion must
+close with `gc.outcome=fail` and machine-readable failure metadata.
 
 Do not invoke provider-native subagents or upstream BMAD runtime commands.
-
-Artifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.decomposition_path` (fallback `gc.var.decomposition_path`) against schema `gc.build.decomposition.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.

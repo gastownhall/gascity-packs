@@ -41,7 +41,7 @@ timeout = "10m"
 id = "{target}.brainstorm-design"
 title = "Superpowers brainstorm design"
 metadata = { "gc.run_target" = "superpowers.brainstorming" }
-description_file = "../assets/workflows/superpowers-brainstorming/{target}.brainstorm-design.md"
+description_file = "../assets/workflows/superpowers-brainstorming/brainstorm-design.md"
 
 [[template.children]]
 id = "{target}.confirm-design-approval"
@@ -69,7 +69,7 @@ timeout = "10m"
 id = "{target}.write-requirements-spec"
 title = "Write Superpowers requirements spec"
 metadata = { "gc.run_target" = "superpowers.brainstorming" }
-description_file = "../assets/workflows/superpowers-brainstorming/{target}.write-requirements-spec.md"
+description_file = "../assets/workflows/superpowers-brainstorming/write-requirements-spec.md"
 
 [[template.children]]
 id = "{target}.review-written-spec"
@@ -90,13 +90,13 @@ id = "{target}.confirm-spec-approval"
 title = "Confirm Superpowers spec approval"
 needs = ["{target}.apply-spec-feedback"]
 metadata = { "gc.run_target" = "superpowers.brainstorming", "gc.continuation_group" = "superpowers-spec-fixes" }
-description_file = "../assets/workflows/superpowers-brainstorming/{target}.confirm-spec-approval.md"
+description_file = "../assets/workflows/superpowers-brainstorming/confirm-spec-approval.md"
 
 [[template]]
 id = "{target}"
 title = "Finalize approved Superpowers requirements"
 needs = ["{target}.superpowers-written-spec-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path", "gc.build.require_approved_status" = "true", "gc.build.expected_producer_formula" = "superpowers-brainstorming", "gc.build.expected_producer_stage" = "requirements" }
 description_file = "../assets/workflows/superpowers-brainstorming/{target}.md"
 
 [template.check]
@@ -104,5 +104,5 @@ max_attempts = 3
 
 [template.check.check]
 mode = "exec"
-path = ".gc/scripts/checks/build-artifact-valid.sh"
+path = ".gc/scripts/checks/build-requirements-source-valid.sh"
 timeout = "5m"

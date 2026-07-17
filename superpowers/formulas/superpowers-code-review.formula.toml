@@ -16,7 +16,7 @@ default = "superpowers.implementer"
 
 [vars.artifact_path_keys]
 description = "Comma-separated artifact metadata keys accepted by the terminal review report validator."
-default = "gc.build.code_review_report_path,gc.build.review_report_path,gc.var.report_path"
+default = "gc.var.report_path,gc.build.review_report_path,gc.build.code_review_report_path"
 
 [vars.review_mode]
 description = "Review authority: report, agent, or interactive."
@@ -26,13 +26,13 @@ default = "agent"
 id = "{target}.setup-superpowers-code-review"
 title = "Prepare Superpowers code review"
 metadata = { "gc.run_target" = "gc.run-operator" }
-description_file = "../assets/workflows/superpowers-code-review/{target}.setup-superpowers-code-review.md"
+description_file = "../assets/workflows/superpowers-code-review/setup-superpowers-code-review.md"
 
 [[template]]
 id = "{target}.superpowers-code-review-loop"
 title = "Run Superpowers code review until approved"
 needs = ["{target}.setup-superpowers-code-review"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.review.require_current_report_terminal" = "true", "gc.review.require_artifact_producer_binding" = "true" }
 description_file = "../assets/workflows/superpowers-code-review/{target}.superpowers-code-review-loop.md"
 
 [template.check]
@@ -46,14 +46,14 @@ timeout = "10m"
 [[template.children]]
 id = "{target}.request-code-review"
 title = "Superpowers request code review"
-metadata = { "gc.run_target" = "superpowers.code-reviewer" }
-description_file = "../assets/workflows/superpowers-code-review/{target}.request-code-review.md"
+metadata = { "gc.run_target" = "superpowers.code-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.code_review_report_path", "gc.build.require_review_status_coverage" = "true" }
+description_file = "../assets/workflows/superpowers-code-review/request-code-review.md"
 
 [[template.children]]
 id = "{target}.gap-analysis-review"
 title = "Superpowers gap-analysis review"
-metadata = { "gc.run_target" = "superpowers.code-quality-reviewer" }
-description_file = "../assets/workflows/superpowers-code-review/{target}.gap-analysis-review.md"
+metadata = { "gc.run_target" = "superpowers.code-quality-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.gap_analysis_report_path", "gc.build.require_review_status_coverage" = "true" }
+description_file = "../assets/workflows/superpowers-code-review/gap-analysis-review.md"
 
 [[template.children]]
 id = "{target}.process-code-review"
@@ -61,14 +61,22 @@ title = "Process Superpowers code review feedback"
 needs = ["{target}.request-code-review", "{target}.gap-analysis-review"]
 condition = "{{review_mode}} != report"
 metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group" = "superpowers-review-fixes" }
-description_file = "../assets/workflows/superpowers-code-review/{target}.process-code-review.md"
+description_file = "../assets/workflows/superpowers-code-review/process-code-review.md"
+
+[[template.children]]
+id = "{target}.report-code-review-findings"
+title = "Record Superpowers code review findings"
+needs = ["{target}.request-code-review", "{target}.gap-analysis-review"]
+condition = "{{review_mode}} == report"
+metadata = { "gc.run_target" = "superpowers.code-quality-reviewer", "gc.review.report_terminal" = "true" }
+description_file = "../assets/workflows/superpowers-code-review/report-code-review-findings.md"
 
 [[template]]
 id = "{target}"
 title = "Finalize Superpowers code review"
 needs = ["{target}.superpowers-code-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
-description_file = "../assets/workflows/superpowers-code-review/{target}.md"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}", "gc.build.require_internal_review_report" = "true", "gc.build.expected_internal_review_producer_stage" = "request-code-review", "gc.build.expected_adapter_review_producer_stage" = "adapter-report", "gc.build.require_review_status_coverage" = "true" }
+description_file = "../assets/workflows/superpowers-code-review/finalize-code-review.md"
 
 [template.check]
 max_attempts = 3

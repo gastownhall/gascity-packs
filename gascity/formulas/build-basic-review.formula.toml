@@ -15,6 +15,10 @@ contract = "graph.v2"
 description = "Role target used to apply starter review findings."
 default = "gc.implementation-worker"
 
+[vars.review_mode]
+description = "Review authority: report, agent, or interactive."
+default = "agent"
+
 [[template]]
 id = "{target}.setup-build-basic-review"
 title = "Prepare build-basic starter review"
@@ -25,7 +29,7 @@ description_file = "../assets/workflows/build-basic-review/{target}.setup-build-
 id = "{target}.build-basic-review-loop"
 title = "Run build-basic starter review until approved"
 needs = ["{target}.setup-build-basic-review"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.require_implementation_provenance" = "true" }
 description_file = "../assets/workflows/build-basic-review/{target}.build-basic-review-loop.md"
 
 [template.check]
@@ -37,20 +41,29 @@ path = ".gc/scripts/checks/implementation-review-approved.sh"
 timeout = "10m"
 
 [[template.children]]
+id = "{target}.refresh-review-context"
+title = "Refresh build-basic review context"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-basic-review/{target}.refresh-review-context.md"
+
+[[template.children]]
 id = "{target}.acceptance-review"
 title = "Starter review: acceptance and correctness"
+needs = ["{target}.refresh-review-context"]
 metadata = { "gc.run_target" = "gc.implementation-reviewer" }
 description_file = "../assets/workflows/build-basic-review/{target}.acceptance-review.md"
 
 [[template.children]]
 id = "{target}.test-evidence-review"
 title = "Starter review: test evidence"
+needs = ["{target}.refresh-review-context"]
 metadata = { "gc.run_target" = "gc.gap-analyst" }
 description_file = "../assets/workflows/build-basic-review/{target}.test-evidence-review.md"
 
 [[template.children]]
 id = "{target}.simplicity-review"
 title = "Starter review: simplicity and maintainability"
+needs = ["{target}.refresh-review-context"]
 metadata = { "gc.run_target" = "gc.design-implementation-reviewer" }
 description_file = "../assets/workflows/build-basic-review/{target}.simplicity-review.md"
 
@@ -69,14 +82,23 @@ description_file = "../assets/workflows/build-basic-review/{target}.synthesize-r
 id = "{target}.apply-review-findings"
 title = "Apply starter review findings"
 needs = ["{target}.synthesize-review"]
+condition = "{{review_mode}} != report"
 metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group" = "build-basic-review-fixes" }
 description_file = "../assets/workflows/build-basic-review/{target}.apply-review-findings.md"
+
+[[template.children]]
+id = "{target}.report-review-findings"
+title = "Record starter review findings"
+needs = ["{target}.synthesize-review"]
+condition = "{{review_mode}} == report"
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+description_file = "../assets/workflows/build-basic-review/{target}.report-review-findings.md"
 
 [[template]]
 id = "{target}"
 title = "Finalize build-basic starter review"
 needs = ["{target}.build-basic-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path", "gc.build.require_implementation_provenance" = "true", "gc.build.require_review_status_coverage" = "true" }
 description_file = "../assets/workflows/build-basic-review/{target}.md"
 
 [template.check]

@@ -19,7 +19,7 @@ default = "compound-engineering.ce-work"
 
 [vars.artifact_path_keys]
 description = "Comma-separated artifact metadata keys accepted by the terminal review report validator."
-default = "gc.build.code_review_report_path,gc.build.review_report_path,gc.var.report_path"
+default = "gc.var.report_path,gc.build.review_report_path,gc.build.code_review_report_path"
 
 [vars.review_mode]
 description = "Review authority: report, agent, or interactive."
@@ -29,7 +29,7 @@ default = "agent"
 id = "{target}.setup-compound-code-review"
 title = "Prepare Compound Engineering code review"
 metadata = { "gc.run_target" = "gc.run-operator" }
-description_file = "../assets/workflows/compound-code-review/{target}.setup-compound-code-review.md"
+description_file = "../assets/workflows/compound-code-review/setup-compound-code-review.md"
 
 [[template]]
 id = "{target}.select-compound-reviewers"
@@ -42,7 +42,7 @@ description_file = "../assets/workflows/compound-code-review/{target}.select-com
 id = "{target}.compound-code-review-loop"
 title = "Run Compound Engineering code review lanes until approved"
 needs = ["{target}.select-compound-reviewers"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.review.require_current_report_terminal" = "true", "gc.review.require_artifact_producer_binding" = "true" }
 description_file = "../assets/workflows/compound-code-review/{target}.compound-code-review-loop.md"
 
 [template.check]
@@ -247,8 +247,8 @@ needs = [
   "{target}.deployment-verification",
   "{target}.gap-analysis-review",
 ]
-metadata = { "gc.run_target" = "compound-engineering.ce-code-review-synthesizer" }
-description_file = "../assets/workflows/compound-code-review/{target}.synthesize-code-review.md"
+metadata = { "gc.run_target" = "compound-engineering.ce-code-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.code_review_report_path", "gc.build.require_review_status_coverage" = "true" }
+description_file = "../assets/workflows/compound-code-review/synthesize-code-review.md"
 
 [[template.children]]
 id = "{target}.apply-review-findings"
@@ -256,14 +256,22 @@ title = "Apply Compound Engineering review findings"
 needs = ["{target}.synthesize-code-review"]
 condition = "{{review_mode}} != report"
 metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group" = "compound-code-review-fixes" }
-description_file = "../assets/workflows/compound-code-review/{target}.apply-review-findings.md"
+description_file = "../assets/workflows/compound-code-review/apply-review-findings.md"
+
+[[template.children]]
+id = "{target}.report-review-findings"
+title = "Record Compound Engineering review findings"
+needs = ["{target}.synthesize-code-review"]
+condition = "{{review_mode}} == report"
+metadata = { "gc.run_target" = "compound-engineering.ce-code-review-synthesizer", "gc.review.report_terminal" = "true" }
+description_file = "../assets/workflows/compound-code-review/report-review-findings.md"
 
 [[template]]
 id = "{target}"
 title = "Finalize approved Compound Engineering code review"
 needs = ["{target}.compound-code-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
-description_file = "../assets/workflows/compound-code-review/{target}.md"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}", "gc.build.require_internal_review_report" = "true", "gc.build.expected_internal_review_producer_stage" = "synthesize-code-review", "gc.build.expected_adapter_review_producer_stage" = "synthesize-code-review", "gc.build.require_review_status_coverage" = "true" }
+description_file = "../assets/workflows/compound-code-review/finalize-code-review.md"
 
 [template.check]
 max_attempts = 3

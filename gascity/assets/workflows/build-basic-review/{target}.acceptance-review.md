@@ -12,12 +12,31 @@ mark acceptance as `iterate` merely because the root checkout is unchanged when
 the recorded source anchor/worktree implements the requested behavior and its
 proof commands pass.
 
-Write findings under the build artifact root. Required findings must include
-the relevant requirement or task reference plus the file, command, or artifact
-that proves the issue.
+Read `gc.build.implementation_snapshot` from the workflow root and the review
+context. Recompute it from the current member-id/commit tuples before reviewing
+and require both values to match. Review the exact current implementation snapshot.
+Carry the matching value on this lane as
+`code_review.implementation_snapshot`; a missing or changed snapshot requires
+`iterate` and a fresh review.
+Recompute the root `gc.build.review_input_snapshot` from the canonical absolute
+summary/context paths, their current raw-byte SHA-256 digests, and that
+implementation snapshot. Require an exact root match and carry it as
+`code_review.review_input_snapshot`; otherwise use `iterate`.
+
+Read `<artifact-root>` from root `gc.build.artifact_root`; require it to be
+absolute and equal the parent of `gc.build.code_review_context_path`. Write exactly
+`<artifact-root>/acceptance-review-report.md`; never write review evidence into
+the authoritative implementation worktree.
+Run Python proof with `PYTHONDONTWRITEBYTECODE=1` and leave no `__pycache__` or
+bytecode files.
+Required findings must include the relevant requirement or task reference plus
+the file, command, or artifact that proves the issue.
 
 Close with `gc.outcome=pass`,
 `code_review.acceptance_verdict=approve|iterate`, and
+`code_review.reviewed_attempt=<current gc.attempt>`,
+`code_review.implementation_snapshot=<exact current snapshot>`, and
+`code_review.review_input_snapshot=<exact current review-input snapshot>`, and
 `code_review.output_path=<acceptance review report path>`.
 
 Use explicit close metadata so the review loop can detect the lane result:
@@ -26,6 +45,9 @@ Use explicit close metadata so the review loop can detect the lane result:
 gc bd update "$CLAIMED_BEAD_ID" \
   --set-metadata 'gc.outcome=pass' \
   --set-metadata 'code_review.acceptance_verdict=approve' \
+  --set-metadata 'code_review.reviewed_attempt=<current gc.attempt>' \
+  --set-metadata 'code_review.implementation_snapshot=<exact current snapshot>' \
+  --set-metadata 'code_review.review_input_snapshot=<exact current review-input snapshot>' \
   --set-metadata 'code_review.output_path=<acceptance review report path>'
 gc bd close "$CLAIMED_BEAD_ID" --reason 'Build-basic acceptance review approved.'
 ```

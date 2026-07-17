@@ -427,16 +427,16 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
             "requirements": base_contract.REQUIREMENTS_GATE,
             "plan": base_contract.PLAN_GATE,
             "decompose": base_contract.DECOMPOSITION_GATE,
+            "summarize-implementation": base_contract.ROOT_IMPLEMENTATION_SUMMARY_GATE,
             "review": base_contract.BUILD_REVIEW_GATE,
             "finalize": base_contract.FINAL_REPORT_GATE,
         }
         for pack_name, expected in DERIVED_PACKS.items():
             review_report_gate = base_contract.REVIEW_REPORT_GATE
-            if pack_name in {"superpowers", "compound-engineering", "gstack", "bmad"}:
+            if pack_name in {"compound-engineering", "superpowers", "gstack", "bmad"}:
                 review_report_gate = (
                     base_contract.REVIEW_REPORT_GATE[0],
-                    "gc.build.code_review_report_path,"
-                    + base_contract.REVIEW_REPORT_GATE[1],
+                    "gc.var.report_path",
                 )
             formula_gates = {
                 expected["formula"]: build_gates,
@@ -480,11 +480,40 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
                             step["check"]["max_attempts"],
                             base_contract.BUILD_ARTIFACT_GATE_MAX_ATTEMPTS,
                         )
+                        expected_check_path = base_contract.BUILD_ARTIFACT_CHECK_SCRIPT
+                        if step_id == "requirements" and (
+                            (
+                                pack_name in {"compound-engineering", "bmad"}
+                                and formula_name == expected["formula"]
+                            )
+                            or (
+                                pack_name == "superpowers"
+                                and formula_name
+                                in {expected["formula"], expected["planning_formula"]}
+                            )
+                        ):
+                            expected_check_path = (
+                                base_contract.BUILD_REQUIREMENTS_SOURCE_CHECK_SCRIPT
+                            )
+                        if (
+                            pack_name == "gstack"
+                            and formula_name == expected["formula"]
+                            and step_id
+                            in {
+                                "requirements",
+                                "decompose",
+                                "summarize-implementation",
+                                "finalize",
+                            }
+                        ):
+                            expected_check_path = (
+                                "../assets/scripts/checks/gstack-build-state-valid.sh"
+                            )
                         self.assertEqual(
                             step["check"]["check"],
                             {
                                 "mode": "exec",
-                                "path": base_contract.BUILD_ARTIFACT_CHECK_SCRIPT,
+                                "path": expected_check_path,
                                 "timeout": "5m",
                             },
                         )
