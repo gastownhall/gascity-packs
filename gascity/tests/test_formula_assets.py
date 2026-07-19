@@ -2928,6 +2928,30 @@ class FormulaAssetTests(unittest.TestCase):
                     all(group == "superpowers-task-{{issue}}" for group in continuation_groups)
                 )
 
+    def test_superpowers_finalizer_materializes_canonical_build_summary(self) -> None:
+        packs_root = pathlib.Path(__file__).resolve().parents[2]
+        pack_root = packs_root / "superpowers"
+        build = load_formula(pack_root, "superpowers-build")
+        finalize_step = {step["id"]: step for step in build["steps"]}["finalize"]
+        finalize = (
+            pack_root / "assets" / "workflows" / "superpowers-build" / "finalize.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(finalize_step["metadata"]["gc.run_target"], "superpowers.finisher")
+        for fragment in (
+            "materialize the canonical",
+            "gc.build.implementation_summary_path",
+            "implementation-summary.md",
+            "{{artifact_root}}",
+            "gc.build.implementation-summary.v1",
+            "gc.implementation.summary_path",
+            "source anchors",
+            "gc bd update",
+            "Do not create the final report",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, finalize)
+
     def test_superpowers_development_converts_subagent_reviews_to_fanout(self) -> None:
         packs_root = pathlib.Path(__file__).resolve().parents[2]
         pack_root = packs_root / "superpowers"
