@@ -152,6 +152,30 @@ test_polecat_startup_uses_standard_hook_claim() {
         fail "polecat propulsion fragment must not regress to an unclaimed hook/work-query choice"
 }
 
+test_polecat_claim_infra_failure_escalates_without_drain_ack() {
+    local prompt block
+    prompt="$GASTOWN/agents/polecat/prompt.template.md"
+
+    grep -F 'CLAIM_INFRA_FAILURE' "$prompt" >/dev/null ||
+        fail "polecat claim loop must distinguish hook infrastructure failure from no-work"
+    ! grep -F 'CLAIM_REJECTED gc hook --claim returned no workable bead after retries' "$prompt" >/dev/null ||
+        fail "exhausted hook retries must not be reported as 'no workable bead'"
+
+    # The terminal infra-failure path must escalate and exit non-zero WITHOUT
+    # drain-ack: drain-ack reports idle and sleeps, hiding the outage from
+    # town oversight in a wake->drain->sleep loop no health check can see.
+    block="$(awk '/CLAIM_INFRA_FAILURE/{found=1} found{print} found && /^fi$/{exit}' "$prompt")"
+    [[ "$block" == *'exit 1'* ]] ||
+        fail "hook infrastructure failure must exit non-zero, not exit 0 like genuine no-work"
+    [[ "$block" != *'gc runtime drain-ack'* ]] ||
+        fail "hook infrastructure failure must NOT drain-ack — that reports idle and hides the outage"
+    [[ "$block" == *'ESCALATION: gc hook --claim failing [HIGH]'* ]] ||
+        fail "hook infrastructure failure must escalate to the witness"
+
+    grep -F 'If it prints `CLAIM_INFRA_FAILURE`' "$prompt" >/dev/null ||
+        fail "claim-block outcome guidance must cover CLAIM_INFRA_FAILURE"
+}
+
 test_review_leg_contract_forbids_synthetic_mutation() {
     local formula prompt
     formula="$GASTOWN/formulas/mol-review-leg.toml"
@@ -222,6 +246,7 @@ test_shutdown_dance_contracts_are_executable
 test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
+test_polecat_claim_infra_failure_escalates_without_drain_ack
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 

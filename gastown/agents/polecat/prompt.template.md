@@ -195,9 +195,17 @@ while [ "$CLAIM_TRY" -lt 3 ]; do
   sleep 2
 done
 if [ -z "$WORK_ID" ]; then
-  echo "CLAIM_REJECTED gc hook --claim returned no workable bead after retries"
-  gc runtime drain-ack
-  exit 0
+  # Hook infrastructure failure, NOT "no work". Do NOT drain-ack: drain-ack
+  # reports idle and puts the session to sleep, which hides the outage from
+  # town oversight and loops wake->drain->sleep forever (a polecat that never
+  # claims leaves no stale bead, so no health check ever fires). Escalate and
+  # exit non-zero WITHOUT acknowledging drain, so the failure stays visible
+  # and the controller's crash-loop path engages instead of the sleep cycle.
+  echo "CLAIM_INFRA_FAILURE gc hook --claim failed after $CLAIM_TRY attempts (last code=$CLAIM_CODE): ${CLAIM_ERR_TEXT:-malformed claim result}"
+  WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"
+  gc mail send "$WITNESS_TARGET" -s "ESCALATION: gc hook --claim failing [HIGH]" \
+    -m "gc hook --claim failed $CLAIM_TRY times in a row (last exit=$CLAIM_CODE): ${CLAIM_ERR_TEXT:-malformed claim result}. Session is NOT drain-acking; this is an infrastructure fault (agent resolution, daemon, or store), not a work shortage."
+  exit 1
 fi
 
 # Post-claim ownership verification. The bead MUST be yours and in_progress
@@ -248,8 +256,10 @@ GC_CLAIM
 ```
 
 If the block prints `NO_ROUTED_WORK`, `CLAIM_REJECTED`, or `CLAIM_RELEASED`, it
-has already drain-acked — stop and exit. Only after it prints `CLAIMED_BEAD_ID` do you read
-formula steps and begin. The claim checks assigned work first (session bead ID,
+has already drain-acked — stop and exit. If it prints `CLAIM_INFRA_FAILURE`,
+the hook itself is broken: it has already escalated to the witness and NOT
+drain-acked — end your turn without retrying the claim or drain-acking. Only
+after it prints `CLAIMED_BEAD_ID` do you read formula steps and begin. The claim checks assigned work first (session bead ID,
 runtime session name, then alias) and only falls through to unassigned pool work
 routed to `${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat`.
 
