@@ -64,24 +64,30 @@ init_repo() {
 }
 
 test_shutdown_probe_scopes_rig_and_fails_closed() {
-    local tmp probe calls output bd_subcommand
+    local tmp probe calls output
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' RETURN
     probe="$tmp/probe.sh"
     calls="$tmp/calls"
     output="$tmp/output"
-    bd_subcommand=$(printf '%s%s' b d)
     extract_shutdown_probe "$probe"
 
     (
         gc() {
-            printf '%s\n' "$*" >> "$calls"
+            printf 'gc %s\n' "$*" >> "$calls"
             case "$*" in
                 "session list --state=all --json")
                     printf '%s\n' '{"sessions":[{"id":"session-1","name":"demo/gastown.worker","template":"gastown.polecat","rig":"demo","alias":"demo/gastown.worker","agent_name":"demo/gastown.worker","session_name":"demo--worker","work_dir":"/missing/provider"}]}'
                     ;;
-                "$bd_subcommand --rig demo list --status=in_progress --json --limit=0")
-                    printf '%s\n' '[]'
+                "bd "*)
+                    case "${2:-} ${3:-} ${4:-} ${5:-} ${6:-} ${7:-}" in
+                        "--rig demo list --status=in_progress --json --limit=0")
+                            printf '%s\n' '[]'
+                            ;;
+                        *)
+                            return 1
+                            ;;
+                    esac
                     ;;
                 *)
                     return 1
@@ -93,7 +99,7 @@ test_shutdown_probe_scopes_rig_and_fails_closed() {
         source "$probe"
     ) > "$output"
 
-    rg -q "^${bd_subcommand} --rig demo list --status=in_progress --json --limit=0$" "$calls" ||
+    rg -q '^gc bd --rig demo list --status=in_progress --json --limit=0$' "$calls" ||
         fail "shutdown probe did not route the target work query to its rig store"
     rg -q '^progress_signal=none$' "$output" ||
         fail "successful exact lookup with no claimed work did not produce progress=none"
@@ -118,7 +124,7 @@ test_shutdown_probe_scopes_rig_and_fails_closed() {
 
     rg -q '^progress_signal=unknown$' "$output" ||
         fail "ambiguous target-session lookup did not fail closed"
-    if rg -q '^bd ' "$calls"; then
+    if rg -q '^gc bd ' "$calls"; then
         fail "ambiguous target-session lookup queried an arbitrary bead store"
     fi
 }
