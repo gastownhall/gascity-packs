@@ -171,7 +171,7 @@ validate_artifact_worktree() {
 
 Canonical metadata wins. If it is absent, a valid legacy path can be adopted
 and migrated. A stale, missing, provider-root, wrong-bead, or foreign-repo path
-is ignored and a new nested worktree is created:
+is ignored and a new canonical artifact worktree is created:
 ```bash
 WORKTREE=
 if [ -n "$ARTIFACT_DIR" ]; then

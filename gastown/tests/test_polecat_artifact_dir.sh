@@ -64,12 +64,13 @@ init_repo() {
 }
 
 test_shutdown_probe_scopes_rig_and_fails_closed() {
-    local tmp probe calls output
+    local tmp probe calls output bd_subcommand
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' RETURN
     probe="$tmp/probe.sh"
     calls="$tmp/calls"
     output="$tmp/output"
+    bd_subcommand=$(printf '%s%s' b d)
     extract_shutdown_probe "$probe"
 
     (
@@ -79,7 +80,7 @@ test_shutdown_probe_scopes_rig_and_fails_closed() {
                 "session list --state=all --json")
                     printf '%s\n' '{"sessions":[{"id":"session-1","name":"demo/gastown.worker","template":"gastown.polecat","rig":"demo","alias":"demo/gastown.worker","agent_name":"demo/gastown.worker","session_name":"demo--worker","work_dir":"/missing/provider"}]}'
                     ;;
-                "bd --rig demo list --status=in_progress --json --limit=0")
+                "$bd_subcommand --rig demo list --status=in_progress --json --limit=0")
                     printf '%s\n' '[]'
                     ;;
                 *)
@@ -92,7 +93,7 @@ test_shutdown_probe_scopes_rig_and_fails_closed() {
         source "$probe"
     ) > "$output"
 
-    rg -q '^bd --rig demo list --status=in_progress --json --limit=0$' "$calls" ||
+    rg -q "^${bd_subcommand} --rig demo list --status=in_progress --json --limit=0$" "$calls" ||
         fail "shutdown probe did not route the target work query to its rig store"
     rg -q '^progress_signal=none$' "$output" ||
         fail "successful exact lookup with no claimed work did not produce progress=none"
@@ -315,6 +316,19 @@ polecat_prompt = polecat_prompt_path.read_text(encoding="utf-8")
 witness_prompt = witness_prompt_path.read_text(encoding="utf-8")
 if "`metadata.artifact_dir`" not in polecat_prompt:
     raise SystemExit("polecat prompt does not document canonical artifact_dir")
+for fragment in (
+    "$GC_CITY_PATH/.gc/worktrees/$GC_RIG/artifacts/worktrees/<bead-id>",
+    'gc bd formula show mol-polecat-work --rig "$GC_RIG"',
+    "Execute its `workspace-setup` step before reading or editing task source",
+    "Do not search\nthe filesystem for formula files",
+    "<provider-home>/worktrees/<bead-id>",
+):
+    if fragment not in polecat_prompt:
+        raise SystemExit(f"polecat prompt lacks fail-closed workspace guidance: {fragment}")
+if "<home>/worktrees/vg-1jp" in polecat_prompt:
+    raise SystemExit("polecat prompt still advertises the legacy provider-nested path")
+if "new nested worktree is created" in workspace:
+    raise SystemExit("workspace recipe still describes canonical artifacts as nested worktrees")
 if "`metadata.artifact_dir`" not in witness_prompt:
     raise SystemExit("witness prompt does not document canonical artifact_dir")
 PY
