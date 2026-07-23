@@ -216,6 +216,43 @@ if verify >= metadata:
 PY
 }
 
+test_polecat_refinery_handoff_uses_configured_template_identity() {
+    local formula
+    formula="$GASTOWN/formulas/mol-polecat-work.toml"
+
+    python3 - "$formula" <<'PY' || fail "polecat refinery handoff must derive and validate the configured template identity"
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index("**6. Reassign to refinery:**")
+end = text.index("**7. Signal refinery", start)
+block = text[start:end]
+
+required = [
+    "POOL_TEMPLATE=${GC_TEMPLATE:-}",
+    'SCOPE_PREFIX="${POOL_TEMPLATE%/*}/"',
+    'REFINERY_LOCAL="${TEMPLATE_LOCAL%.polecat}.refinery"',
+    'REFINERY_TARGET="${SCOPE_PREFIX}${REFINERY_LOCAL}"',
+    "gc status --json",
+    ".qualified_name == $target",
+    "length == 1",
+    'gc bd update "$WORK_BEAD_ID" --status=open --assignee="$REFINERY_TARGET"',
+]
+for needle in required:
+    if needle not in block:
+        raise SystemExit(f"missing refinery handoff contract: {needle}")
+
+legacy = '${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery'
+if legacy in block:
+    raise SystemExit("refinery handoff still trusts a render-time binding_prefix")
+
+validation = block.index("gc status --json")
+mutation = block.index('gc bd update "$WORK_BEAD_ID"')
+if validation > mutation:
+    raise SystemExit("refinery identity validation occurs after bead mutation")
+PY
+}
+
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
@@ -224,5 +261,6 @@ test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_polecat_refinery_handoff_uses_configured_template_identity
 
 echo "gastown pack asset tests passed"

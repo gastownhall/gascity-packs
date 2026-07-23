@@ -613,15 +613,56 @@ matches the branch, base, and origin repository.
 
 **6. Reassign to refinery:**
 ```bash
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
+POOL_TEMPLATE=${GC_TEMPLATE:-}
+SCOPE_PREFIX=""
+TEMPLATE_LOCAL="$POOL_TEMPLATE"
+case "$POOL_TEMPLATE" in
+  */*)
+    SCOPE_PREFIX="${POOL_TEMPLATE%/*}/"
+    TEMPLATE_LOCAL="${POOL_TEMPLATE##*/}"
+    ;;
+esac
+case "$TEMPLATE_LOCAL" in
+  *.polecat)
+    REFINERY_LOCAL="${TEMPLATE_LOCAL%.polecat}.refinery"
+    ;;
+  polecat)
+    REFINERY_LOCAL="refinery"
+    ;;
+  *)
+    echo "REFINERY HANDOFF FAILED: GC_TEMPLATE '$POOL_TEMPLATE' is not a polecat template."
+    echo "The branch is published, but the bead remains with this polecat; refusing to guess an assignee."
+    gc runtime drain-ack
+    exit 1
+    ;;
+esac
+REFINERY_TARGET="${SCOPE_PREFIX}${REFINERY_LOCAL}"
+
+if ! STATUS_JSON=$(gc status --json); then
+  echo "REFINERY HANDOFF FAILED: could not read configured agent identities."
+  echo "The branch is published, but the bead remains with this polecat."
+  gc runtime drain-ack
+  exit 1
+fi
+if ! printf '%s' "$STATUS_JSON" | jq -e --arg target "$REFINERY_TARGET" \
+  '[.agents[] | select(.qualified_name == $target)] | length == 1' >/dev/null; then
+  echo "REFINERY HANDOFF FAILED: derived target '$REFINERY_TARGET' is not exactly one configured agent."
+  echo "The branch is published, but the bead remains with this polecat; refusing to strand it."
+  gc runtime drain-ack
+  exit 1
+fi
+
 gc bd update "$WORK_BEAD_ID" --status=open --assignee="$REFINERY_TARGET" --set-metadata gc.routed_to=""
 ```
 
-`${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery` resolves to
-`$GC_RIG/{{binding_prefix}}refinery` when running inside a rig session,
-or `{{binding_prefix}}refinery` when running in an HQ-only city where
-the workspace is the rig. Writing a rendered empty rig prefix produces
-`/{{binding_prefix}}refinery` and strands beads outside the refinery pool.
+Derive the refinery identity mechanically from the canonical pool template,
+not from `binding_prefix`: imported formula variables may render empty in a
+legacy cooked recipe even while the configured agents retain their import
+binding. For example, `kisakcod/gastown.polecat` becomes
+`kisakcod/gastown.refinery`, while an unbound `kisakcod/polecat` becomes
+`kisakcod/refinery`. Validate the exact derived identity against `gc status`
+before mutating the bead. Missing, malformed, or ambiguous configuration fails
+closed with the already-published branch preserved.
 
 Set `assignee` to the configured refinery named-session identity and clear
 `gc.routed_to` because the direct assignment is the handoff. Generic pool
@@ -635,7 +676,12 @@ picks it up and resumes from the existing branch.
 
 **7. Signal refinery to check for work immediately (belt-and-suspenders):**
 ```bash
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
+REFINERY_TARGET=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].assignee // empty')
+if [ -z "$REFINERY_TARGET" ]; then
+  echo "REFINERY SIGNAL FAILED: the handed-off bead has no assignee."
+  gc runtime drain-ack
+  exit 1
+fi
 gc session wake "$REFINERY_TARGET" || true
 gc session nudge "$REFINERY_TARGET" "Run 'gc prime' to check merge queue and begin processing." || true
 ```

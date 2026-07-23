@@ -1137,6 +1137,8 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
         "mol-idea-to-plan",
     }
     assert "gc session wake \"$REFINERY_TARGET\"" in contracts["mol-polecat-work"]
+    assert "gc status --json" in contracts["mol-polecat-work"]
+    assert ".qualified_name == $target" in contracts["mol-polecat-work"]
     assert 'git worktree add --detach "$MERGE_WT" "origin/$TARGET"' in contracts["mol-refinery-patrol"]
     assert 'gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"' in contracts["mol-refinery-patrol"]
     assert "gc bd close $WORK --reason \"Pull request ready: $PR_URL\"" in contracts["mol-refinery-patrol"]
