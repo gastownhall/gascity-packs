@@ -22,8 +22,10 @@ beads or unrelated workflow beads.
 
 ## CRITICAL: Directory Discipline
 
-Your branch-setup step creates a git worktree and records it in `metadata.work_dir`
-on your work bead. Once created, **stay in your worktree.**
+Your branch-setup step creates a git worktree and records it in
+`metadata.artifact_dir` on your work bead. Once created, **stay in your
+worktree.** `gc.work_dir` is controller execution context, not the durable
+task-artifact key.
 
 - **ALL file edits** must be within your worktree directory
 - **NEVER edit files in** `{{ .RigRoot }}/` (shared rig repo) — polecats must stay in
@@ -31,7 +33,7 @@ on your work bead. Once created, **stay in your worktree.**
 
 The failure mode: You `cd` to the shared rig repo and edit files there. You bypass
 your isolated worktree, stomp on the canonical checkout, and break the recovery
-metadata that points back to `metadata.work_dir`.
+metadata that points back to `metadata.artifact_dir`.
 
 Stay in your worktree. Install deps there if needed (`npm install`). Commit and push from there.
 
@@ -85,15 +87,18 @@ Work beads carry structured metadata for lifecycle tracking and handoff:
 
 | Field | Set by | When | Description |
 |-------|--------|------|-------------|
-| `work_dir` | polecat (branch-setup) | Early | Absolute path to git worktree |
+| `artifact_dir` | polecat (branch-setup) | Early | Absolute path to the validated per-bead git worktree |
 | `branch` | polecat (branch-setup) | Early | Source branch name |
 | `target` | polecat (submit) | Late | Target branch (default: {{ .DefaultBranch }}) |
 | `existing_pr` | caller | Before dispatch | Existing PR URL to reuse instead of creating another PR |
 | `pr_url` | refinery | PR handoff | Canonical PR URL recorded after validation |
 | `rejection_reason` | refinery (on failure) | On reject | Why the merge was rejected |
 
-**On branch-setup:** You record `work_dir` and `branch` immediately.
+**On branch-setup:** You record `artifact_dir` and `branch` immediately.
 This enables crash recovery — the witness can find and salvage your work.
+Legacy task `work_dir` metadata is migrated only after the workspace step
+validates that it is an existing `*/worktrees/<bead-id>` worktree in this rig;
+an agent/provider root cannot pass that exact task-worktree shape.
 
 **On submission:** You update `branch` (may have changed after rebase),
 set `target`, then reassign to refinery. If `existing_pr` is present, leave

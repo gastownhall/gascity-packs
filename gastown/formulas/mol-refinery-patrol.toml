@@ -215,9 +215,30 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
 Fetch and attempt mechanical rebase:
 ```bash
 git fetch --prune origin
+ARTIFACT_SOURCE_SHA=$(gc bd show "$WORK" --json |
+  jq -r '.[0].metadata.artifact_source_sha // empty')
+if [ -z "$ARTIFACT_SOURCE_SHA" ]; then
+  ARTIFACT_SOURCE_SHA=$(git rev-parse "origin/$BRANCH") || {
+    echo "Cannot capture the published source SHA for artifact cleanup. STOP."
+    gc runtime drain-ack
+    exit 1
+  }
+  gc bd update "$WORK" \
+    --set-metadata artifact_source_sha="$ARTIFACT_SOURCE_SHA" || {
+      echo "Cannot durably record the pre-rebase source SHA. STOP."
+      gc runtime drain-ack
+      exit 1
+    }
+fi
 git checkout -b temp origin/$BRANCH
 git rebase origin/$TARGET
 ```
+
+Do not overwrite an existing `artifact_source_sha` on a retry: MR mode may
+already have rewritten the remote branch before a refinery restart, while the
+original artifact still correctly points at the first captured SHA. A polecat
+returning from a rejected attempt clears this proof during its next successful
+submission, so the next refinery handoff captures a fresh value.
 
 If rebase SUCCEEDED (exit 0): close this step, proceed to run-tests.
 
@@ -820,7 +841,8 @@ rejected/reworked attempt before the successful close.
 git checkout --detach "origin/$TARGET" >/dev/null 2>&1 || true
 git branch -d temp || git branch -D temp || true
 ```
-If delete_merged_branches = "true": `git push origin --delete $BRANCH`
+Run **Successful task-artifact cleanup** below, then, if
+delete_merged_branches = "true": `git push origin --delete $BRANCH`
 
 **If MERGE_STRATEGY = "mr":**
 
@@ -1071,7 +1093,71 @@ gc bd close $WORK --reason "Pull request ready: $PR_URL"
 git checkout "$TARGET"
 git branch -d temp
 ```
+Run **Successful task-artifact cleanup** below.
 Do NOT delete `$BRANCH` in mr mode — GitHub pull requests need the source branch.
+
+**Successful task-artifact cleanup (direct and mr):**
+
+Only a successfully closed handoff reaches this block. Remove the polecat's
+nested task worktree only when its canonical-first metadata path is the exact
+bead-scoped worktree in this rig, the worktree is still clean, and its HEAD is
+the exact source SHA captured from `origin/$BRANCH` before refinery rebased.
+This durable proof is required because MR mode rewrites the source branch and
+the artifact deliberately remains at the pre-rebase commit. Rejections and
+ambiguous paths retain the worktree for recovery.
+
+```bash
+# BEGIN SUCCESSFUL_ARTIFACT_CLEANUP
+CLOSED_WORK=$(gc bd show "$WORK" --json)
+CLOSED_STATUS=$(printf '%s' "$CLOSED_WORK" | jq -r '.[0].status // empty')
+CLOSED_META=$(printf '%s' "$CLOSED_WORK" | jq '.[0].metadata')
+HANDOFF_RESULT=$(printf '%s' "$CLOSED_META" | jq -r '.merge_result // empty')
+EXPECTED_ARTIFACT_SHA=$(printf '%s' "$CLOSED_META" |
+  jq -r '.artifact_source_sha // empty')
+TASK_ARTIFACT=$(printf '%s' "$CLOSED_META" | jq -r '
+  if ((.artifact_dir // "") | length) > 0
+  then .artifact_dir
+  else (.work_dir // empty)
+  end')
+SAFE_ARTIFACT=
+
+if [ "$CLOSED_STATUS" = closed ] && [ -n "$TASK_ARTIFACT" ] &&
+   [ -d "$TASK_ARTIFACT" ]; then
+  if ARTIFACT_REAL=$(CDPATH= cd -- "$TASK_ARTIFACT" 2>/dev/null && pwd -P) &&
+     ARTIFACT_TOP=$(git -C "$ARTIFACT_REAL" rev-parse --show-toplevel 2>/dev/null) &&
+     ARTIFACT_TOP=$(CDPATH= cd -- "$ARTIFACT_TOP" 2>/dev/null && pwd -P) &&
+     ARTIFACT_COMMON=$(git -C "$ARTIFACT_REAL" rev-parse \
+       --path-format=absolute --git-common-dir 2>/dev/null) &&
+     ARTIFACT_COMMON=$(CDPATH= cd -- "$ARTIFACT_COMMON" 2>/dev/null && pwd -P) &&
+     RIG_COMMON=$(git -C "$GC_RIG_ROOT" rev-parse \
+       --path-format=absolute --git-common-dir 2>/dev/null) &&
+     RIG_COMMON=$(CDPATH= cd -- "$RIG_COMMON" 2>/dev/null && pwd -P) &&
+     LOCAL_SHA=$(git -C "$ARTIFACT_REAL" rev-parse HEAD 2>/dev/null); then
+    if [ "$(basename -- "$ARTIFACT_REAL")" = "$WORK" ] &&
+       [ "$(basename -- "$(dirname -- "$ARTIFACT_REAL")")" = worktrees ] &&
+       [ "$ARTIFACT_TOP" = "$ARTIFACT_REAL" ] &&
+       [ "$ARTIFACT_COMMON" = "$RIG_COMMON" ] &&
+       { [ "$HANDOFF_RESULT" = merged ] ||
+         [ "$HANDOFF_RESULT" = already_merged ] ||
+         [ "$HANDOFF_RESULT" = pull_request ]; } &&
+       [ -n "$EXPECTED_ARTIFACT_SHA" ] &&
+       [ "$LOCAL_SHA" = "$EXPECTED_ARTIFACT_SHA" ] &&
+       [ -z "$(git -C "$ARTIFACT_REAL" status --porcelain)" ]; then
+      SAFE_ARTIFACT=$ARTIFACT_REAL
+    fi
+  fi
+fi
+
+if [ -n "$SAFE_ARTIFACT" ] &&
+   git -C "$GC_RIG_ROOT" worktree remove "$SAFE_ARTIFACT"; then
+  gc bd update "$WORK" \
+    --unset-metadata artifact_dir \
+    --unset-metadata work_dir
+else
+  echo "Task artifact absent, changed, dirty, unpublished, or unsafe; preserving it for recovery."
+fi
+# END SUCCESSFUL_ARTIFACT_CLEANUP
+```
 
 **If MERGE_STRATEGY = "local":**
 
