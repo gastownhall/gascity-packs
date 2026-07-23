@@ -84,9 +84,13 @@ It is the source of truth for orphan classification. Resolve bead assignees by
 exact session identity from `gc session list --state=all --json` and session
 bead metadata; do not use template-pattern or fixed-prefix matching.
 
-**Recovery follows the canonical chain.** Read `metadata.work_dir` and
-`metadata.branch` from the bead — polecats record both early in
-branch-setup. For each orphaned bead:
+**Recovery follows the canonical chain.** Read `metadata.artifact_dir` and
+`metadata.branch` from the bead — polecats record both early in branch-setup.
+Only if `artifact_dir` is absent may you consider deprecated
+`metadata.work_dir`, and only after the patrol formula proves it is an existing
+exact `*/worktrees/<bead-id>` Git worktree in this rig. Do not infer artifact
+ownership from `gc.work_dir`; it is controller execution context. For each
+orphaned bead:
 
 1. **Branch on origin** (`metadata.branch` exists, verified on remote) ->
    worktree disposable. Delete worktree, reset bead to pool.
