@@ -61,6 +61,13 @@ For every base-pack formula, prompt asset, adapter, or public override change:
 - **Gas City fanout** - A durable formula expansion or graph branch that
   replaces upstream subagent/task-tool dispatch while preserving reviewer or
   worker perspective.
+- **Graph-owned workspace lifecycle** - Deterministic host-local preparation,
+  per-owner serialization, verified entry, result recording, safe sequential
+  reuse, and successful terminal cleanup for a convoy or nested convoy/epic
+  owner. Commits and beads remain durable; workspace state is transient. It does
+  not provide integration, review/fix, publish, restart, cross-host, or
+  garbage-collection behavior.
+
 - **Artifact validator** - The shared base-pack validator invoked by
   formula-specific check steps to validate front matter, structural markdown,
   coverage, traceability, and schema identity.
@@ -758,6 +765,29 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 `producer.stage`, `producer.attempt`, `methodology.pack`, and
 `methodology.name`, and does not require owner or role fields.
 
+### GC-METH-TS-009: Preserve Graph-Owned Workspace Identity
+
+As the implementation workflow, separately drained stages need one exact,
+locally recorded detached worktree per convoy or nested convoy/epic owner from
+preparation through owner completion, because co-located items must form one
+verified commit chain without treating ambient checkout state as authoritative.
+
+Proof expectation: prompt contracts invoke the rendered pack-local workspace
+asset for prepare, path, entry verification, result recording, current-item
+result lookup, and conditional terminal cleanup; script tests exercise owner
+serialization, linear reuse, graph completeness, Git validation, cleanup,
+filesystem, subprocess, and transient local-state behavior.
+### GC-METH-TS-010: Keep Unsupported Lifecycles Outside Workspace Claims
+
+As a pack maintainer, I need same-session drains and downstream integration,
+review/fix, publish, restart, cross-host, and garbage collection to remain
+outside the graph-owned workspace contract, so a deterministic local worktree
+is not misrepresented as an end-to-end delivery lifecycle.
+
+Proof expectation: same-session core and derived prompt owners contain no
+workspace-script wiring, and script scenarios reject unsupported actions without
+side effects, force deletion, or destructive repair.
+
 ## Behavior Requirements
 
 | ID | Trace | Requirement |
@@ -816,6 +846,13 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 | GC-METH-BR-051 | GC-METH-US-001 | WHEN prerequisite inputs already exist for a build stage, THE base pack SHALL provide reusable `build-from-*-base` continuation suffixes that validate those prerequisites, perform only their owned stage or handoff, and delegate to the next suffix without silently rerunning skipped upstream stages. |
 | GC-METH-BR-052 | GC-METH-US-002 | WHEN a methodology pack needs a continuation entrypoint, THE pack SHOULD extend the matching `build-from-*-base` suffix and override selectors, routes, drain formulas, or review expansions instead of copying the suffix graph. |
 | GC-METH-BR-053 | GC-METH-US-001 | WHEN a user wants the built-in Gas City continuation behavior, THE base pack SHALL provide cataloged `build-from-*` wrappers that extend the matching suffix bases. |
+| GC-METH-BR-054 | GC-METH-TS-009 | WHEN a separately drained implementation is prepared, THE prompt SHALL invoke `gc gc workspace prepare` with the claimed step ID and an explicit input ref, and SHALL NOT derive the worktree from ambient `$PWD`, mutate source-anchor `work_dir`, or perform destructive repair. |
+| GC-METH-BR-055 | GC-METH-TS-009 | BEFORE a separately drained implementation reads or mutates source, THE prompt SHALL obtain the authoritative path with `gc gc workspace path` and require `verify-entry`; AFTER clean commit and verification, it SHALL require `record-result`; source-anchor close SHALL require `result` and use its exact source-anchor ID, path, input OID, and output OID. |
+| GC-METH-BR-056 | GC-METH-TS-009 | WHEN the workspace command records lifecycle state, THE state SHALL remain host-local under the repository common Git directory, keyed by repository and graph-derived convoy or nested convoy/epic owner; a waiting next item SHALL atomically inherit the prior recorded output as its input only after that item reaches result phase. |
+| GC-METH-BR-057 | GC-METH-TS-010 | WHEN implementation uses `same-session` shared-drain item formulas, core and derived shared-drain assets SHALL remain outside `gc gc workspace` wiring and SHALL NOT claim deterministic setup, checkpoint, fallback, or result semantics from the graph-owned lifecycle. |
+| GC-METH-BR-058 | GC-METH-TS-010 | WHEN callers request integration, review/fix, publish/PR, restart inheritance, cross-host reuse, garbage collection, or force removal from `gc gc workspace`, THE command SHALL fail closed without remote operations, destructive repair, lifecycle beads, or a canonical integrated result. |
+| GC-METH-BR-060 | GC-METH-TS-009 | AFTER close-source-anchor closes and verifies its exact source anchor, IT SHALL call `cleanup-if-complete`; that action SHALL retain the workspace until every direct member of the graph-derived owner is closed with `gc.outcome=pass`, then remove the clean completed worktree without force and delete transient state. |
+| GC-METH-BR-059 | GC-METH-TS-009 | WHEN the workspace command resolves a source anchor, IT SHALL derive ownership from the anchor's existing `parent_convoy_id`, classify a nested parent convoy as an epic owner, and fail closed on missing, malformed, or ambiguous graph identity. |
 
 ## Scenario Ledger
 

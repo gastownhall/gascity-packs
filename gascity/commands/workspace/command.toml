@@ -1,0 +1,2 @@
+description = "Reuse and clean deterministic convoy- or epic-owned worktrees"
+run = "run.sh"
