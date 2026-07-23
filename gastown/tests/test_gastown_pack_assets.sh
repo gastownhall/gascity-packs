@@ -164,7 +164,7 @@ test_polecat_claim_infra_failure_escalates_without_drain_ack() {
     # The terminal infra-failure path must escalate and exit non-zero WITHOUT
     # drain-ack: drain-ack reports idle and sleeps, hiding the outage from
     # town oversight in a wake->drain->sleep loop no health check can see.
-    block="$(awk '/CLAIM_INFRA_FAILURE/{found=1} found{print} found && /^fi$/{exit}' "$prompt")"
+    block="$(awk '/CLAIM_INFRA_FAILURE gc hook --claim failed after/{found=1} found{print} found && /^fi$/{exit}' "$prompt")"
     [[ "$block" == *'exit 1'* ]] ||
         fail "hook infrastructure failure must exit non-zero, not exit 0 like genuine no-work"
     [[ "$block" != *'gc runtime drain-ack'* ]] ||
@@ -174,6 +174,107 @@ test_polecat_claim_infra_failure_escalates_without_drain_ack() {
 
     grep -F 'If it prints `CLAIM_INFRA_FAILURE`' "$prompt" >/dev/null ||
         fail "claim-block outcome guidance must cover CLAIM_INFRA_FAILURE"
+}
+
+test_polecat_claim_trusts_hook_receipt_when_direct_read_lags() {
+    local prompt tmpdir fake_bin claim_script output calls claim_code
+    prompt="$GASTOWN/agents/polecat/prompt.template.md"
+    tmpdir="$(mktemp -d)"
+    fake_bin="$tmpdir/bin"
+    claim_script="$tmpdir/claim.sh"
+    calls="$tmpdir/calls"
+    mkdir -p "$fake_bin"
+
+    # Execute the exact startup block from the asset. The hook returns the
+    # authoritative successful claim observed in production, while the
+    # immediately-following direct read repeatedly returns its stale
+    # open/unassigned projection.
+    python3 - "$prompt" >"$claim_script" <<'PY'
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+start_marker = "bash <<'GC_CLAIM'\n"
+start = text.index(start_marker) + len(start_marker)
+end = text.index("\nGC_CLAIM", start)
+print(text[start:end].replace("{{ .BindingPrefix }}", "gastown."))
+PY
+    cat >"$fake_bin/gc" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"$GC_TEST_CALLS"
+case "$*" in
+  "hook --claim --json")
+    if [ "${GC_TEST_SCENARIO:-}" = "claims_errored" ]; then
+      printf '%s\n' '{"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"claims_errored"}'
+      exit 1
+    fi
+    printf '%s\n' '{"schema_version":"1","ok":true,"command":"hook","action":"work","reason":"claimed","bead_id":"ac-3iv","assignee":"kisakcod/gastown.polecat-1","route":"kisakcod/gastown.polecat"}'
+    ;;
+  "bd show ac-3iv --json")
+    printf '%s\n' '[{"id":"ac-3iv","status":"open","assignee":"","metadata":{"gc.routed_to":"kisakcod/gastown.polecat"}}]'
+    ;;
+  "mail send "*)
+    exit 0
+    ;;
+  *)
+    printf 'unexpected mutation after authoritative claim: %s\n' "$*" >&2
+    exit 97
+    ;;
+esac
+SH
+    cat >"$fake_bin/sleep" <<'SH'
+#!/bin/sh
+exit 0
+SH
+    chmod +x "$fake_bin/gc" "$fake_bin/sleep" "$claim_script"
+
+    output="$(
+        PATH="$fake_bin:$PATH" \
+        GC_TEST_CALLS="$calls" \
+        GC_RIG="kisakcod" \
+        GC_SESSION_NAME="kisakcod/gastown.polecat-1" \
+        BEADS_ACTOR="kisakcod/gastown.polecat-1" \
+        bash "$claim_script"
+    )" || fail "schema-valid hook claim must survive a stale direct read"
+
+    [[ "$output" == *'CLAIM_READ_STALE ac-3iv direct_status=open direct_assignee=unavailable'* ]] ||
+        fail "stale direct claim projection should be diagnosed without overriding the hook receipt"
+    [[ "$output" == *'CLAIMED_BEAD_ID=ac-3iv'* ]] ||
+        fail "authoritative hook bead id must remain claimed when the direct read lags"
+    [[ "$output" == *'CLAIMED_ASSIGNEE=kisakcod/gastown.polecat-1'* ]] ||
+        fail "authoritative hook assignee must be preserved"
+    [[ "$output" == *'CLAIMED_ROUTE=kisakcod/gastown.polecat'* ]] ||
+        fail "authoritative hook route must be preserved"
+    ! grep -F 'bd update' "$calls" >/dev/null ||
+        fail "stale post-claim reads must never mutate or release the claimed bead"
+    ! grep -F 'runtime drain-ack' "$calls" >/dev/null ||
+        fail "stale post-claim reads must never drain-ack the worker"
+
+    # A structured claims_errored result means routed work existed but its
+    # claim mutation failed. It must remain an observable infrastructure
+    # failure, never be laundered into the same drain path as genuine no_work.
+    : >"$calls"
+    set +e
+    output="$(
+        PATH="$fake_bin:$PATH" \
+        GC_TEST_CALLS="$calls" \
+        GC_TEST_SCENARIO="claims_errored" \
+        GC_RIG="kisakcod" \
+        GC_SESSION_NAME="kisakcod/gastown.polecat-1" \
+        BEADS_ACTOR="kisakcod/gastown.polecat-1" \
+        bash "$claim_script" 2>&1
+    )"
+    claim_code=$?
+    set -e
+    [[ "$claim_code" -eq 1 ]] ||
+        fail "claims_errored must remain a non-zero infrastructure failure"
+    [[ "$output" == *'CLAIM_INFRA_FAILURE'* ]] ||
+        fail "claims_errored must surface as CLAIM_INFRA_FAILURE"
+    ! grep -F 'bd update' "$calls" >/dev/null ||
+        fail "claims_errored must never mutate or release a bead"
+    ! grep -F 'runtime drain-ack' "$calls" >/dev/null ||
+        fail "claims_errored must never acknowledge drain"
+
+    rm -rf "$tmpdir"
 }
 
 test_review_leg_contract_forbids_synthetic_mutation() {
@@ -247,6 +348,7 @@ test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_polecat_claim_infra_failure_escalates_without_drain_ack
+test_polecat_claim_trusts_hook_receipt_when_direct_read_lags
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 

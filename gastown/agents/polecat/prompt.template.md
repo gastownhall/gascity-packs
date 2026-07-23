@@ -158,14 +158,15 @@ bash <<'GC_CLAIM'
 set +e
 EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
 if [ -z "$EXPECTED_ASSIGNEE" ]; then
-  echo "CLAIM_REJECTED no session identity in env; cannot verify ownership"
-  gc runtime drain-ack
-  exit 0
+  echo "CLAIM_INFRA_FAILURE no session identity in env; cannot validate hook ownership"
+  exit 1
 fi
+EXPECTED_ROUTE="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat"
 
 # Claim with retry. A hook-call failure (non-zero exit, malformed JSON) is a
 # transient CLI/daemon fault — NOT "no work" — so retry it before giving up.
-# Only action==drain, or a clean empty result, is genuine NO_ROUTED_WORK.
+# Only a schema-valid action==drain with reason=no_work is a genuine terminal
+# drain. Any other drain reason is infrastructure failure, not idle.
 WORK_ID=""
 CLAIM_TRY=0
 while [ "$CLAIM_TRY" -lt 3 ]; do
@@ -175,22 +176,33 @@ while [ "$CLAIM_TRY" -lt 3 ]; do
   CLAIM_CODE=$?
   CLAIM_ERR_TEXT="$(sed -n '1p' "$CLAIM_ERR")"
   rm -f "$CLAIM_ERR"
+  SCHEMA_VERSION="$(printf '%s' "$CLAIM_JSON" | jq -r '.schema_version // empty' 2>/dev/null)"
+  CLAIM_OK="$(printf '%s' "$CLAIM_JSON" | jq -r '.ok // empty' 2>/dev/null)"
+  COMMAND="$(printf '%s' "$CLAIM_JSON" | jq -r '.command // empty' 2>/dev/null)"
   ACTION="$(printf '%s' "$CLAIM_JSON" | jq -r '.action // empty' 2>/dev/null)"
+  REASON="$(printf '%s' "$CLAIM_JSON" | jq -r '.reason // empty' 2>/dev/null)"
   WORK_ID="$(printf '%s' "$CLAIM_JSON" | jq -r '.bead_id // empty' 2>/dev/null)"
+  CLAIM_ASSIGNEE="$(printf '%s' "$CLAIM_JSON" | jq -r '.assignee // empty' 2>/dev/null)"
+  CLAIM_ROUTE="$(printf '%s' "$CLAIM_JSON" | jq -r '.route // empty' 2>/dev/null)"
   if [ "$ACTION" = "drain" ]; then
-    echo "NO_ROUTED_WORK"
-    gc runtime drain-ack
-    exit 0
+    if [ "$SCHEMA_VERSION" = "1" ] && [ "$CLAIM_OK" = "true" ] &&
+       [ "$COMMAND" = "hook" ] && [ "$REASON" = "no_work" ]; then
+      echo "NO_ROUTED_WORK reason=$REASON"
+      gc runtime drain-ack
+      exit 0
+    fi
+    CLAIM_ERR_TEXT="hook returned non-idle drain reason=${REASON:-missing}"
   fi
-  if [ "$CLAIM_CODE" -eq 0 ] && [ -n "$WORK_ID" ]; then
+  if [ "$CLAIM_CODE" -eq 0 ] &&
+     [ "$SCHEMA_VERSION" = "1" ] && [ "$CLAIM_OK" = "true" ] &&
+     [ "$COMMAND" = "hook" ] && [ "$ACTION" = "work" ] &&
+     { [ "$REASON" = "claimed" ] || [ "$REASON" = "existing_assignment" ] || [ "$REASON" = "ready_assignment" ]; } &&
+     [ -n "$WORK_ID" ] && [ "$CLAIM_ASSIGNEE" = "$EXPECTED_ASSIGNEE" ] &&
+     { [ "$CLAIM_ROUTE" = "$EXPECTED_ROUTE" ] ||
+       { [ "$REASON" != "claimed" ] && [ -z "$CLAIM_ROUTE" ]; }; }; then
     break
   fi
-  if [ "$CLAIM_CODE" -eq 0 ] && [ -z "$ACTION" ] && [ -z "$WORK_ID" ]; then
-    echo "NO_ROUTED_WORK"
-    gc runtime drain-ack
-    exit 0
-  fi
-  echo "CLAIM_RETRY hook call failed (code=$CLAIM_CODE): ${CLAIM_ERR_TEXT:-malformed claim result}"
+  echo "CLAIM_RETRY hook result invalid (code=$CLAIM_CODE action=${ACTION:-missing} reason=${REASON:-missing} assignee=${CLAIM_ASSIGNEE:-missing} route=${CLAIM_ROUTE:-missing}): ${CLAIM_ERR_TEXT:-malformed claim result}"
   WORK_ID=""
   sleep 2
 done
@@ -208,16 +220,14 @@ if [ -z "$WORK_ID" ]; then
   exit 1
 fi
 
-# Post-claim ownership verification. The bead MUST be yours and in_progress
-# before you touch any code. A polecat NEVER works a bead it did not claim this
-# session. Distinguish a READ FAILURE (gc bd show non-zero / empty JSON —
-# transient) from a genuine MISMATCH (non-empty assignee that differs, or
-# status not in_progress). Retry the read before deciding; only a genuine
-# mismatch is CLAIM_REJECTED.
+# The schema-valid hook result above is the authoritative claim receipt. This
+# direct read is best-effort enrichment only: a federated/cache read can lag the
+# committed hook mutation and temporarily report open/unassigned. Never release,
+# mutate, or drain-ack because this secondary read is stale or unavailable.
 STATUS=""
 ASSIGNEE=""
 SHOW_JSON=""
-SHOW_OK=0
+SHOW_CONFIRMED=0
 SHOW_TRY=0
 while [ "$SHOW_TRY" -lt 3 ]; do
   SHOW_TRY=$((SHOW_TRY + 1))
@@ -225,38 +235,32 @@ while [ "$SHOW_TRY" -lt 3 ]; do
   SHOW_CODE=$?
   STATUS="$(printf '%s' "$SHOW_JSON" | jq -r '.[0].status // empty' 2>/dev/null)"
   ASSIGNEE="$(printf '%s' "$SHOW_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)"
-  if [ "$SHOW_CODE" -eq 0 ] && [ -n "$STATUS" ] && [ -n "$ASSIGNEE" ]; then
-    SHOW_OK=1
+  if [ "$SHOW_CODE" -eq 0 ] && [ "$STATUS" = "in_progress" ] &&
+     [ "$ASSIGNEE" = "$CLAIM_ASSIGNEE" ]; then
+    SHOW_CONFIRMED=1
     break
   fi
   sleep 1
 done
-if [ "$SHOW_OK" -ne 1 ]; then
-  # Never leave a claimed bead stranded in_progress on an unreadable state:
-  # release it so it re-enters the pool instead of being lost.
-  echo "CLAIM_RELEASED $WORK_ID unreadable after retries; returning it to the pool"
-  gc bd update "$WORK_ID" --status=open --assignee=""
-  gc runtime drain-ack
-  exit 0
-fi
-if [ "$ASSIGNEE" != "$EXPECTED_ASSIGNEE" ] || [ "$STATUS" != "in_progress" ]; then
-  echo "CLAIM_REJECTED $WORK_ID assignee=$ASSIGNEE status=$STATUS (expected $EXPECTED_ASSIGNEE / in_progress)"
-  gc runtime drain-ack
-  exit 0
-fi
 
-# Ownership confirmed. Stamp a stable session identity so the churn-watcher and
-# the resume re-verify can key on metadata.polecat_session.
-gc bd update "$WORK_ID" --set-metadata polecat_session="$EXPECTED_ASSIGNEE" \
-  || echo "WARN metadata stamp failed for $WORK_ID; churn-watcher/resume lose session keying (proceeding — the claim is valid)"
+if [ "$SHOW_CONFIRMED" -eq 1 ]; then
+  # Stamp only after the secondary read converges. The hook itself already
+  # records durable session identity; this pack-local key is observability-only.
+  gc bd update "$WORK_ID" --set-metadata polecat_session="$CLAIM_ASSIGNEE" \
+    || echo "WARN metadata stamp failed for $WORK_ID; churn-watcher/resume lose session keying (proceeding — the claim is valid)"
+  printf '%s' "$SHOW_JSON" | jq '.[0].metadata'
+else
+  echo "CLAIM_READ_STALE $WORK_ID direct_status=${STATUS:-unavailable} direct_assignee=${ASSIGNEE:-unavailable}; trusting schema-valid hook receipt"
+fi
 
 printf 'CLAIMED_BEAD_ID=%s\n' "$WORK_ID"
-printf '%s' "$SHOW_JSON" | jq '.[0].metadata'
+printf 'CLAIMED_ASSIGNEE=%s\n' "$CLAIM_ASSIGNEE"
+printf 'CLAIMED_ROUTE=%s\n' "$CLAIM_ROUTE"
 GC_CLAIM
 ```
 
-If the block prints `NO_ROUTED_WORK`, `CLAIM_REJECTED`, or `CLAIM_RELEASED`, it
-has already drain-acked — stop and exit. If it prints `CLAIM_INFRA_FAILURE`,
+If the block prints `NO_ROUTED_WORK`, it has already drain-acked — stop and
+exit. If it prints `CLAIM_INFRA_FAILURE`,
 the hook itself is broken: it has already escalated to the witness and NOT
 drain-acked — end your turn without retrying the claim or drain-acking. Only
 after it prints `CLAIMED_BEAD_ID` do you read formula steps and begin. The claim checks assigned work first (session bead ID,
