@@ -159,6 +159,9 @@ set +e
 EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
 if [ -z "$EXPECTED_ASSIGNEE" ]; then
   echo "CLAIM_INFRA_FAILURE no session identity in env; cannot validate hook ownership"
+  WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"
+  gc mail send "$WITNESS_TARGET" -s "ESCALATION: polecat session identity missing [HIGH]" \
+    -m "Polecat startup cannot validate gc hook ownership because BEADS_ACTOR, GC_SESSION_NAME, GC_SESSION_ID, and GC_AGENT are all empty. Session did NOT claim, mutate, or drain-ack."
   exit 1
 fi
 EXPECTED_ROUTE="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat"
@@ -220,10 +223,11 @@ if [ -z "$WORK_ID" ]; then
   exit 1
 fi
 
-# The schema-valid hook result above is the authoritative claim receipt. This
-# direct read is best-effort enrichment only: a federated/cache read can lag the
-# committed hook mutation and temporarily report open/unassigned. Never release,
-# mutate, or drain-ack because this secondary read is stale or unavailable.
+# The schema-valid hook result above says a claim mutation succeeded, but the
+# direct work-context read must confirm that mutation before work starts. A
+# cross-store discovery/mutation bug can return a valid hook receipt while the
+# work-context projection remains open/unassigned. Never release, mutate,
+# drain-ack, or start work when the two views disagree: escalate and fail closed.
 STATUS=""
 ASSIGNEE=""
 SHOW_JSON=""
@@ -243,15 +247,18 @@ while [ "$SHOW_TRY" -lt 3 ]; do
   sleep 1
 done
 
-if [ "$SHOW_CONFIRMED" -eq 1 ]; then
-  # Stamp only after the secondary read converges. The hook itself already
-  # records durable session identity; this pack-local key is observability-only.
-  gc bd update "$WORK_ID" --set-metadata polecat_session="$CLAIM_ASSIGNEE" \
-    || echo "WARN metadata stamp failed for $WORK_ID; churn-watcher/resume lose session keying (proceeding — the claim is valid)"
-  printf '%s' "$SHOW_JSON" | jq '.[0].metadata'
-else
-  echo "CLAIM_READ_STALE $WORK_ID direct_status=${STATUS:-unavailable} direct_assignee=${ASSIGNEE:-unavailable}; trusting schema-valid hook receipt"
+if [ "$SHOW_CONFIRMED" -ne 1 ]; then
+  echo "CLAIM_INFRA_FAILURE $WORK_ID hook reported assignee=$CLAIM_ASSIGNEE route=$CLAIM_ROUTE but direct work read remained status=${STATUS:-unavailable} assignee=${ASSIGNEE:-unavailable}"
+  WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"
+  gc mail send "$WITNESS_TARGET" -s "ESCALATION: hook claim unconfirmed by work read [HIGH]" \
+    -m "gc hook --claim returned work bead=$WORK_ID assignee=$CLAIM_ASSIGNEE route=$CLAIM_ROUTE, but after $SHOW_TRY direct work reads gc bd show remained status=${STATUS:-unavailable} assignee=${ASSIGNEE:-unavailable}. Possible cross-store discovery/mutation mismatch. Session did NOT release, mutate, or drain-ack the bead and will not start work."
+  exit 1
 fi
+
+# Only a confirmed in_progress read may proceed or mutate observability metadata.
+gc bd update "$WORK_ID" --set-metadata polecat_session="$CLAIM_ASSIGNEE" \
+  || echo "WARN metadata stamp failed for $WORK_ID; churn-watcher/resume lose session keying (proceeding — the claim is valid)"
+printf '%s' "$SHOW_JSON" | jq '.[0].metadata'
 
 printf 'CLAIMED_BEAD_ID=%s\n' "$WORK_ID"
 printf 'CLAIMED_ASSIGNEE=%s\n' "$CLAIM_ASSIGNEE"
@@ -261,8 +268,9 @@ GC_CLAIM
 
 If the block prints `NO_ROUTED_WORK`, it has already drain-acked — stop and
 exit. If it prints `CLAIM_INFRA_FAILURE`,
-the hook itself is broken: it has already escalated to the witness and NOT
-drain-acked — end your turn without retrying the claim or drain-acking. Only
+the hook path or cross-store confirmation is broken: it has already escalated
+to the witness and NOT drain-acked — end your turn without retrying the claim
+or drain-acking. Only
 after it prints `CLAIMED_BEAD_ID` do you read formula steps and begin. The claim checks assigned work first (session bead ID,
 runtime session name, then alias) and only falls through to unassigned pool work
 routed to `${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat`.

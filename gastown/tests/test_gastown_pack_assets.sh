@@ -176,7 +176,7 @@ test_polecat_claim_infra_failure_escalates_without_drain_ack() {
         fail "claim-block outcome guidance must cover CLAIM_INFRA_FAILURE"
 }
 
-test_polecat_claim_trusts_hook_receipt_when_direct_read_lags() {
+test_polecat_claim_fails_closed_when_work_read_disagrees() {
     local prompt tmpdir fake_bin claim_script output calls claim_code
     prompt="$GASTOWN/agents/polecat/prompt.template.md"
     tmpdir="$(mktemp -d)"
@@ -186,9 +186,8 @@ test_polecat_claim_trusts_hook_receipt_when_direct_read_lags() {
     mkdir -p "$fake_bin"
 
     # Execute the exact startup block from the asset. The hook returns the
-    # authoritative successful claim observed in production, while the
-    # immediately-following direct read repeatedly returns its stale
-    # open/unassigned projection.
+    # successful receipt observed in production, while the direct work read
+    # repeatedly shows the real open/unassigned wrong-store outcome.
     python3 - "$prompt" >"$claim_script" <<'PY'
 import sys
 
@@ -227,27 +226,32 @@ exit 0
 SH
     chmod +x "$fake_bin/gc" "$fake_bin/sleep" "$claim_script"
 
+    set +e
     output="$(
         PATH="$fake_bin:$PATH" \
         GC_TEST_CALLS="$calls" \
         GC_RIG="kisakcod" \
         GC_SESSION_NAME="kisakcod/gastown.polecat-1" \
         BEADS_ACTOR="kisakcod/gastown.polecat-1" \
-        bash "$claim_script"
-    )" || fail "schema-valid hook claim must survive a stale direct read"
+        bash "$claim_script" 2>&1
+    )"
+    claim_code=$?
+    set -e
 
-    [[ "$output" == *'CLAIM_READ_STALE ac-3iv direct_status=open direct_assignee=unavailable'* ]] ||
-        fail "stale direct claim projection should be diagnosed without overriding the hook receipt"
-    [[ "$output" == *'CLAIMED_BEAD_ID=ac-3iv'* ]] ||
-        fail "authoritative hook bead id must remain claimed when the direct read lags"
-    [[ "$output" == *'CLAIMED_ASSIGNEE=kisakcod/gastown.polecat-1'* ]] ||
-        fail "authoritative hook assignee must be preserved"
-    [[ "$output" == *'CLAIMED_ROUTE=kisakcod/gastown.polecat'* ]] ||
-        fail "authoritative hook route must be preserved"
+    [[ "$claim_code" -eq 1 ]] ||
+        fail "unconfirmed hook receipt must fail closed with a non-zero exit"
+    [[ "$output" == *'CLAIM_INFRA_FAILURE ac-3iv'* ]] ||
+        fail "wrong-store/unconfirmed claim must surface as CLAIM_INFRA_FAILURE"
+    [[ "$output" == *'status=open assignee=unavailable'* ]] ||
+        fail "claim failure must report the disagreeing work-context state"
+    [[ "$output" != *'CLAIMED_BEAD_ID='* ]] ||
+        fail "unconfirmed hook receipt must never emit CLAIMED_BEAD_ID or start work"
     ! grep -F 'bd update' "$calls" >/dev/null ||
-        fail "stale post-claim reads must never mutate or release the claimed bead"
+        fail "unconfirmed post-claim reads must never mutate or release the bead"
     ! grep -F 'runtime drain-ack' "$calls" >/dev/null ||
-        fail "stale post-claim reads must never drain-ack the worker"
+        fail "unconfirmed post-claim reads must never drain-ack the worker"
+    [[ "$(grep -c '^mail send ' "$calls")" -eq 1 ]] ||
+        fail "unconfirmed post-claim state must send exactly one witness escalation"
 
     # A structured claims_errored result means routed work existed but its
     # claim mutation failed. It must remain an observable infrastructure
@@ -348,7 +352,7 @@ test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_polecat_claim_infra_failure_escalates_without_drain_ack
-test_polecat_claim_trusts_hook_receipt_when_direct_read_lags
+test_polecat_claim_fails_closed_when_work_read_disagrees
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 
