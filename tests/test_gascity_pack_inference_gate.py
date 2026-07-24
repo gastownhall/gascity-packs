@@ -1084,6 +1084,19 @@ def test_validate_gastown_orchestration_contract_rejects_missing_refinery_false_
         gascity_pack_inference_gate.validate_gastown_orchestration_contract(tmp_path / "gastown")
 
 
+def test_validate_gastown_orchestration_contract_rejects_missing_refinery_convoy_guard(tmp_path) -> None:
+    formulas = tmp_path / "gastown" / "formulas"
+    formulas.mkdir(parents=True)
+    for formula_name, fragments in gascity_pack_inference_gate.all_gastown_formula_contracts().items():
+        text = "\n".join(fragments)
+        if formula_name == "mol-refinery-patrol":
+            text = text.replace('$kind != "convoy"', "")
+        (formulas / f"{formula_name}.toml").write_text(text, encoding="utf-8")
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="mol-refinery-patrol"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(tmp_path / "gastown")
+
+
 def test_validate_methodology_flow_contracts_accept_current_packs() -> None:
     for pack_name in gascity_pack_inference_gate.METHODOLOGY_PACKS:
         gascity_pack_inference_gate.validate_methodology_flow_contract(
@@ -1146,9 +1159,15 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     ) in refinery_contract
     assert 'jq -ecs --arg agent "$GC_AGENT"' in refinery_contract
     assert 'error("expected every array entry to be an object")' in refinery_contract
+    assert '$kind != "epic"' in refinery_contract
+    assert '$kind != "convoy"' in refinery_contract
     assert 'type == "string" and test("[^[:space:]]")' in refinery_contract
     assert 'gc bd list "${REFINERY_BD_SCOPE[@]}"' in refinery_contract
     assert "printf -v REFINERY_QUERY" in refinery_contract
+    assert (
+        '\'status=open AND assignee="%s" AND type!=epic AND type!=convoy\' "$GC_AGENT"'
+        in refinery_contract
+    )
     assert 'gc bd query "${REFINERY_BD_SCOPE[@]}"' in refinery_contract
     assert '"$REFINERY_QUERY" --limit=21 --json' in refinery_contract
     assert '[ "$REFINERY_ROW_COUNT" -ge 21 ]' in refinery_contract

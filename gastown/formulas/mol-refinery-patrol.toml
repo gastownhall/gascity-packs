@@ -200,6 +200,7 @@ select_refinery_work() {
                 and .assignee == $agent
                 and ($kind | type == "string")
                 and $kind != "epic"
+                and $kind != "convoy"
                 and (.metadata.branch?
                   | type == "string" and test("[^[:space:]]"))
               )
@@ -226,7 +227,7 @@ WORK=$(printf '%s\n' "$REFINERY_SELECTION" | jq -r '.work')
 # with a bounded full-row query when (and only when) the list is truly empty.
 if [ -z "$WORK" ]; then
   printf -v REFINERY_QUERY \
-    'status=open AND assignee="%s" AND type!=epic' "$GC_AGENT"
+    'status=open AND assignee="%s" AND type!=epic AND type!=convoy' "$GC_AGENT"
   if ! REFINERY_ROWS=$(gc bd query "${REFINERY_BD_SCOPE[@]}" \
     "$REFINERY_QUERY" --limit=21 --json); then
     echo "Could not query durable refinery work; refusing to report an idle queue." >&2
@@ -256,10 +257,10 @@ rows when `list` applies metadata filters, while `query` returns their full
 metadata. The fallback expression is built only after `$GC_AGENT` matches the
 canonical identity grammar, so it cannot inject query operators or terminate
 the quoted assignee value. Both paths fail closed on command or JSON errors,
-then independently require the exact open assignee, a non-epic type, and a
-non-whitespace `metadata.branch`. The fallback reads at most 21 exact-assignee
-rows; if all 21 lack a usable branch, it treats the result as truncated and
-ambiguous instead of falsely reporting an idle queue.
+then independently require the exact open assignee, a non-epic, non-convoy
+type, and a non-whitespace `metadata.branch`. The fallback reads at most 21
+exact-assignee rows; if all 21 lack a usable branch, it treats the result as
+truncated and ambiguous instead of falsely reporting an idle queue.
 
 If found: read the bead metadata to confirm it has a branch:
 ```bash

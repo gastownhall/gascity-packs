@@ -281,6 +281,7 @@ case "${2:-}" in
             no_history)
                 printf '%s\n' '[
                   {"id":"epic-1","status":"open","issue_type":"epic","assignee":"kisakcod/gastown.refinery","metadata":{"branch":"polecat/epic-1"}},
+                  {"id":"convoy-1","status":"open","issue_type":"convoy","assignee":"kisakcod/gastown.refinery","metadata":{"branch":"polecat/convoy-1"}},
                   {"id":"wrong-agent","status":"open","issue_type":"task","assignee":"kisakcod/other","metadata":{"branch":"polecat/wrong-agent"}},
                   {"id":"empty-branch","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{"branch":""}},
                   {"id":"durable-1","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{"branch":"polecat/durable-1"}}
@@ -365,10 +366,12 @@ SH
         fail "both refinery reads must carry the exact rig scope"
     grep -F 'gc <bd> <query>' "$calls" >/dev/null ||
         fail "an empty refinery list must trigger the durable query fallback"
-    grep -F '<status=open AND assignee="kisakcod/gastown.refinery" AND type!=epic>' "$calls" >/dev/null ||
-        fail "TOML-decoded refinery fallback must preserve quotes around the exact assignee"
+    grep -F '<status=open AND assignee="kisakcod/gastown.refinery" AND type!=epic AND type!=convoy>' "$calls" >/dev/null ||
+        fail "TOML-decoded refinery fallback must preserve the exact assignee and work-type exclusions"
     grep -F '<--limit=21>' "$calls" >/dev/null ||
         fail "refinery fallback query must stay bounded"
+    [[ "$output" != *'WORK=convoy-1'* ]] ||
+        fail "refinery fallback must never select a same-agent convoy"
 
     # metadata.branch must contain a non-whitespace string on either read path.
     # Valid objects with absent branch metadata may be skipped.
