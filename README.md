@@ -250,6 +250,14 @@ GC=/path/to/gc make registry-validate
 
 ### Publishing a pack to the registry
 
+> **`registry.toml` describes packs that live in this repository only.** Its
+> `source` must be a `https://github.com/gastownhall/gascity-packs/tree/<ref>/<dir>`
+> URL (or the bare repository URL for a root pack) — anything else is rejected,
+> because the content hash can only be verified against this repository's own
+> history. If your pack lives in **your** repo, you do not need a PR here: publish
+> it directly to the Gas City registry under a scoped `<owner>/<pack>` name and you
+> keep ownership of it.
+
 `registry.toml` is the public catalog. Each `[[pack.release]]` carries a
 content hash that `validate_registry.py` enforces against the pack tree at the
 pinned `commit`. To register a new pack, commit it on your branch, then mint a

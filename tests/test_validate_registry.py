@@ -31,10 +31,158 @@ def _init_pack_repo(root) -> str:
     return run_git(root, "rev-parse", "HEAD")
 
 
-def test_source_pack_path_accepts_tree_urls() -> None:
-    source = "https://github.com/gastownhall/gascity-packs/tree/main/cass"
+def test_parse_source_accepts_canonical_tree_url() -> None:
+    spec = validate_registry.parse_source(
+        "https://github.com/gastownhall/gascity-packs/tree/main/cass"
+    )
 
-    assert validate_registry.source_pack_path(source) == "cass"
+    assert spec == validate_registry.SourceSpec(ref="main", pack_path="cass")
+
+
+def test_parse_source_accepts_bare_repo_url_as_root_pack() -> None:
+    spec = validate_registry.parse_source("https://github.com/gastownhall/gascity-packs")
+
+    assert spec == validate_registry.SourceSpec(ref=None, pack_path="")
+
+
+def test_parse_source_tolerates_trailing_slash_and_host_case() -> None:
+    spec = validate_registry.parse_source(
+        "https://GITHUB.COM/gastownhall/gascity-packs/tree/main/cass/"
+    )
+
+    assert spec == validate_registry.SourceSpec(ref="main", pack_path="cass")
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # The headline bug: a foreign source must be refused, not silently unverified.
+        ("https://github.com/eve/packs", "external pack sources are not accepted"),
+        ("https://github.com/eve/packs/tree/main/x", "external pack sources are not accepted"),
+        ("https://evil.com/gastownhall/gascity-packs/tree/main/x", "external pack sources are not accepted"),
+        # Legacy forms that used to skip every check.
+        ("https://github.com/gastownhall/gascity-packs//cass", "legacy '<repo>//<dir>' source form"),
+        ("https://github.com/gastownhall/gascity-packs.git//cass", "legacy '<repo>//<dir>' source form"),
+        # Plausible-but-wrong shapes previously mis-read as "repository root".
+        ("https://github.com/gastownhall/gascity-packs/packs/cass", "unrecognized source URL form"),
+        ("https://github.com/gastownhall/gascity-packs/blob/main/cass", "source uses /blob/"),
+        ("https://github.com/gastownhall/gascity-packs/tree/main", "missing the pack directory"),
+        ("https://github.com/gastownhall/gascity-packs/tree/main/../etc", "invalid segment"),
+        # Transport / identity.
+        ("http://github.com/gastownhall/gascity-packs/tree/main/cass", "must be an HTTPS URL"),
+        ("git@github.com:gastownhall/gascity-packs.git", "must be an HTTPS URL"),
+        ("https://github.com/GasTownHall/gascity-packs/tree/main/cass", "canonical repository URL"),
+        ("https://github.com/gastownhall/gascity-packs/tree/main/cass#v1", "must not embed a ref fragment"),
+        ("https://github.com/gastownhall/gascity-packs/tree/main/cass?x=1", "no query, credentials, or port"),
+    ],
+)
+def test_parse_source_rejects_unverifiable_sources(source: str, expected: str) -> None:
+    with pytest.raises(validate_registry.SourceError) as excinfo:
+        validate_registry.parse_source(source)
+
+    assert expected in str(excinfo.value)
+
+
+def test_validate_rejects_foreign_source_with_bogus_hash(tmp_path) -> None:
+    """Regression: this exact entry validated "ok" before the fail-closed fix."""
+    commit = _init_pack_repo(tmp_path)
+    registry = tmp_path / "registry.toml"
+    registry.write_text(
+        textwrap.dedent(
+            f"""\
+            schema = 1
+
+            [[pack]]
+              name = "evil-pack"
+              description = "d"
+              source = "https://github.com/eve/packs"
+              source_kind = "git"
+
+              [[pack.release]]
+                version = "0.1.0"
+                ref = "main"
+                commit = "{"a" * 40}"
+                hash = "sha256:{"0" * 64}"
+                description = "d"
+            """
+        )
+    )
+    del commit
+
+    errors = validate_registry.validate(registry)
+
+    assert any("external pack sources are not accepted" in e for e in errors)
+
+
+def test_validate_reports_uncomputable_hash_instead_of_passing(tmp_path) -> None:
+    """A canonical source whose commit is absent must error, not silently verify."""
+    _init_pack_repo(tmp_path)
+    registry = tmp_path / "registry.toml"
+    registry.write_text(
+        textwrap.dedent(
+            f"""\
+            schema = 1
+
+            [[pack]]
+              name = "cass"
+              description = "d"
+              source = "https://github.com/gastownhall/gascity-packs/tree/main/cass"
+              source_kind = "git"
+
+              [[pack.release]]
+                version = "0.1.0"
+                ref = "main"
+                commit = "{"a" * 40}"
+                hash = "sha256:{"0" * 64}"
+                description = "d"
+            """
+        )
+    )
+
+    errors = validate_registry.validate(registry)
+
+    assert any("content hash could not be computed" in e for e in errors)
+
+
+def test_validate_verifies_root_pack_hash(tmp_path) -> None:
+    """A repo-root pack (pack_path == "") must be verified, not skipped."""
+    run_git(tmp_path, "init")
+    run_git(tmp_path, "config", "user.email", "test@example.com")
+    run_git(tmp_path, "config", "user.name", "Test User")
+    (tmp_path / "pack.toml").write_bytes(b'[pack]\nname = "rootpack"\nschema = 2\n')
+    run_git(tmp_path, "add", "pack.toml")
+    run_git(tmp_path, "commit", "-m", "root pack")
+    commit = run_git(tmp_path, "rev-parse", "HEAD")
+    registry = tmp_path / "registry.toml"
+
+    def write(hash_value: str) -> None:
+        registry.write_text(
+            textwrap.dedent(
+                f"""\
+                schema = 1
+
+                [[pack]]
+                  name = "rootpack"
+                  description = "d"
+                  source = "https://github.com/gastownhall/gascity-packs"
+                  source_kind = "git"
+
+                  [[pack.release]]
+                    version = "0.1.0"
+                    ref = "main"
+                    commit = "{commit}"
+                    hash = "{hash_value}"
+                    description = "d"
+                """
+            )
+        )
+
+    real = validate_registry.git_pack_content_hash(tmp_path, commit, "")
+    write(real)
+    assert not [e for e in validate_registry.validate(registry) if "rootpack" in e]
+
+    write(f"sha256:{'0' * 64}")
+    assert any("does not match" in e for e in validate_registry.validate(registry) if "rootpack" in e)
 
 
 def test_validate_tree_url_source_checks_pack_toml_name(tmp_path) -> None:
@@ -103,20 +251,22 @@ def test_resolve_commit_returns_full_lowercase_sha(tmp_path) -> None:
     assert resolved == head
 
 
-def test_compute_pack_hash_matches_validator_and_raises_when_absent(tmp_path) -> None:
+def test_git_pack_content_hash_raises_rather_than_returning_none(tmp_path) -> None:
+    """The fail-closed contract: an uncomputable hash must raise, never be falsy."""
     commit = _init_pack_repo(tmp_path)
 
-    computed = validate_registry.compute_pack_hash(tmp_path, "cass", commit)
+    computed = validate_registry.git_pack_content_hash(tmp_path, commit, "cass")
 
-    assert computed == validate_registry.git_pack_content_hash(tmp_path, commit, "cass")
     assert validate_registry.HASH_RE.fullmatch(computed)
-    with pytest.raises(ValueError):
-        validate_registry.compute_pack_hash(tmp_path, "missing", commit)
+    with pytest.raises(ValueError, match="does not contain"):
+        validate_registry.git_pack_content_hash(tmp_path, commit, "missing")
+    with pytest.raises(ValueError, match="not present in this repository"):
+        validate_registry.git_pack_content_hash(tmp_path, "a" * 40, "cass")
 
 
 def test_render_pack_entry_parses_and_carries_computed_hash(tmp_path) -> None:
     commit = _init_pack_repo(tmp_path)
-    content_hash = validate_registry.compute_pack_hash(tmp_path, "cass", commit)
+    content_hash = validate_registry.git_pack_content_hash(tmp_path, commit, "cass")
 
     block = validate_registry.render_pack_entry(
         name="cass",
@@ -141,7 +291,7 @@ def test_render_pack_entry_parses_and_carries_computed_hash(tmp_path) -> None:
 
 def test_render_pack_entry_escapes_quotes_in_descriptions(tmp_path) -> None:
     commit = _init_pack_repo(tmp_path)
-    content_hash = validate_registry.compute_pack_hash(tmp_path, "cass", commit)
+    content_hash = validate_registry.git_pack_content_hash(tmp_path, commit, "cass")
 
     description = 'Has a "quote" and a \\ backslash'
     block = validate_registry.render_pack_entry(

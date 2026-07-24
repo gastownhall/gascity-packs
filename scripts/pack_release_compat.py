@@ -247,7 +247,10 @@ def validate_registry_locally(registry_path: Path) -> None:
             file=sys.stderr,
         )
         return
-    run_checked([sys.executable, str(validator)], cwd=registry_path.parent)
+    # --require-git: this is the release-HASH validation fallback, and without git no
+    # hash is verified at all. Failing is the point; silently degrading to a
+    # format-only check would defeat the fallback.
+    run_checked([sys.executable, str(validator), "--require-git"], cwd=registry_path.parent)
 
 
 def validate_registry_hashes(gc_bin: str, registry_path: Path, pack_filters: Sequence[str] | None) -> None:

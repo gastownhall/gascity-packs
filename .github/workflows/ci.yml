@@ -35,7 +35,10 @@ jobs:
         run: python3 -m pip install PyYAML pytest jsonschema
 
       - name: Validate registry
-        run: python3 validate_registry.py
+        # --require-git: without git, no commit or content-hash verification runs at
+        # all, so a missing worktree must fail rather than silently downgrade this to
+        # a format-only check. (checkout above uses fetch-depth: 0, as it must.)
+        run: python3 validate_registry.py --require-git
 
       - name: Run Python pack tests
         run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests pr-pipeline/tests -q
