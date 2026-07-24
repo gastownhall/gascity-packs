@@ -171,15 +171,95 @@ description = """
 
 Search for work beads assigned to you with branch metadata:
 ```bash
-WORK=$(gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee=$GC_AGENT --status=open \
-  --exclude-type=epic --has-metadata-key=branch --limit=1 --json | jq -r '.[0].id // empty')
+if [[ ! "$GC_AGENT" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$ ]]; then
+  echo "GC_AGENT is not a canonical agent identity; refusing to build a refinery query." >&2
+  exit 1
+fi
+
+REFINERY_BD_SCOPE=()
+if [ -n "${GC_RIG:-}" ]; then
+  REFINERY_BD_SCOPE=(--rig="$GC_RIG")
+fi
+
+select_refinery_work() {
+  jq -ecs --arg agent "$GC_AGENT" '
+    if length != 1 or (.[0] | type) != "array" then
+      error("expected exactly one JSON array")
+    elif any(.[0][]; type != "object") then
+      error("expected every array entry to be an object")
+    else
+      .[0] as $rows
+      | {
+          row_count: ($rows | length),
+          work: ([
+            $rows[]
+            | (.issue_type // .type // null) as $kind
+            | select(
+                (.id | type == "string" and length > 0)
+                and .status == "open"
+                and .assignee == $agent
+                and ($kind | type == "string")
+                and $kind != "epic"
+                and (.metadata.branch?
+                  | type == "string" and test("[^[:space:]]"))
+              )
+          ] | (.[0].id // ""))
+        }
+    end
+  '
+}
+
+if ! REFINERY_ROWS=$(gc bd list "${REFINERY_BD_SCOPE[@]}" \
+  --assignee="$GC_AGENT" --status=open --exclude-type=epic \
+  --has-metadata-key=branch --limit=1 --json); then
+  echo "Could not list refinery work; refusing to report an idle queue." >&2
+  exit 1
+fi
+if ! REFINERY_SELECTION=$(printf '%s\n' "$REFINERY_ROWS" | select_refinery_work); then
+  echo "Could not parse refinery work list; refusing to report an idle queue." >&2
+  exit 1
+fi
+WORK=$(printf '%s\n' "$REFINERY_SELECTION" | jq -r '.work')
+
+# bd 1.1.0's metadata-filtered list path can omit durable rows that have no
+# history entry. Preserve the normal fast path above, but recover those rows
+# with a bounded full-row query when (and only when) the list is truly empty.
+if [ -z "$WORK" ]; then
+  printf -v REFINERY_QUERY \
+    'status=open AND assignee="%s" AND type!=epic' "$GC_AGENT"
+  if ! REFINERY_ROWS=$(gc bd query "${REFINERY_BD_SCOPE[@]}" \
+    "$REFINERY_QUERY" --limit=21 --json); then
+    echo "Could not query durable refinery work; refusing to report an idle queue." >&2
+    exit 1
+  fi
+  if ! REFINERY_SELECTION=$(printf '%s\n' "$REFINERY_ROWS" | select_refinery_work); then
+    echo "Could not parse durable refinery work; refusing to report an idle queue." >&2
+    exit 1
+  fi
+  WORK=$(printf '%s\n' "$REFINERY_SELECTION" | jq -r '.work')
+  REFINERY_ROW_COUNT=$(printf '%s\n' "$REFINERY_SELECTION" | jq -r '.row_count')
+  if [ -z "$WORK" ] && [ "$REFINERY_ROW_COUNT" -ge 21 ]; then
+    echo "Durable refinery query reached its safety bound; queue state is ambiguous, not idle." >&2
+    exit 1
+  fi
+fi
 ```
 
-`${GC_RIG:+--rig="$GC_RIG"}` scopes the query to this refinery's rig
-database. Without it, `gc bd list` routes to the HQ database and never
-sees rig-scoped work beads — the `assignee` field alone does not route
-by namespace. For HQ-only refineries `$GC_RIG` is empty and the flag
-expands to nothing.
+`REFINERY_BD_SCOPE` scopes both reads to this refinery's rig database.
+Without it, the commands route to the HQ database and never see rig-scoped
+work beads — the `assignee` field alone does not route by namespace. For
+HQ-only refineries `$GC_RIG` is empty and the array expands to no argument.
+
+The first read intentionally keeps the normal indexed `gc bd list` path.
+The bounded fallback exists because bd 1.1.0 can omit durable, no-history
+rows when `list` applies metadata filters, while `query` returns their full
+metadata. The fallback expression is built only after `$GC_AGENT` matches the
+canonical identity grammar, so it cannot inject query operators or terminate
+the quoted assignee value. Both paths fail closed on command or JSON errors,
+then independently require the exact open assignee, a non-epic type, and a
+non-whitespace `metadata.branch`. The fallback reads at most 21 exact-assignee
+rows; if all 21 lack a usable branch, it treats the result as truncated and
+ambiguous instead of falsely reporting an idle queue.
 
 If found: read the bead metadata to confirm it has a branch:
 ```bash

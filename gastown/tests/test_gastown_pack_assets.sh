@@ -216,6 +216,209 @@ if verify >= metadata:
 PY
 }
 
+test_refinery_find_work_recovers_no_history_rows_and_fails_closed() {
+    local formula tmpdir fake_bin selector calls output status
+    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+    tmpdir="$(mktemp -d)"
+    fake_bin="$tmpdir/bin"
+    selector="$tmpdir/refinery-find-work.sh"
+    calls="$tmpdir/calls"
+    mkdir -p "$fake_bin"
+
+    python3 - "$formula" >"$selector" <<'PY'
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    formula = tomllib.load(handle)
+text = next(step["description"] for step in formula["steps"] if step["id"] == "find-work")
+anchor = text.index("Search for work beads assigned to you with branch metadata:")
+start_marker = "```bash\n"
+start = text.index(start_marker, anchor) + len(start_marker)
+end = text.index("\n```", start)
+print(text[start:end])
+print("printf 'WORK=%s\\n' \"$WORK\"")
+PY
+    bash -n "$selector" ||
+        fail "refinery find-work block must be valid Bash"
+
+    cat >"$fake_bin/gc" <<'SH'
+#!/usr/bin/env bash
+set -u
+
+{
+    printf 'gc'
+    for arg in "$@"; do
+        printf ' <%s>' "$arg"
+    done
+    printf '\n'
+} >>"$GC_TEST_CALLS"
+
+if [ "${1:-}" != "bd" ]; then
+    printf 'unexpected gc command: %s\n' "$*" >&2
+    exit 97
+fi
+
+case "${2:-}" in
+    list)
+        case "${GC_TEST_SCENARIO:-}" in
+            history)
+                printf '%s\n' '[{"id":"history-1","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{"branch":"polecat/history-1"}}]'
+                ;;
+            list_error)
+                exit 42
+                ;;
+            list_bad_json)
+                printf '%s\n' '{"not":"finished"'
+                ;;
+            *)
+                printf '%s\n' '[]'
+                ;;
+        esac
+        ;;
+    query)
+        case "${GC_TEST_SCENARIO:-}" in
+            no_history)
+                printf '%s\n' '[
+                  {"id":"epic-1","status":"open","issue_type":"epic","assignee":"kisakcod/gastown.refinery","metadata":{"branch":"polecat/epic-1"}},
+                  {"id":"wrong-agent","status":"open","issue_type":"task","assignee":"kisakcod/other","metadata":{"branch":"polecat/wrong-agent"}},
+                  {"id":"empty-branch","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{"branch":""}},
+                  {"id":"durable-1","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{"branch":"polecat/durable-1"}}
+                ]'
+                ;;
+            no_branch)
+                printf '%s\n' '[
+                  {"id":"absent-branch","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{}},
+                  {"id":"empty-branch","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{"branch":""}},
+                  {"id":"whitespace-branch","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{"branch":" \t "}}
+                ]'
+                ;;
+            query_error)
+                exit 43
+                ;;
+            query_bad_json)
+                printf '%s\n' 'not-json'
+                ;;
+            query_non_object)
+                printf '%s\n' '[null]'
+                ;;
+            query_truncated)
+                printf '['
+                for i in $(seq 1 21); do
+                    [ "$i" -eq 1 ] || printf ','
+                    printf '{"id":"branchless-%s","status":"open","issue_type":"task","assignee":"kisakcod/gastown.refinery","metadata":{}}' "$i"
+                done
+                printf ']\n'
+                ;;
+            *)
+                printf 'unexpected query scenario: %s\n' "${GC_TEST_SCENARIO:-}" >&2
+                exit 97
+                ;;
+        esac
+        ;;
+    *)
+        printf 'unexpected gc bd command: %s\n' "$*" >&2
+        exit 97
+        ;;
+esac
+SH
+    chmod +x "$fake_bin/gc" "$selector"
+
+    run_selector() {
+        local scenario="$1"
+        local agent="$2"
+        local rig="$3"
+        : >"$calls"
+        set +e
+        output="$(
+            PATH="$fake_bin:$PATH" \
+            GC_TEST_CALLS="$calls" \
+            GC_TEST_SCENARIO="$scenario" \
+            GC_AGENT="$agent" \
+            GC_RIG="$rig" \
+            bash "$selector" 2>&1
+        )"
+        status=$?
+        set -e
+    }
+
+    # Normal history-backed rows stay on the indexed list path. An empty rig
+    # must add no accidental --rig argument.
+    run_selector history "kisakcod/gastown.refinery" ""
+    [[ "$status" -eq 0 && "$output" == *'WORK=history-1'* ]] ||
+        fail "refinery list fast path must select a valid history-backed row"
+    grep -F 'gc <bd> <list>' "$calls" >/dev/null ||
+        fail "refinery history path must call gc bd list"
+    grep -F '<--assignee=kisakcod/gastown.refinery>' "$calls" >/dev/null ||
+        fail "refinery list must pass GC_AGENT as one quoted assignee argument"
+    ! grep -F 'gc <bd> <query>' "$calls" >/dev/null ||
+        fail "refinery history path must not pay for the durable fallback query"
+    ! grep -F '<--rig=' "$calls" >/dev/null ||
+        fail "HQ refinery read must not synthesize an empty rig scope"
+
+    # A valid empty list falls back to full-row query output, rejects decoys,
+    # and finds the durable no-history handoff with branch metadata.
+    run_selector no_history "kisakcod/gastown.refinery" "kisakcod"
+    [[ "$status" -eq 0 && "$output" == *'WORK=durable-1'* ]] ||
+        fail "refinery fallback must recover a durable no-history row"
+    [[ "$(grep -c '<--rig=kisakcod>' "$calls")" -eq 2 ]] ||
+        fail "both refinery reads must carry the exact rig scope"
+    grep -F 'gc <bd> <query>' "$calls" >/dev/null ||
+        fail "an empty refinery list must trigger the durable query fallback"
+    grep -F '<status=open AND assignee="kisakcod/gastown.refinery" AND type!=epic>' "$calls" >/dev/null ||
+        fail "TOML-decoded refinery fallback must preserve quotes around the exact assignee"
+    grep -F '<--limit=21>' "$calls" >/dev/null ||
+        fail "refinery fallback query must stay bounded"
+
+    # metadata.branch must contain a non-whitespace string on either read path.
+    # Valid objects with absent branch metadata may be skipped.
+    run_selector no_branch "kisakcod/gastown.refinery" "kisakcod"
+    [[ "$status" -eq 0 && "$output" == *'WORK='* && "$output" != *'WORK=empty-branch'* && "$output" != *'WORK=whitespace-branch'* ]] ||
+        fail "refinery fallback must not select an empty or whitespace-only metadata.branch"
+
+    # A full bounded page with no usable branch is potentially truncated.
+    # It must be observable as ambiguity, never laundered into genuine idle.
+    run_selector query_truncated "kisakcod/gastown.refinery" "kisakcod"
+    [[ "$status" -eq 1 && "$output" == *'reached its safety bound'* ]] ||
+        fail "a full branchless refinery query page must fail as truncation-ambiguous"
+
+    # Command and JSON failures are infrastructure failures, never an idle
+    # queue. A failed fast-path read must not be hidden by the fallback.
+    run_selector list_error "kisakcod/gastown.refinery" "kisakcod"
+    [[ "$status" -eq 1 && "$output" == *'Could not list refinery work'* ]] ||
+        fail "refinery list command errors must fail closed"
+    ! grep -F 'gc <bd> <query>' "$calls" >/dev/null ||
+        fail "refinery list command errors must not fall through to query"
+
+    run_selector list_bad_json "kisakcod/gastown.refinery" "kisakcod"
+    [[ "$status" -eq 1 && "$output" == *'Could not parse refinery work list'* ]] ||
+        fail "malformed refinery list JSON must fail closed"
+    ! grep -F 'gc <bd> <query>' "$calls" >/dev/null ||
+        fail "malformed refinery list JSON must not fall through to query"
+
+    run_selector query_error "kisakcod/gastown.refinery" "kisakcod"
+    [[ "$status" -eq 1 && "$output" == *'Could not query durable refinery work'* ]] ||
+        fail "refinery fallback command errors must fail closed"
+
+    run_selector query_bad_json "kisakcod/gastown.refinery" "kisakcod"
+    [[ "$status" -eq 1 && "$output" == *'Could not parse durable refinery work'* ]] ||
+        fail "malformed durable refinery JSON must fail closed"
+
+    run_selector query_non_object "kisakcod/gastown.refinery" "kisakcod"
+    [[ "$status" -eq 1 && "$output" == *'Could not parse durable refinery work'* ]] ||
+        fail "non-object durable refinery rows must fail schema validation"
+
+    # The dynamic query value is allowed only after the canonical identity
+    # grammar rejects quotes, whitespace, and query-language operators.
+    run_selector no_history 'kisakcod/gastown.refinery" OR status=closed' "kisakcod"
+    [[ "$status" -eq 1 && "$output" == *'not a canonical agent identity'* ]] ||
+        fail "noncanonical GC_AGENT must fail before query construction"
+    [[ ! -s "$calls" ]] ||
+        fail "an injectable GC_AGENT must be rejected before any gc command"
+
+    rm -rf "$tmpdir"
+}
+
 test_polecat_refinery_handoff_uses_configured_template_identity() {
     local formula
     formula="$GASTOWN/formulas/mol-polecat-work.toml"
@@ -261,6 +464,7 @@ test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_refinery_find_work_recovers_no_history_rows_and_fails_closed
 test_polecat_refinery_handoff_uses_configured_template_identity
 
 echo "gastown pack asset tests passed"

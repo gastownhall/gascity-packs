@@ -1139,6 +1139,19 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     assert "gc session wake \"$REFINERY_TARGET\"" in contracts["mol-polecat-work"]
     assert "gc status --json" in contracts["mol-polecat-work"]
     assert ".qualified_name == $target" in contracts["mol-polecat-work"]
+    refinery_contract = contracts["mol-refinery-patrol"]
+    assert (
+        'if [[ ! "$GC_AGENT" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*'
+        '(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$ ]]; then'
+    ) in refinery_contract
+    assert 'jq -ecs --arg agent "$GC_AGENT"' in refinery_contract
+    assert 'error("expected every array entry to be an object")' in refinery_contract
+    assert 'type == "string" and test("[^[:space:]]")' in refinery_contract
+    assert 'gc bd list "${REFINERY_BD_SCOPE[@]}"' in refinery_contract
+    assert "printf -v REFINERY_QUERY" in refinery_contract
+    assert 'gc bd query "${REFINERY_BD_SCOPE[@]}"' in refinery_contract
+    assert '"$REFINERY_QUERY" --limit=21 --json' in refinery_contract
+    assert '[ "$REFINERY_ROW_COUNT" -ge 21 ]' in refinery_contract
     assert 'git worktree add --detach "$MERGE_WT" "origin/$TARGET"' in contracts["mol-refinery-patrol"]
     assert 'gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"' in contracts["mol-refinery-patrol"]
     assert "gc bd close $WORK --reason \"Pull request ready: $PR_URL\"" in contracts["mol-refinery-patrol"]
