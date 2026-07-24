@@ -159,19 +159,25 @@ is how a refinery once self-polled for 13h42m with seven queued beads
 without catching the mismatch (upstream #1833).
 
 ```bash
-# Step 0: Orphan-merge scan (mail-loss fallback).
-# Polecats sometimes die between commit and MERGE_READY mail
-# (e.g. controller restart, host wake, claim race). Their branch ships
-# but you never see the mail. Scan metadata for orphans before the
-# normal patrol — these are real merge candidates that need rescuing.
-ORPHANS=$(gc bd list ${GC_RIG:+--rig="$GC_RIG"} --metadata-field gc.routed_to="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}refinery" --status=open --json 2>/dev/null \
-  | jq -r '.[] | select(.metadata.branch != null) | .id')
-for ORPHAN in $ORPHANS; do
-  echo "orphan-merge candidate: $ORPHAN"
-  # Treat each like a normal mail-driven merge: read metadata, run gates,
-  # ff-merge, close the bead. This is just the regular work — scan only
-  # surfaces beads the inbox missed.
-done
+# Step 0: Load the authoritative work selector into this turn.
+# A direct polecat handoff clears gc.routed_to, and bd's metadata-filtered
+# list path can omit durable rows with no history. Therefore an independent
+# routed_to or bare-list pre-scan is not evidence that the queue is idle.
+if ! REFINERY_FORMULA_JSON=$(gc bd formula show mol-refinery-patrol --json); then
+  echo "Could not load the refinery formula; refusing to infer an idle queue." >&2
+  exit 1
+fi
+if ! FIND_WORK_STEP=$(printf '%s\n' "$REFINERY_FORMULA_JSON" | jq -er '
+  [.steps[] | select(.id == "find-work")]
+  | if length == 1
+    then .[0].description
+    else error("expected exactly one find-work step")
+    end
+'); then
+  echo "Could not load the refinery find-work contract; refusing to infer an idle queue." >&2
+  exit 1
+fi
+printf '%s\n' "$FIND_WORK_STEP"
 
 # Step 1: Check for an in-progress patrol wisp
 {{ .AssignedInProgressQuery }}
@@ -181,9 +187,11 @@ WISP=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .De
 gc bd update "$WISP" --assignee="$GC_AGENT"
 ```
 
-Then follow the formula. The step descriptions below are your instructions —
-work through them in order. On crash or restart, re-read the steps and
-determine where you left off from context (git state, bead state).
+Then follow the formula. Execute the complete `find-work` description printed
+by Step 0 before concluding that no merge work exists; do not substitute a
+bare `gc bd list` or a `gc.routed_to` scan. The formula's step descriptions are
+your instructions — work through them in order. On crash or restart, re-read
+the steps and determine where you left off from context (git state, bead state).
 
 That's it. The formula IS your brain. Follow it.
 
@@ -310,7 +318,7 @@ alert the witness, not `gc mail send`.
 |------------|----------------|
 | Pour next wisp | `gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }}` |
 | Burn current wisp | Follow Patrol Lifecycle Discipline Rule 1: pour next wisp, validate `NEXT`, assign it to `$GC_AGENT`, then burn `$CURRENT_WISP`. Never run a standalone burn. |
-| Find assigned work | `gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee="$GC_AGENT" --status=open` |
+| Find assigned work | Run the Startup Step 0 unique JSON extractor, then execute the complete `find-work` step; a bare `gc bd list` is not idle proof. |
 | Snapshot event position | `gc events --seq` |
 | Wait for assignment | `gc events --watch --type=bead.updated --after=$SEQ` |
 | Read work metadata | `gc bd show $WORK --json \| jq '.[0].metadata'` |

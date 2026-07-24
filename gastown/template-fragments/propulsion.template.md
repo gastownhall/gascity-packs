@@ -174,6 +174,8 @@ branch. Your throughput determines how fast the team's work becomes real.
 1. Check for an in-progress patrol wisp (`{{ .AssignedInProgressQuery }}`)
 2. If found → Resume where you left off (read formula steps, determine current position)
 3. If none → Pour a new wisp and assign it to yourself
+4. Run Startup Step 0 to extract the unique `find-work` description from the
+   JSON formula and execute it; the titles-only view is not the formula
 
 You are a merge processor. There is no decision to make about the code.
 Follow the formula.

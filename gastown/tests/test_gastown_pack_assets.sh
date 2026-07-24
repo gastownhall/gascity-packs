@@ -422,6 +422,34 @@ SH
     rm -rf "$tmpdir"
 }
 
+test_refinery_startup_loads_authoritative_find_work_contract() {
+    local agent prompt propulsion
+    agent="$GASTOWN/agents/refinery/agent.toml"
+    prompt="$GASTOWN/agents/refinery/prompt.template.md"
+    propulsion="$GASTOWN/template-fragments/propulsion.template.md"
+
+    grep -F "Startup Step 0 extracts the unique authoritative find-work description" "$agent" >/dev/null ||
+        fail "refinery nudge must require the unique find-work contract before deciding the queue is idle"
+    grep -F 'REFINERY_FORMULA_JSON=$(gc bd formula show mol-refinery-patrol --json)' "$prompt" >/dev/null ||
+        fail "refinery startup must independently check the JSON formula read"
+    grep -F 'FIND_WORK_STEP=$(printf' "$prompt" >/dev/null ||
+        fail "refinery startup must parse the checked formula output separately"
+    grep -F '[.steps[] | select(.id == "find-work")]' "$prompt" >/dev/null ||
+        fail "refinery startup must select the authoritative find-work step"
+    grep -F 'expected exactly one find-work step' "$prompt" >/dev/null ||
+        fail "refinery startup must fail closed unless exactly one find-work step exists"
+    grep -F 'A direct polecat handoff clears gc.routed_to' "$prompt" >/dev/null ||
+        fail "refinery startup must document why routed_to is not handoff evidence"
+    grep -F 'a bare `gc bd list` is not idle proof' "$prompt" >/dev/null ||
+        fail "refinery quick reference must reject the history-sensitive idle shortcut"
+    grep -F 'the titles-only' "$propulsion" >/dev/null ||
+        fail "refinery propulsion must require full formula descriptions, not step titles"
+    ! grep -F -- '--metadata-field gc.routed_to=' "$prompt" >/dev/null ||
+        fail "refinery startup must not scan cleared routed_to metadata for direct handoffs"
+    ! grep -F '| Find assigned work | `gc bd list' "$prompt" >/dev/null ||
+        fail "refinery quick reference must not advertise bare bd list as authoritative"
+}
+
 test_polecat_refinery_handoff_uses_configured_template_identity() {
     local formula
     formula="$GASTOWN/formulas/mol-polecat-work.toml"
@@ -468,6 +496,7 @@ test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 test_refinery_find_work_recovers_no_history_rows_and_fails_closed
+test_refinery_startup_loads_authoritative_find_work_contract
 test_polecat_refinery_handoff_uses_configured_template_identity
 
 echo "gastown pack asset tests passed"

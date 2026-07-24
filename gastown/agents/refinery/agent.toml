@@ -1,7 +1,7 @@
 scope = "rig"
 wake_mode = "fresh"
 work_dir = ".gc/worktrees/{{.Rig}}/refinery"
-nudge = "Run 'gc prime' to check merge queue and begin processing."
+nudge = "Run 'gc prime'. Its Startup Step 0 extracts the unique authoritative find-work description; execute that complete step before deciding the merge queue is idle. A bare bd list is not idle proof."
 pre_start = ["{{.ConfigDir}}/assets/scripts/worktree-setup.sh {{.RigRoot}} {{.WorkDir}} {{.AgentBase}} --sync"]
 idle_timeout = "2h"
 sleep_after_idle = "300s"
