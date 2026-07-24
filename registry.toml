@@ -261,3 +261,16 @@ schema = 1
     commit = "a1490ecf90238f3af52ab2e7f24e30b5b62cbfc2"
     hash = "sha256:c06f30e61407994cef7e16aafecbc71afbbc9f8cdfd0d506146fdf95837333cf"
     description = "Initial oversight-rig release: rig-scoped project-lead + deterministic escalation machinery."
+
+[[pack]]
+  name = "agentops-membrane"
+  description = "Fail-closed, verdict-bound close door for Gas City workflows: cross-family fresh-context review quorum (deterministic finalize, per-round nonce, DEGRADED-aware), LAW-0-safe provider config, doctor checks, and quest scaffolding. From the AgentOps verification membrane."
+  source = "https://github.com/boshu2/agentops/tree/main/packs/agentops-membrane"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "main"
+    commit = "6e2e4c1fad8bbf48345b3f54195ca949c5d23d5c"
+    hash = "sha256:ef7dc6c0acc1c5f59c6bf52e0544561520911e97f4692830fa9d61a71ece14fb"
+    description = "Initial registry release: membrane close door (close-gate + deterministic finalize.jq), membrane-quest formula with engine-gate protection, trinity+AGY agent templates, lane-keepalive + canary orders, LAW-0 doctor checks, QUICKSTART."
