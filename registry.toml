@@ -261,3 +261,55 @@ schema = 1
     commit = "a1490ecf90238f3af52ab2e7f24e30b5b62cbfc2"
     hash = "sha256:c06f30e61407994cef7e16aafecbc71afbbc9f8cdfd0d506146fdf95837333cf"
     description = "Initial oversight-rig release: rig-scoped project-lead + deterministic escalation machinery."
+
+[[pack]]
+  name = "bmad"
+  description = "BMAD Method delivery process (PRD, architecture, epics and stories, readiness, adversarial review) as a Gas City build factory."
+  source = "https://github.com/gastownhall/gascity-packs/tree/main/bmad"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "main"
+    commit = "636fdfaaf54195b293e8e56d5e9c30e4b8d5a9ef"
+    hash = "sha256:cb81d9e35fe4ca2263922e901eac34aec6183d92832aa0695e43ff038462087d"
+    description = "First registry release of the BMAD build factory."
+
+[[pack]]
+  name = "compound-engineering"
+  description = "Every Inc.'s Compound Engineering methodology as a Gas City build factory, with the widest reviewer-persona fanout in the catalog."
+  source = "https://github.com/gastownhall/gascity-packs/tree/main/compound-engineering"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "main"
+    commit = "636fdfaaf54195b293e8e56d5e9c30e4b8d5a9ef"
+    hash = "sha256:7981abfa28021a99accacc097d32a04e2d28c344f09ebf17e3f0ca51768140af"
+    description = "First registry release of the Compound Engineering build factory."
+
+[[pack]]
+  name = "gstack"
+  description = "garrytan/gstack founder sprint (office hours, autoplan, QA, security, release readiness) as a Gas City build factory."
+  source = "https://github.com/gastownhall/gascity-packs/tree/main/gstack"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "main"
+    commit = "636fdfaaf54195b293e8e56d5e9c30e4b8d5a9ef"
+    hash = "sha256:4f180f1327933239a29918e661c0cd3a54ff3de84ab981324665e776de2eff8f"
+    description = "First registry release of the gstack build factory."
+
+[[pack]]
+  name = "superpowers"
+  description = "obra/superpowers TDD-first skill library as a Gas City build factory."
+  source = "https://github.com/gastownhall/gascity-packs/tree/main/superpowers"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "main"
+    commit = "636fdfaaf54195b293e8e56d5e9c30e4b8d5a9ef"
+    hash = "sha256:ba0428bf51627bf465a693f2426cf6be0cef70ae81b043fce3ce6761a4772290"
+    description = "First registry release of the superpowers build factory."
