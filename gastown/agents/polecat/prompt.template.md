@@ -341,7 +341,145 @@ gc mail send "$WITNESS_TARGET" -s "ESCALATION: Brief description [HIGH]" -m "Det
 gc mail send mayor/ -s "BLOCKED: <topic>" -m "Context"
 ```
 
-After escalating: continue if possible, otherwise `gc bd update <bead> --status=escalated && gc runtime drain-ack && exit`.
+After escalating: continue if possible, otherwise stop through the Blocked
+Work Contract below. **Never** hand-write `gc bd update <bead>
+--status=blocked` or `--status=escalated`. A bare status flip is the exact
+defect this contract exists to prevent.
+
+### Blocked Work Contract (fail-closed — the ONLY way to stop on a bead)
+
+A bead you leave `blocked` (or `escalated`) with no recorded reason is
+indistinguishable from a crashed session. The next human or agent has to
+re-derive your entire investigation from nothing, and — because the bead is
+still routed and still claimed — the pool keeps counting it as demand while
+the claim path refuses to hand it out, respawning workers in a loop.
+
+This mirrors the refinery's rejection contract exactly: the durable record
+lives in bead metadata, not in your session transcript.
+
+| Metadata key | Set by | Value |
+|---|---|---|
+| `blocked_reason` | polecat (on block) | Free text: what blocked you AND what would unblock it |
+| `blocked_disposition` | polecat (on block) | One kebab-case token naming the required unblock, e.g. `upstream-dependency-required`, `credentials-required`, `human-decision-required`, `target-platform-validation-required` |
+| `blocked_by` | polecat (on block) | The session identity that blocked it |
+| `gc.routed_to` | polecat (on block) | `human` — a blocked bead must leave the polecat pool |
+
+Run this as ONE Bash command. It records the reason **first**, reads it back,
+and only then flips status and releases the claim. If the reason cannot be
+persisted, it refuses to change status at all: a stale `in_progress` claim is
+recoverable by the witness, a silent `blocked` bead is not.
+
+```bash
+export BLOCKED_BEAD="<the id printed as CLAIMED_BEAD_ID>"
+export BLOCKED_REASON="<what blocked you and what would unblock it — specific, mechanical, no placeholders>"
+export BLOCKED_DISPOSITION="<one kebab-case token: what must happen to unblock>"
+export BLOCKED_STATUS="blocked"   # or "escalated"
+bash <<'GC_BLOCKED'
+# BEGIN POLECAT_BLOCKED_CONTRACT
+set +e
+
+BLOCKED_ACTOR="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
+WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"
+STATUS="${BLOCKED_STATUS:-blocked}"
+
+# --- 0. Refuse before touching the bead. A refusal must mutate nothing. ---
+if [ -z "$BLOCKED_BEAD" ]; then
+  echo "BLOCK_REFUSED no bead id supplied; refusing to touch any bead"
+  exit 2
+fi
+if [ "$STATUS" != "blocked" ] && [ "$STATUS" != "escalated" ]; then
+  echo "BLOCK_REFUSED $BLOCKED_BEAD: BLOCKED_STATUS must be 'blocked' or 'escalated', got '$STATUS'"
+  exit 2
+fi
+REASON="$(printf '%s' "${BLOCKED_REASON:-}" | tr '\n\t' '  ' | tr -s ' ' | sed -e 's/^ *//' -e 's/ *$//')"
+DISPOSITION="$(printf '%s' "${BLOCKED_DISPOSITION:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$(printf '%s' "$REASON" | tr '[:upper:]' '[:lower:]')" in
+  ''|blocked|stuck|unknown|n/a|na|tbd|todo|'see notes'|'see above'|'no reason'|"<what blocked you"*)
+    echo "BLOCK_REFUSED $BLOCKED_BEAD: blocked_reason is empty or a placeholder. State what blocked you and what would unblock it. Bead NOT modified."
+    exit 2
+    ;;
+esac
+if [ "${#REASON}" -lt 24 ]; then
+  echo "BLOCK_REFUSED $BLOCKED_BEAD: blocked_reason must describe what blocked you and what would unblock it (got ${#REASON} chars). Bead NOT modified."
+  exit 2
+fi
+case "$DISPOSITION" in
+  ''|blocked|stuck|unknown|n/a|na|tbd|todo)
+    echo "BLOCK_REFUSED $BLOCKED_BEAD: blocked_disposition must be a kebab-case token naming what would unblock the work (e.g. upstream-dependency-required). Bead NOT modified."
+    exit 2
+    ;;
+esac
+
+# --- 1. Record the reason FIRST and read it back. No reason, no block. ---
+gc bd update "$BLOCKED_BEAD" \
+  --set-metadata blocked_reason="$REASON" \
+  --set-metadata blocked_disposition="$DISPOSITION" \
+  --set-metadata blocked_by="${BLOCKED_ACTOR:-unknown}" \
+  --notes "BLOCKED ($DISPOSITION): $REASON"
+REASON_CODE=$?
+VERIFY_JSON="$(gc bd show "$BLOCKED_BEAD" --json 2>/dev/null)"
+VERIFY_REASON="$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].metadata.blocked_reason // empty' 2>/dev/null)"
+VERIFY_DISPOSITION="$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].metadata.blocked_disposition // empty' 2>/dev/null)"
+if [ "$REASON_CODE" -ne 0 ] || [ "$VERIFY_REASON" != "$REASON" ] || [ "$VERIFY_DISPOSITION" != "$DISPOSITION" ]; then
+  # FAIL CLOSED. Leave the bead in_progress and claimed: a stale claim is
+  # visible to the witness stale/stuck-polecat path, a silently blocked bead
+  # is not. Do NOT drain-ack — that would report idle and hide the outage.
+  echo "BLOCK_ABORTED $BLOCKED_BEAD reason metadata did not persist (update exit=$REASON_CODE, read back reason='${VERIFY_REASON:-empty}' disposition='${VERIFY_DISPOSITION:-empty}'); status NOT changed and claim NOT released"
+  gc mail send "$WITNESS_TARGET" -s "ESCALATION: cannot record blocked_reason on $BLOCKED_BEAD [HIGH]" \
+    -m "Polecat $BLOCKED_ACTOR needed to stop on $BLOCKED_BEAD but could not persist blocked_reason (gc bd update exit=$REASON_CODE; read-back reason='${VERIFY_REASON:-empty}'). Refused to set status=$STATUS, so the bead is NOT silently blocked. It remains in_progress and claimed by this session. Intended reason: $REASON (disposition: $DISPOSITION)"
+  exit 1
+fi
+
+# --- 2. Only now: flip status, release the claim, leave the polecat pool. ---
+gc bd update "$BLOCKED_BEAD" \
+  --status="$STATUS" \
+  --assignee="" \
+  --set-metadata gc.routed_to=human
+STATUS_CODE=$?
+FINAL_JSON="$(gc bd show "$BLOCKED_BEAD" --json 2>/dev/null)"
+FINAL_STATUS="$(printf '%s' "$FINAL_JSON" | jq -r '.[0].status // empty' 2>/dev/null)"
+FINAL_REASON="$(printf '%s' "$FINAL_JSON" | jq -r '.[0].metadata.blocked_reason // empty' 2>/dev/null)"
+if [ "$STATUS_CODE" -ne 0 ] || [ "$FINAL_STATUS" != "$STATUS" ] || [ -z "$FINAL_REASON" ]; then
+  echo "BLOCK_ABORTED $BLOCKED_BEAD status transition failed (exit=$STATUS_CODE status='${FINAL_STATUS:-unavailable}' reason='${FINAL_REASON:-empty}'); the reason IS recorded on the bead"
+  gc mail send "$WITNESS_TARGET" -s "ESCALATION: blocked transition failed on $BLOCKED_BEAD [HIGH]" \
+    -m "Polecat $BLOCKED_ACTOR recorded blocked_reason on $BLOCKED_BEAD but the status/release update failed (exit=$STATUS_CODE, status now '${FINAL_STATUS:-unavailable}'). Reason: $REASON (disposition: $DISPOSITION)"
+  exit 1
+fi
+
+echo "BLOCKED_RECORDED $BLOCKED_BEAD status=$STATUS disposition=$DISPOSITION"
+gc mail send "$WITNESS_TARGET" -s "BLOCKED: $BLOCKED_BEAD needs $DISPOSITION [HIGH]" \
+  -m "$REASON
+
+Bead: $BLOCKED_BEAD
+Status: $STATUS
+Disposition: $DISPOSITION
+Blocked by: $BLOCKED_ACTOR
+Claim released and gc.routed_to=human, so the polecat pool will not respawn on this bead."
+gc runtime drain-ack
+exit 1
+# END POLECAT_BLOCKED_CONTRACT
+GC_BLOCKED
+```
+
+Outcomes:
+
+- `BLOCK_REFUSED` — your reason or disposition was missing/placeholder. The
+  bead was **not** modified. Write a real reason and re-run; do not work
+  around the gate with a bare `gc bd update`.
+- `BLOCK_ABORTED` — the reason could not be persisted. The bead was
+  deliberately left claimed and `in_progress` rather than silently blocked.
+  The witness has been escalated. End your turn; do not drain-ack.
+- `BLOCKED_RECORDED` — done. The bead carries the reason, the claim is
+  released, the bead is routed to `human`, and the session has drain-acked.
+  Stop.
+
+**Why the claim is released.** A blocked bead held by a session that is about
+to exit can never be progressed by that session. Holding the assignee hides
+the bead from the pool and from witness orphan classification, while
+`gc.routed_to` still advertises it as polecat demand. That combination —
+unclaimable status plus live route — is what respawns a worker every 20–40
+seconds. Releasing to `gc.routed_to=human` is the same disposal the refinery
+already performs when it blocks a bead.
 
 ---
 

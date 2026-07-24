@@ -39,9 +39,36 @@ refinery. Resume the existing branch — don't redo all the work.
 | Situation | Action |
 |-----------|--------|
 | Tests fail | Fix them. Do not proceed with failures. |
-| Blocked on external | Mail Witness, mark yourself stuck |
+| Blocked on external | Run the Blocked Work Contract below — never a bare status flip |
 | Context filling | `gc runtime request-restart` (blocks until controller kills you) |
-| Unsure what to do | Mail Witness, don't guess |"""
+| Unsure what to do | Mail Witness, don't guess |
+
+## Blocked Work Contract
+
+**A polecat may not leave a bead `blocked` (or `escalated`) without a durable,
+structured reason on the bead.** This mirrors the refinery's rejection
+contract: the refinery never rejects work without writing
+`metadata.rejection_reason`, and a polecat must never block work without
+writing `metadata.blocked_reason`.
+
+Required on any block, in this order:
+
+1. `--set-metadata blocked_reason="<what blocked you AND what would unblock it>"`
+2. `--set-metadata blocked_disposition="<kebab-case token naming the required unblock>"`
+3. `--set-metadata blocked_by="<your session identity>"` and a matching `--notes`
+4. Read the metadata back. If it did not persist, **do not change status** —
+   leave the bead `in_progress` and claimed, escalate to the witness, and stop.
+5. Only after read-back succeeds: `--status=<blocked|escalated> --assignee=""
+   --set-metadata gc.routed_to=human`, then `gc runtime drain-ack`.
+
+Never run `gc bd update <bead> --status=blocked` on its own. Status first
+means a silently blocked bead if the reason write fails, and a blocked bead
+that is still claimed and still routed to the polecat pool respawns workers
+in a loop while refusing to hand the bead out.
+
+The polecat prompt's **Blocked Work Contract** section carries the executable
+`GC_BLOCKED` block that implements all five requirements. Run that block; do
+not reimplement it."""
 formula = "mol-polecat-work"
 extends = ["mol-polecat-base"]
 
