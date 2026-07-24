@@ -13,7 +13,8 @@ have:
 - parallel dispatch via `gc sling ... --on mol-review-leg`
 - completion mail via `gc mail send`
 - one human clarification gate in the live conversation
-- final bead graph creation with `gc bd create` + `gc bd dep add`
+- final bead graph creation with `gc bd create` + `gc bd dep add`, wired from a
+  capability ledger that maps plan slugs to the bead IDs created in this run
 
 Run this from a coordinator workspace that has the target repo checked out
 (typically a crew worker, or a mayor who has already `cd`'d into the rig repo).
@@ -26,7 +27,7 @@ Run this from a coordinator workspace that has the target repo checked out
 4. Dispatch 6 design-exploration legs in parallel
 5. Run 3 PRD-alignment rounds (2 legs each)
 6. Run 3 plan self-review rounds (2 legs each)
-7. Convert the refined plan into beads with dependencies
+7. Convert the refined plan into beads and verified dependency edges
 
 The goal is parity of outcome, not a verbatim port of upstream's convoy DSL.
 """
@@ -427,6 +428,14 @@ needs = ["plan-review-3"]
 description = """
 Turn the final design doc into executable work.
 
+The deliverable of this step is a machine-readable graph, not a prose roadmap.
+Everything downstream of the planner reads **dependency edges**: `gc bd ready`
+computes readiness from them, `gc bd blocked` lists them, the refinery honours
+them, and the `cascade-nudge-on-blocker-close` order exists only to wake the
+dependents of a closed blocker. None of those readers parse labels, bead notes,
+or the design doc. An edge that was never written is a scheduling relationship
+that does not exist.
+
 **1. Read the final plan:**
 ```bash
 cat ".designs/$REVIEW_ID/design-doc.md"
@@ -452,26 +461,182 @@ Each task bead should include:
 - affected files or subsystems
 - acceptance criteria
 - notes copied from the design doc
+- exactly one `capability:<slug>` label naming the capability this slice
+  delivers, in kebab-case, for example `--labels capability:abi-widening`
 
-Prefer thin vertical slices over giant phases.
+Prefer thin vertical slices over giant phases. Several slices may share one
+capability slug when the capability only exists once every one of them lands.
+
+**Never encode a blocking relationship as a label.** `blocked-on:<slug>` is a
+human-readable string, and a slug is not a bead ID. `gc bd ready` computes
+readiness from dependency edges, so a bead whose only blocker is a label is
+reported as ready while it is genuinely blocked, and
+`cascade-nudge-on-blocker-close` has nothing to fire on when the blocker
+closes. A label describes what a bead *is*; only an edge describes what it
+*waits for*.
 
 After creating the task beads, add them to the convoy with:
 ```bash
 gc convoy add <convoy-id> <task-id>
 ```
 
-**4. Wire dependencies with `gc bd dep add`:**
-Model the actual "X needs Y" relationships. Verify with:
-```bash
-gc bd blocked
+`gc convoy add` writes a `tracks` edge, which is membership and reporting only.
+`tracks` never blocks, so convoy membership is not a substitute for step 5.
+
+**4. Record the capability ledger as you create each bead:**
+The design doc names blockers by capability slug, but `gc bd dep add` only
+accepts bead IDs, so the slug-to-ID mapping has to be written down at the one
+moment it is known: when the IDs come back from `gc bd create`. Append one row
+per created task bead to `.plan-reviews/$REVIEW_ID/plan-ledger.tsv` with three
+whitespace-separated columns:
+
+```
+<bead-id>  <capability-this-bead-delivers>  <capability slugs this bead waits for, comma separated, or - for none>
 ```
 
-**5. Record the created bead IDs in:**
+Example:
+```
+ki-a01  abi-widening         -
+ki-a02  abi-widening         -
+ki-a03  abi-widening         -
+ki-b01  bounded-asset-reads  -
+ki-c01  cache-rewrite        abi-widening,bounded-asset-reads
+```
+
+Every blocker slug in column 3 must appear in column 2 of this same file. A
+slug that names work outside this plan is not something the planner can wire;
+either give it its own bead in this plan or drop the claim.
+
+**5. Wire real dependency edges from the ledger:**
+Run this from the repo root. It resolves each blocker slug to every bead that
+delivers it, adds the `blocks` edges, and reads each one back. It is
+idempotent, so rerun it after a partial or restarted planning run.
+
+```bash
+# BEGIN PLAN_DEPENDENCY_WIRING
+# Converts the capability ledger into real `blocks` dependency edges.
+# Reads:  $PLAN_LEDGER (default .plan-reviews/$REVIEW_ID/plan-ledger.tsv)
+# Writes: one verified `gc bd dep add` per (dependent, provider) pair.
+# Fails closed: a malformed row, an unresolvable slug, a failed add, an edge
+# that does not read back, or a surviving `blocked-on:` label aborts with
+# PLAN_DEP_WIRING_FAILURE and a nonzero return. A label is never an acceptable
+# substitute for an edge, and a partially wired graph is never reported as done.
+PLAN_LEDGER="${PLAN_LEDGER:-.plan-reviews/$REVIEW_ID/plan-ledger.tsv}"
+
+plan_dep_stop() {
+    echo "PLAN_DEP_WIRING_FAILURE: $*" >&2
+    return 1
+}
+
+plan_dep_rows() {
+    awk 'NF > 0 && $1 !~ /^#/ { print $1, $2, $3 }' "$PLAN_LEDGER"
+}
+
+plan_dep_providers() {
+    awk -v want="$1" 'NF > 0 && $1 !~ /^#/ && $2 == want { print $1 }' "$PLAN_LEDGER"
+}
+
+plan_dep_edge_exists() {
+    gc bd dep list "$1" --type blocks --json 2>/dev/null |
+        jq -e --arg blocker "$2" '
+            [ .[]? | (.depends_on_id // .target_id // .id) ] | index($blocker) != null
+        ' >/dev/null 2>&1
+}
+
+plan_dep_blocked_on_labels() {
+    gc bd show "$1" --json 2>/dev/null |
+        jq -r 'if type == "array" then (.[0] // {}) else . end | (.labels // [])[]' 2>/dev/null |
+        grep '^blocked-on:' || true
+}
+
+wire_plan_dependencies() {
+    local bead capability blockers slug providers provider rows edges leaked
+    edges=0
+    leaked=""
+
+    if [ ! -s "$PLAN_LEDGER" ]; then
+        plan_dep_stop "ledger $PLAN_LEDGER is missing or empty; step 4 never ran"
+        return 1
+    fi
+    if awk 'NF > 0 && $1 !~ /^#/ && NF != 3 { bad = 1 } END { exit !bad }' "$PLAN_LEDGER"; then
+        plan_dep_stop "every ledger row needs 3 columns: <bead-id> <capability> <blockers|->"
+        return 1
+    fi
+    if awk 'NF > 0 && $1 !~ /^#/ && ($1 !~ /^[A-Za-z0-9_-]+$/ || $2 !~ /^[A-Za-z0-9_-]+$/ || $3 !~ /^[A-Za-z0-9_,-]+$/) { bad = 1 } END { exit !bad }' "$PLAN_LEDGER"; then
+        plan_dep_stop "ledger IDs and slugs must match [A-Za-z0-9_-]; refusing to shell out unvalidated names"
+        return 1
+    fi
+
+    rows=$(plan_dep_rows)
+    while read -r bead capability blockers; do
+        [ -n "$bead" ] || continue
+        [ "$blockers" != "-" ] || continue
+        for slug in $(echo "$blockers" | tr ',' ' '); do
+            [ -n "$slug" ] || continue
+            if [ "$slug" = "$capability" ]; then
+                plan_dep_stop "$bead cannot wait on its own capability '$slug'"
+                return 1
+            fi
+            providers=$(plan_dep_providers "$slug")
+            if [ -z "$providers" ]; then
+                plan_dep_stop "$bead waits on '$slug' but no ledger bead delivers it"
+                return 1
+            fi
+            for provider in $providers; do
+                [ "$provider" != "$bead" ] || continue
+                if ! plan_dep_edge_exists "$bead" "$provider"; then
+                    if ! gc bd dep add "$bead" "$provider"; then
+                        plan_dep_stop "gc bd dep add $bead $provider failed"
+                        return 1
+                    fi
+                fi
+                if ! plan_dep_edge_exists "$bead" "$provider"; then
+                    plan_dep_stop "edge $bead -> $provider did not read back as a blocks dependency"
+                    return 1
+                fi
+                edges=$((edges + 1))
+            done
+        done
+    done <<< "$rows"
+
+    for bead in $(echo "$rows" | awk 'NF > 0 { print $1 }'); do
+        if [ -n "$(plan_dep_blocked_on_labels "$bead")" ]; then
+            leaked="$leaked $bead"
+        fi
+    done
+    if [ -n "$leaked" ]; then
+        plan_dep_stop "blocked-on: labels are not dependencies; replace them with edges on:$leaked"
+        return 1
+    fi
+
+    echo "PLAN_DEP_WIRING_OK edges=$edges"
+}
+
+wire_plan_dependencies
+# END PLAN_DEPENDENCY_WIRING
+```
+
+A slug that several beads deliver fans out to one edge per delivering bead, so
+the dependent unblocks exactly when the last piece of that capability closes.
+
+**6. Verify the graph, not the prose:**
+```bash
+gc bd blocked
+gc bd ready
+```
+Every bead that column 3 of the ledger gave a blocker to must appear under
+`gc bd blocked` and must NOT appear under `gc bd ready`. `gc bd blocked` on a
+graph with zero edges prints nothing and exits 0, so an empty result is only
+correct when the ledger's column 3 is entirely `-`. If a bead with blockers
+shows up as ready, the edge is missing: stop and fix it before reporting.
+
+**7. Record the created bead IDs in:**
 `.plan-reviews/$REVIEW_ID/beads-created.md`
 
-**6. Finish by telling the human:**
+**8. Finish by telling the human:**
 - which convoy/task beads were created
 - where the artifacts live
+- the `PLAN_DEP_WIRING_OK edges=<n>` count from step 5
 - which bead should be dispatched first
 
 The final output of this workflow is a reviewed plan plus a beads DAG, not code.
