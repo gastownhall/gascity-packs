@@ -115,6 +115,86 @@ class SlugTests(unittest.TestCase):
         self.assertEqual(collect.find_transcript("", "key"), (None, None))
 
 
+# session_key comes from bead metadata, which the profiler does not author. Before this
+# was constrained it was concatenated straight into a path, so a crafted key could read
+# any .jsonl on the machine INTO the capture — and captures get shared.
+class SessionKeyContainmentTests(unittest.TestCase):
+    def test_a_uuid_shaped_key_is_accepted(self) -> None:
+        self.assertTrue(collect.SAFE_SESSION_KEY.match("0b9f4c2e-7a11-4d3b-9f21-2c8e5a6d1234"))
+
+    def test_traversal_and_absolute_keys_are_rejected(self) -> None:
+        for hostile in (
+            "../../../../etc/hosts",
+            "..",
+            "/etc/hosts",
+            "a/b",
+            "a\\b",
+            "key with spaces",
+            "key\x00",
+            "",
+        ):
+            self.assertFalse(
+                collect.SAFE_SESSION_KEY.match(hostile),
+                f"{hostile!r} must not be accepted as a session key",
+            )
+
+    def test_contained_path_keeps_a_normal_join(self) -> None:
+        with tempfile.TemporaryDirectory() as base:
+            os.makedirs(os.path.join(base, "slug"))
+            got = collect.contained_path(base, "slug", "abc.jsonl")
+            self.assertEqual(got, os.path.join(os.path.realpath(base), "slug", "abc.jsonl"))
+
+    def test_contained_path_refuses_escapes(self) -> None:
+        with tempfile.TemporaryDirectory() as base:
+            self.assertIsNone(collect.contained_path(base, "..", "outside.jsonl"))
+            # An ABSOLUTE component makes os.path.join discard base entirely.
+            self.assertIsNone(collect.contained_path(base, "/etc", "hosts.jsonl"))
+
+    def test_contained_path_refuses_a_symlink_pointing_out(self) -> None:
+        with tempfile.TemporaryDirectory() as base, tempfile.TemporaryDirectory() as outside:
+            target = os.path.join(outside, "secret.jsonl")
+            with open(target, "w") as f:
+                f.write("{}\n")
+            os.symlink(outside, os.path.join(base, "slug"))
+            # The join looks contained; only resolving symlinks reveals it is not.
+            self.assertIsNone(collect.contained_path(base, "slug", "secret.jsonl"))
+
+    def test_find_transcript_does_not_read_through_a_hostile_key(self) -> None:
+        # HOME is redirected so this is hermetic AND so the slug directory really exists:
+        # traversal through a MISSING component fails on Linux regardless of the guard, so a
+        # test against a non-existent slug dir would pass even on the vulnerable join.
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as outside:
+            secret = os.path.join(outside, "stolen.jsonl")
+            with open(secret, "w") as f:
+                f.write('{"secret":true}\n')
+            work_dir = "/tmp/rig"
+            slug = collect.project_slug(work_dir)
+            slug_dir = os.path.join(home, ".claude", "projects", slug)
+            os.makedirs(slug_dir)
+            # The exact traversal from the slug dir to the planted file, minus the suffix
+            # find_transcript appends. Computed, not counted — a wrong depth is how this
+            # test silently stopped exercising anything the first time.
+            key = os.path.relpath(secret[: -len(".jsonl")], slug_dir)
+
+            prior = os.environ.get("HOME")
+            os.environ["HOME"] = home
+            try:
+                # Sanity: the traversal genuinely resolves to the planted file, so a failure
+                # below means the guard declined it rather than the path being unreachable.
+                self.assertTrue(
+                    os.path.exists(os.path.join(slug_dir, key + ".jsonl")),
+                    "fixture is wrong: the traversal target must exist for this test to bite",
+                )
+                path, method = collect.find_transcript(work_dir, key)
+            finally:
+                if prior is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = prior
+            self.assertIsNone(path, f"session_key traversal resolved to {path}")
+            self.assertIsNone(method)
+
+
 class CollectEndToEndTests(unittest.TestCase):
     """A real collect run against a fixture rig + city, with gc stubbed."""
 

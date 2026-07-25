@@ -23,6 +23,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -124,6 +125,30 @@ def slug_candidates(work_dir):
     return cands
 
 
+# A Claude Code session key is a UUID, so anything that is not a single safe path
+# component is not a key we could resolve anyway. session_key arrives from BEAD
+# METADATA, which the profiler does not author — concatenating it into a path lets
+# that metadata escape the transcript root and pull any .jsonl on the machine into
+# the capture (and an ABSOLUTE key makes os.path.join discard `base` outright).
+# Rejected rather than sanitized: a mangled key cannot name the right transcript,
+# so silently rewriting it would only produce a confidently wrong join.
+SAFE_SESSION_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def contained_path(base, *parts):
+    """os.path.join constrained to `base`, or None. Resolves symlinks first, so a
+    link inside the transcript root cannot point out of it either. Same containment
+    idiom as discord_intake_service.rig_workdir."""
+    base_abs = os.path.realpath(base)
+    try:
+        candidate = os.path.realpath(os.path.join(base_abs, *parts))
+    except ValueError:  # embedded NUL
+        return None
+    if candidate == base_abs or candidate.startswith(base_abs + os.sep):
+        return candidate
+    return None
+
+
 def find_transcript(work_dir, session_key, session_id=None, w0=None, w1=None):
     """Resolve a session's transcript.
 
@@ -137,9 +162,9 @@ def find_transcript(work_dir, session_key, session_id=None, w0=None, w1=None):
         return None, None
     base = os.path.expanduser("~/.claude/projects")
     for slug in slug_candidates(work_dir):
-        if session_key:
-            p = os.path.join(base, slug, session_key + ".jsonl")
-            if os.path.exists(p):
+        if session_key and SAFE_SESSION_KEY.match(session_key):
+            p = contained_path(base, slug, session_key + ".jsonl")
+            if p and os.path.exists(p):
                 return p, "session_key"
     if not (session_id and w0 and w1):
         return None, None
