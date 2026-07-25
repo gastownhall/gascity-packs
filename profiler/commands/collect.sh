@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 if [ -z "${GC_CITY_PATH:-}" ] || [ -z "${GC_PACK_DIR:-}" ]; then
-  echo "gc profile collect: missing Gas City pack context" >&2
+  echo "gc profiler collect: missing Gas City pack context" >&2
   exit 1
 fi
 exec python3 "$GC_PACK_DIR/scripts/profile_collect.py" "$@"

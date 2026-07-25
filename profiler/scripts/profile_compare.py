@@ -14,7 +14,7 @@ import os
 def load_report(city, root):
     p = os.path.join(city, ".gc", "runtime", "profiles", root, "report.json")
     if not os.path.exists(p):
-        raise SystemExit(f"missing {p} — run: gc profile report {root} --json")
+        raise SystemExit(f"missing {p} — run: gc profiler report {root} --json")
     return json.load(open(p))
 
 

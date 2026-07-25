@@ -51,7 +51,13 @@ def parse_ts(s):
         return None
 
 
-def run_json(cmd, cwd):
+def bd_json(args, cwd):
+    """Read a bead store through `gc bd`, which resolves the store from cwd.
+
+    Bare `bd` would bypass store-aware routing (and the repo gate that enforces
+    it), so every read goes through gc.
+    """
+    cmd = ["gc", "bd", *args]
     out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=300)
     if out.returncode != 0:
         raise RuntimeError(f"{' '.join(cmd)} failed: {out.stderr.strip()[:400]}")
@@ -97,7 +103,9 @@ def closure(all_beads, root_id):
                 if other in by_id and other not in known:
                     known.add(other)
                     changed = True
-    return [by_id[i] for i in known]
+    # Sorted, not set order: the manifest hashes beads.json, so two collects of
+    # the same run have to produce byte-identical output.
+    return [by_id[i] for i in sorted(known)]
 
 
 def project_slug(path):
@@ -188,7 +196,7 @@ def main():
     }
 
     # ---- beads (rig store) ----
-    all_beads = run_json(["bd", "list", "--all", "--flat", "--json"], cwd=rig)
+    all_beads = bd_json(["list", "--all", "--flat", "--json"], cwd=rig)
     run_beads = closure(all_beads, args.root)
     run_beads.sort(key=lambda b: b.get("created_at") or "")
     with open(os.path.join(out, "beads.json"), "w") as f:
@@ -210,8 +218,8 @@ def main():
     rig_name = (root.get("metadata") or {}).get("gc.var.rig_name") or os.path.basename(rig)
     session_beads, sess_ids = [], set()
     try:
-        city_beads = run_json(
-            ["bd", "list", "--all", "--include-infra", "--flat", "--json"], cwd=city)
+        city_beads = bd_json(
+            ["list", "--all", "--include-infra", "--flat", "--json"], cwd=city)
         prefix = f"agent:{rig_name}/"
         for b in city_beads:
             labs = b.get("labels") or []
@@ -283,6 +291,11 @@ def main():
             f"{len(missed)} session transcripts unresolved (no work_dir/session_key or file gone)")
 
     # ---- usage facts ----
+    # Fact shape: gascity usage.Fact (internal/usage/usage.go). run_id and
+    # session_id are the only bead-id-valued keys on it; step_id holds a formula
+    # step id (gc.step_id), never a bead id, so it cannot be matched against the
+    # closure. profile_report.py joins step_id through each step bead's
+    # gc.step_id metadata instead.
     usage_path = os.path.join(city, ".gc", "usage.jsonl")
     n_use = 0
     try:
@@ -292,8 +305,7 @@ def main():
                     u = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if (u.get("run_id") in ids or u.get("session_id") in sess_ids
-                        or u.get("bead_id") in ids):
+                if u.get("run_id") in ids or u.get("session_id") in sess_ids:
                     uo.write(line)
                     n_use += 1
         manifest["sources"]["usage"] = {"count": n_use}

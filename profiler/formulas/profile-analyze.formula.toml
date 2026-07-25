@@ -1,7 +1,7 @@
 description = """
 Analyze a formula-run profile capture and write a narrative report.
 
-The mechanical numbers come from `gc profile report` (deterministic, cited);
+The mechanical numbers come from `gc profiler report` (deterministic, cited);
 this formula adds judgment on top: WHY the slow steps were slow, model-vs-
 tool-vs-dispatch attribution from transcripts, which fixable layer owns each
 finding, and concrete suggested edits for the profiled formula.
@@ -29,15 +29,15 @@ default = ""
 [[steps]]
 id = "analyze"
 title = "Analyze run profile {{root}}"
-metadata = { "gc.run_target" = "gc.profile-analyst" }
+metadata = { "gc.run_target" = "profiler.profile-analyst" }
 description = """
 Analyze the profile capture for workflow root {{root}}.
 
 1. Resolve the capture directory: {{capture_dir}}, or
    <city>/.gc/runtime/profiles/{{root}} when empty. If no capture exists,
-   run `gc profile collect {{root}}` first (from the run's rig root).
+   run `gc profiler collect {{root}}` first (from the run's rig root).
 2. Ensure the mechanical report exists:
-   `gc profile report {{root}} --json --html`.
+   `gc profiler report {{root}} --json --html`.
 3. Read report.json, manifest.json, and formula-provenance.json. For each of
    the top wait and top active steps, open the relevant transcript(s) in
    transcripts/ and attribute the time: model turns vs tool execution vs

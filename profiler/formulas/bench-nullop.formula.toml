@@ -2,7 +2,7 @@ description = """
 Orchestration-overhead benchmark: a chain of trivial steps plus a parallel
 fan-out, all closing immediately with no real work. Profiling a bench-nullop
 run isolates pure platform/dispatch cost (routing, session spawn/wake, claim,
-close) from LLM working time — the noise floor for `gc profile compare`.
+close) from LLM working time — the noise floor for `gc profiler compare`.
 
 Launch: gc sling <operator-target> bench-nullop --formula
 """

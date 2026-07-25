@@ -2,3 +2,8 @@
 name = "profiler"
 version = "0.1.0"
 schema = 2
+
+# bench-nullop routes every step to gc.run-operator, which lives in the gascity
+# pack; without this import the formula cannot resolve its run target.
+[imports.gc]
+source = "../gascity"
