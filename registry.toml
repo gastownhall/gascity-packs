@@ -313,3 +313,16 @@ schema = 1
     commit = "636fdfaaf54195b293e8e56d5e9c30e4b8d5a9ef"
     hash = "sha256:ba0428bf51627bf465a693f2426cf6be0cef70ae81b043fce3ce6761a4772290"
     description = "First registry release of the superpowers build factory."
+
+[[pack]]
+  name = "runtime-cloudflare"
+  description = "The Cloudflare session runtime, shipped as a pack so it versions independently of the gc binary. Declares [runtimes.cloudflare] backed by the gc-runtime-cloudflare RPP v0 provider, replacing the deleted gascity builtin."
+  source = "https://github.com/gastownhall/gascity-packs/tree/main/runtime-cloudflare"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "main"
+    commit = "ffcb02933f878c7c9ac2df470338c28a5e5d829d"
+    hash = "sha256:432a1f917c400a3497f1be7466e0297d108b5e2174eed4d7ae4a87579e45d2d1"
+    description = "First registry release of the Cloudflare session runtime as an RPP v0 pack."
