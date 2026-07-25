@@ -39,6 +39,12 @@ the bead. No separate MR beads.
 | Push fails | Retry with backoff, or abort and investigate |
 | Pre-existing test failure | File bead for tracking (NEVER fix it yourself) — check for duplicates first |
 | Uncertain merge order | Choose based on priority, dependencies, timing |
+| Hosted check red here, green on {{ .DefaultBranch }} | Reject, naming the check. This branch broke it. |
+| Hosted check red here AND red on {{ .DefaultBranch }} | Allow, and say so. Inherited, not caused here. |
+| Hosted check red here, absent on {{ .DefaultBranch }} | Reject: the branch added a failing job. |
+| Hosted CI still running | Wait, bounded. Then UNDETERMINED — stop, do not blame the branch. |
+| Hosted CI reports no checks at all, on both sides | Allow: there is no CI here to degrade. |
+| Hosted CI reports no checks here but does on {{ .DefaultBranch }} | Reject: coverage the target has was lost. |
 
 {{ template "following-mol" . }}
 
@@ -55,6 +61,70 @@ the quality gates documented there instead. Treat their failures the
 same as failures from configured commands (reject or file pre-existing
 bug, per the formula's `handle-failures` step). The fallback preserves
 the quality-gate intent even when pack-specific guidance is missing.
+
+## Hosted-CI Regression Gate
+
+**That section is about running commands. This one is not.** Everything the
+`run-tests` step executes runs on this machine, so it can only prove what this
+machine builds. A Linux worker cannot build `Windows x86 / Release` or
+`Portable tests / macOS arm64`. Passing every configured command earns you the
+right to reach this gate, never the right to skip it.
+
+This is the failure it exists to prevent. One rig's `{{ .DefaultBranch }}`,
+merged bead by bead by a refinery whose entire quality gate was local:
+
+```
+07-22 15:04  beda5d39   success:9            <- last fully green
+07-23 09:34  0d5a7558   failure:3 success:6  <- first red
+07-24 01:25  dd1f26ba   failure:8 success:1
+07-24 22:00  08050416   failure:11
+```
+
+Every failing check was a cross-platform target. Polecat green on Linux,
+refinery green on Linux, merge, hosted CI red, nobody reads it, next merge
+stacks on top.
+
+**The gate is scoped to REGRESSIONS, and this distinction is the whole
+design.** Before a work bead closes, the formula's `merge-push` step reads the
+hosted verdict for the merge SHA *and* for `origin/{{ .DefaultBranch }}`, and
+compares them check name by check name:
+
+| on `{{ .DefaultBranch }}` | on this branch | verdict |
+|---|---|---|
+| green | red | **REGRESSION — reject, naming the check** |
+| absent | red | **REGRESSION — a new failing job is worse** |
+| still running | red | not *proven* inherited — reject |
+| red | red | pre-existing — **allow**, report it, stamp it |
+| anything | green | pass |
+| anything | still running | bounded wait, then UNDETERMINED |
+
+A check is red on `failure`, `timed_out`, `cancelled`, `action_required`, or
+any conclusion not on the accept list (`success`, `neutral`, `skipped`) —
+an unrecognized conclusion is not a pass.
+
+**A red {{ .DefaultBranch }} does not block work, and must not.** On one rig
+the target branch went red and stayed red; every branch cut from it inherited
+those failures. Under a gate that demanded green, no fix could have landed —
+including the fixes for the failures causing the red. That repository sat
+frozen for roughly 16 hours and only moved when a human authorised a
+deliberate override. So an already-failing check is announced
+(`CI_GATE_PREEXISTING_RED`), recorded on the bead in `ci_gate_inherited`, and
+**allowed through**. Report it; do not treat it as your merge's fault, and do
+not treat it as permission to break anything else.
+
+Zero checks follows the same rule. Zero on both sides means this repository
+publishes no CI on this path and there is nothing to degrade: allow. Zero here
+while `{{ .DefaultBranch }}` publishes checks means coverage the target has was
+lost on this branch: reject. Pending is the case people get wrong in the other
+direction — the gate waits, bounded by `ci_timeout_seconds`, and then reports
+UNDETERMINED rather than rejecting. A check that never finished is not evidence
+this branch degraded anything, and a slow CI queue is not the branch's fault.
+
+A rig with no hosted CI at all sets `ci_gate=false`. That is an explicit
+operator waiver, it is announced, and it stamps `ci_gate_result=disabled` on
+every bead it lets through. The gate never turns itself off: an unreadable API
+is *undetermined*, which STOPs without mutating bead state, and is never
+treated as a pass.
 
 ---
 
@@ -228,13 +298,23 @@ Never infer a branch name. If `metadata.branch` is missing, reject the bead.
 
 ## Rejection Flow
 
-On rebase conflict or test failure:
+On rebase conflict, test failure, or a hosted-CI rejection:
 1. Put work bead back in pool:
    `gc bd update $WORK --status=open --assignee="" --set-metadata rejection_reason="..."`
 2. Branch handling depends on failure type:
    - Conflict: leave branch intact (polecat needs it for rebase)
    - Test failure: delete branch (polecat redoes work)
+   - Hosted-CI regression: **leave branch intact.** A CI rejection is
+     fix-forward — the polecat pushes another commit to the same branch and
+     reassigns. Deleting it would throw away work that is one commit from
+     correct, and in `mr` mode it would orphan an open PR.
 3. Pour next wisp, burn current one
+
+A CI `rejection_reason` must be specific enough to act on: which checks this
+branch broke and what they were doing on the base, or that the SHA carried no
+checks at all while the base did. `"CI failed"` is not a rejection reason, and
+neither is `"CI is red"` when the base is red too — that one is not a rejection
+at all.
 
 A new polecat picks up the bead, sees `metadata.branch` and
 `metadata.rejection_reason`, rebases or redoes work, reassigns to refinery.
@@ -257,6 +337,18 @@ contradictory record on the bead.
 
 - `direct` — merge to target and push normally
 - `mr` / `pr` — push the rebased source branch and create or update a GitHub PR
+
+**The hosted-CI gate runs in both modes; only the SHA it can read differs.**
+`mr` mode already pushes the rebased branch, so the gate reads the PR's head
+SHA and rules on the exact object. `direct` mode does not push the source
+branch and this gate does not make it start: it rules on the published tip of
+`metadata.branch`, which IS the commit being landed whenever the rebase was a
+no-op, and when a rebase rewrote the branch it says which SHA it proved and
+which one lands. A rig that wants the exact-object guarantee in `direct` mode
+sets `ci_gate_publish_head=true` and accepts the branch push that comes with
+it; a rig that does not set it pushes exactly what it pushed before. The BASE
+side of the comparison is the same in both modes: `origin/$TARGET`, the tip the
+work lands on and the commit hosted CI actually publishes a board for.
 
 In `mr` mode, this pack treats PR creation as the terminal handoff for the
 direct-bead workflow. Record `pr_url` on the work bead, close the bead, and
@@ -316,6 +408,9 @@ alert the witness, not `gc mail send`.
 | Read work metadata | `gc bd show $WORK --json \| jq '.[0].metadata'` |
 | Set metadata field | `gc bd update $WORK --set-metadata key=value` |
 | Remove metadata field | `gc bd update $WORK --unset-metadata key` |
+| Read hosted check-runs for a SHA | `gh api "repos/$ORIGIN_REPO/commits/$SHA/check-runs?per_page=100"` |
+| Read legacy commit statuses for a SHA | `gh api "repos/$ORIGIN_REPO/commits/$SHA/status?per_page=100"` |
+| Resolve the base the gate compares against | `git rev-parse refs/remotes/origin/$TARGET` |
 | Fetch remote branches | `git fetch --prune origin` |
 | Rebase on target | `git rebase origin/$TARGET` |
 | Fast-forward merge | `git merge --ff-only temp` |

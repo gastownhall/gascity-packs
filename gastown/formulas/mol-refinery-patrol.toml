@@ -27,6 +27,13 @@ In `mr` mode, refinery treats PR publication as the terminal handoff for
 the direct-bead workflow: it records the PR URL on the work bead and
 closes the bead once the PR is verified.
 
+Before a work bead closes in either mode, hosted CI must be green on the
+merge SHA. The `run-tests` step runs configured commands on THIS machine, so
+it can only prove what this machine builds; the CI gate reads the verdict of
+the checks it cannot run. Pending is not green and zero checks is not green.
+A CI rejection uses the SAME flow as a conflict or a test failure: bead back
+in the pool with a specific `rejection_reason`, branch left intact.
+
 Read each step's description before acting — Config values override defaults."""
 formula = "mol-refinery-patrol"
 
@@ -77,6 +84,26 @@ default = "false"
 [vars.event_timeout]
 description = "Seconds to sleep before re-checking for work. Replaces former event-watch loop which hot-spun on cache-reconcile firehose."
 default = "60"
+
+[vars.ci_gate]
+description = "Require that a work bead's hosted CI is no WORSE than the target branch it lands on before the bead closes. The commands in run-tests only prove what THIS machine can build; a Linux worker cannot build a Windows or macOS target. The gate is scoped to regressions, not to redness: a check that is already failing on the target is reported and allowed through, so a repository whose base is red is never frozen. 'false' is an explicit operator waiver; it stamps ci_gate_result=disabled on every bead it lets through. The gate never self-disables on error."
+default = "true"
+
+[vars.ci_timeout_seconds]
+description = "Bounded wait for still-running checks on the head. Pending is never a pass: at this deadline the gate reports UNDETERMINED and stops without mutating bead state, because an unfinished check is not evidence the branch degraded anything and a slow CI queue is not the branch's fault."
+default = "900"
+
+[vars.ci_poll_seconds]
+description = "Seconds between check-run polls while the CI gate waits."
+default = "60"
+
+[vars.ci_zero_check_grace_seconds]
+description = "How long the head may report zero check-runs and zero commit statuses before the gate rules on it. Covers the seconds between a push and GitHub registering workflow runs. After it: zero on the head AND zero on the base means this repository publishes no CI on this path and the bead is allowed through; zero on the head while the base publishes checks means coverage the target has was lost here, and is a rejection."
+default = "300"
+
+[vars.ci_gate_publish_head]
+description = "Direct mode only, and OFF by default because it changes what this rig pushes. When a rebase rewrites the branch, the commit that lands is one no forge has seen. 'false' (default) gates the published branch tip instead and says so out loud — direct mode publishes nothing it did not publish before. 'true' pushes the rebased head to origin/$BRANCH with --force-with-lease first, so the gate rules on the exact object that lands."
+default = "false"
 
 [[steps]]
 id = "validate-identity"
@@ -379,7 +406,13 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
    - Proceed with merge (failure not caused by this branch)
 
 **GATE**: Cannot merge without all checks passing OR pre-existing bug filed/found.
-**FORBIDDEN**: Writing code to fix failures. You are a merge processor."""
+**FORBIDDEN**: Writing code to fix failures. You are a merge processor.
+
+**These checks are local, and local is not enough.** Everything above runs on
+this machine, so it can only prove what this machine can build. A Linux worker
+cannot build `Windows x86 / Release`; a green run here says nothing about it.
+Passing this step earns the right to reach the hosted-CI gate in `merge-push`,
+never the right to skip it."""
 
 [[steps]]
 id = "merge-push"
@@ -613,6 +646,391 @@ lookup_pr_info() {
     | jq '{url:.html_url, number, state:(.state | ascii_upcase), headRefName:.head.ref, baseRefName:.base.ref, headRepositoryOwner:{login:.head.repo.owner.login}, headRepository:{name:.head.repo.name}}'
 }
 
+# BEGIN REFINERY_CI_GATE
+# Hosted-CI REGRESSION gate. Everything the run-tests step executes runs on
+# THIS machine, so it can only prove what this machine builds. On one live rig
+# every quality check the refinery ran was local, the hosted verdict was never
+# read, and the target branch went success:9 -> failure:3 -> failure:11 over 55
+# hours, one refinery merge at a time. Every failing check was a cross-platform
+# target (Windows x86, portable macOS/Windows arm64) that a Linux worker cannot
+# build.
+#
+# The gate is scoped to DEGRADATION, not to redness. It reads the head's check
+# board AND the target tip's check board and rejects only what this branch made
+# worse:
+#
+#   on the base   on the head   verdict
+#   green         red           REGRESSION -- reject, naming the check
+#   absent        red           REGRESSION -- a new failing job is worse
+#   still running red           not PROVEN inherited -- reject (recoverable)
+#   red           red           pre-existing -- ALLOW, reported loudly, stamped
+#   anything      green         nothing to answer for -- pass
+#   anything      still running bounded wait, then UNDETERMINED
+#
+# An absolute "red head = reject" gate cannot ship. On the operator's own rig
+# the target branch went red and STAYED red; every branch cut from it inherited
+# those failures, so an absolute gate would have blocked every fix -- including
+# the fixes for the very failures causing the red. That repository sat frozen
+# for roughly 16 hours and only moved when a human authorised a deliberate
+# override. A gate that no repository with a red base can use is not a gate, it
+# is a freeze, and it would be turned off on the first day it mattered.
+#
+# Return convention:
+#   0 = no attributable degradation, or explicitly waived by ci_gate=false
+#   1 = the BRANCH degraded the board -> ci_gate_reject: bead back in the pool
+#       with a specific rejection_reason, branch left INTACT for fix-forward
+#   2 = the gate could not be evaluated (API/tool/config fault, or the head is
+#       still running) -> STOP without mutating bead state. "Cannot tell" is
+#       never "no regression", and it is never blamed on the branch either.
+# CI_GATE_DETAIL carries the specific, quotable reason for both 1 and 2.
+
+CI_GATE="{{ci_gate}}"
+CI_TIMEOUT_SECONDS="{{ci_timeout_seconds}}"
+CI_POLL_SECONDS="{{ci_poll_seconds}}"
+CI_ZERO_CHECK_GRACE_SECONDS="{{ci_zero_check_grace_seconds}}"
+CI_GATE_PUBLISH_HEAD="{{ci_gate_publish_head}}"
+CI_GATE_DETAIL=""
+CI_GATE_SUMMARY=""
+CI_GATE_LANDS=""
+CI_GATE_BASE_SHA=""
+CI_GATE_INHERITED_NAMES=""
+
+ci_gate_now() {
+  date +%s
+}
+
+ci_gate_reject() {
+  # The EXISTING rejection flow, the same shape the rebase and handle-failures
+  # steps use: reopen the source bead, work bead back in the pool with a
+  # specific rejection_reason, routed to the polecat pool, then pour the next
+  # wisp and burn this one so the queue keeps moving. A CI rejection is
+  # fix-forward -- the polecat pushes another commit to the SAME branch -- so
+  # the branch is NEVER deleted here, and in mr mode deleting it would orphan
+  # an open PR. The base SHA the verdict was measured against is stamped on the
+  # bead too: a reviewer must never have to guess what "worse" was worse than.
+  cgr_reason="$1"
+  gc workflow delete-source "$WORK" --apply && gc workflow reopen-source "$WORK"
+  gc bd update "$WORK" --status=open --assignee="" --set-metadata rejection_reason="CI gate: $cgr_reason" --set-metadata ci_gate_base_sha="${CI_GATE_BASE_SHA:-unresolved}" --set-metadata ci_gate_result="rejected: $cgr_reason" --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat"
+  echo "CI_GATE_REJECTED $WORK: $cgr_reason"
+  echo "Branch $BRANCH left intact for fix-forward; bead NOT closed and NOT merged."
+  CURRENT_WISP=${GC_BEAD_ID:-}
+  if [ -z "$CURRENT_WISP" ]; then
+    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  fi
+  NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
+  if [ -z "$NEXT" ] || ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
+    echo "Could not pour or assign the next refinery wisp; not burning."
+    gc runtime drain-ack
+    exit 1
+  fi
+  if [ -n "$CURRENT_WISP" ]; then
+    gc bd mol burn "$CURRENT_WISP" --force
+  else
+    echo "Could not resolve current wisp; not burning."
+    gc runtime drain-ack
+    exit 1
+  fi
+  exit 1
+}
+
+ci_gate_api() {
+  # One GitHub REST reader for the gate, over gh when present and the same
+  # token/curl fallback the PR handoff already uses when it is not. No new
+  # coupling: this is the plumbing lookup_pr_info and the PR handoff run on.
+  cga_path="$1"
+  cga_err="$2"
+  if command -v gh >/dev/null 2>&1; then
+    gh api -H "Accept: application/vnd.github+json" "repos/$ORIGIN_REPO/$cga_path" 2>"$cga_err"
+    return $?
+  fi
+  init_github_rest 2>>"$cga_err" || return 1
+  curl_gh_api "$cga_err" "$API/$cga_path"
+}
+
+ci_gate_stamp() {
+  # Forensics written the moment the gate rules, not at close time: which SHA
+  # was proven, which SHA it was measured AGAINST, and which failures were let
+  # through as inherited. A bead that closed without a ci_gate_sha is a bead
+  # that was never gated; a bead with a ci_gate_inherited is a bead that landed
+  # onto a board that was already red, and both stay readable off the bead
+  # months later.
+  cgs_sha="$1"
+  [ -n "${WORK:-}" ] || return 0
+  gc bd update "$WORK" --set-metadata ci_gate_sha="$cgs_sha" --set-metadata ci_gate_base_sha="${CI_GATE_BASE_SHA:-none}" --set-metadata ci_gate_inherited="${CI_GATE_INHERITED_NAMES:-none}" --set-metadata ci_gate_result="$CI_GATE_SUMMARY"
+}
+
+ci_gate_resolve_base() {
+  # WHICH BASE: the target branch tip at gate time, NOT the merge-base.
+  #
+  # The merge-base is the more theoretically honest attribution boundary -- it
+  # is exactly the point the branch diverged, so everything after it is the
+  # branch's own doing. It is also frequently un-gradeable: hosted CI attaches
+  # check-runs to commits it was triggered for, and an arbitrary interior
+  # commit of the target's history was very often never a branch tip any
+  # workflow ran against. A comparison against a commit with an empty board
+  # would classify every red check on the head as "absent on the base", i.e.
+  # as a regression, which is the absolute gate wearing a disguise.
+  #
+  # The target tip does not have that problem: it is the commit `on: push`
+  # workflows fire for, so a repository with CI has a board there, and it is
+  # also the commit this work will actually land on. The two only differ when
+  # the target moved after the rebase -- and this step rebases onto the target
+  # tip immediately before gating, which makes the merge-base BE the target tip
+  # in the normal case. When they do differ, a --ff-only merge onto a moved
+  # target fails anyway and the branch comes back through here after another
+  # rebase, so the window is a race of seconds, not a design gap.
+  #
+  # The residual: a check that the moved target broke is charged to the base,
+  # not the branch, which is the direction that errs toward letting work land.
+  CI_GATE_BASE_SHA=$(git rev-parse --verify --quiet "refs/remotes/origin/$TARGET" 2>/dev/null || true)
+  if [ -z "$CI_GATE_BASE_SHA" ]; then
+    CI_GATE_DETAIL="could not resolve refs/remotes/origin/$TARGET, so there is no base board to measure degradation against. Fetch origin and re-run. A missing base is UNDETERMINED, never a pass: without it the gate cannot tell a regression from an inherited failure."
+    return 2
+  fi
+  return 0
+}
+
+ci_gate_board() {
+  # Reads one commit's hosted verdict into CI_GATE_BOARD, normalised to one
+  # entry per check NAME. Reads check-runs AND legacy commit statuses, because
+  # a repo can publish either or both, and "I only looked at one API" is a way
+  # to mistake silence for success.
+  #
+  # Aggregation of repeat runs of the same name is deliberately ASYMMETRIC, and
+  # both directions are fail-closed:
+  #   head: RED beats PENDING beats GREEN -- a red run on the head is red.
+  #   base: GREEN beats RED beats PENDING -- a name only counts as already
+  #         broken if nothing on the base ever passed it, so a flaky base
+  #         cannot be used to excuse a head failure.
+  cgb_sha="$1"
+  cgb_mode="$2"
+  CI_GATE_BOARD=""
+  cgb_err=$(mktemp)
+  cgb_checks=$(ci_gate_api "commits/$cgb_sha/check-runs?per_page=100" "$cgb_err")
+  cgb_status=$?
+  cgb_error=$(cat "$cgb_err")
+  if [ "$cgb_status" -ne 0 ] || [ -z "$cgb_checks" ]; then
+    rm -f "$cgb_err"
+    CI_GATE_DETAIL="could not read check-runs for the $cgb_mode commit $cgb_sha: ${cgb_error:-no response}"
+    return 2
+  fi
+  cgb_statuses=$(ci_gate_api "commits/$cgb_sha/status?per_page=100" "$cgb_err")
+  cgb_status=$?
+  cgb_error=$(cat "$cgb_err")
+  rm -f "$cgb_err"
+  if [ "$cgb_status" -ne 0 ] || [ -z "$cgb_statuses" ]; then
+    CI_GATE_DETAIL="could not read commit statuses for the $cgb_mode commit $cgb_sha: ${cgb_error:-no response}"
+    return 2
+  fi
+  CI_GATE_BOARD=$(jq -n -c --arg mode "$cgb_mode" --argjson checks "$cgb_checks" --argjson statuses "$cgb_statuses" '
+      def clean: (. // "") | tostring | gsub("[[:space:]]+"; " ");
+      def classify_run:
+        (.conclusion // "") as $conclusion
+        | if .status != "completed" then "PENDING"
+          elif (["success","neutral","skipped"] | index($conclusion)) then "GREEN"
+          else "RED" end;
+      def classify_status:
+        if .state == "pending" then "PENDING"
+        elif .state == "success" then "GREEN"
+        else "RED" end;
+      ($checks.check_runs // []) as $runs
+      | ($statuses.statuses // []) as $sts
+      | (($runs | map({key: ("check-run:" + (.name | clean)), label: (.name | clean), state: classify_run, detail: ((.conclusion // .status // "unknown") | clean)}))
+         + ($sts | map({key: ("status:" + (.context | clean)), label: (.context | clean), state: classify_status, detail: ((.state // "unknown") | clean)}))) as $all
+      | {truncated: ((($checks.total_count // 0) > ($runs | length)) or (($statuses.total_count // 0) > ($sts | length))),
+         checks: ($all | group_by(.key) | map(
+             . as $group
+             | ($group | map(.state)) as $states
+             | (if $mode == "base"
+                then (if ($states | index("GREEN")) then "GREEN" elif ($states | index("RED")) then "RED" else "PENDING" end)
+                else (if ($states | index("RED")) then "RED" elif ($states | index("PENDING")) then "PENDING" else "GREEN" end) end) as $state
+             | {key: $group[0].key, label: $group[0].label, state: $state,
+                detail: (($group | map(select(.state == $state)) | .[0].detail) // $group[0].detail)}))}' 2>/dev/null)
+  if [ -z "$CI_GATE_BOARD" ]; then
+    CI_GATE_DETAIL="could not parse the hosted check response for the $cgb_mode commit $cgb_sha"
+    return 2
+  fi
+  if [ "$(printf '%s\n' "$CI_GATE_BOARD" | jq -r '.truncated')" = "true" ]; then
+    CI_GATE_BOARD=""
+    CI_GATE_DETAIL="more checks on the $cgb_mode commit $cgb_sha than one page can report; the whole board is not visible, so nothing about it can be attributed either way"
+    return 2
+  fi
+  return 0
+}
+
+ci_gate_compare() {
+  # The whole verdict, in one pass over the two boards. A red check on the head
+  # is a REGRESSION when the base is green, absent, or still running, and is
+  # INHERITED when the base is red too.
+  #
+  # The one exception is a base with NO board at all: a repository whose CI
+  # only runs on pull requests never publishes checks for its target tip, so
+  # "absent on the base" there means "there is no baseline", not "this branch
+  # added a failing job". Charging a head failure to the branch on that
+  # evidence would freeze exactly the repositories this gate was rescoped to
+  # unfreeze, so an empty base makes every red head check unattributable rather
+  # than a regression, and the summary says so out loud.
+  cgc_out=$(jq -n -r --argjson base "$CI_GATE_BASE_BOARD" --argjson head "$CI_GATE_HEAD_BOARD" '
+      ($base.checks | map({(.key): .state}) | add // {}) as $bmap
+      | ($base.checks | length) as $bcount
+      | [ $head.checks[] | select(.state == "RED") | . + {base: ($bmap[.key] // "ABSENT")} ] as $reds
+      | ($reds | map(select($bcount > 0 and .base != "RED"))) as $regressed
+      | ($reds | map(select($bcount == 0 or .base == "RED"))) as $inherited
+      | [ $head.checks[] | select(.state == "PENDING") ] as $pending
+      | [ ($head.checks | length),
+          $bcount,
+          ($regressed | length),
+          ($inherited | length),
+          ($pending | length),
+          ($regressed | map(.label + " [" + .detail + "; on the base: " + (if .base == "ABSENT" then "no such check" elif .base == "PENDING" then "still running" else (.base | ascii_downcase) end) + "]") | join("; ")),
+          ($inherited | map(.label + " [" + .detail + "]") | join("; ")),
+          ($pending | map(.label + " [" + .detail + "]") | join("; ")) ]
+      | .[]' 2>/dev/null)
+  if [ -z "$cgc_out" ]; then
+    CI_GATE_DETAIL="could not compare the head board against the base board"
+    return 2
+  fi
+  CI_GATE_TOTAL=$(printf '%s\n' "$cgc_out" | sed -n '1p')
+  CI_GATE_BASE_TOTAL=$(printf '%s\n' "$cgc_out" | sed -n '2p')
+  CI_GATE_REGRESSED=$(printf '%s\n' "$cgc_out" | sed -n '3p')
+  CI_GATE_INHERITED=$(printf '%s\n' "$cgc_out" | sed -n '4p')
+  CI_GATE_PENDING=$(printf '%s\n' "$cgc_out" | sed -n '5p')
+  CI_GATE_REGRESSED_NAMES=$(printf '%s\n' "$cgc_out" | sed -n '6p')
+  CI_GATE_INHERITED_NAMES=$(printf '%s\n' "$cgc_out" | sed -n '7p')
+  CI_GATE_PENDING_NAMES=$(printf '%s\n' "$cgc_out" | sed -n '8p')
+  return 0
+}
+
+ci_gate_check() {
+  # Hosted CI must be no worse on the SHA this merge rests on than it already
+  # is on the target it lands on.
+  #   RED         failure, timed_out, cancelled, action_required, or any
+  #               conclusion not on the accept list (default deny -- an
+  #               unrecognized conclusion is not a pass)
+  #   ACCEPTABLE  success, neutral, skipped
+  #   PENDING     anything not completed: WAIT, bounded, then UNDETERMINED. A
+  #               check that has not finished is not evidence of a regression,
+  #               and a slow build is not the branch's fault.
+  #   ZERO CHECKS on BOTH sides: this repo publishes no CI for this path and
+  #               there is nothing to degrade -- allow. On the HEAD ONLY, with
+  #               a base that does publish checks: coverage the target has was
+  #               lost here -- reject.
+  cgc_sha="$1"
+  CI_GATE_DETAIL=""
+  CI_GATE_SUMMARY=""
+  CI_GATE_INHERITED_NAMES=""
+  if [ "$CI_GATE" = "false" ]; then
+    # An explicit operator waiver for a rig with no hosted CI. It is loud and
+    # it is recorded on every bead it lets through. The gate itself never
+    # reaches this state on its own -- no error path sets CI_GATE.
+    CI_GATE_SUMMARY="disabled"
+    echo "CI_GATE_DISABLED_BY_CONFIG: $cgc_sha closes without a hosted-CI comparison (ci_gate=false); stamping ci_gate_result=disabled on the bead."
+    ci_gate_stamp "$cgc_sha"
+    return 0
+  fi
+  if [ -z "${ORIGIN_REPO:-}" ]; then
+    CI_GATE_DETAIL="could not resolve the origin repository to read hosted CI from: ${ORIGIN_REPO_ERROR:-origin is not a github.com remote}. Install gh, or set ci_gate=false if this rig genuinely has no hosted CI."
+    return 2
+  fi
+  ci_gate_resolve_base || return 2
+  # The base board is snapshotted ONCE, before the wait loop. The verdict is
+  # then measured against a single fixed commit for the whole run rather than
+  # against a target that may move underneath it mid-wait.
+  ci_gate_board "$CI_GATE_BASE_SHA" base || return 2
+  CI_GATE_BASE_BOARD="$CI_GATE_BOARD"
+  echo "CI_GATE_BASE: measuring $cgc_sha against $TARGET at $CI_GATE_BASE_SHA."
+  cgc_deadline=$(( $(ci_gate_now) + CI_TIMEOUT_SECONDS ))
+  cgc_zero_deadline=$(( $(ci_gate_now) + CI_ZERO_CHECK_GRACE_SECONDS ))
+  while : ; do
+    ci_gate_board "$cgc_sha" head
+    cgc_poll_status=$?
+    if [ "$cgc_poll_status" -ne 0 ]; then
+      # A transient API failure is not a green light. Retry inside the same
+      # bounded window, then report it as undeterminable.
+      if [ "$(ci_gate_now)" -ge "$cgc_deadline" ]; then
+        return 2
+      fi
+      sleep "$CI_POLL_SECONDS"
+      continue
+    fi
+    CI_GATE_HEAD_BOARD="$CI_GATE_BOARD"
+    ci_gate_compare || return 2
+    if [ "$CI_GATE_TOTAL" -eq 0 ]; then
+      if [ "$(ci_gate_now)" -lt "$cgc_zero_deadline" ]; then
+        # A push takes seconds to register workflow runs; give it the window
+        # before concluding anything from an empty head board.
+        sleep "$CI_POLL_SECONDS"
+        continue
+      fi
+      if [ "$CI_GATE_BASE_TOTAL" -eq 0 ]; then
+        CI_GATE_SUMMARY="no hosted checks on $cgc_sha and none on $TARGET at $CI_GATE_BASE_SHA either; this repository publishes no CI on this path, so this branch cannot have degraded it"
+        echo "CI_GATE_NO_HOSTED_CI: $CI_GATE_SUMMARY"
+        ci_gate_stamp "$cgc_sha"
+        return 0
+      fi
+      CI_GATE_DETAIL="$TARGET at $CI_GATE_BASE_SHA publishes $CI_GATE_BASE_TOTAL checks and $cgc_sha publishes none after ${CI_ZERO_CHECK_GRACE_SECONDS}s. CI ran for the base and did not run here, so this branch lost coverage the target already has: a workflow was removed or renamed, or it never triggered for this ref. Nothing ran, so nothing can be compared."
+      return 1
+    fi
+    if [ "$CI_GATE_REGRESSED" -gt 0 ]; then
+      # Proven degradation. Do not wait for the rest of the board: the verdict
+      # cannot improve, and the polecat can start on these names now.
+      CI_GATE_DETAIL="$CI_GATE_REGRESSED of $CI_GATE_TOTAL checks are red on $cgc_sha and are NOT red on $TARGET at $CI_GATE_BASE_SHA: $CI_GATE_REGRESSED_NAMES. This branch made hosted CI worse. Fix these checks on the same branch and reassign."
+      return 1
+    fi
+    if [ "$CI_GATE_PENDING" -gt 0 ]; then
+      if [ "$(ci_gate_now)" -ge "$cgc_deadline" ]; then
+        CI_GATE_DETAIL="$CI_GATE_PENDING of $CI_GATE_TOTAL checks on $cgc_sha were still running after ${CI_TIMEOUT_SECONDS}s: $CI_GATE_PENDING_NAMES. Unfinished is neither proof of a regression nor proof there is none, and a slow queue is not this branch's fault; re-run the gate once they finish."
+        return 2
+      fi
+      sleep "$CI_POLL_SECONDS"
+      continue
+    fi
+    if [ "$CI_GATE_INHERITED" -eq 0 ]; then
+      CI_GATE_SUMMARY="$CI_GATE_TOTAL checks green on $cgc_sha, no regression against $TARGET at $CI_GATE_BASE_SHA ($CI_GATE_BASE_TOTAL checks)"
+      cgc_marker="CI_GATE_GREEN"
+    elif [ "$CI_GATE_BASE_TOTAL" -eq 0 ]; then
+      CI_GATE_SUMMARY="$CI_GATE_TOTAL checks on $cgc_sha with $CI_GATE_INHERITED red and UNATTRIBUTABLE: $TARGET at $CI_GATE_BASE_SHA publishes no checks at all, so there is no baseline that could charge them to this branch: $CI_GATE_INHERITED_NAMES"
+      cgc_marker="CI_GATE_UNATTRIBUTABLE"
+    else
+      CI_GATE_SUMMARY="$CI_GATE_TOTAL checks on $cgc_sha with no regression against $TARGET at $CI_GATE_BASE_SHA; $CI_GATE_INHERITED of them are already red on the base and are INHERITED, not caused here: $CI_GATE_INHERITED_NAMES"
+      cgc_marker="CI_GATE_PREEXISTING_RED"
+    fi
+    if [ -n "$CI_GATE_LANDS" ]; then
+      # Direct mode with ci_gate_publish_head=false and a rebase that rewrote
+      # the branch: CI ruled on the published tip, and the commit that lands is
+      # a replay of it onto a newer target. Say which SHA was proven and which
+      # one lands, on stdout and on the bead, rather than implying they match.
+      CI_GATE_SUMMARY="$CI_GATE_SUMMARY (landing $CI_GATE_LANDS, a rebase of it; set ci_gate_publish_head=true to gate the exact object)"
+    fi
+    echo "$cgc_marker: $CI_GATE_SUMMARY"
+    if [ "$CI_GATE_INHERITED" -gt 0 ]; then
+      echo "This work is allowed through because it did not make hosted CI worse, NOT because hosted CI is well. The base is red and stays red until something fixes it; ci_gate_inherited on the bead names what was let through."
+    fi
+    ci_gate_stamp "$cgc_sha"
+    return 0
+  done
+}
+
+ci_gate_run() {
+  # Turns the gate's return code into the pack's two existing dispositions:
+  # reject to the pool (the branch's fault) or STOP without mutating bead
+  # state (ours). There is no third disposition and no path that silently
+  # continues.
+  ci_gate_check "$1"
+  cgn_status=$?
+  case "$cgn_status" in
+    0) return 0 ;;
+    1) ci_gate_reject "$CI_GATE_DETAIL" ;;
+    *)
+      echo "CI_GATE_UNDETERMINED: $CI_GATE_DETAIL"
+      echo "STOP. Do not mutate bead state, do not merge, do not close. Cannot tell whether this branch degraded CI is not a licence to assume it did not."
+      gc runtime drain-ack
+      exit 1
+      ;;
+  esac
+}
+# END REFINERY_CI_GATE
+
 if [ "$MERGE_STRATEGY" = "mr" ] && [ -n "$EXISTING_PR" ]; then
   if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
     block_existing_pr "metadata.existing_pr is set but metadata.branch is missing."
@@ -763,6 +1181,63 @@ pour the next wisp and burn this one) — the same tail a normal merge takes. Do
 NOT drain-ack here; that would strand the loop and leak the merged branch.
 Otherwise the branch has a verified real change and you continue to the merge.
 
+**0b. Hosted-CI regression gate:**
+
+Direct mode lands straight onto `$TARGET`, so it is the mode where a branch
+that breaks a check does the damage, and it is the mode the incident happened
+in. The gate runs here, before the merge script touches the target.
+
+It asks one question: **is hosted CI worse on this branch than it already is
+on `$TARGET`?** Not "is it green" — a target that is already red must still be
+fixable, and a gate that blocks every branch cut from a red base freezes the
+repository exactly when it most needs work to land. The base it measures
+against is `origin/$TARGET`, the tip this work will land on and the commit
+`on: push` workflows actually publish checks for.
+
+**Which SHA it reads, and why direct mode does not publish anything.** Hosted
+CI rules on SHAs that exist on the forge. `origin/$BRANCH` is already there —
+the polecat pushed it. When the rebase onto `$TARGET` was a no-op, the commit
+you are about to land IS that published tip and the gate is exact. When the
+rebase rewrote the branch, the commit that lands is one no forge has seen, and
+there are only two honest options: gate the published tip and say so, or push
+the rewritten head first. Pushing is a real change to what this rig does with
+remote refs, so it is opt-in (`ci_gate_publish_head`, default `false`) and a
+rig that does not set it pushes exactly what it pushed before.
+
+```bash
+CI_GATE_SHA=$(git rev-parse temp)
+if [ "$CI_GATE" != "false" ]; then
+  CI_GATE_PUBLISHED_SHA=$(git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH" || true)
+  if [ "$CI_GATE_SHA" = "$CI_GATE_PUBLISHED_SHA" ]; then
+    echo "CI_GATE_EXACT: the SHA being landed is the published tip of $BRANCH."
+  elif [ "$CI_GATE_PUBLISH_HEAD" = "true" ]; then
+    git checkout temp
+    if ! git push origin "HEAD:$BRANCH" --force-with-lease; then
+      echo "--force-with-lease refused: $BRANCH moved after your fetch. STOP, re-fetch, rebase again, and re-run the gate against the new SHA. Never plain --force, and never merge a SHA the gate did not rule on. Do not mutate bead state."
+      gc runtime drain-ack
+      exit 1
+    fi
+  elif [ -n "$CI_GATE_PUBLISHED_SHA" ]; then
+    CI_GATE_LANDS="$CI_GATE_SHA"
+    CI_GATE_SHA="$CI_GATE_PUBLISHED_SHA"
+    echo "CI_GATE_REBASED_HEAD: gating the published tip $CI_GATE_PUBLISHED_SHA; the rebase onto $TARGET produces $CI_GATE_LANDS, which no forge has seen. Set ci_gate_publish_head=true to publish and gate the exact object."
+  else
+    echo "$BRANCH has no published tip to read hosted CI from. STOP. Do not mutate bead state."
+    gc runtime drain-ack
+    exit 1
+  fi
+fi
+
+ci_gate_run "$CI_GATE_SHA"
+```
+
+A board this branch made worse rejects here — bead back in the pool, branch
+left intact, next wisp poured — and the merge script below never runs. A board
+that is red in exactly the ways `$TARGET` is already red passes, loudly, with
+the inherited failures named on the bead in `ci_gate_inherited`. An unfinished
+board is UNDETERMINED: it stops without touching bead state, because a check
+that has not finished is not evidence against the branch.
+
 **1. Merge, push, verify, and close work bead:**
 
 Run this as one script. It uses a temporary detached worktree for the
@@ -814,6 +1289,17 @@ Both the `--set-metadata` write and the `gc bd close` are required —
 closed bead to its merge commit on `$TARGET`. `--unset-metadata
 rejection_reason` clears any stale rejection field from an earlier
 rejected/reworked attempt before the successful close.
+
+`ci_gate_sha`, `ci_gate_base_sha`, `ci_gate_inherited` and `ci_gate_result`
+are already on the bead — the CI gate stamped them the moment it ruled. A
+`--ff-only` merge makes `merged_sha` the same object as `temp`, so
+`ci_gate_sha == merged_sha` is the readable proof that hosted CI ruled on
+exactly what landed; when they differ, `ci_gate_result` names the published tip
+that was proven and the rebase that landed. `ci_gate_base_sha` is what "no
+worse" was measured against, and `ci_gate_inherited` names every check that was
+already failing there and was therefore not charged to this branch — the two
+fields together are why an operator never has to guess whether a red target was
+caused by a given bead or merely survived it.
 
 **2. Cleanup:**
 ```bash
@@ -1046,6 +1532,52 @@ fi
 ```
 If this command fails or prints empty output: STOP. Debug and retry. Do NOT continue.
 
+**3b. Hosted-CI regression gate:**
+
+The pull request exists; it is not finished. Publishing a PR closes this work
+bead, so the hosted checks a local worker cannot run have to have ruled BEFORE
+the close — otherwise the bead reads "done" while the branch broke a check
+nobody is tracking. The question here is the same one direct mode asks: not
+"is the PR green" but "is the PR worse than `$TARGET` already is". The base is
+`origin/$TARGET`, the same branch the PR targets (step 3 already refused a PR
+whose base is anything else).
+
+This path gates the exact object: step 1 already pushed `temp` to
+`origin/$BRANCH`, so no new push is needed here. Ask GitHub for the PR head
+rather than trusting the local ref — if the two disagree, something pushed
+after you and the checks you are about to read belong to a different commit.
+
+```bash
+CI_GATE_SHA=$(git rev-parse temp)
+if [ "$CI_GATE" != "false" ]; then
+  CI_GATE_HEAD_ERR=$(mktemp)
+  CI_GATE_PR_RAW=$(ci_gate_api "pulls/$PR_NUMBER" "$CI_GATE_HEAD_ERR")
+  CI_GATE_HEAD_STATUS=$?
+  CI_GATE_HEAD_ERROR=$(cat "$CI_GATE_HEAD_ERR")
+  rm -f "$CI_GATE_HEAD_ERR"
+  if [ "$CI_GATE_HEAD_STATUS" -ne 0 ] || [ -z "$CI_GATE_PR_RAW" ]; then
+    echo "Could not read the head SHA of PR #$PR_NUMBER: ${CI_GATE_HEAD_ERROR:-no response}"
+    echo "STOP. Do not mutate bead state, do not close."
+    gc runtime drain-ack
+    exit 1
+  fi
+  CI_GATE_PR_HEAD_SHA=$(printf '%s' "$CI_GATE_PR_RAW" | jq -r '.head.sha // empty')
+  if [ -z "$CI_GATE_PR_HEAD_SHA" ] || [ "$CI_GATE_PR_HEAD_SHA" != "$CI_GATE_SHA" ]; then
+    echo "PR #$PR_NUMBER head is '${CI_GATE_PR_HEAD_SHA:-unknown}' but you pushed $CI_GATE_SHA."
+    echo "STOP. Re-fetch, rebase, and re-run the gate against the SHA the PR actually carries."
+    gc runtime drain-ack
+    exit 1
+  fi
+  CI_GATE_SHA="$CI_GATE_PR_HEAD_SHA"
+fi
+
+ci_gate_run "$CI_GATE_SHA"
+```
+
+A rejection here leaves the PR open and the branch intact: the polecat pushes
+a fix to the same branch, the PR updates, and the bead comes back. Deleting
+the branch would orphan the PR.
+
 **4. Record PR metadata and close the work bead:**
 
 Run as a single chained command so the metadata write cannot be skipped
@@ -1085,7 +1617,17 @@ The Gastown example refinery supports direct and mr/pr merge strategies only."
 ```
 Do NOT close the bead, delete the branch, or burn the wisp until a human decides how to proceed.
 
-**GATE**: direct mode requires verified target push. mr mode requires verified PR URL. Bead closure only happens after the selected handoff is confirmed."""
+**GATE**: direct mode requires verified target push. mr mode requires verified
+PR URL. Both modes require the hosted-CI regression gate to have ruled that
+this branch did not make hosted CI worse than `$TARGET` already is (or to have
+been explicitly waived with `ci_gate=false`, which stamps
+`ci_gate_result=disabled` on the bead). Bead closure only happens after the
+selected handoff is confirmed AND the gate has ruled. The gate is never
+skipped because the local checks passed: local checks passing while hosted CI
+regressed is the exact shape of the incident this gate exists to stop. It is
+also never escalated into "hosted CI must be green": inherited failures are
+reported on the bead and allowed through, because a repository with a red base
+that cannot land its own fix is a repository nobody can rescue."""
 
 [[steps]]
 id = "patrol-summary"
