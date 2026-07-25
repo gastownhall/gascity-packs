@@ -41,13 +41,13 @@ jobs:
         run: python3 validate_registry.py --require-git
 
       - name: Run Python pack tests
-        run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests pr-pipeline/tests -q
+        run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
 
       - name: Lint and exercise shared role prompt composition
         run: |
           go install github.com/gastownhall/gascity/cmd/gc@latest
           GC_BIN="$(go env GOPATH)/bin/gc"
-          for pack in gascity gascity/roles bmad compound-engineering gstack superpowers; do
+          for pack in gascity gascity/roles bmad compound-engineering gstack superpowers profiler; do
             "$GC_BIN" lint "$pack"
           done
           GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py -q

@@ -169,6 +169,7 @@ def test_city_scoped_gascity_registers_claim_command_from_rig(
             "compound-engineering.ce-work",
             "# Compound Engineering Worker",
         ),
+        ("profiler", "profiler", "profiler.profile-analyst", "# Profile Analyst"),
     ),
 )
 def test_role_prompts_render_public_worker_fragment(
