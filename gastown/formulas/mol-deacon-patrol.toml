@@ -27,8 +27,8 @@ can't or shouldn't do.
 4. **System diagnostics** — run `gc doctor`, act on findings.
 
 Mechanical tasks (gate evaluation, cross-rig deps, orphan bead sweeps,
-wisp compaction) are handled by exec orders in the maintenance
-pack — no LLM needed.
+wisp compaction) are handled by exec orders in the Gas City builtin
+core pack — no LLM needed. The retired maintenance pack no longer exists.
 
 ## Idle Town Principle
 
@@ -55,6 +55,10 @@ default = ""
 [vars.event_timeout]
 description = "Seconds to sleep before re-checking. Replaces former event-watch loop which hot-spun on cache-reconcile firehose."
 default = "60"
+
+[vars.witness_stale_min]
+description = "Minutes of witness heartbeat silence before health-scan's deterministic pass calls the patrol loop stalled. The default is 1.5x the witness idle_timeout (1h) — the longest legitimate silence for a healthy witness, and an order of magnitude under the multi-hour stalls this catches. Lower it only if your witness idle_timeout is lower."
+default = "90"
 
 [[steps]]
 id = "check-inbox"
@@ -142,12 +146,69 @@ The controller handles "is the agent running?" The deacon handles
 
 **Skip docked/parked rigs.** Only check active rigs.
 
+**Deterministic first pass — witness heartbeat freshness.**
+
+**Config: witness_stale_min = {{witness_stale_min}}**
+
+Run this before forming any judgment. A witness whose self-scheduled patrol
+loop has died still reports a healthy session state: it sits `asleep` or
+`active` and reads as legitimate idle in every other signal in this step. The
+controller sees a live session, and wisp staleness on an idle rig is
+indistinguishable from a healthy lull. Patrol stalls of 14h to 63h were
+observed in production exactly this way, with no alert. Heartbeat age is the
+one signal that separates "idle and fine" from "the loop is gone", so it gets
+measured rather than judged.
+
+```bash
+CHECK="${GC_PACK_DIR:-}/assets/scripts/witness-heartbeat-check.sh"
+if [ -x "$CHECK" ]; then
+  GASTOWN_WITNESS_STALE_MIN={{witness_stale_min}} bash "$CHECK"; echo "heartbeat check exit: $?"
+else
+  echo "witness-heartbeat-check.sh not resolvable under GC_PACK_DIR — use the judgment pass below only."
+fi
+```
+
+Exit 0 means every checked witness heartbeat is inside the window. Exit 1 means
+findings, one TSV row per witness
+(`verdict rig session state age_seconds heartbeat`):
+
+| verdict | meaning | action |
+|---------|---------|--------|
+| `fresh` | heartbeat inside the window | nothing |
+| `stalled` | heartbeat older than the window — the patrol loop is gone | nudge, then warrant if the stall survives the nudge |
+| `no-heartbeat` | no usable timestamp recorded yet | do NOT warrant. A freshly-spawned witness has no heartbeat yet; only a no-heartbeat that persists across cycles is a real signal |
+
+Exit 2 means the check could not run — bad config, an unreadable session
+roster, or a `gc session list` schema drift that hid `last_active`. That is
+"freshness was NOT measured", not health. Escalate the drift the way
+`recover-orphaned-beads` does in `mol-witness-patrol`:
+
+```bash
+gc mail send mayor/ -s "DEACON: witness heartbeat check cannot run" -m "<the check's stderr>"
+```
+
+A `stalled` verdict is deterministic evidence and needs no further judgment,
+but it takes the same escalation route as everything else in this step — nudge
+first, so a witness that is merely wedged mid-turn gets to recover on its own:
+
+```bash
+gc session nudge "$STALLED_SESSION" "Heartbeat silent for <age>. Run gc hook and resume your patrol."
+```
+
+If the next cycle still reports the same session `stalled`, file a deduped
+warrant with the snippet at the end of this step. Do not invent a second
+escalation path, and do not mail a named role directly for a single stall —
+systemic patterns are what the mayor escalation at the end of this step is for.
+
 **For each active rig, assess witness health:**
 
 Check witness patrol wisp freshness. Each patrol cycle burns a wisp.
 If the last wisp is much older than the maximum backoff cap (300s) plus
 buffer, the witness may be stuck. But if there's no active work in the
-rig, the witness is legitimately idle — not stuck.
+rig, the witness is legitimately idle — not stuck. Idle only excuses a stale
+*wisp*: the heartbeat pass above already ruled on whether the loop itself is
+alive, and an empty queue does not stop a live witness from waking. If the
+heartbeat pass returned `stalled`, do not talk yourself out of it here.
 
 **For each active rig, assess refinery health:**
 
