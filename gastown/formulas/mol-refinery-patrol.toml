@@ -27,6 +27,18 @@ In `mr` mode, refinery treats PR publication as the terminal handoff for
 the direct-bead workflow: it records the PR URL on the work bead and
 closes the bead once the PR is verified.
 
+Three gates stand between a rebased branch and a closed bead, in BOTH modes:
+
+1. review-diff — the refinery reads the diff and judges it against the bead's
+   acceptance criteria, recording a verdict that cites the diff
+2. CI gate — hosted checks green on the exact SHA being landed; pending is not
+   green and zero checks is not green
+3. review-comment gate — the automated reviewers' comments are addressed
+
+All three fail closed, and a failure of any of them uses the SAME rejection
+flow as a conflict or a test failure: bead back in the pool with a specific
+`rejection_reason`, branch left intact.
+
 Read each step's description before acting — Config values override defaults."""
 formula = "mol-refinery-patrol"
 
@@ -77,6 +89,26 @@ default = "false"
 [vars.event_timeout]
 description = "Seconds to sleep before re-checking for work. Replaces former event-watch loop which hot-spun on cache-reconcile firehose."
 default = "60"
+
+[vars.ci_gate]
+description = "Require hosted CI green on the exact SHA being landed before a work bead closes. 'true' (the default) is the only fail-closed setting. 'false' is an explicit operator waiver for rigs with no hosted CI; it stamps ci_gate_result=disabled on every bead it lets through. The gate NEVER self-disables on error."
+default = "true"
+
+[vars.ci_timeout_seconds]
+description = "Bounded wait for still-running checks. Pending is never green: at this deadline the gate rejects the bead back to the pool instead of blocking the merge queue forever."
+default = "900"
+
+[vars.ci_poll_seconds]
+description = "Seconds between check-run polls while the CI gate waits."
+default = "60"
+
+[vars.ci_zero_check_grace_seconds]
+description = "How long a head SHA may report zero check-runs and zero commit statuses before the gate calls it unprovable. Covers the seconds between a push and GitHub registering workflow runs; after it, zero checks is a rejection, never a pass."
+default = "300"
+
+[vars.review_bots]
+description = "Comma-separated logins of automated reviewers whose comments must be addressed before a bead closes."
+default = "gemini-code-assist[bot],chatgpt-codex-connector[bot]"
 
 [[steps]]
 id = "validate-identity"
@@ -379,12 +411,96 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
    - Proceed with merge (failure not caused by this branch)
 
 **GATE**: Cannot merge without all checks passing OR pre-existing bug filed/found.
-**FORBIDDEN**: Writing code to fix failures. You are a merge processor."""
+**FORBIDDEN**: Writing code to fix failures. You are a merge processor.
+
+**These checks are local, and local is not enough.** Everything above runs on
+this machine, so it can only prove what this machine can build. A Linux polecat
+cannot build `Windows x86 SP / Release`; a green run here says nothing about
+it. Passing this step earns you the right to proceed to review-diff and the
+pre-close gates — never the right to skip them."""
+
+[[steps]]
+id = "review-diff"
+title = "Review the diff on its merits (pre-PR correctness pass)"
+needs = ["handle-failures"]
+description = """
+**This is not the quality-gate step.** `run-tests` runs configured commands;
+this step is you reading the actual diff and judging it. A branch can pass
+every configured command and still be wrong: right build, wrong behavior;
+a new helper that no production path calls; an acceptance criterion the
+polecat quietly reinterpreted. Commands cannot catch that. You can.
+
+You are still NOT a developer. You do not fix what you find — you reject it
+with a defect a human or the next polecat can act on, exactly like a test
+failure. **FORBIDDEN: editing the branch to make it pass your own review.**
+
+**1. Read the diff and the bead's stated acceptance:**
+```bash
+BRANCH=$(gc bd show $WORK --json | jq -r '.[0].metadata.branch')
+TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_branch}}"')
+gc bd show $WORK --json | jq -r '.[0].title, .[0].description, .[0].notes'
+git diff --stat origin/$TARGET temp
+git diff origin/$TARGET temp
+```
+
+**2. Judge it against these four questions.** Answer them from the diff, not
+from the bead title and not from the polecat's notes:
+
+| Question | What a real answer looks like |
+|---|---|
+| Does it do what the bead asked? | Name the acceptance criterion and the hunk that satisfies it |
+| Is it correct? | Name the logic you traced — boundaries, error paths, nil/empty cases |
+| Is it wired into a production path? | Name the call site that reaches the new code. A function nothing calls is not a feature |
+| Does it regress anything? | Name what the changed code used to do for its existing callers |
+
+**3. The bar — state it plainly so this stays a gate and not a ritual:**
+
+- **Reject** when you can point at the defect: an acceptance criterion left
+  unmet, new code no production path reaches, a logic or lifecycle error you
+  can name, or a regression for existing callers. Every rejection must cite a
+  file the diff actually touches.
+- **Pass** otherwise. Do NOT reject for style, naming, formatting, test
+  coverage you would have liked, a refactor you would have done differently,
+  or anything you cannot cite from the diff. Those are opinions, and a merge
+  queue that stalls on opinions is worse than one that stalls on nothing.
+- A pass costs one careful read of the diff. It is not an investigation, a
+  rebuild, or a design review. If the diff is large, review the hunks that
+  change behavior and say so.
+
+**4. Record the verdict on the bead. This is the durable record — the gate in
+merge-push reads it and refuses to close the bead without it:**
+```bash
+REVIEW_SHA=$(git rev-parse temp)
+gc bd update $WORK \
+  --set-metadata review_sha="$REVIEW_SHA" \
+  --set-metadata review_verdict=pass \
+  --set-metadata review_acceptance="<the acceptance criterion you checked against>" \
+  --set-metadata review_evidence="<what you verified, naming files the diff touches and the production call site you traced>"
+```
+On a defect, record it and let the merge-push gate perform the rejection:
+```bash
+gc bd update $WORK \
+  --set-metadata review_sha="$(git rev-parse temp)" \
+  --set-metadata review_verdict=reject \
+  --set-metadata review_defect="<the defect, naming the file and what is wrong with it>"
+```
+
+`review_sha` binds the verdict to the exact commit you read. When the polecat
+pushes a fix, the SHA changes and the verdict no longer applies — you review
+again. A stale approval cannot be carried forward.
+
+**Both verdicts must cite a file the diff touches.** The gate enforces it in
+both directions on purpose: an uncitable "looks good" cannot approve, and an
+uncitable "I don't like it" cannot reject. `recovery.disposition` follows the
+pack's existing vocabulary — kebab-case, naming what must happen, e.g.
+`production-wiring-rework-required`, `acceptance-unmet`.
+
+Close this step once the verdict is recorded (pass or reject)."""
 
 [[steps]]
 id = "merge-push"
 title = "Merge and push"
-needs = ["handle-failures"]
+needs = ["review-diff"]
 description = """
 **Config: target_branch = {{target_branch}}**
 **Config: delete_merged_branches = {{delete_merged_branches}}**
@@ -613,6 +729,475 @@ lookup_pr_info() {
     | jq '{url:.html_url, number, state:(.state | ascii_upcase), headRefName:.head.ref, baseRefName:.base.ref, headRepositoryOwner:{login:.head.repo.owner.login}, headRepository:{name:.head.repo.name}}'
 }
 
+# BEGIN REFINERY_MERGE_GATE
+# Pre-close gate chain. Three mandatory stages stand between a rebased branch
+# and `gc bd close`, and every one of them fails closed:
+#   1. gate_review      — this refinery's own correctness verdict on the diff
+#   2. gate_ci          — hosted CI green on the exact SHA being landed
+#   3. gate_bot_reviews — automated review comments addressed
+#
+# Why they exist: a polecat on Linux cannot build `Windows x86 SP / Release`.
+# On one live rig every gate the refinery ran was local, so hosted CI was never
+# read and each merge stacked on the previous merge's red: master went from
+# success:9 (07-22) to failure:3 (07-23) to failure:11 (07-24) with no signal
+# anywhere in the bead record.
+#
+# Return convention, identical for all three:
+#   0 = passed
+#   1 = the BRANCH is at fault -> gate_reject: back to the pool, branch intact
+#   2 = the gate could not be evaluated (tool/API/config fault) -> STOP without
+#       mutating bead state. "Cannot prove green" is NEVER "green".
+# GATE_DETAIL carries the specific, quotable reason for both 1 and 2.
+
+CI_GATE="{{ci_gate}}"
+CI_TIMEOUT_SECONDS="{{ci_timeout_seconds}}"
+CI_POLL_SECONDS="{{ci_poll_seconds}}"
+CI_ZERO_CHECK_GRACE_SECONDS="{{ci_zero_check_grace_seconds}}"
+REVIEW_BOTS="{{review_bots}}"
+GATE_DETAIL=""
+GATE_CI_SUMMARY=""
+
+gate_now() {
+  date +%s
+}
+
+gate_reject() {
+  # The EXISTING rejection flow (the same shape the rebase and handle-failures
+  # steps use), not a parallel one: reopen the source bead, put the work bead
+  # back in the pool with a specific rejection_reason, route it to the polecat
+  # pool. Gate failures are fix-forward — the polecat pushes another commit to
+  # the SAME branch and reassigns — so the branch is NEVER deleted here.
+  grj_stage="$1"
+  grj_disposition="$2"
+  grj_reason="$3"
+  gc workflow delete-source "$WORK" --apply && gc workflow reopen-source "$WORK"
+  gc bd update "$WORK" \
+    --status=open \
+    --assignee="" \
+    --set-metadata rejection_reason="$grj_stage: $grj_reason" \
+    --set-metadata recovery.disposition="$grj_disposition" \
+    --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat"
+  echo "GATE_REJECTED $WORK $grj_stage: $grj_reason"
+  echo "Branch $BRANCH left intact for fix-forward; bead NOT closed and NOT merged."
+  exit 1
+}
+
+gate_placeholder() {
+  # One shared placeholder vocabulary for every free-text field a gate
+  # requires. A gate an agent satisfies with "lgtm" manufactures false
+  # confidence, which is strictly worse than no gate at all.
+  gph_text=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')
+  case "$gph_text" in
+    ''|lgtm|ok|okay|fine|good|looksgood|looksgoodtome|noissues|nocomments|nochanges|done|fixed|addressed|ack|acked|thanks|noted|na|nil|tbd|todo|unknown|verified|checked|reviewed|passed|passes|approved)
+      return 0 ;;
+  esac
+  return 1
+}
+
+gate_cites_changed_file() {
+  # Does this free text name a file the diff actually touches? This is the
+  # anti-rubber-stamp check: it cannot be satisfied by adjectives.
+  gcf_text="$1"
+  gcf_files="$2"
+  gcf_found=1
+  while IFS= read -r gcf_file; do
+    [ -n "$gcf_file" ] || continue
+    case "$gcf_text" in
+      *"$gcf_file"*) gcf_found=0 ;;
+    esac
+    gcf_base=${gcf_file##*/}
+    case "$gcf_text" in
+      *"$gcf_base"*) gcf_found=0 ;;
+    esac
+  done <<GATE_CHANGED_FILES
+$gcf_files
+GATE_CHANGED_FILES
+  return "$gcf_found"
+}
+
+gate_review() {
+  # STAGE 1 — the refinery's own correctness verdict on the diff, recorded on
+  # the bead by the review-diff step BEFORE any PR exists. This gate does not
+  # re-judge the code; it enforces that a real review happened, that it is
+  # bound to the exact SHA being landed, and that it cites the diff:
+  #   review_verdict    pass | reject
+  #   review_sha        the reviewed SHA (must equal what we are about to land)
+  #   review_acceptance the acceptance criterion checked (pass)
+  #   review_evidence   what was verified, citing >=1 file the diff touches (pass)
+  #   review_defect     the defect, citing >=1 file the diff touches (reject)
+  gvw_base="$1"
+  gvw_head="$2"
+  GATE_DETAIL=""
+  if ! gvw_files=$(git diff --name-only "$gvw_base" "$gvw_head" 2>/dev/null); then
+    GATE_DETAIL="could not diff $gvw_head against $gvw_base to check the review citation"
+    return 2
+  fi
+  if [ -z "$gvw_files" ]; then
+    GATE_DETAIL="diff of $gvw_head against $gvw_base is empty; nothing to review"
+    return 2
+  fi
+  if ! gvw_head_sha=$(git rev-parse "$gvw_head" 2>/dev/null); then
+    GATE_DETAIL="could not resolve $gvw_head to a SHA"
+    return 2
+  fi
+  if ! gvw_json=$(gc bd show "$WORK" --json 2>/dev/null); then
+    GATE_DETAIL="could not read the review verdict from $WORK"
+    return 2
+  fi
+  gvw_verdict=$(printf '%s' "$gvw_json" | jq -r '.[0].metadata.review_verdict // empty')
+  gvw_sha=$(printf '%s' "$gvw_json" | jq -r '.[0].metadata.review_sha // empty')
+  gvw_acceptance=$(printf '%s' "$gvw_json" | jq -r '.[0].metadata.review_acceptance // empty')
+  gvw_evidence=$(printf '%s' "$gvw_json" | jq -r '.[0].metadata.review_evidence // empty')
+  gvw_defect=$(printf '%s' "$gvw_json" | jq -r '.[0].metadata.review_defect // empty')
+  if [ "$gvw_verdict" != "pass" ] && [ "$gvw_verdict" != "reject" ]; then
+    GATE_DETAIL="review_verdict is '${gvw_verdict:-unset}'; the diff has not been reviewed. Run the review-diff step and record pass or reject."
+    return 2
+  fi
+  if [ "$gvw_sha" != "$gvw_head_sha" ]; then
+    GATE_DETAIL="review_sha is '${gvw_sha:-unset}' but the SHA being landed is $gvw_head_sha; review the diff you are actually landing and record the verdict against that SHA"
+    return 2
+  fi
+  if [ "$gvw_verdict" = "reject" ]; then
+    if gate_placeholder "$gvw_defect" || [ "${#gvw_defect}" -lt 24 ] || ! gate_cites_changed_file "$gvw_defect" "$gvw_files"; then
+      GATE_DETAIL="review_verdict=reject needs review_defect naming the defect and citing a file the diff touches; an uncitable rejection stalls the queue on an opinion"
+      return 2
+    fi
+    GATE_DETAIL="$gvw_defect"
+    return 1
+  fi
+  if gate_placeholder "$gvw_acceptance" || [ "${#gvw_acceptance}" -lt 24 ]; then
+    GATE_DETAIL="review_acceptance must name the acceptance criterion you checked the diff against"
+    return 2
+  fi
+  if gate_placeholder "$gvw_evidence" || [ "${#gvw_evidence}" -lt 80 ]; then
+    GATE_DETAIL="review_evidence must state what you verified in the diff (>=80 chars, no placeholders)"
+    return 2
+  fi
+  if ! gate_cites_changed_file "$gvw_evidence" "$gvw_files"; then
+    GATE_DETAIL="review_evidence cites no file this diff touches; name the file and the production call site you traced. Changed files: $(printf '%s' "$gvw_files" | tr '\n' ' ')"
+    return 2
+  fi
+  return 0
+}
+
+gate_gh_api() {
+  # One GitHub REST reader for the gates, over gh when present and the same
+  # token/curl fallback the PR handoff already uses when it is not.
+  gga_path="$1"
+  gga_err="$2"
+  if command -v gh >/dev/null 2>&1; then
+    gh api -H "Accept: application/vnd.github+json" "repos/$ORIGIN_REPO/$gga_path" 2>"$gga_err"
+    return $?
+  fi
+  init_github_rest 2>>"$gga_err" || return 1
+  curl_gh_api "$gga_err" "$API/$gga_path"
+}
+
+gate_stamp_ci() {
+  # Forensics written the moment the CI gate rules, not at close time: which
+  # SHA was proven, and by how many checks. A bead that closed without a
+  # `ci_gate_sha` matching its `merged_sha` was never gated, and that is
+  # readable back off the bead months later.
+  gsc_sha="$1"
+  [ -n "${WORK:-}" ] || return 0
+  gc bd update "$WORK" \
+    --set-metadata ci_gate_sha="$gsc_sha" \
+    --set-metadata ci_gate_result="$GATE_CI_SUMMARY"
+}
+
+gate_ci_poll() {
+  # One poll of the hosted verdict for a SHA. Reads check-runs AND legacy
+  # commit statuses, because a repo can publish either or both, and "I only
+  # looked at one API" is a way to mistake silence for success.
+  gcp_sha="$1"
+  gcp_err=$(mktemp)
+  gcp_checks=$(gate_gh_api "commits/$gcp_sha/check-runs?per_page=100" "$gcp_err")
+  gcp_status=$?
+  gcp_error=$(cat "$gcp_err")
+  if [ "$gcp_status" -ne 0 ] || [ -z "$gcp_checks" ]; then
+    rm -f "$gcp_err"
+    GATE_DETAIL="could not read check-runs for $gcp_sha: ${gcp_error:-no response}"
+    return 2
+  fi
+  gcp_statuses=$(gate_gh_api "commits/$gcp_sha/status?per_page=100" "$gcp_err")
+  gcp_status=$?
+  gcp_error=$(cat "$gcp_err")
+  rm -f "$gcp_err"
+  if [ "$gcp_status" -ne 0 ] || [ -z "$gcp_statuses" ]; then
+    GATE_DETAIL="could not read commit statuses for $gcp_sha: ${gcp_error:-no response}"
+    return 2
+  fi
+  gcp_summary=$(jq -n -r \
+    --argjson checks "$gcp_checks" \
+    --argjson statuses "$gcp_statuses" '
+      def classify_run:
+        (.conclusion // "") as $conclusion
+        | if .status != "completed" then "PENDING"
+          elif (["success","neutral","skipped"] | index($conclusion)) then "GREEN"
+          else "RED" end;
+      def classify_status:
+        if .state == "pending" then "PENDING"
+        elif .state == "success" then "GREEN"
+        else "RED" end;
+      ($checks.check_runs // []) as $runs
+      | ($statuses.statuses // []) as $sts
+      | (($runs | map({name: (.name // "check"), state: classify_run, detail: (.conclusion // .status // "unknown")}))
+         + ($sts | map({name: (.context // "status"), state: classify_status, detail: (.state // "unknown")}))) as $all
+      | [ (if (($checks.total_count // 0) > ($runs | length)) then "truncated" else "complete" end),
+          ($all | length),
+          ($all | map(select(.state == "RED")) | length),
+          ($all | map(select(.state == "PENDING")) | length),
+          ($all | map(select(.state == "RED")) | map(.name + " (" + .detail + ")") | join(", ")),
+          ($all | map(select(.state == "PENDING")) | map(.name + " (" + .detail + ")") | join(", ")) ]
+      | .[]' 2>/dev/null)
+  if [ -z "$gcp_summary" ]; then
+    GATE_DETAIL="could not parse the check-run response for $gcp_sha"
+    return 2
+  fi
+  if [ "$(printf '%s\n' "$gcp_summary" | sed -n '1p')" = "truncated" ]; then
+    GATE_DETAIL="more check-runs on $gcp_sha than one page can report; cannot prove every check is green"
+    return 2
+  fi
+  GATE_CI_TOTAL=$(printf '%s\n' "$gcp_summary" | sed -n '2p')
+  GATE_CI_RED=$(printf '%s\n' "$gcp_summary" | sed -n '3p')
+  GATE_CI_PENDING=$(printf '%s\n' "$gcp_summary" | sed -n '4p')
+  GATE_CI_RED_NAMES=$(printf '%s\n' "$gcp_summary" | sed -n '5p')
+  GATE_CI_PENDING_NAMES=$(printf '%s\n' "$gcp_summary" | sed -n '6p')
+  return 0
+}
+
+gate_ci() {
+  # STAGE 2 — hosted CI must be green on the exact SHA being landed.
+  #   RED         failure, timed_out, cancelled, action_required, or any
+  #               conclusion not on the accept list (default deny — an
+  #               unrecognized conclusion is not a pass)
+  #   ACCEPTABLE  success, neutral, skipped
+  #   PENDING     anything not completed: WAIT, never pass. At the bounded
+  #               deadline this rejects, so the queue can never wedge here.
+  #   ZERO CHECKS not green. Several commits in the incident carried no checks
+  #               at all; "nothing ran" cannot prove "nothing is broken".
+  gci_sha="$1"
+  GATE_DETAIL=""
+  GATE_CI_SUMMARY=""
+  if [ "$CI_GATE" = "false" ]; then
+    # An explicit operator waiver for a rig with no hosted CI. It is loud and
+    # it is recorded on every bead it lets through. The gate itself NEVER
+    # reaches this state on its own — no error path sets CI_GATE.
+    GATE_CI_SUMMARY="disabled"
+    echo "CI_GATE_DISABLED_BY_CONFIG: $gci_sha closes without hosted-CI proof (ci_gate=false); stamping ci_gate_result=disabled on the bead."
+    gate_stamp_ci "$gci_sha"
+    return 0
+  fi
+  gci_deadline=$(( $(gate_now) + CI_TIMEOUT_SECONDS ))
+  gci_zero_deadline=$(( $(gate_now) + CI_ZERO_CHECK_GRACE_SECONDS ))
+  while : ; do
+    gate_ci_poll "$gci_sha"
+    gci_poll_status=$?
+    if [ "$gci_poll_status" -ne 0 ]; then
+      # A transient API failure is not a green light. Retry inside the same
+      # bounded window, then report it as undeterminable.
+      if [ "$(gate_now)" -ge "$gci_deadline" ]; then
+        return 2
+      fi
+      sleep "$CI_POLL_SECONDS"
+      continue
+    fi
+    if [ "$GATE_CI_TOTAL" -eq 0 ]; then
+      if [ "$(gate_now)" -ge "$gci_zero_deadline" ]; then
+        GATE_DETAIL="zero check-runs and zero commit statuses on $gci_sha after ${CI_ZERO_CHECK_GRACE_SECONDS}s; hosted CI never ruled on this commit so it cannot be proven green"
+        return 1
+      fi
+      sleep "$CI_POLL_SECONDS"
+      continue
+    fi
+    if [ "$GATE_CI_RED" -gt 0 ]; then
+      GATE_DETAIL="$GATE_CI_RED of $GATE_CI_TOTAL checks red on $gci_sha: $GATE_CI_RED_NAMES"
+      return 1
+    fi
+    if [ "$GATE_CI_PENDING" -gt 0 ]; then
+      if [ "$(gate_now)" -ge "$gci_deadline" ]; then
+        GATE_DETAIL="$GATE_CI_PENDING of $GATE_CI_TOTAL checks still running on $gci_sha after ${CI_TIMEOUT_SECONDS}s: $GATE_CI_PENDING_NAMES. Pending is not green; reassign to refinery once the checks finish."
+        return 1
+      fi
+      sleep "$CI_POLL_SECONDS"
+      continue
+    fi
+    GATE_CI_SUMMARY="$GATE_CI_TOTAL checks green on $gci_sha"
+    echo "CI_GATE_GREEN: $GATE_CI_SUMMARY"
+    gate_stamp_ci "$gci_sha"
+    return 0
+  done
+}
+
+gate_pr_number_for_branch() {
+  # Is there a pull request for this branch at all? Answered, never assumed:
+  # direct mode skips stage 3 only when GitHub says there is no PR.
+  gpn_branch="$1"
+  gpn_err="$2"
+  gpn_owner=${ORIGIN_REPO%%/*}
+  # Read the response BEFORE parsing it. Piping the API straight into jq would
+  # turn a failed request into an empty answer, and an empty answer here reads
+  # as "this branch has no pull request" — a silent pass built out of an
+  # outage. The status has to survive to the caller.
+  gpn_raw=$(gate_gh_api "pulls?state=open&head=$gpn_owner:$gpn_branch&per_page=100" "$gpn_err") || return 1
+  [ -n "$gpn_raw" ] || return 1
+  printf '%s' "$gpn_raw" | jq -r '.[0].number // empty'
+}
+
+gate_review_threads() {
+  # Thread resolution lives only in GraphQL; there is no REST equivalent.
+  grt_number="$1"
+  grt_err="$2"
+  grt_owner=${ORIGIN_REPO%%/*}
+  grt_repo=${ORIGIN_REPO#*/}
+  grt_query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved comments(first:100){nodes{databaseId}}}}}}}'
+  if command -v gh >/dev/null 2>&1; then
+    gh api graphql -f query="$grt_query" -F owner="$grt_owner" -F name="$grt_repo" -F number="$grt_number" 2>"$grt_err"
+    return $?
+  fi
+  init_github_rest 2>>"$grt_err" || return 1
+  grt_payload=$(jq -n --arg q "$grt_query" --arg o "$grt_owner" --arg n "$grt_repo" --argjson num "$grt_number" \
+    '{query: $q, variables: {owner: $o, name: $n, number: $num}}')
+  curl -fsS \
+    -H "Accept: application/vnd.github+json" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -X POST "https://api.github.com/graphql" \
+    -d "$grt_payload" 2>"$grt_err"
+}
+
+gate_bot_reviews() {
+  # STAGE 3 — every comment the automated reviewers left must be ADDRESSED.
+  #
+  # "Addressed" means a positive act recorded on the pull request itself:
+  #   * an inline review comment whose thread is marked resolved, or which has
+  #     a substantive non-bot reply in that same thread; or
+  #   * a PR-level comment or review answered by a substantive non-bot comment
+  #     or review posted after it; or
+  #   * the same bot posting an APPROVED review after it — the reviewer
+  #     withdrew its own objection.
+  #
+  # Deliberately NOT "a commit newer than the comment": this refinery rebases
+  # every branch it touches, so commit timestamps move on their own and that
+  # rule would pass without anyone reading a word. Every accepted form above
+  # requires somebody to act, and every one is readable back from the API.
+  gbr_number="$1"
+  GATE_DETAIL=""
+  if [ -z "$gbr_number" ]; then
+    GATE_DETAIL="no pull request number to check automated review comments against"
+    return 2
+  fi
+  gbr_err=$(mktemp)
+  gbr_issue_comments=$(gate_gh_api "issues/$gbr_number/comments?per_page=100" "$gbr_err")
+  gbr_status=$?
+  gbr_error=$(cat "$gbr_err")
+  if [ "$gbr_status" -ne 0 ] || [ -z "$gbr_issue_comments" ]; then
+    rm -f "$gbr_err"
+    GATE_DETAIL="could not read PR #$gbr_number comments: ${gbr_error:-no response}"
+    return 2
+  fi
+  gbr_review_comments=$(gate_gh_api "pulls/$gbr_number/comments?per_page=100" "$gbr_err")
+  gbr_status=$?
+  gbr_error=$(cat "$gbr_err")
+  if [ "$gbr_status" -ne 0 ] || [ -z "$gbr_review_comments" ]; then
+    rm -f "$gbr_err"
+    GATE_DETAIL="could not read PR #$gbr_number review comments: ${gbr_error:-no response}"
+    return 2
+  fi
+  gbr_reviews=$(gate_gh_api "pulls/$gbr_number/reviews?per_page=100" "$gbr_err")
+  gbr_status=$?
+  gbr_error=$(cat "$gbr_err")
+  if [ "$gbr_status" -ne 0 ] || [ -z "$gbr_reviews" ]; then
+    rm -f "$gbr_err"
+    GATE_DETAIL="could not read PR #$gbr_number reviews: ${gbr_error:-no response}"
+    return 2
+  fi
+  gbr_threads=$(gate_review_threads "$gbr_number" "$gbr_err")
+  gbr_status=$?
+  gbr_error=$(cat "$gbr_err")
+  rm -f "$gbr_err"
+  if [ "$gbr_status" -ne 0 ] || [ -z "$gbr_threads" ]; then
+    GATE_DETAIL="could not read PR #$gbr_number review-thread resolution: ${gbr_error:-no response}"
+    return 2
+  fi
+  gbr_resolved=$(printf '%s' "$gbr_threads" | jq -c '
+    [ (.data.repository.pullRequest.reviewThreads.nodes // [])[]
+      | select(.isResolved) | (.comments.nodes // [])[] | .databaseId ]' 2>/dev/null)
+  if [ -z "$gbr_resolved" ]; then
+    GATE_DETAIL="could not parse PR #$gbr_number review-thread resolution"
+    return 2
+  fi
+  gbr_unaddressed=$(jq -n -r \
+    --arg bots "$REVIEW_BOTS" \
+    --argjson issue_comments "$gbr_issue_comments" \
+    --argjson review_comments "$gbr_review_comments" \
+    --argjson reviews "$gbr_reviews" \
+    --argjson resolved "$gbr_resolved" '
+      def trimmed: (. // "") | gsub("^[[:space:]]+|[[:space:]]+$"; "");
+      def botlist: ($bots | split(",") | map(trimmed));
+      def isreviewbot: ((.user.login // "")) as $login | ((botlist | index($login)) != null);
+      def isanybot: (isreviewbot or ((.user.type // "User") == "Bot"));
+      def substantive:
+        (trimmed) as $t
+        | ($t | ascii_downcase | gsub("[^a-z]"; "")) as $key
+        | ($t | length) >= 24
+          and ((["done","fixed","ok","okay","lgtm","addressed","ack","acked","thanks","noted","na","tbd","todo","wontfix","looksgood","noissues"] | index($key)) == null);
+      [ ($issue_comments[] | select(isanybot | not) | select(.body | substantive) | .created_at),
+        ($reviews[] | select(isanybot | not) | select(.body | substantive) | .submitted_at) ] as $replies
+      | [ $reviews[] | select(isreviewbot) | select(.state == "APPROVED")
+          | {login: (.user.login // ""), ts: .submitted_at} ] as $approvals
+      | [ ($issue_comments[] | select(isreviewbot) | select((.body | trimmed | length) > 0)
+            | {kind: "pr_comment", id: .id, login: (.user.login // ""), ts: .created_at}),
+          ($reviews[] | select(isreviewbot) | select(.state != "APPROVED") | select((.body | trimmed | length) > 0)
+            | {kind: "review", id: .id, login: (.user.login // ""), ts: .submitted_at}) ] as $prlevel
+      | ($review_comments | map(. + {root: (.in_reply_to_id // .id)})) as $threaded
+      | [ ($prlevel[] | . as $a
+            | select(([$replies[] | select(. > $a.ts)] | length) == 0)
+            | select(([$approvals[] | select(.login == $a.login and .ts > $a.ts)] | length) == 0)),
+          ($threaded[] | select(isreviewbot) | . as $c
+            | select(($resolved | index($c.id)) == null and ($resolved | index($c.root)) == null)
+            | select(([$threaded[]
+                       | select(.root == $c.root and (isanybot | not)
+                                and .created_at > $c.created_at and (.body | substantive))] | length) == 0)
+            | {kind: "inline_comment", id: $c.id, login: ($c.user.login // ""), ts: $c.created_at}) ]
+      | map(.login + " " + .kind + " " + (.id | tostring) + " @" + .ts)
+      | .[]' 2>/dev/null)
+  gbr_jq_status=$?
+  if [ "$gbr_jq_status" -ne 0 ]; then
+    GATE_DETAIL="could not evaluate automated review comments on PR #$gbr_number"
+    return 2
+  fi
+  if [ -n "$gbr_unaddressed" ]; then
+    GATE_DETAIL="$(printf '%s\n' "$gbr_unaddressed" | grep -c '') unaddressed automated review comment(s) on PR #$gbr_number: $(printf '%s' "$gbr_unaddressed" | tr '\n' ';')"
+    return 1
+  fi
+  echo "REVIEW_GATE_CLEAR: no unaddressed automated review comments on PR #$gbr_number"
+  return 0
+}
+
+gate_run() {
+  # Drives one stage and turns its return code into the pack's two existing
+  # dispositions: reject to the pool (branch's fault) or STOP without mutating
+  # bead state (ours). There is no third disposition, and no path that
+  # silently continues.
+  grn_stage="$1"
+  grn_disposition="$2"
+  shift 2
+  "$@"
+  grn_status=$?
+  case "$grn_status" in
+    0) return 0 ;;
+    1) gate_reject "$grn_stage" "$grn_disposition" "$GATE_DETAIL" ;;
+    *)
+      echo "GATE_UNDETERMINED $grn_stage: $GATE_DETAIL"
+      echo "STOP. Do not mutate bead state, do not merge, do not close. Cannot prove green is not green."
+      gc runtime drain-ack
+      exit 1
+      ;;
+  esac
+}
+# END REFINERY_MERGE_GATE
+
 if [ "$MERGE_STRATEGY" = "mr" ] && [ -n "$EXISTING_PR" ]; then
   if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
     block_existing_pr "metadata.existing_pr is set but metadata.branch is missing."
@@ -763,6 +1348,47 @@ pour the next wisp and burn this one) — the same tail a normal merge takes. Do
 NOT drain-ack here; that would strand the loop and leak the merged branch.
 Otherwise the branch has a verified real change and you continue to the merge.
 
+**0c. Gate chain — review, hosted CI, automated review comments:**
+
+Direct mode runs the SAME three gates as the pull-request handoff, and it
+needs them most: landing straight onto the target with only local checks is
+what took a rig's target branch from success:9 to failure:11 in two days. A
+branch with no pull request still has a head SHA, and hosted CI rules on SHAs
+— so publish the exact commit you intend to land, let CI judge that commit,
+and only then fast-forward the target onto it. The SHA CI blessed and the SHA
+that lands are then the same object, which is the whole point.
+
+```bash
+gate_run "Review gate" acceptance-unmet gate_review "origin/$TARGET" temp
+
+git checkout temp
+git push origin "HEAD:$BRANCH" --force-with-lease
+LAND_SHA=$(git rev-parse temp)
+
+gate_run "CI gate" ci-red gate_ci "$LAND_SHA"
+
+GATE_PR_ERR=$(mktemp)
+GATE_PR_NUMBER=$(gate_pr_number_for_branch "$BRANCH" "$GATE_PR_ERR")
+GATE_PR_STATUS=$?
+GATE_PR_ERROR=$(cat "$GATE_PR_ERR")
+rm -f "$GATE_PR_ERR"
+if [ "$GATE_PR_STATUS" -ne 0 ]; then
+  echo "GATE_UNDETERMINED Review-comment gate: could not ask GitHub whether $BRANCH has a pull request: ${GATE_PR_ERROR:-no response}"
+  echo "STOP. Do not mutate bead state, do not merge, do not close."
+  gc runtime drain-ack
+  exit 1
+fi
+if [ -n "$GATE_PR_NUMBER" ]; then
+  gate_run "Review-comment gate" review-comments-unaddressed gate_bot_reviews "$GATE_PR_NUMBER"
+else
+  echo "REVIEW_GATE_CLEAR: $BRANCH has no pull request, so there is no automated review surface."
+fi
+```
+
+If `--force-with-lease` fails, the source branch moved after your fetch: STOP,
+re-fetch, rebase again, and re-run the gates against the new SHA. Never plain
+`--force`, and never merge a SHA the gates did not rule on.
+
 **1. Merge, push, verify, and close work bead:**
 
 Run this as one script. It uses a temporary detached worktree for the
@@ -802,7 +1428,8 @@ gc bd update "$WORK" \
   --set-metadata merge_result=merged \
   --set-metadata merged_sha="$MERGED_SHA" \
   --set-metadata merged_target="$TARGET" \
-  --unset-metadata rejection_reason && \
+  --unset-metadata rejection_reason \
+  --unset-metadata recovery.disposition && \
 gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"
 ```
 
@@ -813,7 +1440,12 @@ Both the `--set-metadata` write and the `gc bd close` are required —
 `merged_sha` and `merged_target` are the only forensic breadcrumbs tying a
 closed bead to its merge commit on `$TARGET`. `--unset-metadata
 rejection_reason` clears any stale rejection field from an earlier
-rejected/reworked attempt before the successful close.
+rejected/reworked attempt before the successful close, and
+`--unset-metadata recovery.disposition` clears its companion from a gate
+rejection. Do not split the chain: a bead carrying both "closed merged" and a
+live rejection field is internally contradictory. `ci_gate_sha` is already on
+the bead — the CI gate stamped it — and it must equal `merged_sha`; if it does
+not, the SHA that landed is not the SHA CI proved.
 
 **2. Cleanup:**
 ```bash
@@ -846,6 +1478,17 @@ case "$BHRC_STATUS" in
     exit 1
     ;;
 esac
+```
+
+**0b. Review gate (before any pull request exists):**
+
+The correctness verdict is judged here, not after publication: a PR is a
+handoff, and handing off a diff you have not read is the same defect as
+merging one. The gate reads the verdict the review-diff step recorded and
+refuses to publish without it.
+
+```bash
+gate_run "Review gate" acceptance-unmet gate_review "origin/$TARGET" temp
 ```
 
 **1. Push the rebased branch back to origin:**
@@ -1046,6 +1689,42 @@ fi
 ```
 If this command fails or prints empty output: STOP. Debug and retry. Do NOT continue.
 
+**3b. Gate chain: hosted CI, then automated review comments:**
+
+The pull request exists; it is not finished. Publishing a PR closes this work
+bead, so everything a human reviewer would wait for has to be true BEFORE the
+close: the hosted checks that a Linux polecat cannot run locally, and the
+automated reviewers that comment on every PR on this rig.
+
+Ask GitHub for the PR head SHA rather than trusting the local ref — if the two
+disagree, something pushed after you and the checks you are about to read
+belong to a different commit.
+
+```bash
+GATE_HEAD_ERR=$(mktemp)
+GATE_PR_RAW=$(gate_gh_api "pulls/$PR_NUMBER" "$GATE_HEAD_ERR")
+GATE_HEAD_STATUS=$?
+GATE_HEAD_ERROR=$(cat "$GATE_HEAD_ERR")
+rm -f "$GATE_HEAD_ERR"
+if [ "$GATE_HEAD_STATUS" -ne 0 ] || [ -z "$GATE_PR_RAW" ]; then
+  echo "Could not read the head SHA of PR #$PR_NUMBER: ${GATE_HEAD_ERROR:-no response}"
+  echo "STOP. Do not mutate bead state, do not close."
+  gc runtime drain-ack
+  exit 1
+fi
+GATE_PR_HEAD_SHA=$(printf '%s' "$GATE_PR_RAW" | jq -r '.head.sha // empty')
+LOCAL_HEAD_SHA=$(git rev-parse temp)
+if [ -z "$GATE_PR_HEAD_SHA" ] || [ "$GATE_PR_HEAD_SHA" != "$LOCAL_HEAD_SHA" ]; then
+  echo "PR #$PR_NUMBER head is '${GATE_PR_HEAD_SHA:-unknown}' but you pushed $LOCAL_HEAD_SHA."
+  echo "STOP. Re-fetch, rebase, re-run the gates against the SHA the PR actually carries."
+  gc runtime drain-ack
+  exit 1
+fi
+
+gate_run "CI gate" ci-red gate_ci "$GATE_PR_HEAD_SHA"
+gate_run "Review-comment gate" review-comments-unaddressed gate_bot_reviews "$PR_NUMBER"
+```
+
 **4. Record PR metadata and close the work bead:**
 
 Run as a single chained command so the metadata write cannot be skipped
@@ -1062,9 +1741,15 @@ gc bd update $WORK \
   --set-metadata pr_url="$PR_URL" \
   --set-metadata pr_number="$PR_NUMBER" \
   --set-metadata merged_target="$TARGET" \
-  --unset-metadata rejection_reason && \
+  --unset-metadata rejection_reason \
+  --unset-metadata recovery.disposition && \
 gc bd close $WORK --reason "Pull request ready: $PR_URL"
 ```
+
+`--unset-metadata recovery.disposition` clears the companion field a gate
+rejection sets, for the same reason `rejection_reason` is cleared: a closed
+bead advertising a live rejection is a contradictory record. `ci_gate_sha` and
+`ci_gate_result` stay — they are the proof this PR was green when it closed.
 
 **5. Cleanup:**
 ```bash
@@ -1085,7 +1770,12 @@ The Gastown example refinery supports direct and mr/pr merge strategies only."
 ```
 Do NOT close the bead, delete the branch, or burn the wisp until a human decides how to proceed.
 
-**GATE**: direct mode requires verified target push. mr mode requires verified PR URL. Bead closure only happens after the selected handoff is confirmed."""
+**GATE**: direct mode requires verified target push. mr mode requires verified
+PR URL. Both modes require all three pre-close gates — recorded review verdict,
+hosted CI green on the exact SHA being landed, and no unaddressed automated
+review comments. Bead closure only happens after the selected handoff is
+confirmed AND every gate has ruled. No gate may be skipped because the local
+checks passed: local checks are why the incident was invisible."""
 
 [[steps]]
 id = "patrol-summary"
