@@ -54,6 +54,12 @@ if [ -z "$WORK" ]; then
               | select(type == "object")
               | select(((.metadata // {}) | type) == "object")
               | select(.metadata.artifact_cleanup_state == "pending")
+              | select(
+                  .metadata.merge_result == "merged" or
+                  .metadata.merge_result == "already_merged" or
+                  .metadata.merge_result == "pull_request" or
+                  .metadata.merge_result == "mr_merged"
+                )
             ]
             | sort_by(.updated_at // "")
             | .[0].id // empty
@@ -221,7 +227,7 @@ TASK_ARTIFACT=$(printf '%s' "$META" | jq -r '
 TERMINAL=false
 if [ "$STATUS" = closed ]; then
     case "$HANDOFF_RESULT" in
-        merged|already_merged|pull_request|pull_request_merged|mr_merged)
+        merged|already_merged|pull_request|mr_merged)
             TERMINAL=true
             ;;
     esac
@@ -387,7 +393,7 @@ case "$HANDOFF_RESULT" in
             exit 1
         fi
         ;;
-    pull_request_merged|mr_merged)
+    mr_merged)
         EXPECTED_BRANCH="polecat/$WORK"
         if [ "$BRANCH" != "$EXPECTED_BRANCH" ] ||
            ! valid_branch "$BRANCH" ||

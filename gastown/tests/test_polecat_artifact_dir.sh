@@ -736,13 +736,14 @@ case "$*" in
             count=$((count + 1))
             printf '%s\n' "$count" >"$GC_STUB_SHOW_COUNT"
             if [ "$count" -ge 2 ]; then
-                cat "$GC_STUB_BEAD_JSON_SECOND"
+                source_json=$GC_STUB_BEAD_JSON_SECOND
             else
-                cat "$GC_STUB_BEAD_JSON"
+                source_json=$GC_STUB_BEAD_JSON
             fi
         else
-            cat "$GC_STUB_BEAD_JSON"
+            source_json=$GC_STUB_BEAD_JSON
         fi
+        jq --arg work "$5" '[.[] | select(.id == $work)]' "$source_json"
         ;;
     "$bd_subcommand --rig "*" update "*)
         exit "${GC_STUB_UPDATE_EXIT:-0}"
@@ -805,7 +806,7 @@ write_cleanup_bead_json() {
             merged_target: $target
           } + (if $result == "pull_request"
                then {pr_head_sha: $delivered}
-               elif $result == "pull_request_merged" or $result == "mr_merged"
+               elif $result == "mr_merged"
                then {pr_head_sha: $delivered, merged_sha: $delivered}
                else {merged_sha: $delivered}
                end)
@@ -814,7 +815,8 @@ write_cleanup_bead_json() {
 }
 
 test_cleanup_command_is_idempotent_and_mr_retryable() {
-    local tmp rig remote city canonical sweep_artifact bin bead_json calls sha
+    local tmp rig remote city canonical sweep_artifact nonterminal_artifact
+    local bin bead_json calls sha nonterminal_sha result output
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
@@ -847,6 +849,26 @@ test_cleanup_command_is_idempotent_and_mr_retryable() {
     grep -qF 'artifact_cleanup_state=pending' "$calls" ||
         fail "non-terminal MR cleanup did not record a pending retry marker"
 
+    # Closed status alone cannot make pending, obsolete, or unknown result
+    # values terminal. Keep this table dynamic so future aliases cannot
+    # accidentally enter the deletion gate.
+    for result in pull_request_pending pull_request_merged unknown_result; do
+        : >"$calls"
+        write_cleanup_bead_json \
+            "$bead_json" ac-safe1 closed "$result" "$sha" "$canonical"
+        output=$(
+            GC_STUB_BEAD_JSON="$bead_json" GC_STUB_CALLS="$calls" \
+                GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
+                PATH="$bin:$PATH" "$ARTIFACT_CLEANUP" ac-safe1
+        )
+        [[ -d "$canonical" ]] ||
+            fail "closed non-terminal result $result removed the artifact"
+        [[ "$output" == *"ARTIFACT_CLEANUP_DEFERRED"* ]] ||
+            fail "closed non-terminal result $result was not deferred"
+        grep -qF 'artifact_cleanup_state=pending' "$calls" ||
+            fail "closed non-terminal result $result did not remain pending"
+    done
+
     : >"$calls"
     write_cleanup_bead_json \
         "$bead_json" ac-safe1 closed merged "$sha" "$canonical" pending
@@ -869,19 +891,47 @@ test_cleanup_command_is_idempotent_and_mr_retryable() {
 
     # Simulate a crash after terminal closure but before the immediate cleanup
     # invocation. The durable pending marker lets the next refinery scan find
-    # and retire one closed artifact without an explicit bead argument.
+    # and retire one closed artifact without an explicit bead argument. An
+    # older non-terminal row must not starve this actionable cleanup.
+    nonterminal_artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-nonterminal"
+    git -C "$rig" worktree add -q --detach "$nonterminal_artifact" HEAD
+    nonterminal_sha=$(git -C "$nonterminal_artifact" rev-parse HEAD)
     sweep_artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-sweep"
     git -C "$rig" worktree add -q --detach "$sweep_artifact" HEAD
     sha=$(git -C "$sweep_artifact" rev-parse HEAD)
     git -C "$rig" push -qu origin HEAD:refs/heads/polecat/ac-sweep
     write_cleanup_bead_json \
         "$bead_json" ac-sweep closed merged "$sha" "$sweep_artifact" pending
+    jq \
+        --arg artifact "$nonterminal_artifact" \
+        --arg sha "$nonterminal_sha" \
+        '[{
+          id: "ac-nonterminal",
+          status: "closed",
+          updated_at: "2026-07-26T18:00:00Z",
+          metadata: {
+            merge_result: "pull_request_pending",
+            artifact_cleanup_state: "pending",
+            artifact_source_sha: $sha,
+            artifact_dir: $artifact,
+            branch: "polecat/ac-nonterminal",
+            merged_target: "main"
+          }
+        }, (.[0] | .updated_at = "2026-07-26T19:00:00Z")]' \
+        "$bead_json" >"$bead_json.next"
+    mv "$bead_json.next" "$bead_json"
     : >"$calls"
     GC_STUB_BEAD_JSON="$bead_json" GC_STUB_CALLS="$calls" \
         GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
         PATH="$bin:$PATH" "$ARTIFACT_CLEANUP"
     [[ ! -e "$sweep_artifact" ]] ||
         fail "no-argument pending sweep did not close the pre-invocation crash window"
+    [[ -d "$nonterminal_artifact" ]] ||
+        fail "no-argument sweep removed the older non-terminal artifact"
+    grep -qF 'show ac-sweep --json' "$calls" ||
+        fail "no-argument sweep did not select the newer terminal row"
+    ! grep -qF 'show ac-nonterminal --json' "$calls" ||
+        fail "older non-terminal cleanup row starved the actionable row"
     grep -qF 'list --status=closed --has-metadata-key=artifact_cleanup_state' "$calls" ||
         fail "no-argument cleanup did not query the durable pending queue"
 }
