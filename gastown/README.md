@@ -40,12 +40,15 @@ branch on the target and closes the bead after verifying the remote target.
 With `mr` / `pr`, refinery publishes a GitHub pull request and records a
 pending handoff. The source bead stays `blocked` until
 `gc gastown pr-merge-reconcile` verifies the validated PR head was merged and
-its merge commit is reachable from the recorded target branch. Keeping the
-source bead non-closed also keeps its dependency children non-ready.
+its merge commit is reachable from the recorded target branch. The command
+also binds the PR repository to the rig's github.com `origin` and ignores
+local replacement refs and grafts when proving ancestry. Keeping the source
+bead non-closed also keeps its dependency children non-ready.
 
-The reconciler checks at most one pending PR per refinery patrol. Open PRs
-remain pending, changed open heads return to refinery quality gates, and
-closed-unmerged or merged-unvalidated PRs remain blocked for operator review.
+The reconciler checks at most one pending PR per refinery work scan, including
+re-entry after an idle wake. Open PRs remain pending, changed open heads return
+to refinery quality gates, and closed-unmerged or merged-unvalidated PRs
+remain blocked for operator review.
 
 This contract applies to new handoffs. An upgrade does not reopen legacy beads
 that an older pack already closed at PR publication; operators should audit

@@ -93,6 +93,24 @@ for arg in "$@"; do
     printf ' <%s>' "$arg" >>"$GC_TEST_LOG"
 done
 printf '\n' >>"$GC_TEST_LOG"
+
+no_replace=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --no-replace-objects)
+            no_replace=1
+            shift
+            ;;
+        -C)
+            [ "$#" -ge 2 ] || exit 93
+            shift 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
 case "$1" in
     check-ref-format)
         case "$2" in
@@ -100,10 +118,16 @@ case "$1" in
             *) exit 1 ;;
         esac
         ;;
+    remote)
+        [ "$2" = "get-url" ] && [ "$3" = "origin" ] || exit 93
+        printf '%s\n' "${GC_TEST_ORIGIN_URL:-https://github.com/example/repo.git}"
+        ;;
     fetch)
         [ "${GC_TEST_FETCH_FAIL:-0}" = "0" ]
         ;;
     merge-base)
+        [ "$no_replace" = 1 ] || exit 93
+        [ "${GIT_GRAFT_FILE:-}" = "/dev/null" ] || exit 93
         [ "${GC_TEST_MERGE_REACHABLE:-1}" = "1" ]
         ;;
     rev-parse)
@@ -135,6 +159,7 @@ export GC_TEST_REST_INFO="$REST_INFO"
 export GC_TEST_UPDATE_COUNT="$UPDATE_COUNT"
 export GC_AGENT="tributary/gastown.refinery"
 export GC_RIG="tributary"
+export GC_RIG_ROOT="/srv/tributary"
 
 HEAD_A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 HEAD_B=cccccccccccccccccccccccccccccccccccccccc
@@ -145,6 +170,7 @@ reset_case() {
     : >"$LOG"
     printf '0\n' >"$UPDATE_COUNT"
     unset GC_TEST_CLOSE_FAIL GC_TEST_GH_FAIL GC_TEST_FETCH_FAIL GC_TEST_FAIL_UPDATE_AT
+    unset GC_TEST_ORIGIN_URL
     unset GASTOWN_PR_RECONCILE_FORCE_REST GH_TOKEN
     export GC_TEST_MERGE_REACHABLE=1
 }
@@ -167,6 +193,7 @@ write_pending_list() {
             pr_url: $url,
             pr_number: "181",
             pr_head_sha: $head,
+            pr_repo: "example/repo",
             pr_reconcile_pending: "true",
             pr_last_checked_at: $checked
           }
@@ -223,6 +250,8 @@ test_record_blocks_without_closing() {
         fail "record must mark a pending pull request"
     grep -F "<--set-metadata> <pr_head_sha=$HEAD_A>" "$LOG" >/dev/null ||
         fail "record must bind the validated PR head"
+    grep -F '<--set-metadata> <pr_repo=example/repo>' "$LOG" >/dev/null ||
+        fail "record must bind the pull request to the origin repository"
     local arm_line block_line
     arm_line=$(grep -nF '<--set-metadata> <pr_reconcile_pending=true>' "$LOG" | head -n1 | cut -d: -f1)
     block_line=$(grep -nF '<--status=blocked>' "$LOG" | head -n1 | cut -d: -f1)
@@ -230,6 +259,17 @@ test_record_blocks_without_closing() {
         fail "record must arm retry before its final transition to blocked"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "record must not close at PR publication"
+}
+
+test_record_rejects_origin_repo_mismatch_before_mutation() {
+    reset_case
+    export GC_TEST_ORIGIN_URL=https://github.com/example/other.git
+    if "$COMMAND" record tr-92a "$PR_URL" 181 main "$HEAD_A"; then
+        fail "record should reject a pull request from a different origin repository"
+    fi
+
+    ! grep -F 'gc <bd> <update>' "$LOG" >/dev/null ||
+        fail "origin mismatch must fail before arming or mutating the work bead"
 }
 
 test_open_unchanged_stays_blocked() {
@@ -250,6 +290,25 @@ test_open_unchanged_stays_blocked() {
         fail "unchanged open PR must not re-enter the refinery queue"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "unchanged open PR must not close its bead"
+}
+
+test_reconcile_origin_mismatch_retries_without_github_or_close() {
+    reset_case
+    write_pending_list
+    write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
+    export GC_TEST_ORIGIN_URL=git@github.com:example/other.git
+    if "$COMMAND"; then
+        fail "origin mismatch should return nonzero"
+    fi
+
+    grep -F '<--set-metadata> <pr_state=origin_mismatch>' "$LOG" >/dev/null ||
+        fail "origin mismatch must be recorded as retryable"
+    ! grep -F 'gh <pr> <view>' "$LOG" >/dev/null ||
+        fail "origin mismatch must fail before trusting GitHub state"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "origin mismatch must not close the source bead"
+    ! grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
+        fail "origin mismatch must retain the pending marker"
 }
 
 test_partial_record_never_blocks_without_complete_metadata() {
@@ -323,9 +382,9 @@ test_merged_validated_head_and_target_closes() {
     write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
     "$COMMAND"
 
-    grep -F 'git <fetch> <origin> <+refs/heads/main:refs/remotes/origin/main>' "$LOG" >/dev/null ||
+    grep -F '<fetch> <origin> <+refs/heads/main:refs/remotes/origin/main>' "$LOG" >/dev/null ||
         fail "merged PR must fetch the recorded target"
-    grep -F "git <merge-base> <--is-ancestor> <$MERGE_SHA> <origin/main>" "$LOG" >/dev/null ||
+    grep -F "<--no-replace-objects> <-C> <$GC_RIG_ROOT> <merge-base> <--is-ancestor> <$MERGE_SHA> <origin/main>" "$LOG" >/dev/null ||
         fail "merged PR must prove merge commit reachability"
     grep -F "<--set-metadata> <merged_sha=$MERGE_SHA>" "$LOG" >/dev/null ||
         fail "merged PR must record merge evidence before close"
@@ -392,6 +451,7 @@ test_oldest_pending_pr_is_selected() {
           metadata: {
             branch: "polecat/newer", merged_target: "main",
             pr_url: $url, pr_number: "181", pr_head_sha: $head,
+            pr_repo: "example/repo",
             pr_reconcile_pending: "true",
             pr_last_checked_at: "2026-07-26T19:59:00Z"
           }
@@ -401,6 +461,7 @@ test_oldest_pending_pr_is_selected() {
           metadata: {
             branch: "polecat/tr-92a", merged_target: "main",
             pr_url: $url, pr_number: "181", pr_head_sha: $head,
+            pr_repo: "example/repo",
             pr_reconcile_pending: "true",
             pr_last_checked_at: "2026-07-26T18:00:00Z"
           }
@@ -417,14 +478,16 @@ test_oldest_pending_pr_is_selected() {
 test_formula_uses_pending_merge_gate() {
     grep -F 'gc gastown pr-merge-reconcile record' "$FORMULA" >/dev/null ||
         fail "refinery formula must record PR handoffs through the reconciler"
-    grep -F 'id = "reconcile-pr-merges"' "$FORMULA" >/dev/null ||
-        fail "refinery formula must reconcile pending PR merges before new work"
+    grep -F 'Every time this open step is entered or re-entered after an idle wake' "$FORMULA" >/dev/null ||
+        fail "open refinery work scan must repeat pending-merge reconciliation after idle wakes"
     ! grep -F 'gc bd close $WORK --reason "Pull request ready:' "$FORMULA" >/dev/null ||
         fail "refinery formula must not close source beads at PR publication"
 }
 
 test_record_blocks_without_closing
+test_record_rejects_origin_repo_mismatch_before_mutation
 test_open_unchanged_stays_blocked
+test_reconcile_origin_mismatch_retries_without_github_or_close
 test_partial_record_never_blocks_without_complete_metadata
 test_rest_fallback_preserves_open_pending_state
 test_open_changed_head_requeues_for_validation

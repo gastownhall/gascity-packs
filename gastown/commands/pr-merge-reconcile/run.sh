@@ -53,12 +53,99 @@ valid_sha() {
     esac
 }
 
-valid_pr_url() {
-    url_number=${1##*/}
-    case "$1" in
-        https://github.com/*/*/pull/*) valid_number "$url_number" ;;
+github_repo_from_pr_url() {
+    parsed_url=$1
+    case "$parsed_url" in
+        https://github.com/*) parsed_path=${parsed_url#https://github.com/} ;;
         *) return 1 ;;
     esac
+
+    parsed_owner=${parsed_path%%/*}
+    parsed_remainder=${parsed_path#*/}
+    [ "$parsed_remainder" != "$parsed_path" ] || return 1
+    parsed_repo=${parsed_remainder%%/*}
+    parsed_pull_path=${parsed_remainder#*/}
+    [ "$parsed_pull_path" != "$parsed_remainder" ] || return 1
+    parsed_number=${parsed_pull_path#pull/}
+    [ "pull/$parsed_number" = "$parsed_pull_path" ] || return 1
+    [ -n "$parsed_owner" ] && [ -n "$parsed_repo" ] || return 1
+    case "$parsed_owner$parsed_repo" in
+        *[!A-Za-z0-9_.-]*) return 1 ;;
+    esac
+    valid_number "$parsed_number" || return 1
+    printf '%s/%s\n' "$parsed_owner" "$parsed_repo"
+}
+
+valid_pr_url() {
+    github_repo_from_pr_url "$1" >/dev/null
+}
+
+github_repo_from_origin_url() {
+    origin_url=$1
+    case "$origin_url" in
+        https://github.com/*)
+            origin_path=${origin_url#https://github.com/}
+            ;;
+        https://*@github.com/*)
+            origin_path=${origin_url#https://}
+            origin_path=${origin_path#*@github.com/}
+            ;;
+        git@github.com:*)
+            origin_path=${origin_url#git@github.com:}
+            ;;
+        ssh://git@github.com/*)
+            origin_path=${origin_url#ssh://git@github.com/}
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    origin_path=${origin_path%/}
+    origin_path=${origin_path%.git}
+    origin_owner=${origin_path%%/*}
+    origin_repo=${origin_path#*/}
+    [ "$origin_repo" != "$origin_path" ] || return 1
+    [ -n "$origin_owner" ] && [ -n "$origin_repo" ] || return 1
+    case "$origin_repo" in
+        */*) return 1 ;;
+    esac
+    case "$origin_owner$origin_repo" in
+        *[!A-Za-z0-9_.-]*) return 1 ;;
+    esac
+    printf '%s/%s\n' "$origin_owner" "$origin_repo"
+}
+
+rig_git() {
+    if [ -n "${GC_RIG_ROOT:-}" ]; then
+        git -C "$GC_RIG_ROOT" "$@"
+    else
+        git "$@"
+    fi
+}
+
+rig_git_without_history_overrides() {
+    # Both refs/replace and the deprecated info/grafts file rewrite ancestry
+    # for merge-base. Neither is acceptable evidence that a GitHub merge
+    # commit reached the recorded target.
+    if [ -n "${GC_RIG_ROOT:-}" ]; then
+        GIT_GRAFT_FILE=/dev/null \
+            git --no-replace-objects -C "$GC_RIG_ROOT" "$@"
+    else
+        GIT_GRAFT_FILE=/dev/null git --no-replace-objects "$@"
+    fi
+}
+
+lowercase_repo() {
+    printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+repos_equal() {
+    [ "$(lowercase_repo "$1")" = "$(lowercase_repo "$2")" ]
+}
+
+current_origin_repo() {
+    current_origin_url=$(rig_git remote get-url origin 2>/dev/null) || return 1
+    github_repo_from_origin_url "$current_origin_url"
 }
 
 now_utc() {
@@ -147,6 +234,15 @@ record_handoff() {
         echo "pr-merge-reconcile: invalid target branch: $target" >&2
         exit 2
     }
+    pr_repo=$(github_repo_from_pr_url "$pr_url")
+    origin_repo=$(current_origin_repo) || {
+        echo "pr-merge-reconcile: cannot resolve a standard github.com origin repository" >&2
+        exit 2
+    }
+    repos_equal "$pr_repo" "$origin_repo" || {
+        echo "pr-merge-reconcile: pull request repository $pr_repo does not match origin $origin_repo" >&2
+        exit 2
+    }
 
     # Arm the retry marker while the bead is still open. If any later
     # metadata write fails, normal refinery work discovery can retry this
@@ -160,6 +256,7 @@ record_handoff() {
         --set-metadata pr_url="$pr_url" \
         --set-metadata pr_number="$pr_number" \
         --set-metadata pr_head_sha="$head_sha" \
+        --set-metadata pr_repo="$pr_repo" \
         --set-metadata pr_state=open \
         --set-metadata pr_last_checked_at="$(now_utc)" \
         --set-metadata merged_target="$target" \
@@ -277,6 +374,7 @@ reconcile_one() {
     pr_url=$(printf '%s\n' "$row" | jq -r '.metadata.pr_url // empty')
     pr_number=$(printf '%s\n' "$row" | jq -r '.metadata.pr_number // empty')
     expected_head=$(printf '%s\n' "$row" | jq -r '.metadata.pr_head_sha // empty')
+    recorded_repo=$(printf '%s\n' "$row" | jq -r '.metadata.pr_repo // empty')
     branch=$(printf '%s\n' "$row" | jq -r '.metadata.branch // empty')
     target=$(printf '%s\n' "$row" | jq -r '.metadata.merged_target // .metadata.target // empty')
     now=$(now_utc)
@@ -285,14 +383,26 @@ reconcile_one() {
         echo "pr-merge-reconcile: pending row has no bead id; refusing last-touched fallback" >&2
         return 1
     fi
-    if ! valid_pr_url "$pr_url" ||
+    parsed_repo=$(github_repo_from_pr_url "$pr_url" 2>/dev/null || true)
+    if [ -z "$parsed_repo" ] ||
        ! valid_number "$pr_number" ||
        [ "${pr_url##*/}" != "$pr_number" ] ||
        ! valid_sha "$expected_head" ||
+       [ -z "$recorded_repo" ] ||
+       ! repos_equal "$parsed_repo" "$recorded_repo" ||
        [ -z "$branch" ] ||
        ! git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 ||
        ! git check-ref-format "refs/heads/$target" >/dev/null 2>&1; then
         quarantine_metadata "$work" "Pending PR metadata is incomplete or invalid (url/number/head/branch/target)." "$now"
+        return 1
+    fi
+    origin_repo=$(current_origin_repo 2>/dev/null || true)
+    if [ -z "$origin_repo" ] || ! repos_equal "$recorded_repo" "$origin_repo"; then
+        record_retryable_error \
+            "$work" \
+            origin_mismatch \
+            "Recorded PR repository $recorded_repo does not match the current standard github.com origin (${origin_repo:-unresolved}); will retry." \
+            "$now"
         return 1
     fi
 
@@ -360,16 +470,17 @@ reconcile_one() {
                 record_retryable_error "$work" merged_unverified "GitHub reported MERGED without complete merge evidence; will retry." "$now"
                 return 1
             fi
-            if ! git fetch origin "+refs/heads/${target}:refs/remotes/origin/${target}"; then
+            if ! rig_git fetch origin "+refs/heads/${target}:refs/remotes/origin/${target}"; then
                 record_retryable_error "$work" merged_unverified "Could not fetch origin/$target to verify the PR merge; will retry." "$now"
                 return 1
             fi
-            if ! git merge-base --is-ancestor "$merged_sha" "origin/$target"; then
+            if ! rig_git_without_history_overrides \
+                merge-base --is-ancestor "$merged_sha" "origin/$target"; then
                 record_retryable_error "$work" merged_unverified "PR merge commit $merged_sha is not reachable from origin/$target; will retry." "$now"
                 return 1
             fi
 
-            short_sha=$(git rev-parse --short "$merged_sha")
+            short_sha=$(rig_git rev-parse --short "$merged_sha")
             bd_update "$work" \
                 --assignee="$GC_AGENT" \
                 --set-metadata merge_result=merged \

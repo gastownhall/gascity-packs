@@ -166,12 +166,14 @@ upcoming merge work (e.g., priority overrides, hold requests).
 Close this step and proceed."""
 
 [[steps]]
-id = "reconcile-pr-merges"
-title = "Reconcile one pending pull-request merge"
+id = "find-work"
+title = "Find next work bead assigned to me or wait"
 needs = ["check-inbox"]
 description = """
-Before selecting new merge work, reconcile the least-recently-checked
-`merge_strategy=mr` handoff in this rig:
+**Config: event_timeout = {{event_timeout}}**
+
+Every time this open step is entered or re-entered after an idle wake, first
+reconcile the least-recently-checked `merge_strategy=mr` handoff in this rig:
 
 ```bash
 if ! gc gastown pr-merge-reconcile; then
@@ -179,7 +181,7 @@ if ! gc gastown pr-merge-reconcile; then
 fi
 ```
 
-The command performs at most one GitHub lookup per patrol:
+The command performs at most one GitHub lookup per work scan:
 
 - an unchanged open PR stays blocked;
 - a handoff owned by an earlier refinery session is adopted to `$GC_AGENT`;
@@ -928,10 +930,10 @@ so its dependents remain blocked, until a later patrol verifies the PR merge.
 **0. Refuse a 0-diff branch (false-completion guard):**
 
 The same predicate covers the empty-PR / 0-commit concern: do not publish a
-pull request for a branch that introduces no change vs its merge-base. The
-PR handoff closes the bead, so an empty PR is the same false completion as
-an empty direct merge. A tool error (status 2) is not an empty branch — stop
-without mutating bead state rather than halt-escalating a healthy branch.
+pull request for a branch that introduces no change vs its merge-base. An
+empty PR cannot satisfy the work bead and must not enter the pending-merge
+gate. A tool error (status 2) is not an empty branch — stop without mutating
+bead state rather than halt-escalating a healthy branch.
 ```bash
 branch_has_real_change "origin/$TARGET" temp
 BHRC_STATUS=$?
@@ -1246,7 +1248,7 @@ Do NOT close the bead, delete the branch, or burn the wisp until a human decides
 
 **GATE**: direct mode requires verified target push. mr mode records a verified
 PR handoff but does not close the bead; closure happens only in
-`reconcile-pr-merges` after a verified merge."""
+`gc gastown pr-merge-reconcile` after a verified merge."""
 
 [[steps]]
 id = "patrol-summary"

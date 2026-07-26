@@ -275,15 +275,16 @@ you tested as `pr_head_sha`, and the pending merge state. Do not close the
 bead when the branch is merely pushed. If validation fails, record a durable
 blocked reason on the bead and escalate to mayor.
 
-At the start of each patrol, run `gc gastown pr-merge-reconcile` once before
-selecting new work. It checks the least-recently-checked pending PR in this
-rig and adopts handoffs left assigned to an earlier refinery session. An
-unchanged open PR remains blocked. An open PR with a changed head is reopened
-to you for rebase and quality-gate validation. A PR closes its bead only when
-GitHub reports it merged with the validated head and the merge commit is
-reachable from the recorded target branch on `origin`. Closed-unmerged,
-contradictory, or merged-with-unvalidated-head states remain blocked and are
-escalated.
+Before every work scan, including re-entry after an idle wake, run
+`gc gastown pr-merge-reconcile` once. It checks the least-recently-checked
+pending PR in this rig and adopts handoffs left assigned to an earlier
+refinery session. An unchanged open PR remains blocked. An open PR with a
+changed head is reopened to you for rebase and quality-gate validation. A PR
+closes its bead only when GitHub reports it merged with the validated head,
+its repository still matches the rig's `origin`, and the merge commit is
+reachable from the recorded target branch with local history overrides
+disabled. Closed-unmerged, contradictory, or merged-with-unvalidated-head
+states remain blocked and are escalated.
 
 If `metadata.existing_pr` is present while `merge_strategy` is unset or
 `direct`, treat the handoff as `mr`. An existing PR cannot be validated

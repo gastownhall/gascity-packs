@@ -93,7 +93,7 @@ GASTOWN_FORMULA_CONTRACTS = {
         "fast-forward merge",
         "run tests before merging",
         "metadata.target",
-        "closes the bead",
+        "PR publication is not completion",
     ),
     "mol-witness-patrol": (
         "Orphaned bead recovery",
