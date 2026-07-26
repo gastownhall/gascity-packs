@@ -7,6 +7,7 @@ POLECAT_FORMULA="$GASTOWN/formulas/mol-polecat-work.toml"
 WITNESS_FORMULA="$GASTOWN/formulas/mol-witness-patrol.toml"
 SHUTDOWN_FORMULA="$GASTOWN/formulas/mol-shutdown-dance.toml"
 REFINERY_FORMULA="$GASTOWN/formulas/mol-refinery-patrol.toml"
+WORKTREE_SETUP="$GASTOWN/assets/scripts/worktree-setup.sh"
 
 fail() {
     echo "FAIL: $*" >&2
@@ -53,6 +54,31 @@ output_path.write_text("\n".join(block) + "\n", encoding="utf-8")
 PY
 }
 
+extract_workspace_creation() {
+    local output=$1
+    python3 - "$POLECAT_FORMULA" "$output" <<'PY'
+import pathlib
+import re
+import sys
+import tomllib
+
+formula_path = pathlib.Path(sys.argv[1])
+output_path = pathlib.Path(sys.argv[2])
+with formula_path.open("rb") as handle:
+    formula = tomllib.load(handle)
+workspace = next(step for step in formula["steps"] if step["id"] == "workspace-setup")
+blocks = re.findall(r"```bash\n(.*?)```", workspace["description"], re.DOTALL)
+if len(blocks) < 4:
+    raise SystemExit(f"workspace-setup has {len(blocks)} bash blocks; expected at least 4")
+script = "\n".join(blocks[:4])
+script = script.replace("{{convoy_id}}", "convoy-test")
+script = script.replace("{{base_branch}}", "main")
+if "{{" in script:
+    raise SystemExit("workspace creation extraction retained an unresolved template")
+output_path.write_text(script, encoding="utf-8")
+PY
+}
+
 init_repo() {
     local repo=$1
     git init -q "$repo"
@@ -61,6 +87,126 @@ init_repo() {
     printf 'fixture\n' >"$repo/fixture.txt"
     git -C "$repo" add fixture.txt
     git -C "$repo" commit -qm "fixture"
+}
+
+test_workspace_creation_uses_canonical_sibling() {
+    local tmp rig remote city provider canonical setup calls bd_subcommand
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    rig="$tmp/rig"
+    remote="$tmp/remote.git"
+    city="$tmp/city"
+    provider="$city/.gc/worktrees/demo/polecats/gastown.nux"
+    canonical="$city/.gc/worktrees/demo/artifacts/worktrees/ac-safe1"
+    setup="$tmp/workspace-create.sh"
+    calls="$tmp/gc-calls"
+    bd_subcommand=$(printf '%s%s' b d)
+
+    init_repo "$rig"
+    git -C "$rig" branch -M main
+    git init -q --bare "$remote"
+    git -C "$remote" symbolic-ref HEAD refs/heads/main
+    git -C "$rig" remote add origin "$remote"
+    git -C "$rig" push -qu origin main
+    mkdir -p "$(dirname "$provider")"
+    git -C "$rig" worktree add -qb provider-home "$provider" main
+    extract_workspace_creation "$setup"
+
+    (
+        gc() {
+            printf '%s\n' "$*" >>"$calls"
+            case "$*" in
+                "convoy status convoy-test --json")
+                    printf '%s\n' '{"children":[{"id":"ac-safe1"}]}'
+                    ;;
+                "$bd_subcommand show ac-safe1 --json")
+                    printf '%s\n' '[{"metadata":{}}]'
+                    ;;
+                "$bd_subcommand update ac-safe1 --set-metadata artifact_dir="*)
+                    return 0
+                    ;;
+                "runtime drain-ack")
+                    fail "canonical workspace creation unexpectedly drain-acked"
+                    ;;
+                *)
+                    fail "unexpected gc call during workspace creation: $*"
+                    ;;
+            esac
+        }
+        export GC_CITY_PATH="$city"
+        export GC_RIG=demo
+        export GC_RIG_ROOT="$rig"
+        cd "$provider"
+        # shellcheck source=/dev/null
+        source "$setup"
+    )
+
+    [[ -e "$canonical/.git" ]] ||
+        fail "formula did not create the canonical sibling task worktree"
+    [[ "$(git -C "$canonical" rev-parse --show-toplevel)" == "$canonical" ]] ||
+        fail "canonical artifact path is not a Git worktree root"
+    [[ ! -e "$provider/worktrees/ac-safe1" ]] ||
+        fail "formula created a nested task worktree under the provider home"
+    grep -qF \
+        "$bd_subcommand update ac-safe1 --set-metadata artifact_dir=$canonical --unset-metadata work_dir" \
+        "$calls" ||
+        fail "formula did not record the exact canonical artifact_dir"
+}
+
+test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores() {
+    local tmp rig city provider global_config global_ignore exclude
+    local tracked_before config_before global_before status
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    rig="$tmp/rig"
+    city="$tmp/city"
+    provider="$city/.gc/worktrees/demo/polecats/gastown.nux"
+    global_config="$tmp/global.gitconfig"
+    global_ignore="$tmp/global-ignore"
+
+    init_repo "$rig"
+    printf '/tracked-only\n' >"$rig/.gitignore"
+    git -C "$rig" add .gitignore
+    git -C "$rig" commit -qm "tracked ignore fixture"
+
+    printf 'global-only\n' >"$global_ignore"
+    GIT_CONFIG_GLOBAL="$global_config" \
+        git config --global core.excludesFile "$global_ignore"
+    tracked_before=$(git -C "$rig" hash-object .gitignore)
+    config_before=$(git hash-object "$global_config")
+    global_before=$(git hash-object "$global_ignore")
+
+    mkdir -p "$provider/.gc"
+    printf '{"runtime":"scaffold"}\n' >"$provider/.gc/settings.json"
+    GIT_CONFIG_GLOBAL="$global_config" \
+        "$WORKTREE_SETUP" "$rig" "$provider" gastown.nux
+
+    [[ -e "$provider/.git" ]] ||
+        fail "worktree setup did not replace the scaffold with a Git worktree"
+    [[ -f "$provider/.gc/settings.json" ]] ||
+        fail "worktree setup did not preserve staged .gc runtime metadata"
+    status=$(GIT_CONFIG_GLOBAL="$global_config" \
+        git -C "$provider" status --porcelain --untracked-files=all)
+    [[ -z "$status" ]] ||
+        fail ".gc runtime metadata remained visible to git status: $status"
+    [[ "$(git -C "$provider" hash-object .gitignore)" == "$tracked_before" ]] ||
+        fail "worktree setup mutated the tracked .gitignore"
+    [[ "$(git hash-object "$global_config")" == "$config_before" ]] ||
+        fail "worktree setup mutated global Git configuration"
+    [[ "$(git hash-object "$global_ignore")" == "$global_before" ]] ||
+        fail "worktree setup mutated the user's global excludes file"
+
+    exclude=$(git -C "$provider" rev-parse --git-path info/exclude)
+    [[ "$(grep -cxF '.gc/' "$exclude")" -eq 1 ]] ||
+        fail "repository-local exclude does not contain exactly one .gc/ entry"
+
+    # Existing worktrees take the idempotent fast path. That path must still
+    # repair an installation created before .gc/ became a runtime exclude.
+    sed -i '\|^\.gc/$|d' "$exclude"
+    GIT_CONFIG_GLOBAL="$global_config" \
+        "$WORKTREE_SETUP" "$rig" "$provider" gastown.nux
+    [[ "$(grep -cxF '.gc/' "$exclude")" -eq 1 ]] ||
+        fail "existing-worktree fast path did not restore exactly one .gc/ entry"
 }
 
 test_shutdown_probe_scopes_rig_and_fails_closed() {
@@ -229,6 +375,13 @@ if workspace.index("validate_artifact_worktree") > workspace.index('cd -- "$WORK
     raise SystemExit("workspace enters the task path before defining/using its validator")
 if "--set-metadata work_dir=" in workspace:
     raise SystemExit("workspace still writes deprecated task work_dir")
+for forbidden in (
+    'WORKTREE_PATH=$(pwd)/worktrees/',
+    'WORKTREE_PATH="$PWD/worktrees/',
+    'WORKTREE_PATH="${PWD}/worktrees/',
+):
+    if forbidden in workspace:
+        raise SystemExit(f"workspace still creates provider-nested task artifacts: {forbidden}")
 if "GC_WORK_DIR" in workspace:
     raise SystemExit("workspace relies on convergence-only GC_WORK_DIR")
 if 'git branch -D "$EXPECTED_BRANCH"' in workspace or 'git branch -D "$BRANCH"' in workspace:
@@ -335,6 +488,8 @@ PY
 }
 
 test_validator_rejects_provider_and_unrelated_paths
+test_workspace_creation_uses_canonical_sibling
+test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores
 test_shutdown_probe_scopes_rig_and_fails_closed
 test_metadata_migration_and_consumers_are_canonical_first
 
