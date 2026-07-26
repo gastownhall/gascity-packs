@@ -195,19 +195,9 @@ The command performs at most one GitHub lookup per work scan:
 A lookup or fetch failure is retryable and never closes the work bead. Do not
 manually close a pending PR bead because reconciliation was unavailable.
 
-Close this step after the command returns, including its fail-closed error
-paths, and continue to the normal work scan."""
-
-[[steps]]
-id = "find-work"
-title = "Find next work bead assigned to me or wait"
-needs = ["reconcile-pr-merges"]
-description = """
-**Config: event_timeout = {{event_timeout}}**
-
-Before looking for new work, retry at most one closed artifact whose durable
-cleanup marker is still pending. This closes the crash window after the merge
-or bead close but before the immediate cleanup command:
+Next, before looking for new work, retry at most one closed artifact whose
+durable cleanup marker is still pending. This closes the crash window after the
+merge or bead close but before the immediate cleanup command:
 
 ```bash
 if ! gc gastown task-artifact-cleanup; then
@@ -1186,18 +1176,27 @@ the delivery failure and let a later patrol retry/escalate.
 git checkout "$TARGET"
 git branch -d temp
 ```
-Run **Successful task-artifact cleanup** below.
+Do not invoke task-artifact cleanup on this publication path. The artifact and
+its durable `pending` marker remain intact until reconciliation verifies and
+closes the MR handoff, then performs cleanup.
 Do NOT delete `$BRANCH` in mr mode — GitHub pull requests need the source branch.
 
-**Successful task-artifact cleanup (direct and mr):**
+**Successful task-artifact cleanup (direct only on this path):**
 
-Use the pack command below for both the immediate handoff path and retries.
-It is idempotent and is the only supported destructive cleanup path for a
-refinery terminal handoff:
+Use the pack command below after the verified direct-mode close. It is
+idempotent and is the only supported destructive cleanup path for a refinery
+terminal handoff. MR mode reaches the same command only from reconciliation
+after a fresh read proves the verified handoff is closed:
 
 ```bash
 # BEGIN SUCCESSFUL_ARTIFACT_CLEANUP_COMMAND
-gc gastown task-artifact-cleanup "$WORK"
+if [ "$MERGE_STRATEGY" = "direct" ]; then
+  if ! gc gastown task-artifact-cleanup "$WORK"; then
+    echo "Task artifact cleanup did not converge. STOP; its durable pending/blocked state remains retryable."
+    gc runtime drain-ack
+    exit 1
+  fi
+fi
 # END SUCCESSFUL_ARTIFACT_CLEANUP_COMMAND
 ```
 
@@ -1215,13 +1214,15 @@ as the durable recovery copy.
 The current PR-publication path records GitHub's validated `pr_head_sha`, and
 cleanup independently requires that exact source ref to remain at that SHA.
 
-For direct merges and legacy MR behavior, the bead is already closed and the
-command cleans immediately. A merge-gated MR implementation calls the same
-command at publication and again after verified-merge closure:
+For direct merges and MR records with explicit merged evidence, the bead must
+already be closed before the command can clean. The ambiguous historical
+`merge_result=pull_request` value proves only publication, so cleanup preserves
+that artifact even when the legacy bead is closed; operators must migrate it
+through verified-merge reconciliation first. The merge-gated MR workflow does
+not invoke cleanup at publication:
 
-- before terminal closure it preserves the artifact, records
-  `artifact_cleanup_state=pending`, prints `ARTIFACT_CLEANUP_DEFERRED`, and
-  exits successfully;
+- before terminal closure the already-recorded `artifact_cleanup_state=pending`
+  marker and artifact paths remain untouched;
 - after verified closure it removes a proven-safe artifact and records
   `artifact_cleanup_state=complete`;
 - a retry after removal but before the metadata write observes the missing
@@ -1229,10 +1230,15 @@ command at publication and again after verified-merge closure:
 - invalid, dirty, or SHA-mismatched artifacts are preserved and marked
   `artifact_cleanup_state=blocked`.
 
-MR reconciliation MUST run `gc gastown task-artifact-cleanup "$WORK"` after it
-durably records verified merge evidence and closes the bead. Rejections never
-reach terminal cleanup; a polecat's next successful submission clears the stale
-source-SHA proof so refinery captures a fresh one.
+MR reconciliation MUST record `merge_result=mr_merged`, preserve the exact
+`pr_head_sha` and `polecat/<work>` source branch, confirm the bead is closed,
+and only then run `gc gastown task-artifact-cleanup "$WORK"`. It retains
+`pr_reconcile_pending` until a fresh bead read proves cleanup complete and both
+artifact path fields cleared. A cleanup failure, command crash, or final
+metadata-write failure therefore remains discoverable on the closed bead and a
+later patrol retries it. Rejections never reach terminal cleanup; a polecat's
+next successful submission clears the stale source-SHA proof so refinery
+captures a fresh one.
 
 **If MERGE_STRATEGY = "local":**
 

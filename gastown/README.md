@@ -48,7 +48,10 @@ bead non-closed also keeps its dependency children non-ready.
 The reconciler checks at most one pending PR per refinery work scan, including
 re-entry after an idle wake. Open PRs remain pending, changed open heads return
 to refinery quality gates, and closed-unmerged or merged-unvalidated PRs
-remain blocked for operator review.
+remain blocked for operator review. A verified close records the distinct
+`merge_result=mr_merged` state and retains both the validated `pr_head_sha` and
+exact `polecat/<work>` source branch through artifact cleanup. Cleanup is never
+invoked by the MR publication path.
 
 This contract applies to new handoffs. An upgrade does not reopen legacy beads
 that an older pack already closed at PR publication; operators should audit

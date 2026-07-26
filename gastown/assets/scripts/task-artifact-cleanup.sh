@@ -57,7 +57,6 @@ if [ -z "$WORK" ]; then
               | select(
                   .metadata.merge_result == "merged" or
                   .metadata.merge_result == "already_merged" or
-                  .metadata.merge_result == "pull_request" or
                   .metadata.merge_result == "mr_merged"
                 )
             ]
@@ -227,7 +226,7 @@ TASK_ARTIFACT=$(printf '%s' "$META" | jq -r '
 TERMINAL=false
 if [ "$STATUS" = closed ]; then
     case "$HANDOFF_RESULT" in
-        merged|already_merged|pull_request|mr_merged)
+        merged|already_merged|mr_merged)
             TERMINAL=true
             ;;
     esac

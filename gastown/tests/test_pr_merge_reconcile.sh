@@ -13,6 +13,8 @@ LIST_JSON="$TMP/list.json"
 PR_INFO="$TMP/pr.json"
 REST_INFO="$TMP/pr-rest.json"
 UPDATE_COUNT="$TMP/update-count"
+CLOSED_FILE="$TMP/closed"
+CLEANUP_FILE="$TMP/cleanup-complete"
 mkdir -p "$BIN"
 
 fail() {
@@ -34,6 +36,21 @@ case "$1" in
             list)
                 cat "$GC_TEST_LIST_JSON"
                 ;;
+            show)
+                show_status=${GC_TEST_SHOW_STATUS:-closed}
+                show_result=${GC_TEST_SHOW_RESULT:-mr_merged}
+                jq \
+                    --arg merged_sha "$GC_TEST_MERGE_SHA" \
+                    --arg show_status "$show_status" \
+                    --arg show_result "$show_result" \
+                    '.[0]
+                     | .status = $show_status
+                     | .metadata.merge_result = $show_result
+                     | .metadata.merged_sha = $merged_sha
+                     | .metadata.artifact_cleanup_state = "complete"
+                     | del(.metadata.artifact_dir, .metadata.work_dir)
+                     | [.]' "$GC_TEST_LIST_JSON"
+                ;;
             update)
                 count=$(cat "$GC_TEST_UPDATE_COUNT" 2>/dev/null || printf '0')
                 count=$((count + 1))
@@ -44,7 +61,10 @@ case "$1" in
                 exit 0
                 ;;
             close)
-                [ "${GC_TEST_CLOSE_FAIL:-0}" = "0" ]
+                if [ "${GC_TEST_CLOSE_FAIL:-0}" != "0" ]; then
+                    exit 1
+                fi
+                : >"$GC_TEST_CLOSED_FILE"
                 ;;
             *)
                 echo "unexpected gc bead call: $*" >&2
@@ -54,6 +74,17 @@ case "$1" in
         ;;
     mail)
         [ "$2" = "send" ] || exit 90
+        ;;
+    gastown)
+        [ "$2" = "task-artifact-cleanup" ] || exit 90
+        [ -f "$GC_TEST_CLOSED_FILE" ] || {
+            echo "cleanup ran before close" >&2
+            exit 91
+        }
+        if [ "${GC_TEST_CLEANUP_FAIL:-0}" != "0" ]; then
+            exit 1
+        fi
+        : >"$GC_TEST_CLEANUP_FILE"
         ;;
     *)
         echo "unexpected gc call: $*" >&2
@@ -157,6 +188,8 @@ export GC_TEST_LIST_JSON="$LIST_JSON"
 export GC_TEST_PR_INFO="$PR_INFO"
 export GC_TEST_REST_INFO="$REST_INFO"
 export GC_TEST_UPDATE_COUNT="$UPDATE_COUNT"
+export GC_TEST_CLOSED_FILE="$CLOSED_FILE"
+export GC_TEST_CLEANUP_FILE="$CLEANUP_FILE"
 export GC_AGENT="tributary/gastown.refinery"
 export GC_RIG="tributary"
 export GC_RIG_ROOT="/srv/tributary"
@@ -164,12 +197,16 @@ export GC_RIG_ROOT="/srv/tributary"
 HEAD_A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 HEAD_B=cccccccccccccccccccccccccccccccccccccccc
 MERGE_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+export GC_TEST_MERGE_SHA="$MERGE_SHA"
 PR_URL=https://github.com/example/repo/pull/181
 
 reset_case() {
     : >"$LOG"
     printf '0\n' >"$UPDATE_COUNT"
+    rm -f "$CLOSED_FILE" "$CLEANUP_FILE"
     unset GC_TEST_CLOSE_FAIL GC_TEST_GH_FAIL GC_TEST_FETCH_FAIL GC_TEST_FAIL_UPDATE_AT
+    unset GC_TEST_CLEANUP_FAIL
+    unset GC_TEST_SHOW_STATUS GC_TEST_SHOW_RESULT
     unset GC_TEST_ORIGIN_URL
     unset GASTOWN_PR_RECONCILE_FORCE_REST GH_TOKEN
     export GC_TEST_MERGE_REACHABLE=1
@@ -356,6 +393,8 @@ test_open_changed_head_requeues_for_validation() {
         fail "changed open PR must record why revalidation is required"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "changed open PR must not close its bead"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "changed open PR must not clean its task artifact"
 }
 
 test_closed_unmerged_stays_blocked_and_escalates() {
@@ -374,6 +413,8 @@ test_closed_unmerged_stays_blocked_and_escalates() {
         fail "closed-unmerged PR must escalate"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "closed-unmerged PR must not close its bead"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "closed-unmerged PR must not clean its task artifact"
 }
 
 test_merged_validated_head_and_target_closes() {
@@ -388,8 +429,20 @@ test_merged_validated_head_and_target_closes() {
         fail "merged PR must prove merge commit reachability"
     grep -F "<--set-metadata> <merged_sha=$MERGE_SHA>" "$LOG" >/dev/null ||
         fail "merged PR must record merge evidence before close"
+    grep -F '<--set-metadata> <merge_result=mr_merged>' "$LOG" >/dev/null ||
+        fail "verified MR close must use the distinct mr_merged result"
     grep -F 'gc <bd> <close> <--rig=tributary> <tr-92a>' "$LOG" >/dev/null ||
         fail "verified merged PR must close the source bead"
+    grep -F 'gc <gastown> <task-artifact-cleanup> <tr-92a>' "$LOG" >/dev/null ||
+        fail "verified merged PR must retire its task artifact after close"
+    grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
+        fail "verified merge must clear its marker after cleanup convergence"
+    local close_line cleanup_line clear_line
+    close_line=$(grep -nF 'gc <bd> <close>' "$LOG" | head -n1 | cut -d: -f1)
+    cleanup_line=$(grep -nF 'gc <gastown> <task-artifact-cleanup>' "$LOG" | head -n1 | cut -d: -f1)
+    clear_line=$(grep -nF '<--unset-metadata> <pr_reconcile_pending>' "$LOG" | tail -n1 | cut -d: -f1)
+    [[ "$close_line" -lt "$cleanup_line" && "$cleanup_line" -lt "$clear_line" ]] ||
+        fail "close, cleanup, and marker-clear order is not crash safe"
 }
 
 test_merged_changed_head_stays_blocked() {
@@ -421,6 +474,43 @@ test_verified_merge_close_failure_remains_retryable() {
         fail "verified merge must attempt the close"
     ! grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
         fail "failed close must retain the pending marker for restart-safe retry"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "failed close must not start terminal artifact cleanup"
+}
+
+test_cleanup_failure_on_closed_bead_retries() {
+    reset_case
+    write_pending_list
+    write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
+    export GC_TEST_CLEANUP_FAIL=1
+    if "$COMMAND"; then
+        fail "failed artifact cleanup should return nonzero"
+    fi
+
+    grep -F 'gc <bd> <close> <--rig=tributary> <tr-92a>' "$LOG" >/dev/null ||
+        fail "cleanup failure test must first close the verified bead"
+    ! grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
+        fail "cleanup failure must retain the PR reconciliation marker"
+
+    jq --arg merged_sha "$MERGE_SHA" '
+        .[0].status = "closed"
+        | .[0].metadata.merge_result = "mr_merged"
+        | .[0].metadata.merged_sha = $merged_sha
+        | .[0].metadata.pr_state = "merged"
+    ' "$LIST_JSON" >"$LIST_JSON.next"
+    mv "$LIST_JSON.next" "$LIST_JSON"
+    : >"$LOG"
+    unset GC_TEST_CLEANUP_FAIL
+    "$COMMAND"
+
+    grep -F 'gc <bd> <list> <--rig=tributary> <--all>' "$LOG" >/dev/null ||
+        fail "reconcile must scan closed beads for pending cleanup retries"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "closed-bead cleanup retry must not close the bead again"
+    grep -F 'gc <gastown> <task-artifact-cleanup> <tr-92a>' "$LOG" >/dev/null ||
+        fail "closed-bead retry did not rerun artifact cleanup"
+    grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
+        fail "successful cleanup retry did not clear the marker"
 }
 
 test_unreachable_merge_commit_retries_without_close() {
@@ -440,6 +530,92 @@ test_unreachable_merge_commit_retries_without_close() {
         fail "unreachable merge commit must not close its bead"
 }
 
+test_cleanup_waits_for_durable_closed_record() {
+    reset_case
+    write_pending_list
+    write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
+    export GC_TEST_SHOW_STATUS=blocked
+    if "$COMMAND"; then
+        fail "unconfirmed closed state should fail reconciliation"
+    fi
+
+    grep -F 'gc <bd> <close> <--rig=tributary> <tr-92a>' "$LOG" >/dev/null ||
+        fail "close verification test must attempt the verified close"
+    grep -F '<--set-metadata> <pr_state=merged_close_unverified>' "$LOG" >/dev/null ||
+        fail "unconfirmed close must retain an explicit retryable state"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "cleanup must not run until a fresh read proves the bead closed"
+    ! grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
+        fail "unconfirmed close must retain the pending marker"
+}
+
+test_closed_ambiguous_legacy_record_is_reblocked() {
+    reset_case
+    write_pending_list
+    jq '
+        .[0].status = "closed"
+        | .[0].metadata.merge_result = "pull_request"
+    ' "$LIST_JSON" >"$LIST_JSON.next"
+    mv "$LIST_JSON.next" "$LIST_JSON"
+    write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
+    if "$COMMAND"; then
+        fail "ambiguous legacy closed record should fail reconciliation"
+    fi
+
+    grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+        fail "ambiguous legacy closed record must be restored to a dependency-blocking state"
+    grep -F '<--set-metadata> <merge_result=pull_request_legacy_closed_unverified>' "$LOG" >/dev/null ||
+        fail "ambiguous legacy closed record must record its quarantine reason"
+    ! grep -F 'gh <pr> <view>' "$LOG" >/dev/null ||
+        fail "ambiguous legacy close must be quarantined before trusting remote PR state"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "ambiguous legacy close must never invoke cleanup"
+}
+
+test_noncanonical_source_branch_is_quarantined() {
+    reset_case
+    write_pending_list
+    jq '.[0].metadata.branch = "topic/not-the-polecat-source"' \
+        "$LIST_JSON" >"$LIST_JSON.next"
+    mv "$LIST_JSON.next" "$LIST_JSON"
+    write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
+    if "$COMMAND"; then
+        fail "noncanonical MR source branch should fail reconciliation"
+    fi
+
+    grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+        fail "noncanonical source branch must remain dependency-blocking"
+    ! grep -F 'gh <pr> <view>' "$LOG" >/dev/null ||
+        fail "noncanonical source branch must fail before remote PR verification"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "noncanonical source branch must never close the source bead"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "noncanonical source branch must never invoke cleanup"
+}
+
+test_closed_mr_with_open_remote_is_reblocked() {
+    reset_case
+    write_pending_list
+    jq --arg merged_sha "$MERGE_SHA" '
+        .[0].status = "closed"
+        | .[0].metadata.merge_result = "mr_merged"
+        | .[0].metadata.merged_sha = $merged_sha
+        | .[0].metadata.pr_state = "merged"
+    ' "$LIST_JSON" >"$LIST_JSON.next"
+    mv "$LIST_JSON.next" "$LIST_JSON"
+    write_pr_info OPEN "$HEAD_A"
+    if "$COMMAND"; then
+        fail "closed MR with contradictory open remote state should fail reconciliation"
+    fi
+
+    grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+        fail "contradictory closed/open MR must be restored to a dependency-blocking state"
+    grep -F '<--set-metadata> <merge_result=pull_request_closed_state_contradiction>' "$LOG" >/dev/null ||
+        fail "contradictory closed/open MR must record its quarantine reason"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "contradictory closed/open MR must never invoke cleanup"
+}
+
 test_oldest_pending_pr_is_selected() {
     reset_case
     jq -n \
@@ -456,7 +632,7 @@ test_oldest_pending_pr_is_selected() {
             pr_last_checked_at: "2026-07-26T19:59:00Z"
           }
         }, {
-          id: "older",
+          id: "tr-92a",
           status: "blocked",
           metadata: {
             branch: "polecat/tr-92a", merged_target: "main",
@@ -469,7 +645,7 @@ test_oldest_pending_pr_is_selected() {
     write_pr_info OPEN
     "$COMMAND"
 
-    grep -F 'gc <bd> <update> <--rig=tributary> <older>' "$LOG" >/dev/null ||
+    grep -F 'gc <bd> <update> <--rig=tributary> <tr-92a>' "$LOG" >/dev/null ||
         fail "reconcile must rotate by least-recently-checked pending PR"
     ! grep -F 'gc <bd> <update> <--rig=tributary> <newer>' "$LOG" >/dev/null ||
         fail "one patrol must perform at most one pending PR transition"
@@ -480,6 +656,16 @@ test_formula_uses_pending_merge_gate() {
         fail "refinery formula must record PR handoffs through the reconciler"
     grep -F 'Every time this open step is entered or re-entered after an idle wake' "$FORMULA" >/dev/null ||
         fail "open refinery work scan must repeat pending-merge reconciliation after idle wakes"
+    [ "$(grep -c '^id = "find-work"$' "$FORMULA")" -eq 1 ] ||
+        fail "refinery formula must contain exactly one repeating find-work step"
+    local reconcile_line cleanup_line search_line
+    reconcile_line=$(grep -nF 'if ! gc gastown pr-merge-reconcile; then' "$FORMULA" | head -n1 | cut -d: -f1)
+    cleanup_line=$(grep -nF 'if ! gc gastown task-artifact-cleanup; then' "$FORMULA" | head -n1 | cut -d: -f1)
+    search_line=$(grep -nF 'Search for work beads assigned to you with branch metadata:' "$FORMULA" | head -n1 | cut -d: -f1)
+    [[ "$reconcile_line" -lt "$cleanup_line" && "$cleanup_line" -lt "$search_line" ]] ||
+        fail "find-work must order reconciliation, bounded cleanup, then normal work search"
+    grep -F 'Do not invoke task-artifact cleanup on this publication path.' "$FORMULA" >/dev/null ||
+        fail "MR publication path must defer cleanup until verified close"
     ! grep -F 'gc bd close $WORK --reason "Pull request ready:' "$FORMULA" >/dev/null ||
         fail "refinery formula must not close source beads at PR publication"
 }
@@ -495,7 +681,12 @@ test_closed_unmerged_stays_blocked_and_escalates
 test_merged_validated_head_and_target_closes
 test_merged_changed_head_stays_blocked
 test_verified_merge_close_failure_remains_retryable
+test_cleanup_failure_on_closed_bead_retries
 test_unreachable_merge_commit_retries_without_close
+test_cleanup_waits_for_durable_closed_record
+test_closed_ambiguous_legacy_record_is_reblocked
+test_noncanonical_source_branch_is_quarantined
+test_closed_mr_with_open_remote_is_reblocked
 test_oldest_pending_pr_is_selected
 test_formula_uses_pending_merge_gate
 

@@ -852,7 +852,9 @@ test_cleanup_command_is_idempotent_and_mr_retryable() {
     # Closed status alone cannot make pending, obsolete, or unknown result
     # values terminal. Keep this table dynamic so future aliases cannot
     # accidentally enter the deletion gate.
-    for result in pull_request_pending pull_request_merged unknown_result; do
+    for result in \
+        pull_request pull_request_pending pull_request_merged unknown_result
+    do
         : >"$calls"
         write_cleanup_bead_json \
             "$bead_json" ac-safe1 closed "$result" "$sha" "$canonical"
@@ -871,7 +873,7 @@ test_cleanup_command_is_idempotent_and_mr_retryable() {
 
     : >"$calls"
     write_cleanup_bead_json \
-        "$bead_json" ac-safe1 closed merged "$sha" "$canonical" pending
+        "$bead_json" ac-safe1 closed mr_merged "$sha" "$canonical" pending
     GC_STUB_BEAD_JSON="$bead_json" GC_STUB_CALLS="$calls" \
         GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
         PATH="$bin:$PATH" "$ARTIFACT_CLEANUP" ac-safe1
@@ -901,7 +903,7 @@ test_cleanup_command_is_idempotent_and_mr_retryable() {
     sha=$(git -C "$sweep_artifact" rev-parse HEAD)
     git -C "$rig" push -qu origin HEAD:refs/heads/polecat/ac-sweep
     write_cleanup_bead_json \
-        "$bead_json" ac-sweep closed merged "$sha" "$sweep_artifact" pending
+        "$bead_json" ac-sweep closed mr_merged "$sha" "$sweep_artifact" pending
     jq \
         --arg artifact "$nonterminal_artifact" \
         --arg sha "$nonterminal_sha" \
@@ -910,7 +912,7 @@ test_cleanup_command_is_idempotent_and_mr_retryable() {
           status: "closed",
           updated_at: "2026-07-26T18:00:00Z",
           metadata: {
-            merge_result: "pull_request_pending",
+            merge_result: "pull_request",
             artifact_cleanup_state: "pending",
             artifact_source_sha: $sha,
             artifact_dir: $artifact,
@@ -1150,9 +1152,9 @@ test_cleanup_requires_live_remote_evidence_and_stable_state() {
     grep -qF 'artifact_cleanup_state=blocked' "$calls" ||
         fail "target ancestry mismatch was not marked blocked"
 
-    # Current-main MR semantics close at publication. The artifact still
-    # points at the pre-rebase source SHA, so cleanup must prove the validated
-    # rebased PR head through the exact remote source ref instead.
+    # Verified MR cleanup retains the pre-rebase artifact source SHA while
+    # separately proving the validated rebased PR head through the exact
+    # remote source ref.
     artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-pr"
     git -C "$rig" worktree add -q --detach "$artifact" HEAD
     source_sha=$(git -C "$artifact" rev-parse HEAD)
@@ -1161,7 +1163,7 @@ test_cleanup_requires_live_remote_evidence_and_stable_state() {
     git -C "$rig" commit -qm "published PR head"
     delivered_sha=$(git -C "$rig" rev-parse HEAD)
     write_cleanup_bead_json \
-        "$bead_json" ac-pr closed pull_request \
+        "$bead_json" ac-pr closed mr_merged \
         "$source_sha" "$artifact" "" polecat/ac-pr main "$delivered_sha"
 
     set +e
@@ -1187,6 +1189,7 @@ test_cleanup_requires_live_remote_evidence_and_stable_state() {
         fail "PR cleanup accepted a mismatched origin source ref"
 
     git -C "$rig" push -qf origin HEAD:refs/heads/polecat/ac-pr
+    git -C "$rig" push -q origin HEAD:refs/heads/main
     GC_STUB_BEAD_JSON="$bead_json" GC_STUB_CALLS="$calls" \
         GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
         PATH="$bin:$PATH" "$ARTIFACT_CLEANUP" ac-pr
@@ -1561,15 +1564,24 @@ if "--set-metadata artifact_cleanup_state=pending" not in rebase:
     raise SystemExit("refinery does not arm the durable cleanup retry marker")
 if "gc gastown task-artifact-cleanup" not in find_work:
     raise SystemExit("refinery does not retry a closed pending artifact before new work")
+if "gc gastown pr-merge-reconcile" not in find_work:
+    raise SystemExit("refinery does not reconcile pending PRs from the repeating work scan")
+if find_work.index("gc gastown pr-merge-reconcile") > find_work.index(
+    "gc gastown task-artifact-cleanup"
+):
+    raise SystemExit("refinery does not reconcile PR state before bounded cleanup retry")
 for fragment in (
-    "**Successful task-artifact cleanup (direct and mr):**",
+    "**Successful task-artifact cleanup (direct only on this path):**",
+    'if [ "$MERGE_STRATEGY" = "direct" ]; then',
     'gc gastown task-artifact-cleanup "$WORK"',
-    '--set-metadata pr_head_sha="$PR_HEAD_SHA"',
+    '"$WORK" "$PR_URL" "$PR_NUMBER" "$TARGET" "$PR_HEAD_SHA"',
     'if [ "$PR_HEAD_SHA" != "$EXPECTED_PR_HEAD" ]',
     "artifact_cleanup_state=pending",
     "artifact_cleanup_state=complete",
-    "ARTIFACT_CLEANUP_DEFERRED",
-    "MR reconciliation MUST run",
+    "Do not invoke task-artifact cleanup on this publication path",
+    "merge_result=mr_merged",
+    "MR reconciliation MUST record",
+    "and only then run",
     "retains that source ref after local cleanup",
 ):
     if fragment not in merge:
