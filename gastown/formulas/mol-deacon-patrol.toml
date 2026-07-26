@@ -160,12 +160,8 @@ one signal that separates "idle and fine" from "the loop is gone", so it gets
 measured rather than judged.
 
 ```bash
-CHECK="${GC_PACK_DIR:-}/assets/scripts/witness-heartbeat-check.sh"
-if [ -x "$CHECK" ]; then
-  GASTOWN_WITNESS_STALE_MIN={{witness_stale_min}} bash "$CHECK"; echo "heartbeat check exit: $?"
-else
-  echo "witness-heartbeat-check.sh not resolvable under GC_PACK_DIR — use the judgment pass below only."
-fi
+GASTOWN_WITNESS_STALE_MIN={{witness_stale_min}} gc gastown witness-heartbeat-check
+echo "heartbeat check exit: $?"
 ```
 
 Exit 0 means every checked witness heartbeat is inside the window. Exit 1 means
