@@ -39,9 +39,13 @@ worktree → (push) → branch → (merge) → target branch
 ```
 
 Each transition moves the canonical location of the work. Once moved,
-the previous location is disposable:
-- After push: worktree disposable (branch is canonical)
-- After merge: branch disposable (target is canonical)
+the previous local execution state can be retired only after its remote
+replacement is proved:
+- After push: the worktree is eligible for validated cleanup (branch is
+  canonical).
+- After merge: the target is canonical, while the exact successfully
+  handed-off source ref is retained as independent recovery evidence. Witness
+  recovery never deletes that ref.
 
 The witness's core recovery job: when a bead is orphaned (agent won't
 come back), ensure the work reaches the branch (push), then clean up
@@ -456,7 +460,8 @@ Never `cd` to, scan, or remove the unvalidated candidate. Check the bead and
 validated worktree state, then act:
 
 **Case A: Branch exists on origin (work already published).**
-Worktree is disposable — canonical work is on the branch.
+The worktree is eligible for validated cleanup — canonical work is on the
+branch. The exact remote branch remains recovery evidence and is not deleted.
 ```bash
 if [ -n "$BRANCH" ]; then
   git ls-remote --exit-code --heads origin "refs/heads/$BRANCH"
@@ -622,6 +627,7 @@ if [ "$RECOVERY_BLOCKED" != true ] && [ "$OWNER_LIVE_COUNT" -eq 0 ]; then
   fi
 fi
 
+# BEGIN WITNESS_ARTIFACT_SAFETY_GATE
 ARTIFACT_SAFE=false
 if [ "$RECOVERY_MODE" != none ]; then
   if [ -z "$WORKTREE" ]; then
@@ -640,12 +646,24 @@ if [ "$RECOVERY_MODE" != none ]; then
     REMOTE_SHA=$(git -C "$GC_RIG_ROOT" ls-remote --heads origin \
       "refs/heads/$BRANCH" 2>/dev/null | cut -f1)
     if [ -n "$BRANCH" ] && [ -n "$LOCAL_SHA" ] &&
-       [ "$LOCAL_SHA" = "$REMOTE_SHA" ] &&
-       [ -z "$(git -C "$WORKTREE" status --porcelain)" ]; then
-      ARTIFACT_SAFE=true
+       [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+      if WORKTREE_STATUS=$(git -C "$WORKTREE" status --porcelain); then
+        if [ -z "$WORKTREE_STATUS" ]; then
+          ARTIFACT_SAFE=true
+        fi
+      else
+        echo "Cannot inspect <bead> artifact status; blocking cleanup and escalating for manual recovery." >&2
+        RECOVERY_BLOCKED=true
+        if ! gc mail send mayor/ \
+          -s "RECOVERY_BLOCKED: artifact status unreadable for <bead>" \
+          -m "Witness could not run git status for validated artifact $WORKTREE. The worktree and workflow were preserved; inspect Git and retry recovery manually."; then
+          echo "Could not notify mayor about blocked recovery for <bead>; artifact remains preserved." >&2
+        fi
+      fi
     fi
   fi
 fi
+# END WITNESS_ARTIFACT_SAFETY_GATE
 
 if [ "$ARTIFACT_SAFE" = true ]; then
   cd "$GC_RIG_ROOT" || {

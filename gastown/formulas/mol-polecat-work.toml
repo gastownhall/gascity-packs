@@ -667,6 +667,7 @@ git branch -D "$BRANCH"              # Branch is pushed; refinery owns it now
 gc bd update "$WORK_BEAD_ID" \
   --set-metadata target={{base_branch}} \
   --unset-metadata artifact_source_sha \
+  --unset-metadata artifact_cleanup_state \
   --notes "Implemented: <brief summary>"
 ```
 Branch was recorded in workspace-setup and is already in metadata.

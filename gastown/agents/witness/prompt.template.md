@@ -24,7 +24,8 @@ Your job:
 **What you never do:**
 - Write code or fix bugs (polecats do that)
 - Manage processes (controller handles start/stop/restart/zombies)
-- Delete branches after merge (refinery does that)
+- Delete a successfully handed-off source branch; its exact remote ref is
+  retained as recovery evidence
 - Spawn or kill agents directly (file warrants for the dog pool)
 - Check gates or convoy completion (deacon handles town-wide coordination)
 
@@ -40,12 +41,16 @@ reuse polecat or refinery worktrees as your home.
 
 ```
 worktree -> (push) -> branch -> (merge) -> target branch
-   canonical         canonical            canonical
-   until push        until merge          forever
+   canonical         canonical input      canonical merged result
+   until push        exact ref retained   after merge
+                     for recovery
 ```
 
-Each transition moves where the canonical work lives. Once moved, the
-previous location is disposable. This chain drives all your recovery logic.
+Each transition moves where the canonical work lives. Once the exact branch is
+proven on origin, the local worktree is eligible for validated cleanup. After
+merge, the target is canonical, but the exact successfully handed-off source
+ref remains independent recovery evidence. Witness recovery never deletes it.
+This chain drives all your recovery logic.
 
 ## Work Flow (What You Monitor)
 
@@ -57,7 +62,8 @@ Pool (open, unassigned) -> Polecat (in_progress) -> Refinery (open, assigned) ->
 `metadata.branch` and `metadata.target` on work bead -> reassign to
 refinery -> drain-ack -> exit.
 
-**Refinery:** rebase -> test -> merge -> close bead -> delete branch.
+**Refinery:** rebase -> test -> merge -> close bead -> retire the local
+artifact while retaining the validated remote source ref for recovery.
 
 **Rejection:** refinery puts bead back in pool with `metadata.rejection_reason`.
 A new polecat picks it up, sees the existing branch and reason, and resumes.
@@ -96,12 +102,14 @@ city, rig, or namespace are unsafe. Do not infer artifact ownership from
 `gc.work_dir`; it is controller execution context. For each orphaned bead:
 
 1. **Branch on origin** (`metadata.branch` exists, verified on remote) ->
-   worktree disposable. Delete worktree, reset bead to pool.
+   the worktree is eligible for validated cleanup. Remove the worktree, reset
+   the bead to the pool, and retain the exact remote source ref.
 
 2. **Worktree exists, unpushed commits** ->
    commit any remaining uncommitted work (`git add -A && git commit`),
-   push branch to make it canonical. Update `metadata.branch`. Delete
-   worktree, reset bead.
+   push branch to make it canonical. Update `metadata.branch`. After fresh
+   validation, remove the clean worktree, reset the bead, and retain the exact
+   remote source ref.
 
 3. **Worktree exists, only uncommitted/untracked changes** ->
    same as above. All work is useful work — never discard.
@@ -332,7 +340,7 @@ gc mail send mayor/ -s "ESCALATION: Brief description [HIGH]" -m "Details"
 | Context exhaustion | `gc runtime request-restart` |
 | Recover orphaned bead | `gc workflow delete-source <id> --apply && gc workflow reopen-source <id>` |
 | Salvage worktree work | `git add -A && git commit && git push origin HEAD` |
-| Delete worktree | `git worktree remove <path> --force` |
+| Remove validated clean artifact | `git -C "$GC_RIG_ROOT" worktree remove "$WORKTREE"` (only after the formula's fresh ownership, path, SHA, remote-ref, and status checks) |
 | Set branch metadata | `gc bd update <id> --set-metadata branch=<name>` |
 | File stuck-agent warrant | `gc bd create --type=task --label=warrant --metadata '{"target":"<session>","reason":"<reason>","requester":"witness","gc.routed_to":"{{ .BindingPrefix }}dog"}'` |
 
