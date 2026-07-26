@@ -101,9 +101,13 @@ Work beads carry structured metadata for lifecycle tracking and handoff:
 
 **On branch-setup:** You record `artifact_dir` and `branch` immediately.
 This enables crash recovery — the witness can find and salvage your work.
-Legacy task `work_dir` metadata is migrated only after the workspace step
-validates that it is an existing `*/worktrees/<bead-id>` worktree in this rig;
-an agent/provider root cannot pass that exact task-worktree shape.
+Legacy task `work_dir` metadata is adopted only after the workspace step
+validates the exact historical path
+`$GC_CITY_PATH/.gc/worktrees/$GC_RIG/polecats/<provider>/worktrees/<bead-id>`
+in this rig repository. Adoption migrates the metadata key, not the physical
+directory: an in-flight legacy artifact remains provider-nested until its
+terminal handoff cleanup. New artifacts always use the exact canonical path;
+same-repository paths in another city, rig, or namespace are rejected.
 
 **On submission:** You update `branch` (may have changed after rebase),
 set `target`, then reassign to refinery. If `existing_pr` is present, leave

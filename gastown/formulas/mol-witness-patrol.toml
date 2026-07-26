@@ -259,15 +259,44 @@ The canonical work chain: `worktree → (push) → branch → (merge) → target
 Our job is to ensure work reaches the branch so it's schedulable.
 
 Read the bead metadata to find the artifact worktree and branch. Canonical
-`artifact_dir` wins. A legacy `work_dir` may be migrated only if its physical
-path proves to be the exact bead-scoped Git worktree in this rig. The
-persistent Gastown provider home cannot pass that shape check.
+`artifact_dir` wins. A legacy `work_dir` may be adopted in place only if its
+physical path is this city's exact historical
+`.gc/worktrees/<rig>/polecats/<provider>/worktrees/<bead>` layout and the
+worktree belongs to this rig repository. Same-repository paths from another
+city, rig, or namespace are unsafe. The persistent Gastown provider home
+itself cannot pass the bead-scoped shape check.
 ```bash
-META=$(gc bd show <bead> --json | jq '.[0].metadata')
+RECOVERY_BLOCKED=false
+BEAD_JSON=$(gc bd show <bead> --json) || {
+  echo "Cannot read metadata for orphan candidate <bead>; leaving it untouched." >&2
+  RECOVERY_BLOCKED=true
+  BEAD_JSON='[]'
+}
+META=$(printf '%s' "$BEAD_JSON" | jq -ce '
+  if type == "array" and length == 1 and (.[0] | type) == "object" and
+     ((.[0].metadata // {}) | type) == "object"
+  then .[0].metadata // {}
+  else error("expected exactly one work bead object")
+  end
+') || {
+  echo "Invalid metadata response for orphan candidate <bead>; leaving it untouched." >&2
+  RECOVERY_BLOCKED=true
+  META='{}'
+}
 ARTIFACT_DIR=$(printf '%s' "$META" | jq -r '.artifact_dir // empty')
 LEGACY_WORK_DIR=$(printf '%s' "$META" | jq -r '.work_dir // empty')
 BRANCH=$(printf '%s' "$META" | jq -r '.branch // empty')
-RECOVERY_BLOCKED=false
+if [ -z "${GC_CITY_PATH:-}" ] || [ -z "${GC_RIG:-}" ] ||
+   [ -z "${GC_RIG_ROOT:-}" ]; then
+  echo "GC_CITY_PATH, GC_RIG, and GC_RIG_ROOT are required for orphan artifact recovery." >&2
+  RECOVERY_BLOCKED=true
+fi
+case "${GC_RIG:-}" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    echo "Unsafe or missing rig name for orphan artifact recovery: ${GC_RIG:-<empty>}" >&2
+    RECOVERY_BLOCKED=true
+    ;;
+esac
 
 recovery_git_common_dir() {
   local repo_dir=$1 common_dir
@@ -277,13 +306,33 @@ recovery_git_common_dir() {
 }
 
 validate_recovery_artifact_worktree() {
-  local candidate=$1 rig_root=$2 bead_id=$3
+  local candidate=$1 city_root=$2 rig_name=$3 rig_root=$4 bead_id=$5
   local candidate_real candidate_top candidate_common rig_common
+  local city_real rig_namespace rig_namespace_real canonical_path
+  local worktrees_parent provider_home provider_root provider_name
 
   [ -n "$candidate" ] && [ -d "$candidate" ] || return 1
   candidate_real=$(CDPATH= cd -- "$candidate" 2>/dev/null && pwd -P) || return 1
   [ "$(basename -- "$candidate_real")" = "$bead_id" ] || return 1
   [ "$(basename -- "$(dirname -- "$candidate_real")")" = "worktrees" ] || return 1
+
+  city_real=$(CDPATH= cd -- "$city_root" 2>/dev/null && pwd -P) || return 1
+  rig_namespace="$city_real/.gc/worktrees/$rig_name"
+  rig_namespace_real=$(CDPATH= cd -- "$rig_namespace" 2>/dev/null && pwd -P) ||
+    return 1
+  [ "$rig_namespace_real" = "$rig_namespace" ] || return 1
+  canonical_path="$rig_namespace_real/artifacts/worktrees/$bead_id"
+  if [ "$candidate_real" != "$canonical_path" ]; then
+    worktrees_parent=$(dirname -- "$candidate_real")
+    provider_home=$(dirname -- "$worktrees_parent")
+    provider_root=$(dirname -- "$provider_home")
+    provider_name=$(basename -- "$provider_home")
+    [ "$provider_root" = "$rig_namespace_real/polecats" ] || return 1
+    case "$provider_name" in
+      ""|"."|".."|*[!A-Za-z0-9._-]*) return 1 ;;
+    esac
+  fi
+
   candidate_top=$(git -C "$candidate_real" rev-parse --show-toplevel 2>/dev/null) ||
     return 1
   candidate_top=$(CDPATH= cd -- "$candidate_top" 2>/dev/null && pwd -P) || return 1
@@ -299,9 +348,15 @@ validate_recovery_artifact_worktree() {
 confirm_orphan_still_unowned() {
   local current current_status current_assignee sessions live_count
   current=$(gc bd show <bead> --json) || return 1
-  current_status=$(printf '%s' "$current" | jq -r '.[0].status // empty') ||
+  current=$(printf '%s' "$current" | jq -ce '
+    if type == "array" and length == 1 and (.[0] | type) == "object"
+    then .[0]
+    else error("expected exactly one current work bead")
+    end
+  ') || return 1
+  current_status=$(printf '%s' "$current" | jq -r '.status // empty') ||
     return 1
-  current_assignee=$(printf '%s' "$current" | jq -r '.[0].assignee // empty') ||
+  current_assignee=$(printf '%s' "$current" | jq -r '.assignee // empty') ||
     return 1
   { [ "$current_status" = open ] || [ "$current_status" = in_progress ]; } ||
     return 1
@@ -335,7 +390,8 @@ fi
 
 if [ "$RECOVERY_BLOCKED" != true ] && [ -n "$ARTIFACT_CANDIDATE" ]; then
   if WORKTREE=$(validate_recovery_artifact_worktree \
-      "$ARTIFACT_CANDIDATE" "$GC_RIG_ROOT" <bead>); then
+      "$ARTIFACT_CANDIDATE" "$GC_CITY_PATH" "$GC_RIG" \
+      "$GC_RIG_ROOT" <bead>); then
     if [ "$ARTIFACT_SOURCE" = work_dir ]; then
       if confirm_orphan_still_unowned; then
         gc bd update <bead> \
@@ -431,7 +487,8 @@ cd "$WORKTREE"
 BRANCH=$(git branch --show-current)
 if [ -z "$BRANCH" ]; then
   echo "Validated orphan worktree is detached; refusing an ambiguous push." >&2
-  # Attach it to polecat/<bead> using the guarded recovery block above first.
+  gc runtime drain-ack
+  exit 1
 fi
 git log origin/main..HEAD --oneline  # Shows unpushed commits
 ```
@@ -463,7 +520,8 @@ git commit -m "witness: salvage work from orphaned agent (<bead>)"
 BRANCH=$(git branch --show-current)
 if [ -z "$BRANCH" ]; then
   echo "Validated orphan worktree is detached; refusing an ambiguous push." >&2
-  # Attach it to polecat/<bead> using the guarded recovery block above first.
+  gc runtime drain-ack
+  exit 1
 fi
 git push origin "HEAD:refs/heads/$BRANCH"
 gc bd update <bead> --set-metadata branch=$BRANCH
@@ -513,10 +571,25 @@ revalidate the current canonical-first artifact path. A restarted agent or
 changed artifact path means the earlier orphan decision is stale; leave
 everything untouched for the next patrol:
 ```bash
-CURRENT_BEAD=$(gc bd show <bead> --json)
-CURRENT_STATUS=$(printf '%s' "$CURRENT_BEAD" | jq -r '.[0].status // empty')
-CURRENT_ASSIGNEE=$(printf '%s' "$CURRENT_BEAD" | jq -r '.[0].assignee // empty')
-CURRENT_META=$(printf '%s' "$CURRENT_BEAD" | jq '.[0].metadata')
+CURRENT_BEAD=$(gc bd show <bead> --json) || {
+  echo "Cannot refresh <bead> before cleanup; preserving artifact and workflow." >&2
+  RECOVERY_BLOCKED=true
+  CURRENT_BEAD='[]'
+}
+CURRENT_RECORD=$(printf '%s' "$CURRENT_BEAD" | jq -ce '
+  if type == "array" and length == 1 and (.[0] | type) == "object" and
+     ((.[0].metadata // {}) | type) == "object"
+  then .[0]
+  else error("expected exactly one current work bead object")
+  end
+') || {
+  echo "Invalid refreshed metadata for <bead>; preserving artifact and workflow." >&2
+  RECOVERY_BLOCKED=true
+  CURRENT_RECORD='{"metadata":{}}'
+}
+CURRENT_STATUS=$(printf '%s' "$CURRENT_RECORD" | jq -r '.status // empty')
+CURRENT_ASSIGNEE=$(printf '%s' "$CURRENT_RECORD" | jq -r '.assignee // empty')
+CURRENT_META=$(printf '%s' "$CURRENT_RECORD" | jq '.metadata // {}')
 CURRENT_CANONICAL_ARTIFACT=$(printf '%s' "$CURRENT_META" |
   jq -r '.artifact_dir // empty')
 CURRENT_ARTIFACT=$(printf '%s' "$CURRENT_META" | jq -r '
@@ -555,11 +628,13 @@ if [ "$RECOVERY_MODE" != none ]; then
     if [ -z "$CURRENT_CANONICAL_ARTIFACT" ] &&
        { [ -z "$CURRENT_ARTIFACT" ] ||
        ! validate_recovery_artifact_worktree \
-         "$CURRENT_ARTIFACT" "$GC_RIG_ROOT" <bead> >/dev/null; }; then
+         "$CURRENT_ARTIFACT" "$GC_CITY_PATH" "$GC_RIG" \
+         "$GC_RIG_ROOT" <bead> >/dev/null; }; then
       ARTIFACT_SAFE=true
     fi
   elif REVALIDATED_WORKTREE=$(validate_recovery_artifact_worktree \
-      "$CURRENT_ARTIFACT" "$GC_RIG_ROOT" <bead>) &&
+      "$CURRENT_ARTIFACT" "$GC_CITY_PATH" "$GC_RIG" \
+      "$GC_RIG_ROOT" <bead>) &&
        [ "$REVALIDATED_WORKTREE" = "$WORKTREE" ]; then
     LOCAL_SHA=$(git -C "$WORKTREE" rev-parse HEAD 2>/dev/null || true)
     REMOTE_SHA=$(git -C "$GC_RIG_ROOT" ls-remote --heads origin \

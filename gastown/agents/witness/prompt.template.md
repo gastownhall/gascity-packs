@@ -88,9 +88,12 @@ bead metadata; do not use template-pattern or fixed-prefix matching.
 `metadata.branch` from the bead — polecats record both early in branch-setup.
 Only if `artifact_dir` is absent may you consider deprecated
 `metadata.work_dir`, and only after the patrol formula proves it is an existing
-exact `*/worktrees/<bead-id>` Git worktree in this rig. Do not infer artifact
-ownership from `gc.work_dir`; it is controller execution context. For each
-orphaned bead:
+exact
+`$GC_CITY_PATH/.gc/worktrees/$GC_RIG/polecats/<provider>/worktrees/<bead-id>`
+Git worktree in this rig. That is an in-place compatibility adoption, not a
+physical move; terminal cleanup retires it. Same-repository paths in another
+city, rig, or namespace are unsafe. Do not infer artifact ownership from
+`gc.work_dir`; it is controller execution context. For each orphaned bead:
 
 1. **Branch on origin** (`metadata.branch` exists, verified on remote) ->
    worktree disposable. Delete worktree, reset bead to pool.

@@ -358,8 +358,10 @@ if [ -n "$target_bead" ] && [ -n "${bead_json:-}" ]; then
     (CDPATH= cd -- "$common_dir" 2>/dev/null && pwd -P)
   }
   validate_progress_artifact_dir() {
-    local candidate=$1 provider_dir=$2 bead_id=$3
+    local candidate=$1 provider_dir=$2 city_root=$3 rig_name=$4 bead_id=$5
     local candidate_real provider_real candidate_top candidate_common provider_common
+    local city_real rig_namespace rig_namespace_real canonical_path
+    local provider_parent provider_name
     [ -n "$candidate" ] && [ -d "$candidate" ] || return 1
     # Dogs are city-scoped and normally have no GC_RIG_ROOT. The exact target
     # session's worker directory is the independent repository anchor.
@@ -367,8 +369,27 @@ if [ -n "$target_bead" ] && [ -n "${bead_json:-}" ]; then
     candidate_real=$(CDPATH= cd -- "$candidate" 2>/dev/null && pwd -P) || return 1
     provider_real=$(CDPATH= cd -- "$provider_dir" 2>/dev/null && pwd -P) ||
       return 1
+    city_real=$(CDPATH= cd -- "$city_root" 2>/dev/null && pwd -P) || return 1
+    case "$rig_name" in
+      ""|"."|".."|*[!A-Za-z0-9._-]*) return 1 ;;
+    esac
+    rig_namespace="$city_real/.gc/worktrees/$rig_name"
+    rig_namespace_real=$(CDPATH= cd -- "$rig_namespace" 2>/dev/null && pwd -P) ||
+      return 1
+    [ "$rig_namespace_real" = "$rig_namespace" ] || return 1
+    provider_parent=$(dirname -- "$provider_real")
+    provider_name=$(basename -- "$provider_real")
+    [ "$provider_parent" = "$rig_namespace_real/polecats" ] || return 1
+    case "$provider_name" in
+      ""|"."|".."|*[!A-Za-z0-9._-]*) return 1 ;;
+    esac
     [ "$(basename -- "$candidate_real")" = "$bead_id" ] || return 1
     [ "$(basename -- "$(dirname -- "$candidate_real")")" = worktrees ] || return 1
+    canonical_path="$rig_namespace_real/artifacts/worktrees/$bead_id"
+    if [ "$candidate_real" != "$canonical_path" ] &&
+       [ "$candidate_real" != "$provider_real/worktrees/$bead_id" ]; then
+      return 1
+    fi
     candidate_top=$(git -C "$candidate_real" rev-parse --show-toplevel 2>/dev/null) ||
       return 1
     candidate_top=$(CDPATH= cd -- "$candidate_top" 2>/dev/null && pwd -P) || return 1
@@ -380,7 +401,8 @@ if [ -n "$target_bead" ] && [ -n "${bead_json:-}" ]; then
   }
   artifact_candidate=$artifact_dir
   if ! artifact_dir=$(validate_progress_artifact_dir \
-      "$artifact_candidate" "$provider_work_dir" "$target_bead"); then
+      "$artifact_candidate" "$provider_work_dir" "$GC_CITY_PATH" \
+      "$target_rig" "$target_bead"); then
     if [ -n "$artifact_candidate" ]; then
       echo "Ignoring unsafe $artifact_source for $target_bead; not scanning provider or unrelated paths." >&2
       progress=unknown
