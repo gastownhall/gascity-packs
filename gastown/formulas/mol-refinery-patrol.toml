@@ -23,9 +23,12 @@ Merge strategy is per-work-bead metadata:
 - `direct` (default): fast-forward merge to target and push
 - `mr` / `pr`: publish a GitHub pull request instead of landing directly
 
-In `mr` mode, refinery treats PR publication as the terminal handoff for
-the direct-bead workflow: it records the PR URL on the work bead and
-closes the bead once the PR is verified.
+In `mr` mode, PR publication is not completion. Refinery records the
+verified PR identity and head on the work bead, then leaves the bead
+blocked until the PR is merged. Each patrol reconciles one pending PR
+and closes its bead only after the merge commit is verified on the
+recorded target branch. This preserves dependency ordering: downstream
+beads cannot become ready against code that has not landed.
 
 Read each step's description before acting — Config values override defaults."""
 formula = "mol-refinery-patrol"
@@ -163,9 +166,40 @@ upcoming merge work (e.g., priority overrides, hold requests).
 Close this step and proceed."""
 
 [[steps]]
+id = "reconcile-pr-merges"
+title = "Reconcile one pending pull-request merge"
+needs = ["check-inbox"]
+description = """
+Before selecting new merge work, reconcile the least-recently-checked
+`merge_strategy=mr` handoff in this rig:
+
+```bash
+if ! gc gastown pr-merge-reconcile; then
+  echo "Pending PR reconciliation failed safely; its work bead remains blocked."
+fi
+```
+
+The command performs at most one GitHub lookup per patrol:
+
+- an unchanged open PR stays blocked;
+- a handoff owned by an earlier refinery session is adopted to `$GC_AGENT`;
+- an open PR whose head changed is reopened and assigned to this refinery so
+  its quality gates run again;
+- a merged PR closes its work bead only after the recorded head matches and
+  the merge commit is reachable from the recorded `origin/<target>`;
+- a closed-unmerged PR, contradictory metadata, or a merged unvalidated head
+  stays blocked and is escalated to mayor.
+
+A lookup or fetch failure is retryable and never closes the work bead. Do not
+manually close a pending PR bead because reconciliation was unavailable.
+
+Close this step after the command returns, including its fail-closed error
+paths, and continue to the normal work scan."""
+
+[[steps]]
 id = "find-work"
 title = "Find next work bead assigned to me or wait"
-needs = ["check-inbox"]
+needs = ["reconcile-pr-merges"]
 description = """
 **Config: event_timeout = {{event_timeout}}**
 
@@ -888,7 +922,8 @@ artifact source branch.
 **If MERGE_STRATEGY = "mr":**
 
 Refinery does NOT land the branch directly. Instead it publishes a pull
-request and treats PR creation as the terminal handoff for this work bead.
+request and records a pending-merge handoff. The work bead remains blocked,
+so its dependents remain blocked, until a later patrol verifies the PR merge.
 
 **0. Refuse a 0-diff branch (false-completion guard):**
 
@@ -1116,26 +1151,33 @@ fi
 ```
 If this command fails or prints empty output: STOP. Debug and retry. Do NOT continue.
 
-**4. Record PR metadata and close the work bead:**
+**4. Record the pending PR without closing the work bead:**
 
-Run as a single chained command so the metadata write cannot be skipped
-when the close-reason already names the PR. Both the `--set-metadata`
-write and the `gc bd close` are required — `pr_url` and `pr_number`
-are the only forensic breadcrumbs tying a closed bead to its pull
-request. `--unset-metadata rejection_reason` clears any stale rejection
-field from an earlier rejected/reworked attempt before the successful
-close.
+The command stores the canonical URL, number, validated head SHA, and target;
+sets `merge_result=pull_request_pending`; and moves the bead to `blocked`
+while retaining refinery ownership. That status is the dependency gate.
+It also clears stale rejection/routing metadata so the blocked handoff cannot
+be mistaken for pool demand.
 
 ```bash
-gc bd update $WORK \
-  --set-metadata merge_result=pull_request \
-  --set-metadata pr_url="$PR_URL" \
-  --set-metadata pr_number="$PR_NUMBER" \
-  --set-metadata pr_head_sha="$PR_HEAD_SHA" \
-  --set-metadata merged_target="$TARGET" \
-  --unset-metadata rejection_reason && \
-gc bd close $WORK --reason "Pull request ready: $PR_URL"
+if ! gc gastown pr-merge-reconcile record \
+    "$WORK" "$PR_URL" "$PR_NUMBER" "$TARGET" "$PR_HEAD_SHA"; then
+  echo "Failed to record pending PR state. STOP. Do not close $WORK."
+  gc runtime drain-ack
+  exit 1
+fi
+if ! gc mail send mayor/ \
+    -s "PR ready for review: $WORK" \
+    -m "Work bead: $WORK
+Pull request: $PR_URL
+ The bead and its dependents remain blocked until a refinery patrol verifies the merge."; then
+  echo "Pending PR state is safe, but mayor notification failed; report the delivery failure."
+fi
 ```
+
+If the metadata transition fails: STOP. Do not close the bead or describe the
+work as complete. A mail failure does not undo the safe blocked state; report
+the delivery failure and let a later patrol retry/escalate.
 
 **5. Cleanup:**
 ```bash
@@ -1202,7 +1244,9 @@ The Gastown example refinery supports direct and mr/pr merge strategies only."
 ```
 Do NOT close the bead, delete the branch, or burn the wisp until a human decides how to proceed.
 
-**GATE**: direct mode requires verified target push. mr mode requires verified PR URL. Bead closure only happens after the selected handoff is confirmed."""
+**GATE**: direct mode requires verified target push. mr mode records a verified
+PR handoff but does not close the bead; closure happens only in
+`reconcile-pr-merges` after a verified merge."""
 
 [[steps]]
 id = "patrol-summary"

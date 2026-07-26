@@ -131,8 +131,9 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         '--set-metadata merged_sha="$MERGED_SHA"',
         'gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"',
         "gh pr create",
-        "--set-metadata pr_url=\"$PR_URL\"",
-        "gc bd close $WORK --reason \"Pull request ready: $PR_URL\"",
+        "gc gastown pr-merge-reconcile record",
+        '"$WORK" "$PR_URL" "$PR_NUMBER" "$TARGET" "$PR_HEAD_SHA"',
+        "closure happens only in",
     ),
     "mol-witness-patrol": (
         "LIVENESS_MAP=$(jq -n",
