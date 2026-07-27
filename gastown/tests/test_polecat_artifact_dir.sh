@@ -233,6 +233,66 @@ test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores() {
         fail "existing-worktree fast path did not restore exactly one .gc/ entry"
 }
 
+test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt() {
+    local tmp rig remote city provider skill_root exclude head_before status stderr
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    rig="$tmp/rig"
+    remote="$tmp/remote.git"
+    city="$tmp/city"
+    provider="$city/.gc/worktrees/demo/refinery"
+    skill_root="$tmp/core-skills"
+    stderr="$tmp/sync.stderr"
+
+    init_repo "$rig"
+    git -C "$rig" branch -M main
+    git init -q --bare "$remote"
+    git -C "$remote" symbolic-ref HEAD refs/heads/main
+    git -C "$rig" remote add origin "$remote"
+    git -C "$rig" push -qu origin main
+
+    "$WORKTREE_SETUP" "$rig" "$provider" refinery
+
+    # Gas City materializes Codex skills as symlinks under .agents/skills.
+    # These runtime-owned entries must not poison the strict provider sync.
+    mkdir -p \
+        "$skill_root/gc-mail" \
+        "$skill_root/gc-work" \
+        "$provider/.agents/skills"
+    printf '%s\n' '# gc-mail' >"$skill_root/gc-mail/SKILL.md"
+    printf '%s\n' '# gc-work' >"$skill_root/gc-work/SKILL.md"
+    ln -s "$skill_root/gc-mail" "$provider/.agents/skills/core.gc-mail"
+    ln -s "$skill_root/gc-work" "$provider/.agents/skills/core.gc-work"
+
+    "$WORKTREE_SETUP" "$rig" "$provider" refinery --sync
+    [[ -L "$provider/.agents/skills/core.gc-mail" &&
+       -L "$provider/.agents/skills/core.gc-work" ]] ||
+        fail "strict sync removed materialized Codex skill symlinks"
+    [[ -z "$(git -C "$provider" status --porcelain --untracked-files=all)" ]] ||
+        fail "materialized Codex skill symlinks remain visible to git status"
+
+    exclude=$(git -C "$provider" rev-parse --git-path info/exclude)
+    [[ "$(grep -cxF '.agents/skills/' "$exclude")" -eq 1 ]] ||
+        fail "repository-local exclude does not contain exactly one .agents/skills/ entry"
+
+    # The targeted runtime exclude must not weaken the fail-closed guard for
+    # unrelated source dirt.
+    head_before=$(git -C "$provider" rev-parse HEAD)
+    printf '%s\n' 'preserve me' >"$provider/dirty.txt"
+    set +e
+    "$WORKTREE_SETUP" "$rig" "$provider" refinery --sync 2>"$stderr"
+    status=$?
+    set -e
+    [[ "$status" -ne 0 ]] ||
+        fail "strict sync accepted unrelated provider worktree dirt"
+    grep -qF "refusing to sync dirty provider worktree at $provider" "$stderr" ||
+        fail "dirty sync did not report the fail-closed refusal"
+    [[ -f "$provider/dirty.txt" ]] ||
+        fail "dirty sync discarded unrelated provider worktree dirt"
+    [[ "$(git -C "$provider" rev-parse HEAD)" == "$head_before" ]] ||
+        fail "dirty sync moved provider HEAD"
+}
+
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch() {
     local tmp rig remote city provider stable hash task_sha detached_sha
     local stable_sha foreign foreign_head foreign_exclude_before status
@@ -1614,6 +1674,7 @@ test_workspace_metadata_reads_fail_closed_without_pipefail
 test_workspace_collision_fails_closed_without_alternate
 test_workspace_rejects_redirected_artifact_root_before_creation
 test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores
+test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch
 test_shutdown_probe_scopes_rig_and_fails_closed
 test_cleanup_command_is_idempotent_and_mr_retryable
