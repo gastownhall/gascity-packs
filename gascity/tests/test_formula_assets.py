@@ -516,15 +516,15 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
         "formula": data["formula"],
         "description": data.get("description", ""),
         "version": data.get("version", 1),
-        "contract": data.get("contract", ""),
+        "requires": dict(data.get("requires", {})),
         "target_required": data.get("target_required"),
         "vars": {},
         "steps": [],
     }
     for parent in parents:
         parent_data = resolve_formula(root, parent, (*seen, name))
-        if not merged["contract"]:
-            merged["contract"] = parent_data.get("contract", "")
+        for requirement, constraint in parent_data.get("requires", {}).items():
+            merged["requires"].setdefault(requirement, constraint)
         if merged["target_required"] is None:
             merged["target_required"] = parent_data.get("target_required")
         merged["vars"].update(parent_data.get("vars", {}))
@@ -549,15 +549,15 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
         "formula": data["formula"],
         "description": data.get("description", ""),
         "version": data.get("version", 1),
-        "contract": data.get("contract", ""),
+        "requires": dict(data.get("requires", {})),
         "target_required": data.get("target_required"),
         "vars": {},
         "steps": [],
     }
     for parent in parents:
         parent_data = resolve_formula_from_dirs(formula_dirs, parent, (*seen, name))
-        if not merged["contract"]:
-            merged["contract"] = parent_data.get("contract", "")
+        for requirement, constraint in parent_data.get("requires", {}).items():
+            merged["requires"].setdefault(requirement, constraint)
         if merged["target_required"] is None:
             merged["target_required"] = parent_data.get("target_required")
         merged["vars"].update(parent_data.get("vars", {}))
@@ -670,7 +670,7 @@ def assert_pack_or_role_route_target(
 
 
 class FormulaAssetTests(unittest.TestCase):
-    def test_expected_formula_set_is_convoy_first(self) -> None:
+    def test_expected_formula_set_uses_canonical_compiler_requirement(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         paths = sorted((root / "formulas").glob("*.formula.toml"))
 
@@ -679,7 +679,8 @@ class FormulaAssetTests(unittest.TestCase):
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             name = path.name.removesuffix(".formula.toml")
             self.assertEqual(data["formula"], name)
-            self.assertEqual(data["contract"], "graph.v2")
+            self.assertNotIn("contract", data)
+            self.assertEqual(data.get("requires"), {"formula_compiler": ">=2.0.0"})
             var_names = set(data.get("vars", {}))
             self.assertNotIn("issue", var_names)
             self.assertNotIn("bead_id", var_names)
@@ -1186,7 +1187,8 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(formula=name):
                 data = load_formula(root, name)
                 self.assertEqual(data["formula"], name)
-                self.assertEqual(data["contract"], "graph.v2")
+                self.assertNotIn("contract", data)
+                self.assertEqual(data.get("requires"), {"formula_compiler": ">=2.0.0"})
                 self.assertTrue(data["internal"])
                 self.assertNotIn("catalog", data)
                 self.assertNotIn("extends", data)
@@ -1768,7 +1770,8 @@ class FormulaAssetTests(unittest.TestCase):
         root = pathlib.Path(__file__).resolve().parents[1]
         review = load_formula(root, "build-basic-review")
         self.assertEqual(review["type"], "expansion")
-        self.assertEqual(review["contract"], "graph.v2")
+        self.assertNotIn("contract", review)
+        self.assertEqual(review.get("requires"), {"formula_compiler": ">=2.0.0"})
         self.assertEqual(
             review["vars"]["implementation_target"]["default"],
             "gc.implementation-worker",
@@ -3502,7 +3505,8 @@ class FormulaAssetTests(unittest.TestCase):
         for name, (url_var, optional_vars) in expected.items():
             with self.subTest(name=name):
                 data = resolve_formula(root, name)
-                self.assertEqual(data["contract"], "graph.v2")
+                self.assertNotIn("contract", data)
+                self.assertEqual(data.get("requires"), {"formula_compiler": ">=2.0.0"})
                 self.assertFalse(data["target_required"])
                 self.assertTrue(data["vars"][url_var]["required"])
                 self.assertEqual(set(data["vars"]) - {url_var}, optional_vars)
