@@ -181,12 +181,21 @@ if ! gc gastown pr-merge-reconcile; then
 fi
 ```
 
-The command performs at most one GitHub lookup per work scan:
+The command handles at most one reconciliation marker per work scan:
 
 - an unchanged open PR stays blocked;
-- a handoff owned by an earlier refinery session is adopted to `$GC_AGENT`;
+- any handoff owned by an earlier refinery session is adopted to `$GC_AGENT`;
+- an interrupted open record with complete `pull_request_pending` metadata
+  finishes its blocked dependency gate before lookup;
+- an incomplete open record clears stale partial PR evidence and its retry
+  marker, retains the validated `existing_pr` reuse hint, then returns to this
+  refinery for full validation without removing work or artifacts;
 - an open PR whose head changed is reopened and assigned to this refinery so
-  its quality gates run again;
+  its quality gates run again, with the marker cleared in the same transition;
+- before lookup, blocked records must be exact `pull_request_pending`, or
+  complete `mr_merged` evidence retained after a verified close failure;
+  unknown, incomplete, obsolete, or contradictory lifecycle states are
+  quarantined and escalated;
 - a merged PR closes its work bead only after the recorded head matches and
   the merge commit is reachable from the recorded `origin/<target>`;
 - a closed-unmerged PR, contradictory metadata, or a merged unvalidated head
@@ -1168,8 +1177,13 @@ fi
 ```
 
 If the metadata transition fails: STOP. Do not close the bead or describe the
-work as complete. A mail failure does not undo the safe blocked state; report
-the delivery failure and let a later patrol retry/escalate.
+work as complete. The retry marker is armed before the multi-step transition;
+a validated `existing_pr` hint is armed with it so a resumed validation does
+not create a duplicate PR. A later patrol adopts an interrupted open record
+and either completes a fully recorded block or returns an incomplete record to
+full validation after clearing stale partial PR evidence. A mail failure does
+not undo the safe blocked state; report the delivery failure and let a later
+patrol retry/escalate.
 
 **5. Cleanup:**
 ```bash
@@ -1231,8 +1245,11 @@ not invoke cleanup at publication:
   `artifact_cleanup_state=blocked`.
 
 MR reconciliation MUST record `merge_result=mr_merged`, preserve the exact
-`pr_head_sha` and `polecat/<work>` source branch, confirm the bead is closed,
-and only then run `gc gastown task-artifact-cleanup "$WORK"`. It retains
+`pr_head_sha` and `polecat/<work>` source branch, plus `merged_sha`,
+`pr_state=merged`, and the merge timestamp before attempting closure. Only
+that complete blocked state is a valid verified-close retry. Reconciliation
+confirms the bead is closed and only then runs
+`gc gastown task-artifact-cleanup "$WORK"`. It retains
 `pr_reconcile_pending` until a fresh bead read proves cleanup complete and both
 artifact path fields cleared. A cleanup failure, command crash, or final
 metadata-write failure therefore remains discoverable on the closed bead and a

@@ -277,11 +277,17 @@ blocked reason on the bead and escalate to mayor.
 
 Before every work scan, including re-entry after an idle wake, run
 `gc gastown pr-merge-reconcile` once. It checks the least-recently-checked
-pending PR in this rig and adopts handoffs left assigned to an earlier
-refinery session. An unchanged open PR remains blocked. An open PR with a
-changed head is reopened to you for rebase and quality-gate validation. A PR
-closes its bead only when GitHub reports it merged with the validated head,
-its repository still matches the rig's `origin`, and the merge commit is
+pending marker in this rig and adopts handoffs left assigned to an earlier
+refinery session. Interrupted open records are recovered first: a complete
+`pull_request_pending` record is blocked before lookup, while an incomplete
+record has stale partial PR evidence cleared and returns to you for full
+validation with its validated `existing_pr` reuse hint retained. A
+changed-head open marker likewise returns to quality gates.
+Blocked records reach GitHub lookup only as exact `pull_request_pending`, or
+as complete `mr_merged` evidence from a verified close failure; other
+lifecycle combinations are quarantined. An unchanged open PR remains blocked.
+A PR closes its bead only when GitHub reports it merged with the validated
+head, its repository still matches the rig's `origin`, and the merge commit is
 reachable from the recorded target branch with local history overrides
 disabled. Closed-unmerged, contradictory, or merged-with-unvalidated-head
 states remain blocked and are escalated.

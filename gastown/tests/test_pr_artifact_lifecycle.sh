@@ -385,7 +385,7 @@ test_cleanup_failure_then_closed_bead_retry() {
         fail "closed-bead retry attempted to close the bead again"
 }
 
-test_close_failure_never_starts_cleanup() {
+test_close_failure_retries_from_complete_blocked_merge_evidence() {
     setup_case close-failure
     write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
     printf '1\n' >"$CLOSE_FAIL_COUNT"
@@ -399,6 +399,26 @@ test_close_failure_never_starts_cleanup() {
     assert_marker_present
     ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
         fail "cleanup started before close succeeded"
+
+    [ "$(jq -r '.[0].metadata.merge_result' "$STATE")" = mr_merged ] &&
+        [ "$(jq -r '.[0].metadata.pr_state' "$STATE")" = merged ] &&
+        [ "$(jq -r '.[0].metadata.merged_sha' "$STATE")" = "$MERGE_SHA" ] &&
+        [ -n "$(jq -r '.[0].metadata.pr_merged_at // empty' "$STATE")" ] ||
+        fail "close failure did not retain complete verified merge evidence"
+
+    : >"$LOG"
+    export GC_AGENT="demo/gastown.refinery-recycled"
+    "$RECONCILE"
+    export GC_AGENT="demo/gastown.refinery"
+
+    [ "$(jq -r '.[0].status' "$STATE")" = closed ] ||
+        fail "verified blocked merge retry did not close the bead"
+    [ ! -e "$ARTIFACT" ] ||
+        fail "verified blocked merge retry did not clean the artifact"
+    [ "$(jq -r '.[0].metadata.pr_reconcile_pending // empty' "$STATE")" = "" ] ||
+        fail "verified blocked merge retry did not clear its marker"
+    grep -F 'gc <bd> <close> <--rig=demo> <it-1>' "$LOG" >/dev/null ||
+        fail "recycled refinery did not retry the failed close"
 }
 
 test_removed_before_metadata_crash_retries_to_completion() {
@@ -449,7 +469,7 @@ test_changed_head_and_closed_unmerged_never_cleanup() {
 test_publication_arms_without_premature_cleanup_then_converges
 test_closed_legacy_pull_request_is_not_terminal
 test_cleanup_failure_then_closed_bead_retry
-test_close_failure_never_starts_cleanup
+test_close_failure_retries_from_complete_blocked_merge_evidence
 test_removed_before_metadata_crash_retries_to_completion
 test_changed_head_and_closed_unmerged_never_cleanup
 

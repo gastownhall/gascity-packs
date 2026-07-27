@@ -56,7 +56,7 @@ valid_sha() {
     case "$1" in
         ""|*[!0-9a-fA-F]*) return 1 ;;
         *)
-            [ "${#1}" -ge 40 ]
+            [ "${#1}" -ge 40 ] && [ "${#1}" -le 64 ]
             ;;
     esac
 }
@@ -252,12 +252,15 @@ record_handoff() {
         exit 2
     }
 
-    # Arm the retry marker while the bead is still open. If any later
-    # metadata write fails, normal refinery work discovery can retry this
-    # open bead; only move it to blocked after the complete record exists.
+    # Arm the retry marker and validated PR-reuse hint while the bead is still
+    # open. If a later write fails, the all-owner reconciler scan adopts the
+    # open row after refinery recycling. It completes a full pending record's
+    # block transition or clears partial evidence and returns the work to
+    # validation without causing a duplicate PR.
     bd_update "$work" \
         --assignee="$GC_AGENT" \
-        --set-metadata pr_reconcile_pending=true
+        --set-metadata pr_reconcile_pending=true \
+        --set-metadata existing_pr="$pr_url"
     bd_update "$work" \
         --assignee="$GC_AGENT" \
         --set-metadata merge_result=pull_request_pending \
@@ -271,7 +274,11 @@ record_handoff() {
         --set-metadata blocked_reason="Awaiting verified merge of $pr_url" \
         --unset-metadata gc.routed_to \
         --unset-metadata rejection_reason \
-        --unset-metadata pr_reconcile_error
+        --unset-metadata pr_reconcile_error \
+        --unset-metadata merged_sha \
+        --unset-metadata pr_merged_at \
+        --unset-metadata existing_pr \
+        --unset-metadata observed_pr_head_sha
     bd_update "$work" \
         --status=blocked \
         --assignee="$GC_AGENT"
@@ -283,6 +290,7 @@ quarantine_metadata() {
     now=$3
     bd_update "$work" \
         --status=blocked \
+        --assignee="$GC_AGENT" \
         --set-metadata merge_result=pull_request_reconcile_invalid \
         --set-metadata pr_state=invalid \
         --set-metadata pr_last_checked_at="$now" \
@@ -300,10 +308,57 @@ record_retryable_error() {
     state=$2
     reason=$3
     now=$4
+    preserve_verified_state=${5:-false}
+    if [ "$preserve_verified_state" = true ]; then
+        bd_update "$work" \
+            --assignee="$GC_AGENT" \
+            --set-metadata pr_last_checked_at="$now" \
+            --set-metadata pr_reconcile_error="$reason"
+    else
+        bd_update "$work" \
+            --assignee="$GC_AGENT" \
+            --set-metadata pr_state="$state" \
+            --set-metadata pr_last_checked_at="$now" \
+            --set-metadata pr_reconcile_error="$reason"
+    fi
+}
+
+recover_incomplete_open_marker() {
+    work=$1
+    now=$2
+    reason="Interrupted PR handoff record is incomplete; full refinery validation is required"
     bd_update "$work" \
-        --set-metadata pr_state="$state" \
+        --status=open \
+        --assignee="$GC_AGENT" \
+        --set-metadata merge_result=pull_request_record_incomplete \
+        --set-metadata pr_state=revalidation_required \
         --set-metadata pr_last_checked_at="$now" \
-        --set-metadata pr_reconcile_error="$reason"
+        --set-metadata rejection_reason="$reason" \
+        --unset-metadata pr_url \
+        --unset-metadata pr_number \
+        --unset-metadata pr_head_sha \
+        --unset-metadata pr_repo \
+        --unset-metadata merged_sha \
+        --unset-metadata merged_target \
+        --unset-metadata pr_merged_at \
+        --unset-metadata observed_pr_head_sha \
+        --unset-metadata blocked_reason \
+        --unset-metadata pr_reconcile_error \
+        --unset-metadata pr_reconcile_pending \
+        --unset-metadata gc.routed_to
+    echo "REVALIDATE: $work — $reason"
+}
+
+recover_changed_head_open_marker() {
+    work=$1
+    bd_update "$work" \
+        --status=open \
+        --assignee="$GC_AGENT" \
+        --unset-metadata pr_reconcile_pending \
+        --unset-metadata blocked_reason \
+        --unset-metadata pr_reconcile_error \
+        --unset-metadata gc.routed_to
+    echo "REVALIDATE: $work — changed PR head already awaits quality-gate validation."
 }
 
 requeue_changed_open_head() {
@@ -323,8 +378,9 @@ requeue_changed_open_head() {
         --set-metadata pr_last_checked_at="$now" \
         --set-metadata rejection_reason="$reason" \
         --unset-metadata blocked_reason \
-        --unset-metadata pr_reconcile_error
-    bd_update "$work" --unset-metadata pr_reconcile_pending
+        --unset-metadata pr_reconcile_error \
+        --unset-metadata pr_reconcile_pending \
+        --unset-metadata gc.routed_to
     echo "REVALIDATE: $work — $reason"
 }
 
@@ -336,6 +392,7 @@ quarantine_terminal_pr() {
     now=$5
     bd_update "$work" \
         --status=blocked \
+        --assignee="$GC_AGENT" \
         --set-metadata merge_result="$result" \
         --set-metadata pr_state="$state" \
         --set-metadata pr_last_checked_at="$now" \
@@ -369,7 +426,11 @@ reconcile_one() {
         [
           .[]
           | select(((.metadata.pr_reconcile_pending // "") | tostring) == "true")
-          | select(.status == "blocked" or .status == "closed")
+          | select(
+              .status == "open" or
+              .status == "blocked" or
+              .status == "closed"
+            )
         ]
         | sort_by(.metadata.pr_last_checked_at // "")
         | .[0] // empty
@@ -389,6 +450,8 @@ reconcile_one() {
     target=$(printf '%s\n' "$row" | jq -r '.metadata.merged_target // .metadata.target // empty')
     recorded_result=$(printf '%s\n' "$row" | jq -r '.metadata.merge_result // empty')
     recorded_merge_sha=$(printf '%s\n' "$row" | jq -r '.metadata.merged_sha // empty')
+    recorded_pr_state=$(printf '%s\n' "$row" | jq -r '.metadata.pr_state // empty')
+    recorded_merged_at=$(printf '%s\n' "$row" | jq -r '.metadata.pr_merged_at // empty')
     now=$(now_utc)
 
     if [ -z "$work" ]; then
@@ -396,44 +459,106 @@ reconcile_one() {
         return 1
     fi
     parsed_repo=$(github_repo_from_pr_url "$pr_url" 2>/dev/null || true)
-    if [ -z "$parsed_repo" ] ||
-       ! valid_number "$pr_number" ||
-       [ "${pr_url##*/}" != "$pr_number" ] ||
-       ! valid_sha "$expected_head" ||
-       [ -z "$recorded_repo" ] ||
-       ! repos_equal "$parsed_repo" "$recorded_repo" ||
-       [ -z "$branch" ] ||
-       [ "$branch" != "polecat/$work" ] ||
-       ! git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 ||
-       ! git check-ref-format "refs/heads/$target" >/dev/null 2>&1; then
+    handoff_complete=false
+    if [ -n "$parsed_repo" ] &&
+       valid_number "$pr_number" &&
+       [ "${pr_url##*/}" = "$pr_number" ] &&
+       valid_sha "$expected_head" &&
+       [ -n "$recorded_repo" ] &&
+       repos_equal "$parsed_repo" "$recorded_repo" &&
+       [ -n "$branch" ] &&
+       [ "$branch" = "polecat/$work" ] &&
+       git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 &&
+       git check-ref-format "refs/heads/$target" >/dev/null 2>&1; then
+        handoff_complete=true
+    fi
+
+    if [ "$work_status" = open ]; then
+        if [ "$recorded_result" = pull_request_head_changed ]; then
+            recover_changed_head_open_marker "$work"
+            return 0
+        fi
+        if [ "$recorded_result" = pull_request_pending ] &&
+           [ "$handoff_complete" = true ]; then
+            # Complete record write landed but its final dependency gate did
+            # not. Finish that transition before consulting GitHub.
+            bd_update "$work" \
+                --status=blocked \
+                --assignee="$GC_AGENT"
+            work_status=blocked
+        else
+            recover_incomplete_open_marker "$work" "$now"
+            return 0
+        fi
+    fi
+
+    if [ "$handoff_complete" != true ]; then
         quarantine_metadata "$work" "Pending PR metadata is incomplete or invalid (url/number/head/exact polecat branch/target)." "$now"
         return 1
     fi
-    if [ "$work_status" = closed ] &&
-       { [ "$recorded_result" != mr_merged ] ||
-         ! valid_sha "$recorded_merge_sha"; }; then
-        quarantine_terminal_pr \
-            "$work" \
-            pull_request_legacy_closed_unverified \
-            legacy_closed_unverified \
-            "Closed PR record lacks the explicit mr_merged evidence required for a cleanup retry." \
-            "$now"
-        return 1
-    fi
+
+    preserve_verified_state=false
+    case "$work_status" in
+        blocked)
+            case "$recorded_result" in
+                pull_request_pending)
+                    if [ -n "$recorded_merge_sha" ] ||
+                       [ -n "$recorded_merged_at" ] ||
+                       [ "$recorded_pr_state" = merged ]; then
+                        quarantine_metadata "$work" "Blocked pull_request_pending record contains contradictory terminal merge evidence." "$now"
+                        return 1
+                    fi
+                    ;;
+                mr_merged)
+                    if ! valid_sha "$recorded_merge_sha" ||
+                       [ "$recorded_pr_state" != merged ] ||
+                       [ -z "$recorded_merged_at" ]; then
+                        quarantine_metadata "$work" "Blocked mr_merged record lacks complete stored merge evidence for a verified close retry." "$now"
+                        return 1
+                    fi
+                    preserve_verified_state=true
+                    ;;
+                *)
+                    quarantine_metadata "$work" "Blocked PR lifecycle requires exact pull_request_pending or complete mr_merged close-retry evidence." "$now"
+                    return 1
+                    ;;
+            esac
+            ;;
+        closed)
+            if [ "$recorded_result" != mr_merged ] ||
+               ! valid_sha "$recorded_merge_sha" ||
+               [ "$recorded_pr_state" != merged ] ||
+               [ -z "$recorded_merged_at" ]; then
+                quarantine_terminal_pr \
+                    "$work" \
+                    pull_request_legacy_closed_unverified \
+                    legacy_closed_unverified \
+                    "Closed PR record lacks the complete explicit mr_merged evidence required for a cleanup retry." \
+                    "$now"
+                return 1
+            fi
+            preserve_verified_state=true
+            ;;
+        *)
+            quarantine_metadata "$work" "PR reconciliation marker has an unsupported work status." "$now"
+            return 1
+            ;;
+    esac
     origin_repo=$(current_origin_repo 2>/dev/null || true)
     if [ -z "$origin_repo" ] || ! repos_equal "$recorded_repo" "$origin_repo"; then
         record_retryable_error \
             "$work" \
             origin_mismatch \
             "Recorded PR repository $recorded_repo does not match the current standard github.com origin (${origin_repo:-unresolved}); will retry." \
-            "$now"
+            "$now" \
+            "$preserve_verified_state"
         return 1
     fi
 
     err_file=$(mktemp "${TMPDIR:-/tmp}/gascity-pr-reconcile.XXXXXX")
     trap 'rm -f "$err_file"' EXIT HUP INT TERM
     if ! pr_info=$(lookup_pr_info "$pr_url" "$err_file"); then
-        record_retryable_error "$work" lookup_failed "GitHub PR lookup failed; will retry." "$now"
+        record_retryable_error "$work" lookup_failed "GitHub PR lookup failed; will retry." "$now" "$preserve_verified_state"
         cat "$err_file" >&2
         return 1
     fi
@@ -458,12 +583,12 @@ reconcile_one() {
 
     case "$state" in
         OPEN)
-            if [ "$work_status" = closed ]; then
+            if [ "$recorded_result" = mr_merged ]; then
                 quarantine_terminal_pr \
                     "$work" \
-                    pull_request_closed_state_contradiction \
-                    closed_state_contradiction \
-                    "Closed mr_merged bead now resolves to an open pull request; refusing cleanup." \
+                    pull_request_merged_state_contradiction \
+                    merged_state_contradiction \
+                    "Stored mr_merged evidence on $work now resolves to an open pull request; refusing closure or cleanup." \
                     "$now"
                 return 1
             fi
@@ -500,16 +625,27 @@ reconcile_one() {
                 return 1
             fi
             if ! valid_sha "$merged_sha" || [ -z "$merged_at" ]; then
-                record_retryable_error "$work" merged_unverified "GitHub reported MERGED without complete merge evidence; will retry." "$now"
+                record_retryable_error "$work" merged_unverified "GitHub reported MERGED without complete merge evidence; will retry." "$now" "$preserve_verified_state"
+                return 1
+            fi
+            if [ "$recorded_result" = mr_merged ] &&
+               { [ "$merged_sha" != "$recorded_merge_sha" ] ||
+                 [ "$merged_at" != "$recorded_merged_at" ]; }; then
+                quarantine_terminal_pr \
+                    "$work" \
+                    pull_request_merge_evidence_contradiction \
+                    merge_evidence_contradiction \
+                    "Stored mr_merged evidence no longer matches GitHub's merge commit or timestamp." \
+                    "$now"
                 return 1
             fi
             if ! rig_git fetch origin "+refs/heads/${target}:refs/remotes/origin/${target}"; then
-                record_retryable_error "$work" merged_unverified "Could not fetch origin/$target to verify the PR merge; will retry." "$now"
+                record_retryable_error "$work" merged_unverified "Could not fetch origin/$target to verify the PR merge; will retry." "$now" "$preserve_verified_state"
                 return 1
             fi
             if ! rig_git_without_history_overrides \
                 merge-base --is-ancestor "$merged_sha" "origin/$target"; then
-                record_retryable_error "$work" merged_unverified "PR merge commit $merged_sha is not reachable from origin/$target; will retry." "$now"
+                record_retryable_error "$work" merged_unverified "PR merge commit $merged_sha is not reachable from origin/$target; will retry." "$now" "$preserve_verified_state"
                 return 1
             fi
 
@@ -524,6 +660,7 @@ reconcile_one() {
                 --set-metadata pr_last_checked_at="$now" \
                 --unset-metadata rejection_reason \
                 --unset-metadata pr_reconcile_error
+            preserve_verified_state=true
             if [ "$work_status" != closed ] &&
                ! bd_close "$work" --reason "PR #$pr_number merged to $target at $short_sha ($pr_url)"; then
                 echo "pr-merge-reconcile: merge verified but bead close failed; pending marker retained for retry" >&2
@@ -535,7 +672,8 @@ reconcile_one() {
                     "$work" \
                     merged_close_unverified \
                     "PR merge is verified, but the closed bead state could not be read; cleanup was not started." \
-                    "$now" || true
+                    "$now" \
+                    "$preserve_verified_state" || true
                 return 1
             }
             closed_record=$(printf '%s' "$closed_json" | jq -ce '
@@ -550,16 +688,20 @@ reconcile_one() {
                     "$work" \
                     merged_close_unverified \
                     "PR merge is verified, but the closed bead state was invalid; cleanup was not started." \
-                    "$now" || true
+                    "$now" \
+                    "$preserve_verified_state" || true
                 return 1
             }
             closed_verified=$(printf '%s' "$closed_record" | jq -r \
                 --arg merged_sha "$merged_sha" \
+                --arg merged_at "$merged_at" \
                 --arg expected_head "$expected_head" \
                 --arg branch "$branch" '
                 if .status == "closed" and
                    .metadata.merge_result == "mr_merged" and
                    .metadata.merged_sha == $merged_sha and
+                   .metadata.pr_state == "merged" and
+                   .metadata.pr_merged_at == $merged_at and
                    .metadata.pr_head_sha == $expected_head and
                    .metadata.branch == $branch
                 then "true"
@@ -571,7 +713,8 @@ reconcile_one() {
                     "$work" \
                     merged_close_unverified \
                     "Verified MR evidence did not durably converge on a closed bead; cleanup was not started." \
-                    "$now" || true
+                    "$now" \
+                    "$preserve_verified_state" || true
                 return 1
             fi
 
@@ -584,7 +727,8 @@ reconcile_one() {
                     "$work" \
                     merged_cleanup_pending \
                     "PR merge is verified and the bead is closed, but task artifact cleanup failed; will retry." \
-                    "$now" || true
+                    "$now" \
+                    "$preserve_verified_state" || true
                 echo "pr-merge-reconcile: artifact cleanup failed; pending marker retained for closed-bead retry" >&2
                 return 1
             fi
@@ -594,7 +738,8 @@ reconcile_one() {
                     "$work" \
                     merged_cleanup_unverified \
                     "Task artifact cleanup returned success, but its durable state could not be read; will retry." \
-                    "$now" || true
+                    "$now" \
+                    "$preserve_verified_state" || true
                 return 1
             }
             cleanup_record=$(printf '%s' "$cleanup_json" | jq -ce '
@@ -609,16 +754,20 @@ reconcile_one() {
                     "$work" \
                     merged_cleanup_unverified \
                     "Task artifact cleanup returned success, but its durable state was invalid; will retry." \
-                    "$now" || true
+                    "$now" \
+                    "$preserve_verified_state" || true
                 return 1
             }
             cleanup_converged=$(printf '%s' "$cleanup_record" | jq -r \
                 --arg merged_sha "$merged_sha" \
+                --arg merged_at "$merged_at" \
                 --arg expected_head "$expected_head" \
                 --arg branch "$branch" '
                 if .status == "closed" and
                    .metadata.merge_result == "mr_merged" and
                    .metadata.merged_sha == $merged_sha and
+                   .metadata.pr_state == "merged" and
+                   .metadata.pr_merged_at == $merged_at and
                    .metadata.pr_head_sha == $expected_head and
                    .metadata.branch == $branch and
                    .metadata.artifact_cleanup_state == "complete" and
@@ -633,7 +782,8 @@ reconcile_one() {
                     "$work" \
                     merged_cleanup_unverified \
                     "Task artifact cleanup has not durably converged; will retry." \
-                    "$now" || true
+                    "$now" \
+                    "$preserve_verified_state" || true
                 return 1
             fi
 
@@ -648,7 +798,7 @@ reconcile_one() {
             echo "MERGED: closed $work and retired its artifact after verifying $merged_sha on origin/$target."
             ;;
         *)
-            record_retryable_error "$work" unknown "GitHub returned unknown PR state '$state'; will retry." "$now"
+            record_retryable_error "$work" unknown "GitHub returned unknown PR state '$state'; will retry." "$now" "$preserve_verified_state"
             return 1
             ;;
     esac
