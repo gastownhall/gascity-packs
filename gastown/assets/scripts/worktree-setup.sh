@@ -194,6 +194,7 @@ install_local_excludes() {
     append_exclude "__pycache__/"
     append_exclude ".claude/"
     append_exclude ".codex/"
+    append_exclude ".agents/skills/"
     append_exclude ".gemini/"
     append_exclude ".opencode/"
     append_exclude ".github/hooks/"
