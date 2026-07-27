@@ -160,7 +160,8 @@ show metadata, load skills, or run any other operational Bash until it prints
 `in_progress`; `existing_assignment` resumes work already `in_progress`; and
 `ready_assignment` adopts work that is legitimately still `open` but already
 assigned to this session. These are distinct supported hook outcomes — do not
-rewrite one into another.
+rewrite one into another. Execute the block verbatim: do not retype, shorten,
+or simplify its jq receipt validator.
 
 ```bash
 bash <<'GC_CLAIM'
@@ -211,6 +212,9 @@ fi
 # Validate the complete schema-v1 action/reason matrix before trusting fields.
 # A successful empty result, an unknown reason, or a work result without a
 # receipt is malformed infrastructure output — never ordinary idleness.
+# Keep the receipt bound as $r: inside `allowed | index(...)`, jq's `.` is the
+# allowed-reasons array. `index(.reason)` would therefore reject every valid
+# receipt instead of reading its reason.
 if ! printf '%s' "$CLAIM_JSON" | jq -e '
     . as $r
     | type == "object"

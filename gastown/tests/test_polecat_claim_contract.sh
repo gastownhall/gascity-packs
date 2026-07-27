@@ -145,6 +145,12 @@ test_structural_contract() {
     setup_case
     grep -q 'gc hook --claim --drain-ack --json' "$CONTRACT" ||
         fail "claim must request transactional drain acknowledgement"
+    grep -qF '. as $r' "$CONTRACT" ||
+        fail "claim validator must bind the schema-v1 receipt root"
+    grep -qF 'index($r.reason)' "$CONTRACT" ||
+        fail "claim validator must read reason from the bound receipt root"
+    ! grep -Eq '^[[:space:]]+and .*index\(\.reason\)' "$CONTRACT" ||
+        fail "claim validator reads reason from the piped allowed-values array"
     ! grep -q 'gc runtime drain-ack' "$CONTRACT" ||
         fail "contract must not manually acknowledge a structured drain"
     ! grep -q -- '--status=open --assignee=""' "$CONTRACT" ||
@@ -154,6 +160,35 @@ test_structural_contract() {
         grep -q "\"$reason\"" "$CONTRACT" ||
             fail "schema-v1 reason $reason is absent from the contract"
     done
+}
+
+test_receipt_root_reason_membership_regression() {
+    local drain_fixture work_fixture rc
+
+    # `index()` runs with the allowed-values array as jq's current input.
+    # These valid work and drain receipts both fail if the validator is
+    # shortened from `index($r.reason)` to `index(.reason)`.
+    drain_fixture='{"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}'
+    setup_case
+    rc=$(run_contract "$drain_fixture")
+    [[ "$rc" == "0" ]] || fail "schema-v1 drain receipt root exited $rc"
+    grep -q 'NO_ROUTED_WORK reason=no_work' "$OUT" ||
+        fail "schema-v1 drain receipt root was rejected"
+    [[ "$(count_calls "CALL:hook:--claim --drain-ack --json")" == "1" ]] ||
+        fail "schema-v1 drain receipt retried the hook"
+    [[ "$(count_calls "CALL:mail:send")" == "0" ]] ||
+        fail "schema-v1 drain receipt produced a false escalation"
+
+    work_fixture='{"schema_version":"1","ok":true,"command":"hook","action":"work","reason":"existing_assignment","bead_id":"ki-work","assignee":"rig/gastown.polecat-1","route":"rig/gastown.polecat"}'
+    setup_case
+    rc=$(run_contract "$work_fixture" 0 "$(show_json in_progress)")
+    [[ "$rc" == "0" ]] || fail "schema-v1 work receipt root exited $rc"
+    grep -q 'CLAIMED_BEAD_ID=ki-work' "$OUT" ||
+        fail "schema-v1 work receipt root was rejected"
+    grep -q 'CLAIMED_REASON=existing_assignment' "$OUT" ||
+        fail "schema-v1 work receipt reason was not preserved"
+    [[ "$(count_calls "CALL:mail:send")" == "0" ]] ||
+        fail "schema-v1 work receipt produced a false escalation"
 }
 
 test_fresh_session_enters_the_scripted_contract() {
@@ -177,6 +212,10 @@ with open(sys.argv[1], "rb") as handle:
     [[ "$nudge" == *"formula, workspace, metadata, or source"* ]] ||
         fail "fresh-session nudge does not gate formula/workspace/source access"
 
+    grep -qF 'Execute the block verbatim: do not retype, shorten,' "$PROMPT" ||
+        fail "startup guidance permits rewriting the claim validator"
+    grep -qF 'or simplify its jq receipt validator.' "$PROMPT" ||
+        fail "startup guidance does not protect the receipt-root predicate"
     grep -qF \
         '**After the Startup Protocol prints `CLAIMED_BEAD_ID`: read your formula' \
         "$PROMPT" ||
@@ -369,6 +408,7 @@ test_observability_stamp_is_best_effort() {
 }
 
 test_structural_contract
+test_receipt_root_reason_membership_regression
 test_fresh_session_enters_the_scripted_contract
 test_all_structured_drains_are_terminal
 test_complete_work_reason_status_matrix
