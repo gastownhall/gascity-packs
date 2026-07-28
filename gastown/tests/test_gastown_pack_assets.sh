@@ -154,6 +154,94 @@ test_polecat_startup_uses_standard_hook_claim() {
         fail "polecat propulsion fragment must not regress to an unclaimed hook/work-query choice"
 }
 
+test_polecat_submit_guard_and_step_completion_contracts() {
+    local formula prompt fragment
+    formula="$GASTOWN/formulas/mol-polecat-work.toml"
+    prompt="$GASTOWN/agents/polecat/prompt.template.md"
+    fragment="$GASTOWN/template-fragments/approval-fallacy.template.md"
+
+    parse_toml "$formula"
+    if ! python3 - "$prompt" "$fragment" <<'PY'
+import sys
+
+def guard(path):
+    text = open(path, encoding="utf-8").read()
+    begin = "# BEGIN_GASTOWN_SUBMIT_GUARD"
+    end = "# END_GASTOWN_SUBMIT_GUARD"
+    if text.count(begin) != 1 or text.count(end) != 1:
+        raise SystemExit(1)
+    return text.split(begin, 1)[1].split(end, 1)[0]
+
+if guard(sys.argv[1]) != guard(sys.argv[2]):
+    raise SystemExit(1)
+PY
+    then
+        fail "polecat prompt and approval fragment must carry the same submit guard"
+    fi
+
+    ! grep -F '[ "$WORK_STATUS" != "in_progress" ] || [ "$WORK_ASSIGNEE" != "$EXPECTED_ASSIGNEE" ]' "$prompt" "$fragment" >/dev/null ||
+        fail "polecat guard must not treat every non-current source state as submitted"
+    grep -F 'gc bd list --assignee "$EXPECTED_ASSIGNEE" --status=in_progress --limit=0 --json' "$fragment" >/dev/null ||
+        fail "polecat guard must find its claimed step through an exact read-only session query"
+    ! sed -n '/BEGIN_GASTOWN_SUBMIT_GUARD/,/END_GASTOWN_SUBMIT_GUARD/p' "$fragment" | grep -F 'gc hook --claim' >/dev/null ||
+        fail "done-state guard must not claim unrelated routed work"
+    grep -F '[ "$WORK_STATUS" = "closed" ] || [ "$WORK_ASSIGNEE" = "$REFINERY_TARGET" ]' "$fragment" >/dev/null ||
+        fail "polecat guard must require closed or exact-refinery terminal evidence"
+    grep -F -- '--set-metadata gc.outcome=fail --status=closed' "$fragment" >/dev/null ||
+        fail "deterministic source ownership conflicts must terminalize the workflow step"
+    [[ "$(grep -cF -- '--set-metadata gc.outcome=pass --status=closed' "$formula")" -eq 2 ]] ||
+        fail "normal and auto_push=false submission paths must close the Graph-v2 step"
+    [[ "$(grep -cF 'did not verify closed/pass; refusing to drain' "$formula")" -eq 2 ]] ||
+        fail "both successful submission paths must verify step completion before drain"
+    ! grep -F 'gc bd close "$WORK_BEAD_ID"' "$formula" >/dev/null ||
+        fail "polecat formula must never close the source work bead"
+
+    if ! python3 - "$formula" <<'PY'
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+push_verified = text.index('if [ "$REMOTE_REF" != "$LOCAL_HEAD" ]')
+handoff_verified = text.index('Refinery handoff did not verify exact status/assignee')
+cleanup = text.index('git checkout --detach')
+step_completion = text.index('# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION')
+if not push_verified < handoff_verified < cleanup < step_completion:
+    raise SystemExit(1)
+PY
+    then
+        fail "local branch cleanup must follow exact refinery handoff verification"
+    fi
+    grep -F 'Cleanup is best-effort after the verified durable handoff' "$formula" >/dev/null ||
+        fail "post-handoff local cleanup must be explicitly best-effort"
+    grep -F 'The `gc bd update` in step 5 generates' "$formula" >/dev/null ||
+        fail "refinery wake prose must reference the renumbered handoff step"
+
+    local resume_block
+    resume_block=$(sed -n '/BEGIN_GASTOWN_RESUME_VERIFY/,/END_GASTOWN_RESUME_VERIFY/p' "$prompt")
+    [[ "$resume_block" == *'startswith("mol-polecat-work.")'* ]] ||
+        fail "restart verification must accept every mol-polecat-work Graph-v2 step"
+    [[ "$resume_block" == *'.metadata["gc.root_bead_id"]'* ]] &&
+        [[ "$resume_block" == *'.metadata["gc.input_convoy_id"]'* ]] ||
+        fail "restart verification must prove workflow root/input convoy provenance"
+    [[ "$resume_block" == *'.metadata["gc.kind"]'* ]] &&
+        [[ "$resume_block" == *'.metadata["gc.formula_contract"]'* ]] &&
+        [[ "$resume_block" == *'[ "$ROOT_KIND" != "workflow" ]'* ]] &&
+        [[ "$resume_block" == *'[ "$ROOT_CONTRACT" != "graph.v2" ]'* ]] ||
+        fail "restart verification must prove the root is a Graph-v2 workflow"
+    [[ "$resume_block" == *'expected-open-unassigned'* ]] ||
+        fail "restart verification must accept normal Graph-v2 source state"
+    [[ "$resume_block" == *'RESUME_TERMINAL'* ]] &&
+        [[ "$resume_block" == *'[ "$WORK_ASSIGNEE" = "$REFINERY_TARGET" ]'* ]] ||
+        fail "post-handoff restart must recognize exact terminal refinery evidence"
+    [[ "$resume_block" != *'$GC_BEAD_ID'* ]] ||
+        fail "restart verification must not reinterpret GC_BEAD_ID as the source convoy"
+    [[ "$resume_block" != *'OWNERSHIP_LOST'* ]] ||
+        fail "restart verification must not derive workflow ownership from source state"
+    [[ "$resume_block" != *'gc hook --claim'* ]] ||
+        fail "read-only restart verification must not claim unrelated work"
+    [[ "$resume_block" != *'gc runtime drain-ack'* ]] ||
+        fail "indeterminate restart verification must preserve work for reclaim"
+}
+
 test_review_leg_contract_forbids_synthetic_mutation() {
     local formula prompt
     formula="$GASTOWN/formulas/mol-review-leg.toml"
@@ -224,6 +312,7 @@ test_shutdown_dance_contracts_are_executable
 test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
+test_polecat_submit_guard_and_step_completion_contracts
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 

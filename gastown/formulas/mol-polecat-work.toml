@@ -17,9 +17,12 @@ merge review.
 The polecat sets `metadata.branch` and `metadata.target` on the work bead
 and reassigns it to the refinery. The refinery merges and closes.
 
-**NEVER CLOSE BEADS.** You must not run `gc bd close` or set status=closed.
-Even if you believe the code is already merged, reassign to refinery —
-only the refinery verifies merges and closes beads.
+**NEVER CLOSE THE SOURCE WORK BEAD.** You must not run `gc bd close` on the
+implementation bead or set its status=closed. Even if you believe the code is
+already merged, reassign it to refinery — only the refinery verifies merges and
+closes source work. Graph-v2 workflow step beads are different: after their
+prescribed action succeeds, close the claimed step with `gc.outcome=pass` so
+the workflow can advance.
 `{{base_branch}}` may come from the work bead's own `metadata.target` or
 be inherited from a parent convoy with `metadata.target` set.
 
@@ -363,15 +366,86 @@ AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata | if has("a
 if [ "$AUTO_PUSH" = "false" ]; then
   echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"
   BRANCH=$(git branch --show-current)
-  gc bd update "$WORK_BEAD_ID" \
-    --status=open --assignee="" \
-    --set-metadata branch="$BRANCH" \
-    --set-metadata target={{base_branch}} \
-    --set-metadata branch_ready=true \
-    --set-metadata halt_reason=auto_push_false \
-    --set-metadata gc.routed_to="" \
-    --notes "Branch ready: auto_push=false (no push, no refinery handoff)"
+  if ! gc bd update "$WORK_BEAD_ID" \
+       --status=open --assignee="" \
+       --set-metadata branch="$BRANCH" \
+       --set-metadata target={{base_branch}} \
+       --set-metadata branch_ready=true \
+       --set-metadata halt_reason=auto_push_false \
+       --set-metadata gc.routed_to="" \
+       --notes "Branch ready: auto_push=false (no push, no refinery handoff)"; then
+    echo "Failed to record auto_push=false branch-ready state; refusing to drain." >&2
+    exit 1
+  fi
+  BRANCH_READY_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
+  BRANCH_READY_CODE=$?
+  BRANCH_READY_STATUS=$(printf '%s' "$BRANCH_READY_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
+  BRANCH_READY_ASSIGNEE=$(printf '%s' "$BRANCH_READY_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
+  BRANCH_READY_BRANCH=$(printf '%s' "$BRANCH_READY_JSON" | jq -r '.[0].metadata.branch // empty' 2>/dev/null)
+  BRANCH_READY_FLAG=$(printf '%s' "$BRANCH_READY_JSON" | jq -r '.[0].metadata.branch_ready // empty | tostring' 2>/dev/null)
+  if [ "$BRANCH_READY_CODE" -ne 0 ] || [ "$BRANCH_READY_STATUS" != "open" ] ||
+     [ -n "$BRANCH_READY_ASSIGNEE" ] || [ "$BRANCH_READY_BRANCH" != "$BRANCH" ] ||
+     [ "$BRANCH_READY_FLAG" != "true" ]; then
+    echo "auto_push=false branch-ready state did not verify; refusing to drain." >&2
+    exit 1
+  fi
+
+  # Complete this claimed Graph-v2 step only after branch-ready state succeeds.
+  # Use an exact, read-only session query: never call gc hook here because it can
+  # atomically claim unrelated routed work when the expected step is absent.
+  # BEGIN_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION
+  EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
+  if [ -z "$EXPECTED_ASSIGNEE" ]; then
+    echo "Cannot identify the current session assignee; refusing to drain." >&2
+    exit 1
+  fi
+  STEP_LIST_JSON=$(gc bd list --assignee "$EXPECTED_ASSIGNEE" --status=in_progress --limit=0 --json 2>/dev/null)
+  STEP_LIST_CODE=$?
+  STEP_MATCHES=$(printf '%s' "$STEP_LIST_JSON" | jq -c 'if type == "array" then [.[] | select(.metadata["gc.step_ref"] == "mol-polecat-work.submit-and-exit")] else [] end' 2>/dev/null)
+  STEP_COUNT=$(printf '%s' "$STEP_MATCHES" | jq -r 'length' 2>/dev/null)
+  if [ "$STEP_LIST_CODE" -ne 0 ] || [ "$STEP_COUNT" != "1" ]; then
+    echo "Expected exactly one claimed submit step, found ${STEP_COUNT:-unreadable}; refusing to drain." >&2
+    exit 1
+  fi
+  STEP_BEAD_ID=$(printf '%s' "$STEP_MATCHES" | jq -r '.[0].id // empty' 2>/dev/null)
+  if [ -z "$STEP_BEAD_ID" ]; then
+    echo "Claimed submit step has no exact id; refusing to drain." >&2
+    exit 1
+  fi
+  STEP_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
+  STEP_CODE=$?
+  STEP_STATUS=$(printf '%s' "$STEP_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
+  STEP_ASSIGNEE=$(printf '%s' "$STEP_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
+  STEP_REF=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.step_ref"] // empty' 2>/dev/null)
+  ROOT_BEAD_ID=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.root_bead_id"] // empty' 2>/dev/null)
+  if [ "$STEP_CODE" -ne 0 ] || [ "$STEP_STATUS" != "in_progress" ] ||
+     [ "$STEP_ASSIGNEE" != "$EXPECTED_ASSIGNEE" ] ||
+     [ "$STEP_REF" != "mol-polecat-work.submit-and-exit" ] ||
+     [ -z "$ROOT_BEAD_ID" ]; then
+    echo "Claimed submit step identity/state mismatch; refusing to drain." >&2
+    exit 1
+  fi
+  ROOT_JSON=$(gc bd show "$ROOT_BEAD_ID" --json 2>/dev/null)
+  ROOT_CODE=$?
+  ROOT_INPUT_CONVOY=$(printf '%s' "$ROOT_JSON" | jq -r '.[0].metadata["gc.input_convoy_id"] // empty' 2>/dev/null)
+  if [ "$ROOT_CODE" -ne 0 ] || [ "$ROOT_INPUT_CONVOY" != "{{convoy_id}}" ]; then
+    echo "Claimed submit step does not belong to input convoy {{convoy_id}}; refusing to drain." >&2
+    exit 1
+  fi
+  if ! gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed \
+       --notes "Submit complete: auto_push=false branch-ready state recorded on $WORK_BEAD_ID"; then
+    echo "Failed to close claimed submit step $STEP_BEAD_ID; refusing to drain." >&2
+    exit 1
+  fi
+  VERIFY_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
+  VERIFY_STATUS=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
+  VERIFY_OUTCOME=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].metadata["gc.outcome"] // empty' 2>/dev/null)
+  if [ "$VERIFY_STATUS" != "closed" ] || [ "$VERIFY_OUTCOME" != "pass" ]; then
+    echo "Submit step $STEP_BEAD_ID did not verify closed/pass; refusing to drain." >&2
+    exit 1
+  fi
   gc runtime drain-ack
+  # END_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION
   exit 0
 fi
 git push origin HEAD
@@ -405,18 +479,14 @@ if [ "$REMOTE_REF" != "$LOCAL_HEAD" ]; then
 fi
 ```
 
-**4. Clean up local branch (prevent stale branch accumulation):**
+**4. Update metadata on the work bead:**
 ```bash
-BRANCH=$(git branch --show-current)
-git checkout --detach                 # Detach so we can delete the branch
-git branch -D "$BRANCH"              # Branch is pushed; refinery owns it now
-```
-
-**5. Update metadata on the work bead:**
-```bash
-gc bd update "$WORK_BEAD_ID" \
-  --set-metadata target={{base_branch}} \
-  --notes "Implemented: <brief summary>"
+if ! gc bd update "$WORK_BEAD_ID" \
+     --set-metadata target={{base_branch}} \
+     --notes "Implemented: <brief summary>"; then
+  echo "Failed to record refinery handoff metadata; refusing to drain." >&2
+  exit 1
+fi
 ```
 Branch was recorded in workspace-setup and is already in metadata.
 This adds the target for the refinery. If an existing pull request was
@@ -424,10 +494,22 @@ provided by the caller, `metadata.existing_pr` is preserved for refinery
 validation. The refinery records canonical `pr_url` only after verifying
 the PR is open and matches the branch, base, and origin repository.
 
-**6. Reassign to refinery:**
+**5. Reassign to refinery and verify the exact handoff:**
 ```bash
 REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
-gc bd update "$WORK_BEAD_ID" --status=open --assignee="$REFINERY_TARGET" --set-metadata gc.routed_to=""
+if ! gc bd update "$WORK_BEAD_ID" --status=open --assignee="$REFINERY_TARGET" --set-metadata gc.routed_to=""; then
+  echo "Failed to assign $WORK_BEAD_ID to $REFINERY_TARGET; refusing to drain." >&2
+  exit 1
+fi
+HANDOFF_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
+HANDOFF_CODE=$?
+HANDOFF_STATUS=$(printf '%s' "$HANDOFF_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
+HANDOFF_ASSIGNEE=$(printf '%s' "$HANDOFF_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
+if [ "$HANDOFF_CODE" -ne 0 ] || [ "$HANDOFF_STATUS" != "open" ] ||
+   [ "$HANDOFF_ASSIGNEE" != "$REFINERY_TARGET" ]; then
+  echo "Refinery handoff did not verify exact status/assignee; refusing to drain." >&2
+  exit 1
+fi
 ```
 
 `${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery` resolves to
@@ -446,6 +528,29 @@ merge, and close the bead. If there's a conflict, the refinery puts the
 bead back in the pool with `rejection_reason` metadata — a new polecat
 picks it up and resumes from the existing branch.
 
+**6. Clean up the local branch after verified handoff.**
+
+Do not detach or delete the local branch before step 5 verifies the exact
+refinery assignment. If the process crashes before that verification, a restart
+must still be on the valid per-bead branch so submit-and-exit can retry safely.
+After verification, the durable source state is terminal evidence for the
+restart guard, so local cleanup is safe.
+
+```bash
+BRANCH=$(git branch --show-current)
+if [ -n "$BRANCH" ]; then
+  if git checkout --detach; then
+    git branch -D "$BRANCH" ||
+      echo "WARN: verified handoff succeeded, but local branch $BRANCH could not be deleted"
+  else
+    echo "WARN: verified handoff succeeded, but worktree could not detach from $BRANCH"
+  fi
+fi
+```
+
+Cleanup is best-effort after the verified durable handoff. A cleanup warning
+must not undo or duplicate that handoff.
+
 **7. Signal refinery to check for work immediately (belt-and-suspenders):**
 ```bash
 REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
@@ -453,15 +558,73 @@ gc session wake "$REFINERY_TARGET" || true
 gc session nudge "$REFINERY_TARGET" "Run 'gc prime' to check merge queue and begin processing." || true
 ```
 
-The `gc bd update` in step 6 generates a `bead.updated` event the refinery's
+The `gc bd update` in step 5 generates a `bead.updated` event the refinery's
 event-watch will see, but that can take up to `event_timeout` seconds. Wake
 starts a stopped on_demand session; nudge leaves a visible prompt for a running
 one as soon as it is ready for input. Failure is non-fatal: the refinery finds
 the work on its next poll.
 
-**8. Signal reconciler and exit.**
+**8. Complete the claimed Graph-v2 step, then signal reconciler and exit.**
+
+The source work bead remains open for the refinery. Close only this formula's
+claimed `submit-and-exit` step, and only after the handoff above succeeded.
+Use an exact, read-only assignee query: `gc hook --claim` is forbidden here
+because it can claim unrelated routed work if the expected step is absent.
+
 ```bash
+# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION
+EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
+if [ -z "$EXPECTED_ASSIGNEE" ]; then
+  echo "Cannot identify the current session assignee; refusing to drain." >&2
+  exit 1
+fi
+STEP_LIST_JSON=$(gc bd list --assignee "$EXPECTED_ASSIGNEE" --status=in_progress --limit=0 --json 2>/dev/null)
+STEP_LIST_CODE=$?
+STEP_MATCHES=$(printf '%s' "$STEP_LIST_JSON" | jq -c 'if type == "array" then [.[] | select(.metadata["gc.step_ref"] == "mol-polecat-work.submit-and-exit")] else [] end' 2>/dev/null)
+STEP_COUNT=$(printf '%s' "$STEP_MATCHES" | jq -r 'length' 2>/dev/null)
+if [ "$STEP_LIST_CODE" -ne 0 ] || [ "$STEP_COUNT" != "1" ]; then
+  echo "Expected exactly one claimed submit step, found ${STEP_COUNT:-unreadable}; refusing to drain." >&2
+  exit 1
+fi
+STEP_BEAD_ID=$(printf '%s' "$STEP_MATCHES" | jq -r '.[0].id // empty' 2>/dev/null)
+if [ -z "$STEP_BEAD_ID" ]; then
+  echo "Claimed submit step has no exact id; refusing to drain." >&2
+  exit 1
+fi
+STEP_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
+STEP_CODE=$?
+STEP_STATUS=$(printf '%s' "$STEP_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
+STEP_ASSIGNEE=$(printf '%s' "$STEP_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
+STEP_REF=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.step_ref"] // empty' 2>/dev/null)
+ROOT_BEAD_ID=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.root_bead_id"] // empty' 2>/dev/null)
+if [ "$STEP_CODE" -ne 0 ] || [ "$STEP_STATUS" != "in_progress" ] ||
+   [ "$STEP_ASSIGNEE" != "$EXPECTED_ASSIGNEE" ] ||
+   [ "$STEP_REF" != "mol-polecat-work.submit-and-exit" ] ||
+   [ -z "$ROOT_BEAD_ID" ]; then
+  echo "Claimed submit step identity/state mismatch; refusing to drain." >&2
+  exit 1
+fi
+ROOT_JSON=$(gc bd show "$ROOT_BEAD_ID" --json 2>/dev/null)
+ROOT_CODE=$?
+ROOT_INPUT_CONVOY=$(printf '%s' "$ROOT_JSON" | jq -r '.[0].metadata["gc.input_convoy_id"] // empty' 2>/dev/null)
+if [ "$ROOT_CODE" -ne 0 ] || [ "$ROOT_INPUT_CONVOY" != "{{convoy_id}}" ]; then
+  echo "Claimed submit step does not belong to input convoy {{convoy_id}}; refusing to drain." >&2
+  exit 1
+fi
+if ! gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed \
+     --notes "Submit complete: source bead $WORK_BEAD_ID handed to $REFINERY_TARGET"; then
+  echo "Failed to close claimed submit step $STEP_BEAD_ID; refusing to drain." >&2
+  exit 1
+fi
+VERIFY_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
+VERIFY_STATUS=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
+VERIFY_OUTCOME=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].metadata["gc.outcome"] // empty' 2>/dev/null)
+if [ "$VERIFY_STATUS" != "closed" ] || [ "$VERIFY_OUTCOME" != "pass" ]; then
+  echo "Submit step $STEP_BEAD_ID did not verify closed/pass; refusing to drain." >&2
+  exit 1
+fi
 gc runtime drain-ack
+# END_GASTOWN_REFINERY_STEP_COMPLETION
 exit
 ```
 
