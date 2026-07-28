@@ -155,12 +155,15 @@ test_polecat_startup_uses_standard_hook_claim() {
 }
 
 test_polecat_submit_guard_and_step_completion_contracts() {
-    local formula prompt fragment
+    local formula prompt fragment lease_command
     formula="$GASTOWN/formulas/mol-polecat-work.toml"
     prompt="$GASTOWN/agents/polecat/prompt.template.md"
     fragment="$GASTOWN/template-fragments/approval-fallacy.template.md"
+    lease_command="$GASTOWN/commands/polecat-lease/run.sh"
 
     parse_toml "$formula"
+    [[ -x "$lease_command" ]] ||
+        fail "deterministic polecat lease command must be executable"
     if ! python3 - "$prompt" "$fragment" <<'PY'
 import sys
 
@@ -200,16 +203,39 @@ PY
 import sys
 
 text = open(sys.argv[1], encoding="utf-8").read()
-push_verified = text.index('if [ "$REMOTE_REF" != "$LOCAL_HEAD" ]')
+workspace_lease = text.index('gc gastown polecat-lease workspace')
+explicit_publish = text.index('gc gastown polecat-lease publish-rebase')
+new_branch = text.index('git checkout -B "$BRANCH" "origin/{{base_branch}}"')
+submit_lease = text.index('# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT')
+manual_ready = text.index('echo "auto_push=false: halting at branch-ready')
 handoff_verified = text.index('Refinery handoff did not verify exact status/assignee')
 cleanup = text.index('git checkout --detach')
 step_completion = text.index('# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION')
-if not push_verified < handoff_verified < cleanup < step_completion:
+if not workspace_lease < explicit_publish < new_branch < submit_lease:
+    raise SystemExit(1)
+if not submit_lease < manual_ready < handoff_verified < cleanup < step_completion:
     raise SystemExit(1)
 PY
     then
-        fail "local branch cleanup must follow exact refinery handoff verification"
+        fail "deterministic workspace/submit command and handoff cleanup ordering drifted"
     fi
+    ! grep -F 'git push' "$formula" >/dev/null ||
+        fail "formula prose must delegate every push to the deterministic command"
+    grep -F 'option no-deref' "$lease_command" >/dev/null &&
+        grep -F '"create $EXPECTED_REF $EXPECTED_OID"' "$lease_command" >/dev/null &&
+        grep -F '"create $SUBMIT_REF $head_oid"' "$lease_command" >/dev/null &&
+        grep -F -- '--force-with-lease="$BRANCH_REF:$EXPECTED_OID"' "$lease_command" >/dev/null &&
+        grep -F -- '-- "$PUSH_URL" "$SUBMIT_REF:$BRANCH_REF"' "$lease_command" >/dev/null &&
+        grep -F '"delete $SUBMIT_REF $SUBMIT_OID"' "$lease_command" >/dev/null ||
+        fail "lease command must retain exact no-deref capture/freeze/push/cleanup primitives"
+    ! grep -E 'git push[[:space:]]+(--force|-f)([[:space:]]|$)' "$lease_command" >/dev/null ||
+        fail "polecat lease command must never use an unconditional force push"
+    grep -F 'auto_push=false is unsupported for a rejection-rebased branch' \
+        "$lease_command" >/dev/null ||
+        fail "rejected auto_push=false must stop before creating a dead-end frozen submit"
+    grep -F '`polecat_push_lease_*`' "$prompt" >/dev/null &&
+        grep -F 'authoritative repo-local lease refs' "$prompt" >/dev/null ||
+        fail "polecat prompt must distinguish lease refs from the metadata mirror"
     grep -F 'Cleanup is best-effort after the verified durable handoff' "$formula" >/dev/null ||
         fail "post-handoff local cleanup must be explicitly best-effort"
     grep -F 'The `gc bd update` in step 5 generates' "$formula" >/dev/null ||

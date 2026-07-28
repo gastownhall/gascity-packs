@@ -91,6 +91,7 @@ Work beads carry structured metadata for lifecycle tracking and handoff:
 | `existing_pr` | caller | Before dispatch | Existing PR URL to reuse instead of creating another PR |
 | `pr_url` | refinery | PR handoff | Canonical PR URL recorded after validation |
 | `rejection_reason` | refinery (on failure) | On reject | Why the merge was rejected |
+| `polecat_push_lease_*` | deterministic lease command | Rejection recovery only | Operator-visible mirror of the authoritative repo-local lease refs; never edit by hand |
 
 **On branch-setup:** You record `work_dir` and `branch` immediately.
 This enables crash recovery — the witness can find and salvage your work.
@@ -102,6 +103,13 @@ it for refinery to validate and canonicalize into `pr_url`.
 **On rejection:** The refinery puts the bead back in the pool with
 `rejection_reason` set and the branch intact. A new polecat picks it up,
 sees the existing branch and reason, and resumes instead of redoing everything.
+For a rejected branch, run the formula's `gc gastown polecat-lease` command.
+It records the exact expected remote tip in create-only repo-local refs, rebases
+detached, freezes the reviewed submit, and uses an exact
+`--force-with-lease=<ref>:<sha>` compare-and-swap. Bead metadata is only its
+verified mirror. Never edit or recreate either state, reproduce the protocol
+manually, or use an unconditional force push. The command cleans the lease only
+after the frozen push destination is verified at the exact submit commit.
 
 Read metadata:
 ```bash

@@ -1058,30 +1058,132 @@ def test_validate_gastown_orchestration_contract_accepts_current_pack() -> None:
     )
 
 
-def test_validate_gastown_orchestration_contract_rejects_missing_build_handoff(tmp_path) -> None:
-    formulas = tmp_path / "gastown" / "formulas"
+def write_gastown_contract_fixture(tmp_path):
+    pack = tmp_path / "gastown"
+    formulas = pack / "formulas"
     formulas.mkdir(parents=True)
     for formula_name, fragments in gascity_pack_inference_gate.all_gastown_formula_contracts().items():
-        text = "\n".join(fragments)
-        if formula_name == "mol-polecat-work":
-            text = text.replace("--assignee=\"$REFINERY_TARGET\"", "")
-        (formulas / f"{formula_name}.toml").write_text(text, encoding="utf-8")
+        (formulas / f"{formula_name}.toml").write_text(
+            "\n".join(fragments),
+            encoding="utf-8",
+        )
+    command = pack / "commands" / "polecat-lease" / "run.sh"
+    command.parent.mkdir(parents=True)
+    command.write_text(
+        "\n".join(
+            (
+                *gascity_pack_inference_gate.GASTOWN_POLECAT_LEASE_COMMAND_ORDER,
+                *gascity_pack_inference_gate.GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT,
+            )
+        ),
+        encoding="utf-8",
+    )
+    return pack
+
+
+def test_validate_gastown_orchestration_contract_rejects_missing_build_handoff(tmp_path) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "--assignee=\"$REFINERY_TARGET\"",
+            "",
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="mol-polecat-work"):
-        gascity_pack_inference_gate.validate_gastown_orchestration_contract(tmp_path / "gastown")
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+@pytest.mark.parametrize(
+    "required_fragment",
+    gascity_pack_inference_gate.GASTOWN_POLECAT_FORMULA_LEASE_ORDER,
+)
+def test_validate_gastown_orchestration_contract_rejects_missing_formula_lease_call(
+    tmp_path,
+    required_fragment: str,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(required_fragment, "", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="mol-polecat-work"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+@pytest.mark.parametrize(
+    "required_fragment",
+    (
+        *gascity_pack_inference_gate.GASTOWN_POLECAT_LEASE_COMMAND_ORDER,
+        *gascity_pack_inference_gate.GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT,
+    ),
+)
+def test_validate_gastown_orchestration_contract_rejects_missing_lease_primitive(
+    tmp_path,
+    required_fragment: str,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    command = pack / "commands" / "polecat-lease" / "run.sh"
+    command.write_text(
+        command.read_text(encoding="utf-8").replace(required_fragment, "", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="polecat-lease"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_out_of_order_lease_calls(tmp_path) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    first, second, *_ = gascity_pack_inference_gate.GASTOWN_POLECAT_FORMULA_LEASE_ORDER
+    text = formula.read_text(encoding="utf-8")
+    text = text.replace(first, "__FIRST__", 1).replace(second, first, 1)
+    formula.write_text(text.replace("__FIRST__", second, 1), encoding="utf-8")
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="out of order"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_direct_formula_push(tmp_path) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8") + "\ngit push origin HEAD\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="direct git push"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_unconditional_force_push(tmp_path) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    command = pack / "commands" / "polecat-lease" / "run.sh"
+    command.write_text(
+        command.read_text(encoding="utf-8") +
+        "\ngit push --force origin HEAD:refs/heads/polecat/source-1\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="unconditional force push"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
 
 
 def test_validate_gastown_orchestration_contract_rejects_missing_refinery_false_completion_guard(tmp_path) -> None:
-    formulas = tmp_path / "gastown" / "formulas"
-    formulas.mkdir(parents=True)
-    for formula_name, fragments in gascity_pack_inference_gate.all_gastown_formula_contracts().items():
-        text = "\n".join(fragments)
-        if formula_name == "mol-refinery-patrol":
-            text = text.replace("branch_has_real_change", "")
-        (formulas / f"{formula_name}.toml").write_text(text, encoding="utf-8")
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-refinery-patrol.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace("branch_has_real_change", ""),
+        encoding="utf-8",
+    )
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="mol-refinery-patrol"):
-        gascity_pack_inference_gate.validate_gastown_orchestration_contract(tmp_path / "gastown")
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
 
 
 def test_validate_methodology_flow_contracts_accept_current_packs() -> None:
@@ -1137,6 +1239,13 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
         "mol-idea-to-plan",
     }
     assert "gc session wake \"$REFINERY_TARGET\"" in contracts["mol-polecat-work"]
+    assert "gc gastown polecat-lease workspace" in contracts["mol-polecat-work"]
+    assert "gc gastown polecat-lease submit" in contracts["mol-polecat-work"]
+    assert '--auto-push "$AUTO_PUSH_BOOL"' in contracts["mol-polecat-work"]
+    assert (
+        '--force-with-lease="$BRANCH_REF:$EXPECTED_OID"'
+        in gascity_pack_inference_gate.GASTOWN_POLECAT_LEASE_COMMAND_ORDER
+    )
     assert 'git worktree add --detach "$MERGE_WT" "origin/$TARGET"' in contracts["mol-refinery-patrol"]
     assert 'gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"' in contracts["mol-refinery-patrol"]
     assert "gc bd close $WORK --reason \"Pull request ready: $PR_URL\"" in contracts["mol-refinery-patrol"]

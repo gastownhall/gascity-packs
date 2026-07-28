@@ -66,6 +66,35 @@ GASTOWN_REVIEW_TITLE = "Gastown orchestration gate: review leg"
 GASTOWN_REVIEW_ASSIGNMENT_TITLE = "Review Gastown orchestration gate fixture"
 SMOKE_TITLE_PREFIX = "RC model smoke"
 GASTOWN_ALWAYS_ON_AGENTS = ("mayor", "deacon", "boot", "witness")
+GASTOWN_POLECAT_FORMULA_LEASE_ORDER = (
+    "gc gastown polecat-lease workspace",
+    "gc gastown polecat-lease publish-rebase",
+    "# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT",
+    "gc gastown polecat-lease submit",
+)
+GASTOWN_POLECAT_LEASE_COMMAND_ORDER = (
+    '"create $EXPECTED_REF $EXPECTED_OID"',
+    '"update $BRANCH_REF $result $PRE_OID"',
+    '"create $SUBMIT_REF $head_oid"',
+    '--force-with-lease="$BRANCH_REF:$EXPECTED_OID"',
+)
+GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT = (
+    "option no-deref",
+    '"create $CONTEXT_REF $CONTEXT_OID"',
+    '"create $PRE_REF $PRE_OID"',
+    '"create $BASE_REF $BASE_OID"',
+    '"create $REBASED_REF $result"',
+    '-- "$PUSH_URL" "$SUBMIT_REF:$BRANCH_REF"',
+    '"delete $CONTEXT_REF $CONTEXT_OID"',
+    '"delete $EXPECTED_REF $EXPECTED_OID"',
+    '"delete $SUBMIT_REF $SUBMIT_OID"',
+    '.metadata["gc.var.base_branch"] == $base',
+    "source metadata.auto_push=false prohibits an automatic push",
+    "auto_push=false is unsupported for a rejection-rebased branch",
+    'WITNESS_CANONICAL="${ROOT_RIG_NAME:+$ROOT_RIG_NAME/}${ROOT_BINDING_PREFIX}witness"',
+    "current Git worktree does not equal source metadata.work_dir",
+    "exact Graph step ownership/state changed during the lease protocol",
+)
 GASTOWN_FORMULA_CONTRACTS = {
     "mol-review-leg": (
         "write the FULL report into the bead notes",
@@ -109,7 +138,8 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "{{lint_command}}",
         "{{build_command}}",
         "{{test_command}}",
-        "git push origin HEAD",
+        *GASTOWN_POLECAT_FORMULA_LEASE_ORDER,
+        '--auto-push "$AUTO_PUSH_BOOL"',
         "gc bd update \"$WORK_BEAD_ID\" \\",
         "--set-metadata target={{base_branch}}",
         "--status=open --assignee=\"$REFINERY_TARGET\"",
@@ -2820,6 +2850,43 @@ def validate_gastown_orchestration_contract(pack_source: Path) -> None:
         for fragment in required_fragments:
             if fragment not in text:
                 missing.append(f"{formula_name}: missing contract fragment {fragment!r}")
+        if formula_name == "mol-polecat-work":
+            lease_positions = [
+                text.find(fragment) for fragment in GASTOWN_POLECAT_FORMULA_LEASE_ORDER
+            ]
+            if all(position >= 0 for position in lease_positions) and lease_positions != sorted(
+                lease_positions
+            ):
+                missing.append(
+                    "mol-polecat-work: deterministic lease command calls are out of order"
+                )
+            if re.search(r"\bgit push\b", text):
+                missing.append(
+                    "mol-polecat-work: direct git push is forbidden; use polecat-lease"
+                )
+
+    lease_path = pack_source / "commands" / "polecat-lease" / "run.sh"
+    if not lease_path.is_file():
+        missing.append(f"polecat-lease: missing deterministic command {lease_path}")
+    else:
+        lease_text = lease_path.read_text(encoding="utf-8", errors="replace")
+        for fragment in (
+            *GASTOWN_POLECAT_LEASE_COMMAND_ORDER,
+            *GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT,
+        ):
+            if fragment not in lease_text:
+                missing.append(f"polecat-lease: missing contract fragment {fragment!r}")
+        lease_positions = [
+            lease_text.find(fragment) for fragment in GASTOWN_POLECAT_LEASE_COMMAND_ORDER
+        ]
+        if all(position >= 0 for position in lease_positions) and lease_positions != sorted(
+            lease_positions
+        ):
+            missing.append(
+                "polecat-lease: capture/rebase/freeze/push primitives are out of order"
+            )
+        if re.search(r"\bgit push\s+(?:\\\s*)?(?:--force|-f)(?=\s|$)", lease_text):
+            missing.append("polecat-lease: unconditional force push is forbidden")
     if missing:
         raise GateError("Gastown orchestration contract drifted:\n" + "\n".join(f"- {item}" for item in missing))
 

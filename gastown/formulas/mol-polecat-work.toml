@@ -125,47 +125,36 @@ Check if `metadata.branch` already records a branch:
 BRANCH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.branch // empty')
 ```
 
-**If branch exists in metadata** — treat it as authoritative. This
-metadata may come from rejection recovery or from a caller that wants
-work applied to an existing branch. Fetch the named remote branch first.
-If `origin/$BRANCH` exists, make the local branch fast-forward to that
-remote tip or stop on divergence:
+**If branch exists in metadata** — use the deterministic lease command.
+It performs authoritative synchronization and, for a rejected branch, owns
+the detached rebase plus the crash-safe Git ref transactions. Do not reproduce
+that protocol manually or replace its lease refs with bead metadata:
 ```bash
-git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || \
-    echo "Could not fetch metadata.branch=$BRANCH from origin. Checking local refs before stopping."
-if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
-    if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-        git checkout "$BRANCH" || exit 1
-        git merge --ff-only "origin/$BRANCH" || {
-            echo "Local branch $BRANCH diverged from origin/$BRANCH."
-            echo "STOP. Reconcile the branch before continuing."
-            gc runtime drain-ack
-            exit 1
-        }
-    else
-        git checkout --track -b "$BRANCH" "origin/$BRANCH" || exit 1
-    fi
-elif git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-    git checkout "$BRANCH" || exit 1
-else
-    echo "metadata.branch=$BRANCH was set but no local or origin branch exists."
-    echo "STOP. Do not create a different branch."
-    gc runtime drain-ack
+WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"
+if ! gc gastown polecat-lease workspace \
+     --source "$WORK_BEAD_ID" \
+     --convoy "{{convoy_id}}" \
+     --base "{{base_branch}}" \
+     --branch "$BRANCH" \
+     --witness "$WITNESS_TARGET"; then
+    echo "Deterministic workspace/lease recovery stopped; follow its exact diagnostic." >&2
     exit 1
 fi
 ```
-If resuming a rejected branch, rebase onto latest base:
+
+If the command reports a rebase conflict, resolve it while detached and run
+`git rebase --continue`. Then explicitly publish the reviewed result:
 ```bash
-REJECTION=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.rejection_reason // empty')
-if [ -n "$REJECTION" ]; then
-    git rebase origin/{{base_branch}}
-    # If conflicts: resolve them (this is likely the rejection reason)
-    # After resolving: git rebase --continue
-    gc bd update "$WORK_BEAD_ID" \
-      --unset-metadata rejection_reason \
-      --set-metadata fork_sha="$(git rev-parse "origin/{{base_branch}}")"
-fi
+gc gastown polecat-lease publish-rebase \
+  --source "$WORK_BEAD_ID" \
+  --convoy "{{convoy_id}}" \
+  --base "{{base_branch}}" \
+  --branch "$BRANCH" \
+  --witness "$WITNESS_TARGET"
 ```
+Never reset or recreate `refs/gascity/polecat-push-leases/*`. They are the
+authoritative crash/race state; the similarly named bead metadata is only a
+verified operator-visible mirror.
 
 **If no branch** — create one and record it. Always branch from the
 freshly-fetched `origin/{{base_branch}}`, never from local
@@ -364,6 +353,30 @@ but we never push with untracked work left behind.
 ```bash
 AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
 if [ "$AUTO_PUSH" = "false" ]; then
+  AUTO_PUSH_BOOL=false
+else
+  AUTO_PUSH_BOOL=true
+fi
+WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"
+# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT
+if ! gc gastown polecat-lease submit \
+     --source "$WORK_BEAD_ID" \
+     --convoy "{{convoy_id}}" \
+     --base "{{base_branch}}" \
+     --branch "$EXPECTED_BRANCH" \
+     --witness "$WITNESS_TARGET" \
+     --auto-push "$AUTO_PUSH_BOOL"; then
+  echo "Deterministic submit/lease command stopped; no refinery handoff is allowed." >&2
+  exit 1
+fi
+# END_GASTOWN_POLECAT_LEASE_SUBMIT
+```
+For safety, `auto_push=false` is supported only when no rejection-rebase lease
+exists. On a rejection-rebased branch the command stops before submit freeze;
+the source and live Graph step remain recoverable, and no push or handoff occurs.
+
+```bash
+if [ "$AUTO_PUSH" = "false" ]; then
   echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"
   BRANCH=$(git branch --show-current)
   if ! gc bd update "$WORK_BEAD_ID" \
@@ -447,35 +460,6 @@ if [ "$AUTO_PUSH" = "false" ]; then
   gc runtime drain-ack
   # END_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION
   exit 0
-fi
-git push origin HEAD
-PUSH_EXIT=$?
-if [ $PUSH_EXIT -ne 0 ]; then
-    echo "PUSH FAILED (exit $PUSH_EXIT)"
-    echo "Branch '$CURRENT_BRANCH' was NOT pushed to origin."
-    echo "Aborting handoff — bead stays with polecat."
-    echo ""
-    echo "Diagnose the push failure (network, auth, force-needed?) and re-run submit-and-exit."
-    gc runtime drain-ack
-    exit 1
-fi
-# Verify the ref is reachable on origin before trusting the push succeeded.
-REMOTE_REF=$(git ls-remote origin "refs/heads/$CURRENT_BRANCH" 2>/dev/null | awk '{print $1}')
-LOCAL_HEAD=$(git rev-parse HEAD)
-if [ -z "$REMOTE_REF" ]; then
-    echo "PUSH VERIFICATION FAILED"
-    echo "  git push exited 0 but 'git ls-remote' returned no ref for '$CURRENT_BRANCH' on origin."
-    echo "  Branch is local-only. Aborting handoff."
-    gc runtime drain-ack
-    exit 1
-fi
-if [ "$REMOTE_REF" != "$LOCAL_HEAD" ]; then
-    echo "PUSH VERIFICATION FAILED"
-    echo "  origin/$CURRENT_BRANCH = $REMOTE_REF"
-    echo "  local HEAD             = $LOCAL_HEAD"
-    echo "  Branch tip on origin does not match local HEAD. Aborting handoff."
-    gc runtime drain-ack
-    exit 1
 fi
 ```
 
