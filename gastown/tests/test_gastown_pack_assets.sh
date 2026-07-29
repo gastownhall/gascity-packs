@@ -144,14 +144,14 @@ test_polecat_startup_uses_standard_hook_claim() {
         fail "polecat prompt should call the standard hook claim path"
     grep -F 'gc hook --claim --json' "$propulsion" >/dev/null ||
         fail "polecat propulsion fragment should call the standard hook claim path"
-    grep -F 'After closing any formula step bead, immediately run' "$prompt" >/dev/null ||
+    grep -F 'After completing any formula step bead through the' "$prompt" >/dev/null ||
         fail "polecat prompt must require hook continuation after each formula step"
     grep -F 'Poll up to 60 seconds (6 attempts, 10 seconds apart)' "$prompt" >/dev/null &&
         grep -F 'for i in $(seq 1 6); do' "$prompt" >/dev/null &&
         grep -F 'sleep 10' "$prompt" >/dev/null &&
         grep -F 'gc hook --claim --drain-ack --json' "$prompt" >/dev/null ||
         fail "polecat prompt must wait through bounded control gaps before draining"
-    grep -F 'After closing a step bead,' "$propulsion" >/dev/null ||
+    grep -F 'Complete each step through' "$propulsion" >/dev/null ||
         fail "polecat propulsion fragment must require hook continuation after each formula step"
     grep -F 'bounded 60-second' "$propulsion" >/dev/null ||
         fail "polecat propulsion fragment must preserve the poll-before-drain contract"
@@ -162,15 +162,61 @@ test_polecat_startup_uses_standard_hook_claim() {
 }
 
 test_polecat_submit_guard_and_step_completion_contracts() {
-    local formula prompt fragment lease_command
+    local formula prompt fragment lease_command step_command
     formula="$GASTOWN/formulas/mol-polecat-work.toml"
     prompt="$GASTOWN/agents/polecat/prompt.template.md"
     fragment="$GASTOWN/template-fragments/approval-fallacy.template.md"
     lease_command="$GASTOWN/commands/polecat-lease/run.sh"
+    step_command="$GASTOWN/commands/polecat-step/run.sh"
 
     parse_toml "$formula"
     [[ -x "$lease_command" ]] ||
         fail "deterministic polecat lease command must be executable"
+    [[ -x "$step_command" ]] ||
+        fail "deterministic polecat step command must be executable"
+    ! grep -F 'gc hook' "$step_command" >/dev/null ||
+        fail "polecat step completion must never claim unrelated work"
+    grep -F 'gc.outcome=pass' "$step_command" >/dev/null &&
+        grep -F 'gc.formula_contract' "$step_command" >/dev/null &&
+        grep -F 'gc.input_convoy_id' "$step_command" >/dev/null ||
+        fail "polecat step command must bind outcome, Graph-v2 root, and input convoy"
+    if ! python3 - "$formula" <<'PY'
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    document = tomllib.load(handle)
+
+steps = {step["id"]: step for step in document.get("steps", [])}
+expected = [
+    "load-context",
+    "workspace-setup",
+    "preflight-tests",
+    "implement",
+    "self-review",
+]
+errors = []
+for step_id in expected:
+    description = steps.get(step_id, {}).get("description", "")
+    step_ref = f'mol-polecat-work.{step_id}'
+    if description.count("gc gastown polecat-step complete") != 1:
+        errors.append(f"{step_id}: must invoke polecat-step complete exactly once")
+    if '--convoy "{{convoy_id}}"' not in description:
+        errors.append(f"{step_id}: must bind the exact input convoy")
+    if f'--step-ref "{step_ref}"' not in description:
+        errors.append(f"{step_id}: must bind exact step ref {step_ref}")
+    if "Do not run `gc bd close` on this step." not in description:
+        errors.append(f"{step_id}: must forbid raw close substitution")
+    if "POLECAT_STEP_COMPLETE" not in description:
+        errors.append(f"{step_id}: must wait for verified completion output")
+
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    raise SystemExit(1)
+PY
+    then
+        fail "every non-terminal polecat worker stage must use exact validated completion"
+    fi
     if ! python3 - "$prompt" "$fragment" <<'PY'
 import sys
 

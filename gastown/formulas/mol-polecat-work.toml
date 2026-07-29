@@ -21,8 +21,9 @@ and reassigns it to the refinery. The refinery merges and closes.
 implementation bead or set its status=closed. Even if you believe the code is
 already merged, reassign it to refinery — only the refinery verifies merges and
 closes source work. Graph-v2 workflow step beads are different: after their
-prescribed action succeeds, close the claimed step with `gc.outcome=pass` so
-the workflow can advance.
+prescribed action succeeds, use the exact completion path in that stage's
+description so `gc.outcome=pass`, ownership, and workflow provenance are all
+verified. Never substitute `gc bd close` for that path.
 `{{base_branch}}` may come from the work bead's own `metadata.target` or
 be inherited from a parent convoy with `metadata.target` set.
 
@@ -133,7 +134,17 @@ gc mail send <rig>/witness -s "HELP: Unclear requirements" -m "Issue: $WORK_BEAD
 Question: <what you need clarified>"
 ```
 
-**Exit criteria:** You understand the work and can begin."""
+**Exit criteria:** You understand the work and can begin.
+
+**Required final action for this stage:** Only after the exit criteria are
+true, run exactly:
+```bash
+gc gastown polecat-step complete \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.load-context"
+```
+Do not run `gc bd close` on this step. Do not claim the next step until the
+command prints `POLECAT_STEP_COMPLETE`."""
 metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "polecat-work", "gc.session_affinity" = "require" }
 
 [[steps]]
@@ -273,7 +284,17 @@ Empty setup_command → skip.
 
 **Exit criteria:** In your worktree, on a clean feature branch, rebased
 on latest {{base_branch}}, deps installed, worktree and branch recorded
-on the bead."""
+on the bead.
+
+**Required final action for this stage:** Only after the exit criteria are
+true, run exactly:
+```bash
+gc gastown polecat-step complete \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.workspace-setup"
+```
+Do not run `gc bd close` on this step. Do not claim the next step until the
+command prints `POLECAT_STEP_COMPLETE`."""
 metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "polecat-work", "gc.session_affinity" = "require" }
 
 [[steps]]
@@ -287,8 +308,9 @@ Check if the codebase is healthy BEFORE starting your work.
 **Config: lint_command = {{lint_command}}**
 **Config: test_command = {{test_command}}**
 
-**Skip this step if resuming a rejected branch** — pre-flights were
-already verified on the prior attempt. Close this step and proceed.
+**Skip the test commands if resuming a rejected branch** — pre-flights were
+already verified on the prior attempt. You must still use the required
+completion command below.
 
 **1. Run pre-flights (skip empty commands silently):**
 ```bash
@@ -314,7 +336,18 @@ gc mail send <rig>/witness -s "NOTICE: {{base_branch}} has failing pre-flights" 
   -m "Filed: <bead-id>. Proceeding with $WORK_BEAD_ID."
 ```
 
-**Exit criteria:** Pre-flights pass (or pre-existing bug filed), ready to implement."""
+**Exit criteria:** Pre-flights pass (or pre-existing bug filed), ready to
+implement.
+
+**Required final action for this stage:** Only after the exit criteria are
+true, run exactly:
+```bash
+gc gastown polecat-step complete \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.preflight-tests"
+```
+Do not run `gc bd close` on this step. Do not claim the next step until the
+command prints `POLECAT_STEP_COMPLETE`."""
 metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "polecat-work", "gc.session_affinity" = "require" }
 
 [[steps]]
@@ -397,7 +430,17 @@ gc runtime request-restart
 This blocks until the controller kills your session. The next session
 resumes from context (re-reads formula steps, checks git/bead state).
 
-**Exit criteria:** Implementation complete, all changes committed."""
+**Exit criteria:** Implementation complete, all changes committed.
+
+**Required final action for this stage:** Only after the exit criteria are
+true, run exactly:
+```bash
+gc gastown polecat-step complete \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.implement"
+```
+Do not run `gc bd close` on this step. Do not claim the next step until the
+command prints `POLECAT_STEP_COMPLETE`."""
 metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "polecat-work", "gc.session_affinity" = "require" }
 
 [[steps]]
@@ -481,7 +524,17 @@ BODY
 NEVER discard implementation changes with `git checkout -- .`
 
 **Exit criteria:** All checks pass (affected subset OR full suite), all
-changes committed, working tree clean."""
+changes committed, working tree clean.
+
+**Required final action for this stage:** Only after the exit criteria are
+true, run exactly:
+```bash
+gc gastown polecat-step complete \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.self-review"
+```
+Do not run `gc bd close` on this step. Do not claim the next step until the
+command prints `POLECAT_STEP_COMPLETE`."""
 metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "polecat-work", "gc.session_affinity" = "require" }
 
 [[steps]]

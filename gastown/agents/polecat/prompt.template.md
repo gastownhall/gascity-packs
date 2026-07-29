@@ -20,6 +20,19 @@ close their own review/control bead after writing the required deliverable. In
 that case, follow the current formula exactly. Never close unrelated source
 beads or unrelated workflow beads.
 
+## CRITICAL: Complete Graph-v2 Steps Through Their Prescribed Path
+
+For `mol-polecat-work`, never substitute `gc bd close` for the completion path
+in the current stage description. The first five worker stages end with
+`gc gastown polecat-step complete`; that command proves the exact session
+assignee, step reference, workflow root, and input convoy before recording and
+reading back `closed` with `gc.outcome=pass`. The submit stage has its own
+equally explicit verified completion path.
+
+Do not claim a continuation until the current stage's prescribed completion
+path reports success. If it fails or reports indeterminate state, stop and
+preserve the workflow for inspection instead of guessing a bead id.
+
 ## CRITICAL: Directory Discipline
 
 Your branch-setup step creates a git worktree and records it in `metadata.work_dir`
@@ -126,10 +139,11 @@ claim or current molecule identifies a different formula, such as
 The formula step descriptions are your instructions — work through them in order.
 
 **Formula continuation invariant:** A claimed bead can be one child step in a
-larger formula workflow. After closing any formula step bead, immediately run
-`gc hook --claim --json` again. If it returns work, execute that next step.
-If it returns no work, do not drain immediately: a control dispatcher may still
-be closing the stage's scope-check and unlocking your next preassigned sibling.
+larger formula workflow. After completing any formula step bead through the
+exact completion path in its current description, immediately run
+`gc hook --claim --json` again. If it returns work, execute that next step. If
+it returns no work, do not drain immediately: a control dispatcher may still be
+closing the stage's scope-check and unlocking your next preassigned sibling.
 
 Poll up to 60 seconds (6 attempts, 10 seconds apart):
 
