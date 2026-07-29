@@ -105,7 +105,7 @@ indeterminate() {
     exit "$EXIT_INDETERMINATE"
 }
 
-ACTOR=${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_ALIAS:-${GC_AGENT:-}}}}}
+ACTOR=${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}
 safe_atom "$ACTOR" ||
     indeterminate "the current session assignee is unavailable or unsafe"
 
@@ -116,10 +116,13 @@ classify_root() {
     classification=$(printf '%s' "$root_json" | jq -er \
         --arg id "$root_id" --arg convoy "$CONVOY_ID" '
         if type != "array" or length != 1 or .[0].id != $id or
+           .[0].status != "in_progress" or
            .[0].metadata["gc.kind"] != "workflow" or
            .[0].metadata["gc.formula_contract"] != "graph.v2" or
            ((.[0].metadata | has("gc.formula_name")) and
             .[0].metadata["gc.formula_name"] != "mol-polecat-work") or
+           (((.[0].metadata | has("gc.outcome")) and
+             .[0].metadata["gc.outcome"] != "")) or
            (.[0].metadata["gc.input_convoy_id"] | type) != "string" or
            (.[0].metadata["gc.input_convoy_id"] | length) == 0
         then error("root identity or Graph-v2 provenance mismatch")
@@ -167,10 +170,14 @@ find_replay() {
         then [.[] |
           select(.status == "closed" and .assignee == $actor and
                  .metadata["gc.step_ref"] == $ref and
-                 .metadata["gc.outcome"] == "pass" and
+                 .metadata["gc.outcome"] == "pass")] |
+          if all(.[];
                  (.id | type) == "string" and (.id | length) > 0 and
                  (.metadata["gc.root_bead_id"] | type) == "string" and
-                 (.metadata["gc.root_bead_id"] | length) > 0)]
+                 (.metadata["gc.root_bead_id"] | length) > 0)
+          then .
+          else error("closed/pass replay candidate is malformed")
+          end
         else error("closed step list is not an array")
         end' 2>/dev/null) || return 1
 

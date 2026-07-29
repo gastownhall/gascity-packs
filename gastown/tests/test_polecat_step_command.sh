@@ -167,7 +167,11 @@ new_case() {
 invoke() {
     PATH="$TEST_TMP/bin:$PATH" \
     GC_BIN="$TEST_TMP/bin/gc" \
-    BEADS_ACTOR="${TEST_ACTOR:-actor-1}" \
+    BEADS_ACTOR="${TEST_BEADS_ACTOR-actor-1}" \
+    GC_SESSION_NAME="${TEST_SESSION_NAME-}" \
+    GC_SESSION_ID="${TEST_SESSION_ID-}" \
+    GC_ALIAS="${TEST_ALIAS-}" \
+    GC_AGENT="${TEST_GC_AGENT-}" \
     FAKE_DB="$DB" \
     FAKE_STATE="$STATE" \
     FAKE_GC_LOG="$STATE/gc.log" \
@@ -232,6 +236,20 @@ run_command
     fail "correct present formula name did not complete the step"
 assert_no_unknown_call
 
+new_case canonical-agent-fallback
+TEST_BEADS_ACTOR=""
+TEST_ALIAS=wrong-template-identity
+TEST_GC_AGENT=actor-1
+run_command
+unset TEST_BEADS_ACTOR TEST_ALIAS TEST_GC_AGENT
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "canonical GC_AGENT fallback failed: $(<"$OUTPUT")"
+grep -F 'gc bd list --assignee actor-1 ' "$STATE/gc.log" >/dev/null ||
+    fail "GC_AGENT did not win over the non-session GC_ALIAS"
+! grep -F 'wrong-template-identity' "$STATE/gc.log" >/dev/null ||
+    fail "GC_ALIAS was incorrectly used as the session assignee"
+assert_no_unknown_call
+
 new_case ambiguous-live
 jq '.beads["step-2"] = {
       id: "step-2", status: "in_progress", assignee: "actor-1",
@@ -271,6 +289,19 @@ run_command
 assert_unadvanced
 [[ ! -e "$STATE/update-called" ]] ||
     fail "wrong root contract attempted an update"
+assert_no_unknown_call
+
+new_case terminal-root-live
+jq '.beads["root-1"].status = "closed" |
+    .beads["root-1"].metadata["gc.outcome"] = "fail"' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_command
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "terminal root with live step returned $RUN_RC instead of 75"
+assert_unadvanced
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "terminal root with live step attempted an update"
 assert_no_unknown_call
 
 new_case wrong-present-formula-name
@@ -393,6 +424,38 @@ run_command
     fail "ambiguous replay returned $RUN_RC instead of 75"
 [[ ! -e "$STATE/update-called" ]] ||
     fail "ambiguous replay attempted an update"
+assert_no_unknown_call
+
+new_case malformed-replay-sibling
+jq '.beads["step-1"].status = "closed" |
+    .beads["step-1"].metadata["gc.outcome"] = "pass" |
+    .beads["step-2"] = {
+      id: "step-2", status: "closed", assignee: "actor-1",
+      metadata: {
+        "gc.step_ref": "mol-polecat-work.load-context",
+        "gc.outcome": "pass"
+      }
+    }' "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_command
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "malformed replay sibling returned $RUN_RC instead of 75"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "malformed replay sibling attempted an update"
+assert_no_unknown_call
+
+new_case terminal-root-replay
+jq '.beads["step-1"].status = "closed" |
+    .beads["step-1"].metadata["gc.outcome"] = "pass" |
+    .beads["root-1"].status = "closed" |
+    .beads["root-1"].metadata["gc.outcome"] = "fail"' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_command
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "terminal root replay returned $RUN_RC instead of 75"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "terminal root replay attempted an update"
 assert_no_unknown_call
 
 new_case unreadable-replay-candidate
