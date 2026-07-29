@@ -73,6 +73,101 @@ GASTOWN_POLECAT_FORMULA_LEASE_ORDER = (
     "# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT",
     "gc gastown polecat-lease submit",
 )
+GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY_ORDER = (
+    "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
+    'SOURCE_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)',
+    'ARTIFACT_DIR=$(printf \'%s\' "$SOURCE_JSON"',
+    'CANONICAL_ARTIFACT="$RIG_NAMESPACE_REAL/artifacts/worktrees/$WORK_BEAD_ID"',
+    '\ncd -- "$ARTIFACT_DIR" ||',
+    "CURRENT_GIT_TOP=$(git rev-parse --show-toplevel 2>/dev/null)",
+    'if [ "$ARTIFACT_COMMON" != "$RIG_COMMON" ]; then',
+    "# END_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
+    "CURRENT_BRANCH=$(git branch --show-current)",
+    "FINAL_STATUS=$(git status --porcelain)",
+    'AUTO_PUSH=$(printf \'%s\' "$SOURCE_JSON"',
+    "# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT",
+    "gc gastown polecat-lease submit",
+)
+GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY_CONTRACT = (
+    "expected exactly one source child",
+    '(.[0] | type) == "object" and .[0].id == $source and',
+    '(.[0].metadata | type) == "object" and',
+    '(.[0].metadata.artifact_dir | type) == "string" and',
+    'if [ -z "${GC_CITY_PATH:-}" ] || [ -z "${GC_RIG:-}" ] ||',
+    'RIG_NAMESPACE="$CITY_ROOT/.gc/worktrees/$GC_RIG"',
+    '[ "$RIG_NAMESPACE_REAL" != "$RIG_NAMESPACE" ]',
+    'case "$ARTIFACT_DIR" in',
+    'ARTIFACT_REAL=$(CDPATH= cd -- "$ARTIFACT_DIR" 2>/dev/null && pwd -P)',
+    '[ "$ARTIFACT_REAL" != "$ARTIFACT_DIR" ]',
+    '[ "$(basename -- "$ARTIFACT_REAL")" != "$WORK_BEAD_ID" ]',
+    '[ "$(basename -- "$(dirname -- "$ARTIFACT_REAL")")" != "worktrees" ]',
+    '[ "$PROVIDER_ROOT" != "$RIG_NAMESPACE_REAL/polecats" ]',
+    '[ "$CURRENT_GIT_TOP" != "$ARTIFACT_DIR" ]',
+    "current Git top-level does not equal source metadata.artifact_dir",
+    "ARTIFACT_COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)",
+    'RIG_COMMON=$(git -C "$RIG_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)',
+    '[ "$ARTIFACT_COMMON" != "$RIG_COMMON" ]',
+    "source metadata.artifact_dir belongs to another repository",
+)
+GASTOWN_POLECAT_LEASE_AUTO_PUSH_CONTRACT = (
+    'AUTO_PUSH=$(printf \'%s\' "$SOURCE_JSON"',
+    '.[0].metadata.auto_push == false then "false"',
+    '.[0].metadata.auto_push == true then "true"',
+    'error("metadata.auto_push must be boolean")',
+    'submit_artifact_entry_fail "could not resolve exact boolean source metadata.auto_push"',
+    "false) AUTO_PUSH_BOOL=false ;;",
+    '""|true) AUTO_PUSH_BOOL=true ;;',
+)
+GASTOWN_POLECAT_FINAL_CLEAN_CONTRACT = (
+    "FINAL_STATUS=$(git status --porcelain)",
+    'submit_artifact_entry_fail "could not inspect final task-artifact status"',
+    'if [ -n "$FINAL_STATUS" ]; then',
+    'submit_artifact_entry_fail "could not verify final task-artifact status"',
+    'submit_artifact_entry_fail "task artifact is not clean after final capture"',
+)
+GASTOWN_POLECAT_REFINERY_HANDOFF_ORDER = (
+    "# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT",
+    "CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json 2>/dev/null)",
+    "WORK_BEAD_ID=$(printf '%s' \"$CONVOY_STATUS\"",
+    'EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"',
+    'REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"',
+    'SOURCE_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)',
+    'HANDOFF_ACTION=$(printf \'%s\' "$SOURCE_JSON"',
+    "# END_GASTOWN_REFINERY_HANDOFF_CONTEXT",
+    'if [ "$HANDOFF_ACTION" = "proceed" ]; then',
+    'if ! gc bd update "$WORK_BEAD_ID"',
+)
+GASTOWN_POLECAT_REFINERY_HANDOFF_CONTRACT = (
+    '(.[0] | type) == "object" and .[0].id == $source and',
+    '.[0].metadata.branch == $branch;',
+    '((.[0].metadata | has("auto_push")) | not) or',
+    ".[0].metadata.auto_push == true",
+    '((.[0].metadata | has("gc.polecat_submit_convoy")) | not)',
+    'then "proceed"',
+    '(.[0].status | IN("open", "in_progress"))',
+    ".[0].assignee == $refinery",
+    '.[0].metadata["gc.polecat_submit_convoy"] == $convoy',
+    '(.[0].metadata["gc.routed_to"] // "") == ""',
+    '((.[0].metadata | has("branch_ready")) | not)',
+    '((.[0].metadata | has("halt_reason")) | not)',
+    'then "replay"',
+    'elif .[0].status == "closed" and',
+    "source is neither proceedable nor exact current-convoy handoff",
+    'elif [ "$HANDOFF_ACTION" = "replay" ]; then',
+    "Refinery handoff already exists for this exact convoy",
+    "HANDOFF_SHAPE_OK=true",
+    'elif [ "$HANDOFF_STATUS" = "closed" ]; then',
+    "HANDOFF_ASSIGNEE_OK=true",
+)
+GASTOWN_POLECAT_REFINERY_COMPLETION_ORDER = (
+    "# BEGIN_GASTOWN_REFINERY_COMPLETION_CONTEXT",
+    "CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json 2>/dev/null)",
+    "WORK_BEAD_ID=$(printf '%s' \"$CONVOY_STATUS\"",
+    'EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"',
+    "# END_GASTOWN_REFINERY_COMPLETION_CONTEXT",
+    "# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION",
+    "gc gastown polecat-submit complete",
+)
 GASTOWN_POLECAT_LEASE_COMMAND_ORDER = (
     '"create $EXPECTED_REF $EXPECTED_OID"',
     '"update $BRANCH_REF $result $PRE_OID"',
@@ -159,6 +254,13 @@ GASTOWN_FORMULA_CONTRACTS = {
 }
 GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
     "mol-polecat-work": (
+        "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
+        "# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT",
+        "# BEGIN_GASTOWN_REFINERY_COMPLETION_CONTEXT",
+        'SOURCE_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)',
+        '\ncd -- "$ARTIFACT_DIR" ||',
+        "CURRENT_GIT_TOP=$(git rev-parse --show-toplevel 2>/dev/null)",
+        'AUTO_PUSH=$(printf \'%s\' "$SOURCE_JSON"',
         "EXPECTED_BRANCH=\"polecat/$WORK_BEAD_ID\"",
         "{{typecheck_command}}",
         "{{lint_command}}",
@@ -2941,6 +3043,176 @@ def validate_gastown_polecat_scope_formula(path: Path, missing: list[str]) -> No
         if step_id in steps:
             missing.append(f"mol-polecat-work: duplicate step id {step_id!r}")
         steps[step_id] = step
+
+    submit_description = mapping_value(steps.get("submit-and-exit")).get("description")
+    if not isinstance(submit_description, str):
+        missing.append("mol-polecat-work: submit-and-exit description is missing")
+    else:
+        shell_blocks = re.findall(r"```bash\n(.*?)\n```", submit_description, re.DOTALL)
+        entry_blocks = [
+            block
+            for block in shell_blocks
+            if "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY" in block
+        ]
+        if len(entry_blocks) != 1:
+            missing.append(
+                "mol-polecat-work: artifact entry, branch check, final clean, "
+                "and lease submit must share exactly one shell fence"
+            )
+        for marker in (
+            "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
+            "# END_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
+        ):
+            if submit_description.count(marker) != 1:
+                missing.append(
+                    "mol-polecat-work: submit-and-exit must contain exactly one "
+                    f"{marker}"
+                )
+        if len(entry_blocks) == 1:
+            block = entry_blocks[0]
+            for fragment in GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY_CONTRACT:
+                if fragment not in block:
+                    missing.append(
+                        "mol-polecat-work: submit-and-exit artifact entry is missing "
+                        f"{fragment!r}"
+                    )
+            exact_source_fragment = (
+                '(.[0] | type) == "object" and .[0].id == $source and'
+            )
+            if block.count(exact_source_fragment) != 2:
+                missing.append(
+                    "mol-polecat-work: artifact and auto_push reads must each "
+                    "validate the exact source object"
+                )
+            positions = [
+                block.find(fragment)
+                for fragment in GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY_ORDER
+            ]
+            if any(position < 0 for position in positions):
+                missing.append(
+                    "mol-polecat-work: submit-and-exit single-fence ordering is incomplete"
+                )
+            elif positions != sorted(positions):
+                missing.append(
+                    "mol-polecat-work: submit-and-exit must enter and verify the "
+                    "exact artifact before its branch, final-clean, and lease operations"
+                )
+            for fragment in (
+                *GASTOWN_POLECAT_LEASE_AUTO_PUSH_CONTRACT,
+                *GASTOWN_POLECAT_FINAL_CLEAN_CONTRACT,
+            ):
+                if fragment not in block:
+                    missing.append(
+                        "mol-polecat-work: lease submit guard is missing "
+                        f"{fragment!r}"
+                    )
+            if block.count("FINAL_STATUS=$(git status --porcelain)") != 2:
+                missing.append(
+                    "mol-polecat-work: lease submit must inspect final status "
+                    "before and after capture"
+                )
+            if 'AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID"' in block:
+                missing.append(
+                    "mol-polecat-work: lease auto_push guard must reuse exact SOURCE_JSON"
+                )
+        handoff_blocks = [
+            block
+            for block in shell_blocks
+            if "# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT" in block
+        ]
+        completion_blocks = [
+            block
+            for block in shell_blocks
+            if "# BEGIN_GASTOWN_REFINERY_COMPLETION_CONTEXT" in block
+        ]
+        for marker in (
+            "# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT",
+            "# END_GASTOWN_REFINERY_HANDOFF_CONTEXT",
+            "# BEGIN_GASTOWN_REFINERY_COMPLETION_CONTEXT",
+            "# END_GASTOWN_REFINERY_COMPLETION_CONTEXT",
+        ):
+            if submit_description.count(marker) != 1:
+                missing.append(
+                    "mol-polecat-work: submit-and-exit must contain exactly one "
+                    f"{marker}"
+                )
+        for label, blocks, order, contract in (
+            (
+                "refinery handoff",
+                handoff_blocks,
+                GASTOWN_POLECAT_REFINERY_HANDOFF_ORDER,
+                GASTOWN_POLECAT_REFINERY_HANDOFF_CONTRACT,
+            ),
+            (
+                "refinery completion",
+                completion_blocks,
+                GASTOWN_POLECAT_REFINERY_COMPLETION_ORDER,
+                (),
+            ),
+        ):
+            if len(blocks) != 1:
+                missing.append(
+                    f"mol-polecat-work: {label} context and action must share "
+                    "exactly one shell fence"
+                )
+                continue
+            block = blocks[0]
+            for fragment in contract:
+                if fragment not in block:
+                    missing.append(
+                        f"mol-polecat-work: {label} context is missing {fragment!r}"
+                    )
+            if label == "refinery handoff":
+                exact_source_fragment = (
+                    '(.[0] | type) == "object" and .[0].id == $source and'
+                )
+                if block.count(exact_source_fragment) != 2:
+                    missing.append(
+                        "mol-polecat-work: refinery handoff classification and "
+                        "readback must each validate the exact source object"
+                    )
+                for repeated_fragment in (
+                    '.[0].metadata["gc.polecat_submit_convoy"] == $convoy',
+                    '((.[0].metadata | has("branch_ready")) | not)',
+                    '((.[0].metadata | has("halt_reason")) | not)',
+                ):
+                    if block.count(repeated_fragment) != 2:
+                        missing.append(
+                            "mol-polecat-work: active and closed refinery handoff replay "
+                            f"must each retain {repeated_fragment!r}"
+                        )
+            positions = [block.find(fragment) for fragment in order]
+            if any(position < 0 for position in positions):
+                missing.append(f"mol-polecat-work: {label} ordering is incomplete")
+            elif positions != sorted(positions):
+                missing.append(
+                    f"mol-polecat-work: {label} must derive exact context before "
+                    "its stateful action"
+                )
+        for block in shell_blocks:
+            if "git " not in block:
+                continue
+            if "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY" not in block:
+                missing.append(
+                    "mol-polecat-work: later submit fence contains cwd-dependent Git"
+                )
+        if submit_description.count("git branch --show-current") != 1:
+            missing.append(
+                "mol-polecat-work: only the same-fence branch gate may inspect "
+                "the current branch"
+            )
+        if 'BRANCH="$EXPECTED_BRANCH"' not in submit_description:
+            missing.append(
+                "mol-polecat-work: auto_push=false must use the canonical expected branch"
+            )
+        if (
+            "git checkout --detach" in submit_description
+            or "git branch -D" in submit_description
+            or "Local Git cleanup is deliberately skipped here" not in submit_description
+        ):
+            missing.append(
+                "mol-polecat-work: post-handoff cleanup must avoid cwd-dependent Git"
+            )
 
     body = mapping_value(steps.get("body"))
     body_metadata = mapping_value(body.get("metadata"))

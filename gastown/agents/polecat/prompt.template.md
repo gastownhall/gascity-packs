@@ -42,8 +42,11 @@ preserve the workflow for inspection instead of guessing a bead id.
 
 Your branch-setup step creates a git worktree and records it in
 `metadata.artifact_dir` on your work bead. Once created, **stay in your
-worktree.** `gc.work_dir` is controller execution context, not the durable
-task-artifact key.
+worktree.** A later formula stage may nevertheless resume in controller
+execution context, so `submit-and-exit` re-resolves and enters the exact
+source `metadata.artifact_dir` before it trusts the current branch or runs a
+lease/Git operation. `gc.work_dir` is controller execution context, not the
+durable task-artifact key.
 
 - **ALL file edits** must be within your worktree directory
 - **NEVER edit files in** `{{ .RigRoot }}/` (shared rig repo) — polecats must stay in
@@ -81,10 +84,11 @@ has no valid merge target and the work is silently stranded.
 | `metadata.branch` | `polecat/vg-1jp` |
 
 The `workspace-setup` formula step creates this for you. **Do not skip
-that step.** The `submit-and-exit` step's first action is a fail-closed
-gate that refuses to reassign to refinery if the current branch isn't
-`polecat/<bead-id>`. Skipping `workspace-setup` will halt the workflow at
-submit time and require manual recovery
+that step.** The `submit-and-exit` step first re-enters the exact source
+`metadata.artifact_dir` and verifies its Git top-level, then applies a
+fail-closed branch-shape gate that refuses to reassign to refinery if the
+current branch isn't `polecat/<bead-id>`. Skipping `workspace-setup` will halt
+the workflow at submit time and require manual recovery
 (see gastownhall/gascity#2082).
 
 ---
@@ -486,8 +490,9 @@ Nudges from other agents may arrive via your hook. When working:
 
 **Before your session ends, hand off through the formula.** The
 `mol-polecat-work` `submit-and-exit` step is the single source of truth for the
-done sequence — branch-shape gate, push + push-verify, metadata, refinery
-reassignment, wake/nudge, and drain all live there. Run that step.
+done sequence — artifact-entry gate, branch-shape gate, push + push-verify,
+metadata, refinery reassignment, wake/nudge, and drain all live there. Run that
+step.
 
 **Do NOT run submit-and-exit twice** — running the done sequence twice is a bug.
 Do not trust memory for this; check mechanically. Rediscover your claimed

@@ -794,18 +794,136 @@ needs = ["self-review"]
 description = """
 Hand off your work and self-clean. You cease to exist after this step.
 
-**1. Branch-shape gate (fails closed — non-negotiable).**
+**1. Artifact-entry and branch-shape gates (fail closed — non-negotiable).**
 
-Before anything else, verify you are on a per-bead branch. The refinery
-merges the branch recorded in your bead's `metadata.branch`, which must
-follow the `polecat/<bead-id>` convention; if you push from a different
-branch (your agent home branch, a stray local checkout, etc.), the
-handoff contract is broken and the bead is permanently stranded as
-"assigned to refinery, no merge target". See gastownhall/gascity#2082.
+Formula stages can resume in the provider/controller working directory even
+after `workspace-setup` created and entered the task worktree. Before any
+branch, lease, or other Git operation, resolve the exact source bead's
+`metadata.artifact_dir`, enter it, and prove that it is the Git worktree root.
+Do not use the inherited cwd as evidence.
+
+The same shell invocation must continue directly into the branch-shape check;
+OpenCode shell invocations do not preserve `cd` or variables across code
+fences. The refinery merges the branch recorded in the bead's
+`metadata.branch`, which must follow the `polecat/<bead-id>` convention. If
+you push from a different branch (your agent home branch, a stray local
+checkout, etc.), the handoff contract is broken and the bead is permanently
+stranded as "assigned to refinery, no merge target". See
+gastownhall/gascity#2082.
+
+Run this entire artifact-entry, branch-shape, final-clean, and lease-submit
+sequence as one block. Every part is idempotent or response-loss safe, so retry
+the whole block after an interruption; never split it into separate shell
+invocations:
 
 ```bash
-CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
-WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY
+submit_artifact_entry_fail() {
+  echo "SUBMIT ARTIFACT ENTRY GATE FAILED: $1" >&2
+  gc runtime drain-ack
+  exit 1
+}
+
+CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json 2>/dev/null) ||
+  submit_artifact_entry_fail "could not read the exact input convoy"
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er '
+  if type == "object" and (.children | type) == "array" and
+     (.children | length) == 1 and
+     (.children[0] | type) == "object" and
+     (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exactly one source child")
+  end
+' 2>/dev/null) ||
+  submit_artifact_entry_fail "input convoy does not contain exactly one source object"
+case "$WORK_BEAD_ID" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    submit_artifact_entry_fail "source id is unsafe for an artifact path"
+    ;;
+esac
+if [ -z "${GC_CITY_PATH:-}" ] || [ -z "${GC_RIG:-}" ] ||
+   [ -z "${GC_RIG_ROOT:-}" ]; then
+  submit_artifact_entry_fail "GC_CITY_PATH, GC_RIG, and GC_RIG_ROOT are required"
+fi
+case "$GC_RIG" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    submit_artifact_entry_fail "rig name is unsafe for an artifact path"
+    ;;
+esac
+CITY_ROOT=$(CDPATH= cd -- "$GC_CITY_PATH" 2>/dev/null && pwd -P) ||
+  submit_artifact_entry_fail "could not canonicalize the city root"
+RIG_ROOT=$(CDPATH= cd -- "$GC_RIG_ROOT" 2>/dev/null && pwd -P) ||
+  submit_artifact_entry_fail "could not canonicalize the rig root"
+RIG_NAMESPACE="$CITY_ROOT/.gc/worktrees/$GC_RIG"
+RIG_NAMESPACE_REAL=$(CDPATH= cd -- "$RIG_NAMESPACE" 2>/dev/null && pwd -P) ||
+  submit_artifact_entry_fail "could not resolve the city/rig worktree namespace"
+if [ "$RIG_NAMESPACE_REAL" != "$RIG_NAMESPACE" ]; then
+  submit_artifact_entry_fail "city/rig worktree namespace is redirected"
+fi
+
+SOURCE_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null) ||
+  submit_artifact_entry_fail "could not read the exact source bead"
+ARTIFACT_DIR=$(printf '%s' "$SOURCE_JSON" | jq -er --arg source "$WORK_BEAD_ID" '
+  if type == "array" and length == 1 and
+     (.[0] | type) == "object" and .[0].id == $source and
+     (.[0].metadata | type) == "object" and
+     (.[0].metadata.artifact_dir | type) == "string" and
+     (.[0].metadata.artifact_dir | length) > 0
+  then .[0].metadata.artifact_dir
+  else error("expected one exact source object with artifact_dir")
+  end
+' 2>/dev/null) ||
+  submit_artifact_entry_fail "source response or metadata.artifact_dir is invalid"
+case "$ARTIFACT_DIR" in
+  /*) ;;
+  *) submit_artifact_entry_fail "source metadata.artifact_dir is not absolute" ;;
+esac
+ARTIFACT_REAL=$(CDPATH= cd -- "$ARTIFACT_DIR" 2>/dev/null && pwd -P) ||
+  submit_artifact_entry_fail "source metadata.artifact_dir is unavailable"
+if [ "$ARTIFACT_REAL" != "$ARTIFACT_DIR" ] ||
+   [ "$(basename -- "$ARTIFACT_REAL")" != "$WORK_BEAD_ID" ] ||
+   [ "$(basename -- "$(dirname -- "$ARTIFACT_REAL")")" != "worktrees" ]; then
+  submit_artifact_entry_fail "source metadata.artifact_dir is not the exact bead-scoped path"
+fi
+
+CANONICAL_ARTIFACT="$RIG_NAMESPACE_REAL/artifacts/worktrees/$WORK_BEAD_ID"
+if [ "$ARTIFACT_REAL" != "$CANONICAL_ARTIFACT" ]; then
+  WORKTREES_PARENT=$(dirname -- "$ARTIFACT_REAL")
+  PROVIDER_HOME=$(dirname -- "$WORKTREES_PARENT")
+  PROVIDER_ROOT=$(dirname -- "$PROVIDER_HOME")
+  PROVIDER_NAME=$(basename -- "$PROVIDER_HOME")
+  if [ "$PROVIDER_ROOT" != "$RIG_NAMESPACE_REAL/polecats" ]; then
+    submit_artifact_entry_fail "source metadata.artifact_dir is outside the rig artifact layouts"
+  fi
+  case "$PROVIDER_NAME" in
+    ""|"."|".."|*[!A-Za-z0-9._-]*)
+      submit_artifact_entry_fail "legacy artifact has an unsafe provider owner"
+      ;;
+  esac
+fi
+
+cd -- "$ARTIFACT_DIR" ||
+  submit_artifact_entry_fail "source artifact disappeared before entry"
+CURRENT_GIT_TOP=$(git rev-parse --show-toplevel 2>/dev/null) ||
+  submit_artifact_entry_fail "source artifact is not a Git worktree"
+CURRENT_GIT_TOP=$(CDPATH= cd -- "$CURRENT_GIT_TOP" 2>/dev/null && pwd -P) ||
+  submit_artifact_entry_fail "could not canonicalize the current Git worktree"
+if [ "$CURRENT_GIT_TOP" != "$ARTIFACT_DIR" ]; then
+  submit_artifact_entry_fail "current Git top-level does not equal source metadata.artifact_dir"
+fi
+ARTIFACT_COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+  submit_artifact_entry_fail "could not resolve the artifact Git common directory"
+ARTIFACT_COMMON=$(CDPATH= cd -- "$ARTIFACT_COMMON" 2>/dev/null && pwd -P) ||
+  submit_artifact_entry_fail "could not canonicalize the artifact Git common directory"
+RIG_COMMON=$(git -C "$RIG_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+  submit_artifact_entry_fail "could not resolve the rig Git common directory"
+RIG_COMMON=$(CDPATH= cd -- "$RIG_COMMON" 2>/dev/null && pwd -P) ||
+  submit_artifact_entry_fail "could not canonicalize the rig Git common directory"
+if [ "$ARTIFACT_COMMON" != "$RIG_COMMON" ]; then
+  submit_artifact_entry_fail "source metadata.artifact_dir belongs to another repository"
+fi
+# END_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY
 CURRENT_BRANCH=$(git branch --show-current)
 EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"
 if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
@@ -826,42 +944,58 @@ if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
     gc runtime drain-ack
     exit 1
 fi
-```
-
-Also confirm `metadata.branch` reflects this branch (workspace-setup
-recorded it, but a divergent local state would be invisible to the
-refinery without this re-check):
-```bash
-METADATA_BRANCH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.branch // empty')
+METADATA_BRANCH=$(printf '%s' "$SOURCE_JSON" |
+  jq -er --arg source "$WORK_BEAD_ID" '
+    if type == "array" and length == 1 and .[0].id == $source and
+       (.[0].metadata | type) == "object" and
+       ((.[0].metadata.branch // "") | type) == "string"
+    then .[0].metadata.branch // ""
+    else error("source branch metadata is malformed")
+    end
+  ' 2>/dev/null) ||
+  submit_artifact_entry_fail "could not verify exact source branch metadata"
 if [ "$METADATA_BRANCH" != "$EXPECTED_BRANCH" ]; then
-    gc bd update "$WORK_BEAD_ID" --set-metadata branch="$EXPECTED_BRANCH"
+  gc bd update "$WORK_BEAD_ID" --set-metadata branch="$EXPECTED_BRANCH" ||
+    submit_artifact_entry_fail "could not record the canonical source branch"
 fi
-```
 
-**2. Final clean-state verification (safeguard):**
-```bash
-git status --porcelain
-```
-If ANY output (untracked files, uncommitted changes):
-```bash
-git add -A
-git commit -m "chore: capture remaining work ($WORK_BEAD_ID)" -m "$(cat <<'BODY'
-<Explain the remaining changes discovered by final clean-state
-verification and why they are safe to hand off.>
-BODY
-)"
-```
-This is a belt-and-suspenders check — self-review should have caught this,
-but we never push with untracked work left behind.
-
-**3. Push your branch:**
-```bash
-AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
-if [ "$AUTO_PUSH" = "false" ]; then
-  AUTO_PUSH_BOOL=false
-else
-  AUTO_PUSH_BOOL=true
+FINAL_STATUS=$(git status --porcelain) ||
+  submit_artifact_entry_fail "could not inspect final task-artifact status"
+if [ -n "$FINAL_STATUS" ]; then
+  git add -A ||
+    submit_artifact_entry_fail "could not stage remaining task-artifact changes"
+  git commit -m "chore: capture remaining work ($WORK_BEAD_ID)" \
+    -m "Capture remaining changes found by submit-and-exit after self-review." ||
+    submit_artifact_entry_fail "could not commit remaining task-artifact changes"
 fi
+FINAL_STATUS=$(git status --porcelain) ||
+  submit_artifact_entry_fail "could not verify final task-artifact status"
+if [ -n "$FINAL_STATUS" ]; then
+  submit_artifact_entry_fail "task artifact is not clean after final capture"
+fi
+
+AUTO_PUSH=$(printf '%s' "$SOURCE_JSON" | jq -er --arg source "$WORK_BEAD_ID" '
+  if type == "array" and length == 1 and
+     (.[0] | type) == "object" and .[0].id == $source and
+     (.[0].metadata | type) == "object"
+  then
+    if (.[0].metadata | has("auto_push"))
+    then
+      if .[0].metadata.auto_push == false then "false"
+      elif .[0].metadata.auto_push == true then "true"
+      else error("metadata.auto_push must be boolean")
+      end
+    else ""
+    end
+  else error("expected one exact source object")
+  end
+' 2>/dev/null) ||
+  submit_artifact_entry_fail "could not resolve exact boolean source metadata.auto_push"
+case "$AUTO_PUSH" in
+  false) AUTO_PUSH_BOOL=false ;;
+  ""|true) AUTO_PUSH_BOOL=true ;;
+  *) submit_artifact_entry_fail "unsupported source metadata.auto_push" ;;
+esac
 WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"
 # BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT
 if ! gc gastown polecat-lease submit \
@@ -881,9 +1015,56 @@ exists. On a rejection-rebased branch the command stops before submit freeze;
 the source and live Graph step remain recoverable, and no push or handoff occurs.
 
 ```bash
+CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json 2>/dev/null) || {
+  echo "Could not re-read exact input convoy for auto_push=false completion." >&2
+  exit 1
+}
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er '
+  if type == "object" and (.children | type) == "array" and
+     (.children | length) == 1 and
+     (.children[0] | type) == "object" and
+     (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exactly one source child")
+  end
+' 2>/dev/null) || {
+  echo "Input convoy does not contain exactly one source object." >&2
+  exit 1
+}
+case "$WORK_BEAD_ID" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    echo "Unsafe source id for auto_push=false completion." >&2
+    exit 1
+    ;;
+esac
+SOURCE_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null) || {
+  echo "Could not re-read exact source for auto_push=false completion." >&2
+  exit 1
+}
+AUTO_PUSH=$(printf '%s' "$SOURCE_JSON" | jq -er --arg source "$WORK_BEAD_ID" '
+  if type == "array" and length == 1 and
+     (.[0] | type) == "object" and .[0].id == $source and
+     (.[0].metadata | type) == "object"
+  then
+    if (.[0].metadata | has("auto_push"))
+    then
+      if .[0].metadata.auto_push == false then "false"
+      elif .[0].metadata.auto_push == true then "true"
+      else error("metadata.auto_push must be boolean")
+      end
+    else ""
+    end
+  else error("expected one exact source object")
+  end
+' 2>/dev/null) || {
+  echo "Exact source response is invalid for auto_push=false completion." >&2
+  exit 1
+}
+EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"
 if [ "$AUTO_PUSH" = "false" ]; then
   echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"
-  BRANCH=$(git branch --show-current)
+  BRANCH="$EXPECTED_BRANCH"
   if ! gc bd update "$WORK_BEAD_ID" \
        --status=open --assignee="" \
        --set-metadata branch="$BRANCH" \
@@ -946,24 +1127,117 @@ fi
 
 **4. Atomically hand the exact source generation to the refinery:**
 ```bash
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
-if ! gc bd update "$WORK_BEAD_ID" \
-     --status=open \
-     --assignee="$REFINERY_TARGET" \
-     --set-metadata branch="$EXPECTED_BRANCH" \
-     --set-metadata target={{base_branch}} \
-     --set-metadata gc.polecat_submit_convoy={{convoy_id}} \
-     --set-metadata gc.routed_to="" \
-     --unset-metadata artifact_source_sha \
-     --unset-metadata artifact_cleanup_state \
-     --unset-metadata branch_ready \
-     --unset-metadata halt_reason \
-     --notes "Implemented: <brief summary>"; then
-  echo "Failed to record the atomic refinery handoff; refusing to drain." >&2
+# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT
+refinery_handoff_context_fail() {
+  echo "REFINERY HANDOFF CONTEXT FAILED: $1" >&2
   exit 1
+}
+
+CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json 2>/dev/null) ||
+  refinery_handoff_context_fail "could not read the exact input convoy"
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er '
+  if type == "object" and (.children | type) == "array" and
+     (.children | length) == 1 and
+     (.children[0] | type) == "object" and
+     (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exactly one source child")
+  end
+' 2>/dev/null) ||
+  refinery_handoff_context_fail "input convoy does not contain exactly one source object"
+case "$WORK_BEAD_ID" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    refinery_handoff_context_fail "source id is unsafe"
+    ;;
+esac
+EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"
+REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
+SOURCE_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null) ||
+  refinery_handoff_context_fail "could not read the exact source bead"
+HANDOFF_ACTION=$(printf '%s' "$SOURCE_JSON" | jq -er \
+  --arg source "$WORK_BEAD_ID" \
+  --arg branch "$EXPECTED_BRANCH" \
+  --arg target "{{base_branch}}" \
+  --arg convoy "{{convoy_id}}" \
+  --arg refinery "$REFINERY_TARGET" '
+  def common:
+    type == "array" and length == 1 and
+    (.[0] | type) == "object" and .[0].id == $source and
+    (.[0].status | type) == "string" and
+    ((.[0].assignee // "") | type) == "string" and
+    (.[0].metadata | type) == "object" and
+    .[0].metadata.branch == $branch;
+  def auto_push_true:
+    (((.[0].metadata | has("auto_push")) | not) or
+     .[0].metadata.auto_push == true);
+  if (common | not) then
+    error("source identity or canonical branch mismatch")
+  elif (auto_push_true | not) then
+    error("normal refinery handoff requires absent/true auto_push")
+  elif .[0].status == "open" and
+       (.[0].assignee // "") == "" and
+       ((.[0].metadata | has("gc.polecat_submit_convoy")) | not)
+  then "proceed"
+  elif (.[0].status | IN("open", "in_progress")) and
+       .[0].assignee == $refinery and
+       .[0].metadata.target == $target and
+       .[0].metadata["gc.polecat_submit_convoy"] == $convoy and
+       ((.[0].metadata["gc.routed_to"] // "") | type) == "string" and
+       (.[0].metadata["gc.routed_to"] // "") == "" and
+       ((.[0].metadata | has("branch_ready")) | not) and
+       ((.[0].metadata | has("halt_reason")) | not)
+  then "replay"
+  elif .[0].status == "closed" and
+       .[0].metadata.target == $target and
+       .[0].metadata["gc.polecat_submit_convoy"] == $convoy and
+       ((.[0].metadata["gc.routed_to"] // "") | type) == "string" and
+       (.[0].metadata["gc.routed_to"] // "") == "" and
+       ((.[0].metadata | has("branch_ready")) | not) and
+       ((.[0].metadata | has("halt_reason")) | not)
+  then "replay"
+  else
+    error("source is neither proceedable nor exact current-convoy handoff")
+  end
+' 2>/dev/null) ||
+  refinery_handoff_context_fail "source is neither proceedable nor exact current-convoy handoff"
+# END_GASTOWN_REFINERY_HANDOFF_CONTEXT
+
+if [ "$HANDOFF_ACTION" = "proceed" ]; then
+  if ! gc bd update "$WORK_BEAD_ID" \
+       --status=open \
+       --assignee="$REFINERY_TARGET" \
+       --set-metadata branch="$EXPECTED_BRANCH" \
+       --set-metadata target={{base_branch}} \
+       --set-metadata gc.polecat_submit_convoy={{convoy_id}} \
+       --set-metadata gc.routed_to="" \
+       --unset-metadata artifact_source_sha \
+       --unset-metadata artifact_cleanup_state \
+       --unset-metadata branch_ready \
+       --unset-metadata halt_reason \
+       --notes "Implemented: <brief summary>"; then
+    echo "Failed to record the atomic refinery handoff; refusing to drain." >&2
+    exit 1
+  fi
+elif [ "$HANDOFF_ACTION" = "replay" ]; then
+  echo "Refinery handoff already exists for this exact convoy; verifying it."
+else
+  refinery_handoff_context_fail "unsupported handoff action"
 fi
 HANDOFF_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
 HANDOFF_CODE=$?
+if [ "$HANDOFF_CODE" -eq 0 ] &&
+   printf '%s' "$HANDOFF_JSON" | jq -e --arg source "$WORK_BEAD_ID" '
+     type == "array" and length == 1 and
+     (.[0] | type) == "object" and .[0].id == $source and
+     (.[0].status | type) == "string" and
+     ((.[0].assignee // "") | type) == "string" and
+     (.[0].metadata | type) == "object"
+   ' >/dev/null 2>&1; then
+  HANDOFF_SHAPE_OK=true
+else
+  HANDOFF_SHAPE_OK=false
+fi
 HANDOFF_STATUS=$(printf '%s' "$HANDOFF_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
 HANDOFF_ASSIGNEE=$(printf '%s' "$HANDOFF_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
 HANDOFF_BRANCH=$(printf '%s' "$HANDOFF_JSON" | jq -r '.[0].metadata.branch // empty' 2>/dev/null)
@@ -971,13 +1245,25 @@ HANDOFF_TARGET=$(printf '%s' "$HANDOFF_JSON" | jq -r '.[0].metadata.target // em
 HANDOFF_CONVOY=$(printf '%s' "$HANDOFF_JSON" | jq -r '.[0].metadata["gc.polecat_submit_convoy"] // empty' 2>/dev/null)
 HANDOFF_ROUTED=$(printf '%s' "$HANDOFF_JSON" | jq -r '.[0].metadata["gc.routed_to"] // empty' 2>/dev/null)
 HANDOFF_STALE_GENERATION=$(printf '%s' "$HANDOFF_JSON" | jq -r '
-  ((.[0].metadata | has("artifact_source_sha")) or
-   (.[0].metadata | has("artifact_cleanup_state")) or
-   (.[0].metadata | has("branch_ready")) or
+  ((.[0].metadata | has("branch_ready")) or
    (.[0].metadata | has("halt_reason"))) | tostring
 ' 2>/dev/null)
-if [ "$HANDOFF_CODE" -ne 0 ] || [ "$HANDOFF_STATUS" != "open" ] ||
-   [ "$HANDOFF_ASSIGNEE" != "$REFINERY_TARGET" ] ||
+if [ "$HANDOFF_STATUS" = "open" ] || [ "$HANDOFF_STATUS" = "in_progress" ]; then
+  HANDOFF_STATUS_OK=true
+  if [ "$HANDOFF_ASSIGNEE" = "$REFINERY_TARGET" ]; then
+    HANDOFF_ASSIGNEE_OK=true
+  else
+    HANDOFF_ASSIGNEE_OK=false
+  fi
+elif [ "$HANDOFF_STATUS" = "closed" ]; then
+  HANDOFF_STATUS_OK=true
+  HANDOFF_ASSIGNEE_OK=true
+else
+  HANDOFF_STATUS_OK=false
+  HANDOFF_ASSIGNEE_OK=false
+fi
+if [ "$HANDOFF_SHAPE_OK" != "true" ] || [ "$HANDOFF_STATUS_OK" != "true" ] ||
+   [ "$HANDOFF_ASSIGNEE_OK" != "true" ] ||
    [ "$HANDOFF_BRANCH" != "$EXPECTED_BRANCH" ] ||
    [ "$HANDOFF_TARGET" != "{{base_branch}}" ] ||
    [ "$HANDOFF_CONVOY" != "{{convoy_id}}" ] ||
@@ -1013,28 +1299,14 @@ merge, and close the bead. If there's a conflict, the refinery puts the
 bead back in the pool with `rejection_reason` metadata — a new polecat
 picks it up and resumes from the existing branch.
 
-**5. Clean up the local branch after verified handoff.**
+**5. Leave local Git cleanup to the artifact lifecycle.**
 
-Do not detach or delete the local branch before step 4 verifies the exact
-refinery assignment. If the process crashes before that verification, a restart
-must still be on the valid per-bead branch so submit-and-exit can retry safely.
-After verification, the durable source state is terminal evidence for the
-restart guard, so local cleanup is safe.
-
-```bash
-BRANCH=$(git branch --show-current)
-if [ -n "$BRANCH" ]; then
-  if git checkout --detach; then
-    git branch -D "$BRANCH" ||
-      echo "WARN: verified handoff succeeded, but local branch $BRANCH could not be deleted"
-  else
-    echo "WARN: verified handoff succeeded, but worktree could not detach from $BRANCH"
-  fi
-fi
-```
-
-Cleanup is best-effort after the verified durable handoff. A cleanup warning
-must not undo or duplicate that handoff.
+Local Git cleanup is deliberately skipped here. A later shell invocation may
+start in the provider home, so cwd-dependent detach or branch deletion could
+mutate provider state instead of the task artifact. The verified
+durable handoff is complete without local ref deletion; Witness/refinery
+artifact lifecycle cleanup owns the exact revalidated worktree after terminal
+evidence exists.
 
 **6. Signal refinery to check for work immediately (belt-and-suspenders):**
 ```bash
@@ -1057,6 +1329,33 @@ Use an exact, read-only assignee query: `gc hook --claim` is forbidden here
 because it can claim unrelated routed work if the expected step is absent.
 
 ```bash
+# BEGIN_GASTOWN_REFINERY_COMPLETION_CONTEXT
+completion_context_fail() {
+  echo "REFINERY COMPLETION CONTEXT FAILED: $1" >&2
+  exit 1
+}
+
+CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json 2>/dev/null) ||
+  completion_context_fail "could not read the exact input convoy"
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er '
+  if type == "object" and (.children | type) == "array" and
+     (.children | length) == 1 and
+     (.children[0] | type) == "object" and
+     (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exactly one source child")
+  end
+' 2>/dev/null) ||
+  completion_context_fail "input convoy does not contain exactly one source object"
+case "$WORK_BEAD_ID" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    completion_context_fail "source id is unsafe"
+    ;;
+esac
+EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"
+# END_GASTOWN_REFINERY_COMPLETION_CONTEXT
+
 # BEGIN_GASTOWN_REFINERY_STEP_COMPLETION
 if ! gc gastown polecat-submit complete \
      --convoy "{{convoy_id}}" \

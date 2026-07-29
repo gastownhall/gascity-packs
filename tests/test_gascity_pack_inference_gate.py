@@ -7,6 +7,8 @@ import re
 import shutil
 import shlex
 import subprocess
+import textwrap
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -1423,6 +1425,11 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
         "mol-idea-to-plan",
     }
     assert "gc session wake \"$REFINERY_TARGET\"" in contracts["mol-polecat-work"]
+    assert (
+        "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY"
+        in contracts["mol-polecat-work"]
+    )
+    assert '\ncd -- "$ARTIFACT_DIR" ||' in contracts["mol-polecat-work"]
     assert "gc gastown polecat-lease workspace" in contracts["mol-polecat-work"]
     assert "gc gastown polecat-lease submit" in contracts["mol-polecat-work"]
     assert '--auto-push "$AUTO_PUSH_BOOL"' in contracts["mol-polecat-work"]
@@ -1436,6 +1443,472 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     assert "FAIL-SAFE: empty liveness map" in contracts["mol-witness-patrol"]
     assert "gc bd create --type=task --label=warrant" in contracts["mol-deacon-patrol"]
     assert "gc bd dep add" in contracts["mol-idea-to-plan"]
+
+
+def test_validate_gastown_orchestration_contract_rejects_missing_submit_artifact_entry(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
+            "# REMOVED_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="artifact entry"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_submit_branch_before_artifact_entry(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    formula.write_text(
+        text.replace(
+            "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
+            "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY\\n"
+            "CURRENT_BRANCH=$(git branch --show-current)",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="before its branch, final-clean, and lease operations",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_submit_branch_in_later_fence(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "# END_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY\n"
+            "CURRENT_BRANCH=$(git branch --show-current)",
+            "# END_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY\n"
+            "```\n```bash\n"
+            "CURRENT_BRANCH=$(git branch --show-current)",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="single-fence"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_lease_in_later_fence(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "\nFINAL_STATUS=$(git status --porcelain)",
+            "\n```\n```bash\nFINAL_STATUS=$(git status --porcelain)",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="single-fence",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_weak_submit_source_row(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    marker = text.index("# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY")
+    fragment = '(.[0] | type) == "object" and .[0].id == $source and'
+    fragment_at = text.index(fragment, marker)
+    formula.write_text(
+        text[:fragment_at]
+        + ".[0].id == $source and"
+        + text[fragment_at + len(fragment) :],
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="exact source object"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_uncontained_submit_artifact(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            '[ "$PROVIDER_ROOT" != "$RIG_NAMESPACE_REAL/polecats" ]',
+            '[ -z "$PROVIDER_ROOT" ]',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="artifact entry"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_foreign_submit_repository(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            '[ "$ARTIFACT_COMMON" != "$RIG_COMMON" ]',
+            '[ -z "$ARTIFACT_COMMON" ]',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="artifact entry"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_auto_push_bare_cwd_git(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            'echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"\n'
+            '  BRANCH="$EXPECTED_BRANCH"',
+            'echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"\n'
+            "  BRANCH=$(git branch --show-current)",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="current branch"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_lossy_lease_auto_push_read(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    start = text.index(
+        'AUTO_PUSH=$(printf \'%s\' "$SOURCE_JSON"',
+        text.index("# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY"),
+    )
+    end = text.index('case "$AUTO_PUSH" in', start)
+    formula.write_text(
+        text[:start]
+        + 'AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '
+        + "'[0].metadata.auto_push // empty')\n"
+        + text[end:],
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="auto_push"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_lossy_final_status_read(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "FINAL_STATUS=$(git status --porcelain) ||\n"
+            '  submit_artifact_entry_fail "could not inspect final task-artifact status"\n'
+            'if [ -n "$FINAL_STATUS" ]; then',
+            'if [ -n "$(git status --porcelain)" ]; then',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="lease submit"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_post_handoff_bare_cwd_git(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "Local Git cleanup is deliberately skipped here.",
+            "```bash\ngit checkout --detach\n```",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="cwd-dependent Git"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_handoff_in_later_fence(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "# END_GASTOWN_REFINERY_HANDOFF_CONTEXT\n\n"
+            'if [ "$HANDOFF_ACTION" = "proceed" ]; then',
+            "# END_GASTOWN_REFINERY_HANDOFF_CONTEXT\n"
+            "```\n```bash\n"
+            'if [ "$HANDOFF_ACTION" = "proceed" ]; then',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="refinery handoff"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_handoff_auto_push_false(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    marker = text.index("# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT")
+    fragment = ".[0].metadata.auto_push == true"
+    fragment_at = text.index(fragment, marker)
+    formula.write_text(
+        text[:fragment_at]
+        + '(.[0].metadata.auto_push | type) == "boolean"'
+        + text[fragment_at + len(fragment) :],
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="refinery handoff"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_weak_handoff_source_row(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    marker = text.index("# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT")
+    fragment = '(.[0] | type) == "object" and .[0].id == $source and'
+    fragment_at = text.index(fragment, marker)
+    formula.write_text(
+        text[:fragment_at]
+        + ".[0].id == $source and"
+        + text[fragment_at + len(fragment) :],
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="refinery handoff"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_handoff_generation_steal(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    marker = text.index("# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT")
+    fragment = '((.[0].metadata | has("gc.polecat_submit_convoy")) | not)'
+    fragment_at = text.index(fragment, marker)
+    formula.write_text(
+        text[:fragment_at] + "true" + text[fragment_at + len(fragment) :],
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="refinery handoff"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_weak_handoff_replay_generation(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    marker = text.index("# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT")
+    fragment = '.[0].metadata["gc.polecat_submit_convoy"] == $convoy'
+    fragment_at = text.index(fragment, marker)
+    formula.write_text(
+        text[:fragment_at]
+        + '(.[0].metadata["gc.polecat_submit_convoy"] // "") != ""'
+        + text[fragment_at + len(fragment) :],
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="refinery handoff"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_completion_in_later_fence(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "# END_GASTOWN_REFINERY_COMPLETION_CONTEXT\n\n"
+            "# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION",
+            "# END_GASTOWN_REFINERY_COMPLETION_CONTEXT\n"
+            "```\n```bash\n# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="refinery completion",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_refinery_handoff_classifier_accepts_exact_active_and_closed_replay() -> None:
+    formula = (
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+        / "formulas"
+        / "mol-polecat-work.toml"
+    )
+    with formula.open("rb") as handle:
+        document = tomllib.load(handle)
+    description = next(
+        step["description"]
+        for step in document["steps"]
+        if step.get("id") == "submit-and-exit"
+    )
+    block = next(
+        candidate
+        for candidate in re.findall(r"```bash\n(.*?)\n```", description, re.DOTALL)
+        if "# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT" in candidate
+    )
+    match = re.search(
+        r"HANDOFF_ACTION=\$\(printf .*? '\n"
+        r"(?P<program>  def common:.*?)\n' 2>/dev/null\)",
+        block,
+        re.DOTALL,
+    )
+    assert match is not None
+    program = textwrap.dedent(match.group("program"))
+    command = [
+        "jq",
+        "-er",
+        "--arg",
+        "source",
+        "source-1",
+        "--arg",
+        "branch",
+        "polecat/source-1",
+        "--arg",
+        "target",
+        "main",
+        "--arg",
+        "convoy",
+        "convoy-1",
+        "--arg",
+        "refinery",
+        "rig/refinery",
+        program,
+    ]
+
+    def classify(
+        *,
+        status: str = "open",
+        assignee: str = "",
+        metadata: dict[str, object] | None = None,
+    ) -> str:
+        payload = [
+            {
+                "id": "source-1",
+                "status": status,
+                "assignee": assignee,
+                "metadata": {
+                    "branch": "polecat/source-1",
+                    **(metadata or {}),
+                },
+            }
+        ]
+        result = subprocess.run(
+            command,
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return result.stdout.strip() if result.returncode == 0 else "error"
+
+    artifact_evidence = {
+        "artifact_source_sha": "a" * 40,
+        "artifact_cleanup_state": "captured",
+    }
+    current_handoff = {
+        "target": "main",
+        "gc.polecat_submit_convoy": "convoy-1",
+        "gc.routed_to": "",
+        **artifact_evidence,
+    }
+
+    assert classify() == "proceed"
+    assert (
+        classify(
+            status="in_progress",
+            assignee="rig/refinery",
+            metadata=current_handoff,
+        )
+        == "replay"
+    )
+    assert (
+        classify(
+            status="closed",
+            assignee="",
+            metadata=current_handoff,
+        )
+        == "replay"
+    )
+    assert (
+        classify(
+            status="closed",
+            metadata={**current_handoff, "gc.polecat_submit_convoy": "old"},
+        )
+        == "error"
+    )
+    assert (
+        classify(
+            status="closed",
+            metadata={**current_handoff, "branch_ready": True},
+        )
+        == "error"
+    )
+    assert (
+        classify(
+            status="closed",
+            metadata={**current_handoff, "halt_reason": "auto_push_false"},
+        )
+        == "error"
+    )
 
 
 def test_build_basic_work_item_targets_code_and_pytest() -> None:
