@@ -89,12 +89,36 @@ GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT = (
     '"delete $CONTEXT_REF $CONTEXT_OID"',
     '"delete $EXPECTED_REF $EXPECTED_OID"',
     '"delete $SUBMIT_REF $SUBMIT_OID"',
-    '.metadata["gc.var.base_branch"] == $base',
+    '.metadata["gc.var.base_branch"] != $base',
     "source metadata.auto_push=false prohibits an automatic push",
     "auto_push=false is unsupported for a rejection-rebased branch",
     'WITNESS_CANONICAL="${ROOT_RIG_NAME:+$ROOT_RIG_NAME/}${ROOT_BINDING_PREFIX}witness"',
-    "current Git worktree does not equal source metadata.work_dir",
+    "source metadata has no recorded artifact_dir",
+    "current Git worktree does not equal source metadata.artifact_dir",
+    'RUNTIME_IDENTITIES+=("$value")',
+    '--arg actor "$STEP_ASSIGNEE"',
     "exact Graph step ownership/state changed during the lease protocol",
+)
+GASTOWN_POLECAT_SUBMIT_COMMAND_CONTRACT = (
+    'STEP_REF="mol-polecat-work.submit-and-exit"',
+    'REPLAY_VERSION="1"',
+    'RUNTIME_IDENTITIES+=("$value")',
+    "CURRENT_SESSION_ID=${GC_SESSION_ID:-}",
+    "expected exactly one current submit step across runtime identities",
+    '.metadata["gc.formula_contract"] == "graph.v2"',
+    '"polecat-submit.v1"',
+    "replay_closed_step",
+    "multiple coherent closed submit replays matched",
+    '.[0].metadata["gc.var.base_branch"]',
+    '"$SOURCE_TARGET" == "$ROOT_BASE_BRANCH"',
+    '"$SOURCE_SUBMIT_CONVOY" == "$CONVOY_ID"',
+    "SOURCE_BRANCH_READY",
+    "SOURCE_HALT_REASON",
+    "revalidate_context",
+    '--set-metadata "gc.outcome=$outcome"',
+    '--set-metadata "gc.polecat_submit_version=$REPLAY_VERSION"',
+    '--set-metadata "gc.polecat_submit_session_id=$SUBMIT_SESSION_ID"',
+    "evidence changed before completion",
 )
 GASTOWN_FORMULA_CONTRACTS = {
     "mol-review-leg": (
@@ -142,9 +166,18 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "{{test_command}}",
         *GASTOWN_POLECAT_FORMULA_LEASE_ORDER,
         '--auto-push "$AUTO_PUSH_BOOL"',
+        "gc gastown polecat-submit complete",
+        "--mode auto_push_false",
+        "--mode refinery",
         "gc bd update \"$WORK_BEAD_ID\" \\",
         "--set-metadata target={{base_branch}}",
-        "--status=open --assignee=\"$REFINERY_TARGET\"",
+        "--set-metadata gc.polecat_submit_convoy={{convoy_id}}",
+        "--unset-metadata artifact_source_sha",
+        "--unset-metadata artifact_cleanup_state",
+        "--unset-metadata branch_ready",
+        "--unset-metadata halt_reason",
+        "HANDOFF_STALE_GENERATION",
+        "--assignee=\"$REFINERY_TARGET\"",
         "gc session wake \"$REFINERY_TARGET\"",
         "gc runtime drain-ack",
     ),
@@ -156,6 +189,12 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "{{build_command}}",
         "{{test_command}}",
         "branch_has_real_change",
+        "--unset-metadata gc.polecat_submit_convoy",
+        "PRE_REOPEN_JSON",
+        ".metadata.rejection_reason == $rejection",
+        'gc workflow delete-source "$WORK" --apply',
+        'gc workflow reopen-source "$WORK"',
+        "REQUEUE_JSON",
         'git worktree add --detach "$MERGE_WT" "origin/$TARGET"',
         'git -C "$MERGE_WT" merge --ff-only "$TEMP_SHA"',
         "--set-metadata merge_result=merged",
@@ -169,7 +208,11 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "LIVENESS_MAP=$(jq -n",
         "FAIL-SAFE: empty liveness map",
         'git push origin "HEAD:refs/heads/$BRANCH"',
-        "gc workflow delete-source <bead> --apply && gc workflow reopen-source <bead>",
+        "--unset-metadata gc.polecat_submit_convoy",
+        "TOKEN_CLEAR_JSON",
+        "gc workflow delete-source <bead> --apply",
+        "gc workflow reopen-source <bead>",
+        "RESET_JSON",
         "gc bd update <bead> --set-metadata recovered=true",
         "gc session nudge <rig>/{{binding_prefix}}refinery",
         "--label=warrant",
@@ -3107,6 +3150,19 @@ def validate_gastown_orchestration_contract(pack_source: Path) -> None:
             )
         if re.search(r"\bgit push\s+(?:\\\s*)?(?:--force|-f)(?=\s|$)", lease_text):
             missing.append("polecat-lease: unconditional force push is forbidden")
+
+    submit_path = pack_source / "commands" / "polecat-submit" / "run.sh"
+    if not submit_path.is_file():
+        missing.append(f"polecat-submit: missing deterministic command {submit_path}")
+    else:
+        submit_text = submit_path.read_text(encoding="utf-8", errors="replace")
+        for fragment in GASTOWN_POLECAT_SUBMIT_COMMAND_CONTRACT:
+            if fragment not in submit_text:
+                missing.append(
+                    f"polecat-submit: missing contract fragment {fragment!r}"
+                )
+        if "gc hook" in submit_text:
+            missing.append("polecat-submit: claim hook use is forbidden")
     if missing:
         raise GateError("Gastown orchestration contract drifted:\n" + "\n".join(f"- {item}" for item in missing))
 

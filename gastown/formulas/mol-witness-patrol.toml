@@ -690,7 +690,65 @@ if [ "$ARTIFACT_SAFE" = true ]; then
 fi
 
 if [ "$ARTIFACT_SAFE" = true ] && [ "$RECOVERY_MODE" = reset ]; then
-  gc workflow delete-source <bead> --apply && gc workflow reopen-source <bead>
+  if ! confirm_orphan_still_unowned; then
+    echo "Orphan ownership or liveness changed before generation clear; refusing to reopen <bead>." >&2
+    ARTIFACT_SAFE=false
+  elif ! gc bd update <bead> \
+       --unset-metadata gc.polecat_submit_convoy; then
+    echo "Could not clear the old submit generation; refusing to reopen <bead>." >&2
+    ARTIFACT_SAFE=false
+  else
+    TOKEN_CLEAR_JSON=$(gc bd show <bead> --json 2>/dev/null) || {
+      echo "Could not read back the generation clear; refusing to reopen <bead>." >&2
+      ARTIFACT_SAFE=false
+      TOKEN_CLEAR_JSON='[]'
+    }
+    if [ "$ARTIFACT_SAFE" = true ] &&
+       ! printf '%s' "$TOKEN_CLEAR_JSON" | jq -e \
+         --arg id "<bead>" --arg owner "$ASSIGNEE" '
+         type == "array" and length == 1 and .[0].id == $id and
+         (.[0].status == "open" or .[0].status == "in_progress") and
+         .[0].assignee == $owner and
+         (((.[0].metadata // {}) | has("gc.polecat_submit_convoy") | not) or
+          .[0].metadata["gc.polecat_submit_convoy"] == "")
+       ' >/dev/null; then
+      echo "Generation clear or exact orphan ownership did not read back; refusing to reopen <bead>." >&2
+      ARTIFACT_SAFE=false
+    fi
+    if [ "$ARTIFACT_SAFE" = true ] &&
+       ! confirm_orphan_still_unowned; then
+      echo "Orphan ownership or liveness changed after generation clear; refusing to reopen <bead>." >&2
+      ARTIFACT_SAFE=false
+    fi
+  fi
+  if [ "$ARTIFACT_SAFE" = true ]; then
+    if ! gc workflow delete-source <bead> --apply ||
+       ! gc workflow reopen-source <bead>; then
+      echo "Could not reset orphan workflow for <bead>." >&2
+      ARTIFACT_SAFE=false
+    elif ! gc bd update <bead> \
+         --status=open \
+         --assignee="" \
+         --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat" \
+         --unset-metadata gc.polecat_submit_convoy; then
+      echo "Could not persist tokenless orphan pool routing for <bead>." >&2
+      ARTIFACT_SAFE=false
+    else
+      RESET_JSON=$(gc bd show <bead> --json 2>/dev/null) || RESET_JSON='[]'
+      if ! printf '%s' "$RESET_JSON" | jq -e \
+           --arg id "<bead>" \
+           --arg route "${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat" '
+           type == "array" and length == 1 and .[0].id == $id and
+           .[0].status == "open" and (.[0].assignee // "") == "" and
+           .[0].metadata["gc.routed_to"] == $route and
+           (((.[0].metadata // {}) | has("gc.polecat_submit_convoy") | not) or
+            .[0].metadata["gc.polecat_submit_convoy"] == "")
+         ' >/dev/null; then
+        echo "Orphan reset routing did not read back exactly for <bead>." >&2
+        ARTIFACT_SAFE=false
+      fi
+    fi
+  fi
 elif [ "$ARTIFACT_SAFE" = true ] && [ "$RECOVERY_MODE" = closed ]; then
   echo "Closed orphan artifact cleaned; leaving the closed bead closed."
 else

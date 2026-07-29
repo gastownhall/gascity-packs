@@ -165,19 +165,18 @@ test_polecat_startup_uses_scripted_hook_claim() {
         fail "shared restart guidance should wait for the polecat claim receipt"
     ! grep -F 'On crash or restart, re-read your formula steps' "$following" >/dev/null ||
         fail "shared restart guidance should not read formulas before polecat claim"
-    grep -F 'gc hook --claim --json' "$propulsion" >/dev/null ||
-        fail "polecat propulsion fragment should call the standard hook claim path"
-    grep -F 'After completing any formula step bead through the' "$prompt" >/dev/null ||
-        fail "polecat prompt must require hook continuation after each formula step"
-    grep -F 'Poll up to 60 seconds (6 attempts, 10 seconds apart)' "$prompt" >/dev/null &&
-        grep -F 'for i in $(seq 1 6); do' "$prompt" >/dev/null &&
-        grep -F 'sleep 10' "$prompt" >/dev/null &&
-        grep -F 'gc hook --claim --drain-ack --json' "$prompt" >/dev/null ||
-        fail "polecat prompt must wait through bounded control gaps before draining"
+    grep -F 'rerun the complete `POLECAT_CLAIM_CONTRACT` exactly once' "$propulsion" >/dev/null ||
+        fail "polecat propulsion must reuse the validated claim contract after each step"
+    grep -F 'rerun the complete' "$prompt" >/dev/null &&
+        grep -F '`POLECAT_CLAIM_CONTRACT` block exactly once' "$prompt" >/dev/null ||
+        fail "polecat prompt must require one validated continuation claim"
+    ! grep -F 'for i in $(seq 1 6); do' "$prompt" >/dev/null &&
+        ! grep -F '2>/dev/null || true' "$prompt" >/dev/null ||
+        fail "polecat prompt must not retry or suppress uncertain claim results"
     grep -F 'Complete each step through' "$propulsion" >/dev/null ||
         fail "polecat propulsion fragment must require hook continuation after each formula step"
-    grep -F 'bounded 60-second' "$propulsion" >/dev/null ||
-        fail "polecat propulsion fragment must preserve the poll-before-drain contract"
+    ! grep -F 'bounded 60-second' "$propulsion" >/dev/null ||
+        fail "polecat propulsion must not preserve the obsolete raw-hook poll"
     ! grep -F 'run `gc hook` or' "$prompt" >/dev/null ||
         fail "polecat prompt must not regress to an unclaimed hook/work-query choice"
     ! grep -F 'run `gc hook` or' "$propulsion" >/dev/null ||
@@ -185,18 +184,21 @@ test_polecat_startup_uses_scripted_hook_claim() {
 }
 
 test_polecat_submit_guard_and_step_completion_contracts() {
-    local formula prompt fragment lease_command step_command
+    local formula prompt fragment lease_command step_command submit_command
     formula="$GASTOWN/formulas/mol-polecat-work.toml"
     prompt="$GASTOWN/agents/polecat/prompt.template.md"
     fragment="$GASTOWN/template-fragments/approval-fallacy.template.md"
     lease_command="$GASTOWN/commands/polecat-lease/run.sh"
     step_command="$GASTOWN/commands/polecat-step/run.sh"
+    submit_command="$GASTOWN/commands/polecat-submit/run.sh"
 
     parse_toml "$formula"
     [[ -x "$lease_command" ]] ||
         fail "deterministic polecat lease command must be executable"
     [[ -x "$step_command" ]] ||
         fail "deterministic polecat step command must be executable"
+    [[ -x "$submit_command" ]] ||
+        fail "deterministic polecat submit command must be executable"
     ! grep -F 'gc hook' "$step_command" >/dev/null ||
         fail "polecat step completion must never claim unrelated work"
     grep -F 'gc.outcome=pass' "$step_command" >/dev/null &&
@@ -258,20 +260,46 @@ PY
         fail "polecat prompt and approval fragment must carry the same submit guard"
     fi
 
-    ! grep -F '[ "$WORK_STATUS" != "in_progress" ] || [ "$WORK_ASSIGNEE" != "$EXPECTED_ASSIGNEE" ]' "$prompt" "$fragment" >/dev/null ||
-        fail "polecat guard must not treat every non-current source state as submitted"
-    grep -F 'gc bd list --assignee "$EXPECTED_ASSIGNEE" --status=in_progress --limit=0 --json' "$fragment" >/dev/null ||
-        fail "polecat guard must find its claimed step through an exact read-only session query"
-    ! sed -n '/BEGIN_GASTOWN_SUBMIT_GUARD/,/END_GASTOWN_SUBMIT_GUARD/p' "$fragment" | grep -F 'gc hook --claim' >/dev/null ||
-        fail "done-state guard must not claim unrelated routed work"
-    grep -F '[ "$WORK_STATUS" = "closed" ] || [ "$WORK_ASSIGNEE" = "$REFINERY_TARGET" ]' "$fragment" >/dev/null ||
-        fail "polecat guard must require closed or exact-refinery terminal evidence"
-    grep -F -- '--set-metadata gc.outcome=fail --status=closed' "$fragment" >/dev/null ||
-        fail "deterministic source ownership conflicts must terminalize the workflow step"
-    [[ "$(grep -cF -- '--set-metadata gc.outcome=pass --status=closed' "$formula")" -eq 2 ]] ||
-        fail "normal and auto_push=false submission paths must close the Graph-v2 step"
-    [[ "$(grep -cF 'did not verify closed/pass; refusing to drain' "$formula")" -eq 2 ]] ||
-        fail "both successful submission paths must verify step completion before drain"
+    grep -F 'gc gastown polecat-submit guard' "$prompt" "$fragment" >/dev/null ||
+        fail "done-state guards must delegate to the deterministic submit command"
+    grep -F 'polecat-submit.v1' "$prompt" "$fragment" >/dev/null &&
+        grep -F 'gc gastown polecat-submit complete' "$prompt" "$fragment" >/dev/null &&
+        grep -F 'if ! gc runtime drain-ack' "$prompt" "$fragment" >/dev/null ||
+        fail "terminal guard callers must strictly validate, complete, and acknowledge drain"
+    ! sed -n '/BEGIN_GASTOWN_SUBMIT_GUARD/,/END_GASTOWN_SUBMIT_GUARD/p' "$fragment" |
+        grep -E 'gc hook --claim|gc bd (list|show|update)' >/dev/null ||
+        fail "done-state guard must not claim or reconstruct submit state"
+    [[ "$(grep -cF 'gc gastown polecat-submit complete' "$formula")" -eq 2 ]] ||
+        fail "normal and auto_push=false paths must each use deterministic submit completion"
+    grep -F -- '--mode auto_push_false' "$formula" >/dev/null &&
+        grep -F -- '--mode refinery' "$formula" >/dev/null ||
+        fail "submit completion calls must select exact durable evidence modes"
+    ! grep -F 'EXPECTED_ASSIGNEE="${BEADS_ACTOR' "$formula" "$prompt" "$fragment" >/dev/null ||
+        fail "submit paths must not retain single-precedence identity logic"
+    ! grep -F 'gc hook' "$submit_command" >/dev/null ||
+        fail "deterministic submit command must never claim unrelated work"
+    grep -F 'RUNTIME_IDENTITIES+=("$value")' "$submit_command" >/dev/null &&
+        grep -F 'STEP_ASSIGNEE' "$submit_command" >/dev/null &&
+        grep -F 'CURRENT_SESSION_ID=${GC_SESSION_ID:-}' "$submit_command" >/dev/null &&
+        grep -F '"polecat-submit.v1"' "$submit_command" >/dev/null &&
+        grep -F 'replay_closed_step' "$submit_command" >/dev/null &&
+        grep -F 'gc.polecat_submit_convoy' "$submit_command" >/dev/null &&
+        grep -F 'gc.polecat_submit_version' "$submit_command" >/dev/null &&
+        grep -F 'SOURCE_BRANCH_READY' "$submit_command" >/dev/null &&
+        grep -F 'revalidate_context' "$submit_command" >/dev/null ||
+        fail "submit command must bind identities, source evidence, and mutation readback"
+    if ! python3 - "$submit_command" <<'PY'
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index('if [[ "$ACTION" == "guard" ]]; then', text.index("close_step()"))
+guard = text[start:text.index("evidence_matches() {", start)]
+if "close_step" in guard or "run_gc_bd update" in guard:
+    raise SystemExit("guard branch must remain read-only")
+PY
+    then
+        fail "submit guard must never mutate either source or workflow step"
+    fi
     ! grep -F 'gc bd close "$WORK_BEAD_ID"' "$formula" >/dev/null ||
         fail "polecat formula must never close the source work bead"
 
@@ -314,7 +342,7 @@ PY
         fail "polecat prompt must distinguish lease refs from the metadata mirror"
     grep -F 'Cleanup is best-effort after the verified durable handoff' "$formula" >/dev/null ||
         fail "post-handoff local cleanup must be explicitly best-effort"
-    grep -F 'The `gc bd update` in step 5 generates' "$formula" >/dev/null ||
+    grep -F 'The `gc bd update` in step 4 generates' "$formula" >/dev/null ||
         fail "refinery wake prose must reference the renumbered handoff step"
 
 }
@@ -458,6 +486,163 @@ if verify >= metadata:
 PY
 }
 
+test_submit_generation_lifecycle_contract() {
+    if ! python3 - \
+        "$GASTOWN/formulas/mol-polecat-work.toml" \
+        "$GASTOWN/formulas/mol-refinery-patrol.toml" \
+        "$GASTOWN/formulas/mol-witness-patrol.toml" \
+        "$GASTOWN/agents/refinery/prompt.template.md" \
+        "$GASTOWN/agents/witness/prompt.template.md" <<'PY'
+from pathlib import Path
+import sys
+
+polecat, refinery, witness, refinery_prompt, witness_prompt = (
+    Path(name).read_text(encoding="utf-8") for name in sys.argv[1:]
+)
+token_set = "--set-metadata gc.polecat_submit_convoy={{convoy_id}}"
+if polecat.count(token_set) != 2:
+    raise SystemExit("both source transitions must bind the exact convoy")
+
+auto = polecat.split('if [ "$AUTO_PUSH" = "false" ]; then', 1)[1].split(
+    "# BEGIN_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION", 1
+)[0]
+for fragment in (
+    "--status=open --assignee=",
+    '--set-metadata branch="$BRANCH"',
+    "--set-metadata target={{base_branch}}",
+    token_set,
+    "--set-metadata branch_ready=true",
+    "--set-metadata halt_reason=auto_push_false",
+    "--set-metadata gc.routed_to=",
+    "--unset-metadata artifact_source_sha",
+    "--unset-metadata artifact_cleanup_state",
+    "BRANCH_READY_CONVOY",
+    "BRANCH_READY_TARGET",
+    "BRANCH_READY_HALT",
+    "BRANCH_READY_STALE_ARTIFACT",
+):
+    if fragment not in auto:
+        raise SystemExit(f"auto_push=false transition missing {fragment}")
+
+handoff = polecat.split(
+    "**4. Atomically hand the exact source generation to the refinery:", 1
+)[1].split("HANDOFF_JSON=", 1)[0]
+if handoff.count('gc bd update "$WORK_BEAD_ID"') != 1:
+    raise SystemExit("refinery handoff must use one source update")
+for fragment in (
+    "--status=open",
+    '--assignee="$REFINERY_TARGET"',
+    '--set-metadata branch="$EXPECTED_BRANCH"',
+    "--set-metadata target={{base_branch}}",
+    token_set,
+    "--set-metadata gc.routed_to=",
+    "--unset-metadata artifact_source_sha",
+    "--unset-metadata artifact_cleanup_state",
+    "--unset-metadata branch_ready",
+    "--unset-metadata halt_reason",
+):
+    if fragment not in handoff:
+        raise SystemExit(f"atomic refinery handoff missing {fragment}")
+for fragment in (
+    "HANDOFF_BRANCH",
+    "HANDOFF_TARGET",
+    "HANDOFF_CONVOY",
+    "HANDOFF_ROUTED",
+    "HANDOFF_STALE_GENERATION",
+):
+    if fragment not in polecat:
+        raise SystemExit(f"refinery handoff readback missing {fragment}")
+if polecat.count("if ! gc runtime drain-ack; then") < 2:
+    raise SystemExit("both completion callers must fail on drain error")
+
+delete = 'gc workflow delete-source "$WORK" --apply'
+delete_positions = []
+start = 0
+while True:
+    position = refinery.find(delete, start)
+    if position < 0:
+        break
+    delete_positions.append(position)
+    start = position + 1
+if len(delete_positions) != 2:
+    raise SystemExit("expected two refinery rejection reopen paths")
+for position in delete_positions:
+    before = refinery[max(0, position - 2600):position]
+    after = refinery[position:position + 1800]
+    clear = before.rfind("--unset-metadata gc.polecat_submit_convoy")
+    rejection = before.rfind("--set-metadata rejection_reason=")
+    readback = before.rfind("PRE_REOPEN_JSON")
+    ownership = before.rfind('.assignee == $owner')
+    rejection_readback = before.rfind(
+        ".metadata.rejection_reason == $rejection"
+    )
+    if min(clear, rejection, readback, ownership, rejection_readback) < 0:
+        raise SystemExit("refinery pre-reopen generation/rejection proof is incomplete")
+    if not max(clear, rejection) < readback < min(ownership, rejection_readback):
+        raise SystemExit("refinery must stage rejection then read back ownership before reopen")
+    reopen = after.find('gc workflow reopen-source "$WORK"')
+    route = after.find("--set-metadata gc.routed_to=")
+    defensive = after.find("--unset-metadata gc.polecat_submit_convoy", reopen)
+    final_readback = after.find("REQUEUE_JSON", reopen)
+    if min(reopen, route, defensive, final_readback) < 0 or not (
+        reopen < route <= defensive < final_readback
+    ):
+        raise SystemExit("refinery must defensively clear while routing after reopen")
+
+witness_delete = witness.index("gc workflow delete-source <bead> --apply")
+witness_before = witness[max(0, witness_delete - 3600):witness_delete]
+witness_after = witness[witness_delete:witness_delete + 2200]
+for fragment in (
+    "confirm_orphan_still_unowned",
+    "--unset-metadata gc.polecat_submit_convoy",
+    "TOKEN_CLEAR_JSON",
+    '.assignee == $owner',
+    "Orphan ownership or liveness changed after generation clear",
+):
+    if fragment not in witness_before:
+        raise SystemExit(f"witness pre-reopen gate missing {fragment}")
+for fragment in (
+    "gc workflow reopen-source <bead>",
+    "--set-metadata gc.routed_to=",
+    "--unset-metadata gc.polecat_submit_convoy",
+    "RESET_JSON",
+):
+    if fragment not in witness_after:
+        raise SystemExit(f"witness post-reopen proof missing {fragment}")
+
+for text, role in ((refinery_prompt, "refinery"), (witness_prompt, "witness")):
+    if "gc.polecat_submit_convoy" not in text:
+        raise SystemExit(f"{role} prompt lacks generation lifecycle guidance")
+if "read back" not in refinery_prompt:
+    raise SystemExit("refinery prompt lacks pre-reopen readback guidance")
+prompt_reopen = refinery_prompt.index('gc workflow reopen-source "$WORK"')
+prompt_before = refinery_prompt[:prompt_reopen]
+prompt_after = refinery_prompt[prompt_reopen:]
+for fragment in (
+    "REJECTION_REASON=",
+    "--unset-metadata gc.polecat_submit_convoy",
+    '--set-metadata rejection_reason="$REJECTION_REASON"',
+    "PRE_REOPEN_JSON",
+    ".metadata.rejection_reason == $rejection",
+):
+    if fragment not in prompt_before:
+        raise SystemExit(f"refinery prompt pre-reopen contract missing {fragment}")
+for fragment in (
+    "REQUEUE_JSON",
+    "--unset-metadata gc.polecat_submit_convoy",
+    ".metadata.rejection_reason == $rejection",
+    '.metadata["gc.routed_to"] == $route',
+):
+    if fragment not in prompt_after:
+        raise SystemExit(f"refinery prompt post-reopen contract missing {fragment}")
+if "exact liveness check" not in witness_prompt:
+    raise SystemExit("witness prompt lacks post-clear liveness guidance")
+PY
+    then
+        fail "submit-generation handoff/reset ordering contract drifted"
+    fi
+}
+
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
@@ -468,5 +653,6 @@ test_polecat_submit_guard_and_step_completion_contracts
 test_polecat_workflow_is_fail_fast_scoped
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_submit_generation_lifecycle_contract
 
 echo "gastown pack asset tests passed"

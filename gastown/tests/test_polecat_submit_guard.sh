@@ -1,467 +1,332 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-FRAGMENT="$ROOT/gastown/template-fragments/approval-fallacy.template.md"
+ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 PROMPT="$ROOT/gastown/agents/polecat/prompt.template.md"
-TMPDIR_TEST=$(mktemp -d)
-trap 'rm -rf "$TMPDIR_TEST"' EXIT
+FRAGMENT="$ROOT/gastown/template-fragments/approval-fallacy.template.md"
+FORMULA="$ROOT/gastown/formulas/mol-polecat-work.toml"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
 
 fail() {
     echo "FAIL: $*" >&2
     exit 1
 }
 
-extract_guard() {
-    python3 - "$1" <<'PY'
+extract_block() {
+    local source=$1
+    local begin=$2
+    local end=$3
+    local destination=$4
+    python3 - "$source" "$begin" "$end" >"$destination" <<'PY'
 import sys
 
-text = open(sys.argv[1], encoding="utf-8").read()
-begin = "# BEGIN_GASTOWN_SUBMIT_GUARD"
-end = "# END_GASTOWN_SUBMIT_GUARD"
+path, begin, end = sys.argv[1:]
+text = open(path, encoding="utf-8").read()
 if text.count(begin) != 1 or text.count(end) != 1:
-    raise SystemExit(f"{sys.argv[1]} must contain exactly one submit guard")
-guard = text.split(begin, 1)[1].split(end, 1)[0]
-print(guard.replace("{{ .BindingPrefix }}", "gastown.").strip())
+    raise SystemExit(f"{path} must contain one {begin}/{end} block")
+print(text.split(begin, 1)[1].split(end, 1)[0].strip())
 PY
 }
 
-extract_guard "$FRAGMENT" >"$TMPDIR_TEST/fragment-guard.sh"
-extract_guard "$PROMPT" >"$TMPDIR_TEST/prompt-guard.sh"
-cmp -s "$TMPDIR_TEST/fragment-guard.sh" "$TMPDIR_TEST/prompt-guard.sh" ||
-    fail "prompt and fragment submit guards differ"
+extract_block \
+    "$FRAGMENT" \
+    "# BEGIN_GASTOWN_SUBMIT_GUARD" \
+    "# END_GASTOWN_SUBMIT_GUARD" \
+    "$TMP/fragment-guard.sh"
+extract_block \
+    "$PROMPT" \
+    "# BEGIN_GASTOWN_SUBMIT_GUARD" \
+    "# END_GASTOWN_SUBMIT_GUARD" \
+    "$TMP/prompt-guard.sh"
+cmp -s "$TMP/fragment-guard.sh" "$TMP/prompt-guard.sh" ||
+    fail "prompt and fragment submit guards are not byte-identical"
 
-mkdir -p "$TMPDIR_TEST/bin"
-cat >"$TMPDIR_TEST/bin/sleep" <<'SH'
+extract_block \
+    "$FORMULA" \
+    "# BEGIN_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION" \
+    "# END_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION" \
+    "$TMP/auto-push-false-completion.sh"
+extract_block \
+    "$FORMULA" \
+    "# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION" \
+    "# END_GASTOWN_REFINERY_STEP_COMPLETION" \
+    "$TMP/refinery-completion.sh"
+python3 - \
+    "$TMP/auto-push-false-completion.sh" \
+    "$TMP/refinery-completion.sh" <<'PY'
+from pathlib import Path
+import sys
+
+for name in sys.argv[1:]:
+    path = Path(name)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("{{convoy_id}}", "convoy-1"),
+        encoding="utf-8",
+    )
+PY
+
+for block in \
+    "$TMP/fragment-guard.sh" \
+    "$TMP/prompt-guard.sh" \
+    "$TMP/auto-push-false-completion.sh" \
+    "$TMP/refinery-completion.sh"; do
+    if grep -Eq 'gc[[:space:]]+hook([[:space:]]|$)' "$block"; then
+        fail "$(basename "$block") contains a raw gc hook call"
+    fi
+done
+
+mkdir -p "$TMP/bin"
+cat >"$TMP/bin/gc" <<'FAKE'
 #!/usr/bin/env bash
-exit 0
-SH
-cat >"$TMPDIR_TEST/bin/gc" <<'SH'
-#!/usr/bin/env bash
-set -u
+set -euo pipefail
+
+printf 'gc' >>"$CALL_LOG"
+printf ' %q' "$@" >>"$CALL_LOG"
+printf '\n' >>"$CALL_LOG"
 
 if [[ "${1:-}" == "hook" ]]; then
-    touch "$STATE_DIR/called-hook"
-    exit 99
+    touch "$CASE_STATE/raw-hook"
+    exit 97
 fi
-
-if [[ "${1:-}" == "bd" && "${2:-}" == "list" ]]; then
-    if [[ " $* " != *" --assignee $EXPECTED_TEST_ASSIGNEE "* ]] ||
-       [[ " $* " != *" --status=in_progress "* ]] ||
-       [[ " $* " != *" --limit=0 "* ]] ||
-       [[ " $* " != *" --json "* ]]; then
-        touch "$STATE_DIR/bad-list-filter"
-        exit 96
-    fi
-    case "${LIST_MODE:-one}" in
-        list-fail)
-            exit 8
-            ;;
-        none)
-            printf '[]\n'
-            ;;
-        malformed)
-            printf '{"not":"an array"}\n'
-            ;;
-        multiple)
-            jq -n --arg assignee "$EXPECTED_TEST_ASSIGNEE" \
-                --arg step_ref "${STEP_REF_VALUE:-mol-polecat-work.submit-and-exit}" '[
-                {
-                    id: "step-1",
-                    status: "in_progress",
-                    assignee: $assignee,
-                    metadata: {
-                        "gc.step_ref": $step_ref,
-                        "gc.root_bead_id": "root-1"
-                    }
-                },
-                {
-                    id: "step-2",
-                    status: "in_progress",
-                    assignee: $assignee,
-                    metadata: {
-                        "gc.step_ref": $step_ref,
-                        "gc.root_bead_id": "root-2"
-                    }
-                }
-            ]'
-            ;;
-        rootless)
-            jq -n --arg assignee "$EXPECTED_TEST_ASSIGNEE" \
-                --arg step_ref "${STEP_REF_VALUE:-mol-polecat-work.submit-and-exit}" '[{
-                id: "step-1",
-                status: "in_progress",
-                assignee: $assignee,
-                metadata: {"gc.step_ref": $step_ref}
-            }]'
-            ;;
-        one|step-show-fail|root-show-fail|convoy-fail|source-show-fail)
-            jq -n --arg assignee "$EXPECTED_TEST_ASSIGNEE" \
-                --arg step_ref "${STEP_REF_VALUE:-mol-polecat-work.submit-and-exit}" '[{
-                id: "step-1",
-                status: "in_progress",
-                assignee: $assignee,
-                metadata: {
-                    "gc.step_ref": $step_ref,
-                    "gc.root_bead_id": "root-1"
-                }
-            }]'
-            ;;
-        *)
-            exit 2
-            ;;
-    esac
-    exit 0
+if [[ "${1:-}" == "bd" ]]; then
+    touch "$CASE_STATE/raw-bd"
+    exit 96
 fi
-
-if [[ "${1:-}" == "bd" && "${2:-}" == "show" ]]; then
-    id="${3:-}"
-    if [[ -z "$id" ]]; then
-        touch "$STATE_DIR/empty-id-read"
-        exit 98
-    fi
-    if [[ "${LIST_MODE:-one}" == "step-show-fail" && "$id" == "step-1" ]] ||
-       [[ "${LIST_MODE:-one}" == "root-show-fail" && "$id" == "root-1" ]] ||
-       [[ "${LIST_MODE:-one}" == "source-show-fail" && "$id" == "source-1" ]]; then
-        exit 9
-    fi
-    case "$id" in
-        step-1)
-            if [[ -f "$STATE_DIR/closed-pass" ]]; then
-                jq -n --arg step_ref "${STEP_REF_VALUE:-mol-polecat-work.submit-and-exit}" '[{
-                    id: "step-1",
-                    status: "closed",
-                    assignee: env.EXPECTED_TEST_ASSIGNEE,
-                    metadata: {
-                        "gc.step_ref": $step_ref,
-                        "gc.root_bead_id": "root-1",
-                        "gc.outcome": "pass"
-                    }
-                }]'
-            elif [[ -f "$STATE_DIR/closed-fail" ]]; then
-                jq -n --arg step_ref "${STEP_REF_VALUE:-mol-polecat-work.submit-and-exit}" '[{
-                    id: "step-1",
-                    status: "closed",
-                    assignee: env.EXPECTED_TEST_ASSIGNEE,
-                    metadata: {
-                        "gc.step_ref": $step_ref,
-                        "gc.root_bead_id": "root-1",
-                        "gc.outcome": "fail"
-                    }
-                }]'
+if [[ "${1:-}" == "gastown" &&
+      "${2:-}" == "polecat-submit" &&
+      "${3:-}" == "guard" &&
+      "$#" -eq 3 ]]; then
+    case "${GUARD_MODE:-proceed}" in
+        proceed)
+            echo '{"contract":"polecat-submit.v1","action":"proceed","step":"submit-1","assignee":"session-1","root":"root-1","convoy":"convoy-1","source":"source-1","mode":"","branch":"polecat/source-1","status":"open","source_assignee":"","replay":false}'
+            ;;
+        terminal)
+            echo '{"contract":"polecat-submit.v1","action":"terminal","step":"submit-1","assignee":"session-1","root":"root-1","convoy":"convoy-1","source":"source-1","mode":"refinery","branch":"polecat/source-1","status":"open","source_assignee":"demo/gastown.refinery","replay":false}'
+            ;;
+        terminal-replay)
+            echo '{"contract":"polecat-submit.v1","action":"terminal","step":"submit-1","assignee":"session-1","root":"root-1","convoy":"convoy-1","source":"source-1","mode":"refinery","branch":"polecat/source-1","status":"closed","source_assignee":"","replay":true}'
+            ;;
+        terminal-after-complete)
+            if [[ -e "$CASE_STATE/completed" ]]; then
+                echo '{"contract":"polecat-submit.v1","action":"terminal","step":"submit-1","assignee":"session-1","root":"root-1","convoy":"convoy-1","source":"source-1","mode":"refinery","branch":"polecat/source-1","status":"closed","source_assignee":"","replay":true}'
             else
-                jq -n --arg step_ref "${STEP_REF_VALUE:-mol-polecat-work.submit-and-exit}" '[{
-                    id: "step-1",
-                    status: "in_progress",
-                    assignee: env.EXPECTED_TEST_ASSIGNEE,
-                    metadata: {
-                        "gc.step_ref": $step_ref,
-                        "gc.root_bead_id": "root-1"
-                    }
-                }]'
+                echo '{"contract":"polecat-submit.v1","action":"terminal","step":"submit-1","assignee":"session-1","root":"root-1","convoy":"convoy-1","source":"source-1","mode":"refinery","branch":"polecat/source-1","status":"open","source_assignee":"demo/gastown.refinery","replay":false}'
             fi
             ;;
-        root-1)
-            jq -n '[{
-                id: "root-1",
-                status: "in_progress",
-                metadata: {
-                    "gc.kind": "workflow",
-                    "gc.formula_contract": "graph.v2",
-                    "gc.input_convoy_id": "convoy-1"
-                }
-            }]'
+        unsupported)
+            echo '{"contract":"polecat-submit.v1","action":"unknown","step":"submit-1","assignee":"session-1","root":"root-1","convoy":"convoy-1","source":"source-1","mode":"refinery","branch":"polecat/source-1","status":"open","source_assignee":"demo/gastown.refinery","replay":false}'
             ;;
-        source-1)
-            jq -n --arg status "$SOURCE_STATUS" --arg assignee "$SOURCE_ASSIGNEE" '[{
-                id: "source-1",
-                status: $status,
-                assignee: $assignee
-            }]'
+        malformed)
+            echo '{"action":"terminal","source":"source-1"}'
+            ;;
+        fail)
+            echo "POLECAT_SUBMIT_INDETERMINATE: fixture failure" >&2
+            exit 75
             ;;
         *)
-            exit 3
+            exit 95
             ;;
     esac
     exit 0
 fi
-
-if [[ "${1:-}" == "convoy" && "${2:-}" == "status" ]]; then
-    id="${3:-}"
-    if [[ -z "$id" ]]; then
-        touch "$STATE_DIR/empty-id-read"
-        exit 98
-    fi
-    [[ "$id" == "convoy-1" ]] || exit 4
-    [[ "${LIST_MODE:-one}" != "convoy-fail" ]] || exit 10
-    printf '{"children":[{"id":"source-1"}]}\n'
+if [[ "${1:-}" == "gastown" &&
+      "${2:-}" == "polecat-submit" &&
+      "${3:-}" == "complete" ]]; then
+    [[ "${SUBMIT_MODE:-ok}" == "ok" ]] || {
+        echo "POLECAT_SUBMIT_INDETERMINATE: fixture failure" >&2
+        exit 75
+    }
+    touch "$CASE_STATE/completed"
+    echo "POLECAT_SUBMIT_COMPLETE step=submit-1"
     exit 0
 fi
-
-if [[ "${1:-}" == "bd" && "${2:-}" == "update" ]]; then
-    touch "$STATE_DIR/called-update"
-    [[ "${3:-}" == "step-1" ]] || exit 5
-    [[ "${UPDATE_MODE:-ok}" != "fail" ]] || exit 6
-    outcome=""
-    for arg in "$@"; do
-        case "$arg" in
-            gc.outcome=pass) outcome=pass ;;
-            gc.outcome=fail) outcome=fail ;;
-        esac
-    done
-    [[ -n "$outcome" ]] || exit 7
-    if [[ "${UPDATE_MODE:-ok}" != "no-readback" ]]; then
-        touch "$STATE_DIR/closed-$outcome"
-    fi
+if [[ "${1:-}" == "runtime" &&
+      "${2:-}" == "drain-ack" &&
+      "$#" -eq 2 ]]; then
+    case "${DRAIN_MODE:-ok}" in
+        fail)
+            exit 1
+            ;;
+        fail-once)
+            if [[ ! -e "$CASE_STATE/drain-failed-once" ]]; then
+                touch "$CASE_STATE/drain-failed-once"
+                exit 1
+            fi
+            ;;
+    esac
+    touch "$CASE_STATE/drained"
     exit 0
 fi
+exit 94
+FAKE
+chmod +x "$TMP/bin/gc"
 
-if [[ "${1:-}" == "runtime" && "${2:-}" == "drain-ack" ]]; then
-    touch "$STATE_DIR/called-drain"
-    exit 0
-fi
+assert_no_raw_state_calls() {
+    local state=$1
+    [[ ! -e "$state/raw-hook" ]] ||
+        fail "$(basename "$state") called raw gc hook"
+    [[ ! -e "$state/raw-bd" ]] ||
+        fail "$(basename "$state") bypassed the submit helper with gc bd"
+}
 
-exit 97
-SH
-chmod +x "$TMPDIR_TEST/bin/gc" "$TMPDIR_TEST/bin/sleep"
-
-run_case() {
+run_guard_case() {
     local name=$1
-    local status=$2
-    local assignee=$3
-    local list_mode=$4
-    local update_mode=$5
-    local expected_rc=$6
-    local expected_outcome=$7
-    local expected_drain=$8
-    local state="$TMPDIR_TEST/state-$name"
+    local guard_mode=$2
+    local submit_mode=$3
+    local drain_mode=$4
+    local expected_rc=$5
+    local expected_output=$6
+    local expected_drain=$7
+    local expected_complete=$8
+    local state="$TMP/guard-$name"
     local rc
 
     mkdir -p "$state"
+    : >"$state/calls"
     set +e
-    PATH="$TMPDIR_TEST/bin:$PATH" \
-        STATE_DIR="$state" \
-        LIST_MODE="$list_mode" \
-        UPDATE_MODE="$update_mode" \
-        SOURCE_STATUS="$status" \
-        SOURCE_ASSIGNEE="$assignee" \
-        EXPECTED_TEST_ASSIGNEE="tributary/polecats/ac-test" \
-        BEADS_ACTOR="tributary/polecats/ac-test" \
-        GC_RIG="tributary" \
-        bash "$TMPDIR_TEST/fragment-guard.sh" >"$state/output" 2>&1
+    PATH="$TMP/bin:$PATH" \
+        CALL_LOG="$state/calls" \
+        CASE_STATE="$state" \
+        GUARD_MODE="$guard_mode" \
+        SUBMIT_MODE="$submit_mode" \
+        DRAIN_MODE="$drain_mode" \
+        bash "$TMP/fragment-guard.sh" >"$state/output" 2>&1
     rc=$?
     set -e
 
     [[ "$rc" -eq "$expected_rc" ]] ||
-        fail "$name: exit $rc, expected $expected_rc"
-    [[ ! -e "$state/called-hook" ]] ||
-        fail "$name: guard called stateful gc hook"
-    [[ ! -e "$state/bad-list-filter" ]] ||
-        fail "$name: guard did not use exact list filters"
-    [[ ! -e "$state/empty-id-read" ]] ||
-        fail "$name: guard performed an empty-id lookup"
-
-    case "$expected_outcome" in
-        none)
-            [[ ! -e "$state/closed-pass" && ! -e "$state/closed-fail" ]] ||
-                fail "$name: unexpectedly closed the submit step"
-            ;;
-        pass|fail)
-            [[ -e "$state/closed-$expected_outcome" ]] ||
-                fail "$name: missing closed/$expected_outcome outcome"
-            ;;
-        *)
-            fail "$name: invalid expected outcome"
-            ;;
-    esac
-
-    if [[ "$expected_drain" == "yes" ]]; then
-        [[ -e "$state/called-drain" ]] || fail "$name: expected drain"
-    else
-        [[ ! -e "$state/called-drain" ]] || fail "$name: unexpected drain"
+        fail "guard $name returned $rc, expected $expected_rc: $(<"$state/output")"
+    grep -F "$expected_output" "$state/output" >/dev/null ||
+        fail "guard $name did not report $expected_output"
+    [[ "$(grep -c '^gc gastown polecat-submit guard$' "$state/calls")" -eq 1 ]] ||
+        fail "guard $name did not delegate exactly once"
+    [[ "$(grep -c '^gc gastown polecat-submit complete ' "$state/calls" || true)" -eq "$expected_complete" ]] ||
+        fail "guard $name made the wrong number of terminal completion calls"
+    if [[ "$expected_complete" -gt 0 ]]; then
+        grep -Fx 'gc gastown polecat-submit complete --convoy convoy-1 --source source-1 --branch polecat/source-1 --mode refinery' \
+            "$state/calls" >/dev/null ||
+            fail "guard $name did not pass the exact validated terminal tuple"
     fi
+    if [[ "$expected_drain" == "yes" ]]; then
+        [[ -e "$state/drained" ]] ||
+            fail "guard $name did not drain after terminal evidence"
+    else
+        [[ ! -e "$state/drained" ]] ||
+            fail "guard $name drained without terminal evidence"
+    fi
+    assert_no_raw_state_calls "$state"
 }
 
-# Normal pre-handoff state: continue into submit-and-exit without mutation.
-run_case open-unassigned open "" one ok 0 none no
+run_guard_case proceed proceed ok ok 0 '"action":"proceed"' no 0
+run_guard_case terminal-live terminal ok ok 0 '"action":"terminal"' yes 1
+run_guard_case terminal-replay terminal-replay ok ok 0 '"replay":true' yes 1
+run_guard_case helper-failure fail ok ok 1 \
+    "Deterministic submit-state guard failed closed" no 0
+run_guard_case malformed-result malformed ok ok 1 \
+    "Unsupported deterministic submit-state result" no 0
+run_guard_case unsupported-result unsupported ok ok 1 \
+    "Unsupported deterministic submit-state result" no 0
+run_guard_case completion-failure terminal fail ok 1 \
+    "Deterministic terminal submit completion failed" no 1
+run_guard_case drain-failure terminal ok fail 1 \
+    "drain acknowledgement failed" no 1
 
-# Exact terminal evidence: close/pass the workflow step, verify, then drain.
-run_case open-refinery open "tributary/gastown.refinery" one ok 0 pass yes
-run_case active-refinery in_progress "tributary/gastown.refinery" one ok 0 pass yes
-run_case closed-source closed "someone/else" one ok 0 pass yes
+retry_state="$TMP/guard-drain-retry"
+mkdir -p "$retry_state"
+: >"$retry_state/calls"
+set +e
+PATH="$TMP/bin:$PATH" \
+    CALL_LOG="$retry_state/calls" \
+    CASE_STATE="$retry_state" \
+    GUARD_MODE=terminal-after-complete \
+    SUBMIT_MODE=ok \
+    DRAIN_MODE=fail-once \
+    bash "$TMP/fragment-guard.sh" >"$retry_state/first-output" 2>&1
+first_rc=$?
+PATH="$TMP/bin:$PATH" \
+    CALL_LOG="$retry_state/calls" \
+    CASE_STATE="$retry_state" \
+    GUARD_MODE=terminal-after-complete \
+    SUBMIT_MODE=ok \
+    DRAIN_MODE=fail-once \
+    bash "$TMP/fragment-guard.sh" >"$retry_state/second-output" 2>&1
+second_rc=$?
+set -e
+[[ "$first_rc" -eq 1 && "$second_rc" -eq 0 ]] ||
+    fail "drain retry did not fail then replay successfully"
+grep -F '"replay":true' "$retry_state/second-output" >/dev/null ||
+    fail "drain retry did not consume already-closed replay evidence"
+[[ "$(grep -c '^gc gastown polecat-submit complete ' "$retry_state/calls")" -eq 2 ]] ||
+    fail "drain retry did not idempotently complete on both attempts"
+[[ -e "$retry_state/drained" ]] ||
+    fail "drain retry never acknowledged drain"
+assert_no_raw_state_calls "$retry_state"
 
-# Deterministic ownership conflicts terminalize fail, preventing relaunch churn.
-run_case third-party-owner open "tributary/polecats/ac-other" one ok 1 fail yes
-run_case invalid-active-source in_progress "" one ok 1 fail yes
-
-# Transient or ambiguous reads do not claim, close, or drain.
-run_case no-current-step open "" none ok 0 none no
-run_case list-failure open "" list-fail ok 0 none no
-run_case malformed-list open "" malformed ok 0 none no
-run_case multiple-submit-steps open "" multiple ok 0 none no
-run_case rootless-step open "" rootless ok 0 none no
-run_case step-show-failure open "" step-show-fail ok 0 none no
-run_case root-show-failure open "" root-show-fail ok 0 none no
-run_case convoy-failure open "" convoy-fail ok 0 none no
-run_case source-show-failure open "" source-show-fail ok 0 none no
-
-# Mutation or readback failure is fail-closed and never drains.
-run_case close-failure open "tributary/gastown.refinery" one fail 1 none no
-run_case readback-failure open "tributary/gastown.refinery" one no-readback 1 none no
-
-extract_formula_completion() {
-    local marker=$1
-    local destination=$2
-    python3 - "$ROOT/gastown/formulas/mol-polecat-work.toml" "$marker" >"$destination" <<'PY'
-import sys
-
-text = open(sys.argv[1], encoding="utf-8").read()
-marker = sys.argv[2]
-begin = f"# BEGIN_GASTOWN_{marker}_STEP_COMPLETION"
-end = f"# END_GASTOWN_{marker}_STEP_COMPLETION"
-if text.count(begin) != 1 or text.count(end) != 1:
-    raise SystemExit(f"missing unique formula completion block {marker}")
-block = text.split(begin, 1)[1].split(end, 1)[0]
-print(block.replace("{{convoy_id}}", "convoy-1").strip())
-PY
-}
-
-run_formula_completion_case() {
-    local marker=$1
-    local update_mode=$2
-    local expected_rc=$3
-    local expected_closed=$4
-    local expected_drain=$5
-    local state="$TMPDIR_TEST/formula-state-$marker-$update_mode"
-    local script="$TMPDIR_TEST/formula-$marker.sh"
+run_formula_case() {
+    local name=$1
+    local script=$2
+    local expected_mode=$3
+    local submit_mode=$4
+    local expected_rc=$5
+    local expected_drain=$6
+    local drain_mode=${7:-ok}
+    local state="$TMP/formula-$name"
     local rc
+    local expected_call
 
-    extract_formula_completion "$marker" "$script"
     mkdir -p "$state"
+    : >"$state/calls"
     set +e
-    PATH="$TMPDIR_TEST/bin:$PATH" \
-        STATE_DIR="$state" \
-        LIST_MODE=one \
-        UPDATE_MODE="$update_mode" \
-        SOURCE_STATUS=open \
-        SOURCE_ASSIGNEE="" \
-        EXPECTED_TEST_ASSIGNEE="tributary/polecats/ac-test" \
-        BEADS_ACTOR="tributary/polecats/ac-test" \
-        GC_RIG="tributary" \
+    PATH="$TMP/bin:$PATH" \
+        CALL_LOG="$state/calls" \
+        CASE_STATE="$state" \
+        SUBMIT_MODE="$submit_mode" \
+        DRAIN_MODE="$drain_mode" \
         WORK_BEAD_ID="source-1" \
-        REFINERY_TARGET="tributary/gastown.refinery" \
+        EXPECTED_BRANCH="polecat/source-1" \
         bash "$script" >"$state/output" 2>&1
     rc=$?
     set -e
 
     [[ "$rc" -eq "$expected_rc" ]] ||
-        fail "formula $marker/$update_mode: exit $rc, expected $expected_rc"
-    [[ ! -e "$state/called-hook" ]] ||
-        fail "formula $marker/$update_mode: called stateful gc hook"
-    [[ ! -e "$state/bad-list-filter" ]] ||
-        fail "formula $marker/$update_mode: did not use exact list filters"
-    [[ ! -e "$state/empty-id-read" ]] ||
-        fail "formula $marker/$update_mode: performed an empty-id lookup"
-
-    if [[ "$expected_closed" == "yes" ]]; then
-        [[ -e "$state/closed-pass" ]] ||
-            fail "formula $marker/$update_mode: submit step was not closed/pass"
-    else
-        [[ ! -e "$state/closed-pass" ]] ||
-            fail "formula $marker/$update_mode: unexpectedly closed submit step"
-    fi
+        fail "formula $name returned $rc, expected $expected_rc: $(<"$state/output")"
+    expected_call="gc gastown polecat-submit complete --convoy convoy-1 --source source-1 --branch polecat/source-1 --mode $expected_mode"
+    [[ "$(grep -cFx "$expected_call" "$state/calls")" -eq 1 ]] ||
+        fail "formula $name did not make the exact $expected_mode completion call"
     if [[ "$expected_drain" == "yes" ]]; then
-        [[ -e "$state/called-drain" ]] ||
-            fail "formula $marker/$update_mode: expected drain"
+        [[ -e "$state/drained" ]] ||
+            fail "formula $name did not drain after verified completion"
     else
-        [[ ! -e "$state/called-drain" ]] ||
-            fail "formula $marker/$update_mode: unexpected drain"
+        [[ ! -e "$state/drained" ]] ||
+            fail "formula $name drained after failed completion"
     fi
+    assert_no_raw_state_calls "$state"
 }
 
-# Execute both formula terminal paths, plus a fail-closed mutation fixture.
-run_formula_completion_case AUTO_PUSH_FALSE ok 0 yes yes
-run_formula_completion_case REFINERY ok 0 yes yes
-run_formula_completion_case REFINERY fail 1 no no
+run_formula_case \
+    auto-push-false-success \
+    "$TMP/auto-push-false-completion.sh" \
+    auto_push_false ok 0 yes
+run_formula_case \
+    auto-push-false-failure \
+    "$TMP/auto-push-false-completion.sh" \
+    auto_push_false fail 1 no
+run_formula_case \
+    auto-push-false-drain-failure \
+    "$TMP/auto-push-false-completion.sh" \
+    auto_push_false ok 1 no fail
+run_formula_case \
+    refinery-success \
+    "$TMP/refinery-completion.sh" \
+    refinery ok 0 yes
+run_formula_case \
+    refinery-failure \
+    "$TMP/refinery-completion.sh" \
+    refinery fail 1 no
+run_formula_case \
+    refinery-drain-failure \
+    "$TMP/refinery-completion.sh" \
+    refinery ok 1 no fail
 
-extract_resume_verify() {
-    python3 - "$PROMPT" >"$TMPDIR_TEST/resume-verify.sh" <<'PY'
-import sys
-
-text = open(sys.argv[1], encoding="utf-8").read()
-begin = "# BEGIN_GASTOWN_RESUME_VERIFY"
-end = "# END_GASTOWN_RESUME_VERIFY"
-if text.count(begin) != 1 or text.count(end) != 1:
-    raise SystemExit("missing unique resume verification block")
-block = text.split(begin, 1)[1].split(end, 1)[0]
-print(block.replace("{{ .BindingPrefix }}", "gastown.").strip())
-PY
-}
-
-run_resume_case() {
-    local name=$1
-    local step_ref=$2
-    local status=$3
-    local assignee=$4
-    local list_mode=$5
-    local expected_rc=$6
-    local expected_output=$7
-    local state="$TMPDIR_TEST/resume-state-$name"
-    local rc
-
-    mkdir -p "$state"
-    set +e
-    PATH="$TMPDIR_TEST/bin:$PATH" \
-        STATE_DIR="$state" \
-        LIST_MODE="$list_mode" \
-        UPDATE_MODE=ok \
-        STEP_REF_VALUE="$step_ref" \
-        SOURCE_STATUS="$status" \
-        SOURCE_ASSIGNEE="$assignee" \
-        EXPECTED_TEST_ASSIGNEE="tributary/polecats/ac-restarted" \
-        BEADS_ACTOR="tributary/polecats/ac-restarted" \
-        GC_RIG="tributary" \
-        bash "$TMPDIR_TEST/resume-verify.sh" >"$state/output" 2>&1
-    rc=$?
-    set -e
-
-    [[ "$rc" -eq "$expected_rc" ]] ||
-        fail "resume $name: exit $rc, expected $expected_rc"
-    grep -F "$expected_output" "$state/output" >/dev/null ||
-        fail "resume $name: missing output $expected_output"
-    [[ ! -e "$state/called-hook" ]] ||
-        fail "resume $name: called stateful gc hook"
-    [[ ! -e "$state/called-update" ]] ||
-        fail "resume $name: mutated bead state"
-    [[ ! -e "$state/called-drain" ]] ||
-        fail "resume $name: drained instead of preserving/re-establishing step ownership"
-    [[ ! -e "$state/bad-list-filter" ]] ||
-        fail "resume $name: did not use exact session list filters"
-    [[ ! -e "$state/empty-id-read" ]] ||
-        fail "resume $name: performed an empty-id lookup"
-    ! grep -F 'OWNERSHIP_LOST' "$state/output" >/dev/null ||
-        fail "resume $name: interpreted source state as workflow ownership"
-}
-
-extract_resume_verify
-
-# A new provider session resumes any exact mol-polecat-work step. The source
-# remains observational: normal open/unassigned and later refinery assignment
-# do not invalidate ownership of the current Graph-v2 step.
-run_resume_case long-running-implement \
-    mol-polecat-work.implement open "" one 0 \
-    "RESUME_CONFIRMED step=step-1 ref=mol-polecat-work.implement"
-run_resume_case source-already-advanced \
-    mol-polecat-work.submit-and-exit open "tributary/gastown.refinery" one 0 \
-    "RESUME_TERMINAL step=step-1 source=source-1"
-
-# Missing ownership must go through the standard claim path; unreadable state
-# remains fail-closed without draining or guessing.
-run_resume_case needs-reclaim \
-    mol-polecat-work.implement open "" none 0 RESUME_CLAIM_REQUIRED
-run_resume_case list-unreadable \
-    mol-polecat-work.implement open "" list-fail 1 RESUME_INDETERMINATE
-run_resume_case wrong-formula \
-    mol-review-leg.review open "" one 0 RESUME_CLAIM_REQUIRED
-
-echo "polecat submit guard tests passed"
+echo "polecat submit guard integration tests passed"

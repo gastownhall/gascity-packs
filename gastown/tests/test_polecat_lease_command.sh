@@ -47,6 +47,25 @@ if [[ "${1:-}" == "bd" && "${2:-}" == "list" ]]; then
                 ;;
         esac
     done
+    if [[ -n "${FAIL_BD_LIST_ASSIGNEE:-}" &&
+          "$assignee" == "$FAIL_BD_LIST_ASSIGNEE" &&
+          ( -z "${FAIL_BD_LIST_STATUS:-}" ||
+            "$status" == "$FAIL_BD_LIST_STATUS" ) ]]; then
+        exit 96
+    fi
+    if [[ -n "${WRONG_BD_LIST_ASSIGNEE:-}" &&
+          "$assignee" == "$WRONG_BD_LIST_ASSIGNEE" &&
+          "$status" == "in_progress" ]]; then
+        jq '[.beads["workspace-1"]]' "$FAKE_DB"
+        exit 0
+    fi
+    if [[ -n "${DUPLICATE_BD_LIST_ASSIGNEE:-}" &&
+          "$assignee" == "$DUPLICATE_BD_LIST_ASSIGNEE" &&
+          "$status" == "in_progress" ]]; then
+        jq --arg assignee "$assignee" \
+            '[.beads["workspace-1"] | .assignee = $assignee]' "$FAKE_DB"
+        exit 0
+    fi
     jq --arg assignee "$assignee" --arg status "$status" \
         '[.beads[] | select(.assignee == $assignee and .status == $status)]' \
         "$FAKE_DB"
@@ -55,6 +74,23 @@ fi
 
 if [[ "${1:-}" == "bd" && "${2:-}" == "show" ]]; then
     id=${3:-}
+    if [[ -e "$FAKE_STATE/race-fired" &&
+          ! -e "$FAKE_STATE/terminal-authority-drift-fired" ]]; then
+        case "${TERMINAL_AUTHORITY_DRIFT:-}:$id" in
+            step:submit-1)
+                jq '.beads["submit-1"].assignee = "other-runtime"' \
+                    "$FAKE_DB" >"$FAKE_DB.tmp"
+                write_db
+                touch "$FAKE_STATE/terminal-authority-drift-fired"
+                ;;
+            root:root-1)
+                jq '.beads["root-1"].metadata["gc.var.binding_prefix"] = "other."' \
+                    "$FAKE_DB" >"$FAKE_DB.tmp"
+                write_db
+                touch "$FAKE_STATE/terminal-authority-drift-fired"
+                ;;
+        esac
+    fi
     jq -e --arg id "$id" '[.beads[$id]] | select(.[0] != null)' "$FAKE_DB"
     exit 0
 fi
@@ -263,6 +299,8 @@ chmod +x "$TEST_TMP/bin/gc" "$TEST_TMP/bin/git"
 CASE_DIR=""
 ORIGIN=""
 SEED=""
+CITY_ROOT=""
+RIG_ROOT=""
 WORK=""
 STATE=""
 DB=""
@@ -275,7 +313,9 @@ new_case() {
     CASE_DIR="$TEST_TMP/$name"
     ORIGIN="$CASE_DIR/origin.git"
     SEED="$CASE_DIR/seed"
-    WORK="$CASE_DIR/work"
+    CITY_ROOT="$CASE_DIR/city"
+    RIG_ROOT="$CASE_DIR/rig"
+    WORK="$CITY_ROOT/.gc/worktrees/rig/artifacts/worktrees/source-1"
     STATE="$CASE_DIR/state"
     DB="$STATE/db.json"
     PUSH_LOG="$STATE/push.log"
@@ -299,10 +339,12 @@ new_case() {
     "$REAL_GIT" -C "$SEED" commit -q -m feature
     "$REAL_GIT" -C "$SEED" push -q -u origin polecat/source-1
 
-    "$REAL_GIT" clone -q "$ORIGIN" "$WORK"
-    "$REAL_GIT" -C "$WORK" config user.name "Lease Test"
-    "$REAL_GIT" -C "$WORK" config user.email "lease-test@example.invalid"
-    "$REAL_GIT" -C "$WORK" switch -q polecat/source-1
+    "$REAL_GIT" clone -q "$ORIGIN" "$RIG_ROOT"
+    "$REAL_GIT" -C "$RIG_ROOT" config user.name "Lease Test"
+    "$REAL_GIT" -C "$RIG_ROOT" config user.email "lease-test@example.invalid"
+    mkdir -p "$(dirname "$WORK")"
+    "$REAL_GIT" -C "$RIG_ROOT" worktree add -q \
+        -b polecat/source-1 "$WORK" origin/polecat/source-1
 
     if [[ "$rejection" == "true" ]]; then
         "$REAL_GIT" -C "$SEED" switch -q main
@@ -314,12 +356,12 @@ new_case() {
 
     jq -n \
       --arg rejection "$([[ "$rejection" == "true" ]] && printf rejected)" \
-      --arg work_dir "$WORK" '
+      --arg artifact_dir "$WORK" '
       {
         beads: {
           "source-1": {
             id: "source-1", status: "open", assignee: "",
-            metadata: ({branch: "polecat/source-1", work_dir: $work_dir} +
+            metadata: ({branch: "polecat/source-1", artifact_dir: $artifact_dir} +
                        (if $rejection == "" then {}
                         else {rejection_reason: $rejection} end))
           },
@@ -354,6 +396,17 @@ new_case() {
     : >"$STATE/gc.log"
 }
 
+move_case_worktree() {
+    local destination=$1
+    mkdir -p "$(dirname "$destination")"
+    "$REAL_GIT" -C "$RIG_ROOT" worktree move "$WORK" "$destination"
+    WORK=$destination
+    jq --arg path "$WORK" \
+        '.beads["source-1"].metadata.artifact_dir = $path' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+}
+
 invoke_lease() {
     local action=$1
     shift
@@ -361,10 +414,20 @@ invoke_lease() {
         cd "$WORK"
         PATH="$TEST_TMP/bin:$PATH" \
         GC_BIN="$TEST_TMP/bin/gc" \
-        BEADS_ACTOR=actor-1 \
+        GC_CITY_PATH="$CITY_ROOT" \
+        GC_RIG=rig \
+        GC_RIG_ROOT="$RIG_ROOT" \
+        BEADS_ACTOR="${LEASE_BEADS_ACTOR-actor-1}" \
+        GC_SESSION_NAME="${LEASE_GC_SESSION_NAME-}" \
+        GC_SESSION_ID="${LEASE_GC_SESSION_ID-}" \
+        GC_ALIAS="${LEASE_GC_ALIAS-}" \
+        GC_AGENT="${LEASE_GC_AGENT-}" \
         FAKE_DB="$DB" \
         FAKE_STATE="$STATE" \
         FAKE_GC_LOG="$STATE/gc.log" \
+        WRONG_BD_LIST_ASSIGNEE="${WRONG_BD_LIST_ASSIGNEE:-}" \
+        DUPLICATE_BD_LIST_ASSIGNEE="${DUPLICATE_BD_LIST_ASSIGNEE:-}" \
+        TERMINAL_AUTHORITY_DRIFT="${TERMINAL_AUTHORITY_DRIFT:-}" \
         GIT_PUSH_LOG="$PUSH_LOG" \
         REAL_GIT="$REAL_GIT" \
         "$COMMAND" "$action" \
@@ -536,6 +599,39 @@ test_remote_race_terminalizes() {
        "$step_line" -lt "$drain_line" ]] ||
         fail "hard conflict did not order source, durable witness, step, then drain"
     assert_no_unconditional_force
+}
+
+test_terminalization_revalidates_graph_authority() {
+    local drift race_rc
+
+    for drift in step root; do
+        prepare_rebased "terminal-${drift}-drift"
+        make_racer
+        : >"$PUSH_LOG"
+        set +e
+        (
+            export GIT_RACER_WORK="$RACER"
+            export TERMINAL_AUTHORITY_DRIFT="$drift"
+            run_lease submit --auto-push true
+            exit "$RUN_RC"
+        )
+        race_rc=$?
+        set -e
+
+        [[ "$race_rc" -eq 64 ]] ||
+            fail "$drift drift conflict returned $race_rc instead of 64: $(<"$OUTPUT")"
+        [[ -e "$STATE/terminal-authority-drift-fired" ]] ||
+            fail "$drift drift fixture did not fire before terminalization"
+        [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" &&
+           "$(jq -r '.beads["source-1"].assignee' "$DB")" == "" ]] ||
+            fail "$drift drift mutated source state from stale Graph authority"
+        ! rg -q '^gc bd update source-1 .*--status=blocked' "$STATE/gc.log" ||
+            fail "$drift drift attempted to block the source"
+        [[ ! -e "$STATE/mail-sent" && ! -e "$STATE/drained" ]] ||
+            fail "$drift drift notified or drained without current Graph authority"
+        rg -q 'Graph authority changed before hard terminalization' "$OUTPUT" ||
+            fail "$drift drift did not report the authority failure"
+    done
 }
 
 test_unreadable_is_indeterminate() {
@@ -840,16 +936,378 @@ test_graph_base_authority() {
         fail "Graph base authorization failure mutated source"
 }
 
-test_worktree_authority() {
-    new_case worktree-authority false
-    jq --arg path "$SEED" '.beads["source-1"].metadata.work_dir = $path' \
+test_artifact_dir_authority() {
+    new_case artifact-dir-authority false
+    jq --arg path "$SEED" '.beads["source-1"].metadata.artifact_dir = $path' \
         "$DB" >"$DB.tmp"
     mv "$DB.tmp" "$DB"
     run_lease workspace
     [[ "$RUN_RC" -eq 75 ]] ||
-        fail "command accepted a different source worktree: $(<"$OUTPUT")"
+        fail "command accepted a different source artifact_dir: $(<"$OUTPUT")"
     [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
-        fail "worktree authorization failure mutated source"
+        fail "artifact_dir authorization failure mutated source"
+}
+
+test_legacy_work_dir_is_not_lease_authority() {
+    new_case legacy-work-dir-not-authority false
+    jq '.beads["source-1"].metadata |=
+        (.work_dir = .artifact_dir | del(.artifact_dir))' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "lease accepted deprecated work_dir authority: $(<"$OUTPUT")"
+    rg -q 'source metadata has no recorded artifact_dir' "$OUTPUT" ||
+        fail "missing artifact_dir did not produce a precise diagnostic"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "missing artifact_dir mutated source state"
+}
+
+assert_artifact_binding_rejected() {
+    local label=$1
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "$label artifact binding returned $RUN_RC instead of 75: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "$label artifact binding created lease authority"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "$label artifact binding mutated source state"
+}
+
+test_artifact_dir_containment_matrix() {
+    local destination original redirected provider legacy
+
+    new_case artifact-cross-city false
+    destination="$CASE_DIR/other-city/.gc/worktrees/rig/artifacts/worktrees/source-1"
+    move_case_worktree "$destination"
+    assert_artifact_binding_rejected "same-repository cross-city"
+
+    new_case artifact-cross-rig false
+    destination="$CITY_ROOT/.gc/worktrees/other/artifacts/worktrees/source-1"
+    move_case_worktree "$destination"
+    assert_artifact_binding_rejected "same-city cross-rig"
+
+    new_case artifact-wrong-bead false
+    destination="$CITY_ROOT/.gc/worktrees/rig/artifacts/worktrees/source-other"
+    move_case_worktree "$destination"
+    assert_artifact_binding_rejected "wrong-bead"
+
+    new_case artifact-wrong-namespace false
+    destination="$CITY_ROOT/.gc/worktrees/rig/refinery/worktrees/source-1"
+    move_case_worktree "$destination"
+    assert_artifact_binding_rejected "wrong-namespace"
+
+    new_case artifact-provider-home false
+    destination="$CITY_ROOT/.gc/worktrees/rig/polecats/gastown.nux"
+    move_case_worktree "$destination"
+    assert_artifact_binding_rejected "provider-home"
+
+    new_case artifact-symlink-redirect false
+    original=$WORK
+    redirected="$CASE_DIR/redirected/worktrees/source-1"
+    mkdir -p "$(dirname "$redirected")"
+    "$REAL_GIT" -C "$RIG_ROOT" worktree move "$original" "$redirected"
+    ln -s "$redirected" "$original"
+    assert_artifact_binding_rejected "symlink-redirected"
+
+    new_case artifact-foreign-repository false
+    "$REAL_GIT" -C "$RIG_ROOT" worktree remove "$WORK"
+    "$REAL_GIT" init -q -b polecat/source-1 "$WORK"
+    "$REAL_GIT" -C "$WORK" config user.name "Foreign Lease Test"
+    "$REAL_GIT" -C "$WORK" config user.email "foreign@example.invalid"
+    printf 'foreign\n' >"$WORK/foreign.txt"
+    "$REAL_GIT" -C "$WORK" add foreign.txt
+    "$REAL_GIT" -C "$WORK" commit -q -m foreign
+    assert_artifact_binding_rejected "foreign-repository"
+
+    new_case artifact-valid-provider-nested false
+    original=$WORK
+    provider="$CITY_ROOT/.gc/worktrees/rig/polecats/gastown.nux"
+    legacy="$provider/worktrees/source-1"
+    "$REAL_GIT" -C "$RIG_ROOT" worktree remove "$original"
+    mkdir -p "$(dirname "$provider")"
+    "$REAL_GIT" -C "$RIG_ROOT" worktree add -q \
+        -b provider-home "$provider" origin/main
+    mkdir -p "$(dirname "$legacy")"
+    "$REAL_GIT" -C "$RIG_ROOT" worktree add -q \
+        "$legacy" polecat/source-1
+    WORK=$legacy
+    jq --arg path "$WORK" \
+        '.beads["source-1"].metadata.artifact_dir = $path' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "valid provider-nested artifact_dir was rejected: $(<"$OUTPUT")"
+}
+
+test_runtime_identity_deduplication() {
+    new_case runtime-identity-deduplication false
+    LEASE_GC_SESSION_NAME=actor-1
+    LEASE_GC_SESSION_ID=actor-1
+    LEASE_GC_ALIAS=actor-1
+    LEASE_GC_AGENT=actor-1
+    run_lease workspace
+    unset LEASE_GC_SESSION_NAME LEASE_GC_SESSION_ID LEASE_GC_ALIAS LEASE_GC_AGENT
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "deduplicated runtime identity lookup failed: $(<"$OUTPUT")"
+    [[ "$(rg -c -F \
+        'gc bd list --assignee actor-1 --status=in_progress ' \
+        "$STATE/gc.log")" -eq 1 ]] ||
+        fail "equivalent runtime identities issued duplicate live-step queries"
+}
+
+test_runtime_identity_query_rows_are_exact() {
+    new_case runtime-identity-wrong-assignee false
+    LEASE_GC_ALIAS=actor-alias
+    WRONG_BD_LIST_ASSIGNEE=actor-alias
+    run_lease workspace
+    unset LEASE_GC_ALIAS WRONG_BD_LIST_ASSIGNEE
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "wrong-assignee list response returned $RUN_RC instead of 75"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "wrong-assignee list response created lease authority"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "wrong-assignee list response mutated source state"
+
+    new_case runtime-identity-duplicate-id false
+    LEASE_GC_ALIAS=actor-alias
+    DUPLICATE_BD_LIST_ASSIGNEE=actor-alias
+    run_lease workspace
+    unset LEASE_GC_ALIAS DUPLICATE_BD_LIST_ASSIGNEE
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "duplicate aggregate step id returned $RUN_RC instead of 75"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "duplicate aggregate step id created lease authority"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "duplicate aggregate step id mutated source state"
+}
+
+test_live_graph_state_is_active_and_outcome_free() {
+    new_case live-step-preexisting-outcome false
+    jq '.beads["workspace-1"].metadata["gc.outcome"] = "pass"' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "preexisting live-step outcome returned $RUN_RC instead of 75"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "preexisting live-step outcome created lease authority"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "preexisting live-step outcome mutated source state"
+
+    new_case terminal-live-root false
+    jq '.beads["root-1"].status = "closed" |
+        .beads["root-1"].metadata["gc.outcome"] = "fail"' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "terminal target root returned $RUN_RC instead of 75"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "terminal target root created lease authority"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "terminal target root mutated source state"
+}
+
+test_alternate_identity_live_and_closed_recovery() {
+    LEASE_GC_ALIAS=actor-alias
+    prepare_rebased alternate-identity-recovery
+    jq '.beads["submit-1"].assignee = "actor-alias"' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    advance_remote
+    touch "$STATE/fail-drain-once"
+
+    run_lease submit --auto-push true
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "alternate live identity did not reach verified drain retry: $(<"$OUTPUT")"
+    [[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "closed" ]] ||
+        fail "alternate exact assignee was not used to close the live step"
+    [[ ! -e "$STATE/drained" ]] ||
+        fail "alternate live identity fixture unexpectedly acknowledged drain"
+
+    run_lease submit --auto-push true
+    unset LEASE_GC_ALIAS
+    [[ "$RUN_RC" -eq 64 ]] ||
+        fail "alternate closed identity was not recovered: $(<"$OUTPUT")"
+    [[ -e "$STATE/drained" ]] ||
+        fail "alternate closed identity recovery did not retry drain"
+}
+
+test_closed_recovery_root_classification() {
+    new_case terminal-other-root-recovery false
+    jq '.beads["source-1"] |=
+          (.status = "blocked" |
+           .metadata["gc.routed_to"] = "human" |
+           .metadata.polecat_halt_reason = "push_lease_conflict") |
+        .beads["workspace-1"] |=
+          (.status = "closed" |
+           .metadata["gc.outcome"] = "fail" |
+           .metadata["gc.failure_class"] = "hard" |
+           .metadata["gc.failure_reason"] = "push_lease_conflict") |
+        .beads["root-1"] |=
+          (.status = "closed" | .metadata["gc.outcome"] = "fail") |
+        .beads["root-2"] = {
+          id: "root-2", status: "closed", assignee: "",
+          metadata: {
+            "gc.kind": "workflow",
+            "gc.formula_contract": "graph.v2",
+            "gc.input_convoy_id": "other-convoy",
+            "gc.var.base_branch": "other-base",
+            "gc.outcome": "pass"
+          }
+        } |
+        .beads["workspace-2"] = {
+          id: "workspace-2", status: "closed", assignee: "actor-1",
+          metadata: {
+            "gc.step_ref": "mol-polecat-work.workspace-setup",
+            "gc.root_bead_id": "root-2",
+            "gc.outcome": "fail",
+            "gc.failure_class": "hard",
+            "gc.failure_reason": "push_lease_conflict"
+          }
+        }' "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 64 ]] ||
+        fail "terminal other-convoy history blocked exact recovery: $(<"$OUTPUT")"
+    [[ -e "$STATE/drained" ]] ||
+        fail "exact closed hard-recovery did not retry drain"
+
+    new_case malformed-history-recovery false
+    jq '.beads["source-1"] |=
+          (.status = "blocked" |
+           .metadata["gc.routed_to"] = "human" |
+           .metadata.polecat_halt_reason = "push_lease_conflict") |
+        .beads["workspace-1"] |=
+          (.status = "closed" |
+           .metadata["gc.outcome"] = "fail" |
+           .metadata["gc.failure_class"] = "hard" |
+           .metadata["gc.failure_reason"] = "push_lease_conflict") |
+        .beads["root-2"] = {
+          id: "root-2", status: "closed", assignee: "",
+          metadata: {
+            "gc.kind": "workflow",
+            "gc.input_convoy_id": "other-convoy",
+            "gc.var.base_branch": "main",
+            "gc.outcome": "fail"
+          }
+        } |
+        .beads["workspace-2"] = {
+          id: "workspace-2", status: "closed", assignee: "actor-1",
+          metadata: {
+            "gc.step_ref": "mol-polecat-work.workspace-setup",
+            "gc.root_bead_id": "root-2",
+            "gc.outcome": "fail",
+            "gc.failure_class": "hard",
+            "gc.failure_reason": "push_lease_conflict"
+          }
+        }' "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "malformed historical root returned $RUN_RC instead of 75"
+    [[ ! -e "$STATE/drained" ]] ||
+        fail "malformed historical root recovery acknowledged drain"
+}
+
+test_closed_recovery_target_root_state_matrix() {
+    local state name
+
+    new_case incoherent-target-root-recovery false
+    jq '.beads["source-1"] |=
+          (.status = "blocked" |
+           .metadata["gc.routed_to"] = "human" |
+           .metadata.polecat_halt_reason = "push_lease_conflict") |
+        .beads["workspace-1"] |=
+          (.status = "closed" |
+           .metadata["gc.outcome"] = "fail" |
+           .metadata["gc.failure_class"] = "hard" |
+           .metadata["gc.failure_reason"] = "push_lease_conflict")' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+
+    while IFS= read -r state; do
+        name=$(printf '%s' "$state" | jq -r '.name')
+        jq --argjson state "$state" '
+            .beads["root-1"].status = $state.status |
+            if ($state | has("outcome"))
+            then .beads["root-1"].metadata["gc.outcome"] = $state.outcome
+            else del(.beads["root-1"].metadata["gc.outcome"])
+            end' "$DB" >"$DB.tmp"
+        mv "$DB.tmp" "$DB"
+        rm -f "$STATE/drained"
+
+        run_lease workspace
+        [[ "$RUN_RC" -eq 75 ]] ||
+            fail "$name target recovery root returned $RUN_RC instead of 75: $(<"$OUTPUT")"
+        [[ ! -e "$STATE/drained" ]] ||
+            fail "$name target recovery root acknowledged drain"
+        [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "blocked" ]] ||
+            fail "$name target recovery root changed source state"
+        [[ "$(jq -r '.beads["workspace-1"].status' "$DB")" == "closed" ]] ||
+            fail "$name target recovery root changed closed recovery step"
+    done <<'EOF'
+{"name":"closed-pass","status":"closed","outcome":"pass"}
+{"name":"open-without-outcome","status":"open"}
+{"name":"closed-without-outcome","status":"closed"}
+{"name":"active-fail","status":"in_progress","outcome":"fail"}
+EOF
+}
+
+test_ambiguous_runtime_identity_steps_fail_closed() {
+    new_case ambiguous-runtime-identities false
+    jq '.beads["workspace-2"] = {
+          id: "workspace-2",
+          status: "in_progress",
+          assignee: "actor-alias",
+          metadata: {
+            "gc.step_ref": "mol-polecat-work.workspace-setup",
+            "gc.root_bead_id": "root-1"
+          }
+        }' "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    LEASE_GC_ALIAS=actor-alias
+    run_lease workspace
+    unset LEASE_GC_ALIAS
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "ambiguous runtime identity steps did not fail closed: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "ambiguous runtime identity steps created lease authority"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "ambiguous runtime identity steps mutated source state"
+}
+
+test_unreadable_runtime_identity_query_fails_closed() {
+    new_case unreadable-runtime-identity-live false
+    LEASE_GC_ALIAS=actor-alias
+    export FAIL_BD_LIST_ASSIGNEE=actor-alias
+    export FAIL_BD_LIST_STATUS=in_progress
+    run_lease workspace
+    unset FAIL_BD_LIST_ASSIGNEE FAIL_BD_LIST_STATUS LEASE_GC_ALIAS
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "unreadable live identity query did not fail closed: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "unreadable live identity query created lease authority"
+
+    new_case unreadable-runtime-identity-closed false
+    jq '.beads["workspace-1"] |=
+        (.status = "closed" |
+         .metadata["gc.outcome"] = "fail" |
+         .metadata["gc.failure_class"] = "hard" |
+         .metadata["gc.failure_reason"] = "push_lease_conflict")' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    LEASE_GC_ALIAS=actor-alias
+    export FAIL_BD_LIST_ASSIGNEE=actor-alias
+    export FAIL_BD_LIST_STATUS=closed
+    run_lease workspace
+    unset FAIL_BD_LIST_ASSIGNEE FAIL_BD_LIST_STATUS LEASE_GC_ALIAS
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "unreadable closed identity query did not fail closed: $(<"$OUTPUT")"
+    [[ ! -e "$STATE/drained" ]] ||
+        fail "unreadable closed identity query acknowledged drain"
 }
 
 test_witness_authority() {
@@ -1236,6 +1694,7 @@ test_normal_push
 test_rebased_exact_lease_push
 test_rejected_auto_push_false_stops_before_freeze
 test_remote_race_terminalizes
+test_terminalization_revalidates_graph_authority
 test_unreadable_is_indeterminate
 test_capture_mirror_crash_recovery
 test_rebase_mirror_crash_recovery
@@ -1250,7 +1709,17 @@ test_closed_step_drain_retry
 test_mirror_tamper_is_hard
 test_auto_push_authority
 test_graph_base_authority
-test_worktree_authority
+test_artifact_dir_authority
+test_legacy_work_dir_is_not_lease_authority
+test_artifact_dir_containment_matrix
+test_runtime_identity_deduplication
+test_runtime_identity_query_rows_are_exact
+test_live_graph_state_is_active_and_outcome_free
+test_alternate_identity_live_and_closed_recovery
+test_closed_recovery_root_classification
+test_closed_recovery_target_root_state_matrix
+test_ambiguous_runtime_identity_steps_fail_closed
+test_unreadable_runtime_identity_query_fails_closed
 test_witness_authority
 test_unchanged_transaction_failures
 test_leased_remote_missing_is_hard

@@ -229,12 +229,55 @@ Never infer a branch name. If `metadata.branch` is missing, reject the bead.
 ## Rejection Flow
 
 On rebase conflict or test failure:
-1. Put work bead back in pool:
-   `gc bd update $WORK --status=open --assignee="" --set-metadata rejection_reason="..."`
-2. Branch handling depends on failure type:
+1. While the source is still assigned to your exact `$GC_AGENT` identity,
+   clear the old submit generation and read back both the clear and ownership
+   before reopening anything:
+   ```bash
+   REJECTION_REASON="..."
+   gc bd update "$WORK" \
+     --unset-metadata gc.polecat_submit_convoy \
+     --set-metadata rejection_reason="$REJECTION_REASON" || exit 1
+   PRE_REOPEN_JSON=$(gc bd show "$WORK" --json) || exit 1
+   printf '%s' "$PRE_REOPEN_JSON" | jq -e \
+     --arg id "$WORK" --arg owner "$GC_AGENT" \
+     --arg rejection "$REJECTION_REASON" '
+       type == "array" and length == 1 and .[0].id == $id and
+       (.[0].status == "open" or .[0].status == "in_progress") and
+       .[0].assignee == $owner and
+       .[0].metadata.rejection_reason == $rejection and
+       (((.[0].metadata // {}) | has("gc.polecat_submit_convoy") | not) or
+        .[0].metadata["gc.polecat_submit_convoy"] == "")
+     ' >/dev/null || exit 1
+   ```
+2. Only after that proof, reset the workflow and atomically restore pool
+   routing while defensively unsetting the token again:
+   ```bash
+   POLECAT_ROUTE="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat"
+   gc workflow delete-source "$WORK" --apply &&
+   gc workflow reopen-source "$WORK" &&
+   gc bd update "$WORK" \
+     --status=open --assignee="" \
+     --set-metadata rejection_reason="$REJECTION_REASON" \
+     --set-metadata gc.routed_to="$POLECAT_ROUTE" \
+     --unset-metadata gc.polecat_submit_convoy || exit 1
+   REQUEUE_JSON=$(gc bd show "$WORK" --json) || exit 1
+   printf '%s' "$REQUEUE_JSON" | jq -e \
+     --arg id "$WORK" --arg route "$POLECAT_ROUTE" \
+     --arg rejection "$REJECTION_REASON" '
+       type == "array" and length == 1 and .[0].id == $id and
+       .[0].status == "open" and (.[0].assignee // "") == "" and
+       .[0].metadata["gc.routed_to"] == $route and
+       .[0].metadata.rejection_reason == $rejection and
+       (((.[0].metadata // {}) | has("gc.polecat_submit_convoy") | not) or
+        .[0].metadata["gc.polecat_submit_convoy"] == "")
+     ' >/dev/null || exit 1
+   ```
+   If any command or readback fails, stop before the next command; never expose
+   a reopened source with the old generation token.
+3. Branch handling depends on failure type:
    - Conflict: leave branch intact (polecat needs it for rebase)
    - Test failure: delete branch (polecat redoes work)
-3. Pour next wisp, burn current one
+4. Pour next wisp, burn current one
 
 A new polecat picks up the bead, sees `metadata.branch` and
 `metadata.rejection_reason`, rebases or redoes work, reassigns to refinery.

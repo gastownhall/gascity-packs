@@ -7,6 +7,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 PROMPT="$ROOT/gastown/agents/polecat/prompt.template.md"
 AGENT_TOML="$ROOT/gastown/agents/polecat/agent.toml"
 FOLLOWING_MOL="$ROOT/gastown/template-fragments/following-mol.template.md"
+PROPULSION="$ROOT/gastown/template-fragments/propulsion.template.md"
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -245,6 +246,17 @@ with open(sys.argv[1], "rb") as handle:
         fail "context-restart guidance still reads formula steps before claiming"
     grep -qF 'your first operational action is the' "$PROMPT" ||
         fail "startup protocol does not account for prompt-only restoration"
+    grep -qF '`POLECAT_CLAIM_CONTRACT` block exactly once' "$PROMPT" ||
+        fail "step continuation does not reuse the complete claim contract once"
+    ! grep -qF 'for i in $(seq 1 6); do' "$PROMPT" ||
+        fail "step continuation still retries the stateful hook"
+    ! grep -qF '2>/dev/null || true' "$PROMPT" ||
+        fail "step continuation still suppresses uncertain hook failures"
+    grep -qF 'rerun the complete `POLECAT_CLAIM_CONTRACT` exactly once' \
+        "$PROPULSION" ||
+        fail "shared polecat propulsion bypasses the complete continuation contract"
+    ! grep -qF 'bounded 60-second' "$PROPULSION" ||
+        fail "shared polecat propulsion retains obsolete raw-hook polling"
 
     grep -qF 'complete `POLECAT_CLAIM_CONTRACT` as its first operational action' \
         "$FOLLOWING_MOL" ||
@@ -360,6 +372,36 @@ test_receipt_and_direct_assignee_mismatches_fail_closed() {
     assert_fail_closed_without_mutation "direct assignee mismatch"
 }
 
+test_direct_projection_requires_one_exact_row() {
+    local rc matching malformed
+
+    matching=$(show_json in_progress)
+
+    setup_case
+    malformed=$(printf '%s' "$matching" | jq -c '. + .')
+    rc=$(run_contract "$(work_json claimed)" 0 "$malformed")
+    [[ "$rc" == "1" ]] || fail "multi-row direct projection exited $rc"
+    [[ "$(count_calls "CALL:bd:show")" == "3" ]] ||
+        fail "multi-row direct projection did not use bounded read retries"
+    assert_fail_closed_without_mutation "multi-row direct projection"
+
+    setup_case
+    malformed=$(printf '%s' "$matching" | jq -c '.[0]')
+    rc=$(run_contract "$(work_json claimed)" 0 "$malformed")
+    [[ "$rc" == "1" ]] || fail "object-form direct projection exited $rc"
+    [[ "$(count_calls "CALL:bd:show")" == "3" ]] ||
+        fail "object-form direct projection did not use bounded read retries"
+    assert_fail_closed_without_mutation "object-form direct projection"
+
+    setup_case
+    malformed=$(printf '%s' "$matching" | jq -c '.[0].metadata = "not-an-object"')
+    rc=$(run_contract "$(work_json claimed)" 0 "$malformed")
+    [[ "$rc" == "1" ]] || fail "non-object metadata projection exited $rc"
+    [[ "$(count_calls "CALL:bd:show")" == "3" ]] ||
+        fail "non-object metadata projection did not use bounded read retries"
+    assert_fail_closed_without_mutation "non-object metadata projection"
+}
+
 test_hook_errors_and_malformed_results_fail_closed_once() {
     local name code payload rc
     while IFS='|' read -r name code payload; do
@@ -415,6 +457,7 @@ test_complete_work_reason_status_matrix
 test_all_runtime_identity_fields_are_accepted
 test_wrong_reason_status_pairs_fail_closed
 test_receipt_and_direct_assignee_mismatches_fail_closed
+test_direct_projection_requires_one_exact_row
 test_hook_errors_and_malformed_results_fail_closed_once
 test_unreadable_direct_projection_is_never_released
 test_observability_stamp_is_best_effort

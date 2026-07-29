@@ -1176,6 +1176,14 @@ def write_gastown_contract_fixture(tmp_path):
         ),
         encoding="utf-8",
     )
+    submit_command = pack / "commands" / "polecat-submit" / "run.sh"
+    submit_command.parent.mkdir(parents=True)
+    submit_command.write_text(
+        "\n".join(
+            gascity_pack_inference_gate.GASTOWN_POLECAT_SUBMIT_COMMAND_CONTRACT
+        ),
+        encoding="utf-8",
+    )
     return pack
 
 
@@ -1291,6 +1299,25 @@ def test_validate_gastown_orchestration_contract_rejects_missing_lease_primitive
     )
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="polecat-lease"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+@pytest.mark.parametrize(
+    "required_fragment",
+    gascity_pack_inference_gate.GASTOWN_POLECAT_SUBMIT_COMMAND_CONTRACT,
+)
+def test_validate_gastown_orchestration_contract_rejects_missing_submit_primitive(
+    tmp_path,
+    required_fragment: str,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    command = pack / "commands" / "polecat-submit" / "run.sh"
+    command.write_text(
+        command.read_text(encoding="utf-8").replace(required_fragment, "", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="polecat-submit"):
         gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
 
 

@@ -36,99 +36,71 @@ owner is a conflict and must fail closed.
 
 ```bash
 # BEGIN_GASTOWN_SUBMIT_GUARD
-EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}refinery"
-STEP_BEAD_ID=""
-ROOT_BEAD_ID=""
-WORK_BEAD_ID=""
-WORK_STATUS=""
-WORK_ASSIGNEE=""
-READ_OK=0
-READ_TRY=0
-if [ -z "$EXPECTED_ASSIGNEE" ]; then
-  echo "Cannot identify the current session assignee; refusing done-state inference." >&2
+if ! SUBMIT_GUARD_OUTPUT=$(gc gastown polecat-submit guard); then
+  echo "Deterministic submit-state guard failed closed; do not run submit-and-exit." >&2
   exit 1
 fi
-while [ "$READ_TRY" -lt 3 ]; do
-  READ_TRY=$((READ_TRY + 1))
-  STEP_LIST_JSON=$(gc bd list --assignee "$EXPECTED_ASSIGNEE" --status=in_progress --limit=0 --json 2>/dev/null)
-  STEP_LIST_CODE=$?
-  STEP_MATCHES=$(printf '%s' "$STEP_LIST_JSON" | jq -c 'if type == "array" then [.[] | select(.metadata["gc.step_ref"] == "mol-polecat-work.submit-and-exit")] else [] end' 2>/dev/null)
-  STEP_COUNT=$(printf '%s' "$STEP_MATCHES" | jq -r 'length' 2>/dev/null)
-  if [ "$STEP_LIST_CODE" -eq 0 ] && [ "$STEP_COUNT" = "1" ]; then
-    STEP_BEAD_ID=$(printf '%s' "$STEP_MATCHES" | jq -r '.[0].id // empty' 2>/dev/null)
-    if [ -n "$STEP_BEAD_ID" ]; then
-      STEP_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
-      STEP_CODE=$?
-      STEP_STATUS=$(printf '%s' "$STEP_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-      STEP_ASSIGNEE=$(printf '%s' "$STEP_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
-      STEP_REF=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.step_ref"] // empty' 2>/dev/null)
-      ROOT_BEAD_ID=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.root_bead_id"] // empty' 2>/dev/null)
-      if [ "$STEP_CODE" -eq 0 ] && [ "$STEP_STATUS" = "in_progress" ] &&
-         [ "$STEP_ASSIGNEE" = "$EXPECTED_ASSIGNEE" ] &&
-         [ "$STEP_REF" = "mol-polecat-work.submit-and-exit" ] &&
-         [ -n "$ROOT_BEAD_ID" ]; then
-        ROOT_JSON=$(gc bd show "$ROOT_BEAD_ID" --json 2>/dev/null)
-        ROOT_CODE=$?
-        INPUT_CONVOY_ID=$(printf '%s' "$ROOT_JSON" | jq -r '.[0].metadata["gc.input_convoy_id"] // empty' 2>/dev/null)
-        if [ "$ROOT_CODE" -eq 0 ] && [ -n "$INPUT_CONVOY_ID" ]; then
-          CONVOY_STATUS=$(gc convoy status "$INPUT_CONVOY_ID" --json 2>/dev/null)
-          CONVOY_CODE=$?
-          WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end' 2>/dev/null)
-          if [ "$CONVOY_CODE" -eq 0 ] && [ -n "$WORK_BEAD_ID" ]; then
-            WORK_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
-            WORK_CODE=$?
-            WORK_STATUS=$(printf '%s' "$WORK_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-            WORK_ASSIGNEE=$(printf '%s' "$WORK_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
-            if [ "$WORK_CODE" -eq 0 ] && [ -n "$WORK_STATUS" ]; then
-              READ_OK=1
-              break
-            fi
-          fi
-        fi
-      fi
+if ! printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -e '
+  type == "object" and
+  (keys | sort) ==
+    (["action", "assignee", "branch", "contract", "convoy", "mode",
+      "replay", "root", "source", "source_assignee", "status", "step"] |
+     sort) and
+  .contract == "polecat-submit.v1" and
+  (.action | IN("proceed", "terminal")) and
+  (.step | type) == "string" and (.step | length) > 0 and
+  (.assignee | type) == "string" and (.assignee | length) > 0 and
+  (.root | type) == "string" and (.root | length) > 0 and
+  (.convoy | type) == "string" and (.convoy | length) > 0 and
+  (.source | type) == "string" and (.source | length) > 0 and
+  (.branch | type) == "string" and .branch == ("polecat/" + .source) and
+  (.mode | type) == "string" and
+  (.status | type) == "string" and
+  (.source_assignee | type) == "string" and
+  (.replay | type) == "boolean" and
+  (if .action == "proceed"
+   then .mode == "" and .status == "open" and
+        .source_assignee == "" and .replay == false
+   else (.mode | IN("auto_push_false", "refinery")) and
+        (if .mode == "auto_push_false"
+         then .status == "open" and .source_assignee == ""
+         else (.status | IN("open", "in_progress", "closed"))
+         end)
+   end)
+' >/dev/null 2>&1; then
+  echo "Unsupported deterministic submit-state result; refusing done-state inference." >&2
+  exit 1
+fi
+SUBMIT_GUARD_ACTION=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.action')
+case "$SUBMIT_GUARD_ACTION" in
+  proceed)
+    echo "$SUBMIT_GUARD_OUTPUT"
+    ;;
+  terminal)
+    echo "$SUBMIT_GUARD_OUTPUT"
+    SUBMIT_CONVOY=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.convoy')
+    SUBMIT_SOURCE=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.source')
+    SUBMIT_BRANCH=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.branch')
+    SUBMIT_EVIDENCE_MODE=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.mode')
+    if ! gc gastown polecat-submit complete \
+         --convoy "$SUBMIT_CONVOY" \
+         --source "$SUBMIT_SOURCE" \
+         --branch "$SUBMIT_BRANCH" \
+         --mode "$SUBMIT_EVIDENCE_MODE"; then
+      echo "Deterministic terminal submit completion failed; refusing to drain." >&2
+      exit 1
     fi
-  fi
-  sleep 1
-done
-if [ "$READ_OK" -eq 1 ] &&
-   { [ "$WORK_STATUS" = "closed" ] || [ "$WORK_ASSIGNEE" = "$REFINERY_TARGET" ]; }; then
-  echo "ALREADY_SUBMITTED $WORK_BEAD_ID status=$WORK_STATUS assignee=$WORK_ASSIGNEE — completing $STEP_BEAD_ID."
-  if ! gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed \
-       --notes "Submit handoff already complete: source bead $WORK_BEAD_ID status=$WORK_STATUS assignee=$WORK_ASSIGNEE"; then
-    echo "Failed to close claimed submit step $STEP_BEAD_ID; refusing to drain." >&2
+    if ! gc runtime drain-ack; then
+      echo "Submit completion is durable but drain acknowledgement failed; retry the guard." >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  *)
+    echo "Unsupported deterministic submit-state result; refusing done-state inference." >&2
     exit 1
-  fi
-  VERIFY_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
-  VERIFY_STATUS=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-  VERIFY_OUTCOME=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].metadata["gc.outcome"] // empty' 2>/dev/null)
-  if [ "$VERIFY_STATUS" != "closed" ] || [ "$VERIFY_OUTCOME" != "pass" ]; then
-    echo "Submit step $STEP_BEAD_ID did not verify closed/pass; refusing to drain." >&2
-    exit 1
-  fi
-  gc runtime drain-ack
-  exit
-fi
-if [ "$READ_OK" -eq 1 ] &&
-   { [ "$WORK_STATUS" != "open" ] || [ -n "$WORK_ASSIGNEE" ]; }; then
-  echo "Source bead $WORK_BEAD_ID has conflicting state status=$WORK_STATUS assignee=$WORK_ASSIGNEE; failing $STEP_BEAD_ID." >&2
-  if ! gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --status=closed \
-       --notes "Submit blocked: source bead $WORK_BEAD_ID has conflicting status=$WORK_STATUS assignee=$WORK_ASSIGNEE"; then
-    echo "Failed to close conflicting submit step $STEP_BEAD_ID; refusing to drain." >&2
-    exit 1
-  fi
-  VERIFY_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
-  VERIFY_STATUS=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-  VERIFY_OUTCOME=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].metadata["gc.outcome"] // empty' 2>/dev/null)
-  if [ "$VERIFY_STATUS" != "closed" ] || [ "$VERIFY_OUTCOME" != "fail" ]; then
-    echo "Submit step $STEP_BEAD_ID did not verify closed/fail; refusing to drain." >&2
-    exit 1
-  fi
-  gc runtime drain-ack
-  exit 1
-fi
-# Unreadable after retries or the expected open/unassigned pre-handoff state:
-# fall through and run submit-and-exit. This guard never claims routed work.
+    ;;
+esac
 # END_GASTOWN_SUBMIT_GUARD
 ```
 

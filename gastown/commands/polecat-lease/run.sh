@@ -215,7 +215,8 @@ if [[ "$ACTION" == "submit" ]]; then
     EXPECTED_STEP_REF="mol-polecat-work.submit-and-exit"
 fi
 
-ACTOR=${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}
+RUNTIME_IDENTITIES=()
+STEP_ASSIGNEE=""
 STEP_BEAD_ID=""
 ROOT_BEAD_ID=""
 PROVENANCE_READY=0
@@ -224,83 +225,235 @@ ROOT_RIG_NAME=""
 ROOT_BINDING_PREFIX=""
 WITNESS_CANONICAL=""
 
+add_runtime_identity() {
+    local value=$1 existing
+    [[ -n "$value" ]] || return 0
+    safe_atom "$value" || return 1
+    for existing in "${RUNTIME_IDENTITIES[@]}"; do
+        [[ "$existing" != "$value" ]] || return 0
+    done
+    RUNTIME_IDENTITIES+=("$value")
+}
+
+identity_is_runtime() {
+    local value=$1 existing
+    for existing in "${RUNTIME_IDENTITIES[@]}"; do
+        [[ "$existing" != "$value" ]] || return 0
+    done
+    return 1
+}
+
+classify_workflow_root() {
+    local root_json=$1 root_id=$2 mode=$3 classification
+    classification=$(printf '%s' "$root_json" | jq -er \
+        --arg id "$root_id" --arg convoy "$CONVOY_ID" \
+        --arg base "$BASE_BRANCH" --arg mode "$mode" '
+        if type != "array" or length != 1 or .[0].id != $id or
+           (.[0].metadata | type) != "object" or
+           .[0].metadata["gc.kind"] != "workflow" or
+           .[0].metadata["gc.formula_contract"] != "graph.v2" or
+           ((.[0].metadata | has("gc.formula_name")) and
+            .[0].metadata["gc.formula_name"] != "mol-polecat-work") or
+           (.[0].metadata["gc.input_convoy_id"] | type) != "string" or
+           (.[0].metadata["gc.input_convoy_id"] | length) == 0 or
+           (.[0].metadata["gc.var.base_branch"] | type) != "string" or
+           (.[0].metadata["gc.var.base_branch"] | length) == 0 or
+           (.[0].status | type) != "string" or
+           (.[0].status | length) == 0 or
+           ((.[0].metadata | has("gc.outcome")) and
+            (.[0].metadata["gc.outcome"] | type) != "string")
+        then error("root identity or immutable Graph-v2 provenance mismatch")
+        elif .[0].metadata["gc.input_convoy_id"] != $convoy
+        then "other"
+        elif .[0].metadata["gc.var.base_branch"] != $base
+        then error("target root base authority mismatch")
+        elif $mode == "live" and
+             (.[0].status != "in_progress" or
+              ((.[0].metadata | has("gc.outcome")) and
+               .[0].metadata["gc.outcome"] != ""))
+        then error("target workflow root is not active")
+        elif $mode == "recovery" and
+             (((.[0].status == "in_progress" and
+                (((.[0].metadata | has("gc.outcome")) | not) or
+                 .[0].metadata["gc.outcome"] == "")) or
+               (.[0].status == "closed" and
+                .[0].metadata["gc.outcome"] == "fail")) | not)
+        then error("target workflow root has incoherent recovery state")
+        elif $mode != "live" and $mode != "recovery"
+        then error("unsupported workflow root classification mode")
+        else "match"
+        end' 2>/dev/null) || return 2
+    case "$classification" in
+        match) return 0 ;;
+        other) return 1 ;;
+        *) return 2 ;;
+    esac
+}
+
+for runtime_identity in \
+    "${BEADS_ACTOR:-}" \
+    "${GC_SESSION_NAME:-}" \
+    "${GC_SESSION_ID:-}" \
+    "${GC_ALIAS:-}" \
+    "${GC_AGENT:-}"; do
+    add_runtime_identity "$runtime_identity" ||
+        indeterminate "a configured runtime identity is unsafe"
+done
+((${#RUNTIME_IDENTITIES[@]} > 0)) ||
+    indeterminate "no safe runtime identity is available"
+
 derive_graph_context() {
-    local step_list step_matches step_count step_json root_json convoy_json
+    local step_list step_matches step_json root_json convoy_json
     local step_code root_code convoy_code candidate_id candidate_root
+    local candidate_assignee existing identity root_class root_mode
+    local -a live_step_ids=()
+    local -a closed_step_ids=()
     local candidate_count=0
 
-    [[ -n "$ACTOR" ]] || return 1
-    step_list=$(run_gc_bd list --assignee "$ACTOR" --status=in_progress \
-        --limit=0 --json 2>/dev/null)
-    step_code=$?
-    [[ "$step_code" -eq 0 ]] || return 1
-    step_matches=$(printf '%s' "$step_list" | jq -ce --arg ref "$EXPECTED_STEP_REF" \
-        'if type == "array"
-         then [.[] | select(.metadata["gc.step_ref"] == $ref)]
-         else error("step list is not an array")
-         end' 2>/dev/null) || return 1
-    step_count=$(printf '%s' "$step_matches" | jq -er 'length' 2>/dev/null) ||
-        return 1
-    if [[ "$step_count" == "1" ]]; then
-        STEP_BEAD_ID=$(printf '%s' "$step_matches" | jq -er '.[0].id' 2>/dev/null) ||
-            return 1
+    for identity in "${RUNTIME_IDENTITIES[@]}"; do
+        step_list=$(run_gc_bd list --assignee "$identity" --status=in_progress \
+            --limit=0 --json 2>/dev/null)
+        step_code=$?
+        [[ "$step_code" -eq 0 ]] || return 1
+        step_matches=$(printf '%s' "$step_list" |
+            jq -ce --arg ref "$EXPECTED_STEP_REF" \
+                --arg actor "$identity" '
+            if type == "array" and
+               all(.[]; type == "object" and
+                        .status == "in_progress" and .assignee == $actor)
+            then [.[] |
+              select(.metadata["gc.step_ref"] == $ref) |
+              if (.id | type) == "string" and (.id | length) > 0
+              then .
+              else error("matching live step has no string id")
+              end]
+            else error("live step list is not an object array")
+            end' 2>/dev/null) || return 1
+        while IFS= read -r candidate_id; do
+            [[ -n "$candidate_id" ]] || continue
+            safe_atom "$candidate_id" || return 1
+            for existing in "${live_step_ids[@]}"; do
+                [[ "$existing" != "$candidate_id" ]] || return 1
+            done
+            live_step_ids+=("$candidate_id")
+        done < <(printf '%s' "$step_matches" | jq -r '.[].id')
+    done
+
+    if ((${#live_step_ids[@]} == 1)); then
+        STEP_BEAD_ID=${live_step_ids[0]}
         step_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null)
         [[ $? -eq 0 ]] || return 1
+        STEP_ASSIGNEE=$(printf '%s' "$step_json" | jq -er \
+            --arg id "$STEP_BEAD_ID" --arg ref "$EXPECTED_STEP_REF" '
+            if type == "array" and length == 1 and
+               .[0].id == $id and .[0].status == "in_progress" and
+               (.[0].assignee | type) == "string" and
+               (.[0].assignee | length) > 0 and
+               .[0].metadata["gc.step_ref"] == $ref and
+               (((.[0].metadata | has("gc.outcome")) | not) or
+                .[0].metadata["gc.outcome"] == "")
+            then .[0].assignee
+            else error("step identity/provenance mismatch")
+            end' 2>/dev/null) || return 1
+        identity_is_runtime "$STEP_ASSIGNEE" || return 1
         ROOT_BEAD_ID=$(printf '%s' "$step_json" | jq -er \
-            --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" --arg ref "$EXPECTED_STEP_REF" '
+            --arg id "$STEP_BEAD_ID" --arg actor "$STEP_ASSIGNEE" \
+            --arg ref "$EXPECTED_STEP_REF" '
             if type == "array" and length == 1 and
                .[0].id == $id and .[0].status == "in_progress" and
                .[0].assignee == $actor and
                .[0].metadata["gc.step_ref"] == $ref and
+               (((.[0].metadata | has("gc.outcome")) | not) or
+                .[0].metadata["gc.outcome"] == "") and
                (.[0].metadata["gc.root_bead_id"] | type) == "string" and
                (.[0].metadata["gc.root_bead_id"] | length) > 0
             then .[0].metadata["gc.root_bead_id"]
             else error("step provenance mismatch")
             end' 2>/dev/null) || return 1
-    elif [[ "$step_count" == "0" ]]; then
+    elif ((${#live_step_ids[@]} == 0)); then
         # A prior hard-conflict attempt may have durably closed the exact step
         # and then crashed before drain-ack.  Recover only a closed hard-failure
         # candidate whose workflow root binds this input convoy.
-        step_list=$(run_gc_bd list --assignee "$ACTOR" --status=closed \
-            --limit=0 --json 2>/dev/null)
-        [[ $? -eq 0 ]] || return 1
-        step_matches=$(printf '%s' "$step_list" | jq -ce --arg ref "$EXPECTED_STEP_REF" '
-            if type == "array"
-            then [.[] |
-              select(.metadata["gc.step_ref"] == $ref and
-                     .metadata["gc.outcome"] == "fail" and
-                     .metadata["gc.failure_class"] == "hard" and
-                     .metadata["gc.failure_reason"] == "push_lease_conflict")]
-            else error("closed step list is not an array")
-            end' 2>/dev/null) || return 1
-        while IFS=$'\t' read -r candidate_id candidate_root; do
-            [[ -n "$candidate_id" && -n "$candidate_root" ]] || continue
+        for identity in "${RUNTIME_IDENTITIES[@]}"; do
+            step_list=$(run_gc_bd list --assignee "$identity" --status=closed \
+                --limit=0 --json 2>/dev/null)
+            step_code=$?
+            [[ "$step_code" -eq 0 ]] || return 1
+            step_matches=$(printf '%s' "$step_list" |
+                jq -ce --arg ref "$EXPECTED_STEP_REF" \
+                    --arg actor "$identity" '
+                if type == "array" and
+                   all(.[]; type == "object" and
+                            .status == "closed" and .assignee == $actor)
+                then [.[] |
+                  select(.metadata["gc.step_ref"] == $ref and
+                         .metadata["gc.outcome"] == "fail" and
+                         .metadata["gc.failure_class"] == "hard" and
+                         .metadata["gc.failure_reason"] == "push_lease_conflict") |
+                  if (.id | type) == "string" and (.id | length) > 0
+                  then .
+                  else error("matching closed step has no string id")
+                  end]
+                else error("closed step list is not an object array")
+                end' 2>/dev/null) || return 1
+            while IFS= read -r candidate_id; do
+                [[ -n "$candidate_id" ]] || continue
+                safe_atom "$candidate_id" || return 1
+                for existing in "${closed_step_ids[@]}"; do
+                    [[ "$existing" != "$candidate_id" ]] || return 1
+                done
+                closed_step_ids+=("$candidate_id")
+            done < <(printf '%s' "$step_matches" | jq -r '.[].id')
+        done
+
+        for candidate_id in "${closed_step_ids[@]}"; do
+            step_json=$(run_gc_bd show "$candidate_id" --json 2>/dev/null) ||
+                return 1
+            candidate_assignee=$(printf '%s' "$step_json" | jq -er \
+                --arg id "$candidate_id" --arg ref "$EXPECTED_STEP_REF" '
+                if type == "array" and length == 1 and .[0].id == $id and
+                   .[0].status == "closed" and
+                   (.[0].assignee | type) == "string" and
+                   (.[0].assignee | length) > 0 and
+                   .[0].metadata["gc.step_ref"] == $ref and
+                   (.[0].metadata["gc.root_bead_id"] | type) == "string" and
+                   (.[0].metadata["gc.root_bead_id"] | length) > 0 and
+                   .[0].metadata["gc.outcome"] == "fail" and
+                   .[0].metadata["gc.failure_class"] == "hard" and
+                   .[0].metadata["gc.failure_reason"] == "push_lease_conflict"
+                then .[0].assignee
+                else error("closed step provenance mismatch")
+                end' 2>/dev/null) || return 1
+            identity_is_runtime "$candidate_assignee" || return 1
+            candidate_root=$(printf '%s' "$step_json" |
+                jq -er '.[0].metadata["gc.root_bead_id"]' 2>/dev/null) ||
+                return 1
             safe_atom "$candidate_id" && safe_atom "$candidate_root" || return 1
             root_json=$(run_gc_bd show "$candidate_root" --json 2>/dev/null) ||
                 return 1
-            if printf '%s' "$root_json" | jq -e \
-                --arg id "$candidate_root" --arg convoy "$CONVOY_ID" \
-                --arg base "$BASE_BRANCH" '
-                type == "array" and length == 1 and .[0].id == $id and
-                .[0].metadata["gc.kind"] == "workflow" and
-                .[0].metadata["gc.formula_contract"] == "graph.v2" and
-                .[0].metadata["gc.input_convoy_id"] == $convoy and
-                .[0].metadata["gc.var.base_branch"] == $base' \
-                >/dev/null 2>&1; then
-                candidate_count=$((candidate_count + 1))
-                STEP_BEAD_ID=$candidate_id
-                ROOT_BEAD_ID=$candidate_root
-            fi
-        done < <(printf '%s' "$step_matches" | jq -r '
-            .[] |
-            select((.id | type) == "string" and
-                   (.metadata["gc.root_bead_id"] | type) == "string") |
-            [.id, .metadata["gc.root_bead_id"]] | @tsv')
+            classify_workflow_root "$root_json" "$candidate_root" recovery
+            root_class=$?
+            case "$root_class" in
+                0)
+                    candidate_count=$((candidate_count + 1))
+                    STEP_BEAD_ID=$candidate_id
+                    ROOT_BEAD_ID=$candidate_root
+                    STEP_ASSIGNEE=$candidate_assignee
+                    ;;
+                1)
+                    # Canonical history for another convoy is irrelevant.
+                    ;;
+                *)
+                    # Malformed or unreadable provenance cannot be ignored.
+                    return 1
+                    ;;
+            esac
+        done
         [[ "$candidate_count" -eq 1 ]] || return 1
         step_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) ||
             return 1
         printf '%s' "$step_json" | jq -e \
-            --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" \
+            --arg id "$STEP_BEAD_ID" --arg actor "$STEP_ASSIGNEE" \
             --arg ref "$EXPECTED_STEP_REF" --arg root "$ROOT_BEAD_ID" '
             type == "array" and length == 1 and .[0].id == $id and
             .[0].status == "closed" and .[0].assignee == $actor and
@@ -318,15 +471,12 @@ derive_graph_context() {
     root_json=$(run_gc_bd show "$ROOT_BEAD_ID" --json 2>/dev/null)
     root_code=$?
     [[ "$root_code" -eq 0 ]] || return 1
-    printf '%s' "$root_json" | jq -e \
-        --arg id "$ROOT_BEAD_ID" --arg convoy "$CONVOY_ID" \
-        --arg base "$BASE_BRANCH" '
+    root_mode=live
+    [[ "$TERMINAL_RECOVERY" -eq 0 ]] || root_mode=recovery
+    classify_workflow_root "$root_json" "$ROOT_BEAD_ID" "$root_mode" ||
+        return 1
+    printf '%s' "$root_json" | jq -e '
         type == "array" and length == 1 and
-        .[0].id == $id and
-        .[0].metadata["gc.kind"] == "workflow" and
-        .[0].metadata["gc.formula_contract"] == "graph.v2" and
-        .[0].metadata["gc.input_convoy_id"] == $convoy and
-        .[0].metadata["gc.var.base_branch"] == $base and
         ((.[0].metadata["gc.var.rig_name"] // "") | type) == "string" and
         ((.[0].metadata["gc.var.binding_prefix"] // "") | type) == "string"' \
         >/dev/null 2>&1 || return 1
@@ -363,7 +513,7 @@ SOURCE_ASSIGNEE=""
 SOURCE_BRANCH=""
 SOURCE_REJECTED=""
 SOURCE_AUTO_PUSH=""
-SOURCE_WORK_DIR=""
+SOURCE_ARTIFACT_DIR=""
 
 load_source() {
     SOURCE_JSON=$(run_gc_bd show "$SOURCE_ID" --json 2>/dev/null)
@@ -375,7 +525,7 @@ load_source() {
         ((.[0].metadata // {}) | type) == "object" and
         ((.[0].metadata.branch // "") | type) == "string" and
         ((.[0].metadata.rejection_reason // "") | type) == "string" and
-        ((.[0].metadata.work_dir // .[0].metadata["gc.work_dir"] // "") | type) == "string"' \
+        ((.[0].metadata.artifact_dir // "") | type) == "string"' \
         >/dev/null 2>&1 || return 1
     SOURCE_STATUS=$(printf '%s' "$SOURCE_JSON" | jq -er '.[0].status') ||
         return 1
@@ -391,8 +541,8 @@ load_source() {
         then (.[0].metadata.auto_push | tostring)
         else ""
         end') || return 1
-    SOURCE_WORK_DIR=$(printf '%s' "$SOURCE_JSON" | jq -er '
-        .[0].metadata.work_dir // .[0].metadata["gc.work_dir"] // ""') ||
+    SOURCE_ARTIFACT_DIR=$(printf '%s' "$SOURCE_JSON" | jq -er '
+        .[0].metadata.artifact_dir // ""') ||
         return 1
     return 0
 }
@@ -402,18 +552,83 @@ load_source || indeterminate "could not read the exact source bead"
 WORKTREE_TOP=""
 WORKTREE_FINGERPRINT=""
 
+artifact_git_common_dir() {
+    local repo_dir=$1 common_dir
+    common_dir=$(git -C "$repo_dir" rev-parse \
+        --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+    (CDPATH= cd -- "$common_dir" 2>/dev/null && pwd -P)
+}
+
+safe_path_atom() {
+    local value=$1
+    case "$value" in
+        ""|"."|".."|*[!A-Za-z0-9._-]*) return 1 ;;
+    esac
+}
+
 validate_worktree_binding() {
-    local current_top recorded_top
-    [[ -n "$SOURCE_WORK_DIR" ]] ||
-        indeterminate "source metadata has no recorded work_dir"
+    local current_top recorded_top recorded_git_top
+    local city_root rig_root recorded_common rig_common
+    local rig_namespace rig_namespace_real canonical_path
+    local worktrees_parent provider_home provider_root provider_name
+
+    [[ -n "$SOURCE_ARTIFACT_DIR" ]] ||
+        indeterminate "source metadata has no recorded artifact_dir"
+    [[ -n "${GC_CITY_PATH:-}" && -n "${GC_RIG:-}" &&
+       -n "${GC_RIG_ROOT:-}" ]] ||
+        indeterminate "GC_CITY_PATH, GC_RIG, and GC_RIG_ROOT are required"
+    safe_path_atom "$SOURCE_ID" ||
+        indeterminate "source id is unsafe for an artifact path"
+    safe_path_atom "$GC_RIG" ||
+        indeterminate "rig name is unsafe for an artifact path"
+    city_root=$(CDPATH= cd -- "$GC_CITY_PATH" 2>/dev/null && pwd -P) ||
+        indeterminate "could not canonicalize the city root"
+    rig_root=$(CDPATH= cd -- "$GC_RIG_ROOT" 2>/dev/null && pwd -P) ||
+        indeterminate "could not canonicalize the rig root"
+    rig_namespace="$city_root/.gc/worktrees/$GC_RIG"
+    rig_namespace_real=$(CDPATH= cd -- "$rig_namespace" 2>/dev/null && pwd -P) ||
+        indeterminate "could not resolve the city/rig worktree namespace"
+    [[ "$rig_namespace_real" == "$rig_namespace" ]] ||
+        indeterminate "city/rig worktree namespace is redirected"
+
+    recorded_top=$(CDPATH= cd -- "$SOURCE_ARTIFACT_DIR" 2>/dev/null && pwd -P) ||
+        indeterminate "recorded source artifact_dir is unavailable"
+    [[ "$(basename -- "$recorded_top")" == "$SOURCE_ID" &&
+       "$(basename -- "$(dirname -- "$recorded_top")")" == "worktrees" ]] ||
+        indeterminate "source metadata.artifact_dir is not bead-scoped"
+
+    canonical_path="$rig_namespace_real/artifacts/worktrees/$SOURCE_ID"
+    if [[ "$recorded_top" != "$canonical_path" ]]; then
+        worktrees_parent=$(dirname -- "$recorded_top")
+        provider_home=$(dirname -- "$worktrees_parent")
+        provider_root=$(dirname -- "$provider_home")
+        provider_name=$(basename -- "$provider_home")
+        [[ "$provider_root" == "$rig_namespace_real/polecats" ]] ||
+            indeterminate "source metadata.artifact_dir is outside the rig artifact layouts"
+        safe_path_atom "$provider_name" ||
+            indeterminate "source metadata.artifact_dir has an unsafe provider owner"
+    fi
+
+    recorded_git_top=$(git -C "$recorded_top" rev-parse \
+        --show-toplevel 2>/dev/null) ||
+        indeterminate "source metadata.artifact_dir is not a Git worktree"
+    recorded_git_top=$(CDPATH= cd -- "$recorded_git_top" 2>/dev/null && pwd -P) ||
+        indeterminate "could not canonicalize the recorded artifact Git top"
+    [[ "$recorded_git_top" == "$recorded_top" ]] ||
+        indeterminate "source metadata.artifact_dir is a worktree subdirectory"
+    recorded_common=$(artifact_git_common_dir "$recorded_top") ||
+        indeterminate "could not resolve the artifact Git common directory"
+    rig_common=$(artifact_git_common_dir "$rig_root") ||
+        indeterminate "could not resolve the rig Git common directory"
+    [[ "$recorded_common" == "$rig_common" ]] ||
+        indeterminate "source metadata.artifact_dir belongs to another repository"
+
     current_top=$(git rev-parse --show-toplevel 2>/dev/null) ||
         indeterminate "could not resolve the current worktree top"
-    current_top=$(cd "$current_top" 2>/dev/null && pwd -P) ||
+    current_top=$(CDPATH= cd -- "$current_top" 2>/dev/null && pwd -P) ||
         indeterminate "could not canonicalize the current worktree top"
-    recorded_top=$(cd "$SOURCE_WORK_DIR" 2>/dev/null && pwd -P) ||
-        indeterminate "recorded source work_dir is unavailable"
     [[ "$current_top" == "$recorded_top" ]] ||
-        indeterminate "current Git worktree does not equal source metadata.work_dir"
+        indeterminate "current Git worktree does not equal source metadata.artifact_dir"
     WORKTREE_TOP=$current_top
     WORKTREE_FINGERPRINT=$(printf 'worktree-v1\0%s' "$WORKTREE_TOP" |
         git hash-object --stdin 2>/dev/null) ||
@@ -782,6 +997,50 @@ clear_mirror() {
 OBSERVED_REMOTE=""
 LOCAL_HEAD=""
 
+revalidate_terminal_authority() {
+    local step_json root_json root_mode=live
+
+    step_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) ||
+        return 1
+    if [[ "$TERMINAL_RECOVERY" -eq 1 ]]; then
+        printf '%s' "$step_json" | jq -e \
+            --arg id "$STEP_BEAD_ID" --arg actor "$STEP_ASSIGNEE" \
+            --arg ref "$EXPECTED_STEP_REF" --arg root "$ROOT_BEAD_ID" '
+            type == "array" and length == 1 and .[0].id == $id and
+            .[0].status == "closed" and .[0].assignee == $actor and
+            .[0].metadata["gc.step_ref"] == $ref and
+            .[0].metadata["gc.root_bead_id"] == $root and
+            .[0].metadata["gc.outcome"] == "fail" and
+            .[0].metadata["gc.failure_class"] == "hard" and
+            .[0].metadata["gc.failure_reason"] == "push_lease_conflict"' \
+            >/dev/null 2>&1 || return 1
+        root_mode=recovery
+    else
+        printf '%s' "$step_json" | jq -e \
+            --arg id "$STEP_BEAD_ID" --arg actor "$STEP_ASSIGNEE" \
+            --arg ref "$EXPECTED_STEP_REF" --arg root "$ROOT_BEAD_ID" '
+            type == "array" and length == 1 and .[0].id == $id and
+            .[0].status == "in_progress" and .[0].assignee == $actor and
+            .[0].metadata["gc.step_ref"] == $ref and
+            .[0].metadata["gc.root_bead_id"] == $root and
+            (((.[0].metadata | has("gc.outcome")) | not) or
+             .[0].metadata["gc.outcome"] == "")' \
+            >/dev/null 2>&1 || return 1
+    fi
+
+    root_json=$(run_gc_bd show "$ROOT_BEAD_ID" --json 2>/dev/null) ||
+        return 1
+    classify_workflow_root "$root_json" "$ROOT_BEAD_ID" "$root_mode" ||
+        return 1
+    printf '%s' "$root_json" | jq -e \
+        --arg id "$ROOT_BEAD_ID" --arg rig "$ROOT_RIG_NAME" \
+        --arg prefix "$ROOT_BINDING_PREFIX" '
+        type == "array" and length == 1 and .[0].id == $id and
+        (.[0].metadata["gc.var.rig_name"] // "") == $rig and
+        (.[0].metadata["gc.var.binding_prefix"] // "") == $prefix' \
+        >/dev/null 2>&1
+}
+
 terminalize_hard() {
     local reason=$1 source_json step_json verify_json detail
     local status assignee route halt step_status step_outcome step_class
@@ -796,6 +1055,10 @@ terminalize_hard() {
         "submit=${SUBMIT_OID:-<none>}" \
         "local=${LOCAL_HEAD:-<unknown>}")
 
+    revalidate_terminal_authority || {
+        echo "polecat-lease: Graph authority changed before hard terminalization" >&2
+        return 1
+    }
     source_json=$(run_gc_bd show "$SOURCE_ID" --json 2>/dev/null) || return 1
     status=$(printf '%s' "$source_json" | jq -er '.[0].status' 2>/dev/null) ||
         return 1
@@ -837,7 +1100,7 @@ terminalize_hard() {
         return 1
     if [[ "$step_status" == "in_progress" ]]; then
         printf '%s' "$step_json" | jq -e \
-            --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" \
+            --arg id "$STEP_BEAD_ID" --arg actor "$STEP_ASSIGNEE" \
             --arg ref "$EXPECTED_STEP_REF" --arg root "$ROOT_BEAD_ID" '
             type == "array" and length == 1 and .[0].id == $id and
             .[0].assignee == $actor and .[0].metadata["gc.step_ref"] == $ref and
@@ -851,7 +1114,7 @@ terminalize_hard() {
     fi
     verify_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) || return 1
     printf '%s' "$verify_json" | jq -e \
-        --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" \
+        --arg id "$STEP_BEAD_ID" --arg actor "$STEP_ASSIGNEE" \
         --arg ref "$EXPECTED_STEP_REF" --arg root "$ROOT_BEAD_ID" '
         type == "array" and length == 1 and .[0].id == $id and
         .[0].status == "closed" and .[0].assignee == $actor and
@@ -896,7 +1159,7 @@ require_ancestor() {
 }
 
 prove_live_source_step() {
-    local step_json
+    local step_json root_json
     load_source ||
         indeterminate "could not re-read source state before a protected transition"
     enforce_auto_push_policy
@@ -908,14 +1171,20 @@ prove_live_source_step() {
     step_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) ||
         indeterminate "could not re-read the exact Graph step before a protected transition"
     printf '%s' "$step_json" | jq -e \
-        --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" \
+        --arg id "$STEP_BEAD_ID" --arg actor "$STEP_ASSIGNEE" \
         --arg ref "$EXPECTED_STEP_REF" --arg root "$ROOT_BEAD_ID" '
         type == "array" and length == 1 and .[0].id == $id and
         .[0].status == "in_progress" and .[0].assignee == $actor and
         .[0].metadata["gc.step_ref"] == $ref and
-        .[0].metadata["gc.root_bead_id"] == $root' \
+        .[0].metadata["gc.root_bead_id"] == $root and
+        (((.[0].metadata | has("gc.outcome")) | not) or
+         .[0].metadata["gc.outcome"] == "")' \
         >/dev/null 2>&1 ||
         indeterminate "exact Graph step ownership/state changed during the lease protocol"
+    root_json=$(run_gc_bd show "$ROOT_BEAD_ID" --json 2>/dev/null) ||
+        indeterminate "could not re-read the exact Graph root before a protected transition"
+    classify_workflow_root "$root_json" "$ROOT_BEAD_ID" live ||
+        indeterminate "exact Graph root state changed during the lease protocol"
     if git symbolic-ref -q "$BRANCH_REF" >/dev/null 2>&1; then
         hard_conflict "canonical branch became a symbolic ref"
     fi

@@ -170,27 +170,13 @@ escalate instead of manually creating a worktree.
 
 **Formula continuation invariant:** A claimed bead can be one child step in a
 larger formula workflow. After completing any formula step bead through the
-exact completion path in its current description, immediately run
-`gc hook --claim --json` again. If it returns work, execute that next step. If
-it returns no work, do not drain immediately: a control dispatcher may still be
-closing the stage's scope-check and unlocking your next preassigned sibling.
-
-Poll up to 60 seconds (6 attempts, 10 seconds apart):
-
-```bash
-for i in $(seq 1 6); do
-  NEXT=$(gc hook --claim --json 2>/dev/null || true)
-  if printf '%s\n' "$NEXT" | grep -q '"action":"work"'; then
-    # Found work — execute NEXT.bead_id and continue the formula.
-    break
-  fi
-  sleep 10
-done
-```
-
-Only if no work appears after the complete bounded poll may you end the
-session with `gc hook --claim --drain-ack --json`. A final formula step that
-explicitly drains remains terminal and does not poll.
+exact completion path in its current description, rerun the complete
+`POLECAT_CLAIM_CONTRACT` block exactly once as your next operational action.
+Do not substitute a raw hook call, shorten its validator, or retry an uncertain
+result. A valid work receipt identifies the next step. A structured drain is
+terminal and already acknowledged; malformed or nonzero output follows the
+contract's fail-closed escalation path. A final formula step that explicitly
+drains remains terminal and does not claim again.
 
 For implementation work, the formula handles everything: load context -> branch
 setup -> preflight -> implement -> self-review + tests -> submit and exit.
@@ -209,11 +195,13 @@ Default implementation formula: `mol-polecat-work`
 
 > **The Universal Propulsion Principle: If your hook/work query finds work, YOU RUN IT.**
 
-`gc hook --claim --json` is the ONLY permitted discovery source for your work.
-Do NOT run broad `gc bd ready`, `gc bd list`, root-bead searches, metadata searches,
-mail inspection, or repository scans to find a bead — those race other polecats
-and surface work that is not yours. Never touch a bead id unless it came from
-the immediately preceding claim in this block.
+The complete `POLECAT_CLAIM_CONTRACT` is the ONLY permitted discovery path for
+your work. It owns one transactional `gc hook --claim --drain-ack --json` call
+and validates its receipt. Do not substitute a raw hook command. Do NOT run
+broad `gc bd ready`, `gc bd list`, root-bead searches, metadata searches, mail
+inspection, or repository scans to find a bead — those race other polecats and
+surface work that is not yours. Never touch a bead id unless it came from the
+immediately preceding validated claim block.
 
 After any prompt-only restoration, your first operational action is the
 scripted claim below, run as ONE Bash command. Do not read code, list files,
@@ -340,9 +328,16 @@ while [ "$SHOW_TRY" -lt 3 ]; do
   SHOW_TRY=$((SHOW_TRY + 1))
   SHOW_JSON=$(gc bd show "$WORK_ID" --json 2>/dev/null)
   SHOW_CODE=$?
-  SHOW_ROW=$(printf '%s' "$SHOW_JSON" | jq -c --arg id "$WORK_ID" '
-      (if type == "array" then (.[0] // empty) else . end)
-      | select(.id == $id)
+  SHOW_ROW=$(printf '%s' "$SHOW_JSON" | jq -c \
+    --arg id "$WORK_ID" --arg status "$EXPECTED_STATUS" \
+    --arg assignee "$CLAIM_ASSIGNEE" '
+      if type == "array" and length == 1 and
+         .[0].id == $id and .[0].status == $status and
+         .[0].assignee == $assignee and
+         (.[0].metadata | type) == "object"
+      then .[0]
+      else empty
+      end
     ' 2>/dev/null)
   STATUS=$(printf '%s' "$SHOW_ROW" | jq -r '.status // empty' 2>/dev/null)
   ASSIGNEE=$(printf '%s' "$SHOW_ROW" | jq -r '.assignee // empty' 2>/dev/null)
@@ -507,99 +502,71 @@ owner is a conflict and must fail closed.
 
 ```bash
 # BEGIN_GASTOWN_SUBMIT_GUARD
-EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}refinery"
-STEP_BEAD_ID=""
-ROOT_BEAD_ID=""
-WORK_BEAD_ID=""
-WORK_STATUS=""
-WORK_ASSIGNEE=""
-READ_OK=0
-READ_TRY=0
-if [ -z "$EXPECTED_ASSIGNEE" ]; then
-  echo "Cannot identify the current session assignee; refusing done-state inference." >&2
+if ! SUBMIT_GUARD_OUTPUT=$(gc gastown polecat-submit guard); then
+  echo "Deterministic submit-state guard failed closed; do not run submit-and-exit." >&2
   exit 1
 fi
-while [ "$READ_TRY" -lt 3 ]; do
-  READ_TRY=$((READ_TRY + 1))
-  STEP_LIST_JSON=$(gc bd list --assignee "$EXPECTED_ASSIGNEE" --status=in_progress --limit=0 --json 2>/dev/null)
-  STEP_LIST_CODE=$?
-  STEP_MATCHES=$(printf '%s' "$STEP_LIST_JSON" | jq -c 'if type == "array" then [.[] | select(.metadata["gc.step_ref"] == "mol-polecat-work.submit-and-exit")] else [] end' 2>/dev/null)
-  STEP_COUNT=$(printf '%s' "$STEP_MATCHES" | jq -r 'length' 2>/dev/null)
-  if [ "$STEP_LIST_CODE" -eq 0 ] && [ "$STEP_COUNT" = "1" ]; then
-    STEP_BEAD_ID=$(printf '%s' "$STEP_MATCHES" | jq -r '.[0].id // empty' 2>/dev/null)
-    if [ -n "$STEP_BEAD_ID" ]; then
-      STEP_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
-      STEP_CODE=$?
-      STEP_STATUS=$(printf '%s' "$STEP_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-      STEP_ASSIGNEE=$(printf '%s' "$STEP_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
-      STEP_REF=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.step_ref"] // empty' 2>/dev/null)
-      ROOT_BEAD_ID=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.root_bead_id"] // empty' 2>/dev/null)
-      if [ "$STEP_CODE" -eq 0 ] && [ "$STEP_STATUS" = "in_progress" ] &&
-         [ "$STEP_ASSIGNEE" = "$EXPECTED_ASSIGNEE" ] &&
-         [ "$STEP_REF" = "mol-polecat-work.submit-and-exit" ] &&
-         [ -n "$ROOT_BEAD_ID" ]; then
-        ROOT_JSON=$(gc bd show "$ROOT_BEAD_ID" --json 2>/dev/null)
-        ROOT_CODE=$?
-        INPUT_CONVOY_ID=$(printf '%s' "$ROOT_JSON" | jq -r '.[0].metadata["gc.input_convoy_id"] // empty' 2>/dev/null)
-        if [ "$ROOT_CODE" -eq 0 ] && [ -n "$INPUT_CONVOY_ID" ]; then
-          CONVOY_STATUS=$(gc convoy status "$INPUT_CONVOY_ID" --json 2>/dev/null)
-          CONVOY_CODE=$?
-          WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end' 2>/dev/null)
-          if [ "$CONVOY_CODE" -eq 0 ] && [ -n "$WORK_BEAD_ID" ]; then
-            WORK_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
-            WORK_CODE=$?
-            WORK_STATUS=$(printf '%s' "$WORK_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-            WORK_ASSIGNEE=$(printf '%s' "$WORK_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
-            if [ "$WORK_CODE" -eq 0 ] && [ -n "$WORK_STATUS" ]; then
-              READ_OK=1
-              break
-            fi
-          fi
-        fi
-      fi
+if ! printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -e '
+  type == "object" and
+  (keys | sort) ==
+    (["action", "assignee", "branch", "contract", "convoy", "mode",
+      "replay", "root", "source", "source_assignee", "status", "step"] |
+     sort) and
+  .contract == "polecat-submit.v1" and
+  (.action | IN("proceed", "terminal")) and
+  (.step | type) == "string" and (.step | length) > 0 and
+  (.assignee | type) == "string" and (.assignee | length) > 0 and
+  (.root | type) == "string" and (.root | length) > 0 and
+  (.convoy | type) == "string" and (.convoy | length) > 0 and
+  (.source | type) == "string" and (.source | length) > 0 and
+  (.branch | type) == "string" and .branch == ("polecat/" + .source) and
+  (.mode | type) == "string" and
+  (.status | type) == "string" and
+  (.source_assignee | type) == "string" and
+  (.replay | type) == "boolean" and
+  (if .action == "proceed"
+   then .mode == "" and .status == "open" and
+        .source_assignee == "" and .replay == false
+   else (.mode | IN("auto_push_false", "refinery")) and
+        (if .mode == "auto_push_false"
+         then .status == "open" and .source_assignee == ""
+         else (.status | IN("open", "in_progress", "closed"))
+         end)
+   end)
+' >/dev/null 2>&1; then
+  echo "Unsupported deterministic submit-state result; refusing done-state inference." >&2
+  exit 1
+fi
+SUBMIT_GUARD_ACTION=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.action')
+case "$SUBMIT_GUARD_ACTION" in
+  proceed)
+    echo "$SUBMIT_GUARD_OUTPUT"
+    ;;
+  terminal)
+    echo "$SUBMIT_GUARD_OUTPUT"
+    SUBMIT_CONVOY=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.convoy')
+    SUBMIT_SOURCE=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.source')
+    SUBMIT_BRANCH=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.branch')
+    SUBMIT_EVIDENCE_MODE=$(printf '%s' "$SUBMIT_GUARD_OUTPUT" | jq -er '.mode')
+    if ! gc gastown polecat-submit complete \
+         --convoy "$SUBMIT_CONVOY" \
+         --source "$SUBMIT_SOURCE" \
+         --branch "$SUBMIT_BRANCH" \
+         --mode "$SUBMIT_EVIDENCE_MODE"; then
+      echo "Deterministic terminal submit completion failed; refusing to drain." >&2
+      exit 1
     fi
-  fi
-  sleep 1
-done
-if [ "$READ_OK" -eq 1 ] &&
-   { [ "$WORK_STATUS" = "closed" ] || [ "$WORK_ASSIGNEE" = "$REFINERY_TARGET" ]; }; then
-  echo "ALREADY_SUBMITTED $WORK_BEAD_ID status=$WORK_STATUS assignee=$WORK_ASSIGNEE — completing $STEP_BEAD_ID."
-  if ! gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed \
-       --notes "Submit handoff already complete: source bead $WORK_BEAD_ID status=$WORK_STATUS assignee=$WORK_ASSIGNEE"; then
-    echo "Failed to close claimed submit step $STEP_BEAD_ID; refusing to drain." >&2
+    if ! gc runtime drain-ack; then
+      echo "Submit completion is durable but drain acknowledgement failed; retry the guard." >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  *)
+    echo "Unsupported deterministic submit-state result; refusing done-state inference." >&2
     exit 1
-  fi
-  VERIFY_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
-  VERIFY_STATUS=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-  VERIFY_OUTCOME=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].metadata["gc.outcome"] // empty' 2>/dev/null)
-  if [ "$VERIFY_STATUS" != "closed" ] || [ "$VERIFY_OUTCOME" != "pass" ]; then
-    echo "Submit step $STEP_BEAD_ID did not verify closed/pass; refusing to drain." >&2
-    exit 1
-  fi
-  gc runtime drain-ack
-  exit
-fi
-if [ "$READ_OK" -eq 1 ] &&
-   { [ "$WORK_STATUS" != "open" ] || [ -n "$WORK_ASSIGNEE" ]; }; then
-  echo "Source bead $WORK_BEAD_ID has conflicting state status=$WORK_STATUS assignee=$WORK_ASSIGNEE; failing $STEP_BEAD_ID." >&2
-  if ! gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --status=closed \
-       --notes "Submit blocked: source bead $WORK_BEAD_ID has conflicting status=$WORK_STATUS assignee=$WORK_ASSIGNEE"; then
-    echo "Failed to close conflicting submit step $STEP_BEAD_ID; refusing to drain." >&2
-    exit 1
-  fi
-  VERIFY_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
-  VERIFY_STATUS=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-  VERIFY_OUTCOME=$(printf '%s' "$VERIFY_JSON" | jq -r '.[0].metadata["gc.outcome"] // empty' 2>/dev/null)
-  if [ "$VERIFY_STATUS" != "closed" ] || [ "$VERIFY_OUTCOME" != "fail" ]; then
-    echo "Submit step $STEP_BEAD_ID did not verify closed/fail; refusing to drain." >&2
-    exit 1
-  fi
-  gc runtime drain-ack
-  exit 1
-fi
-# Unreadable after retries or the expected open/unassigned pre-handoff state:
-# fall through and run submit-and-exit. This guard never claims routed work.
+    ;;
+esac
 # END_GASTOWN_SUBMIT_GUARD
 ```
 
@@ -619,7 +586,7 @@ is the "Idle Polecat heresy."
 
 | Want to... | Correct command |
 |------------|----------------|
-| Signal work complete | Run the `mol-polecat-work` `submit-and-exit` step (its single source of truth); if already run, `gc runtime drain-ack` + exit |
+| Signal work complete | Run the `mol-polecat-work` `submit-and-exit` step (its single source of truth); if it may already have run, rerun the deterministic submit guard block above so it completes or replays the exact step before checked drain |
 | Read formula steps | `gc bd show <wisp-id>` (shows formula ref) |
 | Read implementation recipe | `gc bd formula show mol-polecat-work --rig "$GC_RIG"` (NOT `find /`, `gc formula step`, or `gc formula show-step`) |
 | Escalate blocker | `WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"; gc mail send "$WITNESS_TARGET" -s "ESCALATION: desc [HIGH]" -m "..."` |

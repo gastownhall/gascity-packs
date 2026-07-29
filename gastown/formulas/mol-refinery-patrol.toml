@@ -281,17 +281,68 @@ If rebase SUCCEEDED (exit 0): close this step, proceed to run-tests.
 If rebase FAILED (conflicts):
 
 1. Abort: `git rebase --abort`
-2. Clean up the existing workflow and reopen the source bead:
+2. Clear and verify the old submit generation while the source is still
+   owned by this refinery, then clean up the workflow and reopen it:
 ```bash
-gc workflow delete-source $WORK --apply && gc workflow reopen-source $WORK
+REJECTION_REASON="Conflicts with $TARGET at $(git rev-parse origin/$TARGET)"
+if ! gc bd update "$WORK" \
+     --unset-metadata gc.polecat_submit_convoy \
+     --set-metadata rejection_reason="$REJECTION_REASON"; then
+  echo "Could not clear the old submit generation; refusing to reopen $WORK." >&2
+  exit 1
+fi
+PRE_REOPEN_JSON=$(gc bd show "$WORK" --json 2>/dev/null) || {
+  echo "Could not verify the generation clear; refusing to reopen $WORK." >&2
+  exit 1
+}
+if ! printf '%s' "$PRE_REOPEN_JSON" | jq -e \
+     --arg id "$WORK" --arg owner "$GC_AGENT" \
+     --arg rejection "$REJECTION_REASON" '
+     type == "array" and length == 1 and .[0].id == $id and
+     (.[0].status == "open" or .[0].status == "in_progress") and
+     .[0].assignee == $owner and
+     .[0].metadata.rejection_reason == $rejection and
+     (((.[0].metadata // {}) | has("gc.polecat_submit_convoy") | not) or
+      .[0].metadata["gc.polecat_submit_convoy"] == "")
+   ' >/dev/null; then
+  echo "Generation clear or exact refinery ownership did not read back; refusing to reopen $WORK." >&2
+  exit 1
+fi
+if ! gc workflow delete-source "$WORK" --apply ||
+   ! gc workflow reopen-source "$WORK"; then
+  echo "Could not reset workflow for rejected source $WORK." >&2
+  exit 1
+fi
 ```
 3. Put the work bead back in the pool with rejection metadata:
 ```bash
-gc bd update $WORK \
+if ! gc bd update "$WORK" \
   --status=open \
   --assignee="" \
-  --set-metadata rejection_reason="Conflicts with $TARGET at $(git rev-parse origin/$TARGET)" \
-  --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat"
+  --set-metadata rejection_reason="$REJECTION_REASON" \
+  --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat" \
+  --unset-metadata gc.polecat_submit_convoy; then
+  echo "Could not persist rejected pool routing for $WORK." >&2
+  exit 1
+fi
+REQUEUE_JSON=$(gc bd show "$WORK" --json 2>/dev/null) || {
+  echo "Could not read back rejected pool routing for $WORK." >&2
+  exit 1
+}
+if ! printf '%s' "$REQUEUE_JSON" | jq -e \
+     --arg id "$WORK" \
+     --arg route "${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat" \
+     --arg rejection "$REJECTION_REASON" '
+     type == "array" and length == 1 and .[0].id == $id and
+     .[0].status == "open" and (.[0].assignee // "") == "" and
+     .[0].metadata["gc.routed_to"] == $route and
+     .[0].metadata.rejection_reason == $rejection and
+     (((.[0].metadata // {}) | has("gc.polecat_submit_convoy") | not) or
+      .[0].metadata["gc.polecat_submit_convoy"] == "")
+   ' >/dev/null; then
+  echo "Rejected pool routing did not read back exactly for $WORK." >&2
+  exit 1
+fi
 ```
 4. Do NOT delete the branch (new polecat needs it for conflict resolution).
 5. Clean up temp branch: `git checkout {{target_branch}} && git branch -D temp`
@@ -382,17 +433,68 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
 1. Diagnose: branch regression or pre-existing on target?
 
 2. If branch caused it:
-   - Clean up the existing workflow and reopen the source bead:
+   - Clear and verify the old submit generation while the source is still
+     owned by this refinery, then clean up the workflow and reopen it:
      ```bash
-     gc workflow delete-source $WORK --apply && gc workflow reopen-source $WORK
+     REJECTION_REASON="<failure summary>"
+     if ! gc bd update "$WORK" \
+          --unset-metadata gc.polecat_submit_convoy \
+          --set-metadata rejection_reason="$REJECTION_REASON"; then
+       echo "Could not clear the old submit generation; refusing to reopen $WORK." >&2
+       exit 1
+     fi
+     PRE_REOPEN_JSON=$(gc bd show "$WORK" --json 2>/dev/null) || {
+       echo "Could not verify the generation clear; refusing to reopen $WORK." >&2
+       exit 1
+     }
+     if ! printf '%s' "$PRE_REOPEN_JSON" | jq -e \
+          --arg id "$WORK" --arg owner "$GC_AGENT" \
+          --arg rejection "$REJECTION_REASON" '
+          type == "array" and length == 1 and .[0].id == $id and
+          (.[0].status == "open" or .[0].status == "in_progress") and
+          .[0].assignee == $owner and
+          .[0].metadata.rejection_reason == $rejection and
+          (((.[0].metadata // {}) | has("gc.polecat_submit_convoy") | not) or
+           .[0].metadata["gc.polecat_submit_convoy"] == "")
+        ' >/dev/null; then
+       echo "Generation clear or exact refinery ownership did not read back; refusing to reopen $WORK." >&2
+       exit 1
+     fi
+     if ! gc workflow delete-source "$WORK" --apply ||
+        ! gc workflow reopen-source "$WORK"; then
+       echo "Could not reset workflow for rejected source $WORK." >&2
+       exit 1
+     fi
      ```
    - Put the work bead back in the pool with rejection metadata:
      ```bash
-     gc bd update $WORK \
+     if ! gc bd update "$WORK" \
        --status=open \
        --assignee="" \
-       --set-metadata rejection_reason="<failure summary>" \
-       --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat"
+       --set-metadata rejection_reason="$REJECTION_REASON" \
+       --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat" \
+       --unset-metadata gc.polecat_submit_convoy; then
+       echo "Could not persist rejected pool routing for $WORK." >&2
+       exit 1
+     fi
+     REQUEUE_JSON=$(gc bd show "$WORK" --json 2>/dev/null) || {
+       echo "Could not read back rejected pool routing for $WORK." >&2
+       exit 1
+     }
+     if ! printf '%s' "$REQUEUE_JSON" | jq -e \
+          --arg id "$WORK" \
+          --arg route "${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat" \
+          --arg rejection "$REJECTION_REASON" '
+          type == "array" and length == 1 and .[0].id == $id and
+          .[0].status == "open" and (.[0].assignee // "") == "" and
+          .[0].metadata["gc.routed_to"] == $route and
+          .[0].metadata.rejection_reason == $rejection and
+          (((.[0].metadata // {}) | has("gc.polecat_submit_convoy") | not) or
+           .[0].metadata["gc.polecat_submit_convoy"] == "")
+        ' >/dev/null; then
+       echo "Rejected pool routing did not read back exactly for $WORK." >&2
+       exit 1
+     fi
      ```
    - Delete branch: `git push origin --delete $BRANCH`
    - Clean up: `git checkout "$TARGET" && git branch -D temp`

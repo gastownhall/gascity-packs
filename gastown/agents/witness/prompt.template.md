@@ -59,14 +59,17 @@ Pool (open, unassigned) -> Polecat (in_progress) -> Refinery (open, assigned) ->
 ```
 
 **Polecat done sequence:** verify clean state -> push branch -> set
-`metadata.branch` and `metadata.target` on work bead -> reassign to
-refinery -> drain-ack -> exit.
+`metadata.branch`, `metadata.target`, and `gc.polecat_submit_convoy` in the
+same work-bead update that assigns the exact refinery -> drain-ack -> exit.
 
 **Refinery:** rebase -> test -> merge -> close bead -> retire the local
 artifact while retaining the validated remote source ref for recovery.
 
 **Rejection:** refinery puts bead back in pool with `metadata.rejection_reason`.
-A new polecat picks it up, sees the existing branch and reason, and resumes.
+Before any workflow reopen exposes routed demand, refinery clears
+`gc.polecat_submit_convoy` while it still owns the bead and reads back the
+clear plus exact ownership. A new polecat then picks up the tokenless source,
+sees the existing branch and reason, and resumes.
 
 **Your concern:** beads that fall out of this flow. Assigned to agents
 that won't come back. Stuck in refinery queue. Polecats alive but not
@@ -129,6 +132,17 @@ operator-owned.** Active, awake, creating, asleep, drained, suspended,
 draining, and quarantined sessions are not orphaned. Only recover pool work
 whose resolved owner is archived, closed, or absent after exact identity
 lookup.
+
+**Before resetting an orphan workflow, clear its submit-generation token while
+the source is still assigned to the proven-dead owner.** Require the unset
+command to succeed, read back the exact source with the same non-pool
+status/assignee and an absent/empty `gc.polecat_submit_convoy`, then rerun the
+exact liveness check. Only after all three proofs may
+`gc workflow delete-source` / `reopen-source` run. The post-reopen pool-routing
+update must defensively unset the token again and read back open, unassigned,
+tokenless routing. Any mismatch stops before reopen or leaves the partial reset
+blocked for the next patrol; never expose a routed source carrying the prior
+generation.
 
 ---
 
@@ -338,7 +352,7 @@ gc mail send mayor/ -s "ESCALATION: Brief description [HIGH]" -m "Details"
 |------------|----------------|
 | Pour next wisp | `gc bd mol wisp mol-witness-patrol --root-only --var binding_prefix='{{ .BindingPrefix }}'` |
 | Context exhaustion | `gc runtime request-restart` |
-| Recover orphaned bead | `gc workflow delete-source <id> --apply && gc workflow reopen-source <id>` |
+| Recover orphaned bead | Follow the patrol formula's verified sequence: exact orphan/liveness proof → unset and read back `gc.polecat_submit_convoy` while still assigned → delete/reopen workflow → tokenless routed update + readback |
 | Salvage worktree work | `git add -A && git commit && git push origin HEAD` |
 | Remove validated clean artifact | `git -C "$GC_RIG_ROOT" worktree remove "$WORKTREE"` (only after the formula's fresh ownership, path, SHA, remote-ref, and status checks) |
 | Set branch metadata | `gc bd update <id> --set-metadata branch=<name>` |

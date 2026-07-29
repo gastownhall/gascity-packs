@@ -25,13 +25,6 @@ write_db() {
 }
 
 if [[ "${1:-}" == "bd" && "${2:-}" == "list" ]]; then
-    if [[ "${LIST_MODE:-ok}" == "fail" ]]; then
-        exit 81
-    fi
-    if [[ "${LIST_MODE:-ok}" == "malformed" ]]; then
-        printf '{"not":"an array"}\n'
-        exit 0
-    fi
     assignee=""
     status=""
     shift 2
@@ -54,6 +47,51 @@ if [[ "${1:-}" == "bd" && "${2:-}" == "list" ]]; then
                 ;;
         esac
     done
+    if [[ "${LIST_MODE:-ok}" == "fail" ||
+          (-n "${FAIL_LIST_ASSIGNEE:-}" &&
+           "$assignee" == "$FAIL_LIST_ASSIGNEE") ]]; then
+        exit 81
+    fi
+    if [[ "${LIST_MODE:-ok}" == "malformed" ]]; then
+        printf '{"not":"an array"}\n'
+        exit 0
+    fi
+    if [[ -n "${LIST_ROW_KIND:-}" &&
+          "$status" == "${LIST_ROW_STATUS:-}" ]]; then
+        case "$LIST_ROW_KIND" in
+            wrong-assignee)
+                jq --arg status "$status" \
+                    '[.beads["step-good"],
+                      (.beads["step-1"] |
+                       .status = $status | .assignee = "foreign-actor")]' \
+                    "$FAKE_DB"
+                ;;
+            wrong-status)
+                jq --arg assignee "$assignee" --arg status "$status" \
+                    '[.beads["step-good"],
+                      (.beads["step-1"] |
+                       .assignee = $assignee |
+                       .status = (if $status == "closed"
+                                  then "in_progress" else "closed" end))]' \
+                    "$FAKE_DB"
+                ;;
+            malformed-row)
+                jq '[.beads["step-good"], null]' "$FAKE_DB"
+                ;;
+            *)
+                touch "$FAKE_STATE/unknown-call"
+                exit 88
+                ;;
+        esac
+        exit 0
+    fi
+    if [[ -n "${DUPLICATE_LIST_FOR_ASSIGNEE:-}" &&
+          "$assignee" == "$DUPLICATE_LIST_FOR_ASSIGNEE" &&
+          "$status" == "in_progress" ]]; then
+        jq --arg assignee "$assignee" \
+            '[.beads["step-1"] | .assignee = $assignee]' "$FAKE_DB"
+        exit 0
+    fi
     jq --arg assignee "$assignee" --arg status "$status" \
         '[.beads[] | select(.assignee == $assignee and .status == $status)]' \
         "$FAKE_DB"
@@ -178,6 +216,10 @@ invoke() {
     LIST_MODE="${LIST_MODE:-ok}" \
     UPDATE_MODE="${UPDATE_MODE:-ok}" \
     FAIL_SHOW_ID="${FAIL_SHOW_ID:-}" \
+    FAIL_LIST_ASSIGNEE="${FAIL_LIST_ASSIGNEE:-}" \
+    DUPLICATE_LIST_FOR_ASSIGNEE="${DUPLICATE_LIST_FOR_ASSIGNEE:-}" \
+    LIST_ROW_KIND="${LIST_ROW_KIND:-}" \
+    LIST_ROW_STATUS="${LIST_ROW_STATUS:-}" \
         "$COMMAND" complete \
         --convoy "${TEST_CONVOY:-convoy-1}" \
         --step-ref "${TEST_STEP_REF:-mol-polecat-work.load-context}"
@@ -236,18 +278,82 @@ run_command
     fail "correct present formula name did not complete the step"
 assert_no_unknown_call
 
-new_case canonical-agent-fallback
+new_case alternate-current-identity
 TEST_BEADS_ACTOR=""
 TEST_ALIAS=wrong-template-identity
 TEST_GC_AGENT=actor-1
 run_command
 unset TEST_BEADS_ACTOR TEST_ALIAS TEST_GC_AGENT
 [[ "$RUN_RC" -eq 0 ]] ||
-    fail "canonical GC_AGENT fallback failed: $(<"$OUTPUT")"
+    fail "alternate current identity lookup failed: $(<"$OUTPUT")"
 grep -F 'gc bd list --assignee actor-1 ' "$STATE/gc.log" >/dev/null ||
-    fail "GC_AGENT did not win over the non-session GC_ALIAS"
-! grep -F 'wrong-template-identity' "$STATE/gc.log" >/dev/null ||
-    fail "GC_ALIAS was incorrectly used as the session assignee"
+    fail "alternate GC_AGENT identity was not queried"
+grep -F 'gc bd list --assignee wrong-template-identity ' \
+    "$STATE/gc.log" >/dev/null ||
+    fail "the bounded identity set did not include GC_ALIAS"
+[[ "$(jq -r '.beads["step-1"].assignee' "$DB")" == "actor-1" ]] ||
+    fail "completion did not preserve the selected row's exact assignee"
+assert_no_unknown_call
+
+new_case duplicate-identities-are-deduplicated
+TEST_BEADS_ACTOR=actor-1
+TEST_SESSION_NAME=actor-1
+TEST_SESSION_ID=actor-1
+TEST_ALIAS=actor-1
+TEST_GC_AGENT=actor-1
+run_command
+unset TEST_BEADS_ACTOR TEST_SESSION_NAME TEST_SESSION_ID TEST_ALIAS TEST_GC_AGENT
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "deduplicated identity lookup failed: $(<"$OUTPUT")"
+[[ "$(grep -cF \
+    'gc bd list --assignee actor-1 --status=in_progress ' \
+    "$STATE/gc.log")" -eq 1 ]] ||
+    fail "the same current identity was queried more than once"
+assert_no_unknown_call
+
+new_case ambiguous-across-current-identities
+jq '.beads["step-2"] = {
+      id: "step-2", status: "in_progress", assignee: "actor-2",
+      metadata: {
+        "gc.step_ref": "mol-polecat-work.load-context",
+        "gc.root_bead_id": "root-1"
+      }
+    }' "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+TEST_SESSION_NAME=actor-2
+run_command
+unset TEST_SESSION_NAME
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "cross-identity ambiguity returned $RUN_RC instead of 75"
+assert_unadvanced
+[[ "$(jq -r '.beads["step-2"].status' "$DB")" == "in_progress" ]] ||
+    fail "cross-identity ambiguity advanced the alternate step"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "cross-identity ambiguity attempted an update"
+assert_no_unknown_call
+
+new_case duplicate-id-across-current-identities
+TEST_SESSION_NAME=actor-2
+DUPLICATE_LIST_FOR_ASSIGNEE=actor-2
+run_command
+unset TEST_SESSION_NAME DUPLICATE_LIST_FOR_ASSIGNEE
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "duplicate aggregate id returned $RUN_RC instead of 75"
+assert_unadvanced
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "duplicate aggregate id attempted an update"
+assert_no_unknown_call
+
+new_case one-current-identity-query-fails
+TEST_SESSION_NAME=actor-2
+FAIL_LIST_ASSIGNEE=actor-2
+run_command
+unset TEST_SESSION_NAME FAIL_LIST_ASSIGNEE
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "one failed identity query returned $RUN_RC instead of 75"
+assert_unadvanced
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "one failed identity query attempted an update"
 assert_no_unknown_call
 
 new_case ambiguous-live
@@ -369,6 +475,56 @@ assert_unadvanced
     fail "malformed list attempted an update"
 assert_no_unknown_call
 
+test_list_row_integrity() {
+    local phase=$1 kind=$2 requested_status=in_progress before
+
+    new_case "list-row-${phase}-${kind}"
+    if [[ "$phase" == "replay" ]]; then
+        requested_status=closed
+        jq '.beads["step-1"].status = "closed" |
+            .beads["step-1"].metadata["gc.outcome"] = "pass" |
+            .beads["step-good"] = {
+              id: "step-good", status: "closed", assignee: "actor-1",
+              metadata: {
+                "gc.step_ref": "mol-polecat-work.load-context",
+                "gc.root_bead_id": "root-1",
+                "gc.outcome": "pass"
+              }
+            }' \
+            "$DB" >"$DB.tmp"
+        mv "$DB.tmp" "$DB"
+    else
+        jq '.beads["step-good"] = {
+              id: "step-good", status: "in_progress", assignee: "actor-1",
+              metadata: {
+                "gc.step_ref": "mol-polecat-work.load-context",
+                "gc.root_bead_id": "root-1"
+              }
+            }' "$DB" >"$DB.tmp"
+        mv "$DB.tmp" "$DB"
+    fi
+    before=$(jq -cS . "$DB")
+
+    LIST_ROW_KIND=$kind
+    LIST_ROW_STATUS=$requested_status
+    run_command
+    unset LIST_ROW_KIND LIST_ROW_STATUS
+
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "$phase $kind list row returned $RUN_RC instead of 75"
+    [[ "$(jq -cS . "$DB")" == "$before" ]] ||
+        fail "$phase $kind list row mutated workflow state"
+    [[ ! -e "$STATE/update-called" ]] ||
+        fail "$phase $kind list row attempted an update"
+    assert_no_unknown_call
+}
+
+for list_phase in live replay; do
+    for list_row_kind in wrong-assignee wrong-status malformed-row; do
+        test_list_row_integrity "$list_phase" "$list_row_kind"
+    done
+done
+
 new_case update-failure
 UPDATE_MODE=fail
 run_command
@@ -444,7 +600,7 @@ run_command
     fail "malformed replay sibling attempted an update"
 assert_no_unknown_call
 
-new_case terminal-root-replay
+new_case terminal-fail-root-replay
 jq '.beads["step-1"].status = "closed" |
     .beads["step-1"].metadata["gc.outcome"] = "pass" |
     .beads["root-1"].status = "closed" |
@@ -452,10 +608,44 @@ jq '.beads["step-1"].status = "closed" |
     "$DB" >"$DB.tmp"
 mv "$DB.tmp" "$DB"
 run_command
-[[ "$RUN_RC" -eq 75 ]] ||
-    fail "terminal root replay returned $RUN_RC instead of 75"
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "terminal fail-root lost-response replay failed: $(<"$OUTPUT")"
+grep -F 'step=step-1' "$OUTPUT" >/dev/null &&
+    grep -F 'replay=true' "$OUTPUT" >/dev/null ||
+    fail "terminal fail-root replay did not select the exact closed/pass step"
 [[ ! -e "$STATE/update-called" ]] ||
-    fail "terminal root replay attempted an update"
+    fail "terminal fail-root replay attempted a duplicate update"
+assert_no_unknown_call
+
+new_case terminal-pass-root-replay
+jq '.beads["step-1"].status = "closed" |
+    .beads["step-1"].metadata["gc.outcome"] = "pass" |
+    .beads["root-1"].status = "closed" |
+    .beads["root-1"].metadata["gc.outcome"] = "pass"' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_command
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "terminal pass-root lost-response replay failed: $(<"$OUTPUT")"
+grep -F 'step=step-1' "$OUTPUT" >/dev/null &&
+    grep -F 'replay=true' "$OUTPUT" >/dev/null ||
+    fail "terminal pass-root replay did not select the exact closed/pass step"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "terminal pass-root replay attempted a duplicate update"
+assert_no_unknown_call
+
+new_case incoherent-terminal-root-replay
+jq '.beads["step-1"].status = "closed" |
+    .beads["step-1"].metadata["gc.outcome"] = "pass" |
+    .beads["root-1"].status = "closed" |
+    del(.beads["root-1"].metadata["gc.outcome"])' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_command
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "incoherent terminal root replay returned $RUN_RC instead of 75"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "incoherent terminal root replay attempted an update"
 assert_no_unknown_call
 
 new_case unreadable-replay-candidate
@@ -515,6 +705,55 @@ grep -F 'step=step-1' "$OUTPUT" >/dev/null &&
     fail "verified other-convoy replay selected the wrong candidate"
 [[ ! -e "$STATE/update-called" ]] ||
     fail "verified replay attempted a duplicate update"
+assert_no_unknown_call
+
+new_case terminal-other-convoy-replay
+jq '.beads["step-1"].status = "closed" |
+    .beads["step-1"].metadata["gc.outcome"] = "pass" |
+    .beads["root-2"] = {
+      id: "root-2", status: "closed", assignee: "",
+      metadata: {
+        "gc.kind": "workflow",
+        "gc.formula_contract": "graph.v2",
+        "gc.input_convoy_id": "other-convoy",
+        "gc.outcome": "fail"
+      }
+    } |
+    .beads["step-2"] = {
+      id: "step-2", status: "closed", assignee: "actor-1",
+      metadata: {
+        "gc.step_ref": "mol-polecat-work.load-context",
+        "gc.root_bead_id": "root-2",
+        "gc.outcome": "pass"
+      }
+    }' "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_command
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "terminal other-convoy history poisoned replay: $(<"$OUTPUT")"
+grep -F 'step=step-1' "$OUTPUT" >/dev/null &&
+    grep -F 'replay=true' "$OUTPUT" >/dev/null ||
+    fail "terminal other-convoy replay selected the wrong candidate"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "terminal other-convoy replay attempted a duplicate update"
+assert_no_unknown_call
+
+new_case alternate-current-identity-replay
+jq '.beads["step-1"].status = "closed" |
+    .beads["step-1"].assignee = "actor-2" |
+    .beads["step-1"].metadata["gc.outcome"] = "pass"' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+TEST_SESSION_NAME=actor-2
+run_command
+unset TEST_SESSION_NAME
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "alternate current identity replay failed: $(<"$OUTPUT")"
+grep -F 'step=step-1' "$OUTPUT" >/dev/null &&
+    grep -F 'replay=true' "$OUTPUT" >/dev/null ||
+    fail "alternate current identity replay was not selected"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "alternate current identity replay attempted a duplicate update"
 assert_no_unknown_call
 
 new_case submit-bypass
