@@ -50,6 +50,7 @@ jobs:
           for pack in gascity gascity/roles bmad compound-engineering gstack superpowers profiler; do
             "$GC_BIN" lint "$pack"
           done
+          GC_TEST_BIN="$GC_BIN" python3 -m pytest oversight-rig/tests/test_order_scopes.py -q
           GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py -q
 
       - name: Run Gastown shell tests
