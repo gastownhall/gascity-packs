@@ -240,7 +240,7 @@ replay_closed_step() {
             fail_closed "closed submit history has partial replay metadata"
 
         context=$(printf '%s' "$candidate" | jq -ec \
-            --arg ref "$STEP_REF" --arg version "$REPLAY_VERSION" '
+            --arg ref "$STEP_REF" --argjson version "$REPLAY_VERSION" '
             if (.id | type) == "string" and (.id | length) > 0 and
                .status == "closed" and
                (.assignee | type) == "string" and (.assignee | length) > 0 and
@@ -318,7 +318,7 @@ replay_closed_step() {
         printf '%s' "$candidate" | jq -e \
             --arg id "$candidate_id" --arg actor "$candidate_assignee" \
             --arg ref "$STEP_REF" --arg root "$root_id" \
-            --arg version "$REPLAY_VERSION" --arg source "$replay_source" \
+            --argjson version "$REPLAY_VERSION" --arg source "$replay_source" \
             --arg convoy "$replay_convoy" --arg branch "$replay_branch" \
             --arg mode "$replay_mode" --arg terminal "$replay_terminal" \
             --arg session "$replay_session" '
@@ -713,7 +713,7 @@ close_step() {
     printf '%s' "$verify" | jq -e \
         --arg id "$STEP_BEAD_ID" --arg actor "$STEP_ASSIGNEE" \
         --arg ref "$STEP_REF" --arg root "$ROOT_BEAD_ID" \
-        --arg outcome "$outcome" --arg version "$REPLAY_VERSION" \
+        --arg outcome "$outcome" --argjson version "$REPLAY_VERSION" \
         --arg source "$SOURCE_ID" --arg convoy "$CONVOY_ID" \
         --arg branch "$CANONICAL_SOURCE_BRANCH" \
         --arg mode "$replay_mode" --arg terminal "$replay_terminal" \

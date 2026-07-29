@@ -145,8 +145,10 @@ case "$subcommand" in
                     value=${pair#*=}
                     metadata=$(jq -cn \
                         --argjson current "$metadata" \
-                        --arg key "$key" --arg value "$value" \
-                        '$current + {($key): $value}')
+                        --arg key "$key" --arg value "$value" '
+                        ($value | try fromjson catch $value) as $decoded |
+                        $current + {($key): $decoded}
+                    ')
                     ;;
                 --set-metadata=*)
                     pair=${1#*=}
@@ -155,8 +157,10 @@ case "$subcommand" in
                     value=${pair#*=}
                     metadata=$(jq -cn \
                         --argjson current "$metadata" \
-                        --arg key "$key" --arg value "$value" \
-                        '$current + {($key): $value}')
+                        --arg key "$key" --arg value "$value" '
+                        ($value | try fromjson catch $value) as $decoded |
+                        $current + {($key): $decoded}
+                    ')
                     ;;
                 --append-notes)
                     shift 2
@@ -540,6 +544,9 @@ unset UPDATE_MODE
 [[ "$(jq -r '.beads["submit-1"].metadata["gc.polecat_submit_version"]' "$DB")" == "1" &&
    "$(jq -r '.beads["submit-1"].metadata["gc.polecat_submit_session_id"]' "$DB")" == "session-1" ]] ||
     fail "applied update did not persist versioned replay evidence"
+jq -e '.beads["submit-1"].metadata["gc.polecat_submit_version"] |
+       type == "number" and . == 1' "$DB" >/dev/null ||
+    fail "fake store did not preserve real bd numeric version typing"
 
 new_case complete-source-race-before-close
 set_generation_token
