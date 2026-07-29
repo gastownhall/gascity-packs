@@ -130,18 +130,41 @@ test_composition_is_documented() {
         fail "pack.toml should not reference the retired maintenance pack import"
 }
 
-test_polecat_startup_uses_standard_hook_claim() {
-    local agent prompt propulsion
+test_polecat_startup_uses_scripted_hook_claim() {
+    local agent prompt propulsion following restart
     agent="$GASTOWN/agents/polecat/agent.toml"
     prompt="$GASTOWN/agents/polecat/prompt.template.md"
     propulsion="$GASTOWN/template-fragments/propulsion.template.md"
+    following="$GASTOWN/template-fragments/following-mol.template.md"
+    restart=$(sed -n '/^\*\*Restart \/ resume:\*\*/,/^\*\*Claim ->/p' "$prompt")
 
-    grep -F 'gc hook --claim --json' "$agent" >/dev/null ||
-        fail "polecat nudge should call the standard hook claim path"
+    grep -F 'POLECAT_CLAIM_CONTRACT' "$agent" >/dev/null ||
+        fail "polecat nudge should enter the complete scripted claim contract"
+    grep -F 'first operational action' "$agent" >/dev/null ||
+        fail "polecat nudge should make the complete contract the first operational action"
+    grep -F 'CLAIMED_BEAD_ID' "$agent" >/dev/null ||
+        fail "polecat nudge should gate continuation on a claim receipt"
+    ! grep -F 'gc hook --claim' "$agent" >/dev/null ||
+        fail "polecat nudge must not bypass the scripted startup contract"
     grep -F 'default_sling_formula = "mol-polecat-work"' "$agent" >/dev/null ||
         fail "plain polecat sling must compile the implementation workflow instead of routing a bare task"
-    grep -F 'gc hook --claim --json' "$prompt" >/dev/null ||
-        fail "polecat prompt should call the standard hook claim path"
+    grep -F 'gc hook --claim --drain-ack --json' "$prompt" >/dev/null ||
+        fail "polecat prompt should use the transactional startup claim path"
+    grep -F '`{{ cmd }} prime` may reload this prompt only' "$prompt" >/dev/null ||
+        fail "prime recovery should be context restoration only"
+    grep -F 'Only after `CLAIMED_BEAD_ID` may you re-read formula steps' "$prompt" >/dev/null ||
+        fail "polecat restart should gate formula/workspace access on the claim receipt"
+    ! grep -F 'FIRST action on restart' "$prompt" >/dev/null ||
+        fail "polecat prompt should not retain a competing manual first action"
+    [[ "$restart" != *'CONVOY_STATUS=$(gc convoy status'* ]] ||
+        fail "polecat prompt should not retain a manual resume bypass"
+    grep -F 'complete `POLECAT_CLAIM_CONTRACT` as its first operational action' \
+        "$following" >/dev/null ||
+        fail "shared restart guidance should preserve the polecat claim-first gate"
+    grep -F '`CLAIMED_BEAD_ID`' "$following" >/dev/null ||
+        fail "shared restart guidance should wait for the polecat claim receipt"
+    ! grep -F 'On crash or restart, re-read your formula steps' "$following" >/dev/null ||
+        fail "shared restart guidance should not read formulas before polecat claim"
     grep -F 'gc hook --claim --json' "$propulsion" >/dev/null ||
         fail "polecat propulsion fragment should call the standard hook claim path"
     grep -F 'After completing any formula step bead through the' "$prompt" >/dev/null ||
@@ -258,7 +281,7 @@ import sys
 text = open(sys.argv[1], encoding="utf-8").read()
 workspace_lease = text.index('gc gastown polecat-lease workspace')
 explicit_publish = text.index('gc gastown polecat-lease publish-rebase')
-new_branch = text.index('git checkout -B "$BRANCH" "origin/{{base_branch}}"')
+new_branch = text.index('git checkout -b "$BRANCH" "origin/{{base_branch}}"')
 submit_lease = text.index('# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT')
 manual_ready = text.index('echo "auto_push=false: halting at branch-ready')
 handoff_verified = text.index('Refinery handoff did not verify exact status/assignee')
@@ -294,31 +317,6 @@ PY
     grep -F 'The `gc bd update` in step 5 generates' "$formula" >/dev/null ||
         fail "refinery wake prose must reference the renumbered handoff step"
 
-    local resume_block
-    resume_block=$(sed -n '/BEGIN_GASTOWN_RESUME_VERIFY/,/END_GASTOWN_RESUME_VERIFY/p' "$prompt")
-    [[ "$resume_block" == *'startswith("mol-polecat-work.")'* ]] ||
-        fail "restart verification must accept every mol-polecat-work Graph-v2 step"
-    [[ "$resume_block" == *'.metadata["gc.root_bead_id"]'* ]] &&
-        [[ "$resume_block" == *'.metadata["gc.input_convoy_id"]'* ]] ||
-        fail "restart verification must prove workflow root/input convoy provenance"
-    [[ "$resume_block" == *'.metadata["gc.kind"]'* ]] &&
-        [[ "$resume_block" == *'.metadata["gc.formula_contract"]'* ]] &&
-        [[ "$resume_block" == *'[ "$ROOT_KIND" != "workflow" ]'* ]] &&
-        [[ "$resume_block" == *'[ "$ROOT_CONTRACT" != "graph.v2" ]'* ]] ||
-        fail "restart verification must prove the root is a Graph-v2 workflow"
-    [[ "$resume_block" == *'expected-open-unassigned'* ]] ||
-        fail "restart verification must accept normal Graph-v2 source state"
-    [[ "$resume_block" == *'RESUME_TERMINAL'* ]] &&
-        [[ "$resume_block" == *'[ "$WORK_ASSIGNEE" = "$REFINERY_TARGET" ]'* ]] ||
-        fail "post-handoff restart must recognize exact terminal refinery evidence"
-    [[ "$resume_block" != *'$GC_BEAD_ID'* ]] ||
-        fail "restart verification must not reinterpret GC_BEAD_ID as the source convoy"
-    [[ "$resume_block" != *'OWNERSHIP_LOST'* ]] ||
-        fail "restart verification must not derive workflow ownership from source state"
-    [[ "$resume_block" != *'gc hook --claim'* ]] ||
-        fail "read-only restart verification must not claim unrelated work"
-    [[ "$resume_block" != *'gc runtime drain-ack'* ]] ||
-        fail "indeterminate restart verification must preserve work for reclaim"
 }
 
 test_polecat_workflow_is_fail_fast_scoped() {
@@ -465,7 +463,7 @@ test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
 test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
-test_polecat_startup_uses_standard_hook_claim
+test_polecat_startup_uses_scripted_hook_claim
 test_polecat_submit_guard_and_step_completion_contracts
 test_polecat_workflow_is_fail_fast_scoped
 test_review_leg_contract_forbids_synthetic_mutation

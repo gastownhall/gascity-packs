@@ -1,6 +1,11 @@
 # Polecat Context
 
-> **Recovery**: Run `{{ cmd }} prime` after compaction, clear, or new session
+> **Recovery/bootstrap**: If context must be restored after compaction, clear,
+> or a new session, `{{ cmd }} prime` may reload this prompt only; it is not
+> work discovery. After prompt restoration, run the Startup Protocol's complete
+> `POLECAT_CLAIM_CONTRACT` block as your first operational action. Until it
+> prints `CLAIMED_BEAD_ID`, do not read a formula, inspect metadata or source,
+> or enter a task workspace.
 
 {{ template "approval-fallacy-polecat" . }}
 
@@ -149,8 +154,10 @@ Implementation work follows the **mol-polecat-work** formula. If your hook
 claim or current molecule identifies a different formula, such as
 `mol-review-leg`, that formula's step descriptions are your instructions.
 
-**FIRST: Read your formula steps.** Do NOT use Claude's internal task tools.
-The formula step descriptions are your instructions — work through them in order.
+**After the Startup Protocol prints `CLAIMED_BEAD_ID`: read your formula
+steps.** The scripted claim block is always the first operational action. Do
+NOT use Claude's internal task tools. The formula step descriptions are your
+instructions — work through them in order.
 
 For default implementation work, read the recipe with this exact command:
 ```bash
@@ -208,254 +215,186 @@ mail inspection, or repository scans to find a bead — those race other polecat
 and surface work that is not yours. Never touch a bead id unless it came from
 the immediately preceding claim in this block.
 
-Your first action is the scripted claim below, run as ONE Bash command. Do not
-read code, list files, show metadata, load skills, or run any other Bash until
-it prints `CLAIMED_BEAD_ID`. The claim flips gc bd status to `in_progress`
-atomically; without it the pool reconciler can recycle you mid-read and another
-polecat race-claims the same bead. Polecat-vs-polecat races are the #1 source of
-churn — close the window.
+After any prompt-only restoration, your first operational action is the
+scripted claim below, run as ONE Bash command. Do not read code, list files,
+show metadata, load skills, or run any other operational Bash until it prints
+`CLAIMED_BEAD_ID`. A fresh `claimed` result is atomically
+`in_progress`; `existing_assignment` resumes work already `in_progress`; and
+`ready_assignment` atomically promotes already-assigned ready work to
+`in_progress` before returning it. These are distinct supported hook outcomes
+— do not rewrite one into another. Execute the block verbatim: do not retype, shorten,
+or simplify its jq receipt validator.
 
 ```bash
 bash <<'GC_CLAIM'
+# BEGIN POLECAT_CLAIM_CONTRACT
 set +e
-EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
-if [ -z "$EXPECTED_ASSIGNEE" ]; then
-  echo "CLAIM_REJECTED no session identity in env; cannot verify ownership"
-  gc runtime drain-ack
+WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"
+
+claim_infra_failure() {
+  echo "CLAIM_INFRA_FAILURE: $*"
+  gc mail send "$WITNESS_TARGET" \
+    -s "ESCALATION: polecat claim contract failed [HIGH]" \
+    -m "$*. The startup wrapper made no follow-up bead mutation and did not manually acknowledge drain." \
+    >/dev/null 2>&1 || true
+}
+
+claim_identity_matches() {
+  local actual=$1 candidate
+  for candidate in "${BEADS_ACTOR:-}" "${GC_SESSION_NAME:-}" \
+                   "${GC_SESSION_ID:-}" "${GC_ALIAS:-}" "${GC_AGENT:-}"; do
+    [ -n "$candidate" ] && [ "$actual" = "$candidate" ] && return 0
+  done
+  return 1
+}
+
+if [ -z "${BEADS_ACTOR:-}${GC_SESSION_NAME:-}${GC_SESSION_ID:-}${GC_ALIAS:-}${GC_AGENT:-}" ]; then
+  claim_infra_failure "no runtime identity is available to validate hook ownership"
+  exit 1
+fi
+
+# --drain-ack is part of the hook transaction. Every structured drain reason
+# (`no_work`, `claims_errored`, or `stale_session`) is intentional and terminal:
+# the hook acknowledges drain before returning it. Never retry or manually
+# drain-ack one of those results.
+CLAIM_ERR=$(mktemp) || {
+  claim_infra_failure "could not allocate hook stderr capture"
+  exit 1
+}
+CLAIM_JSON=$(gc hook --claim --drain-ack --json 2>"$CLAIM_ERR")
+CLAIM_CODE=$?
+CLAIM_ERR_TEXT=$(sed -n '1p' "$CLAIM_ERR")
+rm -f "$CLAIM_ERR"
+
+if [ "$CLAIM_CODE" -ne 0 ]; then
+  claim_infra_failure "gc hook --claim failed (exit=$CLAIM_CODE): ${CLAIM_ERR_TEXT:-no diagnostic}"
+  exit 1
+fi
+
+# Validate the complete schema-v1 action/reason matrix before trusting fields.
+# A successful empty result, an unknown reason, or a work result without a
+# receipt is malformed infrastructure output — never ordinary idleness.
+# Keep the receipt bound as $r: inside `allowed | index(...)`, jq's `.` is the
+# allowed-reasons array. `index(.reason)` would therefore reject every valid
+# receipt instead of reading its reason.
+if ! printf '%s' "$CLAIM_JSON" | jq -e '
+    . as $r
+    | type == "object"
+      and $r.schema_version == "1"
+      and $r.ok == true
+      and $r.command == "hook"
+      and (
+        ($r.action == "drain"
+          and (["no_work", "claims_errored", "stale_session"] | index($r.reason) != null)
+          and $r.drain_acknowledged == true)
+        or
+        ($r.action == "work"
+          and (["claimed", "existing_assignment", "ready_assignment"] | index($r.reason) != null)
+          and ($r.bead_id | type == "string" and length > 0)
+          and ($r.assignee | type == "string" and length > 0))
+      )
+  ' >/dev/null 2>&1; then
+  claim_infra_failure "gc hook --claim returned a malformed or unsupported schema-v1 result"
+  exit 1
+fi
+
+ACTION=$(printf '%s' "$CLAIM_JSON" | jq -r '.action')
+REASON=$(printf '%s' "$CLAIM_JSON" | jq -r '.reason')
+if [ "$ACTION" = "drain" ]; then
+  case "$REASON" in
+    no_work)
+      echo "NO_ROUTED_WORK reason=no_work"
+      ;;
+    claims_errored)
+      echo "CLAIM_DEFERRED reason=claims_errored; claim writes failed and core will reclaim work on a later tick"
+      ;;
+    stale_session)
+      echo "STALE_SESSION_DRAINED reason=stale_session"
+      ;;
+  esac
   exit 0
 fi
 
-# Claim with retry. A hook-call failure (non-zero exit, malformed JSON) is a
-# transient CLI/daemon fault — NOT "no work" — so retry it before giving up.
-# Only action==drain, or a clean empty result, is genuine NO_ROUTED_WORK.
-WORK_ID=""
-CLAIM_TRY=0
-while [ "$CLAIM_TRY" -lt 3 ]; do
-  CLAIM_TRY=$((CLAIM_TRY + 1))
-  CLAIM_ERR="$(mktemp)"
-  CLAIM_JSON="$(gc hook --claim --json 2>"$CLAIM_ERR")"
-  CLAIM_CODE=$?
-  CLAIM_ERR_TEXT="$(sed -n '1p' "$CLAIM_ERR")"
-  rm -f "$CLAIM_ERR"
-  ACTION="$(printf '%s' "$CLAIM_JSON" | jq -r '.action // empty' 2>/dev/null)"
-  WORK_ID="$(printf '%s' "$CLAIM_JSON" | jq -r '.bead_id // empty' 2>/dev/null)"
-  if [ "$ACTION" = "drain" ]; then
-    echo "NO_ROUTED_WORK"
-    gc runtime drain-ack
-    exit 0
-  fi
-  if [ "$CLAIM_CODE" -eq 0 ] && [ -n "$WORK_ID" ]; then
-    break
-  fi
-  if [ "$CLAIM_CODE" -eq 0 ] && [ -z "$ACTION" ] && [ -z "$WORK_ID" ]; then
-    echo "NO_ROUTED_WORK"
-    gc runtime drain-ack
-    exit 0
-  fi
-  echo "CLAIM_RETRY hook call failed (code=$CLAIM_CODE): ${CLAIM_ERR_TEXT:-malformed claim result}"
-  WORK_ID=""
-  sleep 2
-done
-if [ -z "$WORK_ID" ]; then
-  echo "CLAIM_REJECTED gc hook --claim returned no workable bead after retries"
-  gc runtime drain-ack
-  exit 0
+WORK_ID=$(printf '%s' "$CLAIM_JSON" | jq -r '.bead_id')
+CLAIM_ASSIGNEE=$(printf '%s' "$CLAIM_JSON" | jq -r '.assignee')
+CLAIM_ROUTE=$(printf '%s' "$CLAIM_JSON" | jq -r '.route // empty')
+if ! claim_identity_matches "$CLAIM_ASSIGNEE"; then
+  claim_infra_failure "hook receipt for $WORK_ID names assignee=$CLAIM_ASSIGNEE, which is not this runtime identity"
+  exit 1
 fi
 
-# Post-claim ownership verification. The bead MUST be yours and in_progress
-# before you touch any code. A polecat NEVER works a bead it did not claim this
-# session. Distinguish a READ FAILURE (gc bd show non-zero / empty JSON —
-# transient) from a genuine MISMATCH (non-empty assignee that differs, or
-# status not in_progress). Retry the read before deciding; only a genuine
-# mismatch is CLAIM_REJECTED.
-STATUS=""
-ASSIGNEE=""
-SHOW_JSON=""
-SHOW_OK=0
+case "$REASON" in
+  claimed|existing_assignment|ready_assignment) EXPECTED_STATUS=in_progress ;;
+esac
+
+# Confirm the receipt through the normal work context before touching code.
+# This catches a selected-store/mutation mismatch without releasing or
+# reopening through an ambiguous context. Retry only the read projection, never
+# the hook claim itself.
+SHOW_CONFIRMED=false
+SHOW_JSON=
+STATUS=
+ASSIGNEE=
 SHOW_TRY=0
 while [ "$SHOW_TRY" -lt 3 ]; do
   SHOW_TRY=$((SHOW_TRY + 1))
-  SHOW_JSON="$(gc bd show "$WORK_ID" --json 2>/dev/null)"
+  SHOW_JSON=$(gc bd show "$WORK_ID" --json 2>/dev/null)
   SHOW_CODE=$?
-  STATUS="$(printf '%s' "$SHOW_JSON" | jq -r '.[0].status // empty' 2>/dev/null)"
-  ASSIGNEE="$(printf '%s' "$SHOW_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)"
-  if [ "$SHOW_CODE" -eq 0 ] && [ -n "$STATUS" ] && [ -n "$ASSIGNEE" ]; then
-    SHOW_OK=1
+  SHOW_ROW=$(printf '%s' "$SHOW_JSON" | jq -c --arg id "$WORK_ID" '
+      (if type == "array" then (.[0] // empty) else . end)
+      | select(.id == $id)
+    ' 2>/dev/null)
+  STATUS=$(printf '%s' "$SHOW_ROW" | jq -r '.status // empty' 2>/dev/null)
+  ASSIGNEE=$(printf '%s' "$SHOW_ROW" | jq -r '.assignee // empty' 2>/dev/null)
+  if [ "$SHOW_CODE" -eq 0 ] &&
+     [ "$STATUS" = "$EXPECTED_STATUS" ] &&
+     [ "$ASSIGNEE" = "$CLAIM_ASSIGNEE" ]; then
+    SHOW_CONFIRMED=true
     break
   fi
-  sleep 1
+  [ "$SHOW_TRY" -lt 3 ] && sleep 1
 done
-if [ "$SHOW_OK" -ne 1 ]; then
-  # Never leave a claimed bead stranded in_progress on an unreadable state:
-  # release it so it re-enters the pool instead of being lost.
-  echo "CLAIM_RELEASED $WORK_ID unreadable after retries; returning it to the pool"
-  gc bd update "$WORK_ID" --status=open --assignee=""
-  gc runtime drain-ack
-  exit 0
-fi
-if [ "$ASSIGNEE" != "$EXPECTED_ASSIGNEE" ] || [ "$STATUS" != "in_progress" ]; then
-  echo "CLAIM_REJECTED $WORK_ID assignee=$ASSIGNEE status=$STATUS (expected $EXPECTED_ASSIGNEE / in_progress)"
-  gc runtime drain-ack
-  exit 0
+
+if [ "$SHOW_CONFIRMED" != true ]; then
+  claim_infra_failure "$WORK_ID receipt reason=$REASON assignee=$CLAIM_ASSIGNEE but direct reads remained status=${STATUS:-unavailable} assignee=${ASSIGNEE:-unavailable}; expected $EXPECTED_STATUS/$CLAIM_ASSIGNEE"
+  exit 1
 fi
 
-# Ownership confirmed. Stamp a stable session identity so the churn-watcher and
-# the resume re-verify can key on metadata.polecat_session.
-gc bd update "$WORK_ID" --set-metadata polecat_session="$EXPECTED_ASSIGNEE" \
-  || echo "WARN metadata stamp failed for $WORK_ID; churn-watcher/resume lose session keying (proceeding — the claim is valid)"
+# Ownership is confirmed. This metadata is observability only; failure to stamp
+# it cannot invalidate the authoritative hook receipt plus direct read.
+gc bd update "$WORK_ID" --set-metadata polecat_session="$CLAIM_ASSIGNEE" \
+  || echo "WARN metadata stamp failed for $WORK_ID; claim remains valid"
 
 printf 'CLAIMED_BEAD_ID=%s\n' "$WORK_ID"
-printf '%s' "$SHOW_JSON" | jq '.[0].metadata'
+printf 'CLAIMED_REASON=%s\n' "$REASON"
+printf 'CLAIMED_ASSIGNEE=%s\n' "$CLAIM_ASSIGNEE"
+printf 'CLAIMED_ROUTE=%s\n' "$CLAIM_ROUTE"
+printf '%s' "$SHOW_ROW" | jq '.metadata // {}'
+# END POLECAT_CLAIM_CONTRACT
 GC_CLAIM
 ```
 
-If the block prints `NO_ROUTED_WORK`, `CLAIM_REJECTED`, or `CLAIM_RELEASED`, it
-has already drain-acked — stop and exit. Only after it prints `CLAIMED_BEAD_ID` do you read
-the recipe with `gc bd formula show mol-polecat-work --rig "$GC_RIG"` and run
-`workspace-setup` before inspecting task source. The claim checks assigned work
-first (session bead ID, runtime session name, then alias) and only falls through
-to unassigned pool work routed to
+If the block prints `NO_ROUTED_WORK`, `CLAIM_DEFERRED`, or
+`STALE_SESSION_DRAINED`, the hook has already drain-acked — stop and exit
+without retrying. `claims_errored` is a deliberate core drain: a claim write
+failed and the work is reclaimed on a later controller tick; it is not a
+license for this stale snapshot to retry. If the block prints
+`CLAIM_INFRA_FAILURE`, it has escalated once and deliberately has not released,
+mutated, or manually drain-acked through an uncertain context — stop and exit
+nonzero. Only after it prints `CLAIMED_BEAD_ID` do you read formula steps and
+begin. The hook checks assigned work first (session bead ID, runtime session
+name, then alias) and only falls through to unassigned pool work routed to
 `${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat`.
 
-**Resume / crash re-verify (FIRST action on restart).** After a provider restart
-during a long-running formula step, do not assume restored context proves
-ownership. Graph-v2 ownership lives on the claimed workflow step, not on the
-source work bead. Before touching code, use an exact read-only session query to
-rediscover one step already assigned to the current session and prove its
-Graph-v2 root, input convoy, and source provenance. This check never adopts or
-claims old work:
-
-```bash
-bash <<'GC_RESUME_VERIFY'
-set +e
-# BEGIN_GASTOWN_RESUME_VERIFY
-EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
-REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}refinery"
-if [ -z "$EXPECTED_ASSIGNEE" ]; then
-  echo "RESUME_INDETERMINATE no current session identity; do not touch code." >&2
-  exit 1
-fi
-
-STEP_LIST_OK=0
-STEP_LIST_TRY=0
-STEP_MATCHES=""
-STEP_COUNT=""
-while [ "$STEP_LIST_TRY" -lt 3 ]; do
-  STEP_LIST_TRY=$((STEP_LIST_TRY + 1))
-  STEP_LIST_JSON=$(gc bd list --assignee "$EXPECTED_ASSIGNEE" --status=in_progress --limit=0 --json 2>/dev/null)
-  STEP_LIST_CODE=$?
-  STEP_MATCHES=$(printf '%s' "$STEP_LIST_JSON" | jq -c --arg expected "$EXPECTED_ASSIGNEE" \
-    'if type == "array" then [.[] |
-      select(.status == "in_progress") |
-      select(.assignee == $expected) |
-      select((.metadata["gc.step_ref"] // "") | startswith("mol-polecat-work.")) |
-      select((.metadata["gc.root_bead_id"] // "") != "")
-    ] else empty end' 2>/dev/null)
-  MATCH_CODE=$?
-  STEP_COUNT=$(printf '%s' "$STEP_MATCHES" | jq -r 'length' 2>/dev/null)
-  if [ "$STEP_LIST_CODE" -eq 0 ] && [ "$MATCH_CODE" -eq 0 ] &&
-     [ -n "$STEP_COUNT" ]; then
-    STEP_LIST_OK=1
-    break
-  fi
-  sleep 1
-done
-if [ "$STEP_LIST_OK" -ne 1 ]; then
-  echo "RESUME_INDETERMINATE current workflow-step query was unreadable; do not touch code." >&2
-  exit 1
-fi
-if [ "$STEP_COUNT" = "0" ]; then
-  echo "RESUME_CLAIM_REQUIRED no in-progress mol-polecat-work step is assigned to $EXPECTED_ASSIGNEE; stop resume and run the standard Startup Protocol."
-  exit 0
-fi
-if [ "$STEP_COUNT" != "1" ]; then
-  echo "RESUME_INDETERMINATE found $STEP_COUNT current mol-polecat-work steps; do not guess." >&2
-  exit 1
-fi
-
-STEP_BEAD_ID=$(printf '%s' "$STEP_MATCHES" | jq -r '.[0].id // empty' 2>/dev/null)
-if [ -z "$STEP_BEAD_ID" ]; then
-  echo "RESUME_INDETERMINATE current workflow step has no exact id." >&2
-  exit 1
-fi
-STEP_JSON=$(gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
-STEP_CODE=$?
-STEP_SHOW_ID=$(printf '%s' "$STEP_JSON" | jq -r '.[0].id // empty' 2>/dev/null)
-STEP_STATUS=$(printf '%s' "$STEP_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-STEP_ASSIGNEE=$(printf '%s' "$STEP_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
-STEP_REF=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.step_ref"] // empty' 2>/dev/null)
-ROOT_BEAD_ID=$(printf '%s' "$STEP_JSON" | jq -r '.[0].metadata["gc.root_bead_id"] // empty' 2>/dev/null)
-case "$STEP_REF" in
-  mol-polecat-work.*) STEP_REF_OK=1 ;;
-  *) STEP_REF_OK=0 ;;
-esac
-if [ "$STEP_CODE" -ne 0 ] || [ "$STEP_SHOW_ID" != "$STEP_BEAD_ID" ] ||
-   [ "$STEP_STATUS" != "in_progress" ] ||
-   [ "$STEP_ASSIGNEE" != "$EXPECTED_ASSIGNEE" ] ||
-   [ "$STEP_REF_OK" -ne 1 ] || [ -z "$ROOT_BEAD_ID" ]; then
-  echo "RESUME_INDETERMINATE workflow-step identity, ownership, or provenance did not verify." >&2
-  exit 1
-fi
-
-ROOT_JSON=$(gc bd show "$ROOT_BEAD_ID" --json 2>/dev/null)
-ROOT_CODE=$?
-ROOT_SHOW_ID=$(printf '%s' "$ROOT_JSON" | jq -r '.[0].id // empty' 2>/dev/null)
-ROOT_KIND=$(printf '%s' "$ROOT_JSON" | jq -r '.[0].metadata["gc.kind"] // empty' 2>/dev/null)
-ROOT_CONTRACT=$(printf '%s' "$ROOT_JSON" | jq -r '.[0].metadata["gc.formula_contract"] // empty' 2>/dev/null)
-INPUT_CONVOY_ID=$(printf '%s' "$ROOT_JSON" | jq -r '.[0].metadata["gc.input_convoy_id"] // empty' 2>/dev/null)
-if [ "$ROOT_CODE" -ne 0 ] || [ "$ROOT_SHOW_ID" != "$ROOT_BEAD_ID" ] ||
-   [ "$ROOT_KIND" != "workflow" ] || [ "$ROOT_CONTRACT" != "graph.v2" ] ||
-   [ -z "$INPUT_CONVOY_ID" ]; then
-  echo "RESUME_INDETERMINATE Graph-v2 workflow root/input convoy provenance did not verify." >&2
-  exit 1
-fi
-
-CONVOY_STATUS=$(gc convoy status "$INPUT_CONVOY_ID" --json 2>/dev/null)
-CONVOY_CODE=$?
-WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if type == "object" and (.children | type) == "array" and (.children | length) == 1 then .children[0].id else empty end' 2>/dev/null)
-if [ "$CONVOY_CODE" -ne 0 ] || [ -z "$WORK_BEAD_ID" ]; then
-  echo "RESUME_INDETERMINATE input convoy has no single exact source bead." >&2
-  exit 1
-fi
-
-WORK_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
-WORK_CODE=$?
-WORK_SHOW_ID=$(printf '%s' "$WORK_JSON" | jq -r '.[0].id // empty' 2>/dev/null)
-WORK_STATUS=$(printf '%s' "$WORK_JSON" | jq -r '.[0].status // empty' 2>/dev/null)
-WORK_ASSIGNEE=$(printf '%s' "$WORK_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null)
-if [ "$WORK_CODE" -ne 0 ] || [ "$WORK_SHOW_ID" != "$WORK_BEAD_ID" ] ||
-   [ -z "$WORK_STATUS" ]; then
-  echo "RESUME_INDETERMINATE source bead provenance did not verify." >&2
-  exit 1
-fi
-
-# Source state is observational, not the ownership authority. An exact
-# submit-and-exit step with durable terminal source evidence must use the done
-# guard instead of re-entering branch/push logic after local cleanup.
-if [ "$STEP_REF" = "mol-polecat-work.submit-and-exit" ] &&
-   { [ "$WORK_STATUS" = "closed" ] || [ "$WORK_ASSIGNEE" = "$REFINERY_TARGET" ]; }; then
-  echo "RESUME_TERMINAL step=$STEP_BEAD_ID source=$WORK_BEAD_ID status=$WORK_STATUS assignee=$WORK_ASSIGNEE; run the submitted-state guard."
-  exit 0
-fi
-# For every earlier Graph-v2 step, open/unassigned is the normal source state.
-if [ "$WORK_STATUS" = "open" ] && [ -z "$WORK_ASSIGNEE" ]; then
-  SOURCE_STATE="expected-open-unassigned"
-else
-  SOURCE_STATE="observed-$WORK_STATUS-${WORK_ASSIGNEE:-unassigned}"
-fi
-echo "RESUME_CONFIRMED step=$STEP_BEAD_ID ref=$STEP_REF root=$ROOT_BEAD_ID convoy=$INPUT_CONVOY_ID source=$WORK_BEAD_ID source_state=$SOURCE_STATE"
-# END_GASTOWN_RESUME_VERIFY
-GC_RESUME_VERIFY
-```
-
-If this prints `RESUME_CONFIRMED`, resume only that exact workflow step and
-re-read its instructions. Normal source `open`/unassigned state does not mean
-ownership was lost. If it prints `RESUME_TERMINAL`, do not re-enter the
-branch/push sequence; immediately run the submitted-state guard in the final
-reminder so it verifies and closes the exact submit step before draining. If it
-prints `RESUME_CLAIM_REQUIRED`, stop the resume path and run the standard
-Startup Protocol; only its normal atomic assigned/routed rules may establish
-new ownership. On `RESUME_INDETERMINATE`, do not touch code or guess an id.
+**Restart / resume:** Pool restarts mint a new session identity. After prompt
+restoration, run the same complete Startup Protocol claim block above as the
+first operational action. Do not substitute a separate convoy lookup, metadata
+read, or manual ownership probe. An `existing_assignment` or `ready_assignment`
+receipt already checks the hook assignee against `BEADS_ACTOR`,
+`GC_SESSION_NAME`, `GC_SESSION_ID`, `GC_ALIAS`, and `GC_AGENT`, then confirms
+the exact bead status and assignee through a direct read.
+Only after `CLAIMED_BEAD_ID` may you re-read formula steps, enter the validated
+workspace, inspect source state, and resume.
 
 **Claim -> verify ownership -> read formula steps -> follow in order -> claim next step or drain.**
 
@@ -466,7 +405,9 @@ If your context is filling up during long implementation:
 gc runtime request-restart
 ```
 This blocks until the controller kills your session. The new session
-re-reads formula steps and resumes from context.
+restores this prompt if necessary, then runs the complete Startup Protocol
+claim block as its first operational action. Only after `CLAIMED_BEAD_ID` does
+it re-read formula steps and resume from context.
 
 For lighter handoffs (e.g., waiting for external input):
 ```bash

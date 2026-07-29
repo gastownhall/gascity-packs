@@ -1,7 +1,7 @@
 scope = "rig"
 wake_mode = "fresh"
 work_dir = ".gc/worktrees/{{.Rig}}/polecats/{{.AgentBase}}"
-nudge = "Run gc hook --claim --json now; if it returns work, execute the claimed formula immediately."
+nudge = "After prompt restoration, run the Startup Protocol's complete POLECAT_CLAIM_CONTRACT block as your first operational action; do not substitute a direct hook call or inspect formula, workspace, metadata, or source state first. Continue only after it prints CLAIMED_BEAD_ID."
 pre_start = ["{{.ConfigDir}}/assets/scripts/worktree-setup.sh {{.RigRoot}} {{.WorkDir}} {{.AgentBase}} --sync"]
 default_sling_formula = "mol-polecat-work"
 idle_timeout = "2h"
