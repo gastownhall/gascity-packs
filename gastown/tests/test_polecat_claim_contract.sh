@@ -300,7 +300,7 @@ test_complete_work_reason_status_matrix() {
     done <<'CASES'
 claimed in_progress rig/gastown.polecat
 existing_assignment in_progress __omit
-ready_assignment open __omit
+ready_assignment in_progress __omit
 CASES
 }
 
@@ -310,7 +310,7 @@ test_all_runtime_identity_fields_are_accepted() {
         setup_case
         rc=$(run_contract_as "$field" "$value" \
             "$(work_json ready_assignment "$value" __omit)" 0 \
-            "$(show_json open "$value")")
+            "$(show_json in_progress "$value")")
         [[ "$rc" == "0" ]] ||
             fail "$field-owned ready assignment exited $rc: $(cat "$OUT")"
         grep -q "CLAIMED_ASSIGNEE=$value" "$OUT" ||
@@ -336,7 +336,7 @@ test_wrong_reason_status_pairs_fail_closed() {
     done <<'CASES'
 claimed open
 existing_assignment open
-ready_assignment in_progress
+ready_assignment open
 CASES
 }
 

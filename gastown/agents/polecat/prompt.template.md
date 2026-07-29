@@ -158,9 +158,9 @@ scripted claim below, run as ONE Bash command. Do not read code, list files,
 show metadata, load skills, or run any other operational Bash until it prints
 `CLAIMED_BEAD_ID`. A fresh `claimed` result is atomically
 `in_progress`; `existing_assignment` resumes work already `in_progress`; and
-`ready_assignment` adopts work that is legitimately still `open` but already
-assigned to this session. These are distinct supported hook outcomes — do not
-rewrite one into another. Execute the block verbatim: do not retype, shorten,
+`ready_assignment` atomically promotes already-assigned ready work to
+`in_progress` before returning it. These are distinct supported hook outcomes
+— do not rewrite one into another. Execute the block verbatim: do not retype, shorten,
 or simplify its jq receipt validator.
 
 ```bash
@@ -262,8 +262,7 @@ if ! claim_identity_matches "$CLAIM_ASSIGNEE"; then
 fi
 
 case "$REASON" in
-  claimed|existing_assignment) EXPECTED_STATUS=in_progress ;;
-  ready_assignment) EXPECTED_STATUS=open ;;
+  claimed|existing_assignment|ready_assignment) EXPECTED_STATUS=in_progress ;;
 esac
 
 # Confirm the receipt through the normal work context before touching code.
