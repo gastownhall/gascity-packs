@@ -133,6 +133,11 @@ run_gc() {
     "$GC_CMD" "$@"
 }
 
+run_gc_bd() {
+    local command=("$GC_CMD" "bd")
+    "${command[@]}" "$@"
+}
+
 indeterminate() {
     echo "POLECAT_LEASE_INDETERMINATE: $*" >&2
     echo "Protected state was preserved; inspect the diagnostic before retrying." >&2
@@ -225,7 +230,7 @@ derive_graph_context() {
     local candidate_count=0
 
     [[ -n "$ACTOR" ]] || return 1
-    step_list=$(run_gc bd list --assignee "$ACTOR" --status=in_progress \
+    step_list=$(run_gc_bd list --assignee "$ACTOR" --status=in_progress \
         --limit=0 --json 2>/dev/null)
     step_code=$?
     [[ "$step_code" -eq 0 ]] || return 1
@@ -239,7 +244,7 @@ derive_graph_context() {
     if [[ "$step_count" == "1" ]]; then
         STEP_BEAD_ID=$(printf '%s' "$step_matches" | jq -er '.[0].id' 2>/dev/null) ||
             return 1
-        step_json=$(run_gc bd show "$STEP_BEAD_ID" --json 2>/dev/null)
+        step_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null)
         [[ $? -eq 0 ]] || return 1
         ROOT_BEAD_ID=$(printf '%s' "$step_json" | jq -er \
             --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" --arg ref "$EXPECTED_STEP_REF" '
@@ -256,7 +261,7 @@ derive_graph_context() {
         # A prior hard-conflict attempt may have durably closed the exact step
         # and then crashed before drain-ack.  Recover only a closed hard-failure
         # candidate whose workflow root binds this input convoy.
-        step_list=$(run_gc bd list --assignee "$ACTOR" --status=closed \
+        step_list=$(run_gc_bd list --assignee "$ACTOR" --status=closed \
             --limit=0 --json 2>/dev/null)
         [[ $? -eq 0 ]] || return 1
         step_matches=$(printf '%s' "$step_list" | jq -ce --arg ref "$EXPECTED_STEP_REF" '
@@ -271,7 +276,7 @@ derive_graph_context() {
         while IFS=$'\t' read -r candidate_id candidate_root; do
             [[ -n "$candidate_id" && -n "$candidate_root" ]] || continue
             safe_atom "$candidate_id" && safe_atom "$candidate_root" || return 1
-            root_json=$(run_gc bd show "$candidate_root" --json 2>/dev/null) ||
+            root_json=$(run_gc_bd show "$candidate_root" --json 2>/dev/null) ||
                 return 1
             if printf '%s' "$root_json" | jq -e \
                 --arg id "$candidate_root" --arg convoy "$CONVOY_ID" \
@@ -292,7 +297,7 @@ derive_graph_context() {
                    (.metadata["gc.root_bead_id"] | type) == "string") |
             [.id, .metadata["gc.root_bead_id"]] | @tsv')
         [[ "$candidate_count" -eq 1 ]] || return 1
-        step_json=$(run_gc bd show "$STEP_BEAD_ID" --json 2>/dev/null) ||
+        step_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) ||
             return 1
         printf '%s' "$step_json" | jq -e \
             --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" \
@@ -310,7 +315,7 @@ derive_graph_context() {
         return 1
     fi
 
-    root_json=$(run_gc bd show "$ROOT_BEAD_ID" --json 2>/dev/null)
+    root_json=$(run_gc_bd show "$ROOT_BEAD_ID" --json 2>/dev/null)
     root_code=$?
     [[ "$root_code" -eq 0 ]] || return 1
     printf '%s' "$root_json" | jq -e \
@@ -361,7 +366,7 @@ SOURCE_AUTO_PUSH=""
 SOURCE_WORK_DIR=""
 
 load_source() {
-    SOURCE_JSON=$(run_gc bd show "$SOURCE_ID" --json 2>/dev/null)
+    SOURCE_JSON=$(run_gc_bd show "$SOURCE_ID" --json 2>/dev/null)
     [[ $? -eq 0 ]] || return 1
     printf '%s' "$SOURCE_JSON" | jq -e --arg id "$SOURCE_ID" '
         type == "array" and length == 1 and .[0].id == $id and
@@ -638,7 +643,14 @@ load_mirror() {
           ($m.polecat_push_lease_branch // ""),
           ($m.polecat_push_lease_root // ""),
           ($m.polecat_push_lease_state // ""),
-          ($m.polecat_push_lease_manual_pending // "")
+          (if $m | has("polecat_push_lease_manual_pending")
+           then ($m.polecat_push_lease_manual_pending |
+                 if type == "boolean" then tostring
+                 elif type == "string" then .
+                 else error("lease mirror manual-pending flag is not boolean/string")
+                 end)
+           else ""
+           end)
         ] | map(if type == "string" then . else error("lease mirror is not string") end)
           | join("\u001f")' 2>/dev/null) || return 1
     IFS=$'\x1f' read -r M_NS M_CONTEXT M_EXPECTED M_PRE M_BASE M_REBASED \
@@ -716,7 +728,7 @@ sync_mirror() {
     state=$(mirror_state_for_refs)
     [[ "$state" != "manual-pending" ]] || manual="true"
     local args=(
-        bd update "$SOURCE_ID"
+        update "$SOURCE_ID"
         --set-metadata "polecat_push_lease_ref=$LEASE_NS"
         --set-metadata "polecat_push_lease_context_oid=$CONTEXT_OID"
         --set-metadata "polecat_push_lease_expected_sha=$EXPECTED_OID"
@@ -737,7 +749,7 @@ sync_mirror() {
     else
         args+=(--unset-metadata polecat_push_lease_submit_sha)
     fi
-    run_gc "${args[@]}" >/dev/null 2>&1 || return 1
+    run_gc_bd "${args[@]}" >/dev/null 2>&1 || return 1
     load_mirror || return 1
     mirror_matches_refs
 }
@@ -757,12 +769,12 @@ clear_mirror() {
         polecat_push_lease_state
         polecat_push_lease_manual_pending
     )
-    local args=(bd update "$SOURCE_ID")
+    local args=(update "$SOURCE_ID")
     local key
     for key in "${keys[@]}"; do
         args+=(--unset-metadata "$key")
     done
-    run_gc "${args[@]}" >/dev/null 2>&1 || return 1
+    run_gc_bd "${args[@]}" >/dev/null 2>&1 || return 1
     load_mirror || return 1
     [[ "$MIRROR_COUNT" -eq 0 ]]
 }
@@ -784,13 +796,13 @@ terminalize_hard() {
         "submit=${SUBMIT_OID:-<none>}" \
         "local=${LOCAL_HEAD:-<unknown>}")
 
-    source_json=$(run_gc bd show "$SOURCE_ID" --json 2>/dev/null) || return 1
+    source_json=$(run_gc_bd show "$SOURCE_ID" --json 2>/dev/null) || return 1
     status=$(printf '%s' "$source_json" | jq -er '.[0].status' 2>/dev/null) ||
         return 1
     assignee=$(printf '%s' "$source_json" | jq -er '.[0].assignee // ""' 2>/dev/null) ||
         return 1
     if [[ "$status" == "open" && -z "$assignee" ]]; then
-        run_gc bd update "$SOURCE_ID" \
+        run_gc_bd update "$SOURCE_ID" \
             --status=blocked --assignee "" \
             --set-metadata gc.routed_to=human \
             --set-metadata polecat_halt_reason=push_lease_conflict \
@@ -804,7 +816,7 @@ terminalize_hard() {
         return 1
     fi
 
-    verify_json=$(run_gc bd show "$SOURCE_ID" --json 2>/dev/null) || return 1
+    verify_json=$(run_gc_bd show "$SOURCE_ID" --json 2>/dev/null) || return 1
     status=$(printf '%s' "$verify_json" | jq -er '.[0].status' 2>/dev/null) ||
         return 1
     assignee=$(printf '%s' "$verify_json" | jq -er '.[0].assignee // ""' 2>/dev/null) ||
@@ -820,7 +832,7 @@ terminalize_hard() {
         -s "HARD: polecat push lease conflict for $SOURCE_ID" \
         -m "$detail" --notify >/dev/null 2>&1 || return 1
 
-    step_json=$(run_gc bd show "$STEP_BEAD_ID" --json 2>/dev/null) || return 1
+    step_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) || return 1
     step_status=$(printf '%s' "$step_json" | jq -er '.[0].status' 2>/dev/null) ||
         return 1
     if [[ "$step_status" == "in_progress" ]]; then
@@ -831,13 +843,13 @@ terminalize_hard() {
             .[0].assignee == $actor and .[0].metadata["gc.step_ref"] == $ref and
             .[0].metadata["gc.root_bead_id"] == $root' \
             >/dev/null 2>&1 || return 1
-        run_gc bd update "$STEP_BEAD_ID" \
+        run_gc_bd update "$STEP_BEAD_ID" \
             --set-metadata gc.outcome=fail \
             --set-metadata gc.failure_class=hard \
             --set-metadata gc.failure_reason=push_lease_conflict \
             --status=closed --append-notes "$detail" >/dev/null 2>&1 || return 1
     fi
-    verify_json=$(run_gc bd show "$STEP_BEAD_ID" --json 2>/dev/null) || return 1
+    verify_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) || return 1
     printf '%s' "$verify_json" | jq -e \
         --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" \
         --arg ref "$EXPECTED_STEP_REF" --arg root "$ROOT_BEAD_ID" '
@@ -893,7 +905,7 @@ prove_live_source_step() {
           "$SOURCE_BRANCH" != "$BRANCH" ]]; then
         indeterminate "source ownership/branch changed during the lease protocol"
     fi
-    step_json=$(run_gc bd show "$STEP_BEAD_ID" --json 2>/dev/null) ||
+    step_json=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) ||
         indeterminate "could not re-read the exact Graph step before a protected transition"
     printf '%s' "$step_json" | jq -e \
         --arg id "$STEP_BEAD_ID" --arg actor "$ACTOR" \
@@ -1038,7 +1050,7 @@ fetch_feature_from_push_remote() {
 
 clear_rejection_after_rebase() {
     prove_live_source_step
-    run_gc bd update "$SOURCE_ID" \
+    run_gc_bd update "$SOURCE_ID" \
         --unset-metadata rejection_reason \
         --set-metadata "fork_sha=$BASE_OID" >/dev/null 2>&1 || return 1
     load_source || return 1

@@ -147,7 +147,10 @@ block prints as `CLAIMED_BEAD_ID`.
 
 Formula workflows are split into child step beads. After closing a step bead,
 immediately run `gc hook --claim --json` again. Keep claiming and executing
-ready steps until a final formula step drains you or the hook returns no work.
+ready steps until a final formula step drains you. If the hook returns no work
+between stages, follow the polecat Work Protocol's bounded 60-second
+poll-before-drain procedure so a dispatcher scope-check can unlock the next
+preassigned sibling without replacing your session.
 
 You were spawned with work. There is no extra decision to make. Run the claim
 block, then run what it hands you.

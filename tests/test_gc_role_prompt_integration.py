@@ -9,6 +9,8 @@ import textwrap
 
 import pytest
 
+from scripts import gascity_pack_inference_gate
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GASCITY_CORE_SOURCE = (
@@ -253,6 +255,183 @@ def test_plain_gastown_polecat_sling_starts_default_graph_workflow(
     assert payload["workflow_id"]
     assert payload["bead_id"] == payload["workflow_id"]
     assert "molecule_id" not in payload
+    root_id = payload["workflow_id"]
+
+    listed = run_gc(
+        gc_test_bin,
+        workspace,
+        "--city",
+        str(workspace.city_dir),
+        "--rig",
+        "fixture",
+        "beads",
+        "list",
+        "--all",
+        "--format=json",
+    )
+    assert listed.returncode == 0, listed.stderr
+    workflow_beads = {
+        bead["metadata"]["gc.step_ref"]: bead
+        for bead in json.loads(listed.stdout)
+        if bead.get("metadata", {}).get("gc.root_bead_id") == root_id
+        and bead.get("metadata", {}).get("gc.step_ref")
+    }
+    worker_stages = (
+        "load-context",
+        "workspace-setup",
+        "preflight-tests",
+        "implement",
+        "self-review",
+        "submit-and-exit",
+    )
+    observed_groups = set()
+    for stage in worker_stages:
+        worker = workflow_beads[f"mol-polecat-work.{stage}"]
+        observed_groups.add(worker["metadata"]["gc.continuation_group"])
+        assert worker["metadata"]["gc.session_affinity"] == "require"
+        assert worker["metadata"]["gc.routed_to"] == "fixture/gastown.polecat"
+
+        control = workflow_beads[f"mol-polecat-work.{stage}-scope-check"]
+        assert "gc.continuation_group" not in control["metadata"]
+        assert "gc.session_affinity" not in control["metadata"]
+        assert control["metadata"]["gc.routed_to"] == "fixture/core.control-dispatcher"
+    # d034 preserves the pack-authored bridge; current core #3405 replaces it
+    # with its equivalent automatic group during route decoration.
+    assert observed_groups in ({"polecat-work"}, {"pool-workflow"})
+
+    compiled = run_gc(
+        gc_test_bin,
+        workspace,
+        "--city",
+        str(workspace.city_dir),
+        "--rig",
+        "fixture",
+        "formula",
+        "show",
+        "mol-polecat-work",
+        "--json",
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    gascity_pack_inference_gate.validate_gastown_polecat_compiled_graph(
+        json.loads(compiled.stdout)
+    )
+
+
+def test_polecat_workspace_hard_failure_aborts_remaining_worker_scope(
+    tmp_path: Path, gc_test_bin: Path
+) -> None:
+    workspace = write_gastown_sling_workspace(tmp_path)
+    common = (
+        "--city",
+        str(workspace.city_dir),
+        "--rig",
+        "fixture",
+    )
+
+    sling = run_gc(
+        gc_test_bin,
+        workspace,
+        *common,
+        "sling",
+        "fixture/gastown.polecat",
+        "Exercise fail-fast polecat worker scope",
+        "--json",
+    )
+    assert sling.returncode == 0, sling.stderr
+    root_id = json.loads(sling.stdout)["workflow_id"]
+
+    def workflow_beads() -> dict[str, dict[str, object]]:
+        listed = run_gc(
+            gc_test_bin,
+            workspace,
+            *common,
+            "beads",
+            "list",
+            "--all",
+            "--format=json",
+        )
+        assert listed.returncode == 0, listed.stderr
+        beads = json.loads(listed.stdout)
+        return {
+            bead["metadata"]["gc.step_ref"]: bead
+            for bead in beads
+            if bead.get("metadata", {}).get("gc.root_bead_id") == root_id
+            and bead.get("metadata", {}).get("gc.step_ref")
+        }
+
+    def close_step(step_ref: str, outcome: str, *extra_metadata: str) -> None:
+        bead_id = workflow_beads()[step_ref]["id"]
+        metadata = {"gc.outcome": outcome}
+        for item in extra_metadata:
+            key, value = item.split("=", 1)
+            metadata[key] = value
+        # The file-provider fixture intentionally has no generic mutation CLI.
+        # Mutate only the isolated fixture store, then exercise the production
+        # control dispatcher below through the real gc binary.
+        store_path = workspace.city_dir / ".gc" / "beads.json"
+        document = json.loads(store_path.read_text(encoding="utf-8"))
+        for bead in document["beads"]:
+            if bead["id"] == bead_id:
+                bead["status"] = "closed"
+                bead.setdefault("metadata", {}).update(metadata)
+                document["seq"] += 1
+                store_path.write_text(
+                    json.dumps(document, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                break
+        else:
+            pytest.fail(f"fixture bead {bead_id} disappeared")
+
+    def run_control(step_ref: str) -> None:
+        bead_id = workflow_beads()[step_ref]["id"]
+        controlled = run_gc(
+            gc_test_bin,
+            workspace,
+            *common,
+            "convoy",
+            "control",
+            bead_id,
+        )
+        assert controlled.returncode == 0, controlled.stderr
+
+    close_step("mol-polecat-work.load-context", "pass")
+    run_control("mol-polecat-work.load-context-scope-check")
+    close_step(
+        "mol-polecat-work.workspace-setup",
+        "fail",
+        "gc.failure_class=hard",
+    )
+    run_control("mol-polecat-work.workspace-setup-scope-check")
+
+    beads = workflow_beads()
+    assert beads["mol-polecat-work.workspace-setup"]["status"] == "closed"
+    assert beads["mol-polecat-work.workspace-setup"]["metadata"]["gc.outcome"] == "fail"
+    assert (
+        beads["mol-polecat-work.workspace-setup"]["metadata"]["gc.failure_class"]
+        == "hard"
+    )
+    for stage in ("preflight-tests", "implement", "self-review", "submit-and-exit"):
+        stage_bead = beads[f"mol-polecat-work.{stage}"]
+        control_bead = beads[f"mol-polecat-work.{stage}-scope-check"]
+        assert stage_bead["status"] == "closed"
+        assert stage_bead["metadata"]["gc.outcome"] == "skipped"
+        assert not stage_bead.get("assignee")
+        assert control_bead["status"] == "closed"
+        assert control_bead["metadata"]["gc.outcome"] == "skipped"
+        assert not control_bead.get("assignee")
+
+    body = beads["mol-polecat-work.body"]
+    assert body["status"] == "closed"
+    assert body["metadata"]["gc.outcome"] == "fail"
+
+    run_control("mol-polecat-work.workflow-finalize")
+    document = json.loads(
+        (workspace.city_dir / ".gc" / "beads.json").read_text(encoding="utf-8")
+    )
+    root_bead = next(bead for bead in document["beads"] if bead["id"] == root_id)
+    assert root_bead["status"] == "closed"
+    assert root_bead["metadata"]["gc.outcome"] == "fail"
 
 
 @pytest.mark.parametrize(

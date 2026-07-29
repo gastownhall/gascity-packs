@@ -66,6 +66,7 @@ GASTOWN_REVIEW_TITLE = "Gastown orchestration gate: review leg"
 GASTOWN_REVIEW_ASSIGNMENT_TITLE = "Review Gastown orchestration gate fixture"
 SMOKE_TITLE_PREFIX = "RC model smoke"
 GASTOWN_ALWAYS_ON_AGENTS = ("mayor", "deacon", "boot", "witness")
+GASTOWN_POLECAT_CONTINUATION_GROUP = "polecat-work"
 GASTOWN_POLECAT_FORMULA_LEASE_ORDER = (
     "gc gastown polecat-lease workspace",
     "gc gastown polecat-lease publish-rebase",
@@ -188,6 +189,14 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "gc sling \"$REVIEW_TARGET\" \"$LEG_BEAD\" --on {{review_formula}}",
         "gc bd dep add",
     ),
+}
+GASTOWN_POLECAT_WORKFLOW_STAGES = {
+    "load-context": ("setup", ()),
+    "workspace-setup": ("setup", ("load-context",)),
+    "preflight-tests": ("member", ("workspace-setup",)),
+    "implement": ("member", ("preflight-tests",)),
+    "self-review": ("member", ("implement",)),
+    "submit-and-exit": ("member", ("self-review",)),
 }
 METHODOLOGY_FLOW_CONTRACTS = {
     "superpowers": {
@@ -1417,11 +1426,32 @@ def initialize_city(
     run_checked([gc_bin, "--city", str(workspace.city_dir), "config", "show"], env=env, timeout=parse_duration("2m"))
     formulas = selected_setup_formulas(pack_spec, gates)
     for formula in formulas:
-        run_checked(
-            [gc_bin, "--city", str(workspace.city_dir), "--rig", workspace.rig_name, "formula", "show", formula],
+        command = [
+            gc_bin,
+            "--city",
+            str(workspace.city_dir),
+            "--rig",
+            workspace.rig_name,
+            "formula",
+            "show",
+            formula,
+        ]
+        validate_compiled_polecat = (
+            formula == "mol-polecat-work"
+            and pack_spec.gastown
+            and should_validate_gastown_orchestration_contract(gates)
+        )
+        if validate_compiled_polecat:
+            command.append("--json")
+        output = run_checked(
+            command,
             env=env,
             timeout=parse_duration("2m"),
         )
+        if validate_compiled_polecat:
+            validate_gastown_polecat_compiled_graph(
+                command_json_mapping(output, context="compiled mol-polecat-work")
+            )
     if pack_spec.gastown and should_validate_gastown_orchestration_contract(gates):
         validate_gastown_orchestration_contract(pack_spec.source)
     else:
@@ -2839,6 +2869,194 @@ def list_values(value: Any) -> list[Any]:
     return [value]
 
 
+def command_json_mapping(output: str, *, context: str) -> Mapping[str, Any]:
+    for line in reversed(output.splitlines()):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, Mapping):
+            return payload
+    raise GateError(f"{context} did not return a JSON object")
+
+
+def validate_gastown_polecat_scope_formula(path: Path, missing: list[str]) -> None:
+    try:
+        document = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        missing.append(f"mol-polecat-work: invalid TOML: {exc}")
+        return
+
+    raw_steps = list_dicts(document.get("steps"))
+    steps: dict[str, Mapping[str, Any]] = {}
+    for step in raw_steps:
+        step_id = str(step.get("id") or "")
+        if not step_id:
+            missing.append("mol-polecat-work: step is missing an id")
+            continue
+        if step_id in steps:
+            missing.append(f"mol-polecat-work: duplicate step id {step_id!r}")
+        steps[step_id] = step
+
+    body = mapping_value(steps.get("body"))
+    body_metadata = mapping_value(body.get("metadata"))
+    expected_body_metadata = {
+        "gc.kind": "scope",
+        "gc.scope_name": "polecat-work",
+        "gc.scope_role": "body",
+    }
+    for key, expected in expected_body_metadata.items():
+        if body_metadata.get(key) != expected:
+            missing.append(
+                f"mol-polecat-work: body {key} is {body_metadata.get(key)!r}, want {expected!r}"
+            )
+    if set(str(value) for value in list_values(body.get("needs"))) != set(
+        GASTOWN_POLECAT_WORKFLOW_STAGES
+    ):
+        missing.append("mol-polecat-work: body must depend on every worker stage")
+
+    for step_id, (expected_role, expected_needs) in GASTOWN_POLECAT_WORKFLOW_STAGES.items():
+        step = mapping_value(steps.get(step_id))
+        if not step:
+            missing.append(
+                f"mol-polecat-work: {step_id} must be redeclared so child scope metadata is effective"
+            )
+            continue
+        metadata = mapping_value(step.get("metadata"))
+        expected_metadata = {
+            "gc.scope_ref": "body",
+            "gc.scope_role": expected_role,
+            "gc.on_fail": "abort_scope",
+            "gc.continuation_group": GASTOWN_POLECAT_CONTINUATION_GROUP,
+            "gc.session_affinity": "require",
+        }
+        for key, expected in expected_metadata.items():
+            if metadata.get(key) != expected:
+                missing.append(
+                    f"mol-polecat-work: {step_id} {key} is {metadata.get(key)!r}, want {expected!r}"
+                )
+        actual_needs = tuple(str(value) for value in list_values(step.get("needs")))
+        if actual_needs != expected_needs:
+            missing.append(
+                f"mol-polecat-work: {step_id} needs {actual_needs!r}, want {expected_needs!r}"
+            )
+
+    teardowns = [
+        str(step.get("id") or "<unknown>")
+        for step in raw_steps
+        if mapping_value(step.get("metadata")).get("gc.scope_ref") == "body"
+        and mapping_value(step.get("metadata")).get("gc.scope_role") == "teardown"
+    ]
+    if teardowns:
+        missing.append(
+            "mol-polecat-work: hard-failure evidence must not be removed by body teardown "
+            + ", ".join(teardowns)
+        )
+
+
+def validate_gastown_polecat_compiled_graph(payload: Mapping[str, Any]) -> None:
+    missing: list[str] = []
+    if payload.get("ok") is not True:
+        missing.append(f"formula show reported ok={payload.get('ok')!r}")
+    if payload.get("name") != "mol-polecat-work":
+        missing.append(f"formula name is {payload.get('name')!r}, want 'mol-polecat-work'")
+
+    steps = {
+        str(step.get("id") or ""): step
+        for step in list_dicts(payload.get("steps"))
+        if step.get("id")
+    }
+    prefix = "mol-polecat-work."
+    body_id = prefix + "body"
+    body_metadata = mapping_value(mapping_value(steps.get(body_id)).get("metadata"))
+    expected_body_metadata = {
+        "gc.kind": "scope",
+        "gc.scope_name": "polecat-work",
+        "gc.scope_role": "body",
+    }
+    for key, expected in expected_body_metadata.items():
+        if body_metadata.get(key) != expected:
+            missing.append(f"{body_id} {key} is {body_metadata.get(key)!r}, want {expected!r}")
+
+    deps = {
+        (
+            str(dep.get("step_id") or ""),
+            str(dep.get("depends_on_id") or ""),
+            str(dep.get("type") or ""),
+        )
+        for dep in list_dicts(payload.get("deps"))
+    }
+    previous_control: str | None = None
+    controls: list[str] = []
+    for step_id, (expected_role, _expected_needs) in GASTOWN_POLECAT_WORKFLOW_STAGES.items():
+        compiled_id = prefix + step_id
+        metadata = mapping_value(mapping_value(steps.get(compiled_id)).get("metadata"))
+        expected_metadata = {
+            "gc.scope_ref": "body",
+            "gc.scope_role": expected_role,
+            "gc.on_fail": "abort_scope",
+            "gc.continuation_group": GASTOWN_POLECAT_CONTINUATION_GROUP,
+            "gc.session_affinity": "require",
+        }
+        for key, expected in expected_metadata.items():
+            if metadata.get(key) != expected:
+                missing.append(
+                    f"{compiled_id} {key} is {metadata.get(key)!r}, want {expected!r}"
+                )
+
+        control_id = compiled_id + "-scope-check"
+        controls.append(control_id)
+        control_metadata = mapping_value(mapping_value(steps.get(control_id)).get("metadata"))
+        expected_control_metadata = {
+            "gc.kind": "scope-check",
+            "gc.scope_ref": "body",
+            "gc.scope_role": "control",
+            "gc.on_fail": "abort_scope",
+            "gc.control_for": step_id,
+        }
+        for key, expected in expected_control_metadata.items():
+            if control_metadata.get(key) != expected:
+                missing.append(
+                    f"{control_id} {key} is {control_metadata.get(key)!r}, want {expected!r}"
+                )
+        for key in ("gc.continuation_group", "gc.session_affinity"):
+            if key in control_metadata:
+                missing.append(f"{control_id} must not carry worker affinity key {key}")
+        if (control_id, compiled_id, "blocks") not in deps:
+            missing.append(f"{control_id} must depend on {compiled_id}")
+        if previous_control and (compiled_id, previous_control, "blocks") not in deps:
+            missing.append(f"{compiled_id} must depend on prior scope-check {previous_control}")
+        previous_control = control_id
+
+    for control_id in controls:
+        if (body_id, control_id, "blocks") not in deps:
+            missing.append(f"{body_id} must depend on {control_id}")
+
+    finalizer_id = prefix + "workflow-finalize"
+    if (finalizer_id, body_id, "blocks") not in deps:
+        missing.append(f"{finalizer_id} must depend on {body_id}")
+    if (prefix.removesuffix("."), finalizer_id, "blocks") not in deps:
+        missing.append(f"mol-polecat-work root must depend on {finalizer_id}")
+
+    teardowns = [
+        step_id
+        for step_id, step in steps.items()
+        if mapping_value(step.get("metadata")).get("gc.scope_ref") == "body"
+        and mapping_value(step.get("metadata")).get("gc.scope_role") == "teardown"
+    ]
+    if teardowns:
+        missing.append(
+            "compiled hard-failure path unexpectedly contains body teardown: "
+            + ", ".join(sorted(teardowns))
+        )
+
+    if missing:
+        raise GateError(
+            "Compiled mol-polecat-work fail-fast scope contract drifted:\n"
+            + "\n".join(f"- {item}" for item in missing)
+        )
+
+
 def validate_gastown_orchestration_contract(pack_source: Path) -> None:
     missing: list[str] = []
     for formula_name, required_fragments in all_gastown_formula_contracts().items():
@@ -2851,6 +3069,7 @@ def validate_gastown_orchestration_contract(pack_source: Path) -> None:
             if fragment not in text:
                 missing.append(f"{formula_name}: missing contract fragment {fragment!r}")
         if formula_name == "mol-polecat-work":
+            validate_gastown_polecat_scope_formula(path, missing)
             lease_positions = [
                 text.find(fragment) for fragment in GASTOWN_POLECAT_FORMULA_LEASE_ORDER
             ]

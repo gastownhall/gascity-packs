@@ -146,8 +146,15 @@ test_polecat_startup_uses_standard_hook_claim() {
         fail "polecat propulsion fragment should call the standard hook claim path"
     grep -F 'After closing any formula step bead, immediately run' "$prompt" >/dev/null ||
         fail "polecat prompt must require hook continuation after each formula step"
+    grep -F 'Poll up to 60 seconds (6 attempts, 10 seconds apart)' "$prompt" >/dev/null &&
+        grep -F 'for i in $(seq 1 6); do' "$prompt" >/dev/null &&
+        grep -F 'sleep 10' "$prompt" >/dev/null &&
+        grep -F 'gc hook --claim --drain-ack --json' "$prompt" >/dev/null ||
+        fail "polecat prompt must wait through bounded control gaps before draining"
     grep -F 'After closing a step bead,' "$propulsion" >/dev/null ||
         fail "polecat propulsion fragment must require hook continuation after each formula step"
+    grep -F 'bounded 60-second' "$propulsion" >/dev/null ||
+        fail "polecat propulsion fragment must preserve the poll-before-drain contract"
     ! grep -F 'run `gc hook` or' "$prompt" >/dev/null ||
         fail "polecat prompt must not regress to an unclaimed hook/work-query choice"
     ! grep -F 'run `gc hook` or' "$propulsion" >/dev/null ||
@@ -268,6 +275,81 @@ PY
         fail "indeterminate restart verification must preserve work for reclaim"
 }
 
+test_polecat_workflow_is_fail_fast_scoped() {
+    local formula="$GASTOWN/formulas/mol-polecat-work.toml"
+
+    if ! python3 - "$formula" <<'PY'
+import sys
+import tomllib
+
+path = sys.argv[1]
+with open(path, "rb") as handle:
+    document = tomllib.load(handle)
+
+expected = {
+    "load-context": ("setup", []),
+    "workspace-setup": ("setup", ["load-context"]),
+    "preflight-tests": ("member", ["workspace-setup"]),
+    "implement": ("member", ["preflight-tests"]),
+    "self-review": ("member", ["implement"]),
+    "submit-and-exit": ("member", ["self-review"]),
+}
+errors = []
+steps = {}
+for step in document.get("steps", []):
+    step_id = step.get("id")
+    if step_id in steps:
+        errors.append(f"duplicate step id {step_id!r}")
+    steps[step_id] = step
+
+body = steps.get("body", {})
+body_metadata = body.get("metadata", {})
+if body_metadata.get("gc.kind") != "scope":
+    errors.append("body must be a scope")
+if body_metadata.get("gc.scope_name") != "polecat-work":
+    errors.append("body must use the polecat-work scope name")
+if body_metadata.get("gc.scope_role") != "body":
+    errors.append("body must use the body scope role")
+if set(body.get("needs", [])) != set(expected):
+    errors.append("body must depend on every worker stage")
+
+for step_id, (role, needs) in expected.items():
+    step = steps.get(step_id)
+    if not step:
+        errors.append(f"{step_id} must be redeclared by the child formula")
+        continue
+    metadata = step.get("metadata", {})
+    if metadata.get("gc.scope_ref") != "body":
+        errors.append(f"{step_id} must reference body")
+    if metadata.get("gc.scope_role") != role:
+        errors.append(f"{step_id} must use scope role {role}")
+    if metadata.get("gc.on_fail") != "abort_scope":
+        errors.append(f"{step_id} must abort the scope on failure")
+    if metadata.get("gc.continuation_group") != "polecat-work":
+        errors.append(f"{step_id} must stay in the polecat-work continuation group")
+    if metadata.get("gc.session_affinity") != "require":
+        errors.append(f"{step_id} must require session affinity")
+    if step.get("needs", []) != needs:
+        errors.append(f"{step_id} needs {step.get('needs', [])!r}, want {needs!r}")
+
+teardowns = [
+    step.get("id")
+    for step in document.get("steps", [])
+    if step.get("metadata", {}).get("gc.scope_ref") == "body"
+    and step.get("metadata", {}).get("gc.scope_role") == "teardown"
+]
+if teardowns:
+    errors.append(f"hard-failure evidence must not be removed by teardown steps: {teardowns!r}")
+
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    raise SystemExit(1)
+PY
+    then
+        fail "polecat worker stages must compile inside one fail-fast body scope"
+    fi
+}
+
 test_review_leg_contract_forbids_synthetic_mutation() {
     local formula prompt
     formula="$GASTOWN/formulas/mol-review-leg.toml"
@@ -339,6 +421,7 @@ test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_polecat_submit_guard_and_step_completion_contracts
+test_polecat_workflow_is_fail_fast_scoped
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 

@@ -128,8 +128,25 @@ The formula step descriptions are your instructions — work through them in ord
 **Formula continuation invariant:** A claimed bead can be one child step in a
 larger formula workflow. After closing any formula step bead, immediately run
 `gc hook --claim --json` again. If it returns work, execute that next step.
-Do not declare the session done until a final formula step tells you to drain
-or `gc hook --claim --json` returns no work.
+If it returns no work, do not drain immediately: a control dispatcher may still
+be closing the stage's scope-check and unlocking your next preassigned sibling.
+
+Poll up to 60 seconds (6 attempts, 10 seconds apart):
+
+```bash
+for i in $(seq 1 6); do
+  NEXT=$(gc hook --claim --json 2>/dev/null || true)
+  if printf '%s\n' "$NEXT" | grep -q '"action":"work"'; then
+    # Found work — execute NEXT.bead_id and continue the formula.
+    break
+  fi
+  sleep 10
+done
+```
+
+Only if no work appears after the complete bounded poll may you end the
+session with `gc hook --claim --drain-ack --json`. A final formula step that
+explicitly drains remains terminal and does not poll.
 
 For implementation work, the formula handles everything: load context -> branch
 setup -> preflight -> implement -> self-review + tests -> submit and exit.

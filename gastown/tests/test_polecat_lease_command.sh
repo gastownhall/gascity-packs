@@ -17,6 +17,7 @@ cat >"$TEST_TMP/bin/gc" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
+printf 'gc ' >>"$FAKE_GC_LOG"
 printf '%q ' "$@" >>"$FAKE_GC_LOG"
 printf '\n' >>"$FAKE_GC_LOG"
 
@@ -105,7 +106,11 @@ if [[ "${1:-}" == "bd" && "${2:-}" == "update" ]]; then
                 key=${2%%=*}
                 value=${2#*=}
                 jq --arg id "$id" --arg key "$key" --arg value "$value" \
-                    '.beads[$id].metadata[$key] = $value' \
+                    '.beads[$id].metadata[$key] =
+                        (if $value == "true" then true
+                         elif $value == "false" then false
+                         else $value
+                         end)' \
                     "$FAKE_DB" >"$FAKE_DB.tmp"
                 write_db
                 shift 2
@@ -410,6 +415,8 @@ prepare_rebased() {
         fail "$name: rejection metadata was not cleared after published rebase"
     [[ "$(jq -r '.beads["source-1"].metadata.polecat_push_lease_state' "$DB")" == "rebased" ]] ||
         fail "$name: rebased metadata mirror did not verify"
+    [[ "$(jq -r '.beads["source-1"].metadata.polecat_push_lease_manual_pending | type' "$DB")" == "boolean" ]] ||
+        fail "$name: fake bd did not preserve real boolean metadata typing"
 }
 
 test_normal_push() {
@@ -513,16 +520,16 @@ test_remote_race_terminalizes() {
         fail "remote race did not notify and drain after terminalization"
     [[ "$(namespace_count)" -eq 6 ]] ||
         fail "remote race did not preserve all recovery refs"
-    source_line=$(rg -n '^bd update source-1 .*--status=blocked' \
+    source_line=$(rg -n '^gc bd update source-1 .*--status=blocked' \
         "$STATE/gc.log" | cut -d: -f1) ||
         fail "remote race did not log source terminalization"
-    mail_line=$(rg -n '^mail send rig/witness .*--notify' \
+    mail_line=$(rg -n '^gc mail send rig/witness .*--notify' \
         "$STATE/gc.log" | cut -d: -f1) ||
         fail "remote race did not log durable Witness notification"
-    step_line=$(rg -n '^bd update submit-1 .*gc\.outcome=fail' \
+    step_line=$(rg -n '^gc bd update submit-1 .*gc\.outcome=fail' \
         "$STATE/gc.log" | cut -d: -f1) ||
         fail "remote race did not log failed submit-step outcome"
-    drain_line=$(rg -n '^runtime drain-ack' \
+    drain_line=$(rg -n '^gc runtime drain-ack' \
         "$STATE/gc.log" | cut -d: -f1) ||
         fail "remote race did not log drain acknowledgement"
     [[ "$source_line" -lt "$mail_line" && "$mail_line" -lt "$step_line" &&

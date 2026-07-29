@@ -1058,15 +1058,113 @@ def test_validate_gastown_orchestration_contract_accepts_current_pack() -> None:
     )
 
 
+def compiled_polecat_scope_fixture() -> dict[str, object]:
+    prefix = "mol-polecat-work."
+    body_id = prefix + "body"
+    finalizer_id = prefix + "workflow-finalize"
+    steps: list[dict[str, object]] = [
+        {"id": "mol-polecat-work", "metadata": {"gc.kind": "workflow"}},
+        {
+            "id": body_id,
+            "metadata": {
+                "gc.kind": "scope",
+                "gc.scope_name": "polecat-work",
+                "gc.scope_role": "body",
+            },
+        },
+        {"id": finalizer_id, "metadata": {"gc.kind": "workflow-finalize"}},
+    ]
+    deps: list[dict[str, str]] = []
+    previous_control = ""
+    for step_id, (role, _needs) in gascity_pack_inference_gate.GASTOWN_POLECAT_WORKFLOW_STAGES.items():
+        compiled_id = prefix + step_id
+        control_id = compiled_id + "-scope-check"
+        steps.extend(
+            (
+                {
+                    "id": compiled_id,
+                    "metadata": {
+                        "gc.scope_ref": "body",
+                        "gc.scope_role": role,
+                        "gc.on_fail": "abort_scope",
+                        "gc.continuation_group": "polecat-work",
+                        "gc.session_affinity": "require",
+                    },
+                },
+                {
+                    "id": control_id,
+                    "metadata": {
+                        "gc.kind": "scope-check",
+                        "gc.scope_ref": "body",
+                        "gc.scope_role": "control",
+                        "gc.on_fail": "abort_scope",
+                        "gc.control_for": step_id,
+                    },
+                },
+            )
+        )
+        deps.append({"step_id": control_id, "depends_on_id": compiled_id, "type": "blocks"})
+        if previous_control:
+            deps.append({"step_id": compiled_id, "depends_on_id": previous_control, "type": "blocks"})
+        deps.append({"step_id": body_id, "depends_on_id": control_id, "type": "blocks"})
+        previous_control = control_id
+    deps.extend(
+        (
+            {"step_id": finalizer_id, "depends_on_id": body_id, "type": "blocks"},
+            {
+                "step_id": "mol-polecat-work",
+                "depends_on_id": finalizer_id,
+                "type": "blocks",
+            },
+        )
+    )
+    return {
+        "ok": True,
+        "name": "mol-polecat-work",
+        "steps": steps,
+        "deps": deps,
+    }
+
+
+def test_validate_gastown_polecat_compiled_graph_accepts_fail_fast_scope() -> None:
+    gascity_pack_inference_gate.validate_gastown_polecat_compiled_graph(
+        compiled_polecat_scope_fixture()
+    )
+
+
+def test_validate_gastown_polecat_compiled_graph_rejects_unrewritten_stage_dependency() -> None:
+    payload = compiled_polecat_scope_fixture()
+    payload["deps"] = [
+        dep
+        for dep in payload["deps"]
+        if not (
+            dep["step_id"] == "mol-polecat-work.implement"
+            and dep["depends_on_id"] == "mol-polecat-work.preflight-tests-scope-check"
+        )
+    ]
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="prior scope-check"):
+        gascity_pack_inference_gate.validate_gastown_polecat_compiled_graph(payload)
+
+
 def write_gastown_contract_fixture(tmp_path):
     pack = tmp_path / "gastown"
     formulas = pack / "formulas"
     formulas.mkdir(parents=True)
     for formula_name, fragments in gascity_pack_inference_gate.all_gastown_formula_contracts().items():
-        (formulas / f"{formula_name}.toml").write_text(
-            "\n".join(fragments),
-            encoding="utf-8",
-        )
+        formula_path = formulas / f"{formula_name}.toml"
+        if formula_name == "mol-polecat-work":
+            shutil.copy2(
+                gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+                / "formulas"
+                / "mol-polecat-work.toml",
+                formula_path,
+            )
+        else:
+            formula_path.write_text(
+                "\n".join(fragments),
+                encoding="utf-8",
+            )
     command = pack / "commands" / "polecat-lease" / "run.sh"
     command.parent.mkdir(parents=True)
     command.write_text(
@@ -1079,6 +1177,65 @@ def write_gastown_contract_fixture(tmp_path):
         encoding="utf-8",
     )
     return pack
+
+
+def test_validate_gastown_orchestration_contract_rejects_unscoped_worker_stage(tmp_path) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    scoped = (
+        'metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", '
+        '"gc.on_fail" = "abort_scope", "gc.continuation_group" = "polecat-work", '
+        '"gc.session_affinity" = "require" }'
+    )
+    formula.write_text(text.replace(scoped, 'metadata = { "gc.scope_role" = "setup" }', 1))
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="load-context gc.scope_ref"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_missing_worker_affinity(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    formula.write_text(
+        text.replace('"gc.continuation_group" = "polecat-work", ', "", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="load-context gc.continuation_group",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_polecat_compiled_graph_rejects_affinity_on_control() -> None:
+    payload = compiled_polecat_scope_fixture()
+    control = next(
+        step
+        for step in payload["steps"]
+        if step["id"] == "mol-polecat-work.load-context-scope-check"
+    )
+    control["metadata"]["gc.continuation_group"] = "polecat-work"
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="must not carry worker affinity",
+    ):
+        gascity_pack_inference_gate.validate_gastown_polecat_compiled_graph(payload)
+
+
+def test_validate_gastown_orchestration_contract_rejects_incomplete_scope_body(tmp_path) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    text = formula.read_text(encoding="utf-8")
+    formula.write_text(text.replace('"implement", ', "", 1), encoding="utf-8")
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="body must depend"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
 
 
 def test_validate_gastown_orchestration_contract_rejects_missing_build_handoff(tmp_path) -> None:
