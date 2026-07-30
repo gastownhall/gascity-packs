@@ -192,6 +192,9 @@ case "$subcommand" in
                 --unset-metadata)
                     unset_key=$2
                     shift 2
+                    if [[ "${DROP_UNSET_METADATA:-}" == "$unset_key" ]]; then
+                        continue
+                    fi
                     metadata=$(jq -cn \
                         --argjson current "$metadata" \
                         --arg key "$unset_key" \
@@ -327,6 +330,7 @@ run_submit() {
     FAIL_LEASE="${FAIL_LEASE:-}" \
     FAIL_DRAIN="${FAIL_DRAIN:-}" \
     UPDATE_MODE="${UPDATE_MODE:-}" \
+    DROP_UNSET_METADATA="${DROP_UNSET_METADATA:-}" \
     INJECT_LIST_ROW_MODE="${INJECT_LIST_ROW_MODE:-}" \
     CLEAR_TOKEN_ON_REVALIDATE_ROOT="${CLEAR_TOKEN_ON_REVALIDATE_ROOT:-}" \
     TEST_SESSION_ID="${TEST_SESSION_ID:-session-1}" \
@@ -1001,6 +1005,38 @@ grep -F 'POLECAT_SUBMIT_EXECUTE_COMPLETE replay=true' "$OUTPUT" >/dev/null ||
 ! grep -F 'gc gastown polecat-lease submit' "$LOG" >/dev/null ||
     fail "closed exact replay called the lease again"
 
+new_case execute-source-update-apply-then-error
+UPDATE_MODE=apply-then-error
+run_submit execute
+unset UPDATE_MODE
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "applied source-update response loss did not recover: $(<"$OUTPUT")"
+[[ "$(jq -r '.beads["source-1"].metadata["gc.polecat_submit_convoy"]' "$DB")" == "convoy-1" &&
+   "$(jq -r '.beads["submit-1"].status' "$DB")" == "closed" &&
+   -e "$DB.drained" ]] ||
+    fail "applied source-update response loss did not reach durable terminal state"
+[[ "$(grep -c 'gc gastown polecat-lease submit' "$LOG")" -eq 1 ]] ||
+    fail "applied source-update response loss repeated the stateful lease"
+
+for stale_key in artifact_source_sha artifact_cleanup_state; do
+    new_case "execute-rejects-lost-${stale_key}-unset"
+    jq '.beads["source-1"].metadata.artifact_source_sha = "stale-source" |
+        .beads["source-1"].metadata.artifact_cleanup_state = "pending"' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    DROP_UNSET_METADATA=$stale_key
+    run_submit execute
+    unset DROP_UNSET_METADATA
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "lost $stale_key unset returned $RUN_RC instead of 75"
+    [[ "$(jq --arg key "$stale_key" \
+        '.beads["source-1"].metadata | has($key)' "$DB")" == "true" ]] ||
+        fail "lost $stale_key unset fixture did not retain stale metadata"
+    [[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" &&
+       ! -e "$DB.drained" ]] ||
+        fail "lost $stale_key unset closed or drained the workflow"
+done
+
 new_case execute-existing-proof-rejects-later-dirty-work
 UPDATE_MODE=fail
 run_submit execute
@@ -1075,6 +1111,59 @@ run_submit execute
     fail "irrelevant legacy v1 history poisoned exact v2 replay: $(<"$OUTPUT")"
 ! grep -F 'gc gastown polecat-lease submit' "$LOG" >/dev/null ||
     fail "v2 replay with irrelevant legacy history repeated the lease"
+
+new_case execute-ignores-irrelevant-partial-v2
+run_submit execute
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "partial-v2 execute replay setup failed: $(<"$OUTPUT")"
+jq '.beads["partial-other-submit"] = {
+      id: "partial-other-submit",
+      status: "closed",
+      assignee: "session-1",
+      metadata: {
+        "gc.step_ref": "mol-polecat-work.submit-and-exit",
+        "gc.root_bead_id": "other-root",
+        "gc.outcome": "pass",
+        "gc.polecat_submit_version": 2,
+        "gc.polecat_submit_source_id": "other-source",
+        "gc.polecat_submit_convoy_id": "other-convoy",
+        "gc.polecat_submit_branch": "polecat/other-source",
+        "gc.polecat_submit_mode": "refinery",
+        "gc.polecat_submit_session_id": "session-1"
+      }
+    }' "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+: >"$LOG"
+run_submit execute
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "irrelevant partial v2 history poisoned execute replay: $(<"$OUTPUT")"
+! grep -F 'gc gastown polecat-lease submit' "$LOG" >/dev/null ||
+    fail "execute replay with irrelevant partial history repeated the lease"
+
+new_case execute-rejects-relevant-partial-v2
+run_submit execute
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "relevant partial-v2 execute setup failed: $(<"$OUTPUT")"
+jq '.beads["partial-current-submit"] = {
+      id: "partial-current-submit",
+      status: "closed",
+      assignee: "session-1",
+      metadata: {
+        "gc.step_ref": "mol-polecat-work.submit-and-exit",
+        "gc.root_bead_id": "root-1",
+        "gc.outcome": "pass",
+        "gc.polecat_submit_version": 2,
+        "gc.polecat_submit_source_id": "source-1",
+        "gc.polecat_submit_convoy_id": "convoy-1",
+        "gc.polecat_submit_branch": "polecat/source-1",
+        "gc.polecat_submit_mode": "auto_push_false",
+        "gc.polecat_submit_session_id": "session-1"
+      }
+    }' "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit execute
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "canonically relevant partial v2 execute history returned $RUN_RC instead of 75"
 
 new_case complete-ignores-irrelevant-partial-v2
 set_generation_token

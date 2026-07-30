@@ -389,6 +389,7 @@ replay_closed_step() {
     local source_status source_assignee source_branch source_target source_token
     local source_branch_ready source_halt refinery_target
     local coherent_count=0 replay_line="" legacy_candidates='[]'
+    local partial_candidates='[]' partial_context partial_count
     local candidate_version legacy_context selected_root="" selected_source=""
     local selected_convoy="" requested_context
 
@@ -508,8 +509,31 @@ replay_closed_step() {
         ' 2>/dev/null) ||
             fail_closed "closed submit history metadata is malformed"
         [[ "$present_count" != "0" ]] || continue
-        [[ "$present_count" == "16" ]] ||
-            fail_closed "closed submit history has partial replay metadata"
+        if [[ "$present_count" != "16" ]]; then
+            if [[ "$ACTION" == "complete" ]]; then
+                fail_closed "closed submit history has partial replay metadata"
+            fi
+            partial_context=$(printf '%s' "$candidate" | jq -ce '
+                if (.metadata["gc.root_bead_id"] | type) == "string" and
+                   (.metadata["gc.root_bead_id"] | length) > 0 and
+                   (.metadata["gc.polecat_submit_source_id"] | type) == "string" and
+                   (.metadata["gc.polecat_submit_source_id"] | length) > 0 and
+                   (.metadata["gc.polecat_submit_convoy_id"] | type) == "string" and
+                   (.metadata["gc.polecat_submit_convoy_id"] | length) > 0
+                then {
+                  root: .metadata["gc.root_bead_id"],
+                  source: .metadata["gc.polecat_submit_source_id"],
+                  convoy: .metadata["gc.polecat_submit_convoy_id"]
+                }
+                else error("partial replay row lacks canonical provenance")
+                end' 2>/dev/null) ||
+                fail_closed "closed submit history has unclassifiable partial replay metadata"
+            partial_candidates=$(jq -cn \
+                --argjson rows "$partial_candidates" \
+                --argjson row "$partial_context" '$rows + [$row]') ||
+                fail_closed "could not aggregate partial submit history"
+            continue
+        fi
 
         context=$(printf '%s' "$candidate" | jq -ec \
             --arg ref "$STEP_REF" --argjson version "$REPLAY_VERSION" '
@@ -758,7 +782,9 @@ replay_closed_step() {
                .[0].metadata["gc.polecat_submit_execute_artifact_dir"] == $execute_artifact and
                .[0].metadata["gc.polecat_submit_proof_key"] == $proof_key and
                .[0].metadata["gc.polecat_submit_proof_context"] == $proof_context and
-               .[0].metadata["gc.polecat_submit_proof_head"] == $proof_head
+               .[0].metadata["gc.polecat_submit_proof_head"] == $proof_head and
+               ((.[0].metadata | has("artifact_source_sha")) | not) and
+               ((.[0].metadata | has("artifact_cleanup_state")) | not)
             then .[0]
             else error("replay source identity/state mismatch")
             end' 2>/dev/null) ||
@@ -875,6 +901,19 @@ replay_closed_step() {
             all(.[]; .root != $root or .source != $source or .convoy != $convoy)
         ' >/dev/null 2>&1 ||
             fail_closed "legacy v1 history is canonically relevant but lacks durable proof"
+    fi
+    partial_count=$(printf '%s' "$partial_candidates" | jq -er 'length') ||
+        fail_closed "could not count partial submit history"
+    if [[ "$partial_count" -gt 0 ]]; then
+        if [[ "$coherent_count" -eq 0 ]]; then
+            fail_closed "only partial v2 submit history matched the current session"
+        fi
+        printf '%s' "$partial_candidates" | jq -e \
+            --arg root "$selected_root" --arg source "$selected_source" \
+            --arg convoy "$selected_convoy" '
+            all(.[]; .root != $root or .source != $source or .convoy != $convoy)
+        ' >/dev/null 2>&1 ||
+            fail_closed "partial v2 history is canonically relevant but incomplete"
     fi
     [[ "$coherent_count" -le 1 ]] ||
         fail_closed "multiple coherent closed submit replays matched"
@@ -1115,6 +1154,10 @@ load_source() {
         '.metadata["gc.polecat_submit_proof_context"] // ""')
     SOURCE_PROOF_HEAD=$(printf '%s' "$SOURCE_RECORD" | jq -er \
         '.metadata["gc.polecat_submit_proof_head"] // ""')
+    SOURCE_ARTIFACT_SOURCE_SHA_PRESENT=$(printf '%s' "$SOURCE_RECORD" | jq -r \
+        '.metadata | has("artifact_source_sha")')
+    SOURCE_ARTIFACT_CLEANUP_STATE_PRESENT=$(printf '%s' "$SOURCE_RECORD" | jq -r \
+        '.metadata | has("artifact_cleanup_state")')
 }
 
 load_source ||
@@ -1230,7 +1273,9 @@ execution_evidence_matches() {
        "$SOURCE_LEASE_VERSION" == "$LEASE_EVIDENCE_VERSION" &&
        "$SOURCE_EXECUTE_SESSION" == "$CURRENT_SESSION_ID" &&
        "$SOURCE_EXECUTE_STEP" == "$STEP_BEAD_ID" &&
-       -n "$SOURCE_EXECUTE_ARTIFACT" ]] || return 1
+       -n "$SOURCE_EXECUTE_ARTIFACT" &&
+       "$SOURCE_ARTIFACT_SOURCE_SHA_PRESENT" == "false" &&
+       "$SOURCE_ARTIFACT_CLEANUP_STATE_PRESENT" == "false" ]] || return 1
     is_oid "$SOURCE_EXECUTE_HEAD" || return 1
     case "$SOURCE_EXECUTE_ARTIFACT" in
         /*) ;;
