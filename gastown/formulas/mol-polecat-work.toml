@@ -204,11 +204,33 @@ if ! gc gastown polecat-workspace execute; then
 fi
 ```
 
+The sole manual exception is an exact
+`POLECAT_LEASE_REBASE_CONFLICT: resolve and stage the detached rebase`
+diagnostic from that command. Only in that state:
+
+1. Resolve only the files Git already reports as unmerged inside the exact
+   artifact returned by this stage's validated executor. Do not create a
+   replacement worktree or branch.
+2. Use only the exact artifact-bound workspace-transition executor bound to this
+   stage's current convoy and the exact `mol-polecat-work.workspace-setup` step
+   reference. Inside that executor, enumerate the current unmerged index paths
+   with NUL delimiters, require a nonempty set, run the whitespace and
+   conflict-marker check against exactly that set, and stage exactly the same
+   paths. Refuse any path that was not in that freshly enumerated set.
+3. Rerun only the same deterministic command shown above. The lease owns
+   continuation and publication.
+
+This exception does not authorize arbitrary Git repair. Never run `git rebase`,
+`git reset`, `git checkout`, `git switch`, `git branch`, `git cherry-pick`,
+`git commit`, publishing commands, or broad staging such as `git add -A`
+directly during workspace recovery.
+
 **Exit criteria:** The command prints `POLECAT_WORKSPACE_EXECUTE_COMPLETE`.
 That receipt means the exact workspace step is durably closed/pass with a clean,
 registered task artifact on its canonical synchronized branch. Do not run
 `gc bd close`, `gc gastown polecat-step complete`, setup commands, or Git repair
-commands directly for this stage.
+commands directly for this stage outside the exact conflict-resolution exception
+above.
 """
 metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "polecat-work", "gc.session_affinity" = "require" }
 
