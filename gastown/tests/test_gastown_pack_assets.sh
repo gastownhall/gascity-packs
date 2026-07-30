@@ -184,13 +184,14 @@ test_polecat_startup_uses_scripted_hook_claim() {
 }
 
 test_polecat_submit_guard_and_step_completion_contracts() {
-    local formula prompt fragment lease_command step_command submit_command
+    local formula prompt fragment lease_command step_command submit_command workspace_command
     formula="$GASTOWN/formulas/mol-polecat-work.toml"
     prompt="$GASTOWN/agents/polecat/prompt.template.md"
     fragment="$GASTOWN/template-fragments/approval-fallacy.template.md"
     lease_command="$GASTOWN/commands/polecat-lease/run.sh"
     step_command="$GASTOWN/commands/polecat-step/run.sh"
     submit_command="$GASTOWN/commands/polecat-submit/run.sh"
+    workspace_command="$GASTOWN/commands/polecat-workspace/run.sh"
 
     parse_toml "$formula"
     [[ -x "$lease_command" ]] ||
@@ -199,6 +200,8 @@ test_polecat_submit_guard_and_step_completion_contracts() {
         fail "deterministic polecat step command must be executable"
     [[ -x "$submit_command" ]] ||
         fail "deterministic polecat submit command must be executable"
+    [[ -x "$workspace_command" ]] ||
+        fail "deterministic polecat workspace command must be executable"
     ! grep -F 'gc hook' "$step_command" >/dev/null ||
         fail "polecat step completion must never claim unrelated work"
     grep -F 'gc.outcome=pass' "$step_command" >/dev/null &&
@@ -216,7 +219,6 @@ with open(sys.argv[1], "rb") as handle:
 steps = {step["id"]: step for step in document.get("steps", [])}
 expected = [
     "load-context",
-    "workspace-setup",
     "preflight-tests",
     "implement",
     "self-review",
@@ -237,7 +239,6 @@ for step_id in expected:
         errors.append(f"{step_id}: must wait for verified completion output")
 
 exec_counts = {
-    "workspace-setup": 6,
     "preflight-tests": 1,
     "implement": 1,
     "self-review": 5,
@@ -263,82 +264,37 @@ workspace = steps.get("workspace-setup", {}).get("description", "")
 workspace_blocks = re.findall(
     r"```bash\n(.*?)\n```", workspace, re.DOTALL
 )
-bootstrap_blocks = [
-    block for block in workspace_blocks
-    if "# BEGIN POLECAT_ARTIFACT_BOOTSTRAP" in block
-]
-if len(bootstrap_blocks) != 1:
-    errors.append(
-        "workspace-setup must contain one self-contained artifact bootstrap fence"
-    )
-else:
-    bootstrap = bootstrap_blocks[0]
-    for fragment in (
-        "set -euo pipefail",
-        "GC_NO_API=1 gc convoy status",
-        ".convoy.id == $convoy",
-        'git -C "$RIG_ROOT" fetch --prune origin',
-        "POLECAT_ARTIFACT_READY",
-    ):
-        if fragment not in bootstrap:
-            errors.append(
-                f"workspace artifact bootstrap missing {fragment!r}"
-            )
-    if "\ngit fetch --prune origin" in bootstrap:
-        errors.append("workspace artifact bootstrap uses inherited Git cwd")
-
-for index, block in enumerate(workspace_blocks, start=1):
-    derives_source = (
-        "WORK_BEAD_ID=$(" in block
-        or "WORK_BEAD_ID=${GC_POLECAT_SOURCE_ID:-}" in block
-    )
-    if "$WORK_BEAD_ID" in block and not derives_source:
-        errors.append(
-            f"workspace shell fence {index} consumes stale WORK_BEAD_ID"
-        )
-    if (
-        ("git " in block or "polecat-lease" in block or "{{setup_command}}" in block)
-        and "# BEGIN POLECAT_ARTIFACT_BOOTSTRAP" not in block
-        and "gc gastown polecat-step exec" not in block
-    ):
-        errors.append(
-            f"workspace shell fence {index} bypasses artifact exec"
-        )
-
-if workspace.count("--allow-workspace-transition") != 4:
-    errors.append(
-        "workspace-setup must scope exactly four artifact transition invocations"
-    )
-for marker in ("POLECAT_WORKSPACE_SETUP",):
-    block = next((item for item in workspace_blocks if marker in item), "")
-    if not block or "--allow-workspace-transition" in block:
-        errors.append(f"strict workspace fence {marker} permits transition state")
-if (
-    "if ! gc gastown polecat-step exec --allow-workspace-transition "
-    '--convoy "{{convoy_id}}" '
-    '--step-ref "mol-polecat-work.workspace-setup" '
-    "-- git rebase --continue; then" not in workspace
-    or "refusing to publish transition state" not in workspace
+workspace_execute = "gc gastown polecat-workspace execute"
+if len(workspace_blocks) != 1:
+    errors.append("workspace-setup must contain exactly one shell fence")
+elif (
+    workspace.count(workspace_execute) != 1
+    or workspace_blocks[0].count(workspace_execute) != 1
+    or f"if ! {workspace_execute}; then" not in workspace_blocks[0]
+    or workspace_blocks[0].count("gc ") != 1
 ):
-    errors.append("workspace rebase continuation can fall through to publish")
-if "POLECAT_WORKSPACE_BRANCH_STATE" not in workspace:
-    errors.append("workspace branch probe does not emit a visible classification")
+    errors.append("workspace-setup must delegate exactly once and fail closed")
+for forbidden in (
+    "polecat-step",
+    "polecat-lease",
+    "gc bd ",
+    "gc convoy ",
+    "git ",
+    "{{setup_command}}",
+    "--allow-workspace-transition",
+):
+    if forbidden in workspace_blocks[0]:
+        errors.append(
+            f"workspace-setup reconstructs deterministic behavior via {forbidden!r}"
+        )
+if "POLECAT_WORKSPACE_EXECUTE_COMPLETE" not in workspace:
+    errors.append("workspace-setup must require the durable execute receipt")
 for step_id in expected:
     description = steps.get(step_id, {}).get("description", "")
     if "gc runtime drain-ack" in description:
         errors.append(
             f"{step_id}: raw drain-ack can re-wake an unblocked hard failure"
         )
-for fragment in (
-    "gc gastown polecat-step block",
-    '"workspace.canonical-artifact-invalid"',
-    '"workspace.artifact-path-collision"',
-    '"workspace.unrecorded-branch-work"',
-    '"workspace.recovered-branch-no-fork"',
-):
-    if fragment not in workspace:
-        errors.append(f"workspace durable block contract missing {fragment}")
-
 for step_id in ("preflight-tests", "implement", "self-review"):
     description = steps.get(step_id, {}).get("description", "")
     for index, block in enumerate(
@@ -370,6 +326,12 @@ PY
     then
         fail "every non-terminal polecat worker stage must use exact validated completion"
     fi
+    grep -F 'run_gc gastown polecat-step block' "$workspace_command" >/dev/null &&
+        grep -F '"workspace.canonical-artifact-invalid"' "$workspace_command" >/dev/null &&
+        grep -F '"workspace.artifact-path-collision"' "$workspace_command" >/dev/null &&
+        grep -F '"workspace.unrecorded-branch-work"' "$workspace_command" >/dev/null &&
+        grep -F '"workspace.recovered-branch-no-fork"' "$workspace_command" >/dev/null ||
+        fail "workspace command must durably quarantine unsafe artifact and branch state"
     if ! python3 - "$prompt" "$fragment" <<'PY'
 import sys
 
@@ -501,13 +463,14 @@ PY
     ! grep -F 'done sequence — branch-shape gate' "$prompt" >/dev/null ||
         fail "polecat final reminder must not retain the pre-artifact-entry sequence"
 
-    if ! python3 - "$formula" "$submit_command" <<'PY'
+    if ! python3 - "$formula" "$workspace_command" "$submit_command" <<'PY'
 import re
 import sys
 import tomllib
 
-formula_path, command_path = sys.argv[1:]
+formula_path, workspace_command_path, command_path = sys.argv[1:]
 formula_text = open(formula_path, encoding="utf-8").read()
+workspace_command_text = open(workspace_command_path, encoding="utf-8").read()
 command_text = open(command_path, encoding="utf-8").read()
 with open(formula_path, "rb") as handle:
     document = tomllib.load(handle)
@@ -541,11 +504,19 @@ for forbidden in (
 if "POLECAT_SUBMIT_EXECUTE_COMPLETE" not in submit:
     raise SystemExit("terminal submit must require the durable execute receipt")
 
-workspace_lease = formula_text.index("gc gastown polecat-lease workspace")
-explicit_publish = formula_text.index("gc gastown polecat-lease publish-rebase")
+workspace_execute = formula_text.index("gc gastown polecat-workspace execute")
 terminal_execute = formula_text.index(execute)
-if not workspace_lease < explicit_publish < terminal_execute:
-    raise SystemExit("workspace, publish-rebase, and submit execute order drifted")
+if not workspace_execute < terminal_execute:
+    raise SystemExit("workspace and submit execute order drifted")
+for fragment in (
+    "run_gc gastown polecat-lease workspace",
+    "ROOT_SETUP_COMMAND",
+    "gc.polecat_workspace_version",
+    "run_gc gastown polecat-step complete",
+    "POLECAT_WORKSPACE_EXECUTE_COMPLETE",
+):
+    if fragment not in workspace_command_text:
+        raise SystemExit(f"deterministic workspace command is missing {fragment!r}")
 
 execute_start = command_text.index("execute_submit() {")
 execute_end = command_text.index(

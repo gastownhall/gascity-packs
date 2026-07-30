@@ -1295,6 +1295,9 @@ for direct_ref in "$BRANCH_REF" "$TRACKING_REF" "$BASE_REMOTE_REF"; do
     fi
 done
 if [[ "$SOURCE_BRANCH" != "$BRANCH" ]]; then
+    if [[ "$ACTION" == "workspace" && -z "$SOURCE_BRANCH" ]]; then
+        indeterminate "source metadata.branch is absent; run gc gastown polecat-workspace execute"
+    fi
     hard_conflict "source metadata.branch does not match the canonical branch"
 fi
 if [[ "$SOURCE_STATUS" == "blocked" ]]; then
@@ -1542,20 +1545,36 @@ workspace_action() {
             hard_conflict "branch changed before detached rebase publication"
         if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
               -d "$(git rev-parse --git-path rebase-apply)" ]]; then
-            indeterminate "detached rebase is in progress; resolve it, run git rebase --continue, then invoke publish-rebase"
+            if [[ -n "$(git ls-files -u 2>/dev/null)" ]]; then
+                echo "POLECAT_LEASE_REBASE_CONFLICT: resolve and stage the detached rebase, then rerun:" >&2
+                echo "  gc gastown polecat-workspace execute" >&2
+                exit "$EXIT_INDETERMINATE"
+            fi
+            if ! GIT_EDITOR=true git rebase --continue; then
+                if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
+                      -d "$(git rev-parse --git-path rebase-apply)" ]]; then
+                    echo "POLECAT_LEASE_REBASE_CONFLICT: resolve and stage the detached rebase, then rerun:" >&2
+                    echo "  gc gastown polecat-workspace execute" >&2
+                    exit "$EXIT_INDETERMINATE"
+                fi
+                indeterminate "git rebase --continue failed without leaving resumable state"
+            fi
+            publish_rebase_result
+            return 0
         fi
         symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
         head_oid=$(git rev-parse --verify HEAD 2>/dev/null || true)
         if [[ -z "$symbolic" && "$head_oid" != "$PRE_OID" ]]; then
-            indeterminate "an unpublished detached rebase candidate exists; inspect it and invoke publish-rebase explicitly"
+            publish_rebase_result
+            return 0
         fi
         git switch --detach "$PRE_REF" >/dev/null 2>&1 ||
             indeterminate "could not detach at captured PRE"
         if ! git rebase "$BASE_REF"; then
             if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
                   -d "$(git rev-parse --git-path rebase-apply)" ]]; then
-                echo "POLECAT_LEASE_REBASE_CONFLICT: resolve the detached rebase and run:" >&2
-                echo "  gc gastown polecat-lease publish-rebase <the same arguments>" >&2
+                echo "POLECAT_LEASE_REBASE_CONFLICT: resolve and stage the detached rebase, then rerun:" >&2
+                echo "  gc gastown polecat-workspace execute" >&2
                 exit "$EXIT_INDETERMINATE"
             fi
             indeterminate "git rebase failed without leaving a resumable rebase state"

@@ -27,8 +27,11 @@ gc gastown polecat-lease submit \
   --auto-push true|false
 ```
 
-`publish-rebase` is the explicit recovery transition after a model resolves a
-detached rebase conflict and completes `git rebase --continue`.
+`gc gastown polecat-workspace execute` is the normal recovery interface after a
+model resolves and stages a detached rebase conflict. Re-running that same
+command continues the rebase and publishes the exact result. `publish-rebase`
+remains available as a compatibility/recovery interface for callers that have
+already completed `git rebase --continue`.
 
 `auto_push=false` is supported for ordinary, non-rejected work and performs no
 push. It is deliberately unsupported once rejection recovery has published a

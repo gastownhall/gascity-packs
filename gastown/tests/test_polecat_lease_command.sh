@@ -1107,7 +1107,7 @@ test_metadata_cleanup_restart() {
         fail "metadata-only cleanup restart left mirror keys"
 }
 
-test_unpublished_rebase_requires_explicit_publish() {
+test_unpublished_rebase_resumes_through_workspace_action() {
     new_case unpublished-rebase true
     set +e
     (
@@ -1127,18 +1127,29 @@ test_unpublished_rebase_requires_explicit_publish() {
         fail "unpublished rebase was not left detached"
 
     run_lease workspace
-    [[ "$RUN_RC" -eq 75 ]] ||
-        fail "restart guessed at an unpublished rebase candidate: $(<"$OUTPUT")"
-    rg -n 'publish-rebase explicitly' "$OUTPUT" >/dev/null ||
-        fail "restart did not explain explicit rebase publication"
-
-    run_lease publish-rebase
     [[ "$RUN_RC" -eq 0 ]] ||
-        fail "explicit rebase publication failed: $(<"$OUTPUT")"
+        fail "workspace restart did not publish its exact detached candidate: $(<"$OUTPUT")"
     [[ "$(namespace_count)" -eq 5 ]] ||
-        fail "explicit rebase publication did not create rebased phase"
+        fail "workspace restart did not create the rebased phase"
     [[ "$("$REAL_GIT" -C "$WORK" branch --show-current)" == "polecat/source-1" ]] ||
-        fail "explicit rebase publication did not restore the branch"
+        fail "workspace restart did not restore the branch"
+}
+
+test_workspace_rejects_absent_branch_metadata_without_quarantine() {
+    new_case absent-branch-metadata false
+    jq '.beads["source-1"].metadata.branch = ""' "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "absent branch metadata returned $RUN_RC instead of indeterminate"
+    rg -n 'metadata.branch is absent; run gc gastown polecat-workspace execute' \
+        "$OUTPUT" >/dev/null ||
+        fail "absent branch metadata did not direct callers to the workspace wrapper"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "direct lease quarantined a source whose branch metadata was merely absent"
+    [[ "$(jq -r '.beads["workspace-1"].status' "$DB")" == "in_progress" ]] ||
+        fail "direct lease terminalized the workspace step for absent branch metadata"
 }
 
 test_frozen_push_url() {
@@ -1922,12 +1933,11 @@ test_true_rebase_conflict_resolution() {
 
     printf 'resolved base\n' >"$WORK/base.txt"
     "$REAL_GIT" -C "$WORK" add base.txt
-    GIT_EDITOR=true "$REAL_GIT" -C "$WORK" rebase --continue >/dev/null
-    run_lease publish-rebase
+    run_lease workspace
     [[ "$RUN_RC" -eq 0 && "$(namespace_count)" -eq 5 ]] ||
-        fail "resolved rebase did not publish explicitly: $(<"$OUTPUT")"
+        fail "same workspace action did not continue and publish the resolved rebase: $(<"$OUTPUT")"
     [[ "$(<"$WORK/base.txt")" == "resolved base" ]] ||
-        fail "explicit conflict publication lost the reviewed resolution"
+        fail "workspace conflict continuation lost the reviewed resolution"
     run_lease submit --auto-push true
     [[ "$RUN_RC" -eq 0 && "$(remote_feature_oid)" == "$(local_feature_oid)" ]] ||
         fail "resolved conflict submit did not publish exactly"
@@ -2037,7 +2047,8 @@ test_submit_mirror_crash_recovery
 test_push_response_lost_recovery
 test_cleanup_transaction_retry
 test_metadata_cleanup_restart
-test_unpublished_rebase_requires_explicit_publish
+test_unpublished_rebase_resumes_through_workspace_action
+test_workspace_rejects_absent_branch_metadata_without_quarantine
 test_frozen_push_url
 test_mail_failure_retries_before_step_close
 test_closed_step_drain_retry

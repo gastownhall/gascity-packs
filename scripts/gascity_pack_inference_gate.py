@@ -68,8 +68,7 @@ SMOKE_TITLE_PREFIX = "RC model smoke"
 GASTOWN_ALWAYS_ON_AGENTS = ("mayor", "deacon", "boot", "witness")
 GASTOWN_POLECAT_CONTINUATION_GROUP = "polecat-work"
 GASTOWN_POLECAT_FORMULA_COMMAND_ORDER = (
-    "gc gastown polecat-lease workspace",
-    "gc gastown polecat-lease publish-rebase",
+    "gc gastown polecat-workspace execute",
     "gc gastown polecat-submit execute",
 )
 GASTOWN_POLECAT_LEASE_COMMAND_ORDER = (
@@ -99,6 +98,8 @@ GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT = (
     'WITNESS_CANONICAL="${ROOT_RIG_NAME:+$ROOT_RIG_NAME/}${ROOT_BINDING_PREFIX}witness"',
     "source metadata has no recorded artifact_dir",
     "current Git worktree does not equal source metadata.artifact_dir",
+    "source metadata.branch is absent; run gc gastown polecat-workspace execute",
+    "GIT_EDITOR=true git rebase --continue",
     'RUNTIME_IDENTITIES+=("$value")',
     '--arg actor "$STEP_ASSIGNEE"',
     "exact Graph step ownership/state changed during the lease protocol",
@@ -155,6 +156,32 @@ GASTOWN_POLECAT_SUBMIT_COMMAND_CONTRACT = (
     "POLECAT_SUBMIT_EXECUTE_COMPLETE",
     "evidence changed before completion",
 )
+GASTOWN_POLECAT_WORKSPACE_COMMAND_CONTRACT = (
+    "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR",
+    "GC_NO_API=1",
+    "GC_STORE_SCOPE=rig",
+    'STEP_REF="mol-polecat-work.workspace-setup"',
+    'RECEIPT_VERSION="1"',
+    'RUNTIME_IDENTITIES+=("$value")',
+    "CURRENT_SESSION_ID=${GC_SESSION_ID:-}",
+    "expected exactly one current workspace step across runtime identities",
+    '.metadata["gc.graphv2_vars.v1"]',
+    "replay_closed_workspace",
+    "validate_artifact_worktree",
+    "worktree list --porcelain -z",
+    '"workspace.canonical-artifact-invalid"',
+    '"workspace.artifact-path-collision"',
+    '"workspace.unrecorded-branch-work"',
+    '"workspace.recovered-branch-no-fork"',
+    "run_gc gastown polecat-step block",
+    'exit "$EXIT_HARD"',
+    "run_gc gastown polecat-lease workspace",
+    'printf \'%s\\n\' "$ROOT_SETUP_COMMAND"',
+    "gc.polecat_workspace_version",
+    "receipt_matches_live_step",
+    "run_gc gastown polecat-step complete",
+    "POLECAT_WORKSPACE_EXECUTE_COMPLETE",
+)
 GASTOWN_POLECAT_STEP_COMMAND_CONTRACT = (
     "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR",
     "unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE",
@@ -188,12 +215,6 @@ GASTOWN_POLECAT_STEP_BLOCK_CONTRACT = (
     "durable block succeeded but drain acknowledgement failed",
     "POLECAT_STEP_BLOCKED",
 )
-GASTOWN_POLECAT_WORKSPACE_BLOCK_CODES = (
-    '"workspace.canonical-artifact-invalid"',
-    '"workspace.artifact-path-collision"',
-    '"workspace.unrecorded-branch-work"',
-    '"workspace.recovered-branch-no-fork"',
-)
 GASTOWN_POLECAT_STEP_EXEC_FINAL_ORDER = (
     'cd -- "$ARTIFACT_REAL"',
     'EXEC_STEP_JSON=$(run_gc_bd show "$STEP_BEAD_ID"',
@@ -203,19 +224,11 @@ GASTOWN_POLECAT_STEP_EXEC_FINAL_ORDER = (
     'exec -- "${EXEC_ARGV[@]}"',
 )
 GASTOWN_POLECAT_STEP_STAGE_EXEC_COUNTS = {
-    "workspace-setup": 6,
+    "workspace-setup": 0,
     "preflight-tests": 1,
     "implement": 1,
     "self-review": 5,
 }
-GASTOWN_POLECAT_STEP_WORKSPACE_TRANSITIONS = (
-    "lease-workspace",
-    "rebase-continue",
-    "publish-rebase",
-    "create-or-recover-branch",
-)
-GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN = "# BEGIN POLECAT_ARTIFACT_BOOTSTRAP"
-GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END = "# END POLECAT_ARTIFACT_BOOTSTRAP"
 GASTOWN_FORMULA_CONTRACTS = {
     "mol-review-leg": (
         "write the FULL report into the bead notes",
@@ -232,8 +245,6 @@ GASTOWN_FORMULA_CONTRACTS = {
     ),
     "mol-polecat-work": (
         'extends = ["mol-polecat-base"]',
-        "git worktree add",
-        "--set-metadata branch=\"$BRANCH\"",
         "{{test_command}}",
     ),
     "mol-refinery-patrol": (
@@ -3033,30 +3044,6 @@ def polecat_step_exec_argv(command: str) -> list[str] | None:
     return argv
 
 
-def workspace_transition_kind(child_argv: Sequence[str], command: str) -> str | None:
-    if list(child_argv[:4]) == ["gc", "gastown", "polecat-lease", "workspace"]:
-        return "lease-workspace"
-    if (
-        list(child_argv[:2]) == ["git", "rebase"]
-        and len(child_argv) >= 3
-        and child_argv[2].removesuffix(";") == "--continue"
-    ):
-        return "rebase-continue"
-    if list(child_argv[:4]) == [
-        "gc",
-        "gastown",
-        "polecat-lease",
-        "publish-rebase",
-    ]:
-        return "publish-rebase"
-    if (
-        list(child_argv[:2]) == ["bash", "-se"]
-        and "POLECAT_WORKSPACE_BRANCH" in command
-    ):
-        return "create-or-recover-branch"
-    return None
-
-
 def validate_gastown_polecat_executor_formula(
     document: Mapping[str, Any],
     missing: list[str],
@@ -3067,7 +3054,6 @@ def validate_gastown_polecat_executor_formula(
         for step in raw_steps
         if isinstance(step.get("id"), str)
     }
-    transition_kinds: list[str] = []
     marker = "gc gastown polecat-step exec"
 
     for step_id, step in steps.items():
@@ -3113,15 +3099,11 @@ def validate_gastown_polecat_executor_formula(
                 "--convoy": [],
                 "--step-ref": [],
             }
-            transition_count = 0
             option_index = 0
             valid_options = True
             while option_index < len(options):
                 option = options[option_index]
-                if option == "--allow-workspace-transition":
-                    transition_count += 1
-                    option_index += 1
-                elif option in option_values and option_index + 1 < len(options):
+                if option in option_values and option_index + 1 < len(options):
                     option_values[option].append(options[option_index + 1])
                     option_index += 2
                 else:
@@ -3132,11 +3114,6 @@ def validate_gastown_polecat_executor_formula(
                     f"mol-polecat-work: {step_id} polecat-step exec has unsupported options"
                 )
                 continue
-            if transition_count > 1:
-                missing.append(
-                    f"mol-polecat-work: {step_id} polecat-step exec repeats "
-                    "--allow-workspace-transition"
-                )
             if option_values["--convoy"] != ["{{convoy_id}}"]:
                 missing.append(
                     f"mol-polecat-work: {step_id} polecat-step exec must bind the exact convoy"
@@ -3148,60 +3125,46 @@ def validate_gastown_polecat_executor_formula(
                     f"step-ref {expected_ref!r}"
                 )
 
-            transition_kind = workspace_transition_kind(child_argv, command)
-            if transition_count:
-                if step_id != "workspace-setup" or transition_kind is None:
-                    missing.append(
-                        "mol-polecat-work: --allow-workspace-transition is scoped "
-                        "only to the four workspace transition commands"
-                    )
-                else:
-                    transition_kinds.append(transition_kind)
-            elif transition_kind is not None:
-                missing.append(
-                    f"mol-polecat-work: workspace transition {transition_kind!r} "
-                    "must carry --allow-workspace-transition"
-                )
-
-    if sorted(transition_kinds) != sorted(GASTOWN_POLECAT_STEP_WORKSPACE_TRANSITIONS):
-        missing.append(
-            "mol-polecat-work: workspace transition executor set is "
-            f"{sorted(transition_kinds)!r}, want "
-            f"{sorted(GASTOWN_POLECAT_STEP_WORKSPACE_TRANSITIONS)!r}"
-        )
-
-    all_descriptions = "\n".join(
-        str(step.get("description") or "") for step in raw_steps
-    )
     workspace_description = str(
         mapping_value(steps.get("workspace-setup")).get("description") or ""
     )
-    for bootstrap_marker in (
-        GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN,
-        GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END,
-    ):
-        if all_descriptions.count(bootstrap_marker) != 1:
-            missing.append(
-                f"mol-polecat-work: workspace bootstrap marker "
-                f"{bootstrap_marker!r} must occur exactly once"
-            )
-    bootstrap_blocks = [
-        block
-        for block in re.findall(
-            r"```bash\n(.*?)\n```", workspace_description, re.DOTALL
-        )
-        if GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN in block
-        or GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END in block
-    ]
-    if (
-        len(bootstrap_blocks) != 1
-        or GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN not in bootstrap_blocks[0]
-        or GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END not in bootstrap_blocks[0]
-        or bootstrap_blocks[0].find(GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN)
-        >= bootstrap_blocks[0].find(GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END)
-    ):
+    workspace_blocks = re.findall(
+        r"```bash\n(.*?)\n```", workspace_description, re.DOTALL
+    )
+    workspace_execute = "gc gastown polecat-workspace execute"
+    if len(workspace_blocks) != 1:
         missing.append(
-            "mol-polecat-work: artifact bootstrap must be one ordered workspace bash fence"
+            "mol-polecat-work: workspace-setup must contain exactly one shell fence"
+        )
+    else:
+        workspace_block = workspace_blocks[0]
+        if (
+            workspace_description.count(workspace_execute) != 1
+            or workspace_block.count(workspace_execute) != 1
+            or f"if ! {workspace_execute}; then" not in workspace_block
+            or workspace_block.count("gc ") != 1
+        ):
+            missing.append(
+                "mol-polecat-work: workspace-setup must delegate exactly once "
+                "and fail closed"
+            )
+        for forbidden in (
+            "polecat-step",
+            "polecat-lease",
+            "gc bd ",
+            "gc convoy ",
+            "git ",
+            "{{setup_command}}",
+            "--allow-workspace-transition",
+        ):
+            if forbidden in workspace_block:
+                missing.append(
+                    "mol-polecat-work: workspace fence reconstructs deterministic "
+                    f"behavior via forbidden fragment {forbidden!r}"
+                )
+    if "POLECAT_WORKSPACE_EXECUTE_COMPLETE" not in workspace_description:
+        missing.append(
+            "mol-polecat-work: workspace-setup must require the durable execute receipt"
         )
     for step_id in (
         "load-context",
@@ -3215,26 +3178,6 @@ def validate_gastown_polecat_executor_formula(
             missing.append(
                 f"mol-polecat-work: {step_id} uses raw drain-ack before durable "
                 "completion or quarantine"
-            )
-    if workspace_description.count("gc gastown polecat-step block") < 2:
-        missing.append(
-            "mol-polecat-work: deterministic workspace hard failures do not use "
-            "both durable block helpers"
-        )
-    for block_code in GASTOWN_POLECAT_WORKSPACE_BLOCK_CODES:
-        if block_code not in workspace_description:
-            missing.append(
-                f"mol-polecat-work: workspace durable block code {block_code!r} is missing"
-            )
-    for executor_context in (
-        "GC_POLECAT_SOURCE_ID",
-        "GC_POLECAT_CONVOY_ID",
-        "GC_POLECAT_ARTIFACT_DIR",
-    ):
-        if executor_context not in workspace_description:
-            missing.append(
-                "mol-polecat-work: workspace branch recovery does not consume "
-                f"executor-owned {executor_context}"
             )
 
 
@@ -3486,13 +3429,31 @@ def validate_gastown_orchestration_contract(pack_source: Path) -> None:
                 and command_positions != sorted(command_positions)
             ):
                 missing.append(
-                    "mol-polecat-work: deterministic workspace, publish, and submit "
+                    "mol-polecat-work: deterministic workspace and submit "
                     "commands are out of order"
                 )
             if re.search(r"\bgit push\b", text):
                 missing.append(
                     "mol-polecat-work: direct git push is forbidden; use polecat-lease"
                 )
+
+    workspace_path = pack_source / "commands" / "polecat-workspace" / "run.sh"
+    if not workspace_path.is_file():
+        missing.append(
+            f"polecat-workspace: missing deterministic command {workspace_path}"
+        )
+    else:
+        workspace_text = workspace_path.read_text(
+            encoding="utf-8", errors="replace"
+        )
+        for fragment in GASTOWN_POLECAT_WORKSPACE_COMMAND_CONTRACT:
+            if fragment not in workspace_text:
+                missing.append(
+                    "polecat-workspace: missing contract fragment "
+                    f"{fragment!r}"
+                )
+        if "gc hook" in workspace_text:
+            missing.append("polecat-workspace: claim hook use is forbidden")
 
     lease_path = pack_source / "commands" / "polecat-lease" / "run.sh"
     if not lease_path.is_file():
