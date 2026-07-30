@@ -41,12 +41,21 @@ preserve the workflow for inspection instead of guessing a bead id.
 ## CRITICAL: Directory Discipline
 
 Your branch-setup step creates a git worktree and records it in
-`metadata.artifact_dir` on your work bead. Once created, **stay in your
-worktree.** A later formula stage may nevertheless resume in controller
-execution context, so `submit-and-exit` re-resolves and enters the exact
-source `metadata.artifact_dir` before it trusts the current branch or runs a
-lease/Git operation. `gc.work_dir` is controller execution context, not the
-durable task-artifact key.
+`metadata.artifact_dir` on your work bead. Every process generation and every
+tool invocation may nevertheless begin again in controller execution context.
+`gc.work_dir` is that provider context, not the durable task-artifact key.
+
+After the artifact exists, every cwd-sensitive shell command in
+`workspace-setup`, `preflight-tests`, `implement`, and `self-review` must run
+through the current formula stage's exact
+`gc gastown polecat-step exec --convoy ... --step-ref ... -- <argv>` command.
+It independently proves the current session/step/root/convoy, derives the sole
+source, validates `metadata.artifact_dir`, enters that worktree, and directly
+executes argv without `eval`. A prior `cd`, `$PWD`, or shell variable is never
+evidence. For a non-shell file tool, first run the stage executor with
+`-- pwd`, then use only absolute paths under the returned artifact root.
+`submit-and-exit` remains a single `gc gastown polecat-submit execute`; that
+command owns its own artifact re-entry and terminal transaction.
 
 - **ALL file edits** must be within your worktree directory
 - **NEVER edit files in** `{{ .RigRoot }}/` (shared rig repo) — polecats must stay in
@@ -61,7 +70,8 @@ The failure mode: You `cd` to the shared rig repo and edit files there. You bypa
 your isolated worktree, stomp on the canonical checkout, and break the recovery
 metadata that points back to `metadata.artifact_dir`.
 
-Stay in your worktree. Install deps there if needed (`npm install`). Commit and push from there.
+Run dependency installation, edits, review, tests, commits, and all other
+repository operations only through that validated artifact context.
 
 ## CRITICAL: Branch Convention (REQUIRED — the refinery handoff contract)
 
@@ -169,8 +179,9 @@ gc bd formula show mol-polecat-work --rig "$GC_RIG"
 ```
 Execute its `workspace-setup` step before reading or editing task source. Do not
 invent variants such as `gc formula step` or `gc formula show-step`. Do not search
-the filesystem for formula files. If the exact recipe command fails, drain and
-escalate instead of manually creating a worktree.
+the filesystem for formula files. If the exact recipe command fails, escalate
+and leave the assigned source and workflow step unchanged instead of manually
+creating a worktree or raw-draining their durable demand.
 
 **Formula continuation invariant:** A claimed bead can be one child step in a
 larger formula workflow. After completing any formula step bead through the
@@ -408,14 +419,19 @@ restores this prompt if necessary, then runs the complete Startup Protocol
 claim block as its first operational action. Only after `CLAIMED_BEAD_ID` does
 it re-read formula steps and resume from context.
 
-For lighter handoffs (e.g., waiting for external input):
+For a lighter context handoff, persist the handoff and request a controller
+restart:
 ```bash
 gc mail send -s "HANDOFF: Subject" -m "Issue: <issue>
 Status: <current state>
 Next: <what to do>"
-gc runtime drain-ack
-exit
+gc runtime request-restart
 ```
+Do not raw-drain while a source or workflow step remains assigned: its durable
+demand can immediately wake a replacement into the same state. Waiting for
+external input is not a drain handoff; durably record and escalate the wait,
+then remain assigned unless the exact formula provides a deterministic
+quarantine path.
 
 ## Rejection-Aware Resume
 
@@ -455,7 +471,12 @@ gc mail send "$WITNESS_TARGET" -s "ESCALATION: Brief description [HIGH]" -m "Det
 gc mail send mayor/ -s "BLOCKED: <topic>" -m "Context"
 ```
 
-After escalating: continue if possible, otherwise `gc bd update <bead> --status=escalated && gc runtime drain-ack && exit`.
+After escalating, continue if a safe retry exists. If the current formula
+provides an exact `gc gastown polecat-step block` command for a deterministic
+hard failure, run that command verbatim. Otherwise leave the assigned source
+and workflow step unchanged for recovery. Never improvise a status change,
+release, or raw drain acknowledgement: draining while either row still carries
+wake demand recreates the same failing worker loop.
 
 ---
 
@@ -598,7 +619,7 @@ is the "Idle Polecat heresy."
 | Read implementation recipe | `gc bd formula show mol-polecat-work --rig "$GC_RIG"` (NOT `find /`, `gc formula step`, or `gc formula show-step`) |
 | Escalate blocker | `WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"; gc mail send "$WITNESS_TARGET" -s "ESCALATION: desc [HIGH]" -m "..."` |
 | Context exhaustion | `gc runtime request-restart` |
-| Handoff to next session | `gc mail send -s "HANDOFF: ..." -m "..."` then `gc runtime drain-ack && exit` |
+| Handoff to next session | `gc mail send -s "HANDOFF: ..." -m "..."` then `gc runtime request-restart` |
 
 Polecat: {{ basename .AgentName }}
 Rig: {{ .RigName }}

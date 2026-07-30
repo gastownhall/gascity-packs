@@ -25,6 +25,33 @@ write_db() {
     mv "$FAKE_DB.tmp" "$FAKE_DB"
 }
 
+direct_store_env_is_exact() {
+    [[ "${GC_NO_API:-}" == "1" &&
+       "${GC_CITY:-}" == "$EXPECTED_CITY_ROOT" &&
+       "${GC_CITY_PATH:-}" == "$EXPECTED_CITY_ROOT" &&
+       "${GC_RIG:-}" == "$EXPECTED_RUNTIME_RIG" &&
+       "${GC_RIG_ROOT:-}" == "$EXPECTED_RIG_ROOT" &&
+       "${GC_STORE_ROOT:-}" == "$EXPECTED_RIG_ROOT" &&
+       "${GC_STORE_SCOPE:-}" == "rig" ]]
+}
+
+if [[ "${1:-}" == "bd" ]]; then
+    if [[ "${2:-}" != "--rig" ||
+          "${3:-}" != "$EXPECTED_RUNTIME_RIG" ]] ||
+       ! direct_store_env_is_exact; then
+        touch "$FAKE_STATE/non-direct-store-read"
+        exit 98
+    fi
+    set -- bd "${@:4}"
+fi
+
+if [[ "${1:-}" == "convoy" ]] && ! direct_store_env_is_exact; then
+    touch "$FAKE_STATE/stale-convoy-cache-read"
+    printf '%s\n' \
+        '{"schema_version":"1","convoy":{"id":"convoy-1"},"children":[{"id":"stale-source"}]}'
+    exit 0
+fi
+
 if [[ "${1:-}" == "bd" && "${2:-}" == "list" ]]; then
     assignee=""
     status=""
@@ -179,7 +206,30 @@ fi
 
 if [[ "${1:-}" == "convoy" && "${2:-}" == "status" &&
       "${3:-}" == "convoy-1" && "${4:-}" == "--json" ]]; then
-    printf '%s\n' '{"children":[{"id":"source-1"}]}'
+    count_file="$FAKE_STATE/convoy-read-count"
+    count=0
+    if [[ -f "$count_file" ]]; then
+        count=$(<"$count_file")
+    fi
+    count=$((count + 1))
+    printf '%s\n' "$count" >"$count_file"
+    source_id=${FAKE_CONVOY_SOURCE_ID:-source-1}
+    if [[ "${FAKE_CONVOY_DRIFT_AFTER_FIRST:-0}" == "1" &&
+          "$count" -gt 1 ]]; then
+        source_id=drifted-source
+    elif [[ "${FAKE_CONVOY_DRIFT_AFTER_RACE:-0}" == "1" &&
+            -e "$FAKE_STATE/race-fired" ]]; then
+        source_id=drifted-source
+    fi
+    jq -cn \
+        --arg schema "${FAKE_CONVOY_SCHEMA_VERSION:-1}" \
+        --arg convoy "${FAKE_CONVOY_ID:-convoy-1}" \
+        --arg source "$source_id" \
+        '{
+          schema_version: $schema,
+          convoy: {id: $convoy},
+          children: [{id: $source}]
+        }'
     exit 0
 fi
 
@@ -422,9 +472,17 @@ invoke_lease() {
         GC_SESSION_ID="${LEASE_GC_SESSION_ID-actor-session-1}" \
         GC_ALIAS="${LEASE_GC_ALIAS-}" \
         GC_AGENT="${LEASE_GC_AGENT-}" \
+        EXPECTED_CITY_ROOT="$CITY_ROOT" \
+        EXPECTED_RIG_ROOT="$RIG_ROOT" \
+        EXPECTED_RUNTIME_RIG=rig \
         FAKE_DB="$DB" \
         FAKE_STATE="$STATE" \
         FAKE_GC_LOG="$STATE/gc.log" \
+        FAKE_CONVOY_SCHEMA_VERSION="${FAKE_CONVOY_SCHEMA_VERSION:-1}" \
+        FAKE_CONVOY_ID="${FAKE_CONVOY_ID:-convoy-1}" \
+        FAKE_CONVOY_SOURCE_ID="${FAKE_CONVOY_SOURCE_ID:-source-1}" \
+        FAKE_CONVOY_DRIFT_AFTER_FIRST="${FAKE_CONVOY_DRIFT_AFTER_FIRST:-0}" \
+        FAKE_CONVOY_DRIFT_AFTER_RACE="${FAKE_CONVOY_DRIFT_AFTER_RACE:-0}" \
         WRONG_BD_LIST_ASSIGNEE="${WRONG_BD_LIST_ASSIGNEE:-}" \
         DUPLICATE_BD_LIST_ASSIGNEE="${DUPLICATE_BD_LIST_ASSIGNEE:-}" \
         TERMINAL_AUTHORITY_DRIFT="${TERMINAL_AUTHORITY_DRIFT:-}" \
@@ -526,6 +584,59 @@ assert_submit_proof() {
 
 remote_feature_oid() {
     "$REAL_GIT" --git-dir="$ORIGIN" rev-parse refs/heads/polecat/source-1
+}
+
+test_direct_store_convoy_authority() {
+    new_case direct-store-convoy-authority false
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "direct-store convoy authority failed: $(<"$OUTPUT")"
+    [[ ! -e "$STATE/non-direct-store-read" &&
+       ! -e "$STATE/stale-convoy-cache-read" ]] ||
+        fail "lease consulted a non-authoritative store or stale convoy cache"
+    rg -q '^gc bd --rig rig list ' "$STATE/gc.log" ||
+        fail "bead reads were not explicitly scoped to the runtime rig"
+    rg -q '^gc convoy status convoy-1 --json ' "$STATE/gc.log" ||
+        fail "authoritative convoy status was not consulted"
+}
+
+test_convoy_schema_and_identity_fail_closed() {
+    new_case convoy-schema-mismatch false
+    FAKE_CONVOY_SCHEMA_VERSION=2
+    run_lease workspace
+    unset FAKE_CONVOY_SCHEMA_VERSION
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "wrong convoy schema returned $RUN_RC instead of 75"
+    [[ "$(namespace_count)" -eq 0 &&
+       "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "wrong convoy schema mutated protected state"
+
+    new_case convoy-identity-mismatch false
+    FAKE_CONVOY_ID=other-convoy
+    run_lease workspace
+    unset FAKE_CONVOY_ID
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "wrong convoy identity returned $RUN_RC instead of 75"
+    [[ "$(namespace_count)" -eq 0 &&
+       "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "wrong convoy identity mutated protected state"
+}
+
+test_convoy_source_revalidated_before_protected_mutation() {
+    new_case convoy-source-drift true
+    FAKE_CONVOY_DRIFT_AFTER_FIRST=1
+    run_lease workspace
+    unset FAKE_CONVOY_DRIFT_AFTER_FIRST
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "convoy source drift returned $RUN_RC instead of 75: $(<"$OUTPUT")"
+    [[ "$(<"$STATE/convoy-read-count")" -eq 2 ]] ||
+        fail "convoy source was not re-read at the protected mutation seam"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "convoy source drift created lease authority"
+    [[ "$(jq -r '.beads["source-1"].metadata.rejection_reason' "$DB")" == "rejected" ]] ||
+        fail "convoy source drift mutated source metadata"
+    ! rg -q '^gc bd --rig rig update source-1 ' "$STATE/gc.log" ||
+        fail "convoy source drift attempted a protected bead mutation"
 }
 
 local_feature_oid() {
@@ -772,13 +883,13 @@ test_remote_race_terminalizes() {
         fail "remote race did not notify and drain after terminalization"
     [[ "$(namespace_count)" -eq 6 ]] ||
         fail "remote race did not preserve all recovery refs"
-    source_line=$(rg -n '^gc bd update source-1 .*--status=blocked' \
+    source_line=$(rg -n '^gc bd --rig rig update source-1 .*--status=blocked' \
         "$STATE/gc.log" | cut -d: -f1) ||
         fail "remote race did not log source terminalization"
     mail_line=$(rg -n '^gc mail send rig/witness .*--notify' \
         "$STATE/gc.log" | cut -d: -f1) ||
         fail "remote race did not log durable Witness notification"
-    step_line=$(rg -n '^gc bd update submit-1 .*gc\.outcome=fail' \
+    step_line=$(rg -n '^gc bd --rig rig update submit-1 .*gc\.outcome=fail' \
         "$STATE/gc.log" | cut -d: -f1) ||
         fail "remote race did not log failed submit-step outcome"
     drain_line=$(rg -n '^gc runtime drain-ack' \
@@ -814,13 +925,40 @@ test_terminalization_revalidates_graph_authority() {
         [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" &&
            "$(jq -r '.beads["source-1"].assignee' "$DB")" == "" ]] ||
             fail "$drift drift mutated source state from stale Graph authority"
-        ! rg -q '^gc bd update source-1 .*--status=blocked' "$STATE/gc.log" ||
+        ! rg -q '^gc bd --rig rig update source-1 .*--status=blocked' "$STATE/gc.log" ||
             fail "$drift drift attempted to block the source"
         [[ ! -e "$STATE/mail-sent" && ! -e "$STATE/drained" ]] ||
             fail "$drift drift notified or drained without current Graph authority"
         rg -q 'Graph authority changed before hard terminalization' "$OUTPUT" ||
             fail "$drift drift did not report the authority failure"
     done
+}
+
+test_terminalization_revalidates_convoy_authority() {
+    prepare_rebased terminal-convoy-drift
+    make_racer
+    : >"$PUSH_LOG"
+    set +e
+    (
+        export GIT_RACER_WORK="$RACER"
+        export FAKE_CONVOY_DRIFT_AFTER_RACE=1
+        run_lease submit --auto-push true
+        exit "$RUN_RC"
+    )
+    race_rc=$?
+    set -e
+
+    [[ "$race_rc" -eq 64 ]] ||
+        fail "convoy-drift conflict returned $race_rc instead of 64: $(<"$OUTPUT")"
+    [[ -e "$STATE/race-fired" ]] ||
+        fail "convoy-drift fixture did not fire before terminalization"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" &&
+       "$(jq -r '.beads["source-1"].assignee' "$DB")" == "" ]] ||
+        fail "terminalization mutated source after convoy authority changed"
+    [[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" ]] ||
+        fail "terminalization closed the Graph step after convoy authority changed"
+    [[ ! -e "$STATE/mail-sent" && ! -e "$STATE/drained" ]] ||
+        fail "terminalization notified or drained after convoy authority changed"
 }
 
 test_unreadable_is_indeterminate() {
@@ -1241,7 +1379,7 @@ test_runtime_identity_deduplication() {
     [[ "$RUN_RC" -eq 0 ]] ||
         fail "deduplicated runtime identity lookup failed: $(<"$OUTPUT")"
     [[ "$(rg -c -F \
-        'gc bd list --assignee actor-1 --status=in_progress ' \
+        'gc bd --rig rig list --assignee actor-1 --status=in_progress ' \
         "$STATE/gc.log")" -eq 1 ]] ||
         fail "equivalent runtime identities issued duplicate live-step queries"
 }
@@ -1880,6 +2018,9 @@ test_linked_worktree_ref_races() {
 }
 
 test_normal_push
+test_direct_store_convoy_authority
+test_convoy_schema_and_identity_fail_closed
+test_convoy_source_revalidated_before_protected_mutation
 test_rebased_exact_lease_push
 test_rejected_auto_push_false_stops_before_freeze
 test_auto_push_false_proof_is_local_and_idempotent
@@ -1888,6 +2029,7 @@ test_submit_proof_create_race_is_idempotent
 test_dirty_artifact_cannot_create_submit_proof
 test_remote_race_terminalizes
 test_terminalization_revalidates_graph_authority
+test_terminalization_revalidates_convoy_authority
 test_unreadable_is_indeterminate
 test_capture_mirror_crash_recovery
 test_rebase_mirror_crash_recovery

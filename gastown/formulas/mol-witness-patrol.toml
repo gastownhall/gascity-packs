@@ -127,14 +127,44 @@ Archive after reading.
 **Hygiene principle**: Archive messages after they're fully processed.
 Inbox should be near-empty after this step.
 
-Close this step and continue to `recover-orphaned-beads` — do NOT exit
+Close this step and continue to `surface-polecat-blocks` — do NOT exit
 the wisp here. The `next-iteration` step is the only place that pours
 the next wisp and burns this one."""
 
 [[steps]]
+id = "surface-polecat-blocks"
+title = "Surface durable polecat blocks"
+needs = ["check-inbox"]
+description = """
+Run the deterministic durable-block reconciler once before any orphan or
+stuck-agent classification:
+
+```bash
+if ! gc gastown polecat-blocks surface; then
+  echo "Durable polecat-block surfacing was incomplete; the next patrol must retry." >&2
+fi
+```
+
+The command scans **all statuses** directly in this rig's store for
+`gc.polecat_block_version=1`. It validates exact source/step/root/convoy
+provenance, mails the Mayor at least once for valid, partial, or malformed
+contracts, and records a signature receipt only after successful mail.
+Matching receipts deduplicate later patrols. Quarantined, drained, suspended,
+or otherwise controller-owned session state never hides a durable block.
+
+This is surfacing only. Do not change source/step status, ownership, routing,
+workflow state, artifact metadata, block provenance, or outcomes here. Do not
+attempt an in-place unblock. Exact block recovery requires an explicitly
+authorized new workflow-generation reset.
+
+Whether the command reports blocks, no blocks, or a retryable notification
+failure, continue to `recover-orphaned-beads`. Durable v1 rows are excluded
+from that generic recovery path and will be retried by this step next cycle."""
+
+[[steps]]
 id = "recover-orphaned-beads"
 title = "Recover orphaned work beads"
-needs = ["check-inbox"]
+needs = ["surface-polecat-blocks"]
 description = """
 **This is the witness's core job.**
 
@@ -160,6 +190,13 @@ open/unassigned before witness observes it; that requires a separate
 worktree-salvage scan keyed by canonical `metadata.artifact_dir`, with a
 validated legacy `metadata.work_dir` fallback. Bound Gastown polecat
 assignees use the shape `<rig>/{{binding_prefix}}<polecat-suffix>`.
+
+**Exclude every row carrying `gc.polecat_block_version=1` before liveness
+classification, regardless of its current status.** The preceding
+`surface-polecat-blocks` step exclusively owns those durable source/step
+contracts. A partial block may still be `open` or `in_progress`; generic orphan
+cleanup must not mistake its Graph step for a source bead, salvage/delete its
+artifact, clear its workflow, or reopen it.
 
 Get the full session roster for liveness checks:
 ```bash
@@ -848,7 +885,11 @@ progressing. The controller can't detect this; it's a work-layer judgment.
 ```bash
 gc bd list --status=in_progress --json --limit=0
 ```
-Filter for beads assigned to polecat-pattern agents in YOUR rig.
+Filter for beads assigned to polecat-pattern agents in YOUR rig. Exclude every
+row carrying `gc.polecat_block_version=1` before assessing progress or filing
+a warrant, even if a partial block remains `in_progress`. Durable blocks were
+already surfaced by `surface-polecat-blocks`; a warrant or generic recovery
+must never race that contract.
 
 **Step 2: For each, assess progress:**
 

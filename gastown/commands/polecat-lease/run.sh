@@ -129,13 +129,53 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
     exit "$EXIT_INDETERMINATE"
 fi
 
+[[ -n "${GC_CITY_PATH:-}" && -n "${GC_RIG:-}" &&
+   -n "${GC_RIG_ROOT:-}" ]] || {
+    echo "polecat-lease: GC_CITY_PATH, GC_RIG, and GC_RIG_ROOT are required" >&2
+    exit "$EXIT_INDETERMINATE"
+}
+case "$GC_RIG" in
+    ""|"."|".."|*[!A-Za-z0-9._-]*)
+        echo "polecat-lease: the runtime rig name is unsafe" >&2
+        exit "$EXIT_INDETERMINATE"
+        ;;
+esac
+RUNTIME_RIG=$GC_RIG
+CITY_ROOT=$(CDPATH= cd -- "$GC_CITY_PATH" 2>/dev/null && pwd -P) || {
+    echo "polecat-lease: could not canonicalize the city root" >&2
+    exit "$EXIT_INDETERMINATE"
+}
+RIG_ROOT=$(CDPATH= cd -- "$GC_RIG_ROOT" 2>/dev/null && pwd -P) || {
+    echo "polecat-lease: could not canonicalize the rig root" >&2
+    exit "$EXIT_INDETERMINATE"
+}
+
 run_gc() {
     "$GC_CMD" "$@"
 }
 
 run_gc_bd() {
-    local command=("$GC_CMD" "bd")
-    "${command[@]}" "$@"
+    local command=("$GC_CMD" "bd" "--rig" "$RUNTIME_RIG")
+    GC_NO_API=1 \
+    GC_CITY="$CITY_ROOT" \
+    GC_CITY_PATH="$CITY_ROOT" \
+    GC_RIG="$RUNTIME_RIG" \
+    GC_RIG_ROOT="$RIG_ROOT" \
+    GC_STORE_ROOT="$RIG_ROOT" \
+    GC_STORE_SCOPE=rig \
+        "${command[@]}" "$@"
+}
+
+run_gc_convoy() {
+    local command=("$GC_CMD" "convoy")
+    GC_NO_API=1 \
+    GC_CITY="$CITY_ROOT" \
+    GC_CITY_PATH="$CITY_ROOT" \
+    GC_RIG="$RUNTIME_RIG" \
+    GC_RIG_ROOT="$RIG_ROOT" \
+    GC_STORE_ROOT="$RIG_ROOT" \
+    GC_STORE_SCOPE=rig \
+        "${command[@]}" "$@"
 }
 
 indeterminate() {
@@ -160,6 +200,29 @@ is_oid() {
     case "$oid" in
         *[!0-9a-f]*) return 1 ;;
     esac
+}
+
+convoy_source_id() {
+    local convoy_json=$1
+    printf '%s' "$convoy_json" | jq -er --arg convoy "$CONVOY_ID" '
+        if type == "object" and .schema_version == "1" and
+           (.convoy | type) == "object" and
+           .convoy.id == $convoy and
+           (.children | type) == "array" and
+           (.children | length) == 1 and
+           (.children[0].id | type) == "string" and
+           (.children[0].id | length) > 0
+        then .children[0].id
+        else error("convoy identity/schema/source mismatch")
+        end' 2>/dev/null
+}
+
+prove_authoritative_convoy_source() {
+    local convoy_json convoy_source
+    convoy_json=$(run_gc_convoy status "$CONVOY_ID" --json 2>/dev/null) ||
+        return 1
+    convoy_source=$(convoy_source_id "$convoy_json") || return 1
+    [[ "$convoy_source" == "$SOURCE_ID" ]]
 }
 
 for atom in "$SOURCE_ID" "$CONVOY_ID" "$BASE_BRANCH" "$BRANCH" "$WITNESS_TARGET"; do
@@ -308,8 +371,8 @@ if [[ "$ACTION" == "submit" ]]; then
 fi
 
 derive_graph_context() {
-    local step_list step_matches step_json root_json convoy_json
-    local step_code root_code convoy_code candidate_id candidate_root
+    local step_list step_matches step_json root_json
+    local step_code root_code candidate_id candidate_root
     local candidate_assignee existing identity root_class root_mode
     local -a live_step_ids=()
     local -a closed_step_ids=()
@@ -497,13 +560,7 @@ derive_graph_context() {
     [[ "$WITNESS_TARGET" == "$WITNESS_CANONICAL" ]] || return 1
     WITNESS_TARGET=$WITNESS_CANONICAL
 
-    convoy_json=$(run_gc convoy status "$CONVOY_ID" --json 2>/dev/null)
-    convoy_code=$?
-    [[ "$convoy_code" -eq 0 ]] || return 1
-    printf '%s' "$convoy_json" | jq -e --arg source "$SOURCE_ID" '
-        type == "object" and (.children | type) == "array" and
-        (.children | length) == 1 and .children[0].id == $source' \
-        >/dev/null 2>&1 || return 1
+    prove_authoritative_convoy_source || return 1
     safe_atom "$ROOT_BEAD_ID" || return 1
     PROVENANCE_READY=1
     return 0
@@ -1077,7 +1134,8 @@ revalidate_terminal_authority() {
         type == "array" and length == 1 and .[0].id == $id and
         (.[0].metadata["gc.var.rig_name"] // "") == $rig and
         (.[0].metadata["gc.var.binding_prefix"] // "") == $prefix' \
-        >/dev/null 2>&1
+        >/dev/null 2>&1 || return 1
+    prove_authoritative_convoy_source
 }
 
 terminalize_hard() {
@@ -1224,6 +1282,8 @@ prove_live_source_step() {
         indeterminate "could not re-read the exact Graph root before a protected transition"
     classify_workflow_root "$root_json" "$ROOT_BEAD_ID" live ||
         indeterminate "exact Graph root state changed during the lease protocol"
+    prove_authoritative_convoy_source ||
+        indeterminate "convoy identity/source changed during the lease protocol"
     if git symbolic-ref -q "$BRANCH_REF" >/dev/null 2>&1; then
         hard_conflict "canonical branch became a symbolic ref"
     fi

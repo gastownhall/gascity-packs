@@ -1185,6 +1185,24 @@ def write_gastown_contract_fixture(tmp_path):
         ),
         encoding="utf-8",
     )
+    step_command = pack / "commands" / "polecat-step" / "run.sh"
+    step_command.parent.mkdir(parents=True)
+    shutil.copy2(
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+        / "commands"
+        / "polecat-step"
+        / "run.sh",
+        step_command,
+    )
+    prompt = pack / "agents" / "polecat" / "prompt.template.md"
+    prompt.parent.mkdir(parents=True)
+    shutil.copy2(
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+        / "agents"
+        / "polecat"
+        / "prompt.template.md",
+        prompt,
+    )
     return pack
 
 
@@ -1324,6 +1342,268 @@ def test_validate_gastown_orchestration_contract_rejects_missing_submit_primitiv
     )
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="polecat-submit"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_missing_step_primitive(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    command = pack / "commands" / "polecat-step" / "run.sh"
+    command.write_text(
+        command.read_text(encoding="utf-8").replace(
+            'exec -- "${EXEC_ARGV[@]}"',
+            '"${EXEC_ARGV[@]}"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="polecat-step"):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_step_exec_mutation(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    command = pack / "commands" / "polecat-step" / "run.sh"
+    command.write_text(
+        command.read_text(encoding="utf-8").replace(
+            'exec -- "${EXEC_ARGV[@]}"',
+            'run_gc_bd update "$SOURCE_ID" --status=closed\n'
+            '    exec -- "${EXEC_ARGV[@]}"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="exec branch must not mutate",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_missing_human_quarantine_route(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    command = pack / "commands" / "polecat-step" / "run.sh"
+    command.write_text(
+        command.read_text(encoding="utf-8").replace(
+            '--set-metadata "gc.routed_to=human"',
+            '--set-metadata "gc.routed_to=gastown.polecat"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="polecat-step",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_raw_nonterminal_drain(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            'echo "Could not refresh origin/{{base_branch}}." >&2',
+            'echo "Could not refresh origin/{{base_branch}}." >&2\n'
+            "    gc runtime drain-ack",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="raw drain-ack",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_raw_handoff_drain(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    prompt = pack / "agents" / "polecat" / "prompt.template.md"
+    text = prompt.read_text(encoding="utf-8")
+    start = text.index("For a lighter context handoff")
+    end = text.index("## Rejection-Aware Resume", start)
+    handoff = text[start:end].replace(
+        "gc runtime request-restart",
+        "gc runtime drain-ack",
+        1,
+    )
+    prompt.write_text(
+        text[:start] + handoff + text[end:],
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="context handoff may raw-drain assigned demand",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_recipe_failure_drain(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    prompt = pack / "agents" / "polecat" / "prompt.template.md"
+    prompt.write_text(
+        prompt.read_text(encoding="utf-8").replace(
+            "If the exact recipe command fails, escalate",
+            "If the exact recipe command fails, drain and escalate",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="recipe-read failure lacks fail-closed escalation",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_missing_workspace_block_code(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            '"workspace.artifact-path-collision"',
+            '"workspace.generic-error"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="workspace durable block code",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_missing_formula_executor(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "gc gastown polecat-step exec",
+            "gc gastown missing-step-executor",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="workspace-setup has 5 polecat-step exec invocations",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_wrong_executor_step_ref(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            '--step-ref "mol-polecat-work.preflight-tests"',
+            '--step-ref "mol-polecat-work.implement"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="preflight-tests.*must bind step-ref",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_unflagged_workspace_transition(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            "     --allow-workspace-transition \\\n",
+            "",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="must carry --allow-workspace-transition",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_transition_flag_on_strict_exec(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            'gc gastown polecat-step exec \\\n'
+            '  --convoy "{{convoy_id}}" \\\n'
+            '  --step-ref "mol-polecat-work.workspace-setup" \\\n'
+            "  -- git status",
+            'gc gastown polecat-step exec \\\n'
+            "  --allow-workspace-transition \\\n"
+            '  --convoy "{{convoy_id}}" \\\n'
+            '  --step-ref "mol-polecat-work.workspace-setup" \\\n'
+            "  -- git status",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="scoped only to the four workspace transition commands",
+    ):
+        gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
+
+
+def test_validate_gastown_orchestration_contract_rejects_split_workspace_bootstrap(
+    tmp_path,
+) -> None:
+    pack = write_gastown_contract_fixture(tmp_path)
+    formula = pack / "formulas" / "mol-polecat-work.toml"
+    formula.write_text(
+        formula.read_text(encoding="utf-8").replace(
+            gascity_pack_inference_gate.GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END,
+            "# ARTIFACT BOOTSTRAP FINISHED",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        gascity_pack_inference_gate.GateError,
+        match="workspace bootstrap marker",
+    ):
         gascity_pack_inference_gate.validate_gastown_orchestration_contract(pack)
 
 

@@ -48,8 +48,13 @@ require source `metadata.target`, canonical `metadata.branch`, and
 convoy.
 `auto_push_false` requires open/unassigned plus `branch_ready=true` and
 `halt_reason=auto_push_false`. `refinery` requires the exact configured
-refinery assignment or an already-closed source. The command rereads evidence
-immediately before closing and reading back the submit step as pass.
+refinery assignment or an already-closed source. Live `metadata.auto_push`
+must still match the selected proof mode, and live `metadata.artifact_dir`
+must still name the proof-bound registered worktree. The sole artifact
+exception is an already-closed refinery source whose exact head has a
+read-backed completed-cleanup receipt and whose recorded worktree is now
+absent. The command rereads this full evidence immediately before closing,
+after step close, and before drain.
 
 The same close update persists versioned source/convoy/branch/mode/session plus
 submit-proof key/context/head evidence. If the response or later drain

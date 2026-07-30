@@ -89,20 +89,45 @@ gc bd prime                    # Load beads context
 
 **2. Derive your work bead and check your hook:**
 ```bash
-CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
-WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
-if [ -z "$WORK_BEAD_ID" ]; then
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || exit 1
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+') || {
   echo "mol-polecat-base requires an input convoy with exactly one tracked member" >&2
   exit 1
-fi
+}
 gc bd list --assignee=$GC_AGENT --status=in_progress
 ```
 
 The work bead is your assigned issue. Read it carefully:
 ```bash
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || exit 1
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+') || {
+  echo "mol-polecat-base requires an input convoy with exactly one tracked member" >&2
+  exit 1
+}
 gc bd show "$WORK_BEAD_ID"           # Full issue details
 gc bd show "$WORK_BEAD_ID" --json | jq '.[0].metadata'  # Check for existing metadata
 ```
+
+Every shell fence is independent. Never rely on `WORK_BEAD_ID`, a `cd`, a
+function, or another shell variable surviving into a later command.
 
 **3. Check for rejection (IMPORTANT):**
 
@@ -130,6 +155,20 @@ gc mail inbox
 
 If blocked or unclear, mail Witness:
 ```bash
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || exit 1
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+') || {
+  echo "mol-polecat-base requires an input convoy with exactly one tracked member" >&2
+  exit 1
+}
 gc mail send <rig>/witness -s "HELP: Unclear requirements" -m "Issue: $WORK_BEAD_ID
 Question: <what you need clarified>"
 ```
@@ -163,92 +202,162 @@ Every check is idempotent — safe to re-run after crash/restart.
 2. `metadata.target` on the parent convoy chain
 3. the rig repo's default branch
 
-**1. Fetch latest and derive your work bead:**
+**1–2. Create or recover the durable task artifact in one invocation.**
+
+Run this entire fence as one fail-fast shell command. It is self-contained and
+does not trust the process cwd or state from an earlier tool call:
 ```bash
-git fetch --prune origin
-CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
-WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
-if [ -z "$WORK_BEAD_ID" ]; then
-  echo "mol-polecat-work requires an input convoy with exactly one tracked member" >&2
-  gc runtime drain-ack
+# BEGIN POLECAT_ARTIFACT_BOOTSTRAP
+set -euo pipefail
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR \
+  GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE \
+  GIT_CONFIG GIT_CONFIG_SYSTEM GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM \
+  GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_IMPLICIT_WORK_TREE \
+  GIT_GRAFT_FILE GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX \
+  GIT_INTERNAL_SUPER_PREFIX GIT_SUPER_PREFIX GIT_SHALLOW_FILE \
+  GIT_QUARANTINE_PATH GIT_CEILING_DIRECTORIES \
+  GIT_DISCOVERY_ACROSS_FILESYSTEM
+for git_config_name in "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; do
+  unset "$git_config_name"
+done
+unset git_config_name
+
+block_workspace_hard_failure() {
+  local code=$1 reason=$2
+  gc gastown polecat-step block \
+    --convoy "{{convoy_id}}" \
+    --step-ref "mol-polecat-work.workspace-setup" \
+    --code "$code" \
+    --reason "$reason"
+  exit $?
+}
+
+if [ -z "${GC_CITY_PATH:-}" ] || [ -z "${GC_RIG:-}" ] ||
+   [ -z "${GC_RIG_ROOT:-}" ]; then
+  echo "GC_CITY_PATH, GC_RIG, and GC_RIG_ROOT are required for task worktrees." >&2
   exit 1
 fi
-```
-
-**2. Ensure a safe per-bead artifact worktree exists.**
-
-Task worktrees use the canonical `metadata.artifact_dir` key. The deprecated
-task `metadata.work_dir` key may be adopted only after proving that it is an
-existing per-bead Git worktree at this city's exact historical Gastown
-provider path. A legacy core may already have launched the session inside that
-valid task worktree, so current cwd equality is not a rejection criterion.
-Adoption migrates the metadata key in place; it does not claim that a legacy
-provider-nested directory has physically moved. Never `cd` to either task
-metadata path before it passes the city, rig, layout, bead, and Git checks.
-
-Load both task keys and resolve the city-managed artifact root before changing
-directories. New task worktrees are siblings of prunable polecat homes, never
-children of them:
-```bash
-BEAD_JSON=$(gc bd show "$WORK_BEAD_ID" --json) || {
-  echo "Could not read work bead metadata for $WORK_BEAD_ID." >&2
-  gc runtime drain-ack
+case "$GC_RIG" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    echo "Unsafe rig name for artifact path: $GC_RIG" >&2
+    exit 1
+    ;;
+esac
+CITY_ROOT=$(CDPATH= cd -- "$GC_CITY_PATH" 2>/dev/null && pwd -P) || {
+  echo "City root is missing: $GC_CITY_PATH" >&2
   exit 1
 }
-BEAD_META=$(printf '%s' "$BEAD_JSON" | jq -ce '
+RIG_ROOT=$(CDPATH= cd -- "$GC_RIG_ROOT" 2>/dev/null && pwd -P) || {
+  echo "Rig root is missing: $GC_RIG_ROOT" >&2
+  exit 1
+}
+
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || {
+  echo "Could not read authoritative input convoy {{convoy_id}}." >&2
+  exit 1
+}
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and
+     (.children | type) == "array" and (.children | length) == 1 and
+     (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected the exact input convoy with one tracked member")
+  end
+') || {
+  echo "mol-polecat-work requires an input convoy with exactly one tracked member" >&2
+  exit 1
+}
+case "$WORK_BEAD_ID" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    echo "Unsafe work bead id for artifact path: $WORK_BEAD_ID" >&2
+    exit 1
+    ;;
+esac
+
+BEAD_JSON=$(GC_NO_API=1 \
+  GC_CITY="$CITY_ROOT" \
+  GC_CITY_PATH="$CITY_ROOT" \
+  GC_RIG="$GC_RIG" \
+  GC_RIG_ROOT="$RIG_ROOT" \
+  GC_STORE_ROOT="$RIG_ROOT" \
+  GC_STORE_SCOPE=rig \
+  gc bd --rig "$GC_RIG" show "$WORK_BEAD_ID" --json) || {
+  echo "Could not read work bead metadata for $WORK_BEAD_ID." >&2
+  exit 1
+}
+BEAD_META=$(printf '%s' "$BEAD_JSON" | jq -ce \
+  --arg id "$WORK_BEAD_ID" '
   if type == "array" and length == 1 and (.[0] | type) == "object" and
+     .[0].id == $id and .[0].status == "open" and
+     ((.[0].assignee // "") == "") and
      ((.[0].metadata // {}) | type) == "object"
   then .[0].metadata // {}
   else error("expected exactly one work bead object")
   end
 ') || {
   echo "Invalid work bead response for $WORK_BEAD_ID; refusing to create or adopt an artifact." >&2
-  gc runtime drain-ack
   exit 1
 }
 ARTIFACT_DIR=$(printf '%s' "$BEAD_META" | jq -r '.artifact_dir // empty')
 LEGACY_WORK_DIR=$(printf '%s' "$BEAD_META" | jq -r '.work_dir // empty')
-if [ -z "${GC_CITY_PATH:-}" ] || [ -z "${GC_RIG:-}" ] ||
-   [ -z "${GC_RIG_ROOT:-}" ]; then
-  echo "GC_CITY_PATH, GC_RIG, and GC_RIG_ROOT are required for task worktrees." >&2
-  gc runtime drain-ack
-  exit 1
-fi
-case "$WORK_BEAD_ID" in
-  ""|"."|".."|*[!A-Za-z0-9._-]*)
-    echo "Unsafe work bead id for artifact path: $WORK_BEAD_ID" >&2
-    gc runtime drain-ack
-    exit 1
-    ;;
-esac
-case "$GC_RIG" in
-  ""|"."|".."|*[!A-Za-z0-9._-]*)
-    echo "Unsafe rig name for artifact path: $GC_RIG" >&2
-    gc runtime drain-ack
-    exit 1
-    ;;
-esac
-CITY_ROOT=$(CDPATH= cd -- "$GC_CITY_PATH" 2>/dev/null && pwd -P) || {
-  echo "City root is missing: $GC_CITY_PATH" >&2
-  gc runtime drain-ack
-  exit 1
-}
-RIG_ROOT=$(CDPATH= cd -- "$GC_RIG_ROOT" 2>/dev/null && pwd -P) || {
-  echo "Rig root is missing: $GC_RIG_ROOT" >&2
-  gc runtime drain-ack
-  exit 1
-}
-```
 
-Use this validator for canonical paths, legacy adoption, and any newly-created
-path:
-```bash
+git -C "$RIG_ROOT" fetch --prune origin
+
 # BEGIN ARTIFACT_WORKTREE_VALIDATOR
 artifact_git_common_dir() {
   local repo_dir=$1 common_dir
   common_dir=$(git -C "$repo_dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
     return 1
   (CDPATH= cd -- "$common_dir" 2>/dev/null && pwd -P)
+}
+
+ARTIFACT_POINTER_LINE=
+artifact_read_one_line_file() {
+  local file=$1 line count=0
+  ARTIFACT_POINTER_LINE=
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    count=$((count + 1))
+    [ "$count" -eq 1 ] || return 1
+    ARTIFACT_POINTER_LINE=$line
+  done <"$file"
+  [ "$count" -eq 1 ]
+}
+
+artifact_resolve_file_ref() {
+  local base=$1 ref=$2 candidate parent parent_real
+  case "$ref" in
+    /*) candidate=$ref ;;
+    *) candidate="$base/$ref" ;;
+  esac
+  parent=$(dirname -- "$candidate") || return 1
+  parent_real=$(CDPATH= cd -- "$parent" 2>/dev/null && pwd -P) ||
+    return 1
+  printf '%s/%s\n' "$parent_real" "$(basename -- "$candidate")"
+}
+
+artifact_is_registered_worktree() {
+  local rig_root=$1 candidate=$2 listed count=0
+  local git_dir backpointer_ref backpointer_real
+
+  git -C "$rig_root" worktree list --porcelain -z >/dev/null 2>&1 ||
+    return 1
+  while IFS= read -r -d '' listed; do
+    [ "$listed" = "worktree $candidate" ] && count=$((count + 1))
+  done < <(git -C "$rig_root" worktree list --porcelain -z 2>/dev/null)
+  [ "$count" -eq 1 ] || return 1
+
+  git_dir=$(git -C "$candidate" rev-parse \
+    --path-format=absolute --absolute-git-dir 2>/dev/null) || return 1
+  git_dir=$(CDPATH= cd -- "$git_dir" 2>/dev/null && pwd -P) || return 1
+  artifact_read_one_line_file "$git_dir/gitdir" || return 1
+  backpointer_ref=$ARTIFACT_POINTER_LINE
+  backpointer_real=$(artifact_resolve_file_ref \
+    "$git_dir" "$backpointer_ref") || return 1
+  [ "$backpointer_real" = "$candidate/.git" ]
 }
 
 validate_artifact_worktree() {
@@ -295,17 +404,15 @@ validate_artifact_worktree() {
   candidate_common=$(artifact_git_common_dir "$candidate_real") || return 1
   rig_common=$(artifact_git_common_dir "$rig_root") || return 1
   [ "$candidate_common" = "$rig_common" ] || return 1
+  artifact_is_registered_worktree "$rig_root" "$candidate_real" || return 1
 
   printf '%s\n' "$candidate_real"
 }
 # END ARTIFACT_WORKTREE_VALIDATOR
-```
 
-Canonical metadata wins. If it is absent, a valid legacy path can be adopted
-in place. A stale, missing, provider-root, wrong-city, wrong-rig, wrong-bead,
-or foreign-repo legacy path is ignored and a new canonical artifact worktree
-is created:
-```bash
+# Canonical metadata wins. If it is absent, a valid legacy path can be adopted
+# in place. Unsafe canonical state stops; only unsafe deprecated state may fall
+# back to a newly created canonical worktree.
 WORKTREE=
 if [ -n "$ARTIFACT_DIR" ]; then
   if WORKTREE=$(validate_artifact_worktree \
@@ -315,8 +422,9 @@ if [ -n "$ARTIFACT_DIR" ]; then
   else
     echo "Canonical artifact_dir is missing or unsafe: $ARTIFACT_DIR" >&2
     echo "STOP. Preserve it for manual recovery; only an absent canonical key may fall back or create." >&2
-    gc runtime drain-ack
-    exit 1
+    block_workspace_hard_failure \
+      "workspace.canonical-artifact-invalid" \
+      "canonical artifact_dir is missing, redirected, or unsafe"
   fi
 elif [ -n "$LEGACY_WORK_DIR" ]; then
   if WORKTREE=$(validate_artifact_worktree \
@@ -334,37 +442,43 @@ if [ -z "$WORKTREE" ]; then
   if [ -L "$ARTIFACT_HOME" ] ||
      { [ -e "$ARTIFACT_HOME" ] && [ ! -d "$ARTIFACT_HOME" ]; }; then
     echo "Task artifact root is redirected or is not a directory: $ARTIFACT_HOME" >&2
-    gc runtime drain-ack
-    exit 1
+    block_workspace_hard_failure \
+      "workspace.artifact-root-unsafe" \
+      "task artifact root is redirected or is not a directory"
   fi
   mkdir -p -- "$ARTIFACT_HOME"
   ARTIFACT_HOME_REAL=$(CDPATH= cd -- "$ARTIFACT_HOME" 2>/dev/null && pwd -P) || {
     echo "Cannot resolve task artifact root." >&2
-    gc runtime drain-ack
-    exit 1
+    block_workspace_hard_failure \
+      "workspace.artifact-root-unresolvable" \
+      "task artifact root cannot be resolved"
   }
   if [ "$ARTIFACT_HOME_REAL" != "$ARTIFACT_HOME" ]; then
     echo "Task artifact root is redirected outside the city/rig namespace." >&2
-    gc runtime drain-ack
-    exit 1
+    block_workspace_hard_failure \
+      "workspace.artifact-root-redirected" \
+      "task artifact root resolves outside the city and rig namespace"
   fi
   WORKTREE_PARENT="$ARTIFACT_HOME/worktrees"
   if [ -L "$WORKTREE_PARENT" ] ||
      { [ -e "$WORKTREE_PARENT" ] && [ ! -d "$WORKTREE_PARENT" ]; }; then
     echo "Task worktree parent is redirected or is not a directory: $WORKTREE_PARENT" >&2
-    gc runtime drain-ack
-    exit 1
+    block_workspace_hard_failure \
+      "workspace.worktree-parent-unsafe" \
+      "task worktree parent is redirected or is not a directory"
   fi
   mkdir -p -- "$WORKTREE_PARENT"
   WORKTREE_PARENT=$(CDPATH= cd -- "$WORKTREE_PARENT" 2>/dev/null && pwd -P) || {
     echo "Cannot resolve task worktree parent under the city artifact root." >&2
-    gc runtime drain-ack
-    exit 1
+    block_workspace_hard_failure \
+      "workspace.worktree-parent-unresolvable" \
+      "task worktree parent cannot be resolved"
   }
   if [ "$WORKTREE_PARENT" != "$ARTIFACT_HOME/worktrees" ]; then
     echo "Task worktree parent is redirected outside the city artifact root." >&2
-    gc runtime drain-ack
-    exit 1
+    block_workspace_hard_failure \
+      "workspace.worktree-parent-redirected" \
+      "task worktree parent resolves outside the artifact root"
   fi
   WORKTREE_PATH="$WORKTREE_PARENT/$WORK_BEAD_ID"
 
@@ -378,8 +492,9 @@ if [ -z "$WORKTREE" ]; then
     else
       echo "Canonical artifact path already exists but is not this bead's validated worktree: $WORKTREE_PATH" >&2
       echo "STOP. Preserve and resolve the collision manually; do not create an alternate artifact." >&2
-      gc runtime drain-ack
-      exit 1
+      block_workspace_hard_failure \
+        "workspace.artifact-path-collision" \
+        "canonical artifact path exists but is not this bead's registered worktree"
     fi
   fi
 
@@ -390,25 +505,30 @@ if [ -z "$WORKTREE" ]; then
       "$WORKTREE_PATH" "$CITY_ROOT" "$GC_RIG" "$RIG_ROOT" \
       "$WORK_BEAD_ID" canonical-only) || {
         echo "New task worktree failed validation: $WORKTREE_PATH" >&2
-        gc runtime drain-ack
-        exit 1
+        block_workspace_hard_failure \
+          "workspace.new-worktree-invalid" \
+          "new task worktree failed canonical registration validation"
       }
   fi
 fi
 
 # Record the canonical key immediately, then retire any legacy task key.
-gc bd update "$WORK_BEAD_ID" \
+GC_NO_API=1 \
+GC_CITY="$CITY_ROOT" \
+GC_CITY_PATH="$CITY_ROOT" \
+GC_RIG="$GC_RIG" \
+GC_RIG_ROOT="$RIG_ROOT" \
+GC_STORE_ROOT="$RIG_ROOT" \
+GC_STORE_SCOPE=rig \
+gc bd --rig "$GC_RIG" update "$WORK_BEAD_ID" \
   --set-metadata artifact_dir="$WORKTREE" \
   --unset-metadata work_dir || {
     echo "Could not record artifact_dir; refusing to enter an untracked task worktree." >&2
-    gc runtime drain-ack
     exit 1
   }
-cd -- "$WORKTREE" || {
-  echo "Validated task worktree disappeared: $WORKTREE" >&2
-  gc runtime drain-ack
-  exit 1
-}
+printf 'POLECAT_ARTIFACT_READY source=%s artifact=%s\n' \
+  "$WORK_BEAD_ID" "$WORKTREE"
+# END POLECAT_ARTIFACT_BOOTSTRAP
 ```
 
 Worktrees are scoped to the work bead (not the agent name) so that:
@@ -420,7 +540,40 @@ Worktrees are scoped to the work bead (not the agent name) so that:
 
 Check if `metadata.branch` already records a branch:
 ```bash
-BRANCH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.branch // empty')
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json)
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+')
+if [ -z "$WORK_BEAD_ID" ]; then
+  echo "mol-polecat-work requires an input convoy with exactly one tracked member" >&2
+  exit 1
+fi
+BRANCH=$(GC_NO_API=1 \
+  GC_STORE_ROOT="$GC_RIG_ROOT" \
+  GC_STORE_SCOPE=rig \
+  gc bd --rig "$GC_RIG" show "$WORK_BEAD_ID" --json |
+  jq -er --arg id "$WORK_BEAD_ID" '
+    if type == "array" and length == 1 and .[0].id == $id and
+       .[0].status == "open" and ((.[0].assignee // "") == "") and
+       ((.[0].metadata // {}) | type) == "object"
+    then .[0].metadata.branch // ""
+    else error("source identity/state changed")
+    end
+  ') || exit 1
+if [ -n "$BRANCH" ]; then
+  printf 'POLECAT_WORKSPACE_BRANCH_STATE source=%s state=present branch=%s\n' \
+    "$WORK_BEAD_ID" "$BRANCH"
+else
+  printf 'POLECAT_WORKSPACE_BRANCH_STATE source=%s state=absent\n' \
+    "$WORK_BEAD_ID"
+fi
 ```
 
 **If branch exists in metadata** — use the deterministic lease command.
@@ -428,13 +581,43 @@ It performs authoritative synchronization and, for a rejected branch, owns
 the detached rebase plus the crash-safe Git ref transactions. Do not reproduce
 that protocol manually or replace its lease refs with bead metadata:
 ```bash
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || exit 1
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+') || {
+  echo "mol-polecat-work requires an input convoy with exactly one tracked member" >&2
+  exit 1
+}
+BRANCH=$(GC_NO_API=1 \
+  GC_STORE_ROOT="$GC_RIG_ROOT" \
+  GC_STORE_SCOPE=rig \
+  gc bd --rig "$GC_RIG" show "$WORK_BEAD_ID" --json |
+  jq -er --arg id "$WORK_BEAD_ID" '
+    if type == "array" and length == 1 and .[0].id == $id and
+       .[0].status == "open" and ((.[0].assignee // "") == "") and
+       ((.[0].metadata // {}) | type) == "object"
+    then .[0].metadata.branch // ""
+    else error("source identity/state changed")
+    end
+  ') || exit 1
 WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"
-if ! gc gastown polecat-lease workspace \
-     --source "$WORK_BEAD_ID" \
+if ! gc gastown polecat-step exec \
+     --allow-workspace-transition \
      --convoy "{{convoy_id}}" \
-     --base "{{base_branch}}" \
-     --branch "$BRANCH" \
-     --witness "$WITNESS_TARGET"; then
+     --step-ref "mol-polecat-work.workspace-setup" \
+     -- gc gastown polecat-lease workspace \
+       --source "$WORK_BEAD_ID" \
+       --convoy "{{convoy_id}}" \
+       --base "{{base_branch}}" \
+       --branch "$BRANCH" \
+       --witness "$WITNESS_TARGET"; then
     echo "Deterministic workspace/lease recovery stopped; follow its exact diagnostic." >&2
     exit 1
 fi
@@ -443,12 +626,49 @@ fi
 If the command reports a rebase conflict, resolve it while detached and run
 `git rebase --continue`. Then explicitly publish the reviewed result:
 ```bash
-gc gastown polecat-lease publish-rebase \
-  --source "$WORK_BEAD_ID" \
+if ! gc gastown polecat-step exec \
+  --allow-workspace-transition \
   --convoy "{{convoy_id}}" \
-  --base "{{base_branch}}" \
-  --branch "$BRANCH" \
-  --witness "$WITNESS_TARGET"
+  --step-ref "mol-polecat-work.workspace-setup" \
+  -- git rebase --continue; then
+  echo "Rebase continuation failed; refusing to publish transition state." >&2
+  exit 1
+fi
+
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || exit 1
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+') || exit 1
+BRANCH=$(GC_NO_API=1 \
+  GC_STORE_ROOT="$GC_RIG_ROOT" \
+  GC_STORE_SCOPE=rig \
+  gc bd --rig "$GC_RIG" show "$WORK_BEAD_ID" --json |
+  jq -er --arg id "$WORK_BEAD_ID" '
+    if type == "array" and length == 1 and .[0].id == $id and
+       .[0].status == "open" and ((.[0].assignee // "") == "") and
+       ((.[0].metadata // {}) | type) == "object"
+    then .[0].metadata.branch // ""
+    else error("source identity/state changed")
+    end
+  ') || exit 1
+WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"
+gc gastown polecat-step exec \
+  --allow-workspace-transition \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.workspace-setup" \
+  -- gc gastown polecat-lease publish-rebase \
+    --source "$WORK_BEAD_ID" \
+    --convoy "{{convoy_id}}" \
+    --base "{{base_branch}}" \
+    --branch "$BRANCH" \
+    --witness "$WITNESS_TARGET"
 ```
 Never reset or recreate `refs/gascity/polecat-push-leases/*`. They are the
 authoritative crash/race state; the similarly named bead metadata is only a
@@ -459,20 +679,44 @@ is already on the expected branch and only the metadata write was missed.
 Every other non-pristine state fails closed; never delete or reset a ref to
 repair empty metadata:
 ```bash
+gc gastown polecat-step exec \
+  --allow-workspace-transition \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.workspace-setup" \
+  -- bash -se <<'POLECAT_WORKSPACE_BRANCH'
+WORK_BEAD_ID=${GC_POLECAT_SOURCE_ID:-}
+if [ -z "$WORK_BEAD_ID" ] ||
+   [ "${GC_POLECAT_CONVOY_ID:-}" != "{{convoy_id}}" ] ||
+   [ "${GC_POLECAT_ARTIFACT_DIR:-}" != "$(pwd -P)" ]; then
+  echo "polecat-step did not provide the exact authoritative artifact context" >&2
+  exit 1
+fi
+block_workspace_branch_hard_failure() {
+  local code=$1 reason=$2
+  gc gastown polecat-step block \
+    --convoy "{{convoy_id}}" \
+    --step-ref "mol-polecat-work.workspace-setup" \
+    --code "$code" \
+    --reason "$reason"
+  exit $?
+}
 EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"
 CURRENT_BRANCH=$(git branch --show-current)
 if [ "$CURRENT_BRANCH" = "$EXPECTED_BRANCH" ]; then
   BRANCH="$EXPECTED_BRANCH"
   FORK_SHA=$(git merge-base "$BRANCH" "origin/{{base_branch}}") || {
     echo "Cannot derive fork point for recovered branch $BRANCH." >&2
-    gc runtime drain-ack
-    exit 1
+    block_workspace_branch_hard_failure \
+      "workspace.recovered-branch-no-fork" \
+      "canonical recovered branch has no verifiable fork point"
   }
-  gc bd update "$WORK_BEAD_ID" \
+  GC_NO_API=1 \
+  GC_STORE_ROOT="$GC_RIG_ROOT" \
+  GC_STORE_SCOPE=rig \
+  gc bd --rig "$GC_RIG" update "$WORK_BEAD_ID" \
     --set-metadata branch="$BRANCH" \
     --set-metadata fork_sha="$FORK_SHA" || {
       echo "Could not record recovered branch metadata." >&2
-      gc runtime drain-ack
       exit 1
     }
 elif [ -n "$CURRENT_BRANCH" ] ||
@@ -482,29 +726,31 @@ elif [ -n "$CURRENT_BRANCH" ] ||
      ! git merge-base --is-ancestor HEAD "origin/{{base_branch}}"; then
   echo "artifact_dir contains branch/work not recorded in metadata.branch." >&2
   echo "STOP. Recover and record it manually; do not reset or delete refs." >&2
-  gc runtime drain-ack
-  exit 1
+  block_workspace_branch_hard_failure \
+    "workspace.unrecorded-branch-work" \
+    "artifact contains branch, work, or refs absent from source metadata"
 else
   # A clean detached checkout at or behind the fetched base has no unique work.
   git fetch origin {{base_branch}} || {
     echo "Could not refresh origin/{{base_branch}}." >&2
-    gc runtime drain-ack
     exit 1
   }
   BRANCH="$EXPECTED_BRANCH"
   git checkout -b "$BRANCH" "origin/{{base_branch}}" || {
     echo "Could not create $BRANCH from origin/{{base_branch}}." >&2
-    gc runtime drain-ack
     exit 1
   }
-  gc bd update "$WORK_BEAD_ID" \
+  GC_NO_API=1 \
+  GC_STORE_ROOT="$GC_RIG_ROOT" \
+  GC_STORE_SCOPE=rig \
+  gc bd --rig "$GC_RIG" update "$WORK_BEAD_ID" \
     --set-metadata branch="$BRANCH" \
     --set-metadata fork_sha="$(git rev-parse "origin/{{base_branch}}")" || {
       echo "Could not record new branch metadata." >&2
-      gc runtime drain-ack
       exit 1
     }
 fi
+POLECAT_WORKSPACE_BRANCH
 ```
 
 Always create new branches from freshly-fetched `origin/{{base_branch}}`,
@@ -523,12 +769,20 @@ the target.
 
 **4. Ensure clean working state:**
 ```bash
-git status                  # Should be clean
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.workspace-setup" \
+  -- git status
 ```
 
 **5. Run project setup (if configured):**
 ```bash
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.workspace-setup" \
+  -- bash -se <<'POLECAT_WORKSPACE_SETUP'
 {{setup_command}}
+POLECAT_WORKSPACE_SETUP
 ```
 Empty setup_command → skip.
 
@@ -564,9 +818,14 @@ completion command below.
 
 **1. Run pre-flights (skip empty commands silently):**
 ```bash
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.preflight-tests" \
+  -- bash -se <<'POLECAT_PREFLIGHT'
 {{typecheck_command}}
 {{lint_command}}
 {{test_command}}
+POLECAT_PREFLIGHT
 ```
 
 **2. If pre-flights pass:** proceed.
@@ -579,8 +838,17 @@ not your assignment.
 FORBIDDEN: Pushing to {{base_branch}}. FORBIDDEN: Fixing pre-existing failures.
 
 ```bash
-CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
-WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || exit 1
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+') || exit 1
 gc bd create --title "Pre-existing failure: <description>" --type bug --priority 1
 gc mail send <rig>/witness -s "NOTICE: {{base_branch}} has failing pre-flights" \
   -m "Filed: <bead-id>. Proceeding with $WORK_BEAD_ID."
@@ -617,10 +885,26 @@ Do the actual implementation work.
 from load-context. Focus on fixing the specific issue that caused
 rejection — don't redo everything.
 
-Derive your work bead in this shell context:
+Every repository command runs through the exact live stage's read-only artifact
+executor. Each invocation re-derives the sole source from the workflow convoy,
+validates its `metadata.artifact_dir`, and enters that Git worktree. A `cd` or
+shell variable from an earlier tool call never counts. For non-shell file
+tools, first run the executor with `-- pwd`, then use only absolute paths below
+that returned artifact root.
+
+Derive your work bead when a non-repository operation needs its ID:
 ```bash
-CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
-WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || exit 1
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+') || exit 1
 ```
 
 **Commit frequently with detailed messages.** Every commit gets a
@@ -630,6 +914,15 @@ change exists, not just *what* the diff did. The diff already shows
 the what.
 
 ```bash
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.implement" \
+  -- bash -se <<'POLECAT_IMPLEMENT_COMMIT'
+WORK_BEAD_ID=${GC_POLECAT_SOURCE_ID:-}
+if [ -z "$WORK_BEAD_ID" ]; then
+  echo "polecat-step did not provide the authoritative source id" >&2
+  exit 1
+fi
 git add <files>
 git commit -m "<type>: <imperative subject> ($WORK_BEAD_ID)" -m "$(cat <<'BODY'
 <1-3 paragraph explanation:>
@@ -643,6 +936,7 @@ git commit -m "<type>: <imperative subject> ($WORK_BEAD_ID)" -m "$(cat <<'BODY'
 Note any follow-ups, deferred edge cases, or downstream impacts here.
 BODY
 )"
+POLECAT_IMPLEMENT_COMMIT
 ```
 
 Commit types: feat, fix, refactor, perf, test, docs, chore
@@ -668,6 +962,20 @@ Do NOT fix unrelated issues in this branch.
 
 **If stuck (>15 minutes):**
 ```bash
+CONVOY_STATUS=$(GC_NO_API=1 gc convoy status "{{convoy_id}}" --json) || exit 1
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -er \
+  --arg convoy "{{convoy_id}}" '
+  if type == "object" and .schema_version == "1" and
+     .convoy.id == $convoy and (.children | type) == "array" and
+     (.children | length) == 1 and (.children[0].id | type) == "string" and
+     (.children[0].id | length) > 0
+  then .children[0].id
+  else error("expected exact input convoy with one source")
+  end
+') || {
+  echo "mol-polecat-work requires an input convoy with exactly one tracked member" >&2
+  exit 1
+}
 gc mail send <rig>/witness -s "HELP: Stuck on implementation" -m "Issue: $WORK_BEAD_ID
 Problem: <what's blocking you>
 Tried: <what you've attempted>"
@@ -713,9 +1021,14 @@ locally-runnable failures should have been caught before push.
 
 **1. Review the diff:**
 ```bash
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.self-review" \
+  -- bash -se <<'POLECAT_REVIEW_DIFF'
 git diff origin/{{base_branch}}...HEAD
 git log --oneline origin/{{base_branch}}..HEAD
 git diff --stat origin/{{base_branch}}...HEAD
+POLECAT_REVIEW_DIFF
 ```
 
 Check for: bugs, security issues, style violations, missing error handling,
@@ -723,14 +1036,23 @@ debug cruft, unintended file changes. Fix anything you find.
 
 **2. Run quality checks (skip empty commands):**
 ```bash
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.self-review" \
+  -- bash -se <<'POLECAT_QUALITY_CHECKS'
 {{setup_command}}
 {{typecheck_command}}
 {{lint_command}}
 {{build_command}}
+POLECAT_QUALITY_CHECKS
 ```
 
 **3. Run tests — affected subset if rig provides one, full suite otherwise:**
 ```bash
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.self-review" \
+  -- bash -se <<'POLECAT_AFFECTED_TESTS'
 if [ -n "{{affected_tests_command}}" ]; then
     # Rig has an affected-tests detector. Run only the tests our diff
     # touches — same logic the rig's CI uses to dispatch test workflows.
@@ -741,6 +1063,7 @@ else
     # No affected detector — run the full suite (legacy behavior).
     {{test_command}}
 fi
+POLECAT_AFFECTED_TESTS
 ```
 
 **ALL CHECKS MUST PASS.** If your change caused the failure, fix it.
@@ -753,22 +1076,35 @@ submitting.
 
 **4. Ensure everything is committed:**
 ```bash
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.self-review" \
+  -- bash -se <<'POLECAT_REVIEW_STATUS'
 git status                  # Must be clean
 git log origin/{{base_branch}}..HEAD --oneline  # Must show your commits
+POLECAT_REVIEW_STATUS
 ```
 
 If uncommitted changes exist, commit them with a body explaining what
 slipped through the `implement` step (typically a self-review touch-up,
 test addition, or formatter run):
 ```bash
-CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
-WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.self-review" \
+  -- bash -se <<'POLECAT_REVIEW_COMMIT'
+WORK_BEAD_ID=${GC_POLECAT_SOURCE_ID:-}
+if [ -z "$WORK_BEAD_ID" ]; then
+  echo "polecat-step did not provide the authoritative source id" >&2
+  exit 1
+fi
 git add -A
 git commit -m "<type>: <imperative subject> ($WORK_BEAD_ID)" -m "$(cat <<'BODY'
 <Explain what these residual changes are: a self-review fix,
 test-only addition, formatter run, etc. Be specific.>
 BODY
 )"
+POLECAT_REVIEW_COMMIT
 ```
 
 NEVER discard implementation changes with `git checkout -- .`

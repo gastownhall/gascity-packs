@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 GASTOWN="$ROOT/gastown"
 POLECAT_FORMULA="$GASTOWN/formulas/mol-polecat-work.toml"
+POLECAT_STEP="$GASTOWN/commands/polecat-step/run.sh"
 POLECAT_SUBMIT="$GASTOWN/commands/polecat-submit/run.sh"
 WITNESS_FORMULA="$GASTOWN/formulas/mol-witness-patrol.toml"
 SHUTDOWN_FORMULA="$GASTOWN/formulas/mol-shutdown-dance.toml"
@@ -93,9 +94,15 @@ with formula_path.open("rb") as handle:
     formula = tomllib.load(handle)
 workspace = next(step for step in formula["steps"] if step["id"] == "workspace-setup")
 blocks = re.findall(r"```bash\n(.*?)```", workspace["description"], re.DOTALL)
-if len(blocks) < 4:
-    raise SystemExit(f"workspace-setup has {len(blocks)} bash blocks; expected at least 4")
-script = "\n".join(blocks[:4])
+bootstrap = [
+    block for block in blocks
+    if "# BEGIN POLECAT_ARTIFACT_BOOTSTRAP" in block
+]
+if len(bootstrap) != 1:
+    raise SystemExit(
+        f"workspace-setup has {len(bootstrap)} artifact bootstrap fences; expected one"
+    )
+script = bootstrap[0]
 script = script.replace("{{convoy_id}}", "convoy-test")
 script = script.replace("{{base_branch}}", "main")
 if "{{" in script:
@@ -116,6 +123,7 @@ init_repo() {
 
 test_workspace_creation_uses_canonical_sibling() {
     local tmp rig remote city provider canonical setup calls bd_subcommand
+    local foreign foreign_head foreign_status
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
@@ -123,6 +131,7 @@ test_workspace_creation_uses_canonical_sibling() {
     city="$tmp/city"
     provider="$city/.gc/worktrees/demo/polecats/gastown.nux"
     canonical="$city/.gc/worktrees/demo/artifacts/worktrees/ac-safe1"
+    foreign="$tmp/foreign"
     setup="$tmp/workspace-create.sh"
     calls="$tmp/gc-calls"
     bd_subcommand=$(printf '%s%s' b d)
@@ -135,23 +144,36 @@ test_workspace_creation_uses_canonical_sibling() {
     git -C "$rig" push -qu origin main
     mkdir -p "$(dirname "$provider")"
     git -C "$rig" worktree add -qb provider-home "$provider" main
+    init_repo "$foreign"
+    foreign_head=$(git -C "$foreign" rev-parse HEAD)
+    foreign_status=$(git -C "$foreign" status --porcelain)
     extract_workspace_creation "$setup"
 
     (
         gc() {
-            printf '%s\n' "$*" >>"$calls"
-            case "$*" in
+            local call=$*
+            if [[ "$call" == "$bd_subcommand --rig demo "* ]]; then
+                [[ "${GC_NO_API:-}" == "1" &&
+                   "${GC_STORE_ROOT:-}" == "$rig" &&
+                   "${GC_STORE_SCOPE:-}" == "rig" ]] ||
+                    fail "workspace creation used an unpinned bead store"
+                call="$bd_subcommand ${call#"$bd_subcommand --rig demo "}"
+            fi
+            printf '%s\n' "$call" >>"$calls"
+            case "$call" in
                 "convoy status convoy-test --json")
-                    printf '%s\n' '{"children":[{"id":"ac-safe1"}]}'
+                    printf '%s\n' \
+                        '{"schema_version":"1","convoy":{"id":"convoy-test"},"children":[{"id":"ac-safe1"}]}'
                     ;;
                 "$bd_subcommand show ac-safe1 --json")
-                    printf '%s\n' '[{"metadata":{}}]'
+                    printf '%s\n' \
+                        '[{"id":"ac-safe1","status":"open","assignee":"","metadata":{}}]'
                     ;;
                 "$bd_subcommand update ac-safe1 --set-metadata artifact_dir="*)
                     return 0
                     ;;
-                "runtime drain-ack")
-                    fail "canonical workspace creation unexpectedly drain-acked"
+                "gastown polecat-step block "*)
+                    fail "canonical workspace creation unexpectedly blocked"
                     ;;
                 *)
                     fail "unexpected gc call during workspace creation: $*"
@@ -161,6 +183,12 @@ test_workspace_creation_uses_canonical_sibling() {
         export GC_CITY_PATH="$city"
         export GC_RIG=demo
         export GC_RIG_ROOT="$rig"
+        export GIT_CONFIG_COUNT=1
+        export GIT_CONFIG_KEY_0=remote.origin.url
+        export GIT_CONFIG_VALUE_0=file:///definitely-not-the-rig-origin
+        cd "$foreign"
+        # shellcheck source=/dev/null
+        source "$setup"
         cd "$provider"
         # shellcheck source=/dev/null
         source "$setup"
@@ -172,6 +200,9 @@ test_workspace_creation_uses_canonical_sibling() {
         fail "canonical artifact path is not a Git worktree root"
     [[ ! -e "$provider/worktrees/ac-safe1" ]] ||
         fail "formula created a nested task worktree under the provider home"
+    [[ "$(git -C "$foreign" rev-parse HEAD)" == "$foreign_head" &&
+       "$(git -C "$foreign" status --porcelain)" == "$foreign_status" ]] ||
+        fail "artifact bootstrap mutated its inherited foreign Git cwd"
     grep -qF \
         "$bd_subcommand update ac-safe1 --set-metadata artifact_dir=$canonical --unset-metadata work_dir" \
         "$calls" ||
@@ -491,6 +522,7 @@ test_shutdown_probe_scopes_rig_and_fails_closed() {
 test_validator_rejects_provider_and_unrelated_paths() {
     local tmp validator rig city_a city_b provider bead valid got plain
     local alias_root foreign foreign_wt cross_city other_rig wrong_namespace
+    local copied_pointer
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' RETURN
     validator="$tmp/validator.sh"
@@ -527,6 +559,14 @@ test_validator_rejects_provider_and_unrelated_paths() {
     if validate_artifact_worktree \
         "$plain" "$city_a" demo "$rig" ac-plain existing >/dev/null; then
         fail "plain nested directory was accepted as a Git worktree root"
+    fi
+
+    copied_pointer="$provider/worktrees/ac-copied"
+    mkdir -p "$copied_pointer"
+    cp -- "$valid/.git" "$copied_pointer/.git"
+    if validate_artifact_worktree \
+        "$copied_pointer" "$city_a" demo "$rig" ac-copied existing >/dev/null; then
+        fail "copied worktree .git pointer was accepted as registered capacity"
     fi
 
     if validate_artifact_worktree \
@@ -607,21 +647,30 @@ test_workspace_metadata_reads_fail_closed_without_pipefail() {
             set +u
             set +o pipefail
             gc() {
-                printf '%s\n' "$*" >>"$calls"
-                case "$*" in
+                local call=$*
+                if [[ "$call" == "$bd_subcommand --rig demo "* ]]; then
+                    [[ "${GC_NO_API:-}" == "1" &&
+                       "${GC_STORE_ROOT:-}" == "$rig" &&
+                       "${GC_STORE_SCOPE:-}" == "rig" ]] ||
+                        fail "metadata read mode $mode used an unpinned bead store"
+                    call="$bd_subcommand ${call#"$bd_subcommand --rig demo "}"
+                fi
+                printf '%s\n' "$call" >>"$calls"
+                case "$call" in
                     "convoy status convoy-test --json")
-                        printf '%s\n' '{"children":[{"id":"ac-safe1"}]}'
+                        printf '%s\n' \
+                            '{"schema_version":"1","convoy":{"id":"convoy-test"},"children":[{"id":"ac-safe1"}]}'
                         ;;
                     "$bd_subcommand show ac-safe1 --json")
                         case "$mode" in
                             command-failure) return 1 ;;
                             malformed) printf '%s\n' '{' ;;
                             empty) printf '%s\n' '[]' ;;
-                            ambiguous) printf '%s\n' '[{"metadata":{}},{"metadata":{}}]' ;;
+                            ambiguous)
+                                printf '%s\n' \
+                                    '[{"id":"ac-safe1","status":"open","metadata":{}},{"id":"ac-other","status":"open","metadata":{}}]'
+                                ;;
                         esac
-                        ;;
-                    "runtime drain-ack")
-                        return 0
                         ;;
                     "$bd_subcommand update "*)
                         fail "metadata read mode $mode reached a metadata update"
@@ -679,16 +728,26 @@ test_workspace_collision_fails_closed_without_alternate() {
         set +u
         set +o pipefail
         gc() {
-            printf '%s\n' "$*" >>"$calls"
-            case "$*" in
+            local call=$*
+            if [[ "$call" == "$bd_subcommand --rig demo "* ]]; then
+                [[ "${GC_NO_API:-}" == "1" &&
+                   "${GC_STORE_ROOT:-}" == "$rig" &&
+                   "${GC_STORE_SCOPE:-}" == "rig" ]] ||
+                    fail "canonical collision used an unpinned bead store"
+                call="$bd_subcommand ${call#"$bd_subcommand --rig demo "}"
+            fi
+            printf '%s\n' "$call" >>"$calls"
+            case "$call" in
                 "convoy status convoy-test --json")
-                    printf '%s\n' '{"children":[{"id":"ac-safe1"}]}'
+                    printf '%s\n' \
+                        '{"schema_version":"1","convoy":{"id":"convoy-test"},"children":[{"id":"ac-safe1"}]}'
                     ;;
                 "$bd_subcommand show ac-safe1 --json")
-                    printf '%s\n' '[{"metadata":{}}]'
+                    printf '%s\n' \
+                        '[{"id":"ac-safe1","status":"open","assignee":"","metadata":{}}]'
                     ;;
-                "runtime drain-ack")
-                    return 0
+                "gastown polecat-step block "*)
+                    return 75
                     ;;
                 "$bd_subcommand update "*)
                     fail "canonical collision reached a metadata update"
@@ -708,6 +767,10 @@ test_workspace_collision_fails_closed_without_alternate() {
         fail "invalid canonical-path collision did not stop workspace creation"
     fi
 
+    rg -q \
+        'gastown polecat-step block .*--code workspace\.artifact-path-collision ' \
+        "$calls" ||
+        fail "canonical collision did not use the durable block path"
     grep -qF 'preserve me' "$canonical/recovery.txt" ||
         fail "canonical collision contents were not preserved"
     if find "$city/.gc/worktrees/demo/artifacts" \
@@ -745,16 +808,26 @@ test_workspace_rejects_redirected_artifact_root_before_creation() {
         set +u
         set +o pipefail
         gc() {
-            printf '%s\n' "$*" >>"$calls"
-            case "$*" in
+            local call=$*
+            if [[ "$call" == "$bd_subcommand --rig demo "* ]]; then
+                [[ "${GC_NO_API:-}" == "1" &&
+                   "${GC_STORE_ROOT:-}" == "$rig" &&
+                   "${GC_STORE_SCOPE:-}" == "rig" ]] ||
+                    fail "redirect test used an unpinned bead store"
+                call="$bd_subcommand ${call#"$bd_subcommand --rig demo "}"
+            fi
+            printf '%s\n' "$call" >>"$calls"
+            case "$call" in
                 "convoy status convoy-test --json")
-                    printf '%s\n' '{"children":[{"id":"ac-safe1"}]}'
+                    printf '%s\n' \
+                        '{"schema_version":"1","convoy":{"id":"convoy-test"},"children":[{"id":"ac-safe1"}]}'
                     ;;
                 "$bd_subcommand show ac-safe1 --json")
-                    printf '%s\n' '[{"metadata":{}}]'
+                    printf '%s\n' \
+                        '[{"id":"ac-safe1","status":"open","assignee":"","metadata":{}}]'
                     ;;
-                "runtime drain-ack")
-                    return 0
+                "gastown polecat-step block "*)
+                    return 75
                     ;;
                 "$bd_subcommand update "*)
                     fail "redirected artifact root reached a metadata update"
@@ -774,6 +847,10 @@ test_workspace_rejects_redirected_artifact_root_before_creation() {
         fail "redirected artifact root did not stop workspace creation"
     fi
 
+    rg -q \
+        'gastown polecat-step block .*--code workspace\.artifact-root-unsafe ' \
+        "$calls" ||
+        fail "redirected artifact root did not use the durable block path"
     [[ ! -e "$redirected/worktrees" ]] ||
         fail "workspace setup wrote through a redirected artifact root"
 }
@@ -1468,6 +1545,7 @@ test_witness_status_failure_blocks_artifact_removal() {
 test_metadata_migration_and_consumers_are_canonical_first() {
     python3 - \
         "$POLECAT_FORMULA" \
+        "$POLECAT_STEP" \
         "$POLECAT_SUBMIT" \
         "$WITNESS_FORMULA" \
         "$SHUTDOWN_FORMULA" \
@@ -1480,6 +1558,7 @@ import tomllib
 
 (
     polecat_path,
+    polecat_step_path,
     polecat_submit_path,
     witness_path,
     shutdown_path,
@@ -1493,18 +1572,22 @@ import tomllib
 with polecat_path.open("rb") as handle:
     polecat = tomllib.load(handle)
 workspace = next(step["description"] for step in polecat["steps"] if step["id"] == "workspace-setup")
+preflight = next(step["description"] for step in polecat["steps"] if step["id"] == "preflight-tests")
+implement = next(step["description"] for step in polecat["steps"] if step["id"] == "implement")
+self_review = next(step["description"] for step in polecat["steps"] if step["id"] == "self-review")
 submit = next(step["description"] for step in polecat["steps"] if step["id"] == "submit-and-exit")
+polecat_step = polecat_step_path.read_text(encoding="utf-8")
 polecat_submit = polecat_submit_path.read_text(encoding="utf-8")
 
 required_workspace = (
-    'BEAD_JSON=$(gc bd show "$WORK_BEAD_ID" --json) ||',
+    'gc bd --rig "$GC_RIG" show "$WORK_BEAD_ID" --json) ||',
     'expected exactly one work bead object',
     ".artifact_dir // empty",
     ".work_dir // empty",
     "validate_artifact_worktree",
     '--set-metadata artifact_dir="$WORKTREE"',
     "--unset-metadata work_dir",
-    'cd -- "$WORKTREE"',
+    "POLECAT_ARTIFACT_READY",
     'ARTIFACT_HOME="$CITY_ROOT/.gc/worktrees/$GC_RIG/artifacts"',
     'EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"',
     'git merge-base --is-ancestor HEAD "origin/{{base_branch}}"',
@@ -1520,8 +1603,8 @@ for fragment in required_workspace:
         raise SystemExit(f"workspace contract missing: {fragment}")
 if workspace.index(".artifact_dir // empty") > workspace.index(".work_dir // empty"):
     raise SystemExit("legacy task work_dir is read before canonical artifact_dir")
-if workspace.index("validate_artifact_worktree") > workspace.index('cd -- "$WORKTREE"'):
-    raise SystemExit("workspace enters the task path before defining/using its validator")
+if 'cd -- "$WORKTREE"' in workspace:
+    raise SystemExit("workspace bootstrap falsely relies on cwd surviving its fence")
 if "--set-metadata work_dir=" in workspace:
     raise SystemExit("workspace still writes deprecated task work_dir")
 for forbidden in (
@@ -1539,6 +1622,42 @@ if 'git branch -D "$EXPECTED_BRANCH"' in workspace or 'git branch -D "$BRANCH"' 
     raise SystemExit("empty-branch recovery can delete an unrecorded work branch")
 if submit.count("gc gastown polecat-submit execute") != 1:
     raise SystemExit("polecat terminal formula does not delegate exactly once")
+for stage_name, description in (
+    ("preflight-tests", preflight),
+    ("implement", implement),
+    ("self-review", self_review),
+):
+    if "gc gastown polecat-step exec" not in description:
+        raise SystemExit(f"{stage_name} does not enter the durable artifact")
+    if f'--step-ref "mol-polecat-work.{stage_name}"' not in description:
+        raise SystemExit(f"{stage_name} artifact exec is not stage-bound")
+if "bash -se <<'POLECAT_PREFLIGHT'" not in preflight:
+    raise SystemExit("preflight commands do not share one validated artifact invocation")
+for marker in (
+    "POLECAT_REVIEW_DIFF",
+    "POLECAT_QUALITY_CHECKS",
+    "POLECAT_AFFECTED_TESTS",
+    "POLECAT_REVIEW_STATUS",
+    "POLECAT_REVIEW_COMMIT",
+):
+    if marker not in self_review:
+        raise SystemExit(f"self-review artifact fence missing: {marker}")
+for fragment in (
+    ".metadata.artifact_dir",
+    "validate_artifact_context()",
+    'rig_namespace="$CITY_ROOT/.gc/worktrees/$RUNTIME_RIG"',
+    'canonical_artifact="$rig_namespace_real/artifacts/worktrees/$SOURCE_ID"',
+    "worktree list --porcelain -z",
+    'read_one_line_file "$artifact_real/.git"',
+    'read_one_line_file "$admin_real/gitdir"',
+    'validate_artifact_context "$SOURCE_ARTIFACT_DIR"',
+    'validate_artifact_context "."',
+    'exec -- "${EXEC_ARGV[@]}"',
+):
+    if fragment not in polecat_step:
+        raise SystemExit(f"polecat artifact executor missing: {fragment}")
+if '.metadata.work_dir' in polecat_step:
+    raise SystemExit("polecat artifact executor trusts deprecated task work_dir")
 if "--unset-metadata artifact_source_sha" not in polecat_submit:
     raise SystemExit("polecat submission does not retire stale refinery artifact proof")
 if "--unset-metadata artifact_cleanup_state" not in polecat_submit:

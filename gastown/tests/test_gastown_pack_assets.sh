@@ -206,6 +206,7 @@ test_polecat_submit_guard_and_step_completion_contracts() {
         grep -F 'gc.input_convoy_id' "$step_command" >/dev/null ||
         fail "polecat step command must bind outcome, Graph-v2 root, and input convoy"
     if ! python3 - "$formula" <<'PY'
+import re
 import sys
 import tomllib
 
@@ -234,6 +235,133 @@ for step_id in expected:
         errors.append(f"{step_id}: must forbid raw close substitution")
     if "POLECAT_STEP_COMPLETE" not in description:
         errors.append(f"{step_id}: must wait for verified completion output")
+
+exec_counts = {
+    "workspace-setup": 6,
+    "preflight-tests": 1,
+    "implement": 1,
+    "self-review": 5,
+}
+for step_id, count in exec_counts.items():
+    description = steps.get(step_id, {}).get("description", "")
+    actual = description.count("gc gastown polecat-step exec")
+    if actual != count:
+        errors.append(f"{step_id}: artifact exec count {actual}, want {count}")
+    if f'--step-ref "mol-polecat-work.{step_id}"' not in description:
+        errors.append(f"{step_id}: artifact exec does not bind its exact step")
+
+load = steps.get("load-context", {}).get("description", "")
+for index, block in enumerate(
+    re.findall(r"```bash\n(.*?)\n```", load, re.DOTALL), start=1
+):
+    if "$WORK_BEAD_ID" in block and "WORK_BEAD_ID=$(" not in block:
+        errors.append(
+            f"load-context shell fence {index} consumes stale WORK_BEAD_ID"
+        )
+
+workspace = steps.get("workspace-setup", {}).get("description", "")
+workspace_blocks = re.findall(
+    r"```bash\n(.*?)\n```", workspace, re.DOTALL
+)
+bootstrap_blocks = [
+    block for block in workspace_blocks
+    if "# BEGIN POLECAT_ARTIFACT_BOOTSTRAP" in block
+]
+if len(bootstrap_blocks) != 1:
+    errors.append(
+        "workspace-setup must contain one self-contained artifact bootstrap fence"
+    )
+else:
+    bootstrap = bootstrap_blocks[0]
+    for fragment in (
+        "set -euo pipefail",
+        "GC_NO_API=1 gc convoy status",
+        ".convoy.id == $convoy",
+        'git -C "$RIG_ROOT" fetch --prune origin',
+        "POLECAT_ARTIFACT_READY",
+    ):
+        if fragment not in bootstrap:
+            errors.append(
+                f"workspace artifact bootstrap missing {fragment!r}"
+            )
+    if "\ngit fetch --prune origin" in bootstrap:
+        errors.append("workspace artifact bootstrap uses inherited Git cwd")
+
+for index, block in enumerate(workspace_blocks, start=1):
+    derives_source = (
+        "WORK_BEAD_ID=$(" in block
+        or "WORK_BEAD_ID=${GC_POLECAT_SOURCE_ID:-}" in block
+    )
+    if "$WORK_BEAD_ID" in block and not derives_source:
+        errors.append(
+            f"workspace shell fence {index} consumes stale WORK_BEAD_ID"
+        )
+    if (
+        ("git " in block or "polecat-lease" in block or "{{setup_command}}" in block)
+        and "# BEGIN POLECAT_ARTIFACT_BOOTSTRAP" not in block
+        and "gc gastown polecat-step exec" not in block
+    ):
+        errors.append(
+            f"workspace shell fence {index} bypasses artifact exec"
+        )
+
+if workspace.count("--allow-workspace-transition") != 4:
+    errors.append(
+        "workspace-setup must scope exactly four artifact transition invocations"
+    )
+for marker in ("POLECAT_WORKSPACE_SETUP",):
+    block = next((item for item in workspace_blocks if marker in item), "")
+    if not block or "--allow-workspace-transition" in block:
+        errors.append(f"strict workspace fence {marker} permits transition state")
+if (
+    "if ! gc gastown polecat-step exec --allow-workspace-transition "
+    '--convoy "{{convoy_id}}" '
+    '--step-ref "mol-polecat-work.workspace-setup" '
+    "-- git rebase --continue; then" not in workspace
+    or "refusing to publish transition state" not in workspace
+):
+    errors.append("workspace rebase continuation can fall through to publish")
+if "POLECAT_WORKSPACE_BRANCH_STATE" not in workspace:
+    errors.append("workspace branch probe does not emit a visible classification")
+for step_id in expected:
+    description = steps.get(step_id, {}).get("description", "")
+    if "gc runtime drain-ack" in description:
+        errors.append(
+            f"{step_id}: raw drain-ack can re-wake an unblocked hard failure"
+        )
+for fragment in (
+    "gc gastown polecat-step block",
+    '"workspace.canonical-artifact-invalid"',
+    '"workspace.artifact-path-collision"',
+    '"workspace.unrecorded-branch-work"',
+    '"workspace.recovered-branch-no-fork"',
+):
+    if fragment not in workspace:
+        errors.append(f"workspace durable block contract missing {fragment}")
+
+for step_id in ("preflight-tests", "implement", "self-review"):
+    description = steps.get(step_id, {}).get("description", "")
+    for index, block in enumerate(
+        re.findall(r"```bash\n(.*?)\n```", description, re.DOTALL), start=1
+    ):
+        cwd_sensitive = (
+            "git " in block
+            or any(
+                marker in block
+                for marker in (
+                    "{{setup_command}}",
+                    "{{typecheck_command}}",
+                    "{{lint_command}}",
+                    "{{build_command}}",
+                    "{{test_command}}",
+                    "{{affected_tests_command}}",
+                )
+            )
+        )
+        if cwd_sensitive and "gc gastown polecat-step exec" not in block:
+            errors.append(
+                f"{step_id} shell fence {index} bypasses artifact exec"
+            )
 
 if errors:
     print("\n".join(errors), file=sys.stderr)
@@ -303,11 +431,73 @@ PY
     then
         fail "submit guard must never mutate either source or workflow step"
     fi
+    if ! python3 - "$step_command" <<'PY'
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index('if [[ "$ACTION" == "exec" ]]; then')
+end = text.index('if ! run_gc_bd update "$STEP_BEAD_ID"', start)
+branch = text[start:end]
+required = (
+    'run_gc_convoy status "$CONVOY_ID" --json',
+    ".metadata.artifact_dir",
+    "validate_artifact_context()",
+    'rig_namespace="$CITY_ROOT/.gc/worktrees/$RUNTIME_RIG"',
+    'canonical_artifact="$rig_namespace_real/artifacts/worktrees/$SOURCE_ID"',
+    "worktree list --porcelain -z",
+    'read_one_line_file "$artifact_real/.git"',
+    'read_one_line_file "$admin_real/gitdir"',
+    'cd -- "$ARTIFACT_REAL"',
+    'validate_artifact_context "."',
+    'exec -- "${EXEC_ARGV[@]}"',
+)
+for fragment in required:
+    if fragment not in branch:
+        raise SystemExit(f"artifact exec contract missing: {fragment}")
+if "run_gc_bd update" in branch or "eval " in branch:
+    raise SystemExit("artifact exec must remain mutation-free and no-eval")
+if text.index('exec -- "${EXEC_ARGV[@]}"') > end:
+    raise SystemExit("artifact exec does not terminate before completion mutation")
+PY
+    then
+        fail "polecat step artifact executor is not read-only or fail-closed"
+    fi
     ! grep -F 'gc bd close "$WORK_BEAD_ID"' "$formula" >/dev/null ||
         fail "polecat formula must never close the source work bead"
-    grep -F 'later formula stage may nevertheless resume in controller' "$prompt" >/dev/null &&
-        grep -F 'first re-enters the exact source' "$prompt" >/dev/null ||
+    grep -F 'Every process generation and every' "$prompt" >/dev/null &&
+        grep -F 'gc gastown polecat-step exec --convoy ... --step-ref ... -- <argv>' "$prompt" >/dev/null &&
+        grep -F 'A prior `cd`, `$PWD`, or shell variable is never' "$prompt" >/dev/null &&
+        grep -F 'For a non-shell file tool' "$prompt" >/dev/null ||
         fail "polecat prompt must not assume workspace-setup cwd survives later stages"
+    if ! python3 - "$prompt" <<'PY'
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+start = text.index("For a lighter context handoff")
+end = text.index("## Rejection-Aware Resume", start)
+handoff = text[start:end]
+if "gc runtime request-restart" not in handoff:
+    raise SystemExit("lighter handoff must request a controller restart")
+if "gc runtime drain-ack" in handoff:
+    raise SystemExit("lighter handoff must not raw-drain assigned demand")
+if "recipe command fails, drain and" in text:
+    raise SystemExit("recipe-read failure must not raw-drain assigned demand")
+if (
+    "If the exact recipe command fails, escalate" not in text
+    or "leave the assigned source and workflow step unchanged" not in text
+):
+    raise SystemExit("recipe-read failure lacks fail-closed assigned-state guidance")
+quick = next(
+    line for line in text.splitlines()
+    if "| Handoff to next session |" in line
+)
+if "gc runtime request-restart" not in quick or "drain-ack" in quick:
+    raise SystemExit("handoff quick-reference contradicts restart contract")
+PY
+    then
+        fail "polecat prompt retains an unsafe raw-drain handoff"
+    fi
     ! grep -F 'done sequence — branch-shape gate' "$prompt" >/dev/null ||
         fail "polecat final reminder must not retain the pre-artifact-entry sequence"
 
@@ -692,6 +882,127 @@ PY
     fi
 }
 
+test_witness_surfaces_durable_polecat_blocks() {
+    local formula prompt command help
+    formula="$GASTOWN/formulas/mol-witness-patrol.toml"
+    prompt="$GASTOWN/agents/witness/prompt.template.md"
+    command="$GASTOWN/commands/polecat-blocks/run.sh"
+    help="$GASTOWN/commands/polecat-blocks/help.md"
+
+    [[ -x "$command" ]] ||
+        fail "polecat-blocks surfacing command should exist and be executable"
+    [[ -f "$help" ]] ||
+        fail "polecat-blocks surfacing help should be packaged"
+    parse_toml "$formula"
+
+    if ! python3 - "$formula" "$prompt" "$command" "$help" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+formula_path, prompt_path, command_path, help_path = map(pathlib.Path, sys.argv[1:])
+with formula_path.open("rb") as handle:
+    formula = tomllib.load(handle)
+prompt = prompt_path.read_text()
+command = command_path.read_text()
+help_text = help_path.read_text()
+
+steps = formula.get("steps", [])
+by_id = {step.get("id"): step for step in steps}
+required = {
+    "check-inbox",
+    "surface-polecat-blocks",
+    "recover-orphaned-beads",
+    "check-polecat-health",
+}
+if not required.issubset(by_id):
+    raise SystemExit("witness patrol lacks the durable-block surfacing chain")
+surface = by_id["surface-polecat-blocks"]
+if surface.get("needs") != ["check-inbox"]:
+    raise SystemExit("durable-block surfacing must immediately follow inbox")
+if by_id["recover-orphaned-beads"].get("needs") != ["surface-polecat-blocks"]:
+    raise SystemExit("orphan recovery must wait for durable-block surfacing")
+surface_text = surface.get("description", "")
+surface_words = " ".join(surface_text.split())
+if surface_text.count("gc gastown polecat-blocks surface") != 1:
+    raise SystemExit("witness patrol must invoke the surfacer exactly once")
+for fragment in (
+    "all statuses",
+    "gc.polecat_block_version=1",
+    "valid, partial, or malformed",
+    "at least once",
+    "signature receipt",
+    "Quarantined",
+    "surfacing only",
+    "Do not change source/step status",
+    "Do not attempt an in-place unblock",
+):
+    if fragment not in surface_words:
+        raise SystemExit(f"witness surface step lacks {fragment!r}")
+
+for step_id in ("recover-orphaned-beads", "check-polecat-health"):
+    text = by_id[step_id].get("description", "")
+    if "gc.polecat_block_version=1" not in text:
+        raise SystemExit(f"{step_id} does not exclude durable block rows")
+    if "surface-polecat-blocks" not in text:
+        raise SystemExit(f"{step_id} does not defer to the block surfacer")
+
+for fragment in (
+    "gc gastown polecat-blocks surface",
+    "direct rig store",
+    "gc.polecat_block_version=1",
+    "partial/malformed",
+    "Mayor at least once",
+    "signature receipt",
+    "Quarantine",
+    "Exclude every v1-marked row",
+    "never attempt an in-place unblock",
+):
+    if fragment not in prompt:
+        raise SystemExit(f"witness prompt lacks {fragment!r}")
+
+for text, label in ((command, "command"), (help_text, "help")):
+    for fragment in (
+        "gc.polecat_block_version",
+        "gc.polecat_block_alert_version",
+        "gc.polecat_block_alert_signature",
+    ):
+        if fragment not in text:
+            raise SystemExit(f"polecat-blocks {label} lacks {fragment!r}")
+for fragment in (
+    "GC_NO_API=1",
+    "GC_STORE_SCOPE=rig",
+    "list --all",
+    "sha256_stream",
+    "bounded_text",
+    "row_count=$GROUP_COUNT row_ids=$ROW_IDS_LABEL",
+    "mail send mayor/",
+    "run_gc_bd update",
+):
+    if fragment not in command:
+        raise SystemExit(f"polecat-blocks command lacks {fragment!r}")
+if "rows=$GROUP_COMPACT" in command:
+    raise SystemExit("polecat-blocks mail must not embed unbounded full rows")
+if "${" + "digest,," + "}" in command:
+    raise SystemExit("polecat-blocks must remain compatible with Bash 3.2")
+
+mail = command.index("mail send mayor/")
+update = command.index('run_gc_bd update "$ANCHOR_ID"')
+verify = command.index("VERIFY_JSON=", update)
+if not mail < update < verify:
+    raise SystemExit("block receipt must be written only after Mayor mail")
+update_body = command[update:verify]
+if update_body.count("--set-metadata") != 2:
+    raise SystemExit("block receipt update must write exactly two fields")
+for forbidden in ("--status", "--assignee", "--unset-metadata"):
+    if forbidden in update_body:
+        raise SystemExit(f"block receipt update may not use {forbidden}")
+PY
+    then
+        fail "witness durable polecat-block surfacing contract drifted"
+    fi
+}
+
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
@@ -703,5 +1014,6 @@ test_polecat_workflow_is_fail_fast_scoped
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 test_submit_generation_lifecycle_contract
+test_witness_surfaces_durable_polecat_blocks
 
 echo "gastown pack asset tests passed"

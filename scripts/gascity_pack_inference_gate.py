@@ -79,6 +79,11 @@ GASTOWN_POLECAT_LEASE_COMMAND_ORDER = (
     '--force-with-lease="$BRANCH_REF:$EXPECTED_OID"',
 )
 GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT = (
+    "GC_NO_API=1",
+    "GC_STORE_SCOPE=rig",
+    '.schema_version == "1"',
+    ".convoy.id == $convoy",
+    "prove_authoritative_convoy_source",
     "option no-deref",
     '"create $CONTEXT_REF $CONTEXT_OID"',
     '"create $PRE_REF $PRE_OID"',
@@ -105,6 +110,18 @@ GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT = (
     "POLECAT_SUBMIT_PROOF version=%s key=%s context=%s head=%s auto_push=%s",
 )
 GASTOWN_POLECAT_SUBMIT_COMMAND_CONTRACT = (
+    "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR",
+    "unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE",
+    "GC_NO_API=1",
+    "GC_STORE_SCOPE=rig",
+    '.schema_version == "1"',
+    ".convoy.id == $convoy",
+    "revalidate_convoy_membership",
+    "validate_registered_artifact",
+    "worktree list --porcelain -z",
+    'read_one_line_file "$artifact_real/.git"',
+    'read_one_line_file "$admin_real/gitdir"',
+    "verify_execute_artifact_in_cwd",
     'STEP_REF="mol-polecat-work.submit-and-exit"',
     'REPLAY_VERSION="2"',
     'EXECUTE_VERSION="1"',
@@ -138,6 +155,67 @@ GASTOWN_POLECAT_SUBMIT_COMMAND_CONTRACT = (
     "POLECAT_SUBMIT_EXECUTE_COMPLETE",
     "evidence changed before completion",
 )
+GASTOWN_POLECAT_STEP_COMMAND_CONTRACT = (
+    "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR",
+    "unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE",
+    "GC_NO_API=1",
+    "GC_STORE_SCOPE=rig",
+    '.[0].metadata["gc.var.rig_name"] != $rig',
+    '.convoy.id == $convoy',
+    '((.[0].assignee // "") == "")',
+    'worktree list --porcelain -z',
+    'if [[ "$ALLOW_WORKSPACE_TRANSITION" == "true" ]]; then',
+    '"$STEP_REF" != "mol-polecat-work.workspace-setup"',
+    '"$SOURCE_BRANCH" == "$EXPECTED_BRANCH"',
+    '"$current_branch" == "$EXPECTED_BRANCH"',
+    'validate_artifact_context "$SOURCE_ARTIFACT_DIR"',
+    'validate_artifact_context "."',
+    'exec -- "${EXEC_ARGV[@]}"',
+)
+GASTOWN_POLECAT_STEP_BLOCK_CONTRACT = (
+    'gc gastown polecat-step block',
+    "--code MACHINE_CODE --reason TEXT",
+    'BLOCK_REPLAY=false',
+    "block_source_precondition_ok",
+    "block_step_precondition_ok",
+    "revalidate_block_snapshot",
+    '--set-metadata "gc.routed_to=human"',
+    '--set-metadata "gc.polecat_block_previous_route=$BLOCK_PREVIOUS_ROUTE"',
+    '--set-metadata "gc.polecat_block_code=$BLOCK_CODE"',
+    '--set-metadata "gc.polecat_block_step_id=$STEP_BEAD_ID"',
+    'run_gc_bd update "$BLOCK_SOURCE_ID" --status=blocked',
+    'run_gc_bd update "$STEP_BEAD_ID" --status=blocked',
+    "durable block succeeded but drain acknowledgement failed",
+    "POLECAT_STEP_BLOCKED",
+)
+GASTOWN_POLECAT_WORKSPACE_BLOCK_CODES = (
+    '"workspace.canonical-artifact-invalid"',
+    '"workspace.artifact-path-collision"',
+    '"workspace.unrecorded-branch-work"',
+    '"workspace.recovered-branch-no-fork"',
+)
+GASTOWN_POLECAT_STEP_EXEC_FINAL_ORDER = (
+    'cd -- "$ARTIFACT_REAL"',
+    'EXEC_STEP_JSON=$(run_gc_bd show "$STEP_BEAD_ID"',
+    'EXEC_CONVOY_JSON=$(run_gc_convoy status "$CONVOY_ID"',
+    'EXEC_SOURCE_JSON=$(run_gc_bd show "$SOURCE_ID"',
+    'validate_artifact_context "."',
+    'exec -- "${EXEC_ARGV[@]}"',
+)
+GASTOWN_POLECAT_STEP_STAGE_EXEC_COUNTS = {
+    "workspace-setup": 6,
+    "preflight-tests": 1,
+    "implement": 1,
+    "self-review": 5,
+}
+GASTOWN_POLECAT_STEP_WORKSPACE_TRANSITIONS = (
+    "lease-workspace",
+    "rebase-continue",
+    "publish-rebase",
+    "create-or-recover-branch",
+)
+GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN = "# BEGIN POLECAT_ARTIFACT_BOOTSTRAP"
+GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END = "# END POLECAT_ARTIFACT_BOOTSTRAP"
 GASTOWN_FORMULA_CONTRACTS = {
     "mol-review-leg": (
         "write the FULL report into the bead notes",
@@ -2925,12 +3003,248 @@ def command_json_mapping(output: str, *, context: str) -> Mapping[str, Any]:
     raise GateError(f"{context} did not return a JSON object")
 
 
+def continued_commands_containing(block: str, marker: str) -> list[str]:
+    """Return logical backslash-continued shell commands containing marker."""
+    commands: list[str] = []
+    lines = block.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if marker not in line:
+            index += 1
+            continue
+        command = line[line.index(marker) :]
+        while command.rstrip().endswith("\\") and index + 1 < len(lines):
+            index += 1
+            command += "\n" + lines[index]
+        commands.append(re.sub(r"\\\s*\n\s*", " ", command).strip())
+        index += 1
+    return commands
+
+
+def polecat_step_exec_argv(command: str) -> list[str] | None:
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    prefix = ["gc", "gastown", "polecat-step", "exec"]
+    if argv[: len(prefix)] != prefix:
+        return None
+    return argv
+
+
+def workspace_transition_kind(child_argv: Sequence[str], command: str) -> str | None:
+    if list(child_argv[:4]) == ["gc", "gastown", "polecat-lease", "workspace"]:
+        return "lease-workspace"
+    if (
+        list(child_argv[:2]) == ["git", "rebase"]
+        and len(child_argv) >= 3
+        and child_argv[2].removesuffix(";") == "--continue"
+    ):
+        return "rebase-continue"
+    if list(child_argv[:4]) == [
+        "gc",
+        "gastown",
+        "polecat-lease",
+        "publish-rebase",
+    ]:
+        return "publish-rebase"
+    if (
+        list(child_argv[:2]) == ["bash", "-se"]
+        and "POLECAT_WORKSPACE_BRANCH" in command
+    ):
+        return "create-or-recover-branch"
+    return None
+
+
+def validate_gastown_polecat_executor_formula(
+    document: Mapping[str, Any],
+    missing: list[str],
+) -> None:
+    raw_steps = list_dicts(document.get("steps"))
+    steps = {
+        str(step.get("id") or ""): step
+        for step in raw_steps
+        if isinstance(step.get("id"), str)
+    }
+    transition_kinds: list[str] = []
+    marker = "gc gastown polecat-step exec"
+
+    for step_id, step in steps.items():
+        description = step.get("description")
+        if not isinstance(description, str):
+            description = ""
+        shell_blocks = re.findall(r"```bash\n(.*?)\n```", description, re.DOTALL)
+        commands = [
+            command
+            for block in shell_blocks
+            for command in continued_commands_containing(block, marker)
+        ]
+        marker_count = description.count(marker)
+        expected_count = GASTOWN_POLECAT_STEP_STAGE_EXEC_COUNTS.get(step_id, 0)
+        if marker_count != len(commands):
+            missing.append(
+                f"mol-polecat-work: {step_id} has a polecat-step exec marker "
+                "outside a complete bash command"
+            )
+        if len(commands) != expected_count:
+            missing.append(
+                f"mol-polecat-work: {step_id} has {len(commands)} polecat-step "
+                f"exec invocations, want {expected_count}"
+            )
+
+        for command in commands:
+            argv = polecat_step_exec_argv(command)
+            if argv is None or "--" not in argv:
+                missing.append(
+                    f"mol-polecat-work: {step_id} has an invalid polecat-step exec invocation"
+                )
+                continue
+            separator = argv.index("--")
+            options = argv[4:separator]
+            child_argv = argv[separator + 1 :]
+            if not child_argv:
+                missing.append(
+                    f"mol-polecat-work: {step_id} polecat-step exec has no child command"
+                )
+                continue
+
+            option_values: dict[str, list[str]] = {
+                "--convoy": [],
+                "--step-ref": [],
+            }
+            transition_count = 0
+            option_index = 0
+            valid_options = True
+            while option_index < len(options):
+                option = options[option_index]
+                if option == "--allow-workspace-transition":
+                    transition_count += 1
+                    option_index += 1
+                elif option in option_values and option_index + 1 < len(options):
+                    option_values[option].append(options[option_index + 1])
+                    option_index += 2
+                else:
+                    valid_options = False
+                    break
+            if not valid_options:
+                missing.append(
+                    f"mol-polecat-work: {step_id} polecat-step exec has unsupported options"
+                )
+                continue
+            if transition_count > 1:
+                missing.append(
+                    f"mol-polecat-work: {step_id} polecat-step exec repeats "
+                    "--allow-workspace-transition"
+                )
+            if option_values["--convoy"] != ["{{convoy_id}}"]:
+                missing.append(
+                    f"mol-polecat-work: {step_id} polecat-step exec must bind the exact convoy"
+                )
+            expected_ref = f"mol-polecat-work.{step_id}"
+            if option_values["--step-ref"] != [expected_ref]:
+                missing.append(
+                    f"mol-polecat-work: {step_id} polecat-step exec must bind "
+                    f"step-ref {expected_ref!r}"
+                )
+
+            transition_kind = workspace_transition_kind(child_argv, command)
+            if transition_count:
+                if step_id != "workspace-setup" or transition_kind is None:
+                    missing.append(
+                        "mol-polecat-work: --allow-workspace-transition is scoped "
+                        "only to the four workspace transition commands"
+                    )
+                else:
+                    transition_kinds.append(transition_kind)
+            elif transition_kind is not None:
+                missing.append(
+                    f"mol-polecat-work: workspace transition {transition_kind!r} "
+                    "must carry --allow-workspace-transition"
+                )
+
+    if sorted(transition_kinds) != sorted(GASTOWN_POLECAT_STEP_WORKSPACE_TRANSITIONS):
+        missing.append(
+            "mol-polecat-work: workspace transition executor set is "
+            f"{sorted(transition_kinds)!r}, want "
+            f"{sorted(GASTOWN_POLECAT_STEP_WORKSPACE_TRANSITIONS)!r}"
+        )
+
+    all_descriptions = "\n".join(
+        str(step.get("description") or "") for step in raw_steps
+    )
+    workspace_description = str(
+        mapping_value(steps.get("workspace-setup")).get("description") or ""
+    )
+    for bootstrap_marker in (
+        GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN,
+        GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END,
+    ):
+        if all_descriptions.count(bootstrap_marker) != 1:
+            missing.append(
+                f"mol-polecat-work: workspace bootstrap marker "
+                f"{bootstrap_marker!r} must occur exactly once"
+            )
+    bootstrap_blocks = [
+        block
+        for block in re.findall(
+            r"```bash\n(.*?)\n```", workspace_description, re.DOTALL
+        )
+        if GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN in block
+        or GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END in block
+    ]
+    if (
+        len(bootstrap_blocks) != 1
+        or GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN not in bootstrap_blocks[0]
+        or GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END not in bootstrap_blocks[0]
+        or bootstrap_blocks[0].find(GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_BEGIN)
+        >= bootstrap_blocks[0].find(GASTOWN_POLECAT_ARTIFACT_BOOTSTRAP_END)
+    ):
+        missing.append(
+            "mol-polecat-work: artifact bootstrap must be one ordered workspace bash fence"
+        )
+    for step_id in (
+        "load-context",
+        "workspace-setup",
+        "preflight-tests",
+        "implement",
+        "self-review",
+    ):
+        description = str(mapping_value(steps.get(step_id)).get("description") or "")
+        if "gc runtime drain-ack" in description:
+            missing.append(
+                f"mol-polecat-work: {step_id} uses raw drain-ack before durable "
+                "completion or quarantine"
+            )
+    if workspace_description.count("gc gastown polecat-step block") < 2:
+        missing.append(
+            "mol-polecat-work: deterministic workspace hard failures do not use "
+            "both durable block helpers"
+        )
+    for block_code in GASTOWN_POLECAT_WORKSPACE_BLOCK_CODES:
+        if block_code not in workspace_description:
+            missing.append(
+                f"mol-polecat-work: workspace durable block code {block_code!r} is missing"
+            )
+    for executor_context in (
+        "GC_POLECAT_SOURCE_ID",
+        "GC_POLECAT_CONVOY_ID",
+        "GC_POLECAT_ARTIFACT_DIR",
+    ):
+        if executor_context not in workspace_description:
+            missing.append(
+                "mol-polecat-work: workspace branch recovery does not consume "
+                f"executor-owned {executor_context}"
+            )
+
+
 def validate_gastown_polecat_scope_formula(path: Path, missing: list[str]) -> None:
     try:
         document = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         missing.append(f"mol-polecat-work: invalid TOML: {exc}")
         return
+    validate_gastown_polecat_executor_formula(document, missing)
 
     raw_steps = list_dicts(document.get("steps"))
     steps: dict[str, Mapping[str, Any]] = {}
@@ -3215,6 +3529,108 @@ def validate_gastown_orchestration_contract(pack_source: Path) -> None:
                 )
         if "gc hook" in submit_text:
             missing.append("polecat-submit: claim hook use is forbidden")
+
+    step_path = pack_source / "commands" / "polecat-step" / "run.sh"
+    if not step_path.is_file():
+        missing.append(f"polecat-step: missing deterministic command {step_path}")
+    else:
+        step_text = step_path.read_text(encoding="utf-8", errors="replace")
+        for fragment in (
+            *GASTOWN_POLECAT_STEP_COMMAND_CONTRACT,
+            *GASTOWN_POLECAT_STEP_BLOCK_CONTRACT,
+        ):
+            if fragment not in step_text:
+                missing.append(
+                    f"polecat-step: missing executor/block contract fragment {fragment!r}"
+                )
+        final_positions = [
+            step_text.find(fragment)
+            for fragment in GASTOWN_POLECAT_STEP_EXEC_FINAL_ORDER
+        ]
+        if (
+            all(position >= 0 for position in final_positions)
+            and final_positions != sorted(final_positions)
+        ):
+            missing.append(
+                "polecat-step: artifact entry, authoritative rereads, final proof, "
+                "and exec are out of order"
+            )
+        exec_position = step_text.find('exec -- "${EXEC_ARGV[@]}"')
+        exec_branch_start = step_text.rfind(
+            'if [[ "$ACTION" == "exec" ]]; then',
+            0,
+            exec_position,
+        )
+        if exec_branch_start < 0 or exec_position < exec_branch_start:
+            missing.append("polecat-step: could not isolate the read-only exec branch")
+        else:
+            exec_branch = step_text[exec_branch_start:exec_position]
+            mutation = re.search(
+                r"\brun_gc_(?:bd|convoy)\s+"
+                r"(?:create|update|close|reopen|delete|set|unset)\b",
+                exec_branch,
+            )
+            if mutation:
+                missing.append(
+                    "polecat-step: exec branch must not mutate workflow or source state "
+                    f"through {mutation.group(0)!r}"
+                )
+
+    prompt_path = pack_source / "agents" / "polecat" / "prompt.template.md"
+    if not prompt_path.is_file():
+        missing.append(f"polecat prompt: missing template {prompt_path}")
+    else:
+        prompt_text = prompt_path.read_text(encoding="utf-8", errors="replace")
+        recipe_start = prompt_text.find(
+            "If the exact recipe command fails, escalate"
+        )
+        recipe_end = prompt_text.find(
+            "**Formula continuation invariant:**", recipe_start
+        )
+        if recipe_start < 0 or recipe_end < recipe_start:
+            missing.append(
+                "polecat prompt: recipe-read failure lacks fail-closed escalation"
+            )
+        else:
+            recipe_contract = prompt_text[recipe_start:recipe_end]
+            if (
+                "leave the assigned source and workflow step unchanged"
+                not in recipe_contract
+                or "drain-ack" in recipe_contract
+            ):
+                missing.append(
+                    "polecat prompt: recipe-read failure may raw-drain assigned demand"
+                )
+        handoff_start = prompt_text.find("For a lighter context handoff")
+        handoff_end = prompt_text.find(
+            "## Rejection-Aware Resume", handoff_start
+        )
+        if handoff_start < 0 or handoff_end < handoff_start:
+            missing.append("polecat prompt: missing bounded context-handoff contract")
+        else:
+            handoff_contract = prompt_text[handoff_start:handoff_end]
+            if (
+                "gc runtime request-restart" not in handoff_contract
+                or "gc runtime drain-ack" in handoff_contract
+            ):
+                missing.append(
+                    "polecat prompt: context handoff may raw-drain assigned demand"
+                )
+        quick_reference = next(
+            (
+                line
+                for line in prompt_text.splitlines()
+                if "| Handoff to next session |" in line
+            ),
+            "",
+        )
+        if (
+            "gc runtime request-restart" not in quick_reference
+            or "drain-ack" in quick_reference
+        ):
+            missing.append(
+                "polecat prompt: handoff quick-reference contradicts restart contract"
+            )
     if missing:
         raise GateError("Gastown orchestration contract drifted:\n" + "\n".join(f"- {item}" for item in missing))
 

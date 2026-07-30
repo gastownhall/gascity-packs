@@ -21,10 +21,53 @@ printf 'gc' >>"$FAKE_LOG"
 printf ' %q' "$@" >>"$FAKE_LOG"
 printf '\n' >>"$FAKE_LOG"
 
+assert_direct_store() {
+    [[ "${GC_NO_API:-}" == "1" &&
+       "${GC_CITY:-}" == "$EXPECTED_CITY" &&
+       "${GC_CITY_PATH:-}" == "$EXPECTED_CITY" &&
+       "${GC_RIG:-}" == "$EXPECTED_RIG" &&
+       "${GC_RIG_ROOT:-}" == "$EXPECTED_RIG_ROOT" &&
+       "${GC_STORE_ROOT:-}" == "$EXPECTED_RIG_ROOT" &&
+       "${GC_STORE_SCOPE:-}" == "rig" ]] || exit 92
+}
+
 if [[ "$1" == "convoy" && "$2" == "status" ]]; then
+    assert_direct_store
     convoy=$3
     [[ "${FAIL_CONVOY:-}" != "$convoy" ]] || exit 1
-    jq --arg id "$convoy" '.convoys[$id]' "$FAKE_DB"
+    payload=$(jq --arg id "$convoy" '.convoys[$id]' "$FAKE_DB")
+    count=0
+    if [[ -s "$FAKE_DB.submit-convoy-count" ]]; then
+        count=$(<"$FAKE_DB.submit-convoy-count")
+    fi
+    count=$((count + 1))
+    printf '%s\n' "$count" >"$FAKE_DB.submit-convoy-count"
+    if [[ "${SWAP_ARTIFACT_ON_CONVOY_CALL:-}" == "$count" &&
+          ! -e "$FAKE_DB.artifact-swapped" ]]; then
+        "$REAL_GIT" -C "$SWAP_RIG_ROOT" worktree move \
+            "$SWAP_ARTIFACT" "$SWAP_ARTIFACT.registered"
+        mkdir -p "$SWAP_ARTIFACT"
+        cp -a "$SWAP_ARTIFACT.registered/." "$SWAP_ARTIFACT/"
+        : >"$FAKE_DB.artifact-swapped"
+    fi
+    if [[ "${CONVOY_OVERRIDE_ON_CALL:-}" == "$count" ]]; then
+        case "${CONVOY_OVERRIDE_MODE:-}" in
+            wrong-id)
+                payload=$(printf '%s' "$payload" |
+                    jq '.convoy.id = "wrong-convoy"')
+                ;;
+            wrong-schema)
+                payload=$(printf '%s' "$payload" |
+                    jq '.schema_version = "0"')
+                ;;
+            wrong-source)
+                payload=$(printf '%s' "$payload" |
+                    jq '.children = [{id:"wrong-source"}]')
+                ;;
+            *) exit 93 ;;
+        esac
+    fi
+    printf '%s\n' "$payload"
     exit 0
 fi
 
@@ -32,7 +75,17 @@ if [[ "$1" == "gastown" && "$2" == "polecat-lease" ]]; then
     [[ "${FAIL_LEASE:-}" != "1" ]] || exit 97
     printf 'lease-cwd=%s\n' "$PWD" >>"$FAKE_LOG"
     shift 2
-    exec bash "$LEASE_COMMAND" "$@"
+    set +e
+    bash "$LEASE_COMMAND" "$@"
+    lease_code=$?
+    set -e
+    if [[ "$lease_code" -eq 0 &&
+          "${MUTATE_CONVOY_AFTER_LEASE:-}" == "wrong-id" ]]; then
+        jq '.convoys["convoy-1"].convoy.id = "wrong-convoy"' \
+            "$FAKE_DB" >"$FAKE_DB.tmp"
+        mv "$FAKE_DB.tmp" "$FAKE_DB"
+    fi
+    exit "$lease_code"
 fi
 
 if [[ "$1" == "runtime" && "$2" == "drain-ack" ]]; then
@@ -47,8 +100,14 @@ if [[ "$1" == "session" &&
 fi
 
 [[ "$1" == "bd" ]] || exit 90
-subcommand=$2
-shift 2
+assert_direct_store
+shift
+if [[ "${1:-}" == "--rig" ]]; then
+    [[ "${2:-}" == "$EXPECTED_RIG" ]] || exit 94
+    shift 2
+fi
+subcommand=$1
+shift
 case "$subcommand" in
     list)
         assignee=""
@@ -223,6 +282,20 @@ case "$subcommand" in
         ' "$FAKE_DB" >"$FAKE_DB.tmp"
         mv "$FAKE_DB.tmp" "$FAKE_DB"
         : >"$FAKE_DB.post-update"
+        if [[ "$id" == "submit-1" && "$status" == "closed" ]]; then
+            case "${MUTATE_SOURCE_AFTER_STEP_CLOSE:-}" in
+                "")
+                    ;;
+                auto-push-true)
+                    jq '.beads["source-1"].metadata.auto_push = true' \
+                        "$FAKE_DB" >"$FAKE_DB.tmp"
+                    mv "$FAKE_DB.tmp" "$FAKE_DB"
+                    ;;
+                *)
+                    exit 95
+                    ;;
+            esac
+        fi
         [[ "${UPDATE_MODE:-}" != "apply-then-error" ]] || exit 1
         ;;
     *)
@@ -297,7 +370,8 @@ new_case() {
       },
       convoys: {
         "convoy-1": {
-          id: "convoy-1",
+          schema_version: "1",
+          convoy: {id: "convoy-1"},
           children: [{id: "source-1"}]
         }
       }
@@ -306,7 +380,8 @@ new_case() {
 }
 
 run_submit() {
-    local rc
+    local rc runtime_rig
+    runtime_rig=${TEST_RIG-demo}
     set +e
     mkdir -p "$RUN_CWD"
     (
@@ -316,13 +391,17 @@ run_submit() {
     GC_SESSION_ID="${TEST_SESSION_ID-session-1}" \
     GC_ALIAS="session-1" \
     GC_AGENT="agent-name" \
-    GC_RIG="${TEST_RIG-demo}" \
+    GC_RIG="$runtime_rig" \
     GC_CITY_PATH="$CITY" \
     GC_RIG_ROOT="$RIG_ROOT" \
     GC_BIN="$FAKE_GC" \
     LEASE_COMMAND="$LEASE_COMMAND" \
     FAKE_DB="$DB" \
     FAKE_LOG="$LOG" \
+    EXPECTED_CITY="$CITY" \
+    EXPECTED_RIG="$runtime_rig" \
+    EXPECTED_RIG_ROOT="$RIG_ROOT" \
+    REAL_GIT="$(command -v git)" \
     FAIL_LIST_IDENTITY="${FAIL_LIST_IDENTITY:-}" \
     FAIL_SHOW_ID="${FAIL_SHOW_ID:-}" \
     FAIL_FIRST_POST_UPDATE_SHOW="${FAIL_FIRST_POST_UPDATE_SHOW:-}" \
@@ -333,6 +412,18 @@ run_submit() {
     DROP_UNSET_METADATA="${DROP_UNSET_METADATA:-}" \
     INJECT_LIST_ROW_MODE="${INJECT_LIST_ROW_MODE:-}" \
     CLEAR_TOKEN_ON_REVALIDATE_ROOT="${CLEAR_TOKEN_ON_REVALIDATE_ROOT:-}" \
+    CONVOY_OVERRIDE_ON_CALL="${CONVOY_OVERRIDE_ON_CALL:-}" \
+    CONVOY_OVERRIDE_MODE="${CONVOY_OVERRIDE_MODE:-}" \
+    MUTATE_CONVOY_AFTER_LEASE="${MUTATE_CONVOY_AFTER_LEASE:-}" \
+    MUTATE_SOURCE_AFTER_STEP_CLOSE="${MUTATE_SOURCE_AFTER_STEP_CLOSE:-}" \
+    SWAP_ARTIFACT_ON_CONVOY_CALL="${SWAP_ARTIFACT_ON_CONVOY_CALL:-}" \
+    SWAP_ARTIFACT="$ARTIFACT" \
+    SWAP_RIG_ROOT="$RIG_ROOT" \
+    GIT_DIR="${INJECT_GIT_DIR:-}" \
+    GIT_WORK_TREE="${INJECT_GIT_WORK_TREE:-}" \
+    GIT_CONFIG_COUNT="${INJECT_GIT_CONFIG_COUNT:-}" \
+    GIT_CONFIG_KEY_0="${INJECT_GIT_CONFIG_KEY_0:-}" \
+    GIT_CONFIG_VALUE_0="${INJECT_GIT_CONFIG_VALUE_0:-}" \
     TEST_SESSION_ID="${TEST_SESSION_ID:-session-1}" \
         bash "$COMMAND" "$@" >"$OUTPUT" 2>&1
     )
@@ -346,7 +437,7 @@ assert_live_unmutated() {
         fail "submit step status changed unexpectedly: $(<"$OUTPUT")"
     [[ "$(jq -r '.beads["submit-1"].metadata["gc.outcome"] // ""' "$DB")" == "" ]] ||
         fail "submit outcome changed unexpectedly: $(<"$OUTPUT")"
-    ! grep -F 'gc bd update submit-1' "$LOG" >/dev/null ||
+    ! grep -E 'gc bd( --rig [^ ]+)? update submit-1' "$LOG" >/dev/null ||
         fail "submit step update was attempted unexpectedly: $(<"$OUTPUT")"
 }
 
@@ -450,6 +541,35 @@ grep -F '"action":"proceed"' "$OUTPUT" >/dev/null &&
 assert_live_unmutated
 [[ "$(grep -c -- '--assignee session-1' "$LOG")" -eq 1 ]] ||
     fail "deduplicated identity was queried more than once"
+grep -F 'gc bd --rig demo list' "$LOG" >/dev/null ||
+    fail "submit did not pin bead reads to the runtime rig"
+
+new_case guard-rejects-wrong-convoy-identity
+jq '.convoys["convoy-1"].convoy.id = "stale-convoy"' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit guard
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "wrong convoy payload identity returned $RUN_RC instead of 75"
+assert_live_unmutated
+
+new_case guard-rejects-wrong-convoy-schema
+jq '.convoys["convoy-1"].schema_version = "0"' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit guard
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "wrong convoy payload schema returned $RUN_RC instead of 75"
+assert_live_unmutated
+
+new_case guard-rejects-multiple-convoy-sources
+jq '.convoys["convoy-1"].children += [{id:"source-2"}]' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit guard
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "multi-source convoy returned $RUN_RC instead of 75"
+assert_live_unmutated
 
 new_case guard-missing-exact-session-id
 TEST_SESSION_ID=""
@@ -486,7 +606,7 @@ run_submit guard
     fail "stale generation guard returned $RUN_RC instead of 75"
 [[ "$(jq -r '.beads["source-1"].metadata["gc.polecat_submit_convoy"]' "$DB")" == "stale-convoy" ]] ||
     fail "guard overwrote the stale source generation token"
-! grep -F 'gc bd update source-1' "$LOG" >/dev/null ||
+! grep -E 'gc bd( --rig [^ ]+)? update source-1' "$LOG" >/dev/null ||
     fail "guard attempted to mutate the source generation token"
 assert_live_unmutated
 
@@ -547,7 +667,7 @@ run_submit guard
 unset INJECT_LIST_ROW_MODE
 [[ "$RUN_RC" -eq 75 ]] ||
     fail "closed list contract mismatch returned $RUN_RC instead of 75"
-! grep -F 'gc bd update' "$LOG" >/dev/null ||
+! grep -E 'gc bd( --rig [^ ]+)? update' "$LOG" >/dev/null ||
     fail "closed list contract mismatch attempted a mutation"
 
 new_case guard-missing-root-base
@@ -628,6 +748,47 @@ run_submit complete \
     fail "wrong evidence returned $RUN_RC instead of 75"
 assert_live_unmutated
 
+new_case complete-rejects-auto-push-false-policy-drift
+set_generation_token
+jq '.beads["source-1"].metadata.auto_push = true' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode auto_push_false
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "auto_push=false proof accepted live auto_push=true policy"
+assert_live_unmutated
+jq '.beads["source-1"].metadata.auto_push = false' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode auto_push_false
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "corrected auto_push=false policy did not recover: $(<"$OUTPUT")"
+
+new_case complete-rejects-missing-live-artifact-owner
+set_generation_token
+jq 'del(.beads["source-1"].metadata.artifact_dir)' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode auto_push_false
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "auto_push=false proof accepted a missing live artifact_dir"
+assert_live_unmutated
+jq --arg artifact "$ARTIFACT" \
+    '.beads["source-1"].metadata.artifact_dir = $artifact' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode auto_push_false
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "restored live artifact ownership did not recover: $(<"$OUTPUT")"
+
 new_case complete-wrong-target
 jq '.beads["source-1"].metadata.target = "release"' \
     "$DB" >"$DB.tmp"
@@ -665,6 +826,33 @@ run_submit complete \
     fail "refinery completion failed: $(<"$OUTPUT")"
 grep -F 'mode=refinery' "$OUTPUT" >/dev/null ||
     fail "refinery completion did not report its evidence mode"
+
+new_case complete-rejects-refinery-policy-drift
+jq '.beads["source-1"].status = "in_progress" |
+    .beads["source-1"].assignee = "demo/gastown.refinery" |
+    .beads["source-1"].metadata.auto_push = true |
+    del(.beads["source-1"].metadata.branch_ready,
+        .beads["source-1"].metadata.halt_reason)' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+set_generation_token
+jq '.beads["source-1"].metadata.auto_push = false' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode refinery
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "refinery proof accepted live auto_push=false policy"
+assert_live_unmutated
+jq '.beads["source-1"].metadata.auto_push = true' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode refinery
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "corrected refinery auto_push policy did not recover: $(<"$OUTPUT")"
 
 new_case complete-wrong-convoy-source
 set_generation_token
@@ -716,6 +904,18 @@ unset CLEAR_TOKEN_ON_REVALIDATE_ROOT
     fail "source-race fixture did not clear the token"
 assert_live_unmutated
 
+new_case complete-revalidates-convoy-before-step-close
+set_generation_token
+CONVOY_OVERRIDE_ON_CALL=3
+CONVOY_OVERRIDE_MODE=wrong-id
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode auto_push_false
+unset CONVOY_OVERRIDE_ON_CALL CONVOY_OVERRIDE_MODE
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "final pre-close convoy identity change returned $RUN_RC instead of 75"
+assert_live_unmutated
+
 new_case complete-response-loss-terminal-root-replay
 set_generation_token
 UPDATE_MODE=apply-then-error
@@ -741,8 +941,26 @@ run_submit complete \
 grep -F 'POLECAT_SUBMIT_COMPLETE' "$OUTPUT" >/dev/null &&
     grep -F 'replay=true' "$OUTPUT" >/dev/null ||
     fail "terminal-root replay did not report exact replay"
-! grep -F 'gc bd update' "$LOG" >/dev/null ||
+! grep -E 'gc bd( --rig [^ ]+)? update' "$LOG" >/dev/null ||
     fail "closed replay attempted a second mutation"
+
+new_case guard-rejects-convoy-change-during-replay
+set_generation_token
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode auto_push_false
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "convoy replay-reread setup did not complete: $(<"$OUTPUT")"
+printf '0\n' >"$DB.submit-convoy-count"
+: >"$LOG"
+CONVOY_OVERRIDE_ON_CALL=2
+CONVOY_OVERRIDE_MODE=wrong-id
+run_submit guard
+unset CONVOY_OVERRIDE_ON_CALL CONVOY_OVERRIDE_MODE
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "convoy identity change during replay returned $RUN_RC instead of 75"
+! grep -E 'gc bd( --rig [^ ]+)? update' "$LOG" >/dev/null ||
+    fail "convoy change during replay attempted a mutation"
 
 new_case guard-corrupt-refinery-terminal-replay
 jq '.beads["source-1"].assignee = "demo/gastown.refinery"' \
@@ -761,7 +979,7 @@ mv "$DB.tmp" "$DB"
 run_submit guard
 [[ "$RUN_RC" -eq 75 ]] ||
     fail "refinery/branch_ready replay corruption returned $RUN_RC instead of 75"
-! grep -F 'gc bd update' "$LOG" >/dev/null ||
+! grep -E 'gc bd( --rig [^ ]+)? update' "$LOG" >/dev/null ||
     fail "corrupt refinery replay attempted a mutation"
 
 new_case complete-closed-fail-root-replay
@@ -783,7 +1001,7 @@ run_submit complete \
     fail "closed/fail terminal-root replay failed: $(<"$OUTPUT")"
 grep -F 'replay=true' "$OUTPUT" >/dev/null ||
     fail "closed/fail terminal-root replay did not report replay"
-! grep -F 'gc bd update' "$LOG" >/dev/null ||
+! grep -E 'gc bd( --rig [^ ]+)? update' "$LOG" >/dev/null ||
     fail "closed/fail terminal-root replay attempted a mutation"
 
 new_case complete-replay-source-token-mismatch
@@ -800,7 +1018,7 @@ run_submit complete \
     --branch polecat/source-1 --mode auto_push_false
 [[ "$RUN_RC" -eq 75 ]] ||
     fail "replay source token mismatch returned $RUN_RC instead of 75"
-! grep -F 'gc bd update' "$LOG" >/dev/null ||
+! grep -E 'gc bd( --rig [^ ]+)? update' "$LOG" >/dev/null ||
     fail "replay source token mismatch attempted a mutation"
 
 new_case guard-stale-same-source-new-root
@@ -809,7 +1027,8 @@ jq '.beads["root-2"] = (.beads["root-1"] |
       .metadata["gc.input_convoy_id"] = "convoy-2") |
     .beads["submit-1"].metadata["gc.root_bead_id"] = "root-2" |
     .convoys["convoy-2"] = {
-      id: "convoy-2",
+      schema_version: "1",
+      convoy: {id: "convoy-2"},
       children: [{id: "source-1"}]
     } |
     .beads["source-1"].metadata["gc.polecat_submit_convoy"] = "convoy-1"' \
@@ -839,7 +1058,7 @@ mv "$DB.tmp" "$DB"
 run_submit guard
 [[ "$RUN_RC" -eq 75 ]] ||
     fail "duplicate coherent replay returned $RUN_RC instead of 75"
-! grep -F 'gc bd update' "$LOG" >/dev/null ||
+! grep -E 'gc bd( --rig [^ ]+)? update' "$LOG" >/dev/null ||
     fail "duplicate replay attempted a mutation"
 
 new_case guard-old-session-replay-ignored
@@ -860,7 +1079,7 @@ run_submit guard
 unset TEST_SESSION_ID
 [[ "$RUN_RC" -eq 75 ]] ||
     fail "different current session reused old replay evidence"
-! grep -F 'gc bd update' "$LOG" >/dev/null ||
+! grep -E 'gc bd( --rig [^ ]+)? update' "$LOG" >/dev/null ||
     fail "ignored old-session replay attempted a mutation"
 
 new_case complete-rejects-mutable-terminal-metadata
@@ -921,6 +1140,65 @@ run_submit complete \
     fail "missing proof-bound auto_push=false artifact returned $RUN_RC instead of 75"
 assert_live_unmutated
 
+new_case complete-rejects-copied-git-pointer
+set_generation_token
+git -C "$RIG_ROOT" worktree move "$ARTIFACT" "$ARTIFACT.registered"
+mkdir -p "$ARTIFACT"
+cp -a "$ARTIFACT.registered/." "$ARTIFACT/"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode auto_push_false
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "copied linked-worktree .git pointer returned $RUN_RC instead of 75"
+grep -E 'backpointer|registered rig worktree|artifact proof' "$OUTPUT" >/dev/null ||
+    fail "copied .git pointer rejection lacked an artifact-registration diagnostic"
+assert_live_unmutated
+
+new_case complete-requires-proven-closed-refinery-cleanup
+jq '.beads["source-1"].status = "closed" |
+    .beads["source-1"].assignee = "demo/gastown.refinery" |
+    .beads["source-1"].metadata.auto_push = true |
+    del(.beads["source-1"].metadata.branch_ready,
+        .beads["source-1"].metadata.halt_reason)' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+set_generation_token
+cleanup_head=$(git -C "$ARTIFACT" rev-parse --verify HEAD)
+git -C "$RIG_ROOT" worktree remove "$ARTIFACT"
+jq 'del(.beads["source-1"].metadata.artifact_dir)' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode refinery
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "closed refinery accepted an unproven missing artifact"
+assert_live_unmutated
+jq --arg sha "$cleanup_head" \
+    '.beads["source-1"].metadata.artifact_source_sha = $sha |
+     .beads["source-1"].metadata.artifact_cleanup_state = "complete"' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit complete \
+    --convoy convoy-1 --source source-1 \
+    --branch polecat/source-1 --mode refinery
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "exact closed-refinery cleanup proof did not recover: $(<"$OUTPUT")"
+
+new_case execute-sanitizes-inherited-git-overrides
+INJECT_GIT_DIR="$RIG_ROOT/.git"
+INJECT_GIT_WORK_TREE="$RUN_CWD"
+INJECT_GIT_CONFIG_COUNT=1
+INJECT_GIT_CONFIG_KEY_0=core.worktree
+INJECT_GIT_CONFIG_VALUE_0="$RUN_CWD"
+run_submit execute
+unset INJECT_GIT_DIR INJECT_GIT_WORK_TREE
+unset INJECT_GIT_CONFIG_COUNT INJECT_GIT_CONFIG_KEY_0 INJECT_GIT_CONFIG_VALUE_0
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "sanitized Git override execute failed: $(<"$OUTPUT")"
+grep -F "lease-cwd=$ARTIFACT" "$LOG" >/dev/null ||
+    fail "inherited Git overrides redirected terminal submit"
+
 new_case execute-auto-push-false-from-wrong-cwd
 printf 'captured at submit\n' >"$ARTIFACT/final.txt"
 run_submit execute
@@ -968,6 +1246,78 @@ remote_head=$(git -C "$RIG_ROOT" ls-remote origin \
 grep -F 'gc session wake demo/gastown.refinery' "$LOG" >/dev/null &&
     grep -F 'gc session nudge demo/gastown.refinery' "$LOG" >/dev/null ||
     fail "refinery execute did not wake and nudge the refinery"
+
+new_case execute-rejects-final-artifact-swap
+SWAP_ARTIFACT_ON_CONVOY_CALL=3
+run_submit execute
+unset SWAP_ARTIFACT_ON_CONVOY_CALL
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "final artifact swap returned $RUN_RC instead of 75"
+[[ -e "$DB.artifact-swapped" ]] ||
+    fail "final artifact-swap fixture did not run"
+! grep -F 'gc gastown polecat-lease submit' "$LOG" >/dev/null ||
+    fail "artifact swap reached the stateful lease"
+[[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" &&
+   "$(jq -r '.beads["source-1"].metadata["gc.polecat_submit_convoy"] // ""' "$DB")" == "" ]] ||
+    fail "artifact swap advanced terminal Graph state"
+
+new_case execute-replay-rejects-final-artifact-swap
+run_submit execute
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "final replay artifact-swap setup did not complete: $(<"$OUTPUT")"
+rm -f "$DB.drained"
+printf '0\n' >"$DB.submit-convoy-count"
+: >"$LOG"
+SWAP_ARTIFACT_ON_CONVOY_CALL=2
+run_submit execute
+unset SWAP_ARTIFACT_ON_CONVOY_CALL
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "final replay artifact swap returned $RUN_RC instead of 75"
+[[ -e "$DB.artifact-swapped" && ! -e "$DB.drained" ]] ||
+    fail "final replay artifact swap was not detected before drain"
+! grep -F 'gc gastown polecat-lease submit' "$LOG" >/dev/null ||
+    fail "final replay artifact swap repeated the stateful lease"
+mv "$ARTIFACT" "$ARTIFACT.copied"
+git -C "$RIG_ROOT" worktree move "$ARTIFACT.registered" "$ARTIFACT"
+: >"$LOG"
+run_submit execute
+[[ "$RUN_RC" -eq 0 && -e "$DB.drained" ]] ||
+    fail "restored registered replay artifact did not recover: $(<"$OUTPUT")"
+! grep -F 'gc gastown polecat-lease submit' "$LOG" >/dev/null ||
+    fail "restored replay artifact repeated the stateful lease"
+
+new_case execute-rejects-final-pre-lease-convoy-reread
+CONVOY_OVERRIDE_ON_CALL=3
+CONVOY_OVERRIDE_MODE=wrong-source
+run_submit execute
+unset CONVOY_OVERRIDE_ON_CALL CONVOY_OVERRIDE_MODE
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "final pre-lease convoy reread returned $RUN_RC instead of 75"
+! grep -F 'gc gastown polecat-lease submit' "$LOG" >/dev/null ||
+    fail "changed pre-lease convoy reached the stateful lease"
+[[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" &&
+   "$(jq -r '.beads["source-1"].metadata["gc.polecat_submit_convoy"] // ""' "$DB")" == "" ]] ||
+    fail "changed pre-lease convoy advanced terminal Graph state"
+
+new_case execute-revalidates-convoy-after-lease
+MUTATE_CONVOY_AFTER_LEASE=wrong-id
+run_submit execute
+unset MUTATE_CONVOY_AFTER_LEASE
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "post-lease convoy identity change returned $RUN_RC instead of 75"
+[[ "$(grep -c 'gc gastown polecat-lease submit' "$LOG")" -eq 1 ]] ||
+    fail "post-lease convoy fixture did not execute exactly one lease"
+[[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" &&
+   "$(jq -r '.beads["source-1"].metadata["gc.polecat_submit_convoy"] // ""' "$DB")" == "" ]] ||
+    fail "post-lease convoy change advanced terminal Graph state"
+jq '.convoys["convoy-1"].convoy.id = "convoy-1"' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit execute
+[[ "$RUN_RC" -eq 0 ]] ||
+    fail "post-lease convoy recovery did not reuse durable proof: $(<"$OUTPUT")"
+[[ "$(grep -c 'gc gastown polecat-lease submit' "$LOG")" -eq 1 ]] ||
+    fail "post-lease convoy recovery repeated the stateful lease"
 
 new_case execute-lease-failure-is-fail-closed
 printf 'capture before rejected lease\n' >"$ARTIFACT/final.txt"
@@ -1053,6 +1403,26 @@ run_submit execute
     fail "execute mutated proof-bound late work before rejecting it"
 [[ "$(grep -c 'gc gastown polecat-lease submit' "$LOG")" -eq 1 ]] ||
     fail "dirty proof-bound recovery repeated the stateful lease"
+
+new_case execute-rechecks-source-after-step-close
+MUTATE_SOURCE_AFTER_STEP_CLOSE=auto-push-true
+run_submit execute
+unset MUTATE_SOURCE_AFTER_STEP_CLOSE
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "post-close source policy mutation returned $RUN_RC instead of 75"
+[[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "closed" &&
+   "$(jq -r '.beads["source-1"].metadata.auto_push' "$DB")" == "true" &&
+   ! -e "$DB.drained" ]] ||
+    fail "post-close source mutation was not preserved before drain"
+: >"$LOG"
+jq '.beads["source-1"].metadata.auto_push = false' \
+    "$DB" >"$DB.tmp"
+mv "$DB.tmp" "$DB"
+run_submit execute
+[[ "$RUN_RC" -eq 0 && -e "$DB.drained" ]] ||
+    fail "corrected post-close source evidence did not recover: $(<"$OUTPUT")"
+! grep -F 'gc gastown polecat-lease submit' "$LOG" >/dev/null ||
+    fail "post-close source recovery repeated the stateful lease"
 
 new_case execute-drain-failure-replays-without-lease
 FAIL_DRAIN=1

@@ -77,6 +77,32 @@ progressing.
 
 ---
 
+## Durable Polecat Blocks
+
+Before orphan recovery, follow the `mol-witness-patrol`
+`surface-polecat-blocks` step and run exactly:
+
+```bash
+gc gastown polecat-blocks surface
+```
+
+This deterministic command scans every status in the direct rig store for
+`gc.polecat_block_version=1`. It surfaces valid source/step pairs and
+partial/malformed contracts to the Mayor at least once, then records an exact
+signature receipt so later patrols do not resend the same notification.
+Quarantine and all other session-liveness states are diagnostic context only;
+they never suppress a durable block.
+
+The block rows are recovery authority, not ordinary orphans or stuck-agent
+warrant candidates. Exclude every v1-marked row from generic orphan cleanup and
+polecat warrant logic, including partial rows that remain `open` or
+`in_progress`. Do not change their status, ownership, routing, workflow,
+artifact, provenance, or outcome, and never attempt an in-place unblock.
+Recovery requires a separate explicitly authorized reset to a new workflow
+generation.
+
+---
+
 ## Orphaned Bead Recovery (Core Job)
 
 This is why the witness exists. Beads get orphaned when:
@@ -352,6 +378,7 @@ gc mail send mayor/ -s "ESCALATION: Brief description [HIGH]" -m "Details"
 |------------|----------------|
 | Pour next wisp | `gc bd mol wisp mol-witness-patrol --root-only --var binding_prefix='{{ .BindingPrefix }}'` |
 | Context exhaustion | `gc runtime request-restart` |
+| Surface durable polecat blocks | `gc gastown polecat-blocks surface` (all-status direct-store scan; notification receipts deduplicate exact signatures) |
 | Recover orphaned bead | Follow the patrol formula's verified sequence: exact orphan/liveness proof → unset and read back `gc.polecat_submit_convoy` while still assigned → delete/reopen workflow → tokenless routed update + readback |
 | Salvage worktree work | `git add -A && git commit && git push origin HEAD` |
 | Remove validated clean artifact | `git -C "$GC_RIG_ROOT" worktree remove "$WORKTREE"` (only after the formula's fresh ownership, path, SHA, remote-ref, and status checks) |
