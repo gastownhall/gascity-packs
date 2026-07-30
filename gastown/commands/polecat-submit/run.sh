@@ -6,7 +6,9 @@ set -u -o pipefail
 EXIT_USAGE=2
 EXIT_INDETERMINATE=75
 STEP_REF="mol-polecat-work.submit-and-exit"
-REPLAY_VERSION="1"
+REPLAY_VERSION="2"
+EXECUTE_VERSION="1"
+LEASE_EVIDENCE_VERSION="1"
 
 ACTION=${1:-}
 if [[ -n "$ACTION" ]]; then
@@ -22,6 +24,7 @@ usage() {
     cat >&2 <<'EOF'
 Usage:
   gc gastown polecat-submit guard
+  gc gastown polecat-submit execute
   gc gastown polecat-submit complete \
     --convoy ID --source ID --branch polecat/ID \
     --mode auto_push_false|refinery
@@ -67,7 +70,7 @@ if (($#)); then
     exit "$EXIT_USAGE"
 fi
 case "$ACTION" in
-    guard)
+    guard|execute)
         if [[ -n "$MODE$CONVOY_ID$SOURCE_ID$EXPECTED_BRANCH" ]]; then
             usage
             exit "$EXIT_USAGE"
@@ -106,6 +109,15 @@ safe_component() {
     [[ "$value" != *[!A-Za-z0-9._-]* ]]
 }
 
+is_oid() {
+    local value=$1
+    case "${#value}" in
+        40|64) ;;
+        *) return 1 ;;
+    esac
+    [[ "$value" != *[!0-9a-f]* ]]
+}
+
 if [[ "$ACTION" == "complete" ]]; then
     safe_atom "$CONVOY_ID" && safe_atom "$SOURCE_ID" &&
         safe_atom "$EXPECTED_BRANCH" || {
@@ -134,6 +146,10 @@ fi
 run_gc_bd() {
     local command=("$GC_CMD" "bd")
     "${command[@]}" "$@"
+}
+
+run_gc() {
+    "$GC_CMD" "$@"
 }
 
 run_gc_convoy() {
@@ -181,16 +197,200 @@ identity_is_current() {
     return 1
 }
 
+single_origin_url() {
+    local mode=$1 output line count=0 selected=""
+    if [[ "$mode" == "push" ]]; then
+        output=$(git -C "$PROOF_RIG_ROOT" remote get-url --push --all origin 2>/dev/null) ||
+            return 1
+    else
+        output=$(git -C "$PROOF_RIG_ROOT" remote get-url --all origin 2>/dev/null) ||
+            return 1
+    fi
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        count=$((count + 1))
+        selected=$line
+    done <<<"$output"
+    [[ "$count" -eq 1 ]] && safe_atom "$selected" || return 1
+    printf '%s' "$selected"
+}
+
+emit_submit_proof_key() {
+    printf '%s\n' \
+        "schema=gascity-polecat-submit-proof-key-v1" \
+        "source=$SOURCE_ID" \
+        "workflow_root=$ROOT_BEAD_ID" \
+        "step=$STEP_BEAD_ID" \
+        "input_convoy=$CONVOY_ID" \
+        "session_id=$CURRENT_SESSION_ID"
+}
+
+emit_submit_proof_context() {
+    printf '%s\n' \
+        "schema=gascity-polecat-submit-proof-v1" \
+        "version=$LEASE_EVIDENCE_VERSION" \
+        "key=$PROOF_KEY" \
+        "source=$SOURCE_ID" \
+        "workflow_root=$ROOT_BEAD_ID" \
+        "step=$STEP_BEAD_ID" \
+        "step_assignee=$STEP_ASSIGNEE" \
+        "input_convoy=$CONVOY_ID" \
+        "session_id=$CURRENT_SESSION_ID" \
+        "branch=$CANONICAL_SOURCE_BRANCH" \
+        "target=$ROOT_BASE_BRANCH" \
+        "auto_push=$PROOF_AUTO_PUSH" \
+        "head_oid=$SOURCE_EXECUTE_HEAD" \
+        "rig=$ROOT_RIG_NAME" \
+        "binding_prefix=$ROOT_BINDING_PREFIX" \
+        "witness=$PROOF_WITNESS" \
+        "repo_common_fingerprint=$PROOF_REPOSITORY_FINGERPRINT" \
+        "worktree_fingerprint=$PROOF_WORKTREE_FINGERPRINT" \
+        "origin_fetch_fingerprint=$PROOF_FETCH_FINGERPRINT" \
+        "origin_push_fingerprint=$PROOF_PUSH_FINGERPRINT"
+}
+
+prepare_submit_proof_refs() {
+    [[ -n "${GC_RIG_ROOT:-}" ]] || return 1
+    PROOF_RIG_ROOT=$(CDPATH= cd -- "$GC_RIG_ROOT" 2>/dev/null && pwd -P) ||
+        return 1
+    PROOF_KEY=$(emit_submit_proof_key |
+        git -C "$PROOF_RIG_ROOT" hash-object --stdin 2>/dev/null) || return 1
+    is_oid "$PROOF_KEY" || return 1
+    PROOF_NS="refs/gascity/polecat-submit-proofs/v1/$PROOF_KEY"
+    PROOF_CONTEXT_REF="$PROOF_NS/context"
+    PROOF_HEAD_REF="$PROOF_NS/head"
+    git -C "$PROOF_RIG_ROOT" check-ref-format "$PROOF_CONTEXT_REF" >/dev/null 2>&1 &&
+        git -C "$PROOF_RIG_ROOT" check-ref-format "$PROOF_HEAD_REF" >/dev/null 2>&1
+}
+
+probe_submit_proof_refs() {
+    local context_oid="" head_oid="" context_code head_code
+    context_oid=$(git -C "$PROOF_RIG_ROOT" rev-parse \
+        --verify --quiet "$PROOF_CONTEXT_REF" 2>/dev/null)
+    context_code=$?
+    head_oid=$(git -C "$PROOF_RIG_ROOT" rev-parse \
+        --verify --quiet "$PROOF_HEAD_REF" 2>/dev/null)
+    head_code=$?
+    case "$context_code:$head_code" in
+        1:1)
+            PROOF_REF_STATE="absent"
+            ;;
+        0:0)
+            is_oid "$context_oid" && is_oid "$head_oid" || return 1
+            PROOF_REF_STATE="complete"
+            ;;
+        0:1|1:0)
+            PROOF_REF_STATE="partial"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+prepare_submit_proof_context() {
+    local mode=$1 rig_common fetch_url push_url
+    case "$mode" in
+        auto_push_false) PROOF_AUTO_PUSH=false ;;
+        refinery) PROOF_AUTO_PUSH=true ;;
+        *) return 1 ;;
+    esac
+    [[ -n "$SOURCE_EXECUTE_ARTIFACT" ]] || return 1
+    PROOF_WITNESS="${ROOT_RIG_NAME:+$ROOT_RIG_NAME/}${ROOT_BINDING_PREFIX}witness"
+    safe_atom "$PROOF_WITNESS" || return 1
+    prepare_submit_proof_refs || return 1
+    rig_common=$(git -C "$PROOF_RIG_ROOT" rev-parse \
+        --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+    PROOF_COMMON_DIR=$(CDPATH= cd -- "$rig_common" 2>/dev/null && pwd -P) ||
+        return 1
+    PROOF_REPOSITORY_FINGERPRINT=$(printf 'git-common-v1\0%s' "$PROOF_COMMON_DIR" |
+        git -C "$PROOF_RIG_ROOT" hash-object --stdin 2>/dev/null) || return 1
+    PROOF_WORKTREE_FINGERPRINT=$(printf 'worktree-v1\0%s' "$SOURCE_EXECUTE_ARTIFACT" |
+        git -C "$PROOF_RIG_ROOT" hash-object --stdin 2>/dev/null) || return 1
+    fetch_url=$(single_origin_url fetch) || return 1
+    push_url=$(single_origin_url push) || return 1
+    PROOF_FETCH_FINGERPRINT=$(printf 'fetch-url-v1\0%s' "$fetch_url" |
+        git -C "$PROOF_RIG_ROOT" hash-object --stdin 2>/dev/null) || return 1
+    PROOF_PUSH_FINGERPRINT=$(printf 'push-url-v1\0%s' "$push_url" |
+        git -C "$PROOF_RIG_ROOT" hash-object --stdin 2>/dev/null) || return 1
+    for proof_oid in "$PROOF_REPOSITORY_FINGERPRINT" \
+        "$PROOF_WORKTREE_FINGERPRINT" "$PROOF_FETCH_FINGERPRINT" \
+        "$PROOF_PUSH_FINGERPRINT" "$SOURCE_EXECUTE_HEAD"; do
+        is_oid "$proof_oid" || return 1
+    done
+    PROOF_EXPECTED_CONTEXT=$(emit_submit_proof_context |
+        git -C "$PROOF_RIG_ROOT" hash-object --stdin 2>/dev/null) || return 1
+    is_oid "$PROOF_EXPECTED_CONTEXT"
+}
+
+verify_submit_proof() {
+    local context_oid head_oid body expected
+    context_oid=$(git -C "$PROOF_RIG_ROOT" rev-parse --verify "$PROOF_CONTEXT_REF" 2>/dev/null) ||
+        return 1
+    head_oid=$(git -C "$PROOF_RIG_ROOT" rev-parse --verify "$PROOF_HEAD_REF" 2>/dev/null) ||
+        return 1
+    [[ "$context_oid" == "$PROOF_EXPECTED_CONTEXT" &&
+       "$head_oid" == "$SOURCE_EXECUTE_HEAD" ]] || return 1
+    ! git -C "$PROOF_RIG_ROOT" symbolic-ref -q "$PROOF_CONTEXT_REF" >/dev/null 2>&1 &&
+        ! git -C "$PROOF_RIG_ROOT" symbolic-ref -q "$PROOF_HEAD_REF" >/dev/null 2>&1 ||
+        return 1
+    [[ "$(git -C "$PROOF_RIG_ROOT" cat-file -t "$context_oid" 2>/dev/null)" == "blob" &&
+       "$(git -C "$PROOF_RIG_ROOT" cat-file -t "$head_oid" 2>/dev/null)" == "commit" ]] ||
+        return 1
+    body=$(git -C "$PROOF_RIG_ROOT" cat-file blob "$context_oid" 2>/dev/null) ||
+        return 1
+    expected=$(emit_submit_proof_context) || return 1
+    [[ "$body" == "$expected" ]] || return 1
+    VERIFIED_PROOF_KEY=$PROOF_KEY
+    VERIFIED_PROOF_CONTEXT=$context_oid
+    VERIFIED_PROOF_HEAD=$head_oid
+}
+
+verify_artifact_at_submit_proof() {
+    local mode=$1 artifact_real git_top artifact_common head status branch
+    if [[ ! -d "$SOURCE_EXECUTE_ARTIFACT" ]]; then
+        [[ "$mode" == "refinery" && "$SOURCE_STATUS" == "closed" ]] &&
+            return 0
+        return 1
+    fi
+    artifact_real=$(CDPATH= cd -- "$SOURCE_EXECUTE_ARTIFACT" 2>/dev/null && pwd -P) ||
+        return 1
+    [[ "$artifact_real" == "$SOURCE_EXECUTE_ARTIFACT" ]] || return 1
+    git_top=$(git -C "$artifact_real" rev-parse --show-toplevel 2>/dev/null) ||
+        return 1
+    git_top=$(CDPATH= cd -- "$git_top" 2>/dev/null && pwd -P) || return 1
+    [[ "$git_top" == "$artifact_real" ]] || return 1
+    artifact_common=$(git -C "$artifact_real" rev-parse \
+        --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+    artifact_common=$(CDPATH= cd -- "$artifact_common" 2>/dev/null && pwd -P) ||
+        return 1
+    [[ "$artifact_common" == "$PROOF_COMMON_DIR" ]] || return 1
+    branch=$(git -C "$artifact_real" branch --show-current 2>/dev/null) ||
+        return 1
+    head=$(git -C "$artifact_real" rev-parse --verify HEAD 2>/dev/null) ||
+        return 1
+    status=$(git -C "$artifact_real" status --porcelain \
+        --untracked-files=all 2>/dev/null) || return 1
+    [[ "$branch" == "$CANONICAL_SOURCE_BRANCH" &&
+       "$head" == "$SOURCE_EXECUTE_HEAD" &&
+       -z "$status" ]]
+}
+
 replay_closed_step() {
     local closed_matches='[]' listed matches identity
     local candidate present_count context
     local candidate_id candidate_assignee root_id replay_session
     local replay_source replay_convoy replay_branch replay_mode replay_terminal
+    local replay_execute_version replay_lease_version replay_execute_session
+    local replay_execute_step replay_execute_head replay_execute_artifact
+    local replay_proof_key replay_proof_context replay_proof_head
     local root_json root_context root_convoy root_base root_rig root_prefix
     local convoy_json derived_source source_json source_record
     local source_status source_assignee source_branch source_target source_token
     local source_branch_ready source_halt refinery_target
-    local coherent_count=0 replay_line=""
+    local coherent_count=0 replay_line="" legacy_candidates='[]'
+    local candidate_version legacy_context selected_root="" selected_source=""
+    local selected_convoy="" requested_context
 
     for identity in "${RUNTIME_IDENTITIES[@]}"; do
         listed=$(run_gc_bd list --assignee "$identity" --status=closed \
@@ -223,6 +423,69 @@ replay_closed_step() {
 
     while IFS= read -r candidate; do
         [[ -n "$candidate" ]] || continue
+        replay_session=$(printf '%s' "$candidate" | jq -er \
+            '.metadata["gc.polecat_submit_session_id"] // ""' 2>/dev/null) ||
+            fail_closed "closed submit history session metadata is malformed"
+        # Session ids are immutable. Discard unrelated history before applying
+        # the current proof schema so legacy rows from another run cannot poison
+        # the exact current replay.
+        [[ -n "$replay_session" ]] || continue
+        [[ "$replay_session" == "$CURRENT_SESSION_ID" ]] || continue
+        candidate_version=$(printf '%s' "$candidate" | jq -er \
+            '.metadata["gc.polecat_submit_version"] // "" | tostring' 2>/dev/null) ||
+            fail_closed "closed submit history version metadata is malformed"
+        if [[ "$candidate_version" != "$REPLAY_VERSION" ]]; then
+            legacy_context=$(printf '%s' "$candidate" | jq -ce \
+                --arg ref "$STEP_REF" '
+                if (.id | type) == "string" and (.id | length) > 0 and
+                   .status == "closed" and
+                   .metadata["gc.step_ref"] == $ref and
+                   .metadata["gc.outcome"] == "pass" and
+                   .metadata["gc.polecat_submit_version"] == 1 and
+                   (.metadata["gc.root_bead_id"] | type) == "string" and
+                   (.metadata["gc.polecat_submit_source_id"] | type) == "string" and
+                   (.metadata["gc.polecat_submit_convoy_id"] | type) == "string" and
+                   (.metadata["gc.polecat_submit_session_id"] | type) == "string"
+                then {
+                  id: .id,
+                  root: .metadata["gc.root_bead_id"],
+                  source: .metadata["gc.polecat_submit_source_id"],
+                  convoy: .metadata["gc.polecat_submit_convoy_id"],
+                  session: .metadata["gc.polecat_submit_session_id"]
+                }
+                else error("legacy replay row is partial or malformed")
+                end' 2>/dev/null) ||
+                fail_closed "closed submit legacy history is partial or malformed"
+            [[ "$(printf '%s' "$legacy_context" | jq -er '.session')" == \
+               "$CURRENT_SESSION_ID" ]] || continue
+            legacy_candidates=$(jq -cn \
+                --argjson rows "$legacy_candidates" \
+                --argjson row "$legacy_context" '$rows + [$row]') ||
+                fail_closed "could not aggregate legacy submit history"
+            continue
+        fi
+        if [[ "$ACTION" == "complete" ]]; then
+            requested_context=$(printf '%s' "$candidate" | jq -ce '
+                if (.metadata["gc.polecat_submit_source_id"] | type) == "string" and
+                   (.metadata["gc.polecat_submit_convoy_id"] | type) == "string" and
+                   (.metadata["gc.polecat_submit_branch"] | type) == "string" and
+                   (.metadata["gc.polecat_submit_mode"] | type) == "string"
+                then {
+                  source: .metadata["gc.polecat_submit_source_id"],
+                  convoy: .metadata["gc.polecat_submit_convoy_id"],
+                  branch: .metadata["gc.polecat_submit_branch"],
+                  mode: .metadata["gc.polecat_submit_mode"]
+                }
+                else error("requested replay tuple is partial or malformed")
+                end' 2>/dev/null) ||
+                fail_closed "closed submit history lacks a safe requested replay tuple"
+            if [[ "$(printf '%s' "$requested_context" | jq -er '.source')" != "$SOURCE_ID" ||
+                  "$(printf '%s' "$requested_context" | jq -er '.convoy')" != "$CONVOY_ID" ||
+                  "$(printf '%s' "$requested_context" | jq -er '.branch')" != "$EXPECTED_BRANCH" ||
+                  "$(printf '%s' "$requested_context" | jq -er '.mode')" != "$MODE" ]]; then
+                continue
+            fi
+        fi
         present_count=$(printf '%s' "$candidate" | jq -er '
             (.metadata // {}) as $m |
             ["gc.polecat_submit_version",
@@ -231,12 +494,21 @@ replay_closed_step() {
              "gc.polecat_submit_branch",
              "gc.polecat_submit_mode",
              "gc.polecat_submit_terminal",
-             "gc.polecat_submit_session_id"] |
+             "gc.polecat_submit_session_id",
+             "gc.polecat_submit_execute_version",
+             "gc.polecat_submit_lease_version",
+             "gc.polecat_submit_execute_session_id",
+             "gc.polecat_submit_execute_step_id",
+             "gc.polecat_submit_execute_head_sha",
+             "gc.polecat_submit_execute_artifact_dir",
+             "gc.polecat_submit_proof_key",
+             "gc.polecat_submit_proof_context",
+             "gc.polecat_submit_proof_head"] |
             map(. as $key | select($m | has($key))) | length
         ' 2>/dev/null) ||
             fail_closed "closed submit history metadata is malformed"
         [[ "$present_count" != "0" ]] || continue
-        [[ "$present_count" == "7" ]] ||
+        [[ "$present_count" == "16" ]] ||
             fail_closed "closed submit history has partial replay metadata"
 
         context=$(printf '%s' "$candidate" | jq -ec \
@@ -260,7 +532,23 @@ replay_closed_step() {
                (.metadata["gc.polecat_submit_terminal"] |
                   IN("branch_ready", "refinery", "closed")) and
                (.metadata["gc.polecat_submit_session_id"] | type) == "string" and
-               (.metadata["gc.polecat_submit_session_id"] | length) > 0
+               (.metadata["gc.polecat_submit_session_id"] | length) > 0 and
+               .metadata["gc.polecat_submit_execute_version"] == 1 and
+               .metadata["gc.polecat_submit_lease_version"] == 1 and
+               (.metadata["gc.polecat_submit_execute_session_id"] | type) == "string" and
+               (.metadata["gc.polecat_submit_execute_session_id"] | length) > 0 and
+               (.metadata["gc.polecat_submit_execute_step_id"] | type) == "string" and
+               (.metadata["gc.polecat_submit_execute_step_id"] | length) > 0 and
+               (.metadata["gc.polecat_submit_execute_head_sha"] | type) == "string" and
+               (.metadata["gc.polecat_submit_execute_head_sha"] | length) > 0 and
+               (.metadata["gc.polecat_submit_execute_artifact_dir"] | type) == "string" and
+               (.metadata["gc.polecat_submit_execute_artifact_dir"] | length) > 0 and
+               (.metadata["gc.polecat_submit_proof_key"] | type) == "string" and
+               (.metadata["gc.polecat_submit_proof_key"] | length) > 0 and
+               (.metadata["gc.polecat_submit_proof_context"] | type) == "string" and
+               (.metadata["gc.polecat_submit_proof_context"] | length) > 0 and
+               (.metadata["gc.polecat_submit_proof_head"] | type) == "string" and
+               (.metadata["gc.polecat_submit_proof_head"] | length) > 0
             then {
               id: .id,
               assignee: .assignee,
@@ -270,7 +558,16 @@ replay_closed_step() {
               branch: .metadata["gc.polecat_submit_branch"],
               mode: .metadata["gc.polecat_submit_mode"],
               terminal: .metadata["gc.polecat_submit_terminal"],
-              session: .metadata["gc.polecat_submit_session_id"]
+              session: .metadata["gc.polecat_submit_session_id"],
+              execute_version: .metadata["gc.polecat_submit_execute_version"],
+              lease_version: .metadata["gc.polecat_submit_lease_version"],
+              execute_session: .metadata["gc.polecat_submit_execute_session_id"],
+              execute_step: .metadata["gc.polecat_submit_execute_step_id"],
+              execute_head: .metadata["gc.polecat_submit_execute_head_sha"],
+              execute_artifact: .metadata["gc.polecat_submit_execute_artifact_dir"],
+              proof_key: .metadata["gc.polecat_submit_proof_key"],
+              proof_context: .metadata["gc.polecat_submit_proof_context"],
+              proof_head: .metadata["gc.polecat_submit_proof_head"]
             }
             else error("closed submit replay contract mismatch")
             end' 2>/dev/null) ||
@@ -284,11 +581,29 @@ replay_closed_step() {
         replay_mode=$(printf '%s' "$context" | jq -er '.mode')
         replay_terminal=$(printf '%s' "$context" | jq -er '.terminal')
         replay_session=$(printf '%s' "$context" | jq -er '.session')
+        replay_execute_version=$(printf '%s' "$context" | jq -er '.execute_version')
+        replay_lease_version=$(printf '%s' "$context" | jq -er '.lease_version')
+        replay_execute_session=$(printf '%s' "$context" | jq -er '.execute_session')
+        replay_execute_step=$(printf '%s' "$context" | jq -er '.execute_step')
+        replay_execute_head=$(printf '%s' "$context" | jq -er '.execute_head')
+        replay_execute_artifact=$(printf '%s' "$context" | jq -er '.execute_artifact')
+        replay_proof_key=$(printf '%s' "$context" | jq -er '.proof_key')
+        replay_proof_context=$(printf '%s' "$context" | jq -er '.proof_context')
+        replay_proof_head=$(printf '%s' "$context" | jq -er '.proof_head')
         safe_atom "$candidate_id" && safe_atom "$candidate_assignee" &&
             safe_atom "$root_id" && safe_atom "$replay_source" &&
             safe_atom "$replay_convoy" && safe_atom "$replay_branch" &&
-            safe_atom "$replay_session" ||
+            safe_atom "$replay_session" && safe_atom "$replay_execute_session" &&
+            safe_atom "$replay_execute_step" && is_oid "$replay_execute_head" &&
+            is_oid "$replay_proof_key" && is_oid "$replay_proof_context" &&
+            is_oid "$replay_proof_head" ||
             fail_closed "closed submit replay identity is unsafe"
+        [[ "$replay_execute_version" == "$EXECUTE_VERSION" &&
+           "$replay_lease_version" == "$LEASE_EVIDENCE_VERSION" &&
+           "$replay_execute_session" == "$replay_session" &&
+           "$replay_execute_step" == "$candidate_id" &&
+           "$replay_proof_head" == "$replay_execute_head" ]] ||
+            fail_closed "closed submit replay execution receipt is incoherent"
         identity_is_current "$candidate_assignee" ||
             fail_closed "closed submit replay assignee is not a current identity"
         # A runtime name or alias may be reused. The persisted session identity
@@ -321,7 +636,16 @@ replay_closed_step() {
             --argjson version "$REPLAY_VERSION" --arg source "$replay_source" \
             --arg convoy "$replay_convoy" --arg branch "$replay_branch" \
             --arg mode "$replay_mode" --arg terminal "$replay_terminal" \
-            --arg session "$replay_session" '
+            --arg session "$replay_session" \
+            --argjson execute_version "$EXECUTE_VERSION" \
+            --argjson lease_version "$LEASE_EVIDENCE_VERSION" \
+            --arg execute_session "$replay_execute_session" \
+            --arg execute_step "$replay_execute_step" \
+            --arg execute_head "$replay_execute_head" \
+            --arg execute_artifact "$replay_execute_artifact" \
+            --arg proof_key "$replay_proof_key" \
+            --arg proof_context "$replay_proof_context" \
+            --arg proof_head "$replay_proof_head" '
             type == "array" and length == 1 and .[0].id == $id and
             .[0].status == "closed" and .[0].assignee == $actor and
             .[0].metadata["gc.step_ref"] == $ref and
@@ -333,7 +657,16 @@ replay_closed_step() {
             .[0].metadata["gc.polecat_submit_branch"] == $branch and
             .[0].metadata["gc.polecat_submit_mode"] == $mode and
             .[0].metadata["gc.polecat_submit_terminal"] == $terminal and
-            .[0].metadata["gc.polecat_submit_session_id"] == $session
+            .[0].metadata["gc.polecat_submit_session_id"] == $session and
+            .[0].metadata["gc.polecat_submit_execute_version"] == $execute_version and
+            .[0].metadata["gc.polecat_submit_lease_version"] == $lease_version and
+            .[0].metadata["gc.polecat_submit_execute_session_id"] == $execute_session and
+            .[0].metadata["gc.polecat_submit_execute_step_id"] == $execute_step and
+            .[0].metadata["gc.polecat_submit_execute_head_sha"] == $execute_head and
+            .[0].metadata["gc.polecat_submit_execute_artifact_dir"] == $execute_artifact and
+            .[0].metadata["gc.polecat_submit_proof_key"] == $proof_key and
+            .[0].metadata["gc.polecat_submit_proof_context"] == $proof_context and
+            .[0].metadata["gc.polecat_submit_proof_head"] == $proof_head
         ' >/dev/null 2>&1 ||
             fail_closed "closed submit replay changed after listing"
 
@@ -399,14 +732,33 @@ replay_closed_step() {
         source_json=$(run_gc_bd show "$replay_source" --json 2>/dev/null) ||
             fail_closed "could not read replay source"
         source_record=$(printf '%s' "$source_json" | jq -ce \
-            --arg id "$replay_source" '
+            --arg id "$replay_source" \
+            --argjson execute_version "$EXECUTE_VERSION" \
+            --argjson lease_version "$LEASE_EVIDENCE_VERSION" \
+            --arg execute_session "$replay_execute_session" \
+            --arg execute_step "$replay_execute_step" \
+            --arg execute_head "$replay_execute_head" \
+            --arg execute_artifact "$replay_execute_artifact" \
+            --arg proof_key "$replay_proof_key" \
+            --arg proof_context "$replay_proof_context" \
+            --arg proof_head "$replay_proof_head" '
             if type == "array" and length == 1 and .[0].id == $id and
                (.[0].status | type) == "string" and
                ((.[0].assignee // "") | type) == "string" and
                ((.[0].metadata // {}) | type) == "object" and
                (.[0].metadata.branch | type) == "string" and
                (.[0].metadata.target | type) == "string" and
-               (.[0].metadata["gc.polecat_submit_convoy"] | type) == "string"
+               (.[0].metadata["gc.polecat_submit_convoy"] | type) == "string" and
+               ((.[0].metadata.artifact_dir // "") | type) == "string" and
+               .[0].metadata["gc.polecat_submit_execute_version"] == $execute_version and
+               .[0].metadata["gc.polecat_submit_lease_version"] == $lease_version and
+               .[0].metadata["gc.polecat_submit_execute_session_id"] == $execute_session and
+               .[0].metadata["gc.polecat_submit_execute_step_id"] == $execute_step and
+               .[0].metadata["gc.polecat_submit_execute_head_sha"] == $execute_head and
+               .[0].metadata["gc.polecat_submit_execute_artifact_dir"] == $execute_artifact and
+               .[0].metadata["gc.polecat_submit_proof_key"] == $proof_key and
+               .[0].metadata["gc.polecat_submit_proof_context"] == $proof_context and
+               .[0].metadata["gc.polecat_submit_proof_head"] == $proof_head
             then .[0]
             else error("replay source identity/state mismatch")
             end' 2>/dev/null) ||
@@ -429,6 +781,43 @@ replay_closed_step() {
            "$source_target" == "$root_base" &&
            "$source_token" == "$replay_convoy" ]] ||
             fail_closed "replay source generation, branch, or target mismatched"
+
+        STEP_BEAD_ID=$candidate_id
+        STEP_ASSIGNEE=$candidate_assignee
+        ROOT_BEAD_ID=$root_id
+        CONVOY_ID=$replay_convoy
+        SOURCE_ID=$replay_source
+        CANONICAL_SOURCE_BRANCH=$replay_branch
+        ROOT_BASE_BRANCH=$root_base
+        ROOT_RIG_NAME=$root_rig
+        ROOT_BINDING_PREFIX=$root_prefix
+        REFINERY_TARGET=$refinery_target
+        SOURCE_STATUS=$source_status
+        SOURCE_ASSIGNEE=$source_assignee
+        SOURCE_BRANCH=$source_branch
+        SOURCE_TARGET=$source_target
+        SOURCE_SUBMIT_CONVOY=$source_token
+        SOURCE_BRANCH_READY=$source_branch_ready
+        SOURCE_HALT_REASON=$source_halt
+        SOURCE_ARTIFACT_DIR=$(printf '%s' "$source_record" | jq -er \
+            '.metadata.artifact_dir // ""')
+        SOURCE_EXECUTE_VERSION=$replay_execute_version
+        SOURCE_LEASE_VERSION=$replay_lease_version
+        SOURCE_EXECUTE_SESSION=$replay_execute_session
+        SOURCE_EXECUTE_STEP=$replay_execute_step
+        SOURCE_EXECUTE_HEAD=$replay_execute_head
+        SOURCE_EXECUTE_ARTIFACT=$replay_execute_artifact
+        SOURCE_PROOF_KEY=$replay_proof_key
+        SOURCE_PROOF_CONTEXT=$replay_proof_context
+        SOURCE_PROOF_HEAD=$replay_proof_head
+        MODE=$replay_mode
+        prepare_submit_proof_context "$replay_mode" &&
+            [[ "$SOURCE_PROOF_KEY" == "$PROOF_KEY" &&
+               "$SOURCE_PROOF_CONTEXT" == "$PROOF_EXPECTED_CONTEXT" &&
+               "$SOURCE_PROOF_HEAD" == "$SOURCE_EXECUTE_HEAD" ]] &&
+            verify_submit_proof &&
+            verify_artifact_at_submit_proof "$replay_mode" ||
+            fail_closed "closed submit replay create-only proof did not verify"
         case "$replay_mode" in
             auto_push_false)
                 [[ "$source_status" == "open" &&
@@ -447,6 +836,9 @@ replay_closed_step() {
         esac
 
         coherent_count=$((coherent_count + 1))
+        selected_root=$root_id
+        selected_source=$replay_source
+        selected_convoy=$replay_convoy
         if [[ "$ACTION" == "guard" ]]; then
             replay_line=$(jq -cn \
                 --arg contract "polecat-submit.v1" \
@@ -471,6 +863,19 @@ replay_closed_step() {
         fi
     done < <(printf '%s' "$closed_matches" | jq -c '.[]')
 
+    legacy_count=$(printf '%s' "$legacy_candidates" | jq -er 'length') ||
+        fail_closed "could not count legacy submit history"
+    if [[ "$legacy_count" -gt 0 ]]; then
+        if [[ "$coherent_count" -eq 0 ]]; then
+            fail_closed "only legacy v1 submit history matched the current session"
+        fi
+        printf '%s' "$legacy_candidates" | jq -e \
+            --arg root "$selected_root" --arg source "$selected_source" \
+            --arg convoy "$selected_convoy" '
+            all(.[]; .root != $root or .source != $source or .convoy != $convoy)
+        ' >/dev/null 2>&1 ||
+            fail_closed "legacy v1 history is canonically relevant but lacks durable proof"
+    fi
     [[ "$coherent_count" -le 1 ]] ||
         fail_closed "multiple coherent closed submit replays matched"
     [[ "$coherent_count" -eq 1 ]] || return 1
@@ -506,7 +911,16 @@ done
 STEP_MATCH_COUNT=$(printf '%s' "$STEP_MATCHES" | jq -er 'length') ||
     fail_closed "could not count current submit steps"
 if [[ "$STEP_MATCH_COUNT" == "0" ]]; then
-    replay_closed_step && exit 0
+    if REPLAY_OUTPUT=$(replay_closed_step); then
+        printf '%s\n' "$REPLAY_OUTPUT"
+        if [[ "$ACTION" == "execute" ]]; then
+            run_gc runtime drain-ack ||
+                fail_closed "closed submit replay verified but drain acknowledgement failed"
+            printf 'POLECAT_SUBMIT_EXECUTE_COMPLETE replay=true session=%s\n' \
+                "$CURRENT_SESSION_ID"
+        fi
+        exit 0
+    fi
     fail_closed "no current submit step or coherent closed replay was found"
 fi
 [[ "$STEP_MATCH_COUNT" == "1" ]] ||
@@ -614,6 +1028,9 @@ if [[ "$ACTION" == "complete" && "$DERIVED_SOURCE_ID" != "$SOURCE_ID" ]]; then
 fi
 SOURCE_ID=$DERIVED_SOURCE_ID
 CANONICAL_SOURCE_BRANCH="polecat/$SOURCE_ID"
+if [[ "$ACTION" == "execute" ]]; then
+    EXPECTED_BRANCH=$CANONICAL_SOURCE_BRANCH
+fi
 SUBMIT_SESSION_ID=$CURRENT_SESSION_ID
 
 load_source() {
@@ -632,7 +1049,29 @@ load_source() {
            (((.[0].metadata | has("halt_reason")) | not) or
             (.[0].metadata.halt_reason | type) == "string") and
            (((.[0].metadata | has("gc.polecat_submit_convoy")) | not) or
-            (.[0].metadata["gc.polecat_submit_convoy"] | type) == "string")
+            (.[0].metadata["gc.polecat_submit_convoy"] | type) == "string") and
+           (((.[0].metadata | has("artifact_dir")) | not) or
+            (.[0].metadata.artifact_dir | type) == "string") and
+           (((.[0].metadata | has("auto_push")) | not) or
+            (.[0].metadata.auto_push | type) == "boolean") and
+           (((.[0].metadata | has("gc.polecat_submit_execute_version")) | not) or
+            (.[0].metadata["gc.polecat_submit_execute_version"] | type) == "number") and
+           (((.[0].metadata | has("gc.polecat_submit_lease_version")) | not) or
+            (.[0].metadata["gc.polecat_submit_lease_version"] | type) == "number") and
+           (((.[0].metadata | has("gc.polecat_submit_execute_session_id")) | not) or
+            (.[0].metadata["gc.polecat_submit_execute_session_id"] | type) == "string") and
+           (((.[0].metadata | has("gc.polecat_submit_execute_step_id")) | not) or
+            (.[0].metadata["gc.polecat_submit_execute_step_id"] | type) == "string") and
+           (((.[0].metadata | has("gc.polecat_submit_execute_head_sha")) | not) or
+            (.[0].metadata["gc.polecat_submit_execute_head_sha"] | type) == "string") and
+           (((.[0].metadata | has("gc.polecat_submit_execute_artifact_dir")) | not) or
+            (.[0].metadata["gc.polecat_submit_execute_artifact_dir"] | type) == "string") and
+           (((.[0].metadata | has("gc.polecat_submit_proof_key")) | not) or
+            (.[0].metadata["gc.polecat_submit_proof_key"] | type) == "string") and
+           (((.[0].metadata | has("gc.polecat_submit_proof_context")) | not) or
+            (.[0].metadata["gc.polecat_submit_proof_context"] | type) == "string") and
+           (((.[0].metadata | has("gc.polecat_submit_proof_head")) | not) or
+            (.[0].metadata["gc.polecat_submit_proof_head"] | type) == "string")
         then .[0]
         else error("source identity/state mismatch")
         end' 2>/dev/null) || return 1
@@ -651,6 +1090,31 @@ load_source() {
         '.metadata.halt_reason // ""')
     SOURCE_SUBMIT_CONVOY=$(printf '%s' "$SOURCE_RECORD" | jq -er \
         '.metadata["gc.polecat_submit_convoy"] // ""')
+    SOURCE_ARTIFACT_DIR=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata.artifact_dir // ""')
+    SOURCE_AUTO_PUSH=$(printf '%s' "$SOURCE_RECORD" | jq -er '
+        if .metadata | has("auto_push")
+        then (.metadata.auto_push | tostring)
+        else ""
+        end')
+    SOURCE_EXECUTE_VERSION=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_execute_version"] // "" | tostring')
+    SOURCE_LEASE_VERSION=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_lease_version"] // "" | tostring')
+    SOURCE_EXECUTE_SESSION=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_execute_session_id"] // ""')
+    SOURCE_EXECUTE_STEP=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_execute_step_id"] // ""')
+    SOURCE_EXECUTE_HEAD=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_execute_head_sha"] // ""')
+    SOURCE_EXECUTE_ARTIFACT=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_execute_artifact_dir"] // ""')
+    SOURCE_PROOF_KEY=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_proof_key"] // ""')
+    SOURCE_PROOF_CONTEXT=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_proof_context"] // ""')
+    SOURCE_PROOF_HEAD=$(printf '%s' "$SOURCE_RECORD" | jq -er \
+        '.metadata["gc.polecat_submit_proof_head"] // ""')
 }
 
 load_source ||
@@ -707,6 +1171,15 @@ close_step() {
         --set-metadata "gc.polecat_submit_mode=$replay_mode" \
         --set-metadata "gc.polecat_submit_terminal=$replay_terminal" \
         --set-metadata "gc.polecat_submit_session_id=$SUBMIT_SESSION_ID" \
+        --set-metadata "gc.polecat_submit_execute_version=$EXECUTE_VERSION" \
+        --set-metadata "gc.polecat_submit_lease_version=$LEASE_EVIDENCE_VERSION" \
+        --set-metadata "gc.polecat_submit_execute_session_id=$SOURCE_EXECUTE_SESSION" \
+        --set-metadata "gc.polecat_submit_execute_step_id=$SOURCE_EXECUTE_STEP" \
+        --set-metadata "gc.polecat_submit_execute_head_sha=$SOURCE_EXECUTE_HEAD" \
+        --set-metadata "gc.polecat_submit_execute_artifact_dir=$SOURCE_EXECUTE_ARTIFACT" \
+        --set-metadata "gc.polecat_submit_proof_key=$SOURCE_PROOF_KEY" \
+        --set-metadata "gc.polecat_submit_proof_context=$SOURCE_PROOF_CONTEXT" \
+        --set-metadata "gc.polecat_submit_proof_head=$SOURCE_PROOF_HEAD" \
         --status=closed \
         --append-notes "$note" >/dev/null || true
     verify=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) || return 1
@@ -717,7 +1190,16 @@ close_step() {
         --arg source "$SOURCE_ID" --arg convoy "$CONVOY_ID" \
         --arg branch "$CANONICAL_SOURCE_BRANCH" \
         --arg mode "$replay_mode" --arg terminal "$replay_terminal" \
-        --arg session "$SUBMIT_SESSION_ID" '
+        --arg session "$SUBMIT_SESSION_ID" \
+        --argjson execute_version "$EXECUTE_VERSION" \
+        --argjson lease_version "$LEASE_EVIDENCE_VERSION" \
+        --arg execute_session "$SOURCE_EXECUTE_SESSION" \
+        --arg execute_step "$SOURCE_EXECUTE_STEP" \
+        --arg execute_head "$SOURCE_EXECUTE_HEAD" \
+        --arg execute_artifact "$SOURCE_EXECUTE_ARTIFACT" \
+        --arg proof_key "$SOURCE_PROOF_KEY" \
+        --arg proof_context "$SOURCE_PROOF_CONTEXT" \
+        --arg proof_head "$SOURCE_PROOF_HEAD" '
         type == "array" and length == 1 and .[0].id == $id and
         .[0].status == "closed" and .[0].assignee == $actor and
         .[0].metadata["gc.step_ref"] == $ref and
@@ -729,9 +1211,360 @@ close_step() {
         .[0].metadata["gc.polecat_submit_branch"] == $branch and
         .[0].metadata["gc.polecat_submit_mode"] == $mode and
         .[0].metadata["gc.polecat_submit_terminal"] == $terminal and
-        .[0].metadata["gc.polecat_submit_session_id"] == $session
+        .[0].metadata["gc.polecat_submit_session_id"] == $session and
+        .[0].metadata["gc.polecat_submit_execute_version"] == $execute_version and
+        .[0].metadata["gc.polecat_submit_lease_version"] == $lease_version and
+        .[0].metadata["gc.polecat_submit_execute_session_id"] == $execute_session and
+        .[0].metadata["gc.polecat_submit_execute_step_id"] == $execute_step and
+        .[0].metadata["gc.polecat_submit_execute_head_sha"] == $execute_head and
+        .[0].metadata["gc.polecat_submit_execute_artifact_dir"] == $execute_artifact and
+        .[0].metadata["gc.polecat_submit_proof_key"] == $proof_key and
+        .[0].metadata["gc.polecat_submit_proof_context"] == $proof_context and
+        .[0].metadata["gc.polecat_submit_proof_head"] == $proof_head
     ' >/dev/null 2>&1
 }
+
+execution_evidence_matches() {
+    local mode=$1
+    [[ "$SOURCE_EXECUTE_VERSION" == "$EXECUTE_VERSION" &&
+       "$SOURCE_LEASE_VERSION" == "$LEASE_EVIDENCE_VERSION" &&
+       "$SOURCE_EXECUTE_SESSION" == "$CURRENT_SESSION_ID" &&
+       "$SOURCE_EXECUTE_STEP" == "$STEP_BEAD_ID" &&
+       -n "$SOURCE_EXECUTE_ARTIFACT" ]] || return 1
+    is_oid "$SOURCE_EXECUTE_HEAD" || return 1
+    case "$SOURCE_EXECUTE_ARTIFACT" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    if [[ -n "$SOURCE_ARTIFACT_DIR" &&
+          "$SOURCE_EXECUTE_ARTIFACT" != "$SOURCE_ARTIFACT_DIR" ]]; then
+        return 1
+    fi
+    prepare_submit_proof_context "$mode" || return 1
+    [[ "$SOURCE_PROOF_KEY" == "$PROOF_KEY" &&
+       "$SOURCE_PROOF_CONTEXT" == "$PROOF_EXPECTED_CONTEXT" &&
+       "$SOURCE_PROOF_HEAD" == "$SOURCE_EXECUTE_HEAD" ]] || return 1
+    verify_submit_proof || return 1
+    [[ "$VERIFIED_PROOF_KEY" == "$SOURCE_PROOF_KEY" &&
+       "$VERIFIED_PROOF_CONTEXT" == "$SOURCE_PROOF_CONTEXT" &&
+       "$VERIFIED_PROOF_HEAD" == "$SOURCE_PROOF_HEAD" ]] || return 1
+    verify_artifact_at_submit_proof "$mode"
+}
+
+evidence_matches() {
+    execution_evidence_matches "$MODE" || return 1
+    [[ "$SOURCE_BRANCH" == "$EXPECTED_BRANCH" &&
+       "$SOURCE_BRANCH" == "$CANONICAL_SOURCE_BRANCH" &&
+       "$SOURCE_TARGET" == "$ROOT_BASE_BRANCH" &&
+       "$SOURCE_SUBMIT_CONVOY" == "$CONVOY_ID" ]] || return 1
+    case "$MODE" in
+        auto_push_false)
+            [[ "$SOURCE_STATUS" == "open" &&
+               -z "$SOURCE_ASSIGNEE" &&
+               "$SOURCE_BRANCH_READY" == "true" &&
+               "$SOURCE_HALT_REASON" == "auto_push_false" ]]
+            ;;
+        refinery)
+            [[ "$SOURCE_STATUS" == "closed" ||
+               (("$SOURCE_STATUS" == "open" ||
+                 "$SOURCE_STATUS" == "in_progress") &&
+                "$SOURCE_ASSIGNEE" == "$REFINERY_TARGET") ]]
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+classify_terminal() {
+    local candidate_mode="" candidate_kind=""
+    TERMINAL_MODE=""
+    TERMINAL_KIND=""
+    [[ "$SOURCE_SUBMIT_CONVOY" == "$CONVOY_ID" &&
+       "$SOURCE_BRANCH" == "$CANONICAL_SOURCE_BRANCH" &&
+       "$SOURCE_TARGET" == "$ROOT_BASE_BRANCH" ]] || return 1
+    if [[ "$SOURCE_STATUS" == "closed" ]]; then
+        candidate_mode="refinery"
+        candidate_kind="closed"
+    elif [[ ("$SOURCE_STATUS" == "open" ||
+             "$SOURCE_STATUS" == "in_progress") &&
+            "$SOURCE_ASSIGNEE" == "$REFINERY_TARGET" ]]; then
+        candidate_mode="refinery"
+        candidate_kind="refinery"
+    elif [[ "$SOURCE_STATUS" == "open" &&
+            -z "$SOURCE_ASSIGNEE" &&
+            "$SOURCE_BRANCH_READY" == "true" &&
+            "$SOURCE_HALT_REASON" == "auto_push_false" ]]; then
+        candidate_mode="auto_push_false"
+        candidate_kind="branch_ready"
+    else
+        return 1
+    fi
+    execution_evidence_matches "$candidate_mode" || return 1
+    TERMINAL_MODE=$candidate_mode
+    TERMINAL_KIND=$candidate_kind
+}
+
+prepare_execute_artifact() {
+    local allow_capture=${1:-true}
+    local city_root rig_root rig_namespace rig_namespace_real artifact_real
+    local worktrees_parent provider_home provider_root provider_name
+    local git_top artifact_common rig_common final_status
+
+    [[ -n "${GC_CITY_PATH:-}" && -n "${GC_RIG_ROOT:-}" &&
+       -n "$ROOT_RIG_NAME" && -n "$SOURCE_ARTIFACT_DIR" ]] ||
+        fail_closed "execute requires exact city, rig, and source artifact context"
+    city_root=$(CDPATH= cd -- "$GC_CITY_PATH" 2>/dev/null && pwd -P) ||
+        fail_closed "could not canonicalize the city root"
+    rig_root=$(CDPATH= cd -- "$GC_RIG_ROOT" 2>/dev/null && pwd -P) ||
+        fail_closed "could not canonicalize the rig root"
+    rig_namespace="$city_root/.gc/worktrees/$ROOT_RIG_NAME"
+    rig_namespace_real=$(CDPATH= cd -- "$rig_namespace" 2>/dev/null && pwd -P) ||
+        fail_closed "could not resolve the city/rig worktree namespace"
+    [[ "$rig_namespace_real" == "$rig_namespace" ]] ||
+        fail_closed "the city/rig worktree namespace is redirected"
+    case "$SOURCE_ARTIFACT_DIR" in
+        /*) ;;
+        *) fail_closed "source metadata.artifact_dir is not absolute" ;;
+    esac
+    artifact_real=$(CDPATH= cd -- "$SOURCE_ARTIFACT_DIR" 2>/dev/null && pwd -P) ||
+        fail_closed "source metadata.artifact_dir is unavailable"
+    [[ "$artifact_real" == "$SOURCE_ARTIFACT_DIR" &&
+       "$(basename -- "$artifact_real")" == "$SOURCE_ID" &&
+       "$(basename -- "$(dirname -- "$artifact_real")")" == "worktrees" ]] ||
+        fail_closed "source metadata.artifact_dir is not the exact bead-scoped path"
+    if [[ "$artifact_real" != "$rig_namespace_real/artifacts/worktrees/$SOURCE_ID" ]]; then
+        worktrees_parent=$(dirname -- "$artifact_real")
+        provider_home=$(dirname -- "$worktrees_parent")
+        provider_root=$(dirname -- "$provider_home")
+        provider_name=$(basename -- "$provider_home")
+        [[ "$provider_root" == "$rig_namespace_real/polecats" ]] ||
+            fail_closed "source metadata.artifact_dir is outside the rig artifact layouts"
+        safe_component "$provider_name" && [[ -n "$provider_name" ]] ||
+            fail_closed "legacy artifact has an unsafe provider owner"
+    fi
+    git_top=$(git -C "$artifact_real" rev-parse --show-toplevel 2>/dev/null) ||
+        fail_closed "source artifact is not a Git worktree"
+    git_top=$(CDPATH= cd -- "$git_top" 2>/dev/null && pwd -P) ||
+        fail_closed "could not canonicalize the artifact Git top"
+    [[ "$git_top" == "$artifact_real" ]] ||
+        fail_closed "source artifact is a Git worktree subdirectory"
+    artifact_common=$(git -C "$artifact_real" rev-parse \
+        --path-format=absolute --git-common-dir 2>/dev/null) ||
+        fail_closed "could not resolve the artifact Git common directory"
+    artifact_common=$(CDPATH= cd -- "$artifact_common" 2>/dev/null && pwd -P) ||
+        fail_closed "could not canonicalize the artifact Git common directory"
+    rig_common=$(git -C "$rig_root" rev-parse \
+        --path-format=absolute --git-common-dir 2>/dev/null) ||
+        fail_closed "could not resolve the rig Git common directory"
+    rig_common=$(CDPATH= cd -- "$rig_common" 2>/dev/null && pwd -P) ||
+        fail_closed "could not canonicalize the rig Git common directory"
+    [[ "$artifact_common" == "$rig_common" ]] ||
+        fail_closed "source metadata.artifact_dir belongs to another repository"
+
+    cd -- "$artifact_real" ||
+        fail_closed "source artifact disappeared before entry"
+    [[ "$(git branch --show-current 2>/dev/null)" == "$CANONICAL_SOURCE_BRANCH" ]] ||
+        fail_closed "task artifact is not on the canonical source branch"
+    [[ "$SOURCE_BRANCH" == "$CANONICAL_SOURCE_BRANCH" ]] ||
+        fail_closed "source metadata.branch is not canonical"
+    final_status=$(git status --porcelain) ||
+        fail_closed "could not inspect final task-artifact status"
+    if [[ -n "$final_status" ]]; then
+        [[ "$allow_capture" == "true" ]] ||
+            fail_closed "an existing submit proof binds a dirty task artifact"
+        git add -A ||
+            fail_closed "could not stage remaining task-artifact changes"
+        git commit -m "chore: capture remaining work ($SOURCE_ID)" \
+            -m "Capture remaining changes found by deterministic submit." ||
+            fail_closed "could not commit remaining task-artifact changes"
+    fi
+    final_status=$(git status --porcelain) ||
+        fail_closed "could not verify final task-artifact status"
+    [[ -z "$final_status" ]] ||
+        fail_closed "task artifact is not clean after final capture"
+    EXECUTE_HEAD=$(git rev-parse --verify HEAD 2>/dev/null) ||
+        fail_closed "could not resolve the clean submit head"
+    is_oid "$EXECUTE_HEAD" ||
+        fail_closed "the clean submit head is invalid"
+    EXECUTE_ARTIFACT=$artifact_real
+}
+
+execute_terminal_update() {
+    local update_code=0
+    case "$EXECUTE_MODE" in
+        auto_push_false)
+            run_gc_bd update "$SOURCE_ID" \
+                --status=open --assignee="" \
+                --set-metadata "branch=$CANONICAL_SOURCE_BRANCH" \
+                --set-metadata "target=$ROOT_BASE_BRANCH" \
+                --set-metadata "gc.polecat_submit_convoy=$CONVOY_ID" \
+                --set-metadata branch_ready=true \
+                --set-metadata halt_reason=auto_push_false \
+                --set-metadata gc.routed_to="" \
+                --set-metadata "gc.polecat_submit_execute_version=$EXECUTE_VERSION" \
+                --set-metadata "gc.polecat_submit_lease_version=$LEASE_EVIDENCE_VERSION" \
+                --set-metadata "gc.polecat_submit_execute_session_id=$CURRENT_SESSION_ID" \
+                --set-metadata "gc.polecat_submit_execute_step_id=$STEP_BEAD_ID" \
+                --set-metadata "gc.polecat_submit_execute_head_sha=$EXECUTE_HEAD" \
+                --set-metadata "gc.polecat_submit_execute_artifact_dir=$EXECUTE_ARTIFACT" \
+                --set-metadata "gc.polecat_submit_proof_key=$EXECUTE_PROOF_KEY" \
+                --set-metadata "gc.polecat_submit_proof_context=$EXECUTE_PROOF_CONTEXT" \
+                --set-metadata "gc.polecat_submit_proof_head=$EXECUTE_PROOF_HEAD" \
+                --unset-metadata artifact_source_sha \
+                --unset-metadata artifact_cleanup_state \
+                --notes "Branch ready: auto_push=false (no push, no refinery handoff)" \
+                >/dev/null || update_code=$?
+            ;;
+        refinery)
+            run_gc_bd update "$SOURCE_ID" \
+                --status=open --assignee="$REFINERY_TARGET" \
+                --set-metadata "branch=$CANONICAL_SOURCE_BRANCH" \
+                --set-metadata "target=$ROOT_BASE_BRANCH" \
+                --set-metadata "gc.polecat_submit_convoy=$CONVOY_ID" \
+                --set-metadata gc.routed_to="" \
+                --set-metadata "gc.polecat_submit_execute_version=$EXECUTE_VERSION" \
+                --set-metadata "gc.polecat_submit_lease_version=$LEASE_EVIDENCE_VERSION" \
+                --set-metadata "gc.polecat_submit_execute_session_id=$CURRENT_SESSION_ID" \
+                --set-metadata "gc.polecat_submit_execute_step_id=$STEP_BEAD_ID" \
+                --set-metadata "gc.polecat_submit_execute_head_sha=$EXECUTE_HEAD" \
+                --set-metadata "gc.polecat_submit_execute_artifact_dir=$EXECUTE_ARTIFACT" \
+                --set-metadata "gc.polecat_submit_proof_key=$EXECUTE_PROOF_KEY" \
+                --set-metadata "gc.polecat_submit_proof_context=$EXECUTE_PROOF_CONTEXT" \
+                --set-metadata "gc.polecat_submit_proof_head=$EXECUTE_PROOF_HEAD" \
+                --unset-metadata artifact_source_sha \
+                --unset-metadata artifact_cleanup_state \
+                --unset-metadata branch_ready \
+                --unset-metadata halt_reason \
+                --notes "Implemented and deterministically submitted from $EXECUTE_HEAD" \
+                >/dev/null || update_code=$?
+            ;;
+        *) return 1 ;;
+    esac
+    load_source || return 1
+    MODE=$EXECUTE_MODE
+    evidence_matches || return 1
+    [[ "$update_code" -eq 0 ]] || return 0
+}
+
+execute_submit() {
+    local auto_push_bool witness_target current_head current_status
+    local initial_proof_state
+
+    if classify_terminal; then
+        EXECUTE_MODE=$TERMINAL_MODE
+        MODE=$EXECUTE_MODE
+    else
+        [[ "$SOURCE_STATUS" == "open" && -z "$SOURCE_ASSIGNEE" &&
+           -z "$SOURCE_SUBMIT_CONVOY" ]] ||
+            fail_closed "execute source is neither proceedable nor exact proven terminal state"
+        case "$SOURCE_AUTO_PUSH" in
+            false)
+                EXECUTE_MODE="auto_push_false"
+                auto_push_bool=false
+                ;;
+            ""|true)
+                EXECUTE_MODE="refinery"
+                auto_push_bool=true
+                ;;
+            *) fail_closed "source metadata.auto_push is invalid" ;;
+        esac
+        prepare_submit_proof_refs && probe_submit_proof_refs ||
+            fail_closed "could not inspect the create-only submit-proof namespace"
+        initial_proof_state=$PROOF_REF_STATE
+        [[ "$initial_proof_state" != "partial" ]] ||
+            fail_closed "the existing submit-proof namespace is partial"
+        if [[ "$initial_proof_state" == "complete" ]]; then
+            prepare_execute_artifact false
+        else
+            prepare_execute_artifact true
+        fi
+        SOURCE_EXECUTE_HEAD=$EXECUTE_HEAD
+        SOURCE_EXECUTE_ARTIFACT=$EXECUTE_ARTIFACT
+        prepare_submit_proof_context "$EXECUTE_MODE" &&
+            probe_submit_proof_refs ||
+            fail_closed "could not derive or re-read the submit-proof context"
+        if [[ "$initial_proof_state" == "complete" &&
+              "$PROOF_REF_STATE" != "complete" ]]; then
+            fail_closed "the retained submit proof disappeared during recovery"
+        fi
+        case "$PROOF_REF_STATE" in
+            complete)
+                verify_submit_proof ||
+                    fail_closed "the retained submit proof differs from this execution"
+                ;;
+            partial)
+                fail_closed "the submit-proof namespace became partial"
+                ;;
+            absent)
+                witness_target="${ROOT_RIG_NAME:+$ROOT_RIG_NAME/}${ROOT_BINDING_PREFIX}witness"
+                run_gc gastown polecat-lease submit \
+                    --source "$SOURCE_ID" \
+                    --convoy "$CONVOY_ID" \
+                    --base "$ROOT_BASE_BRANCH" \
+                    --branch "$CANONICAL_SOURCE_BRANCH" \
+                    --witness "$witness_target" \
+                    --auto-push "$auto_push_bool" ||
+                    fail_closed "deterministic lease submit did not succeed"
+                current_status=$(git status --porcelain) ||
+                    fail_closed "could not revalidate the post-lease clean tree"
+                [[ -z "$current_status" &&
+                   "$(git branch --show-current 2>/dev/null)" == "$CANONICAL_SOURCE_BRANCH" ]] ||
+                    fail_closed "artifact branch or cleanliness changed during lease submit"
+                current_head=$(git rev-parse --verify HEAD 2>/dev/null) ||
+                    fail_closed "could not re-read the post-lease head"
+                [[ "$current_head" == "$EXECUTE_HEAD" ]] ||
+                    fail_closed "artifact head changed during lease submit"
+                prepare_submit_proof_context "$EXECUTE_MODE" &&
+                    verify_submit_proof ||
+                    fail_closed "lease submit did not publish its create-only proof"
+                ;;
+        esac
+        EXECUTE_PROOF_KEY=$VERIFIED_PROOF_KEY
+        EXECUTE_PROOF_CONTEXT=$VERIFIED_PROOF_CONTEXT
+        EXECUTE_PROOF_HEAD=$VERIFIED_PROOF_HEAD
+        revalidate_context ||
+            fail_closed "Graph authority changed before terminal source update"
+        load_source ||
+            fail_closed "could not re-read source before terminal source update"
+        [[ "$SOURCE_STATUS" == "open" && -z "$SOURCE_ASSIGNEE" &&
+           -z "$SOURCE_SUBMIT_CONVOY" ]] ||
+            fail_closed "source changed before terminal source update"
+        execute_terminal_update ||
+            fail_closed "terminal source update did not persist exact execution proof"
+    fi
+
+    case "$EXECUTE_MODE" in
+        auto_push_false) COMPLETION_TERMINAL="branch_ready" ;;
+        refinery)
+            if [[ "$SOURCE_STATUS" == "closed" ]]; then
+                COMPLETION_TERMINAL="closed"
+            else
+                COMPLETION_TERMINAL="refinery"
+            fi
+            ;;
+    esac
+    MODE=$EXECUTE_MODE
+    close_step pass "$MODE" "$COMPLETION_TERMINAL" \
+        "Submit execute complete with durable lease proof on source $SOURCE_ID" ||
+        fail_closed "submit execute did not persist and read back closed/pass"
+    execution_evidence_matches "$MODE" ||
+        fail_closed "create-only submit proof changed before drain"
+    if [[ "$MODE" == "refinery" ]]; then
+        run_gc session wake "$REFINERY_TARGET" >/dev/null 2>&1 || true
+        run_gc session nudge "$REFINERY_TARGET" \
+            "Run 'gc prime' to check merge queue and begin processing." \
+            >/dev/null 2>&1 || true
+    fi
+    run_gc runtime drain-ack ||
+        fail_closed "submit execute completed durably but drain acknowledgement failed"
+    printf 'POLECAT_SUBMIT_EXECUTE_COMPLETE step=%s root=%s convoy=%s source=%s mode=%s branch=%s head=%s\n' \
+        "$STEP_BEAD_ID" "$ROOT_BEAD_ID" "$CONVOY_ID" "$SOURCE_ID" \
+        "$MODE" "$CANONICAL_SOURCE_BRANCH" "$SOURCE_EXECUTE_HEAD"
+}
+
+if [[ "$ACTION" == "execute" ]]; then
+    execute_submit
+    exit 0
+fi
 
 if [[ "$ACTION" == "guard" ]]; then
     if [[ -n "$SOURCE_SUBMIT_CONVOY" &&
@@ -741,25 +1574,7 @@ if [[ "$ACTION" == "guard" ]]; then
 
     TERMINAL_MODE=""
     TERMINAL_KIND=""
-    if [[ "$SOURCE_SUBMIT_CONVOY" == "$CONVOY_ID" &&
-          "$SOURCE_BRANCH" == "$CANONICAL_SOURCE_BRANCH" &&
-          "$SOURCE_TARGET" == "$ROOT_BASE_BRANCH" ]]; then
-        if [[ "$SOURCE_STATUS" == "closed" ]]; then
-            TERMINAL_MODE="refinery"
-            TERMINAL_KIND="closed"
-        elif [[ ("$SOURCE_STATUS" == "open" ||
-                 "$SOURCE_STATUS" == "in_progress") &&
-                "$SOURCE_ASSIGNEE" == "$REFINERY_TARGET" ]]; then
-            TERMINAL_MODE="refinery"
-            TERMINAL_KIND="refinery"
-        elif [[ "$SOURCE_STATUS" == "open" &&
-                -z "$SOURCE_ASSIGNEE" &&
-                "$SOURCE_BRANCH_READY" == "true" &&
-                "$SOURCE_HALT_REASON" == "auto_push_false" ]]; then
-            TERMINAL_MODE="auto_push_false"
-            TERMINAL_KIND="branch_ready"
-        fi
-    fi
+    classify_terminal || true
 
     if [[ -n "$TERMINAL_MODE" ]]; then
         load_source ||
@@ -849,27 +1664,6 @@ if [[ "$ACTION" == "guard" ]]; then
     echo "POLECAT_SUBMIT_CONFLICT source=$SOURCE_ID status=$SOURCE_STATUS assignee=${SOURCE_ASSIGNEE:-unassigned}" >&2
     exit "$EXIT_INDETERMINATE"
 fi
-
-evidence_matches() {
-    [[ "$SOURCE_BRANCH" == "$EXPECTED_BRANCH" &&
-       "$SOURCE_BRANCH" == "$CANONICAL_SOURCE_BRANCH" &&
-       "$SOURCE_TARGET" == "$ROOT_BASE_BRANCH" &&
-       "$SOURCE_SUBMIT_CONVOY" == "$CONVOY_ID" ]] || return 1
-    case "$MODE" in
-        auto_push_false)
-            [[ "$SOURCE_STATUS" == "open" &&
-               -z "$SOURCE_ASSIGNEE" &&
-               "$SOURCE_BRANCH_READY" == "true" &&
-               "$SOURCE_HALT_REASON" == "auto_push_false" ]]
-            ;;
-        refinery)
-            [[ "$SOURCE_STATUS" == "closed" ||
-               (("$SOURCE_STATUS" == "open" ||
-                 "$SOURCE_STATUS" == "in_progress") &&
-                "$SOURCE_ASSIGNEE" == "$REFINERY_TARGET") ]]
-            ;;
-    esac
-}
 
 evidence_matches ||
     fail_closed "source $SOURCE_ID does not satisfy exact $MODE completion evidence"

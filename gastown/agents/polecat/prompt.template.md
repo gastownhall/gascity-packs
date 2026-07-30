@@ -501,9 +501,11 @@ source work bead through that step's root and input convoy. Never pass a bare or
 guessed id to `bd`, which fuzzy-matches and can mutate the wrong bead.
 
 The source work bead is intentionally open and unassigned before handoff, so
-that state is **not** proof of submission. Only a closed source bead or exact
-assignment to the configured refinery is terminal evidence. Any other assigned
-owner is a conflict and must fail closed.
+that state is **not** proof of submission. Terminal evidence requires the exact
+retained execute/proof receipt together with either the `auto_push=false`
+branch-ready shape, exact assignment to the configured refinery, or a closed
+refinery source. Mutable source metadata alone is never proof. Any other
+assigned owner is a conflict and must fail closed.
 
 ```bash
 # BEGIN_GASTOWN_SUBMIT_GUARD

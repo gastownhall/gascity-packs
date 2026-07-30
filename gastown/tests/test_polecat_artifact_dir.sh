@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 GASTOWN="$ROOT/gastown"
 POLECAT_FORMULA="$GASTOWN/formulas/mol-polecat-work.toml"
+POLECAT_SUBMIT="$GASTOWN/commands/polecat-submit/run.sh"
 WITNESS_FORMULA="$GASTOWN/formulas/mol-witness-patrol.toml"
 SHUTDOWN_FORMULA="$GASTOWN/formulas/mol-shutdown-dance.toml"
 REFINERY_FORMULA="$GASTOWN/formulas/mol-refinery-patrol.toml"
@@ -1467,6 +1468,7 @@ test_witness_status_failure_blocks_artifact_removal() {
 test_metadata_migration_and_consumers_are_canonical_first() {
     python3 - \
         "$POLECAT_FORMULA" \
+        "$POLECAT_SUBMIT" \
         "$WITNESS_FORMULA" \
         "$SHUTDOWN_FORMULA" \
         "$REFINERY_FORMULA" \
@@ -1478,6 +1480,7 @@ import tomllib
 
 (
     polecat_path,
+    polecat_submit_path,
     witness_path,
     shutdown_path,
     refinery_path,
@@ -1491,6 +1494,7 @@ with polecat_path.open("rb") as handle:
     polecat = tomllib.load(handle)
 workspace = next(step["description"] for step in polecat["steps"] if step["id"] == "workspace-setup")
 submit = next(step["description"] for step in polecat["steps"] if step["id"] == "submit-and-exit")
+polecat_submit = polecat_submit_path.read_text(encoding="utf-8")
 
 required_workspace = (
     'BEAD_JSON=$(gc bd show "$WORK_BEAD_ID" --json) ||',
@@ -1533,9 +1537,11 @@ if ".artifact-worktree-" in workspace or "WORKTREE_GENERATION" in workspace:
     raise SystemExit("workspace can create a non-canonical random artifact generation")
 if 'git branch -D "$EXPECTED_BRANCH"' in workspace or 'git branch -D "$BRANCH"' in workspace:
     raise SystemExit("empty-branch recovery can delete an unrecorded work branch")
-if "--unset-metadata artifact_source_sha" not in submit:
+if submit.count("gc gastown polecat-submit execute") != 1:
+    raise SystemExit("polecat terminal formula does not delegate exactly once")
+if "--unset-metadata artifact_source_sha" not in polecat_submit:
     raise SystemExit("polecat submission does not retire stale refinery artifact proof")
-if "--unset-metadata artifact_cleanup_state" not in submit:
+if "--unset-metadata artifact_cleanup_state" not in polecat_submit:
     raise SystemExit("polecat submission does not retire stale cleanup state")
 canonical_guard = workspace.index("Canonical artifact_dir is missing or unsafe")
 legacy_fallback = workspace.index('elif [ -n "$LEGACY_WORK_DIR" ]')

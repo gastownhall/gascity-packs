@@ -42,35 +42,32 @@ extract_block \
 cmp -s "$TMP/fragment-guard.sh" "$TMP/prompt-guard.sh" ||
     fail "prompt and fragment submit guards are not byte-identical"
 
-extract_block \
-    "$FORMULA" \
-    "# BEGIN_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION" \
-    "# END_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION" \
-    "$TMP/auto-push-false-completion.sh"
-extract_block \
-    "$FORMULA" \
-    "# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION" \
-    "# END_GASTOWN_REFINERY_STEP_COMPLETION" \
-    "$TMP/refinery-completion.sh"
-python3 - \
-    "$TMP/auto-push-false-completion.sh" \
-    "$TMP/refinery-completion.sh" <<'PY'
-from pathlib import Path
+python3 - "$FORMULA" >"$TMP/submit-execute.sh" <<'PY'
+import re
 import sys
+import tomllib
 
-for name in sys.argv[1:]:
-    path = Path(name)
-    path.write_text(
-        path.read_text(encoding="utf-8").replace("{{convoy_id}}", "convoy-1"),
-        encoding="utf-8",
+with open(sys.argv[1], "rb") as handle:
+    document = tomllib.load(handle)
+submit = next(
+    step["description"]
+    for step in document.get("steps", [])
+    if step.get("id") == "submit-and-exit"
+)
+blocks = re.findall(r"```bash\n(.*?)\n```", submit, re.DOTALL)
+if len(blocks) != 1:
+    raise SystemExit(
+        "submit-and-exit must contain exactly one deterministic shell fence"
     )
+if blocks[0].count("gc gastown polecat-submit execute") != 1:
+    raise SystemExit("terminal fence must call polecat-submit execute exactly once")
+print(blocks[0])
 PY
 
 for block in \
     "$TMP/fragment-guard.sh" \
     "$TMP/prompt-guard.sh" \
-    "$TMP/auto-push-false-completion.sh" \
-    "$TMP/refinery-completion.sh"; do
+    "$TMP/submit-execute.sh"; do
     if grep -Eq 'gc[[:space:]]+hook([[:space:]]|$)' "$block"; then
         fail "$(basename "$block") contains a raw gc hook call"
     fi
@@ -139,6 +136,18 @@ if [[ "${1:-}" == "gastown" &&
     }
     touch "$CASE_STATE/completed"
     echo "POLECAT_SUBMIT_COMPLETE step=submit-1"
+    exit 0
+fi
+if [[ "${1:-}" == "gastown" &&
+      "${2:-}" == "polecat-submit" &&
+      "${3:-}" == "execute" &&
+      "$#" -eq 3 ]]; then
+    [[ "${SUBMIT_MODE:-ok}" == "ok" ]] || {
+        echo "POLECAT_SUBMIT_INDETERMINATE: fixture failure" >&2
+        exit 75
+    }
+    touch "$CASE_STATE/completed" "$CASE_STATE/drained"
+    echo "POLECAT_SUBMIT_EXECUTE_COMPLETE step=submit-1"
     exit 0
 fi
 if [[ "${1:-}" == "runtime" &&
@@ -265,15 +274,11 @@ assert_no_raw_state_calls "$retry_state"
 
 run_formula_case() {
     local name=$1
-    local script=$2
-    local expected_mode=$3
-    local submit_mode=$4
-    local expected_rc=$5
-    local expected_drain=$6
-    local drain_mode=${7:-ok}
+    local submit_mode=$2
+    local expected_rc=$3
+    local expected_drain=$4
     local state="$TMP/formula-$name"
     local rc
-    local expected_call
 
     mkdir -p "$state"
     : >"$state/calls"
@@ -282,18 +287,17 @@ run_formula_case() {
         CALL_LOG="$state/calls" \
         CASE_STATE="$state" \
         SUBMIT_MODE="$submit_mode" \
-        DRAIN_MODE="$drain_mode" \
-        WORK_BEAD_ID="source-1" \
-        EXPECTED_BRANCH="polecat/source-1" \
-        bash "$script" >"$state/output" 2>&1
+        bash "$TMP/submit-execute.sh" >"$state/output" 2>&1
     rc=$?
     set -e
 
     [[ "$rc" -eq "$expected_rc" ]] ||
         fail "formula $name returned $rc, expected $expected_rc: $(<"$state/output")"
-    expected_call="gc gastown polecat-submit complete --convoy convoy-1 --source source-1 --branch polecat/source-1 --mode $expected_mode"
-    [[ "$(grep -cFx "$expected_call" "$state/calls")" -eq 1 ]] ||
-        fail "formula $name did not make the exact $expected_mode completion call"
+    [[ "$(grep -cFx 'gc gastown polecat-submit execute' "$state/calls")" -eq 1 ]] ||
+        fail "formula $name did not call deterministic execute exactly once"
+    ! grep -E '^gc (bd|hook|runtime|session)|^gc gastown polecat-submit (guard|complete)|^gc gastown polecat-lease' \
+        "$state/calls" >/dev/null ||
+        fail "formula $name split deterministic execute into raw stateful calls"
     if [[ "$expected_drain" == "yes" ]]; then
         [[ -e "$state/drained" ]] ||
             fail "formula $name did not drain after verified completion"
@@ -304,29 +308,7 @@ run_formula_case() {
     assert_no_raw_state_calls "$state"
 }
 
-run_formula_case \
-    auto-push-false-success \
-    "$TMP/auto-push-false-completion.sh" \
-    auto_push_false ok 0 yes
-run_formula_case \
-    auto-push-false-failure \
-    "$TMP/auto-push-false-completion.sh" \
-    auto_push_false fail 1 no
-run_formula_case \
-    auto-push-false-drain-failure \
-    "$TMP/auto-push-false-completion.sh" \
-    auto_push_false ok 1 no fail
-run_formula_case \
-    refinery-success \
-    "$TMP/refinery-completion.sh" \
-    refinery ok 0 yes
-run_formula_case \
-    refinery-failure \
-    "$TMP/refinery-completion.sh" \
-    refinery fail 1 no
-run_formula_case \
-    refinery-drain-failure \
-    "$TMP/refinery-completion.sh" \
-    refinery ok 1 no fail
+run_formula_case execute-success ok 0 yes
+run_formula_case execute-failure fail 1 no
 
 echo "polecat submit guard integration tests passed"

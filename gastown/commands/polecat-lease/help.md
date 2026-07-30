@@ -35,3 +35,13 @@ push. It is deliberately unsupported once rejection recovery has published a
 rebased lease: `submit` stops before freezing or pushing, keeps the live Graph
 step and five recovery refs intact, and requires the source policy to be changed
 to allow an exact automatic push or explicit human reconciliation.
+
+Every successful `submit`, including `auto_push=false`, creates an immutable
+two-ref proof under
+`refs/gascity/polecat-submit-proofs/v1/<workflow-generation-key>/`. The
+`context` ref targets a canonical context blob and the `head` ref retains the
+exact submitted commit. Creation is create-only and verifies the canonical
+branch in the same Git transaction. Exact retries return the same
+`POLECAT_SUBMIT_PROOF` receipt; conflicting or partial proof state fails closed.
+Proof refs survive worker drain so submit completion and response-loss replay
+can verify them independently.

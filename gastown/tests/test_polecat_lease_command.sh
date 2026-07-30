@@ -419,7 +419,7 @@ invoke_lease() {
         GC_RIG_ROOT="$RIG_ROOT" \
         BEADS_ACTOR="${LEASE_BEADS_ACTOR-actor-1}" \
         GC_SESSION_NAME="${LEASE_GC_SESSION_NAME-}" \
-        GC_SESSION_ID="${LEASE_GC_SESSION_ID-}" \
+        GC_SESSION_ID="${LEASE_GC_SESSION_ID-actor-session-1}" \
         GC_ALIAS="${LEASE_GC_ALIAS-}" \
         GC_AGENT="${LEASE_GC_AGENT-}" \
         FAKE_DB="$DB" \
@@ -450,6 +450,78 @@ run_lease() {
 namespace_count() {
     "$REAL_GIT" -C "$WORK" for-each-ref \
         --format='%(refname)' refs/gascity/polecat-push-leases | wc -l
+}
+
+submit_proof_count() {
+    "$REAL_GIT" -C "$WORK" for-each-ref \
+        --format='%(refname)' refs/gascity/polecat-submit-proofs | wc -l
+}
+
+proof_receipt_field() {
+    local field=$1 line token
+    line=$(grep -E '^POLECAT_SUBMIT_PROOF ' "$OUTPUT") || return 1
+    [[ "$(grep -Ec '^POLECAT_SUBMIT_PROOF ' "$OUTPUT")" -eq 1 ]] || return 1
+    for token in $line; do
+        case "$token" in
+            "$field="*)
+                printf '%s' "${token#*=}"
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+assert_submit_proof() {
+    local expected_auto_push=$1 expected_head=$2
+    local version key context head mode namespace context_body
+    version=$(proof_receipt_field version) ||
+        fail "submit proof has no exact version receipt: $(<"$OUTPUT")"
+    key=$(proof_receipt_field key) ||
+        fail "submit proof has no exact key receipt: $(<"$OUTPUT")"
+    context=$(proof_receipt_field context) ||
+        fail "submit proof has no exact context receipt: $(<"$OUTPUT")"
+    head=$(proof_receipt_field head) ||
+        fail "submit proof has no exact head receipt: $(<"$OUTPUT")"
+    mode=$(proof_receipt_field auto_push) ||
+        fail "submit proof has no exact auto_push receipt: $(<"$OUTPUT")"
+    [[ "$version" == "1" && "$mode" == "$expected_auto_push" &&
+       "$head" == "$expected_head" ]] ||
+        fail "submit proof receipt has the wrong version/mode/head: $(<"$OUTPUT")"
+    for oid in "$key" "$context" "$head"; do
+        [[ "$oid" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]] ||
+            fail "submit proof receipt contains an invalid object id: $oid"
+    done
+    namespace="refs/gascity/polecat-submit-proofs/v1/$key"
+    [[ "$(submit_proof_count)" -eq 2 ]] ||
+        fail "submit proof is not exactly one two-ref record"
+    [[ "$("$REAL_GIT" -C "$WORK" rev-parse "$namespace/context")" == "$context" &&
+       "$("$REAL_GIT" -C "$WORK" rev-parse "$namespace/head")" == "$head" ]] ||
+        fail "submit proof receipt disagrees with its authoritative refs"
+    [[ "$("$REAL_GIT" -C "$WORK" cat-file -t "$context")" == "blob" &&
+       "$("$REAL_GIT" -C "$WORK" cat-file -t "$head")" == "commit" ]] ||
+        fail "submit proof refs do not target blob/commit objects"
+    context_body=$("$REAL_GIT" -C "$WORK" cat-file blob "$context")
+    for exact in \
+        "schema=gascity-polecat-submit-proof-v1" \
+        "version=1" \
+        "key=$key" \
+        "source=source-1" \
+        "workflow_root=root-1" \
+        "step=submit-1" \
+        "step_assignee=actor-1" \
+        "input_convoy=convoy-1" \
+        "session_id=${LEASE_GC_SESSION_ID-actor-session-1}" \
+        "branch=polecat/source-1" \
+        "target=main" \
+        "auto_push=$expected_auto_push" \
+        "head_oid=$head" \
+        "rig=rig" \
+        "binding_prefix=" \
+        "witness=rig/witness"; do
+        printf '%s\n' "$context_body" | grep -Fx "$exact" >/dev/null ||
+            fail "submit proof context is missing $exact"
+    done
 }
 
 remote_feature_oid() {
@@ -491,6 +563,7 @@ test_normal_push() {
     [[ "$RUN_RC" -eq 0 ]] || fail "normal push failed: $(<"$OUTPUT")"
     [[ "$(remote_feature_oid)" == "$(local_feature_oid)" ]] ||
         fail "normal push did not publish the exact local branch"
+    assert_submit_proof true "$(local_feature_oid)"
     [[ "$(namespace_count)" -eq 0 ]] ||
         fail "normal push unexpectedly created rejection lease refs"
     ! rg -n -- '--force-with-lease' "$PUSH_LOG" >/dev/null ||
@@ -510,6 +583,7 @@ test_rebased_exact_lease_push() {
         fail "leased submit failed: $(<"$OUTPUT")"
     [[ "$(remote_feature_oid)" == "$SUBMIT" ]] ||
         fail "leased submit did not publish frozen submit"
+    assert_submit_proof true "$SUBMIT"
     [[ "$(namespace_count)" -eq 0 ]] ||
         fail "verified leased submit did not clean refs"
     [[ "$(jq -r '[.beads["source-1"].metadata |
@@ -527,6 +601,9 @@ test_rebased_exact_lease_push() {
 
 test_rejected_auto_push_false_stops_before_freeze() {
     prepare_rebased rejected-no-push
+    jq '.beads["source-1"].metadata.auto_push = false' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
     BEFORE=$(remote_feature_oid)
     run_lease submit --auto-push false
     [[ "$RUN_RC" -eq 75 ]] ||
@@ -535,12 +612,124 @@ test_rejected_auto_push_false_stops_before_freeze() {
         fail "rejected auto_push=false changed the remote"
     [[ "$(namespace_count)" -eq 5 ]] ||
         fail "rejected auto_push=false froze submit or lost recovery refs"
+    [[ "$(submit_proof_count)" -eq 0 ]] ||
+        fail "rejected auto_push=false created submit proof without success"
     [[ "$(jq -r '.beads["source-1"].metadata.polecat_push_lease_state' "$DB")" == "rebased" ]] ||
         fail "rejected auto_push=false changed the rebased mirror phase"
     [[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" ]] ||
         fail "rejected auto_push=false closed the only authorized Graph step"
     [[ ! -e "$STATE/drained" ]] ||
         fail "rejected auto_push=false drained the live recovery step"
+}
+
+test_auto_push_false_proof_is_local_and_idempotent() {
+    local before head first_receipt
+    new_case auto-push-false-proof false
+    jq '.beads["source-1"].metadata.auto_push = false' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    before=$(remote_feature_oid)
+    printf 'local only\n' >>"$WORK/feature.txt"
+    "$REAL_GIT" -C "$WORK" add feature.txt
+    "$REAL_GIT" -C "$WORK" commit -q -m local-only
+    head=$(local_feature_oid)
+
+    run_lease submit --auto-push false
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "auto_push=false proof failed: $(<"$OUTPUT")"
+    [[ "$(remote_feature_oid)" == "$before" ]] ||
+        fail "auto_push=false changed the remote"
+    [[ "$head" != "$before" ]] ||
+        fail "auto_push=false fixture did not create a local-only head"
+    assert_submit_proof false "$head"
+    first_receipt=$(grep -E '^POLECAT_SUBMIT_PROOF ' "$OUTPUT")
+
+    run_lease submit --auto-push false
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "auto_push=false exact retry failed: $(<"$OUTPUT")"
+    assert_submit_proof false "$head"
+    [[ "$(grep -E '^POLECAT_SUBMIT_PROOF ' "$OUTPUT")" == "$first_receipt" ]] ||
+        fail "auto_push=false retry returned a different proof receipt"
+}
+
+test_submit_proof_ref_tamper_is_hard() {
+    local key context_ref tampered original_head
+    new_case submit-proof-tamper false
+    jq '.beads["source-1"].metadata.auto_push = false' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    run_lease submit --auto-push false
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "submit-proof tamper setup failed: $(<"$OUTPUT")"
+    key=$(proof_receipt_field key)
+    original_head=$(proof_receipt_field head)
+    context_ref="refs/gascity/polecat-submit-proofs/v1/$key/context"
+    tampered=$(printf 'tampered submit proof\n' |
+        "$REAL_GIT" -C "$WORK" hash-object -w --stdin)
+    "$REAL_GIT" -C "$WORK" update-ref "$context_ref" "$tampered"
+
+    run_lease submit --auto-push false
+    [[ "$RUN_RC" -eq 64 ]] ||
+        fail "submit-proof ref tamper returned $RUN_RC instead of hard failure: $(<"$OUTPUT")"
+    [[ "$("$REAL_GIT" -C "$WORK" rev-parse "$context_ref")" == "$tampered" ]] ||
+        fail "submit-proof tamper was overwritten"
+    [[ "$("$REAL_GIT" -C "$WORK" rev-parse \
+        "refs/gascity/polecat-submit-proofs/v1/$key/head")" == "$original_head" ]] ||
+        fail "submit-proof tamper changed the retained head"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "blocked" ]] ||
+        fail "submit-proof tamper did not block the source"
+}
+
+test_submit_proof_create_race_is_idempotent() {
+    local first_pid second_pid first_rc second_rc first_receipt second_receipt
+    new_case submit-proof-create-race false
+    jq '.beads["source-1"].metadata.auto_push = false' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    mkdir -p "$STATE/proof-barrier"
+
+    set +e
+    (
+        export GIT_TX_BARRIER_MATCH="create refs/gascity/polecat-submit-proofs/v1/"
+        export GIT_TX_BARRIER_DIR="$STATE/proof-barrier"
+        invoke_lease submit --auto-push false
+    ) >"$STATE/proof-race-one.out" 2>&1 &
+    first_pid=$!
+    (
+        export GIT_TX_BARRIER_MATCH="create refs/gascity/polecat-submit-proofs/v1/"
+        export GIT_TX_BARRIER_DIR="$STATE/proof-barrier"
+        invoke_lease submit --auto-push false
+    ) >"$STATE/proof-race-two.out" 2>&1 &
+    second_pid=$!
+    wait "$first_pid"
+    first_rc=$?
+    wait "$second_pid"
+    second_rc=$?
+    set -e
+
+    [[ "$first_rc" -eq 0 && "$second_rc" -eq 0 ]] ||
+        fail "same-context submit-proof race was not idempotent: rc=$first_rc/$second_rc"
+    [[ "$(submit_proof_count)" -eq 2 ]] ||
+        fail "same-context submit-proof race exposed partial or duplicate refs"
+    first_receipt=$(grep -E '^POLECAT_SUBMIT_PROOF ' "$STATE/proof-race-one.out")
+    second_receipt=$(grep -E '^POLECAT_SUBMIT_PROOF ' "$STATE/proof-race-two.out")
+    [[ "$first_receipt" == "$second_receipt" ]] ||
+        fail "same-context submit-proof race returned different receipts"
+}
+
+test_dirty_artifact_cannot_create_submit_proof() {
+    new_case dirty-submit-proof false
+    jq '.beads["source-1"].metadata.auto_push = false' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    printf 'untracked\n' >"$WORK/untracked.txt"
+    run_lease submit --auto-push false
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "dirty artifact returned $RUN_RC instead of indeterminate"
+    [[ "$(submit_proof_count)" -eq 0 ]] ||
+        fail "dirty artifact created a submit proof"
+    [[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" ]] ||
+        fail "dirty artifact terminalized the Graph step"
 }
 
 make_racer() {
@@ -1693,6 +1882,10 @@ test_linked_worktree_ref_races() {
 test_normal_push
 test_rebased_exact_lease_push
 test_rejected_auto_push_false_stops_before_freeze
+test_auto_push_false_proof_is_local_and_idempotent
+test_submit_proof_ref_tamper_is_hard
+test_submit_proof_create_race_is_idempotent
+test_dirty_artifact_cannot_create_submit_proof
 test_remote_race_terminalizes
 test_terminalization_revalidates_graph_authority
 test_unreadable_is_indeterminate

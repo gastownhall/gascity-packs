@@ -301,6 +301,11 @@ for runtime_identity in \
 done
 ((${#RUNTIME_IDENTITIES[@]} > 0)) ||
     indeterminate "no safe runtime identity is available"
+CURRENT_SESSION_ID=${GC_SESSION_ID:-}
+if [[ "$ACTION" == "submit" ]]; then
+    [[ -n "$CURRENT_SESSION_ID" ]] && safe_atom "$CURRENT_SESSION_ID" ||
+        indeterminate "submit proof requires an exact nonempty GC_SESSION_ID"
+fi
 
 derive_graph_context() {
     local step_list step_matches step_json root_json convoy_json
@@ -525,7 +530,9 @@ load_source() {
         ((.[0].metadata // {}) | type) == "object" and
         ((.[0].metadata.branch // "") | type) == "string" and
         ((.[0].metadata.rejection_reason // "") | type) == "string" and
-        ((.[0].metadata.artifact_dir // "") | type) == "string"' \
+        ((.[0].metadata.artifact_dir // "") | type) == "string" and
+        (((.[0].metadata | has("auto_push")) | not) or
+         (.[0].metadata.auto_push | type) == "boolean")' \
         >/dev/null 2>&1 || return 1
     SOURCE_STATUS=$(printf '%s' "$SOURCE_JSON" | jq -er '.[0].status') ||
         return 1
@@ -551,6 +558,7 @@ load_source || indeterminate "could not read the exact source bead"
 
 WORKTREE_TOP=""
 WORKTREE_FINGERPRINT=""
+REPO_COMMON_FINGERPRINT=""
 
 artifact_git_common_dir() {
     local repo_dir=$1 common_dir
@@ -635,16 +643,24 @@ validate_worktree_binding() {
         indeterminate "could not fingerprint the bound worktree"
     is_oid "$WORKTREE_FINGERPRINT" ||
         indeterminate "invalid worktree fingerprint"
+    REPO_COMMON_FINGERPRINT=$(printf 'git-common-v1\0%s' "$rig_common" |
+        git hash-object --stdin 2>/dev/null) ||
+        indeterminate "could not fingerprint the repository common directory"
+    is_oid "$REPO_COMMON_FINGERPRINT" ||
+        indeterminate "invalid repository common-directory fingerprint"
 }
 
 validate_worktree_binding
 
 enforce_auto_push_policy() {
-    [[ "$ACTION" == "submit" && "$AUTO_PUSH" == "true" ]] || return 0
-    case "$SOURCE_AUTO_PUSH" in
-        ""|true) return 0 ;;
-        false)
+    [[ "$ACTION" == "submit" ]] || return 0
+    case "$AUTO_PUSH:$SOURCE_AUTO_PUSH" in
+        true:|true:true|false:false) return 0 ;;
+        true:false)
             indeterminate "source metadata.auto_push=false prohibits an automatic push"
+            ;;
+        false:|false:true)
+            indeterminate "auto_push=false requires exact boolean source metadata.auto_push=false"
             ;;
         *)
             indeterminate "source metadata.auto_push has an unsupported value"
@@ -707,6 +723,29 @@ emit_context() {
 CONTEXT_EXPECTED=$(emit_context | git hash-object --stdin 2>/dev/null) ||
     indeterminate "could not hash lease context"
 is_oid "$CONTEXT_EXPECTED" || indeterminate "invalid context object id"
+
+emit_submit_proof_key() {
+    printf '%s\n' \
+        "schema=gascity-polecat-submit-proof-key-v1" \
+        "source=$SOURCE_ID" \
+        "workflow_root=$ROOT_BEAD_ID" \
+        "step=$STEP_BEAD_ID" \
+        "input_convoy=$CONVOY_ID" \
+        "session_id=$CURRENT_SESSION_ID"
+}
+
+SUBMIT_PROOF_VERSION="1"
+SUBMIT_PROOF_KEY=$(emit_submit_proof_key | git hash-object --stdin 2>/dev/null) ||
+    indeterminate "could not derive the submit-proof key"
+is_oid "$SUBMIT_PROOF_KEY" ||
+    indeterminate "Git returned an invalid submit-proof key"
+SUBMIT_PROOF_NS="refs/gascity/polecat-submit-proofs/v1/$SUBMIT_PROOF_KEY"
+SUBMIT_PROOF_CONTEXT_REF="$SUBMIT_PROOF_NS/context"
+SUBMIT_PROOF_HEAD_REF="$SUBMIT_PROOF_NS/head"
+for ref in "$SUBMIT_PROOF_CONTEXT_REF" "$SUBMIT_PROOF_HEAD_REF"; do
+    git check-ref-format "$ref" >/dev/null 2>&1 ||
+        indeterminate "Git rejected an internal submit-proof ref"
+done
 
 CONTEXT_OID=""
 EXPECTED_OID=""
@@ -1757,6 +1796,195 @@ leased_push() {
     cleanup_namespace
 }
 
+SUBMIT_PROOF_CONTEXT_OID=""
+SUBMIT_PROOF_HEAD_OID=""
+SUBMIT_PROOF_STATE="absent"
+
+emit_submit_proof_context() {
+    local head_oid=$1
+    printf '%s\n' \
+        "schema=gascity-polecat-submit-proof-v1" \
+        "version=$SUBMIT_PROOF_VERSION" \
+        "key=$SUBMIT_PROOF_KEY" \
+        "source=$SOURCE_ID" \
+        "workflow_root=$ROOT_BEAD_ID" \
+        "step=$STEP_BEAD_ID" \
+        "step_assignee=$STEP_ASSIGNEE" \
+        "input_convoy=$CONVOY_ID" \
+        "session_id=$CURRENT_SESSION_ID" \
+        "branch=$BRANCH" \
+        "target=$BASE_BRANCH" \
+        "auto_push=$AUTO_PUSH" \
+        "head_oid=$head_oid" \
+        "rig=$ROOT_RIG_NAME" \
+        "binding_prefix=$ROOT_BINDING_PREFIX" \
+        "witness=$WITNESS_CANONICAL" \
+        "repo_common_fingerprint=$REPO_COMMON_FINGERPRINT" \
+        "worktree_fingerprint=$WORKTREE_FINGERPRINT" \
+        "origin_fetch_fingerprint=$FETCH_FINGERPRINT" \
+        "origin_push_fingerprint=$PUSH_FINGERPRINT"
+}
+
+read_submit_proof_once() {
+    SUBMIT_PROOF_CONTEXT_OID=$(read_ref "$SUBMIT_PROOF_CONTEXT_REF") ||
+        return 1
+    SUBMIT_PROOF_HEAD_OID=$(read_ref "$SUBMIT_PROOF_HEAD_REF") ||
+        return 1
+    if [[ -z "$SUBMIT_PROOF_CONTEXT_OID" &&
+          -z "$SUBMIT_PROOF_HEAD_OID" ]]; then
+        SUBMIT_PROOF_STATE="absent"
+    elif [[ -n "$SUBMIT_PROOF_CONTEXT_OID" &&
+            -n "$SUBMIT_PROOF_HEAD_OID" ]]; then
+        SUBMIT_PROOF_STATE="complete"
+    else
+        SUBMIT_PROOF_STATE="partial"
+    fi
+}
+
+load_submit_proof() {
+    local attempt
+    for attempt in 1 2 3; do
+        read_submit_proof_once || return 1
+        [[ "$SUBMIT_PROOF_STATE" == "partial" ]] || return 0
+        sleep 1
+    done
+    return 0
+}
+
+submit_proof_matches() {
+    local expected_context=$1 expected_head=$2 observed_context
+    [[ "$SUBMIT_PROOF_STATE" == "complete" &&
+       "$SUBMIT_PROOF_CONTEXT_OID" == "$expected_context" &&
+       "$SUBMIT_PROOF_HEAD_OID" == "$expected_head" ]] || return 1
+    ! git symbolic-ref -q "$SUBMIT_PROOF_CONTEXT_REF" >/dev/null 2>&1 ||
+        return 1
+    validate_commit_ref "$SUBMIT_PROOF_HEAD_REF" "$expected_head" || return 1
+    [[ "$(git cat-file -t "$expected_context" 2>/dev/null)" == "blob" ]] ||
+        return 1
+    observed_context=$(git cat-file blob "$expected_context" 2>/dev/null) ||
+        return 1
+    [[ "$observed_context" == "$(emit_submit_proof_context "$expected_head")" ]] ||
+        return 1
+    ref_equals "$SUBMIT_PROOF_CONTEXT_REF" "$expected_context" &&
+        ref_equals "$SUBMIT_PROOF_HEAD_REF" "$expected_head"
+}
+
+revalidate_submit_proof_inputs() {
+    local expected_head=$1 current branch_oid clean_status
+    prove_live_source_step
+    current=$(git branch --show-current 2>/dev/null || true)
+    [[ "$current" == "$BRANCH" ]] ||
+        indeterminate "submit proof is not running on the canonical branch"
+    branch_oid=$(read_ref "$BRANCH_REF") ||
+        indeterminate "could not read the branch before submit-proof publication"
+    [[ "$branch_oid" == "$expected_head" ]] ||
+        indeterminate "canonical branch changed before submit-proof publication"
+    clean_status=$(git status --porcelain --untracked-files=all 2>/dev/null) ||
+        indeterminate "could not inspect final task-artifact status"
+    [[ -z "$clean_status" ]] ||
+        indeterminate "task artifact is dirty; refusing submit-proof publication"
+    if [[ "$AUTO_PUSH" == "true" ]]; then
+        read_push_remote
+        [[ "$REMOTE_STATE" == "present" &&
+           "$REMOTE_OID" == "$expected_head" ]] ||
+            indeterminate "pushed branch no longer verifies at the exact submit head"
+    fi
+}
+
+emit_submit_proof_receipt() {
+    local context_oid=$1 head_oid=$2
+    printf 'POLECAT_SUBMIT_PROOF version=%s key=%s context=%s head=%s auto_push=%s\n' \
+        "$SUBMIT_PROOF_VERSION" "$SUBMIT_PROOF_KEY" "$context_oid" \
+        "$head_oid" "$AUTO_PUSH"
+}
+
+reuse_existing_submit_proof() {
+    local head_oid context_oid
+    load_submit_proof ||
+        indeterminate "could not inspect the existing submit-proof namespace"
+    case "$SUBMIT_PROOF_STATE" in
+        absent)
+            return 1
+            ;;
+        partial)
+            hard_conflict "existing submit-proof namespace is partial"
+            ;;
+        complete)
+            ;;
+    esac
+    [[ "$NS_STATE" == "absent" ]] ||
+        hard_conflict "submit proof coexists with unfinished rejection-lease refs"
+    head_oid=$(read_ref "$BRANCH_REF") ||
+        indeterminate "could not resolve the branch for submit-proof retry"
+    is_oid "$head_oid" ||
+        indeterminate "canonical branch has no valid submit-proof retry head"
+    context_oid=$(emit_submit_proof_context "$head_oid" |
+        git hash-object --stdin 2>/dev/null) ||
+        indeterminate "could not hash the submit-proof retry context"
+    submit_proof_matches "$context_oid" "$head_oid" ||
+        hard_conflict "existing submit proof differs from this workflow context or head"
+    revalidate_submit_proof_inputs "$head_oid"
+    emit_submit_proof_receipt "$context_oid" "$head_oid"
+    return 0
+}
+
+persist_submit_proof() {
+    local head_oid context_oid written
+
+    head_oid=$(read_ref "$BRANCH_REF") ||
+        indeterminate "could not resolve the submit-proof head"
+    is_oid "$head_oid" ||
+        indeterminate "canonical branch has no valid submit-proof head"
+    revalidate_submit_proof_inputs "$head_oid"
+
+    context_oid=$(emit_submit_proof_context "$head_oid" |
+        git hash-object --stdin 2>/dev/null) ||
+        indeterminate "could not hash the submit-proof context"
+    is_oid "$context_oid" ||
+        indeterminate "Git returned an invalid submit-proof context id"
+    written=$(emit_submit_proof_context "$head_oid" |
+        git hash-object -w --stdin 2>/dev/null) ||
+        indeterminate "could not write the submit-proof context object"
+    [[ "$written" == "$context_oid" ]] ||
+        indeterminate "written submit-proof context did not match its digest"
+
+    if printf '%s\n' \
+        start \
+        "option no-deref" \
+        "verify $BRANCH_REF $head_oid" \
+        "create $SUBMIT_PROOF_CONTEXT_REF $context_oid" \
+        "create $SUBMIT_PROOF_HEAD_REF $head_oid" \
+        prepare \
+        commit | git update-ref --stdin >/dev/null 2>&1; then
+        :
+    else
+        load_submit_proof ||
+            indeterminate "could not read submit proof after create-only transaction failure"
+        case "$SUBMIT_PROOF_STATE" in
+            absent)
+                indeterminate "submit-proof transaction failed without publishing refs"
+                ;;
+            partial)
+                hard_conflict "submit-proof transaction exposed partial refs"
+                ;;
+            complete)
+                submit_proof_matches "$context_oid" "$head_oid" ||
+                    hard_conflict "another submit proof won with different context or head"
+                ;;
+        esac
+    fi
+
+    load_submit_proof ||
+        indeterminate "could not read the durable submit proof"
+    [[ "$SUBMIT_PROOF_STATE" != "partial" ]] ||
+        hard_conflict "durable submit-proof namespace is partial"
+    submit_proof_matches "$context_oid" "$head_oid" ||
+        hard_conflict "durable submit proof failed exact readback validation"
+    revalidate_submit_proof_inputs "$head_oid"
+
+    emit_submit_proof_receipt "$context_oid" "$head_oid"
+}
+
 submit_action() {
     local current branch_oid
     current=$(git branch --show-current 2>/dev/null || true)
@@ -1765,13 +1993,18 @@ submit_action() {
     branch_oid=$(read_ref "$BRANCH_REF") ||
         indeterminate "could not read canonical submit branch"
     is_oid "$branch_oid" || indeterminate "canonical branch ref is missing"
+    if reuse_existing_submit_proof; then
+        return 0
+    fi
 
     if [[ "$NS_STATE" == "absent" ]]; then
         if [[ "$AUTO_PUSH" == "false" ]]; then
             echo "POLECAT_LEASE_AUTO_PUSH_FALSE: no rejection lease; no push performed"
+            persist_submit_proof
             return 0
         fi
         normal_push
+        persist_submit_proof
         return 0
     fi
     [[ "$NS_STATE" != "captured" ]] ||
@@ -1794,6 +2027,7 @@ submit_action() {
         "frozen submit abandoned published rebase"
 
     leased_push
+    persist_submit_proof
 }
 
 case "$ACTION" in

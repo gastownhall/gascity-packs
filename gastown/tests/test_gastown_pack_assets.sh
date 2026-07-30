@@ -269,11 +269,11 @@ PY
     ! sed -n '/BEGIN_GASTOWN_SUBMIT_GUARD/,/END_GASTOWN_SUBMIT_GUARD/p' "$fragment" |
         grep -E 'gc hook --claim|gc bd (list|show|update)' >/dev/null ||
         fail "done-state guard must not claim or reconstruct submit state"
-    [[ "$(grep -cF 'gc gastown polecat-submit complete' "$formula")" -eq 2 ]] ||
-        fail "normal and auto_push=false paths must each use deterministic submit completion"
-    grep -F -- '--mode auto_push_false' "$formula" >/dev/null &&
-        grep -F -- '--mode refinery' "$formula" >/dev/null ||
-        fail "submit completion calls must select exact durable evidence modes"
+    [[ "$(grep -cF 'gc gastown polecat-submit execute' "$formula")" -eq 1 ]] ||
+        fail "terminal stage must delegate exactly once to deterministic submit execute"
+    ! grep -F 'gc gastown polecat-submit complete' "$formula" >/dev/null &&
+        ! grep -F 'gc gastown polecat-lease submit' "$formula" >/dev/null ||
+        fail "terminal formula must not reconstruct lease or completion behavior"
     ! grep -F 'EXPECTED_ASSIGNEE="${BEADS_ACTOR' "$formula" "$prompt" "$fragment" >/dev/null ||
         fail "submit paths must not retain single-precedence identity logic"
     ! grep -F 'gc hook' "$submit_command" >/dev/null ||
@@ -286,14 +286,17 @@ PY
         grep -F 'gc.polecat_submit_convoy' "$submit_command" >/dev/null &&
         grep -F 'gc.polecat_submit_version' "$submit_command" >/dev/null &&
         grep -F 'SOURCE_BRANCH_READY' "$submit_command" >/dev/null &&
-        grep -F 'revalidate_context' "$submit_command" >/dev/null ||
+        grep -F 'revalidate_context' "$submit_command" >/dev/null &&
+        grep -F 'prepare_execute_artifact' "$submit_command" >/dev/null &&
+        grep -F 'verify_submit_proof' "$submit_command" >/dev/null &&
+        grep -F 'POLECAT_SUBMIT_EXECUTE_COMPLETE' "$submit_command" >/dev/null ||
         fail "submit command must bind identities, source evidence, and mutation readback"
     if ! python3 - "$submit_command" <<'PY'
 import sys
 
 text = open(sys.argv[1], encoding="utf-8").read()
-start = text.index('if [[ "$ACTION" == "guard" ]]; then', text.index("close_step()"))
-guard = text[start:text.index("evidence_matches() {", start)]
+start = text.rindex('\nif [[ "$ACTION" == "guard" ]]; then') + 1
+guard = text[start:text.index("\nevidence_matches ||", start)]
 if "close_step" in guard or "run_gc_bd update" in guard:
     raise SystemExit("guard branch must remain read-only")
 PY
@@ -308,229 +311,79 @@ PY
     ! grep -F 'done sequence — branch-shape gate' "$prompt" >/dev/null ||
         fail "polecat final reminder must not retain the pre-artifact-entry sequence"
 
-    if ! python3 - "$formula" <<'PY'
+    if ! python3 - "$formula" "$submit_command" <<'PY'
 import re
 import sys
 import tomllib
 
-path = sys.argv[1]
-text = open(path, encoding="utf-8").read()
-with open(path, "rb") as handle:
+formula_path, command_path = sys.argv[1:]
+formula_text = open(formula_path, encoding="utf-8").read()
+command_text = open(command_path, encoding="utf-8").read()
+with open(formula_path, "rb") as handle:
     document = tomllib.load(handle)
 submit = next(
     step["description"]
     for step in document.get("steps", [])
     if step.get("id") == "submit-and-exit"
 )
-required_entry = (
-    "expected exactly one source child",
-    '(.[0] | type) == "object" and .[0].id == $source and',
-    '(.[0].metadata | type) == "object" and',
-    '(.[0].metadata.artifact_dir | type) == "string" and',
-    'if [ -z "${GC_CITY_PATH:-}" ] || [ -z "${GC_RIG:-}" ] ||',
-    'RIG_NAMESPACE="$CITY_ROOT/.gc/worktrees/$GC_RIG"',
-    '[ "$RIG_NAMESPACE_REAL" != "$RIG_NAMESPACE" ]',
-    'case "$ARTIFACT_DIR" in',
-    '[ "$ARTIFACT_REAL" != "$ARTIFACT_DIR" ]',
-    '[ "$PROVIDER_ROOT" != "$RIG_NAMESPACE_REAL/polecats" ]',
-    "CURRENT_GIT_TOP=$(git rev-parse --show-toplevel 2>/dev/null)",
-    '[ "$CURRENT_GIT_TOP" != "$ARTIFACT_DIR" ]',
-    "ARTIFACT_COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)",
-    'RIG_COMMON=$(git -C "$RIG_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)',
-    '[ "$ARTIFACT_COMMON" != "$RIG_COMMON" ]',
-)
-for marker in (
-    "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
-    "# END_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
-):
-    if submit.count(marker) != 1:
-        raise SystemExit(f"submit stage must contain exactly one {marker}")
-
 shell_blocks = re.findall(r"```bash\n(.*?)\n```", submit, re.DOTALL)
-entry_blocks = [
-    block
-    for block in shell_blocks
-    if "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY" in block
-]
-if len(entry_blocks) != 1:
-    raise SystemExit(
-        "artifact entry, branch check, final clean, and lease must share one shell fence"
-    )
-entry_block = entry_blocks[0]
-for fragment in required_entry:
-    if fragment not in entry_block:
-        raise SystemExit(f"artifact entry contract is missing {fragment!r}")
-exact_source_fragment = '(.[0] | type) == "object" and .[0].id == $source and'
-if entry_block.count(exact_source_fragment) != 2:
-    raise SystemExit("artifact and auto_push reads must each validate the exact source")
-lease_auto_push = (
-    'AUTO_PUSH=$(printf \'%s\' "$SOURCE_JSON"',
-    '.[0].metadata.auto_push == false then "false"',
-    '.[0].metadata.auto_push == true then "true"',
-    'error("metadata.auto_push must be boolean")',
-    'submit_artifact_entry_fail "could not resolve exact boolean source metadata.auto_push"',
-    "false) AUTO_PUSH_BOOL=false ;;",
-    '""|true) AUTO_PUSH_BOOL=true ;;',
-)
-for fragment in lease_auto_push:
-    if fragment not in entry_block:
-        raise SystemExit(f"lease auto_push guard is missing {fragment!r}")
-if 'AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID"' in entry_block:
-    raise SystemExit("lease auto_push guard must reuse exact SOURCE_JSON")
-final_clean = (
-    "FINAL_STATUS=$(git status --porcelain)",
-    'submit_artifact_entry_fail "could not inspect final task-artifact status"',
-    'if [ -n "$FINAL_STATUS" ]; then',
-    'submit_artifact_entry_fail "could not verify final task-artifact status"',
-    'submit_artifact_entry_fail "task artifact is not clean after final capture"',
-)
-for fragment in final_clean:
-    if fragment not in entry_block:
-        raise SystemExit(f"lease final-clean guard is missing {fragment!r}")
-if entry_block.count("FINAL_STATUS=$(git status --porcelain)") != 2:
-    raise SystemExit("lease must inspect final status before and after capture")
-
-entry_order = (
-    "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
-    'SOURCE_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)',
-    'ARTIFACT_DIR=$(printf \'%s\' "$SOURCE_JSON"',
-    'CANONICAL_ARTIFACT="$RIG_NAMESPACE_REAL/artifacts/worktrees/$WORK_BEAD_ID"',
-    '\ncd -- "$ARTIFACT_DIR" ||',
-    "CURRENT_GIT_TOP=$(git rev-parse --show-toplevel 2>/dev/null)",
-    '[ "$ARTIFACT_COMMON" != "$RIG_COMMON" ]',
-    "# END_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY",
-    "CURRENT_BRANCH=$(git branch --show-current)",
-    "FINAL_STATUS=$(git status --porcelain)",
-    'AUTO_PUSH=$(printf \'%s\' "$SOURCE_JSON"',
-    "# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT",
-    "gc gastown polecat-lease submit",
-)
-entry_positions = [entry_block.index(fragment) for fragment in entry_order]
-if entry_positions != sorted(entry_positions):
-    raise SystemExit(
-        "submit stage must enter an exact contained same-repo artifact in the "
-        "same invocation as branch, final-clean, and lease operations"
-    )
-for block in shell_blocks:
-    if "git " not in block:
-        continue
-    if "# BEGIN_GASTOWN_POLECAT_SUBMIT_ARTIFACT_ENTRY" not in block:
-        raise SystemExit("later submit fence contains cwd-dependent Git")
-if submit.count("git branch --show-current") != 1:
-    raise SystemExit("only the same-fence branch gate may inspect the current branch")
-if 'BRANCH="$EXPECTED_BRANCH"' not in submit:
-    raise SystemExit("auto_push=false must use the canonical expected branch")
-if "git checkout --detach" in submit or "git branch -D" in submit:
-    raise SystemExit("post-handoff cleanup must not mutate an inherited cwd")
-
-handoff_blocks = [
-    block
-    for block in shell_blocks
-    if "# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT" in block
-]
-completion_blocks = [
-    block
-    for block in shell_blocks
-    if "# BEGIN_GASTOWN_REFINERY_COMPLETION_CONTEXT" in block
-]
-for marker in (
-    "# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT",
-    "# END_GASTOWN_REFINERY_HANDOFF_CONTEXT",
-    "# BEGIN_GASTOWN_REFINERY_COMPLETION_CONTEXT",
-    "# END_GASTOWN_REFINERY_COMPLETION_CONTEXT",
+if len(shell_blocks) != 1:
+    raise SystemExit("terminal submit must use exactly one shell fence")
+block = shell_blocks[0]
+execute = "gc gastown polecat-submit execute"
+if submit.count(execute) != 1 or block.count(execute) != 1:
+    raise SystemExit("terminal submit must invoke deterministic execute exactly once")
+if f"if ! {execute}; then" not in block:
+    raise SystemExit("terminal submit must fail closed when execute fails")
+if block.count("gc ") != 1:
+    raise SystemExit("terminal submit shell fence must contain one gc command")
+for forbidden in (
+    "polecat-lease",
+    "polecat-submit guard",
+    "polecat-submit complete",
+    "gc bd ",
+    "gc runtime ",
+    "gc session ",
+    "git ",
 ):
-    if submit.count(marker) != 1:
-        raise SystemExit(f"submit stage must contain exactly one {marker}")
-if len(handoff_blocks) != 1:
-    raise SystemExit("refinery handoff context and action must share one shell fence")
-if len(completion_blocks) != 1:
-    raise SystemExit("refinery completion context and action must share one shell fence")
-handoff_block = handoff_blocks[0]
-completion_block = completion_blocks[0]
-handoff_contract = (
-    '(.[0] | type) == "object" and .[0].id == $source and',
-    '.[0].metadata.branch == $branch;',
-    '((.[0].metadata | has("auto_push")) | not) or',
-    ".[0].metadata.auto_push == true",
-    '((.[0].metadata | has("gc.polecat_submit_convoy")) | not)',
-    'then "proceed"',
-    '(.[0].status | IN("open", "in_progress"))',
-    ".[0].assignee == $refinery",
-    '.[0].metadata["gc.polecat_submit_convoy"] == $convoy',
-    '(.[0].metadata["gc.routed_to"] // "") == ""',
-    '((.[0].metadata | has("branch_ready")) | not)',
-    '((.[0].metadata | has("halt_reason")) | not)',
-    'then "replay"',
-    'elif .[0].status == "closed" and',
-    "source is neither proceedable nor exact current-convoy handoff",
-    'elif [ "$HANDOFF_ACTION" = "replay" ]; then',
-    "Refinery handoff already exists for this exact convoy",
-    "HANDOFF_SHAPE_OK=true",
-    'elif [ "$HANDOFF_STATUS" = "closed" ]; then',
-    "HANDOFF_ASSIGNEE_OK=true",
-)
-for fragment in handoff_contract:
-    if fragment not in handoff_block:
-        raise SystemExit(f"refinery handoff context is missing {fragment!r}")
-handoff_exact_source = '(.[0] | type) == "object" and .[0].id == $source and'
-if handoff_block.count(handoff_exact_source) != 2:
-    raise SystemExit(
-        "refinery handoff classification and readback must validate the exact source"
-    )
-for repeated_fragment in (
-    '.[0].metadata["gc.polecat_submit_convoy"] == $convoy',
-    '((.[0].metadata | has("branch_ready")) | not)',
-    '((.[0].metadata | has("halt_reason")) | not)',
-):
-    if handoff_block.count(repeated_fragment) != 2:
-        raise SystemExit(
-            f"active and closed handoff replay must retain {repeated_fragment!r}"
-        )
-handoff_order = (
-    "# BEGIN_GASTOWN_REFINERY_HANDOFF_CONTEXT",
-    "CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json 2>/dev/null)",
-    "WORK_BEAD_ID=$(printf '%s' \"$CONVOY_STATUS\"",
-    'EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"',
-    'REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"',
-    'SOURCE_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)',
-    'HANDOFF_ACTION=$(printf \'%s\' "$SOURCE_JSON"',
-    "# END_GASTOWN_REFINERY_HANDOFF_CONTEXT",
-    'if [ "$HANDOFF_ACTION" = "proceed" ]; then',
-    'if ! gc bd update "$WORK_BEAD_ID"',
-)
-completion_order = (
-    "# BEGIN_GASTOWN_REFINERY_COMPLETION_CONTEXT",
-    "CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json 2>/dev/null)",
-    "WORK_BEAD_ID=$(printf '%s' \"$CONVOY_STATUS\"",
-    'EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"',
-    "# END_GASTOWN_REFINERY_COMPLETION_CONTEXT",
-    "# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION",
-    "gc gastown polecat-submit complete",
-)
-for label, block, order in (
-    ("refinery handoff", handoff_block, handoff_order),
-    ("refinery completion", completion_block, completion_order),
-):
-    positions = [block.index(fragment) for fragment in order]
-    if positions != sorted(positions):
-        raise SystemExit(f"{label} must derive exact context before its action")
+    if forbidden in block:
+        raise SystemExit(f"terminal submit reconstructs delegated behavior: {forbidden}")
+if "POLECAT_SUBMIT_EXECUTE_COMPLETE" not in submit:
+    raise SystemExit("terminal submit must require the durable execute receipt")
 
-workspace_lease = text.index('gc gastown polecat-lease workspace')
-explicit_publish = text.index('gc gastown polecat-lease publish-rebase')
-new_branch = text.index('git checkout -b "$BRANCH" "origin/{{base_branch}}"')
-submit_lease = text.index('# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT')
-manual_ready = submit.index('echo "auto_push=false: halting at branch-ready')
-handoff_verified = submit.index('Refinery handoff did not verify exact status/assignee')
-cleanup = submit.index('Local Git cleanup is deliberately skipped')
-step_completion = submit.index('# BEGIN_GASTOWN_REFINERY_STEP_COMPLETION')
-if not workspace_lease < explicit_publish < new_branch < submit_lease:
-    raise SystemExit(1)
-submit_lease_in_stage = submit.index('# BEGIN_GASTOWN_POLECAT_LEASE_SUBMIT')
-if not submit_lease_in_stage < manual_ready < handoff_verified < cleanup < step_completion:
-    raise SystemExit(1)
+workspace_lease = formula_text.index("gc gastown polecat-lease workspace")
+explicit_publish = formula_text.index("gc gastown polecat-lease publish-rebase")
+terminal_execute = formula_text.index(execute)
+if not workspace_lease < explicit_publish < terminal_execute:
+    raise SystemExit("workspace, publish-rebase, and submit execute order drifted")
+
+execute_start = command_text.index("execute_submit() {")
+execute_end = command_text.index(
+    'if [[ "$ACTION" == "execute" ]]; then', execute_start
+)
+execute_body = command_text[execute_start:execute_end]
+ordered = (
+    "prepare_execute_artifact",
+    "run_gc gastown polecat-lease submit",
+    "execute_terminal_update",
+    "close_step pass",
+    'run_gc runtime drain-ack',
+    "POLECAT_SUBMIT_EXECUTE_COMPLETE",
+)
+positions = [execute_body.index(fragment) for fragment in ordered]
+if positions != sorted(positions):
+    raise SystemExit("deterministic execute transaction ordering drifted")
+for fragment in (
+    "prepare_submit_proof_context",
+    "verify_submit_proof",
+    "execution_evidence_matches",
+    'run_gc session wake "$REFINERY_TARGET"',
+):
+    if fragment not in execute_body:
+        raise SystemExit(f"deterministic execute is missing {fragment!r}")
 PY
     then
-        fail "deterministic workspace/submit command and handoff cleanup ordering drifted"
+        fail "deterministic submit delegation or transaction ordering drifted"
     fi
     ! grep -F 'git push' "$formula" >/dev/null ||
         fail "formula prose must delegate every push to the deterministic command"
@@ -549,11 +402,6 @@ PY
     grep -F '`polecat_push_lease_*`' "$prompt" >/dev/null &&
         grep -F 'authoritative repo-local lease refs' "$prompt" >/dev/null ||
         fail "polecat prompt must distinguish lease refs from the metadata mirror"
-    grep -F 'Local Git cleanup is deliberately skipped here' "$formula" >/dev/null ||
-        fail "post-handoff cleanup must avoid cwd-dependent Git"
-    grep -F 'The `gc bd update` in step 4 generates' "$formula" >/dev/null ||
-        fail "refinery wake prose must reference the renumbered handoff step"
-
 }
 
 test_polecat_workflow_is_fail_fast_scoped() {
@@ -701,68 +549,60 @@ test_submit_generation_lifecycle_contract() {
         "$GASTOWN/formulas/mol-refinery-patrol.toml" \
         "$GASTOWN/formulas/mol-witness-patrol.toml" \
         "$GASTOWN/agents/refinery/prompt.template.md" \
-        "$GASTOWN/agents/witness/prompt.template.md" <<'PY'
+        "$GASTOWN/agents/witness/prompt.template.md" \
+        "$GASTOWN/commands/polecat-submit/run.sh" <<'PY'
 from pathlib import Path
 import sys
 
-polecat, refinery, witness, refinery_prompt, witness_prompt = (
+polecat, refinery, witness, refinery_prompt, witness_prompt, submit = (
     Path(name).read_text(encoding="utf-8") for name in sys.argv[1:]
 )
-token_set = "--set-metadata gc.polecat_submit_convoy={{convoy_id}}"
-if polecat.count(token_set) != 2:
-    raise SystemExit("both source transitions must bind the exact convoy")
+if polecat.count("gc gastown polecat-submit execute") != 1:
+    raise SystemExit("formula must delegate its terminal transaction exactly once")
+if "gc.polecat_submit_convoy" in polecat:
+    raise SystemExit("formula must not reconstruct submit-generation mutation")
 
-auto = polecat.split('if [ "$AUTO_PUSH" = "false" ]; then', 1)[1].split(
-    "# BEGIN_GASTOWN_AUTO_PUSH_FALSE_STEP_COMPLETION", 1
+terminal_update = submit.split("execute_terminal_update() {", 1)[1].split(
+    "\nexecute_submit() {", 1
 )[0]
+token_set = '--set-metadata "gc.polecat_submit_convoy=$CONVOY_ID"'
+if terminal_update.count(token_set) != 2:
+    raise SystemExit("both deterministic source transitions must bind the exact convoy")
 for fragment in (
-    "--status=open --assignee=",
-    '--set-metadata branch="$BRANCH"',
-    "--set-metadata target={{base_branch}}",
-    token_set,
+    '--set-metadata "branch=$CANONICAL_SOURCE_BRANCH"',
+    '--set-metadata "target=$ROOT_BASE_BRANCH"',
+    '--set-metadata "gc.polecat_submit_execute_version=$EXECUTE_VERSION"',
+    '--set-metadata "gc.polecat_submit_lease_version=$LEASE_EVIDENCE_VERSION"',
+    '--set-metadata "gc.polecat_submit_proof_key=$EXECUTE_PROOF_KEY"',
+    "--unset-metadata artifact_source_sha",
+    "--unset-metadata artifact_cleanup_state",
+):
+    if terminal_update.count(fragment) != 2:
+        raise SystemExit(f"both deterministic source transitions must retain {fragment}")
+for fragment in (
+    '--status=open --assignee=""',
     "--set-metadata branch_ready=true",
     "--set-metadata halt_reason=auto_push_false",
-    "--set-metadata gc.routed_to=",
-    "--unset-metadata artifact_source_sha",
-    "--unset-metadata artifact_cleanup_state",
-    "BRANCH_READY_CONVOY",
-    "BRANCH_READY_TARGET",
-    "BRANCH_READY_HALT",
-    "BRANCH_READY_STALE_ARTIFACT",
 ):
-    if fragment not in auto:
+    if fragment not in terminal_update:
         raise SystemExit(f"auto_push=false transition missing {fragment}")
-
-handoff = polecat.split(
-    "**4. Atomically hand the exact source generation to the refinery:", 1
-)[1].split("HANDOFF_JSON=", 1)[0]
-if handoff.count('gc bd update "$WORK_BEAD_ID"') != 1:
-    raise SystemExit("refinery handoff must use one source update")
 for fragment in (
-    "--status=open",
-    '--assignee="$REFINERY_TARGET"',
-    '--set-metadata branch="$EXPECTED_BRANCH"',
-    "--set-metadata target={{base_branch}}",
-    token_set,
-    "--set-metadata gc.routed_to=",
-    "--unset-metadata artifact_source_sha",
-    "--unset-metadata artifact_cleanup_state",
+    '--status=open --assignee="$REFINERY_TARGET"',
     "--unset-metadata branch_ready",
     "--unset-metadata halt_reason",
 ):
-    if fragment not in handoff:
-        raise SystemExit(f"atomic refinery handoff missing {fragment}")
-for fragment in (
-    "HANDOFF_BRANCH",
-    "HANDOFF_TARGET",
-    "HANDOFF_CONVOY",
-    "HANDOFF_ROUTED",
-    "HANDOFF_STALE_GENERATION",
-):
-    if fragment not in polecat:
-        raise SystemExit(f"refinery handoff readback missing {fragment}")
-if polecat.count("if ! gc runtime drain-ack; then") < 2:
-    raise SystemExit("both completion callers must fail on drain error")
+    if fragment not in terminal_update:
+        raise SystemExit(f"refinery transition missing {fragment}")
+
+execute = submit.split("execute_submit() {", 1)[1].split(
+    '\nif [[ "$ACTION" == "execute" ]]', 1
+)[0]
+proof = execute.index("verify_submit_proof")
+transition = execute.index("execute_terminal_update")
+completion = execute.index("close_step pass")
+drain = execute.index("run_gc runtime drain-ack")
+if not proof < transition < completion < drain:
+    raise SystemExit("proof, terminal mutation, close, and drain order drifted")
 
 delete = 'gc workflow delete-source "$WORK" --apply'
 delete_positions = []
