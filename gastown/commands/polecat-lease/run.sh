@@ -259,11 +259,12 @@ CONTEXT_REF="$LEASE_NS/context"
 EXPECTED_REF="$LEASE_NS/expected"
 PRE_REF="$LEASE_NS/pre-rebase"
 BASE_REF="$LEASE_NS/base"
+CANDIDATE_REF="$LEASE_NS/candidate"
 REBASED_REF="$LEASE_NS/rebased"
 SUBMIT_REF="$LEASE_NS/submit"
 
 for ref in "$CONTEXT_REF" "$EXPECTED_REF" "$PRE_REF" "$BASE_REF" \
-           "$REBASED_REF" "$SUBMIT_REF"; do
+           "$CANDIDATE_REF" "$REBASED_REF" "$SUBMIT_REF"; do
     git check-ref-format "$ref" >/dev/null 2>&1 ||
         indeterminate "Git rejected an internal lease ref"
 done
@@ -631,11 +632,46 @@ safe_path_atom() {
     esac
 }
 
+LEASE_POINTER_LINE=
+lease_read_one_line_file() {
+    local file=$1 line count=0
+    LEASE_POINTER_LINE=
+    [[ -f "$file" && ! -L "$file" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        count=$((count + 1))
+        [[ "$count" -eq 1 ]] || return 1
+        LEASE_POINTER_LINE=$line
+    done <"$file"
+    [[ "$count" -eq 1 ]]
+}
+
+lease_resolve_dir_ref() {
+    local base=$1 ref=$2 candidate
+    case "$ref" in
+        /*) candidate=$ref ;;
+        *) candidate="$base/$ref" ;;
+    esac
+    (CDPATH= cd -- "$candidate" 2>/dev/null && pwd -P)
+}
+
+lease_resolve_file_ref() {
+    local base=$1 ref=$2 candidate parent parent_real
+    case "$ref" in
+        /*) candidate=$ref ;;
+        *) candidate="$base/$ref" ;;
+    esac
+    parent=$(dirname -- "$candidate") || return 1
+    parent_real=$(CDPATH= cd -- "$parent" 2>/dev/null && pwd -P) || return 1
+    printf '%s/%s\n' "$parent_real" "$(basename -- "$candidate")"
+}
+
 validate_worktree_binding() {
     local current_top recorded_top recorded_git_top
     local city_root rig_root recorded_common rig_common
     local rig_namespace rig_namespace_real canonical_path
     local worktrees_parent provider_home provider_root provider_name
+    local artifact_git_dir dotgit_ref dotgit_real backref backreal listed
+    local registered_count=0
 
     [[ -n "$SOURCE_ARTIFACT_DIR" ]] ||
         indeterminate "source metadata has no recorded artifact_dir"
@@ -658,6 +694,8 @@ validate_worktree_binding() {
 
     recorded_top=$(CDPATH= cd -- "$SOURCE_ARTIFACT_DIR" 2>/dev/null && pwd -P) ||
         indeterminate "recorded source artifact_dir is unavailable"
+    [[ "$recorded_top" == "$SOURCE_ARTIFACT_DIR" ]] ||
+        indeterminate "source metadata.artifact_dir is redirected"
     [[ "$(basename -- "$recorded_top")" == "$SOURCE_ID" &&
        "$(basename -- "$(dirname -- "$recorded_top")")" == "worktrees" ]] ||
         indeterminate "source metadata.artifact_dir is not bead-scoped"
@@ -687,6 +725,39 @@ validate_worktree_binding() {
         indeterminate "could not resolve the rig Git common directory"
     [[ "$recorded_common" == "$rig_common" ]] ||
         indeterminate "source metadata.artifact_dir belongs to another repository"
+
+    artifact_git_dir=$(git -C "$recorded_top" rev-parse \
+        --path-format=absolute --absolute-git-dir 2>/dev/null) ||
+        indeterminate "could not resolve the artifact Git admin directory"
+    artifact_git_dir=$(CDPATH= cd -- "$artifact_git_dir" 2>/dev/null && pwd -P) ||
+        indeterminate "could not canonicalize the artifact Git admin directory"
+    [[ "$(dirname -- "$artifact_git_dir")" == "$rig_common/worktrees" ]] ||
+        indeterminate "artifact Git admin directory is not registered to the rig"
+    lease_read_one_line_file "$recorded_top/.git" ||
+        indeterminate "source artifact has an invalid or redirected .git pointer"
+    case "$LEASE_POINTER_LINE" in
+        "gitdir: "*) dotgit_ref=${LEASE_POINTER_LINE#gitdir: } ;;
+        *) indeterminate "source artifact has an invalid .git pointer" ;;
+    esac
+    safe_atom "$dotgit_ref" ||
+        indeterminate "source artifact has an unsafe .git pointer"
+    dotgit_real=$(lease_resolve_dir_ref "$recorded_top" "$dotgit_ref") ||
+        indeterminate "source artifact .git pointer is unavailable"
+    [[ "$dotgit_real" == "$artifact_git_dir" ]] ||
+        indeterminate "source artifact .git pointer does not match Git identity"
+    lease_read_one_line_file "$artifact_git_dir/gitdir" ||
+        indeterminate "source artifact Git admin backpointer is invalid"
+    backref=$LEASE_POINTER_LINE
+    backreal=$(lease_resolve_file_ref "$artifact_git_dir" "$backref") ||
+        indeterminate "source artifact Git admin backpointer is unavailable"
+    [[ "$backreal" == "$recorded_top/.git" ]] ||
+        indeterminate "source artifact Git admin backpointer does not match artifact"
+    while IFS= read -r -d '' listed; do
+        [[ "$listed" == "worktree $recorded_top" ]] &&
+            registered_count=$((registered_count + 1))
+    done < <(git -C "$rig_root" worktree list --porcelain -z 2>/dev/null)
+    [[ "$registered_count" -eq 1 ]] ||
+        indeterminate "source artifact is not exactly one registered rig worktree"
 
     current_top=$(git rev-parse --show-toplevel 2>/dev/null) ||
         indeterminate "could not resolve the current worktree top"
@@ -773,6 +844,7 @@ emit_context() {
         "target=$BASE_BRANCH" \
         "witness=$WITNESS_CANONICAL" \
         "worktree_fingerprint=$WORKTREE_FINGERPRINT" \
+        "repo_common_fingerprint=$REPO_COMMON_FINGERPRINT" \
         "origin_fetch_fingerprint=$FETCH_FINGERPRINT" \
         "origin_push_fingerprint=$PUSH_FINGERPRINT"
 }
@@ -808,6 +880,7 @@ CONTEXT_OID=""
 EXPECTED_OID=""
 PRE_OID=""
 BASE_OID=""
+CANDIDATE_OID=""
 REBASED_OID=""
 SUBMIT_OID=""
 NS_COUNT=0
@@ -847,13 +920,15 @@ read_namespace_once() {
         indeterminate "could not read lease pre-rebase ref"
     BASE_OID=$(read_ref "$BASE_REF") ||
         indeterminate "could not read lease base ref"
+    CANDIDATE_OID=$(read_ref "$CANDIDATE_REF") ||
+        indeterminate "could not read lease candidate ref"
     REBASED_OID=$(read_ref "$REBASED_REF") ||
         indeterminate "could not read lease rebased ref"
     SUBMIT_OID=$(read_ref "$SUBMIT_REF") ||
         indeterminate "could not read lease submit ref"
     NS_COUNT=0
     for oid in "$CONTEXT_OID" "$EXPECTED_OID" "$PRE_OID" "$BASE_OID" \
-               "$REBASED_OID" "$SUBMIT_OID"; do
+               "$CANDIDATE_OID" "$REBASED_OID" "$SUBMIT_OID"; do
         [[ -z "$oid" ]] || NS_COUNT=$((NS_COUNT + 1))
     done
     case "$NS_COUNT" in
@@ -861,7 +936,8 @@ read_namespace_once() {
         4)
             if [[ -n "$CONTEXT_OID" && -n "$EXPECTED_OID" &&
                   -n "$PRE_OID" && -n "$BASE_OID" &&
-                  -z "$REBASED_OID" && -z "$SUBMIT_OID" ]]; then
+                  -z "$CANDIDATE_OID" && -z "$REBASED_OID" &&
+                  -z "$SUBMIT_OID" ]]; then
                 NS_STATE="captured"
                 return 0
             fi
@@ -869,14 +945,22 @@ read_namespace_once() {
         5)
             if [[ -n "$CONTEXT_OID" && -n "$EXPECTED_OID" &&
                   -n "$PRE_OID" && -n "$BASE_OID" &&
-                  -n "$REBASED_OID" && -z "$SUBMIT_OID" ]]; then
-                NS_STATE="rebased"
-                return 0
+                  -z "$SUBMIT_OID" ]]; then
+                if [[ -n "$CANDIDATE_OID" && -z "$REBASED_OID" ]]; then
+                    NS_STATE="candidate"
+                    return 0
+                elif [[ -z "$CANDIDATE_OID" && -n "$REBASED_OID" ]]; then
+                    NS_STATE="rebased"
+                    return 0
+                fi
             fi
             ;;
         6)
-            NS_STATE="submit-frozen"
-            return 0
+            if [[ -z "$CANDIDATE_OID" && -n "$REBASED_OID" &&
+                  -n "$SUBMIT_OID" ]]; then
+                NS_STATE="submit-frozen"
+                return 0
+            fi
             ;;
     esac
     NS_STATE="partial"
@@ -905,6 +989,29 @@ validate_commit_ref() {
     [[ "$observed" == "$oid" ]]
 }
 
+validate_candidate_lineage() {
+    local candidate=$1 original_base pre_count candidate_count diff_code
+    is_oid "$candidate" || return 1
+    [[ "$(git cat-file -t "$candidate" 2>/dev/null)" == "commit" ]] || return 1
+    git merge-base --is-ancestor "$BASE_OID" "$candidate" >/dev/null 2>&1 ||
+        return 1
+    original_base=$(git merge-base "$PRE_OID" "$BASE_OID" 2>/dev/null) ||
+        return 1
+    is_oid "$original_base" || return 1
+    pre_count=$(git rev-list --count "$original_base..$PRE_OID" 2>/dev/null) ||
+        return 1
+    candidate_count=$(git rev-list --count "$BASE_OID..$candidate" 2>/dev/null) ||
+        return 1
+    [[ "$pre_count" -gt 0 && "$candidate_count" -eq "$pre_count" ]] ||
+        return 1
+    git diff --quiet "$original_base" "$PRE_OID" >/dev/null 2>&1
+    diff_code=$?
+    [[ "$diff_code" -eq 1 ]] || return 1
+    git diff --quiet "$BASE_OID" "$candidate" >/dev/null 2>&1
+    diff_code=$?
+    [[ "$diff_code" -eq 1 ]]
+}
+
 validate_namespace() {
     [[ "$NS_STATE" != "partial" ]] || return 1
     [[ "$NS_STATE" != "absent" ]] || return 0
@@ -916,6 +1023,11 @@ validate_namespace() {
     validate_commit_ref "$EXPECTED_REF" "$EXPECTED_OID" || return 1
     validate_commit_ref "$PRE_REF" "$PRE_OID" || return 1
     validate_commit_ref "$BASE_REF" "$BASE_OID" || return 1
+    if [[ "$NS_STATE" == "candidate" ]]; then
+        validate_commit_ref "$CANDIDATE_REF" "$CANDIDATE_OID" || return 1
+        validate_candidate_lineage "$CANDIDATE_OID" || return 1
+        ref_equals "$BRANCH_REF" "$PRE_OID" || return 1
+    fi
     if [[ "$NS_STATE" == "rebased" || "$NS_STATE" == "submit-frozen" ]]; then
         validate_commit_ref "$REBASED_REF" "$REBASED_OID" || return 1
     fi
@@ -977,7 +1089,7 @@ load_mirror() {
 
 mirror_state_for_refs() {
     case "$NS_STATE" in
-        captured) printf 'captured' ;;
+        captured|candidate) printf 'captured' ;;
         rebased) printf 'rebased' ;;
         submit-frozen)
             if [[ "$M_MANUAL" == "true" ]]; then
@@ -1227,13 +1339,15 @@ terminalize_hard() {
 hard_conflict() {
     local reason=$*
     echo "POLECAT_LEASE_HARD_CONFLICT: $reason" >&2
-    if [[ "$PROVENANCE_READY" -eq 1 ]] && terminalize_hard "$reason"; then
-        if ! run_gc runtime drain-ack >/dev/null 2>&1; then
-            echo "polecat-lease: terminal state verified but drain-ack failed; retry required" >&2
-            exit "$EXIT_INDETERMINATE"
-        fi
-    else
+    [[ "$PROVENANCE_READY" -eq 1 ]] ||
+        indeterminate "hard conflict lacks exact Graph provenance for quarantine"
+    terminalize_hard "$reason" || {
         echo "polecat-lease: terminal state did not verify; refusing to drain" >&2
+        exit "$EXIT_INDETERMINATE"
+    }
+    if ! run_gc runtime drain-ack >/dev/null 2>&1; then
+        echo "polecat-lease: terminal state verified but drain-ack failed; retry required" >&2
+        exit "$EXIT_INDETERMINATE"
     fi
     exit "$EXIT_HARD"
 }
@@ -1470,9 +1584,61 @@ capture_lease() {
     sync_mirror || indeterminate "captured lease metadata did not verify"
 }
 
+record_rebase_candidate() {
+    local symbolic result branch_oid
+    prove_live_source_step
+    [[ "$NS_STATE" == "captured" ]] ||
+        indeterminate "rebase candidate recording requires captured lease state"
+    symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
+    [[ -z "$symbolic" ]] ||
+        indeterminate "rebase candidate recording requires detached HEAD"
+    [[ ! -d "$(git rev-parse --git-path rebase-merge)" &&
+       ! -d "$(git rev-parse --git-path rebase-apply)" ]] ||
+        indeterminate "cannot record a rebase candidate while rebase state is active"
+    result=$(git rev-parse --verify HEAD 2>/dev/null) ||
+        indeterminate "could not resolve the detached rebase candidate"
+    validate_candidate_lineage "$result" ||
+        indeterminate "detached result does not preserve the captured candidate lineage"
+    branch_oid=$(read_ref "$BRANCH_REF") ||
+        indeterminate "could not read the canonical branch before candidate recording"
+    [[ "$branch_oid" == "$PRE_OID" ]] ||
+        hard_conflict "canonical branch changed before candidate recording"
+
+    if printf '%s\n' \
+        start \
+        "option no-deref" \
+        "verify $CONTEXT_REF $CONTEXT_OID" \
+        "verify $EXPECTED_REF $EXPECTED_OID" \
+        "verify $PRE_REF $PRE_OID" \
+        "verify $BASE_REF $BASE_OID" \
+        "verify $BRANCH_REF $PRE_OID" \
+        "create $CANDIDATE_REF $result" \
+        prepare \
+        commit | git update-ref --stdin >/dev/null 2>&1; then
+        :
+    else
+        load_namespace || hard_conflict "candidate recording left partial refs"
+        validate_namespace || hard_conflict "candidate recording raced different state"
+        if [[ "$NS_STATE" == "captured" ]]; then
+            indeterminate "candidate recording transaction failed without changing state"
+        fi
+        [[ "$NS_STATE" == "candidate" && "$CANDIDATE_OID" == "$result" ]] ||
+            hard_conflict "another detached candidate won the lease evidence CAS"
+    fi
+    load_namespace || hard_conflict "recorded candidate namespace is incomplete"
+    validate_namespace || hard_conflict "recorded candidate evidence failed validation"
+    [[ "$NS_STATE" == "candidate" && "$CANDIDATE_OID" == "$result" ]] ||
+        hard_conflict "recorded candidate evidence changed unexpectedly"
+    sync_mirror || indeterminate "candidate lease mirror did not verify"
+}
+
 publish_rebase_result() {
     local symbolic result
     prove_live_source_step
+    [[ "$NS_STATE" == "candidate" ]] ||
+        indeterminate "rebase publication requires lease-owned candidate evidence"
+    validate_namespace ||
+        hard_conflict "rebase candidate evidence is incomplete or incoherent"
     symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
     [[ -z "$symbolic" ]] ||
         hard_conflict "rebase publication requires detached HEAD"
@@ -1481,11 +1647,10 @@ publish_rebase_result() {
         indeterminate "rebase is still in progress; resolve/continue it first"
     result=$(git rev-parse --verify HEAD 2>/dev/null) ||
         indeterminate "could not resolve detached rebase result"
-    is_oid "$result" || indeterminate "invalid detached rebase result"
-    [[ "$(git cat-file -t "$result" 2>/dev/null)" == "commit" ]] ||
-        indeterminate "detached rebase result is not a commit"
-    require_ancestor "$BASE_REF" "$result" \
-        "detached rebase result is not based on captured base"
+    [[ "$result" == "$CANDIDATE_OID" ]] ||
+        hard_conflict "detached HEAD does not equal the lease-owned candidate"
+    validate_candidate_lineage "$result" ||
+        hard_conflict "lease-owned candidate no longer preserves captured lineage"
 
     if printf '%s\n' \
         start \
@@ -1496,13 +1661,15 @@ publish_rebase_result() {
         "verify $BASE_REF $BASE_OID" \
         "update $BRANCH_REF $result $PRE_OID" \
         "create $REBASED_REF $result" \
+        "delete $CANDIDATE_REF $CANDIDATE_OID" \
         prepare \
         commit | git update-ref --stdin >/dev/null 2>&1; then
         REBASED_OID=$result
+        CANDIDATE_OID=""
     else
         load_namespace || hard_conflict "rebase publication left partial refs"
         validate_namespace || hard_conflict "rebase publication raced different state"
-        if [[ "$NS_STATE" == "captured" ]] &&
+        if [[ "$NS_STATE" == "candidate" ]] &&
            ref_equals "$BRANCH_REF" "$PRE_OID"; then
             indeterminate "rebase publication transaction failed without changing state"
         fi
@@ -1522,6 +1689,30 @@ publish_rebase_result() {
 
 workspace_action() {
     local branch_oid head_oid symbolic
+
+    if [[ "$NS_STATE" == "candidate" ]]; then
+        read_push_remote
+        case "$REMOTE_STATE" in
+            present)
+                OBSERVED_REMOTE=$REMOTE_OID
+                [[ "$REMOTE_OID" == "$EXPECTED_OID" ]] ||
+                    hard_conflict "remote moved after rebase candidate recording"
+                ;;
+            missing|malformed)
+                OBSERVED_REMOTE=${REMOTE_OID:-missing}
+                hard_conflict "candidate-bound remote branch is missing or malformed"
+                ;;
+            unreadable)
+                indeterminate "could not read candidate-bound push remote"
+                ;;
+        esac
+        symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
+        head_oid=$(git rev-parse --verify HEAD 2>/dev/null || true)
+        [[ -z "$symbolic" && "$head_oid" == "$CANDIDATE_OID" ]] ||
+            hard_conflict "worktree no longer presents the exact lease-owned candidate"
+        publish_rebase_result
+        return 0
+    fi
 
     if [[ "$NS_STATE" == "captured" ]]; then
         read_push_remote
@@ -1557,16 +1748,16 @@ workspace_action() {
                     echo "  gc gastown polecat-workspace execute" >&2
                     exit "$EXIT_INDETERMINATE"
                 fi
-                indeterminate "git rebase --continue failed without leaving resumable state"
+                indeterminate "git rebase --continue failed without lease-owned success evidence"
             fi
+            record_rebase_candidate
             publish_rebase_result
             return 0
         fi
         symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
         head_oid=$(git rev-parse --verify HEAD 2>/dev/null || true)
         if [[ -z "$symbolic" && "$head_oid" != "$PRE_OID" ]]; then
-            publish_rebase_result
-            return 0
+            indeterminate "detached result lacks lease-owned rebase candidate evidence"
         fi
         git switch --detach "$PRE_REF" >/dev/null 2>&1 ||
             indeterminate "could not detach at captured PRE"
@@ -1577,8 +1768,9 @@ workspace_action() {
                 echo "  gc gastown polecat-workspace execute" >&2
                 exit "$EXIT_INDETERMINATE"
             fi
-            indeterminate "git rebase failed without leaving a resumable rebase state"
+            indeterminate "git rebase failed without lease-owned success evidence"
         fi
+        record_rebase_candidate
         publish_rebase_result
         return 0
     fi
@@ -1688,16 +1880,16 @@ workspace_action() {
 }
 
 publish_action() {
-    [[ "$NS_STATE" == "captured" ]] ||
-        hard_conflict "publish-rebase requires captured pre-rebase state"
+    [[ "$NS_STATE" == "candidate" ]] ||
+        indeterminate "publish-rebase requires exact lease-owned candidate evidence"
     local branch_oid head_oid
     branch_oid=$(read_ref "$BRANCH_REF") ||
         indeterminate "could not read branch before explicit rebase publication"
     head_oid=$(git rev-parse --verify HEAD 2>/dev/null || true)
     [[ "$branch_oid" == "$PRE_OID" ]] ||
         hard_conflict "branch changed before explicit rebase publication"
-    [[ -n "$head_oid" && "$head_oid" != "$PRE_OID" ]] ||
-        hard_conflict "no detached rebase result is available to publish"
+    [[ -n "$head_oid" && "$head_oid" == "$CANDIDATE_OID" ]] ||
+        hard_conflict "detached HEAD does not equal the recorded rebase candidate"
     publish_rebase_result
 }
 

@@ -101,6 +101,11 @@ fi
 
 if [[ "${1:-}" == "bd" && "${2:-}" == "show" ]]; then
     id=${3:-}
+    if [[ "${FAIL_SOURCE_BLOCK_READBACK:-0}" == "1" &&
+          "$id" == "source-1" &&
+          -e "$FAKE_STATE/source-blocked-for-readback" ]]; then
+        exit 96
+    fi
     if [[ -e "$FAKE_STATE/race-fired" &&
           ! -e "$FAKE_STATE/terminal-authority-drift-fired" ]]; then
         case "${TERMINAL_AUTHORITY_DRIFT:-}:$id" in
@@ -201,6 +206,11 @@ if [[ "${1:-}" == "bd" && "${2:-}" == "update" ]]; then
                 ;;
         esac
     done
+    if [[ "${FAIL_SOURCE_BLOCK_READBACK:-0}" == "1" &&
+          "$id" == "source-1" &&
+          "$(jq -r '.beads["source-1"].status' "$FAKE_DB")" == "blocked" ]]; then
+        touch "$FAKE_STATE/source-blocked-for-readback"
+    fi
     exit 0
 fi
 
@@ -918,8 +928,8 @@ test_terminalization_revalidates_graph_authority() {
         race_rc=$?
         set -e
 
-        [[ "$race_rc" -eq 64 ]] ||
-            fail "$drift drift conflict returned $race_rc instead of 64: $(<"$OUTPUT")"
+        [[ "$race_rc" -eq 75 ]] ||
+            fail "$drift drift conflict returned $race_rc instead of 75: $(<"$OUTPUT")"
         [[ -e "$STATE/terminal-authority-drift-fired" ]] ||
             fail "$drift drift fixture did not fire before terminalization"
         [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" &&
@@ -948,8 +958,8 @@ test_terminalization_revalidates_convoy_authority() {
     race_rc=$?
     set -e
 
-    [[ "$race_rc" -eq 64 ]] ||
-        fail "convoy-drift conflict returned $race_rc instead of 64: $(<"$OUTPUT")"
+    [[ "$race_rc" -eq 75 ]] ||
+        fail "convoy-drift conflict returned $race_rc instead of 75: $(<"$OUTPUT")"
     [[ -e "$STATE/race-fired" ]] ||
         fail "convoy-drift fixture did not fire before terminalization"
     [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" &&
@@ -1107,8 +1117,9 @@ test_metadata_cleanup_restart() {
         fail "metadata-only cleanup restart left mirror keys"
 }
 
-test_unpublished_rebase_resumes_through_workspace_action() {
+test_unpublished_rebase_without_zero_exit_stays_unpublished() {
     new_case unpublished-rebase true
+    pre_oid=$(local_feature_oid)
     set +e
     (
         export GIT_REBASE_RESPONSE_LOST=1
@@ -1122,17 +1133,75 @@ test_unpublished_rebase_resumes_through_workspace_action() {
     [[ -e "$STATE/rebase-response-lost-fired" ]] ||
         fail "lost-rebase-response fixture did not fire"
     [[ "$(namespace_count)" -eq 4 ]] ||
-        fail "unpublished rebase changed the captured lease phase"
+        fail "nonzero rebase exit invented lease-owned candidate evidence"
     [[ -z "$("$REAL_GIT" -C "$WORK" branch --show-current)" ]] ||
         fail "unpublished rebase was not left detached"
 
     run_lease workspace
-    [[ "$RUN_RC" -eq 0 ]] ||
-        fail "workspace restart did not publish its exact detached candidate: $(<"$OUTPUT")"
-    [[ "$(namespace_count)" -eq 5 ]] ||
-        fail "workspace restart did not create the rebased phase"
-    [[ "$("$REAL_GIT" -C "$WORK" branch --show-current)" == "polecat/source-1" ]] ||
-        fail "workspace restart did not restore the branch"
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "workspace restart inferred success from an unowned detached HEAD: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 4 ]] ||
+        fail "workspace restart mutated refs without candidate evidence"
+    [[ "$(local_feature_oid)" == "$pre_oid" ]] ||
+        fail "workspace restart moved the canonical branch without candidate evidence"
+    rg -q 'detached result lacks lease-owned rebase candidate evidence' "$OUTPUT" ||
+        fail "workspace restart did not diagnose missing candidate evidence"
+}
+
+test_hostile_detached_base_cannot_publish_captured_lease() {
+    new_case hostile-detached-base true
+    set +e
+    (
+        export GIT_FAIL_TX_MATCH='/candidate '
+        run_lease workspace
+        exit "$RUN_RC"
+    )
+    candidate_tx_rc=$?
+    set -e
+    [[ "$candidate_tx_rc" -eq 75 && "$(namespace_count)" -eq 4 ]] ||
+        fail "hostile-detached fixture did not preserve captured refs: $(<"$OUTPUT")"
+
+    pre_ref=$(lease_ref_with_suffix pre-rebase)
+    base_ref=$(lease_ref_with_suffix base)
+    pre_oid=$("$REAL_GIT" -C "$WORK" rev-parse "$pre_ref")
+    base_oid=$("$REAL_GIT" -C "$WORK" rev-parse "$base_ref")
+    "$REAL_GIT" -C "$WORK" switch -q --detach "$base_oid"
+
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "detached base-only commit returned $RUN_RC instead of 75: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 4 ]] ||
+        fail "detached base-only commit published a lease phase"
+    [[ "$(local_feature_oid)" == "$pre_oid" ]] ||
+        fail "detached base-only commit moved the canonical branch"
+    ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet \
+        "$(lease_ref_with_suffix candidate)" ||
+        fail "detached base-only commit created candidate evidence"
+    ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet \
+        "$(lease_ref_with_suffix rebased)" ||
+        fail "detached base-only commit created a rebased ref"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "detached base-only commit terminalized the source"
+    rg -q 'detached result lacks lease-owned rebase candidate evidence' "$OUTPUT" ||
+        fail "detached base-only commit did not diagnose missing candidate evidence"
+}
+
+test_direct_lease_rejects_symlink_git_pointer() {
+    new_case symlink-dotgit false
+    mv "$WORK/.git" "$WORK/.git.pointer"
+    ln -s .git.pointer "$WORK/.git"
+
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "symlink .git pointer returned $RUN_RC instead of 75: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 0 ]] ||
+        fail "symlink .git pointer created lease refs"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "symlink .git pointer terminalized the source"
+    [[ ! -e "$STATE/mail-sent" && ! -e "$STATE/drained" ]] ||
+        fail "symlink .git pointer notified or drained"
+    rg -q 'invalid or redirected .git pointer' "$OUTPUT" ||
+        fail "symlink .git pointer did not produce the exact rejection diagnostic"
 }
 
 test_workspace_rejects_absent_branch_metadata_without_quarantine() {
@@ -1187,8 +1256,8 @@ test_mail_failure_retries_before_step_close() {
     advance_remote
     touch "$STATE/fail-mail-once"
     run_lease submit --auto-push true
-    [[ "$RUN_RC" -eq 64 ]] ||
-        fail "mail failure conflict did not return hard status: $(<"$OUTPUT")"
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "mail failure conflict did not request an indeterminate retry: $(<"$OUTPUT")"
     [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "blocked" ]] ||
         fail "mail failure did not preserve blocked source"
     [[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" ]] ||
@@ -1203,6 +1272,46 @@ test_mail_failure_retries_before_step_close() {
         fail "mail retry did not complete notification and drain"
     [[ "$(jq -r '.beads["submit-1"].metadata["gc.failure_reason"]' "$DB")" == "push_lease_conflict" ]] ||
         fail "mail retry did not close the exact step with a reason"
+}
+
+test_terminalization_failure_never_reports_durable_quarantine() {
+    prepare_rebased terminal-update-failure
+    advance_remote
+    set +e
+    (
+        export FAIL_ALL_BD_UPDATE_MATCH='--status=blocked'
+        run_lease submit --auto-push true
+        exit "$RUN_RC"
+    )
+    update_rc=$?
+    set -e
+    [[ "$update_rc" -eq 75 ]] ||
+        fail "failed source quarantine returned $update_rc instead of 75: $(<"$OUTPUT")"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
+        fail "failed source quarantine mutated the source"
+    [[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" ]] ||
+        fail "failed source quarantine closed the Graph step"
+    [[ ! -e "$STATE/mail-sent" && ! -e "$STATE/drained" ]] ||
+        fail "failed source quarantine notified or drained"
+
+    prepare_rebased terminal-readback-failure
+    advance_remote
+    set +e
+    (
+        export FAIL_SOURCE_BLOCK_READBACK=1
+        run_lease submit --auto-push true
+        exit "$RUN_RC"
+    )
+    readback_rc=$?
+    set -e
+    [[ "$readback_rc" -eq 75 ]] ||
+        fail "unreadable quarantine returned $readback_rc instead of 75: $(<"$OUTPUT")"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "blocked" ]] ||
+        fail "readback fixture did not durably write the source quarantine"
+    [[ "$(jq -r '.beads["submit-1"].status' "$DB")" == "in_progress" ]] ||
+        fail "unreadable quarantine closed the Graph step"
+    [[ ! -e "$STATE/mail-sent" && ! -e "$STATE/drained" ]] ||
+        fail "unreadable quarantine notified or drained"
 }
 
 test_closed_step_drain_retry() {
@@ -1690,8 +1799,8 @@ test_unchanged_transaction_failures() {
     )
     publish_rc=$?
     set -e
-    [[ "$publish_rc" -eq 75 && "$(namespace_count)" -eq 4 ]] ||
-        fail "failed publish transaction did not preserve captured state: $(<"$OUTPUT")"
+    [[ "$publish_rc" -eq 75 && "$(namespace_count)" -eq 5 ]] ||
+        fail "failed publish transaction did not preserve candidate state: $(<"$OUTPUT")"
     run_lease publish-rebase
     [[ "$RUN_RC" -eq 0 && "$(namespace_count)" -eq 5 ]] ||
         fail "failed publish transaction was not explicitly recoverable: $(<"$OUTPUT")"
@@ -1840,13 +1949,13 @@ test_command_capture_and_publish_races() {
     new_case command-publish-race true
     set +e
     (
-        export GIT_REBASE_RESPONSE_LOST=1
+        export GIT_FAIL_TX_MATCH='/rebased '
         run_lease workspace
         exit "$RUN_RC"
     )
     unpublished_rc=$?
     set -e
-    [[ "$unpublished_rc" -eq 75 && "$(namespace_count)" -eq 4 ]] ||
+    [[ "$unpublished_rc" -eq 75 && "$(namespace_count)" -eq 5 ]] ||
         fail "publish-race fixture did not leave an explicit detached candidate"
 
     publish_barrier="$STATE/publish-barrier"
@@ -2047,10 +2156,13 @@ test_submit_mirror_crash_recovery
 test_push_response_lost_recovery
 test_cleanup_transaction_retry
 test_metadata_cleanup_restart
-test_unpublished_rebase_resumes_through_workspace_action
+test_unpublished_rebase_without_zero_exit_stays_unpublished
+test_hostile_detached_base_cannot_publish_captured_lease
+test_direct_lease_rejects_symlink_git_pointer
 test_workspace_rejects_absent_branch_metadata_without_quarantine
 test_frozen_push_url
 test_mail_failure_retries_before_step_close
+test_terminalization_failure_never_reports_durable_quarantine
 test_closed_step_drain_retry
 test_mirror_tamper_is_hard
 test_auto_push_authority
