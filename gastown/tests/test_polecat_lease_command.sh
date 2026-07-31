@@ -2477,8 +2477,9 @@ SH
 
 test_trusted_replay_excludes_custom_content_drivers() {
     local scope marker driver global_config source_oid scope_rc filter_driver
+    local key value common_dir git_dir attributes_file
 
-    for scope in global environment repo; do
+    for scope in global environment repo worktree; do
         new_case "hostile-merge-driver-$scope" true
         marker="$STATE/hostile-merge-driver-fired"
         driver="$STATE/drop-source-driver"
@@ -2535,6 +2536,15 @@ SH
                 run_lease workspace
                 scope_rc=$RUN_RC
                 ;;
+            worktree)
+                "$REAL_GIT" -C "$RIG_ROOT" config \
+                    extensions.worktreeConfig true
+                "$REAL_GIT" -C "$WORK" config --worktree \
+                    merge.drop-source.driver \
+                    "$driver %O %A %B %L %P"
+                run_lease workspace
+                scope_rc=$RUN_RC
+                ;;
         esac
 
         [[ "$scope_rc" -eq 75 ]] ||
@@ -2543,9 +2553,9 @@ SH
             fail "$scope custom merge driver executed during trusted replay"
         [[ "$(local_feature_oid)" == "$source_oid" ]] ||
             fail "$scope custom merge driver changed the canonical source branch"
-        if [[ "$scope" == "repo" ]]; then
+        if [[ "$scope" == "repo" || "$scope" == "worktree" ]]; then
             rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
-                fail "repository custom merge driver lacked its fail-closed diagnostic"
+                fail "$scope custom merge driver lacked its fail-closed diagnostic"
         fi
     done
 
@@ -2576,6 +2586,115 @@ SH
         fail "repository config include did not fail closed: $(<"$OUTPUT")"
     rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
         fail "repository config include lacked its fail-closed diagnostic"
+
+    for key in merge.default merge.drop-source.recursive diff.external \
+        hook.hostile.command gc.recentObjectsHook; do
+        new_case "hostile-local-${key//./-}" true
+        marker="$STATE/hostile-$key-fired"
+        driver="$STATE/hostile-$key-driver"
+        cat >"$driver" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+touch '$marker'
+exit 0
+SH
+        chmod +x "$driver"
+        value=$driver
+        if [[ "$key" == "merge.default" ||
+              "$key" == "merge.drop-source.recursive" ]]; then
+            value=union
+        fi
+        source_oid=$(local_feature_oid)
+        "$REAL_GIT" -C "$WORK" config "$key" "$value"
+        if [[ "$key" == "hook.hostile.command" ]]; then
+            "$REAL_GIT" -C "$WORK" config --add \
+                hook.hostile.event post-commit
+        fi
+        run_lease workspace
+        [[ "$RUN_RC" -eq 75 && ! -e "$marker" ]] ||
+            fail "$key did not fail closed: $(<"$OUTPUT")"
+        [[ "$(local_feature_oid)" == "$source_oid" ]] ||
+            fail "$key changed the canonical source branch"
+        rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
+            fail "$key lacked its fail-closed diagnostic"
+    done
+
+    for scope in common worktree; do
+        new_case "hostile-$scope-info-attributes" true
+        common_dir=$("$REAL_GIT" -C "$WORK" rev-parse \
+            --path-format=absolute --git-common-dir)
+        git_dir=$("$REAL_GIT" -C "$WORK" rev-parse \
+            --path-format=absolute --absolute-git-dir)
+        case "$scope" in
+            common) attributes_file="$common_dir/info/attributes" ;;
+            worktree) attributes_file="$git_dir/info/attributes" ;;
+        esac
+        mkdir -p "$(dirname "$attributes_file")"
+        printf '*.txt merge=union\n' >"$attributes_file"
+        source_oid=$(local_feature_oid)
+        run_lease workspace
+        [[ "$RUN_RC" -eq 75 ]] ||
+            fail "$scope info attributes did not fail closed: $(<"$OUTPUT")"
+        [[ "$(local_feature_oid)" == "$source_oid" ]] ||
+            fail "$scope info attributes changed the canonical source branch"
+        rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
+            fail "$scope info attributes lacked its fail-closed diagnostic"
+    done
+
+    for scope in common worktree; do
+        new_case "hostile-$scope-info-grafts" true
+        common_dir=$("$REAL_GIT" -C "$WORK" rev-parse \
+            --path-format=absolute --git-common-dir)
+        git_dir=$("$REAL_GIT" -C "$WORK" rev-parse \
+            --path-format=absolute --absolute-git-dir)
+        case "$scope" in
+            common) attributes_file="$common_dir/info/grafts" ;;
+            worktree) attributes_file="$git_dir/info/grafts" ;;
+        esac
+        mkdir -p "$(dirname "$attributes_file")"
+        printf '%s %s\n' "$(local_feature_oid)" \
+            "$("$REAL_GIT" -C "$WORK" rev-parse refs/remotes/origin/main)" \
+            >"$attributes_file"
+        source_oid=$(local_feature_oid)
+        run_lease workspace
+        [[ "$RUN_RC" -eq 75 ]] ||
+            fail "$scope info grafts did not fail closed: $(<"$OUTPUT")"
+        [[ "$(local_feature_oid)" == "$source_oid" ]] ||
+            fail "$scope info grafts changed the canonical source branch"
+        rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
+            fail "$scope info grafts lacked its fail-closed diagnostic"
+    done
+
+    new_case hostile-repository-routing-environment true
+    source_oid=$(local_feature_oid)
+    set +e
+    (
+        export GIT_DIR="$ORIGIN"
+        export GIT_WORK_TREE="$WORK"
+        export GIT_COMMON_DIR="$ORIGIN"
+        export GIT_INDEX_FILE="$STATE/hostile-index"
+        export GIT_OBJECT_DIRECTORY="$ORIGIN/objects"
+        export GIT_ALTERNATE_OBJECT_DIRECTORIES="$RIG_ROOT/.git/objects"
+        export GIT_NAMESPACE=hostile
+        run_lease workspace
+        exit "$RUN_RC"
+    )
+    scope_rc=$?
+    set -e
+    [[ "$scope_rc" -eq 0 ]] ||
+        fail "repository-routing environment was not sanitized: $(<"$OUTPUT")"
+    [[ "$(local_feature_oid)" != "$source_oid" &&
+       "$(replay_proof_count)" -eq 4 ]] ||
+        fail "sanitized repository-routing environment did not publish the exact replay"
+
+    new_case hostile-local-core-worktree true
+    source_oid=$(local_feature_oid)
+    "$REAL_GIT" -C "$WORK" config core.worktree "$SEED"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "repository core.worktree did not fail closed: $(<"$OUTPUT")"
+    [[ "$(local_feature_oid)" == "$source_oid" ]] ||
+        fail "repository core.worktree changed the canonical source branch"
 }
 
 test_conflict_resolved_to_base_keeps_empty_commit() {

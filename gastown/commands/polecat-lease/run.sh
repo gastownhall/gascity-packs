@@ -8,6 +8,20 @@
 
 set -u -o pipefail
 
+# Managed polecat work is discovered from its validated cwd and canonical rig
+# paths.  Inherited repository/index/object routing would let the caller make
+# otherwise identical Git commands observe or write a different repository.
+# Standard user/system Git config remains trusted for remote authentication
+# and URL policy, but caller-selected replacement config paths are discarded.
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_NAMESPACE
+unset GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+unset GIT_QUARANTINE_PATH GIT_SHALLOW_FILE GIT_GRAFT_FILE
+unset GIT_REPLACE_REF_BASE GIT_ATTR_SOURCE GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
+unset GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL
+unset GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_EXEC_PATH
+export GIT_CONFIG_COUNT=0
+export GIT_NO_REPLACE_OBJECTS=1
+
 EXIT_USAGE=2
 EXIT_HARD=64
 EXIT_INDETERMINATE=75
@@ -1041,35 +1055,117 @@ REPLAY_RECORDER_COMMAND=$(build_replay_recorder_command) ||
    "$REPLAY_RECORDER_COMMAND" != *$'\t'* ]] ||
     indeterminate "the constrained rebase recorder command is unsafe"
 
-# A repository-local include, filter, merge driver, or external diff command
-# is executable policy controlled outside the captured commit graph.  Global
-# and system configuration can be excluded from trusted Git below; local
-# configuration cannot, because Git always reads the repository config.
-# Refuse those extension points before every trusted operation.  --no-includes
-# is intentional: an include is itself rejected without opening its target.
-trusted_replay_local_config_is_safe() (
-    local keys key lower
-    unset GIT_CONFIG
+# Repository and linked-worktree configuration plus unversioned attributes are
+# executable policy controlled outside the captured commit graph.  Git cannot
+# exclude those scopes for normal commands, so inspect each backing file
+# directly before and after every trusted operation.  --no-includes is
+# intentional: an include is itself rejected without opening its target.
+trusted_replay_config_file_is_safe() {
+    local config_file=$1 scope=$2 keys key lower
+
+    if [[ ! -e "$config_file" && ! -L "$config_file" ]]; then
+        return 0
+    fi
+    if [[ ! -f "$config_file" || -L "$config_file" ]]; then
+        printf '%s\n' \
+            "polecat-lease: trusted replay refuses redirected or non-regular $scope Git configuration $config_file" >&2
+        return 1
+    fi
     keys=$(
         GIT_CONFIG_PARAMETERS= \
         GIT_CONFIG_COUNT=0 \
         GIT_CONFIG_NOSYSTEM=1 \
         GIT_CONFIG_SYSTEM=/dev/null \
         GIT_CONFIG_GLOBAL=/dev/null \
-            git config --local --no-includes --name-only --list 2>/dev/null
+            git config --file "$config_file" --no-includes \
+                --name-only --list 2>/dev/null
     ) || return 1
     while IFS= read -r key; do
         [[ -n "$key" ]] || continue
         lower=${key,,}
         case "$lower" in
-            include.*|includeif.*|filter.*|merge.*.driver|\
-            diff.*.command|diff.*.textconv|core.attributesfile)
+            include.*|includeif.*|filter.*|hook.*|\
+            merge.*.driver|merge.*.recursive|\
+            merge.default|diff.external|diff.*.command|diff.*.textconv|\
+            core.attributesfile|core.worktree|gc.recentobjectshook)
                 printf '%s\n' \
-                    "polecat-lease: trusted replay refuses local Git configuration key $key" >&2
+                    "polecat-lease: trusted replay refuses $scope Git configuration key $key" >&2
                 return 1
                 ;;
         esac
     done <<<"$keys"
+}
+
+trusted_replay_unversioned_file_is_safe() {
+    local policy_file=$1 label=$2
+
+    if [[ ! -e "$policy_file" && ! -L "$policy_file" ]]; then
+        return 0
+    fi
+    if [[ ! -f "$policy_file" || -L "$policy_file" ]]; then
+        printf '%s\n' \
+            "polecat-lease: trusted replay refuses redirected or non-regular $label $policy_file" >&2
+        return 1
+    fi
+    if [[ -s "$policy_file" ]]; then
+        printf '%s\n' \
+            "polecat-lease: trusted replay refuses nonempty unversioned $label $policy_file" >&2
+        return 1
+    fi
+}
+
+trusted_replay_external_policy_is_safe() (
+    local git_dir common_dir common_attributes worktree_attributes
+    local common_grafts worktree_grafts
+
+    unset GIT_CONFIG GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+    unset GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    unset GIT_QUARANTINE_PATH GIT_SHALLOW_FILE GIT_GRAFT_FILE
+    unset GIT_REPLACE_REF_BASE GIT_NAMESPACE
+    unset GIT_ATTR_SOURCE GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
+    git_dir=$(
+        GIT_CONFIG_PARAMETERS= \
+        GIT_CONFIG_COUNT=0 \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_SYSTEM=/dev/null \
+        GIT_CONFIG_GLOBAL=/dev/null \
+            git rev-parse --path-format=absolute \
+                --absolute-git-dir 2>/dev/null
+    ) || return 1
+    common_dir=$(
+        GIT_CONFIG_PARAMETERS= \
+        GIT_CONFIG_COUNT=0 \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_SYSTEM=/dev/null \
+        GIT_CONFIG_GLOBAL=/dev/null \
+            git rev-parse --path-format=absolute \
+                --git-common-dir 2>/dev/null
+    ) || return 1
+    git_dir=$(CDPATH= cd -- "$git_dir" 2>/dev/null && pwd -P) || return 1
+    common_dir=$(CDPATH= cd -- "$common_dir" 2>/dev/null && pwd -P) ||
+        return 1
+
+    trusted_replay_config_file_is_safe \
+        "$common_dir/config" "repository-local" || return 1
+    trusted_replay_config_file_is_safe \
+        "$git_dir/config.worktree" "linked-worktree" || return 1
+
+    common_attributes="$common_dir/info/attributes"
+    worktree_attributes="$git_dir/info/attributes"
+    trusted_replay_unversioned_file_is_safe \
+        "$common_attributes" "repository-local attributes" || return 1
+    if [[ "$worktree_attributes" != "$common_attributes" ]]; then
+        trusted_replay_unversioned_file_is_safe \
+            "$worktree_attributes" "linked-worktree attributes" || return 1
+    fi
+    common_grafts="$common_dir/info/grafts"
+    worktree_grafts="$git_dir/info/grafts"
+    trusted_replay_unversioned_file_is_safe \
+        "$common_grafts" "repository-local grafts" || return 1
+    if [[ "$worktree_grafts" != "$common_grafts" ]]; then
+        trusted_replay_unversioned_file_is_safe \
+            "$worktree_grafts" "linked-worktree grafts" || return 1
+    fi
 )
 
 # Every Git process which can create or advance a trusted replay receives the
@@ -1079,8 +1175,13 @@ trusted_replay_local_config_is_safe() (
 # todo editors, signing, filters, custom merge/diff drivers, autostash, rerere,
 # and other state-changing replay policy cannot influence the replay.
 run_trusted_replay_git() (
-    trusted_replay_local_config_is_safe || return 1
-    unset GIT_CONFIG GIT_ATTR_SOURCE GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
+    local rc=0
+    trusted_replay_external_policy_is_safe || return 1
+    unset GIT_CONFIG GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+    unset GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    unset GIT_QUARANTINE_PATH GIT_SHALLOW_FILE GIT_GRAFT_FILE
+    unset GIT_REPLACE_REF_BASE GIT_NAMESPACE
+    unset GIT_ATTR_SOURCE GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
     export GIT_CONFIG_PARAMETERS=
     export GIT_CONFIG_COUNT=0
     export GIT_CONFIG_NOSYSTEM=1
@@ -1100,6 +1201,17 @@ run_trusted_replay_git() (
         -c core.fsmonitor=false \
         -c core.commentChar=# \
         -c commit.gpgSign=false \
+        -c diff.algorithm=myers \
+        -c diff.external=false \
+        -c diff.renames=true \
+        -c diff.renameLimit=1000 \
+        -c gc.auto=0 \
+        -c maintenance.auto=false \
+        -c merge.conflictStyle=merge \
+        -c merge.default=text \
+        -c merge.directoryRenames=conflict \
+        -c merge.renames=true \
+        -c merge.renameLimit=7000 \
         -c merge.renormalize=false \
         -c rebase.abbreviateCommands=false \
         -c rebase.rescheduleFailedExec=false \
@@ -1112,7 +1224,10 @@ run_trusted_replay_git() (
         -c rerere.enabled=false \
         -c rerere.autoupdate=false \
         -c sequence.editor=: \
-        "$@"
+        -c submodule.recurse=false \
+        "$@" || rc=$?
+    trusted_replay_external_policy_is_safe || return 1
+    return "$rc"
 )
 
 # The trusted sequencer records one immutable source/result pair per frozen
@@ -1943,6 +2058,8 @@ capture_lease() {
 record_rebase_candidate() {
     local result branch_oid
     prove_live_source_step
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy enables an unsafe trusted-replay extension point"
     [[ "$NS_STATE" == "captured" ]] ||
         indeterminate "rebase candidate recording requires captured lease state"
     [[ ! -d "$(git rev-parse --git-path rebase-merge)" &&
@@ -1958,6 +2075,8 @@ record_rebase_candidate() {
         indeterminate "could not read the canonical branch before candidate recording"
     [[ "$branch_oid" == "$PRE_OID" ]] ||
         hard_conflict "canonical branch changed before candidate recording"
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy changed before trusted-replay candidate recording"
 
     if {
         printf '%s\n' \
@@ -1985,6 +2104,8 @@ record_rebase_candidate() {
         [[ "$NS_STATE" == "candidate" && "$CANDIDATE_OID" == "$result" ]] ||
             hard_conflict "another detached candidate won the lease evidence CAS"
     fi
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy changed during trusted-replay candidate recording"
     load_namespace || hard_conflict "recorded candidate namespace is incomplete"
     validate_namespace || hard_conflict "recorded candidate evidence failed validation"
     [[ "$NS_STATE" == "candidate" && "$CANDIDATE_OID" == "$result" ]] ||
@@ -1995,6 +2116,8 @@ record_rebase_candidate() {
 publish_rebase_result() {
     local result status
     prove_live_source_step
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy enables an unsafe trusted-replay extension point"
     [[ "$NS_STATE" == "candidate" ]] ||
         indeterminate "rebase publication requires lease-owned candidate evidence"
     validate_namespace ||
@@ -2014,11 +2137,13 @@ publish_rebase_result() {
         indeterminate "could not inspect rebase worktree before publication"
     [[ -z "$status" ]] ||
         indeterminate "rebase worktree is dirty before publication"
-    run_trusted_replay_git switch --detach \
+    run_trusted_replay_git switch --no-recurse-submodules --detach \
         "$CANDIDATE_REF" >/dev/null 2>&1 ||
         indeterminate "could not detach from the lease-owned temporary branch"
     [[ "$(git rev-parse --verify HEAD 2>/dev/null)" == "$result" ]] ||
         indeterminate "detached publication HEAD does not equal the candidate"
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy changed before trusted-replay publication"
 
     if {
         printf '%s\n' \
@@ -2052,7 +2177,10 @@ publish_rebase_result() {
             hard_conflict "another rebase result won the branch CAS"
         fi
     fi
-    run_trusted_replay_git switch "$BRANCH" >/dev/null 2>&1 ||
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy changed during trusted-replay publication"
+    run_trusted_replay_git switch --no-recurse-submodules \
+        "$BRANCH" >/dev/null 2>&1 ||
         indeterminate "rebase published but branch checkout failed"
     load_namespace || hard_conflict "published rebase namespace is incomplete"
     validate_namespace || hard_conflict "published rebase namespace failed validation"
@@ -2454,6 +2582,8 @@ record_replay_action() {
     local previous written line observed parent extra
 
     prove_live_source_step
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy enables an unsafe trusted-replay extension point"
     [[ "$NS_STATE" == "captured" &&
        "$REBASE_WORK_OID" == "$PRE_OID" ]] ||
         hard_conflict "internal replay recorder requires the frozen captured lease"
@@ -2493,6 +2623,8 @@ record_replay_action() {
         [[ "$written" == "$REPLAY_PROOF_GENERATION" ]] ||
             indeterminate "written replay proof context changed its content address"
     fi
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy changed before trusted-replay proof sealing"
 
     if emit_replay_record_transaction \
             "$ordinal" "$source_ref" "$replay_ref" \
@@ -2508,6 +2640,8 @@ record_replay_action() {
         [[ "$REPLAY_PROOF_RECORDED" -eq "$ordinal" ]] ||
             hard_conflict "another replay proof writer advanced a different ordinal"
     fi
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy changed during trusted-replay proof sealing"
 
     validate_replay_proof_prefix ||
         hard_conflict "recorded replay proof failed exact readback"
@@ -2564,8 +2698,8 @@ finish_trusted_rebase() {
 workspace_action() {
     local branch_oid rebase_help
 
-    trusted_replay_local_config_is_safe ||
-        indeterminate "local Git configuration enables an unsafe trusted-replay extension point"
+    trusted_replay_external_policy_is_safe ||
+        indeterminate "repository or worktree Git policy enables an unsafe trusted-replay extension point"
 
     if [[ "$NS_STATE" == "candidate" ]]; then
         read_push_remote
@@ -2659,7 +2793,7 @@ workspace_action() {
             hard_conflict "replay proof namespace is incoherent before rebase start"
         [[ "$REPLAY_PROOF_STATE" == "absent" ]] ||
             hard_conflict "captured lease has orphaned replay proof without an active rebase"
-        run_trusted_replay_git switch \
+        run_trusted_replay_git switch --no-recurse-submodules \
             "$REBASE_WORK_BRANCH" >/dev/null 2>&1 ||
             indeterminate "could not check out the lease-owned temporary rebase branch"
         rebase_help=$(LC_ALL=C run_trusted_replay_git rebase -h 2>&1 || true)
@@ -2704,7 +2838,8 @@ workspace_action() {
                 indeterminate "could not read leased push remote"
                 ;;
         esac
-        run_trusted_replay_git switch "$BRANCH" >/dev/null 2>&1 ||
+        run_trusted_replay_git switch --no-recurse-submodules \
+            "$BRANCH" >/dev/null 2>&1 ||
             indeterminate "could not check out the leased branch"
         sync_mirror || indeterminate "lease mirror did not verify on restart"
         clear_rejection_after_rebase ||
@@ -2723,7 +2858,8 @@ workspace_action() {
             branch_oid=$(read_ref "$BRANCH_REF") ||
                 indeterminate "could not inspect the local feature branch"
             if [[ -n "$branch_oid" ]]; then
-                git switch "$BRANCH" >/dev/null 2>&1 ||
+                git switch --no-recurse-submodules \
+                    "$BRANCH" >/dev/null 2>&1 ||
                     indeterminate "could not check out the existing branch"
                 if checked_ancestor "$TRACKING_REF" "$branch_oid" \
                     "fetched feature tip versus local branch"; then
@@ -2736,7 +2872,8 @@ workspace_action() {
                     hard_conflict "local branch diverged before lease capture"
                 fi
             else
-                git switch -c "$BRANCH" "$TRACKING_REF" >/dev/null 2>&1 ||
+                git switch --no-recurse-submodules \
+                    -c "$BRANCH" "$TRACKING_REF" >/dev/null 2>&1 ||
                     indeterminate "could not create the local tracking branch"
             fi
             ;;
@@ -2749,7 +2886,8 @@ workspace_action() {
                 indeterminate "could not inspect the local-only feature branch"
             [[ -n "$branch_oid" ]] ||
                 hard_conflict "metadata branch exists neither locally nor remotely"
-            git switch "$BRANCH" >/dev/null 2>&1 ||
+            git switch --no-recurse-submodules \
+                "$BRANCH" >/dev/null 2>&1 ||
                 indeterminate "could not check out the local-only branch"
             ;;
         malformed)
