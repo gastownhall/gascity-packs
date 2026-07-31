@@ -886,7 +886,8 @@ revalidate_source_authority() {
 
 durable_hard_block() {
     local code=$1 reason=$2 block_code block_output
-    local source_now step_now root_now convoy_now derived_source
+    local subject message
+    local source_now step_now root_now root_context_now convoy_now derived_source
     echo "POLECAT_WORKSPACE_HARD: $code: $reason" >&2
     block_output=$(run_gc gastown polecat-step block \
         --convoy "$CONVOY_ID" \
@@ -905,8 +906,12 @@ durable_hard_block() {
     # uncertainty, not proof of a durable hard outcome.
     root_now=$(run_gc_bd show "$ROOT_BEAD_ID" --json 2>/dev/null) ||
         indeterminate "durable block returned but the workflow root was unreadable"
-    root_context "$root_now" >/dev/null ||
+    root_context_now=$(root_context "$root_now") ||
         indeterminate "durable block returned but Graph root authority changed"
+    root_context_now=$(printf '%s' "$root_context_now" | jq -cS .) ||
+        indeterminate "durable block returned but Graph root authority was malformed"
+    [[ "$root_context_now" == "$ROOT_CONTEXT_CANONICAL" ]] ||
+        indeterminate "durable block returned after Graph root authority drift"
     convoy_now=$(run_gc_convoy status "$CONVOY_ID" --json 2>/dev/null) ||
         indeterminate "durable block returned but convoy authority was unreadable"
     derived_source=$(convoy_source_id "$convoy_now" "$CONVOY_ID") ||
@@ -949,6 +954,19 @@ durable_hard_block() {
         .[0].metadata["gc.polecat_block_convoy"] == $convoy
     ' >/dev/null 2>&1 ||
         indeterminate "durable block returned without an exact step quarantine"
+    subject="POLECAT WORKSPACE QUARANTINE: $SOURCE_ID"
+    message=$(printf '%s\n' \
+        "Source: $SOURCE_ID" \
+        "Workflow root: $ROOT_BEAD_ID" \
+        "Step: $STEP_BEAD_ID" \
+        "Convoy: $CONVOY_ID" \
+        "Code: $code" \
+        "Reason: $reason" \
+        "The durable quarantine requires explicit human reconciliation; do not rerun project setup automatically.") ||
+        indeterminate "could not encode the quarantine notification"
+    run_gc mail send "$WITNESS_TARGET" \
+        -s "$subject" -m "$message" --notify ||
+        indeterminate "durable quarantine verified but Witness notification failed"
     # A successful block is terminal quarantine, never workspace success.
     exit "$EXIT_HARD"
 }
@@ -1332,6 +1350,61 @@ if ! printf 'start\noption no-deref\nprepare\nabort\n' |
      "$GIT_CMD" -C "$RIG_ROOT" update-ref --stdin >/dev/null 2>&1; then
     indeterminate "Git lacks transactional update-ref support for setup intent"
 fi
+command -v flock >/dev/null 2>&1 ||
+    indeterminate "flock is required for exclusive setup execution"
+
+ensure_setup_lock_directory() {
+    local path=$1 resolved
+    if [[ -L "$path" || (-e "$path" && ! -d "$path") ]]; then
+        return 1
+    fi
+    if [[ ! -e "$path" ]]; then
+        mkdir -- "$path" 2>/dev/null || {
+            [[ -d "$path" && ! -L "$path" ]] || return 1
+        }
+    fi
+    [[ -d "$path" && ! -L "$path" ]] || return 1
+    resolved=$(CDPATH= cd -- "$path" 2>/dev/null && pwd -P) || return 1
+    [[ "$resolved" == "$path" ]]
+}
+
+SETUP_GIT_COMMON=$(artifact_git_common_dir "$RIG_ROOT") ||
+    indeterminate "could not resolve the setup lock repository"
+[[ "$SETUP_GIT_COMMON" == /* && -d "$SETUP_GIT_COMMON" &&
+   ! -L "$SETUP_GIT_COMMON" ]] ||
+    indeterminate "setup lock repository is redirected or unsafe"
+SETUP_LOCK_ROOT="$SETUP_GIT_COMMON/gascity-locks"
+SETUP_LOCK_PARENT="$SETUP_LOCK_ROOT/polecat-workspace-setups-v1"
+SETUP_LOCK_PATH="$SETUP_LOCK_PARENT/$SETUP_KEY"
+SETUP_LOCK_FILE="$SETUP_LOCK_PATH/lock"
+ensure_setup_lock_directory "$SETUP_LOCK_ROOT" &&
+    ensure_setup_lock_directory "$SETUP_LOCK_PARENT" &&
+    ensure_setup_lock_directory "$SETUP_LOCK_PATH" ||
+    indeterminate "could not create a physical setup lock directory"
+if [[ ! -e "$SETUP_LOCK_FILE" && ! -L "$SETUP_LOCK_FILE" ]]; then
+    (set -o noclobber; : >"$SETUP_LOCK_FILE") 2>/dev/null || {
+        [[ -f "$SETUP_LOCK_FILE" && ! -L "$SETUP_LOCK_FILE" ]] ||
+            indeterminate "could not exclusively create the exact setup lock file"
+    }
+fi
+[[ -f "$SETUP_LOCK_FILE" && ! -L "$SETUP_LOCK_FILE" ]] ||
+    indeterminate "setup lock file is redirected or is not a regular file"
+exec {SETUP_LOCK_FD}<>"$SETUP_LOCK_FILE" ||
+    indeterminate "could not open the exact setup lock"
+SETUP_LOCK_PATH_ID=$(stat -Lc '%d:%i:%h' "$SETUP_LOCK_FILE" 2>/dev/null) ||
+    indeterminate "could not identify the setup lock path"
+SETUP_LOCK_FD_ID=$(stat -Lc '%d:%i:%h' "/proc/$$/fd/$SETUP_LOCK_FD" \
+    2>/dev/null) ||
+    indeterminate "could not identify the opened setup lock"
+[[ "$SETUP_LOCK_PATH_ID" == "$SETUP_LOCK_FD_ID" &&
+   "${SETUP_LOCK_PATH_ID##*:}" == "1" ]] ||
+    indeterminate "setup lock file identity or containment is unsafe"
+flock -n "$SETUP_LOCK_FD" ||
+    indeterminate "another executor currently owns this exact workspace setup"
+[[ -f "$SETUP_LOCK_FILE" && ! -L "$SETUP_LOCK_FILE" &&
+   "$(stat -Lc '%d:%i:%h' "$SETUP_LOCK_FILE" 2>/dev/null)" == \
+     "$SETUP_LOCK_FD_ID" ]] ||
+    indeterminate "setup lock path changed while acquiring ownership"
 
 read_setup_ref() {
     local ref=$1 value code
@@ -1445,11 +1518,13 @@ mark_setup_done() {
 
 STEP_JSON=$(run_gc_bd show "$STEP_BEAD_ID" --json 2>/dev/null) ||
     indeterminate "could not re-read workspace step before setup"
+SETUP_RUN_MODE=""
 if receipt_matches_live_step "$STEP_JSON" "$HEAD_OID" "$FORK_SHA" complete; then
     # A prior invocation completed setup and durably recorded the exact state.
     # Re-run only proof finalization/completion after exact rebinding.
     mark_setup_done ||
         indeterminate "completed setup receipt lacks its exact durable Git proof"
+    SETUP_RUN_MODE=done
 elif receipt_matches_live_step "$STEP_JSON" "$HEAD_OID" "$FORK_SHA" attempted; then
     validate_setup_proof \
         "$SETUP_KEY" "$SETUP_CONTEXT_OID" false \
@@ -1457,7 +1532,14 @@ elif receipt_matches_live_step "$STEP_JSON" "$HEAD_OID" "$FORK_SHA" attempted; t
         "$CURRENT_SESSION_ID" "$WORKTREE" "$EXPECTED_BRANCH" \
         "$ROOT_BASE_BRANCH" "$FORK_SHA" "$HEAD_OID" "$SETUP_DIGEST" ||
         indeterminate "attempted setup receipt conflicts with its durable intent"
-    indeterminate "project setup was durably attempted; retry cannot prove it is safe to execute again"
+    if [[ -n "$ROOT_SETUP_COMMAND" ]]; then
+        durable_hard_block \
+            "workspace.setup-execution-ambiguous" \
+            "project setup has a durable attempted receipt but no completion receipt; explicit reconciliation is required"
+    fi
+    # An empty setup command has no external effect to repeat.  Its exact
+    # attempted receipt can therefore be promoted without invoking a shell.
+    SETUP_RUN_MODE=complete-empty
 else
     RECEIPT_KEY_COUNT=$(printf '%s' "$STEP_JSON" | jq -er '
         [.[0].metadata | keys[] |
@@ -1469,14 +1551,38 @@ else
 
     load_setup_namespace ||
         indeterminate "workspace setup intent namespace is partial or unreadable"
-    [[ "$SETUP_NS_STATE" == "absent" ]] ||
-        indeterminate "workspace setup already has an exclusive durable intent"
+    case "$SETUP_NS_STATE" in
+        absent)
+            revalidate_graph_context ||
+                indeterminate "Graph authority changed before setup intent creation"
+            revalidate_source_authority ||
+                indeterminate "source authority changed before setup intent creation"
+            create_setup_intent ||
+                indeterminate "could not exclusively create the workspace setup intent"
+            ;;
+        attempted)
+            validate_setup_proof \
+                "$SETUP_KEY" "$SETUP_CONTEXT_OID" false \
+                "$STEP_BEAD_ID" "$ROOT_BEAD_ID" "$CONVOY_ID" "$SOURCE_ID" \
+                "$CURRENT_SESSION_ID" "$WORKTREE" "$EXPECTED_BRANCH" \
+                "$ROOT_BASE_BRANCH" "$FORK_SHA" "$HEAD_OID" "$SETUP_DIGEST" ||
+                indeterminate "receipt-free setup intent does not match current authority"
+            # The per-generation lock proves the prior intent owner is no
+            # longer running.  Protocol order guarantees setup cannot begin
+            # before the attempted Graph receipt is durably readable, so this
+            # receipt-free state is safe to adopt.
+            ;;
+        complete)
+            indeterminate "workspace setup done proof exists without its exact Graph receipt"
+            ;;
+        *)
+            indeterminate "workspace setup intent namespace has an invalid state"
+            ;;
+    esac
     revalidate_graph_context ||
-        indeterminate "Graph authority changed before setup intent creation"
+        indeterminate "Graph authority changed before setup receipt creation"
     revalidate_source_authority ||
-        indeterminate "source authority changed before setup intent creation"
-    create_setup_intent ||
-        indeterminate "could not exclusively create the workspace setup intent"
+        indeterminate "source authority changed before setup receipt creation"
 
     run_gc_bd update "$STEP_BEAD_ID" \
         --set-metadata "gc.polecat_workspace_version=$RECEIPT_VERSION" \
@@ -1497,7 +1603,14 @@ else
         indeterminate "could not read back the pre-execution workspace setup receipt"
     receipt_matches_live_step "$STEP_JSON" "$HEAD_OID" "$FORK_SHA" attempted ||
         indeterminate "pre-execution workspace setup receipt did not read back exactly"
+    if [[ -n "$ROOT_SETUP_COMMAND" ]]; then
+        SETUP_RUN_MODE=execute
+    else
+        SETUP_RUN_MODE=complete-empty
+    fi
+fi
 
+if [[ "$SETUP_RUN_MODE" != "done" ]]; then
     WORKTREE_NOW=$(validate_artifact_worktree \
         "$SOURCE_ARTIFACT_DIR" existing) ||
         indeterminate "task artifact changed before project setup"
@@ -1524,7 +1637,7 @@ else
     revalidate_graph_context ||
         indeterminate "Graph authority changed before project setup"
 
-    if [[ -n "$ROOT_SETUP_COMMAND" ]]; then
+    if [[ "$SETUP_RUN_MODE" == "execute" ]]; then
         printf '%s\n' "$ROOT_SETUP_COMMAND" |
             (
                 cd -- "$WORKTREE" ||

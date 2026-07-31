@@ -235,15 +235,15 @@ done
 EXPECTED_BRANCH="polecat/$SOURCE_ID"
 if [[ "$BRANCH" != "$EXPECTED_BRANCH" ]]; then
     echo "polecat-lease: branch $BRANCH does not equal $EXPECTED_BRANCH" >&2
-    exit "$EXIT_HARD"
+    exit "$EXIT_USAGE"
 fi
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || {
     echo "polecat-lease: invalid feature branch" >&2
-    exit "$EXIT_HARD"
+    exit "$EXIT_USAGE"
 }
 git check-ref-format --branch "$BASE_BRANCH" >/dev/null 2>&1 || {
     echo "polecat-lease: invalid base branch" >&2
-    exit "$EXIT_HARD"
+    exit "$EXIT_USAGE"
 }
 
 BRANCH_REF="refs/heads/$BRANCH"
@@ -255,6 +255,8 @@ LEASE_KEY=$(printf 'gascity-polecat-push-lease-v1\0%s' "$SOURCE_ID" | git hash-o
 is_oid "$LEASE_KEY" || indeterminate "Git returned an invalid lease key"
 
 LEASE_NS="refs/gascity/polecat-push-leases/$LEASE_KEY"
+REBASE_WORK_BRANCH="gascity-polecat-rebase/$LEASE_KEY"
+REBASE_WORK_REF="refs/heads/$REBASE_WORK_BRANCH"
 CONTEXT_REF="$LEASE_NS/context"
 EXPECTED_REF="$LEASE_NS/expected"
 PRE_REF="$LEASE_NS/pre-rebase"
@@ -263,7 +265,7 @@ CANDIDATE_REF="$LEASE_NS/candidate"
 REBASED_REF="$LEASE_NS/rebased"
 SUBMIT_REF="$LEASE_NS/submit"
 
-for ref in "$CONTEXT_REF" "$EXPECTED_REF" "$PRE_REF" "$BASE_REF" \
+for ref in "$REBASE_WORK_REF" "$CONTEXT_REF" "$EXPECTED_REF" "$PRE_REF" "$BASE_REF" \
            "$CANDIDATE_REF" "$REBASED_REF" "$SUBMIT_REF"; do
     git check-ref-format "$ref" >/dev/null 2>&1 ||
         indeterminate "Git rejected an internal lease ref"
@@ -843,6 +845,7 @@ emit_context() {
         "branch=$BRANCH" \
         "target=$BASE_BRANCH" \
         "witness=$WITNESS_CANONICAL" \
+        "rebase_work_ref=$REBASE_WORK_REF" \
         "worktree_fingerprint=$WORKTREE_FINGERPRINT" \
         "repo_common_fingerprint=$REPO_COMMON_FINGERPRINT" \
         "origin_fetch_fingerprint=$FETCH_FINGERPRINT" \
@@ -880,6 +883,7 @@ CONTEXT_OID=""
 EXPECTED_OID=""
 PRE_OID=""
 BASE_OID=""
+REBASE_WORK_OID=""
 CANDIDATE_OID=""
 REBASED_OID=""
 SUBMIT_OID=""
@@ -912,6 +916,8 @@ ref_equals() {
 }
 
 read_namespace_once() {
+    REBASE_WORK_OID=$(read_ref "$REBASE_WORK_REF") ||
+        indeterminate "could not read lease-owned rebase work ref"
     CONTEXT_OID=$(read_ref "$CONTEXT_REF") ||
         indeterminate "could not read lease context ref"
     EXPECTED_OID=$(read_ref "$EXPECTED_REF") ||
@@ -932,12 +938,17 @@ read_namespace_once() {
         [[ -z "$oid" ]] || NS_COUNT=$((NS_COUNT + 1))
     done
     case "$NS_COUNT" in
-        0) NS_STATE="absent"; return 0 ;;
+        0)
+            if [[ -z "$REBASE_WORK_OID" ]]; then
+                NS_STATE="absent"
+                return 0
+            fi
+            ;;
         4)
             if [[ -n "$CONTEXT_OID" && -n "$EXPECTED_OID" &&
                   -n "$PRE_OID" && -n "$BASE_OID" &&
                   -z "$CANDIDATE_OID" && -z "$REBASED_OID" &&
-                  -z "$SUBMIT_OID" ]]; then
+                  -z "$SUBMIT_OID" && -n "$REBASE_WORK_OID" ]]; then
                 NS_STATE="captured"
                 return 0
             fi
@@ -947,9 +958,17 @@ read_namespace_once() {
                   -n "$PRE_OID" && -n "$BASE_OID" &&
                   -z "$SUBMIT_OID" ]]; then
                 if [[ -n "$CANDIDATE_OID" && -z "$REBASED_OID" ]]; then
+                    [[ -n "$REBASE_WORK_OID" ]] || {
+                        NS_STATE="partial"
+                        return 1
+                    }
                     NS_STATE="candidate"
                     return 0
                 elif [[ -z "$CANDIDATE_OID" && -n "$REBASED_OID" ]]; then
+                    [[ -z "$REBASE_WORK_OID" ]] || {
+                        NS_STATE="partial"
+                        return 1
+                    }
                     NS_STATE="rebased"
                     return 0
                 fi
@@ -957,7 +976,7 @@ read_namespace_once() {
             ;;
         6)
             if [[ -z "$CANDIDATE_OID" && -n "$REBASED_OID" &&
-                  -n "$SUBMIT_OID" ]]; then
+                  -n "$SUBMIT_OID" && -z "$REBASE_WORK_OID" ]]; then
                 NS_STATE="submit-frozen"
                 return 0
             fi
@@ -990,7 +1009,7 @@ validate_commit_ref() {
 }
 
 validate_candidate_lineage() {
-    local candidate=$1 original_base pre_count candidate_count diff_code
+    local candidate=$1 original_base pre_count candidate_count
     is_oid "$candidate" || return 1
     [[ "$(git cat-file -t "$candidate" 2>/dev/null)" == "commit" ]] || return 1
     git merge-base --is-ancestor "$BASE_OID" "$candidate" >/dev/null 2>&1 ||
@@ -1004,12 +1023,6 @@ validate_candidate_lineage() {
         return 1
     [[ "$pre_count" -gt 0 && "$candidate_count" -eq "$pre_count" ]] ||
         return 1
-    git diff --quiet "$original_base" "$PRE_OID" >/dev/null 2>&1
-    diff_code=$?
-    [[ "$diff_code" -eq 1 ]] || return 1
-    git diff --quiet "$BASE_OID" "$candidate" >/dev/null 2>&1
-    diff_code=$?
-    [[ "$diff_code" -eq 1 ]]
 }
 
 validate_namespace() {
@@ -1023,8 +1036,17 @@ validate_namespace() {
     validate_commit_ref "$EXPECTED_REF" "$EXPECTED_OID" || return 1
     validate_commit_ref "$PRE_REF" "$PRE_OID" || return 1
     validate_commit_ref "$BASE_REF" "$BASE_OID" || return 1
+    if [[ "$NS_STATE" == "captured" ]]; then
+        validate_commit_ref "$REBASE_WORK_REF" "$REBASE_WORK_OID" || return 1
+        ref_equals "$BRANCH_REF" "$PRE_OID" || return 1
+        if [[ "$REBASE_WORK_OID" != "$PRE_OID" ]]; then
+            validate_candidate_lineage "$REBASE_WORK_OID" || return 1
+        fi
+    fi
     if [[ "$NS_STATE" == "candidate" ]]; then
         validate_commit_ref "$CANDIDATE_REF" "$CANDIDATE_OID" || return 1
+        validate_commit_ref "$REBASE_WORK_REF" "$REBASE_WORK_OID" || return 1
+        [[ "$REBASE_WORK_OID" == "$CANDIDATE_OID" ]] || return 1
         validate_candidate_lineage "$CANDIDATE_OID" || return 1
         ref_equals "$BRANCH_REF" "$PRE_OID" || return 1
     fi
@@ -1563,6 +1585,7 @@ capture_lease() {
         "create $EXPECTED_REF $EXPECTED_OID" \
         "create $PRE_REF $PRE_OID" \
         "create $BASE_REF $BASE_OID" \
+        "create $REBASE_WORK_REF $PRE_OID" \
         prepare \
         commit | git update-ref --stdin >/dev/null 2>&1; then
         :
@@ -1585,20 +1608,19 @@ capture_lease() {
 }
 
 record_rebase_candidate() {
-    local symbolic result branch_oid
+    local result branch_oid
     prove_live_source_step
     [[ "$NS_STATE" == "captured" ]] ||
         indeterminate "rebase candidate recording requires captured lease state"
-    symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
-    [[ -z "$symbolic" ]] ||
-        indeterminate "rebase candidate recording requires detached HEAD"
     [[ ! -d "$(git rev-parse --git-path rebase-merge)" &&
        ! -d "$(git rev-parse --git-path rebase-apply)" ]] ||
         indeterminate "cannot record a rebase candidate while rebase state is active"
-    result=$(git rev-parse --verify HEAD 2>/dev/null) ||
-        indeterminate "could not resolve the detached rebase candidate"
+    result=$(read_ref "$REBASE_WORK_REF") ||
+        indeterminate "could not resolve the lease-owned rebase work ref"
+    [[ -n "$result" ]] ||
+        indeterminate "lease-owned rebase work ref is missing"
     validate_candidate_lineage "$result" ||
-        indeterminate "detached result does not preserve the captured candidate lineage"
+        indeterminate "lease-owned rebase result does not preserve captured lineage"
     branch_oid=$(read_ref "$BRANCH_REF") ||
         indeterminate "could not read the canonical branch before candidate recording"
     [[ "$branch_oid" == "$PRE_OID" ]] ||
@@ -1633,24 +1655,30 @@ record_rebase_candidate() {
 }
 
 publish_rebase_result() {
-    local symbolic result
+    local result status
     prove_live_source_step
     [[ "$NS_STATE" == "candidate" ]] ||
         indeterminate "rebase publication requires lease-owned candidate evidence"
     validate_namespace ||
         hard_conflict "rebase candidate evidence is incomplete or incoherent"
-    symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
-    [[ -z "$symbolic" ]] ||
-        hard_conflict "rebase publication requires detached HEAD"
     [[ ! -d "$(git rev-parse --git-path rebase-merge)" &&
        ! -d "$(git rev-parse --git-path rebase-apply)" ]] ||
         indeterminate "rebase is still in progress; resolve/continue it first"
-    result=$(git rev-parse --verify HEAD 2>/dev/null) ||
-        indeterminate "could not resolve detached rebase result"
-    [[ "$result" == "$CANDIDATE_OID" ]] ||
-        hard_conflict "detached HEAD does not equal the lease-owned candidate"
+    result=$(read_ref "$REBASE_WORK_REF") ||
+        indeterminate "could not resolve lease-owned rebase work ref"
+    [[ "$result" == "$CANDIDATE_OID" &&
+       "$REBASE_WORK_OID" == "$CANDIDATE_OID" ]] ||
+        hard_conflict "rebase work ref does not equal the lease-owned candidate"
     validate_candidate_lineage "$result" ||
         hard_conflict "lease-owned candidate no longer preserves captured lineage"
+    status=$(git status --porcelain --untracked-files=all 2>/dev/null) ||
+        indeterminate "could not inspect rebase worktree before publication"
+    [[ -z "$status" ]] ||
+        indeterminate "rebase worktree is dirty before publication"
+    git switch --detach "$CANDIDATE_REF" >/dev/null 2>&1 ||
+        indeterminate "could not detach from the lease-owned temporary branch"
+    [[ "$(git rev-parse --verify HEAD 2>/dev/null)" == "$result" ]] ||
+        indeterminate "detached publication HEAD does not equal the candidate"
 
     if printf '%s\n' \
         start \
@@ -1662,10 +1690,12 @@ publish_rebase_result() {
         "update $BRANCH_REF $result $PRE_OID" \
         "create $REBASED_REF $result" \
         "delete $CANDIDATE_REF $CANDIDATE_OID" \
+        "delete $REBASE_WORK_REF $result" \
         prepare \
         commit | git update-ref --stdin >/dev/null 2>&1; then
         REBASED_OID=$result
         CANDIDATE_OID=""
+        REBASE_WORK_OID=""
     else
         load_namespace || hard_conflict "rebase publication left partial refs"
         validate_namespace || hard_conflict "rebase publication raced different state"
@@ -1687,8 +1717,210 @@ publish_rebase_result() {
         indeterminate "rebase published but source rejection metadata did not update"
 }
 
+REBASE_STOPPED_OID=""
+REBASE_ONTO_OID=""
+CONFLICT_GENERATION=""
+CONFLICT_NS=""
+CONFLICT_CONTEXT_REF=""
+CONFLICT_TREE_REF=""
+CONFLICT_DONE_REF=""
+CONFLICT_PARENT_OID=""
+CONFLICT_PROOF_TREE=""
+REBASE_LINE=""
+
+read_rebase_line() {
+    local file=$1 line count=0
+    REBASE_LINE=""
+    [[ -f "$file" && ! -L "$file" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        count=$((count + 1))
+        [[ "$count" -eq 1 ]] || return 1
+        REBASE_LINE=$line
+    done <"$file"
+    [[ "$count" -eq 1 && -n "$REBASE_LINE" &&
+       "$REBASE_LINE" != *$'\r'* && "$REBASE_LINE" != *$'\t'* ]]
+}
+
+emit_conflict_generation() {
+    jq -cnS \
+        --arg schema "gascity-polecat-conflict-generation-v1" \
+        --arg lease_context "$CONTEXT_OID" \
+        --arg source "$SOURCE_ID" \
+        --arg root "$ROOT_BEAD_ID" \
+        --arg step "$STEP_BEAD_ID" \
+        --arg convoy "$CONVOY_ID" \
+        --arg work_ref "$REBASE_WORK_REF" \
+        --arg pre "$PRE_OID" \
+        --arg base "$BASE_OID" \
+        --arg stopped "$REBASE_STOPPED_OID" \
+        --arg rebase_head "$REBASE_STOPPED_OID" \
+        --arg onto "$REBASE_ONTO_OID" \
+        '{
+          schema: $schema,
+          lease_context_oid: $lease_context,
+          source: $source,
+          workflow_root: $root,
+          step: $step,
+          input_convoy: $convoy,
+          rebase_work_ref: $work_ref,
+          pre_oid: $pre,
+          base_oid: $base,
+          stopped_oid: $stopped,
+          rebase_head_oid: $rebase_head,
+          onto_oid: $onto
+        }'
+}
+
+load_active_rebase_generation() {
+    local state_dir rebase_head
+    state_dir=$(git rev-parse --git-path rebase-merge 2>/dev/null) || return 1
+    [[ -d "$state_dir" && ! -L "$state_dir" ]] || return 1
+    [[ ! -e "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]] ||
+        return 1
+    read_rebase_line "$state_dir/head-name" || return 1
+    [[ "$REBASE_LINE" == "$REBASE_WORK_REF" ]] || return 1
+    read_rebase_line "$state_dir/orig-head" || return 1
+    [[ "$REBASE_LINE" == "$PRE_OID" ]] || return 1
+    read_rebase_line "$state_dir/onto" || return 1
+    REBASE_ONTO_OID=$REBASE_LINE
+    [[ "$REBASE_ONTO_OID" == "$BASE_OID" ]] || return 1
+    read_rebase_line "$state_dir/stopped-sha" || return 1
+    REBASE_STOPPED_OID=$REBASE_LINE
+    is_oid "$REBASE_STOPPED_OID" || return 1
+    [[ "$(git cat-file -t "$REBASE_STOPPED_OID" 2>/dev/null)" == "commit" ]] ||
+        return 1
+    rebase_head=$(git rev-parse --verify REBASE_HEAD 2>/dev/null) || return 1
+    [[ "$rebase_head" == "$REBASE_STOPPED_OID" ]] || return 1
+    ref_equals "$BRANCH_REF" "$PRE_OID" || return 1
+    ref_equals "$REBASE_WORK_REF" "$PRE_OID" || return 1
+    CONFLICT_GENERATION=$(emit_conflict_generation |
+        git hash-object --stdin 2>/dev/null) || return 1
+    is_oid "$CONFLICT_GENERATION" || return 1
+    CONFLICT_NS="refs/gascity/polecat-conflicts/v1/$LEASE_KEY/$CONFLICT_GENERATION"
+    CONFLICT_CONTEXT_REF="$CONFLICT_NS/context"
+    CONFLICT_TREE_REF="$CONFLICT_NS/tree"
+    CONFLICT_DONE_REF="$CONFLICT_NS/done"
+    for ref in "$CONFLICT_CONTEXT_REF" "$CONFLICT_TREE_REF" \
+               "$CONFLICT_DONE_REF"; do
+        git check-ref-format "$ref" >/dev/null 2>&1 || return 1
+    done
+}
+
+conflict_stage_diagnostic() {
+    echo "POLECAT_LEASE_REBASE_CONFLICT: stage this exact lease-owned conflict generation:" >&2
+    printf '  gc gastown polecat-step exec --convoy %q --step-ref %q -- gc gastown polecat-conflict stage\n' \
+        "$CONVOY_ID" "$EXPECTED_STEP_REF" >&2
+    echo "Then rerun only: gc gastown polecat-workspace execute" >&2
+}
+
+require_conflict_done() {
+    local context_oid tree_oid done_oid context_body actual_tree ref
+    local unmerged unstaged untracked
+    CONFLICT_PARENT_OID=""
+    CONFLICT_PROOF_TREE=""
+    load_active_rebase_generation || return 1
+    for ref in "$CONFLICT_CONTEXT_REF" "$CONFLICT_TREE_REF" \
+               "$CONFLICT_DONE_REF"; do
+        git symbolic-ref -q "$ref" >/dev/null 2>&1 && return 1
+    done
+    context_oid=$(read_ref "$CONFLICT_CONTEXT_REF") || return 1
+    tree_oid=$(read_ref "$CONFLICT_TREE_REF") || return 1
+    done_oid=$(read_ref "$CONFLICT_DONE_REF") || return 1
+    is_oid "$context_oid" && is_oid "$tree_oid" && is_oid "$done_oid" ||
+        return 1
+    [[ "$tree_oid" == "$done_oid" ]] || return 1
+    [[ "$(git cat-file -t "$context_oid" 2>/dev/null)" == "blob" &&
+       "$(git cat-file -t "$tree_oid" 2>/dev/null)" == "tree" ]] || return 1
+    context_body=$(git cat-file blob "$context_oid" 2>/dev/null) || return 1
+    CONFLICT_PARENT_OID=$(printf '%s' "$context_body" |
+        jq -er '.conflict_parent_oid' 2>/dev/null) || return 1
+    is_oid "$CONFLICT_PARENT_OID" || return 1
+    [[ "$(git cat-file -t "$CONFLICT_PARENT_OID" 2>/dev/null)" == "commit" ]] ||
+        return 1
+    printf '%s' "$context_body" | jq -e \
+        --arg schema "gascity-polecat-conflict-context-v1" \
+        --arg generation "$CONFLICT_GENERATION" \
+        --arg lease_context "$CONTEXT_OID" \
+        --arg source "$SOURCE_ID" --arg root "$ROOT_BEAD_ID" \
+        --arg step "$STEP_BEAD_ID" --arg convoy "$CONVOY_ID" \
+        --arg work_ref "$REBASE_WORK_REF" \
+        --arg pre "$PRE_OID" --arg base "$BASE_OID" \
+        --arg stopped "$REBASE_STOPPED_OID" --arg onto "$REBASE_ONTO_OID" \
+        --arg parent "$CONFLICT_PARENT_OID" --arg tree "$tree_oid" '
+        type == "object" and .schema == $schema and
+        .generation == $generation and .lease_context_oid == $lease_context and
+        .source == $source and .workflow_root == $root and .step == $step and
+        .input_convoy == $convoy and .rebase_work_ref == $work_ref and
+        .pre_oid == $pre and .base_oid == $base and
+        .stopped_oid == $stopped and .rebase_head_oid == $stopped and
+        .onto_oid == $onto and .conflict_parent_oid == $parent and
+        .expected_tree_oid == $tree and
+        (.unmerged_tuple_digest | type) == "string" and
+        (.unmerged_tuple_digest | length) > 0' >/dev/null 2>&1 || return 1
+    unmerged=$(git ls-files -u 2>/dev/null) || return 1
+    [[ -z "$unmerged" ]] || return 1
+    unstaged=$(git diff --name-only 2>/dev/null) || return 1
+    [[ -z "$unstaged" ]] || return 1
+    untracked=$(git ls-files --others --exclude-standard 2>/dev/null) ||
+        return 1
+    [[ -z "$untracked" ]] || return 1
+    git diff --cached --check >/dev/null 2>&1 || return 1
+    actual_tree=$(git write-tree 2>/dev/null) || return 1
+    [[ "$actual_tree" == "$tree_oid" ]] || return 1
+    CONFLICT_PROOF_TREE=$tree_oid
+}
+
+commit_replays_stopped_conflict() {
+    local commit=$1 parent=$2 stopped=$3 tree=$4
+    local line observed parent_observed extra author_a author_b message_a message_b
+    line=$(git rev-list --parents -n 1 "$commit" 2>/dev/null) || return 1
+    read -r observed parent_observed extra <<<"$line"
+    [[ "$observed" == "$commit" && "$parent_observed" == "$parent" &&
+       -z "$extra" ]] || return 1
+    [[ "$(git rev-parse "$commit^{tree}" 2>/dev/null)" == "$tree" ]] ||
+        return 1
+    author_a=$(git show -s --format='%an%n%ae%n%aI' "$commit" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    author_b=$(git show -s --format='%an%n%ae%n%aI' "$stopped" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    message_a=$(git show -s --format='%B' "$commit" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    message_b=$(git show -s --format='%B' "$stopped" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    [[ "$author_a" == "$author_b" && "$message_a" == "$message_b" ]]
+}
+
+materialize_empty_conflict_commit() {
+    local current_head parent_tree
+    current_head=$(git rev-parse --verify HEAD 2>/dev/null) || return 1
+    parent_tree=$(git rev-parse "$CONFLICT_PARENT_OID^{tree}" 2>/dev/null) ||
+        return 1
+    if [[ "$current_head" == "$CONFLICT_PARENT_OID" ]]; then
+        [[ "$CONFLICT_PROOF_TREE" == "$parent_tree" ]] || return 0
+        if ! GIT_EDITOR=true git commit --allow-empty \
+            --no-verify -C "$REBASE_STOPPED_OID" >/dev/null 2>&1; then
+            current_head=$(git rev-parse --verify HEAD 2>/dev/null) ||
+                return 1
+            commit_replays_stopped_conflict \
+                "$current_head" "$CONFLICT_PARENT_OID" \
+                "$REBASE_STOPPED_OID" "$CONFLICT_PROOF_TREE" ||
+                return 1
+        fi
+        current_head=$(git rev-parse --verify HEAD 2>/dev/null) || return 1
+        commit_replays_stopped_conflict \
+            "$current_head" "$CONFLICT_PARENT_OID" \
+            "$REBASE_STOPPED_OID" "$CONFLICT_PROOF_TREE"
+        return
+    fi
+    # A crash may occur after the exact empty commit is materialized but before
+    # rebase --continue advances the sequencer.  Accept only that one replay.
+    commit_replays_stopped_conflict \
+        "$current_head" "$CONFLICT_PARENT_OID" \
+        "$REBASE_STOPPED_OID" "$CONFLICT_PROOF_TREE"
+}
+
 workspace_action() {
-    local branch_oid head_oid symbolic
+    local branch_oid rebase_help
 
     if [[ "$NS_STATE" == "candidate" ]]; then
         read_push_remote
@@ -1706,10 +1938,8 @@ workspace_action() {
                 indeterminate "could not read candidate-bound push remote"
                 ;;
         esac
-        symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
-        head_oid=$(git rev-parse --verify HEAD 2>/dev/null || true)
-        [[ -z "$symbolic" && "$head_oid" == "$CANDIDATE_OID" ]] ||
-            hard_conflict "worktree no longer presents the exact lease-owned candidate"
+        [[ "$REBASE_WORK_OID" == "$CANDIDATE_OID" ]] ||
+            hard_conflict "lease-owned rebase work ref no longer presents the candidate"
         publish_rebase_result
         return 0
     fi
@@ -1731,45 +1961,79 @@ workspace_action() {
                 ;;
         esac
         branch_oid=$(read_ref "$BRANCH_REF") ||
-            indeterminate "could not read branch before detached rebase"
+            indeterminate "could not read branch before lease-owned rebase"
         [[ "$branch_oid" == "$PRE_OID" ]] ||
-            hard_conflict "branch changed before detached rebase publication"
+            hard_conflict "canonical branch changed before lease-owned rebase"
         if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
               -d "$(git rev-parse --git-path rebase-apply)" ]]; then
+            load_active_rebase_generation ||
+                hard_conflict "active rebase does not match the captured lease generation"
             if [[ -n "$(git ls-files -u 2>/dev/null)" ]]; then
-                echo "POLECAT_LEASE_REBASE_CONFLICT: resolve and stage the detached rebase, then rerun:" >&2
-                echo "  gc gastown polecat-workspace execute" >&2
+                conflict_stage_diagnostic
                 exit "$EXIT_INDETERMINATE"
             fi
+            require_conflict_done || {
+                conflict_stage_diagnostic
+                indeterminate "active rebase lacks an exact completed conflict-stage proof"
+            }
+            materialize_empty_conflict_commit ||
+                indeterminate "could not preserve the exact empty conflict commit"
+            [[ -z "$(git ls-files -u 2>/dev/null)" &&
+               -z "$(git diff --name-only 2>/dev/null)" &&
+               -z "$(git ls-files --others --exclude-standard 2>/dev/null)" &&
+               "$(git write-tree 2>/dev/null)" == "$CONFLICT_PROOF_TREE" ]] ||
+                indeterminate "conflict proof changed before rebase continuation"
+            git diff --cached --check >/dev/null 2>&1 ||
+                indeterminate "conflict proof failed its final continuation check"
             if ! GIT_EDITOR=true git rebase --continue; then
                 if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
                       -d "$(git rev-parse --git-path rebase-apply)" ]]; then
-                    echo "POLECAT_LEASE_REBASE_CONFLICT: resolve and stage the detached rebase, then rerun:" >&2
-                    echo "  gc gastown polecat-workspace execute" >&2
+                    load_active_rebase_generation ||
+                        hard_conflict "continued rebase left an unbound conflict generation"
+                    conflict_stage_diagnostic
                     exit "$EXIT_INDETERMINATE"
                 fi
                 indeterminate "git rebase --continue failed without lease-owned success evidence"
             fi
+            load_namespace ||
+                hard_conflict "completed rebase left partial lease refs"
+            validate_namespace ||
+                hard_conflict "completed rebase changed lease-owned work authority"
             record_rebase_candidate
             publish_rebase_result
             return 0
         fi
-        symbolic=$(git symbolic-ref -q HEAD 2>/dev/null || true)
-        head_oid=$(git rev-parse --verify HEAD 2>/dev/null || true)
-        if [[ -z "$symbolic" && "$head_oid" != "$PRE_OID" ]]; then
-            indeterminate "detached result lacks lease-owned rebase candidate evidence"
+        if [[ "$REBASE_WORK_OID" != "$PRE_OID" ]]; then
+            validate_candidate_lineage "$REBASE_WORK_OID" ||
+                hard_conflict "lease-owned completed rebase has invalid lineage"
+            record_rebase_candidate
+            publish_rebase_result
+            return 0
         fi
-        git switch --detach "$PRE_REF" >/dev/null 2>&1 ||
-            indeterminate "could not detach at captured PRE"
-        if ! git rebase "$BASE_REF"; then
+        git switch "$REBASE_WORK_BRANCH" >/dev/null 2>&1 ||
+            indeterminate "could not check out the lease-owned temporary rebase branch"
+        rebase_help=$(LC_ALL=C git rebase -h 2>&1 || true)
+        [[ "$rebase_help" == *"reapply-cherry-picks"* &&
+           "$rebase_help" == *"--empty"* ]] ||
+            indeterminate "Git lacks the count-preserving rebase policy"
+        if ! git rebase --merge --reapply-cherry-picks --empty=keep "$BASE_REF"; then
             if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
                   -d "$(git rev-parse --git-path rebase-apply)" ]]; then
-                echo "POLECAT_LEASE_REBASE_CONFLICT: resolve and stage the detached rebase, then rerun:" >&2
-                echo "  gc gastown polecat-workspace execute" >&2
+                load_active_rebase_generation ||
+                    hard_conflict "failed rebase left an unbound conflict generation"
+                conflict_stage_diagnostic
                 exit "$EXIT_INDETERMINATE"
             fi
-            indeterminate "git rebase failed without lease-owned success evidence"
+            load_namespace ||
+                hard_conflict "failed rebase left partial lease refs"
+            validate_namespace ||
+                hard_conflict "failed rebase changed lease-owned authority incoherently"
+            indeterminate "git rebase returned nonzero; retry will inspect only the lease-owned work ref"
         fi
+        load_namespace ||
+            hard_conflict "completed rebase left partial lease refs"
+        validate_namespace ||
+            hard_conflict "completed rebase changed lease-owned work authority"
         record_rebase_candidate
         publish_rebase_result
         return 0
@@ -1882,14 +2146,13 @@ workspace_action() {
 publish_action() {
     [[ "$NS_STATE" == "candidate" ]] ||
         indeterminate "publish-rebase requires exact lease-owned candidate evidence"
-    local branch_oid head_oid
+    local branch_oid
     branch_oid=$(read_ref "$BRANCH_REF") ||
         indeterminate "could not read branch before explicit rebase publication"
-    head_oid=$(git rev-parse --verify HEAD 2>/dev/null || true)
     [[ "$branch_oid" == "$PRE_OID" ]] ||
         hard_conflict "branch changed before explicit rebase publication"
-    [[ -n "$head_oid" && "$head_oid" == "$CANDIDATE_OID" ]] ||
-        hard_conflict "detached HEAD does not equal the recorded rebase candidate"
+    [[ "$REBASE_WORK_OID" == "$CANDIDATE_OID" ]] ||
+        hard_conflict "rebase work ref does not equal the recorded candidate"
     publish_rebase_result
 }
 

@@ -179,6 +179,11 @@ GASTOWN_POLECAT_WORKSPACE_COMMAND_CONTRACT = (
     'printf \'%s\\n\' "$ROOT_SETUP_COMMAND"',
     "gc.polecat_workspace_version",
     "receipt_matches_live_step",
+    'SETUP_LOCK_PATH="$SETUP_LOCK_PARENT/$SETUP_KEY"',
+    'exec {SETUP_LOCK_FD}<>"$SETUP_LOCK_FILE"',
+    'flock -n "$SETUP_LOCK_FD"',
+    '"workspace.setup-execution-ambiguous"',
+    'run_gc mail send "$WITNESS_TARGET"',
     "run_gc gastown polecat-step complete",
     "POLECAT_WORKSPACE_EXECUTE_COMPLETE",
 )
@@ -191,13 +196,30 @@ GASTOWN_POLECAT_STEP_COMMAND_CONTRACT = (
     '.convoy.id == $convoy',
     '((.[0].assignee // "") == "")',
     'worktree list --porcelain -z',
-    'if [[ "$ALLOW_WORKSPACE_TRANSITION" == "true" ]]; then',
-    '"$STEP_REF" != "mol-polecat-work.workspace-setup"',
+    'CONFLICT_STAGE_EXEC=false',
+    '"polecat-step: workspace-setup exec accepts only exact polecat-conflict stage"',
+    'if [[ "$CONFLICT_STAGE_EXEC" == "true" ]]; then',
     '"$SOURCE_BRANCH" == "$EXPECTED_BRANCH"',
     '"$current_branch" == "$EXPECTED_BRANCH"',
     'validate_artifact_context "$SOURCE_ARTIFACT_DIR"',
     'validate_artifact_context "."',
     'exec -- "${EXEC_ARGV[@]}"',
+)
+GASTOWN_POLECAT_CONFLICT_COMMAND_CONTRACT = (
+    "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR",
+    "gc gastown polecat-conflict stage",
+    'STEP_REF="mol-polecat-work.workspace-setup"',
+    'REBASE_WORK_REF="refs/heads/gascity-polecat-rebase/$LEASE_KEY"',
+    '"$GIT_CMD" ls-files -u -z',
+    'GIT_INDEX_FILE="$INDEX_COPY"',
+    "unmerged_tuple_digest",
+    "conflict_parent_oid",
+    "proof_refs_are_direct",
+    "revalidate_authority",
+    '"create $CONFLICT_CONTEXT_REF $CONFLICT_CONTEXT_OID"',
+    '"create $CONFLICT_TREE_REF $EXPECTED_TREE"',
+    '"create $CONFLICT_DONE_REF $EXPECTED_TREE"',
+    "POLECAT_CONFLICT_STAGE_COMPLETE",
 )
 GASTOWN_POLECAT_STEP_BLOCK_CONTRACT = (
     'gc gastown polecat-step block',
@@ -224,7 +246,7 @@ GASTOWN_POLECAT_STEP_EXEC_FINAL_ORDER = (
     'exec -- "${EXEC_ARGV[@]}"',
 )
 GASTOWN_POLECAT_STEP_STAGE_EXEC_COUNTS = {
-    "workspace-setup": 0,
+    "workspace-setup": 1,
     "preflight-tests": 1,
     "implement": 1,
     "self-review": 5,
@@ -3124,6 +3146,16 @@ def validate_gastown_polecat_executor_formula(
                     f"mol-polecat-work: {step_id} polecat-step exec must bind "
                     f"step-ref {expected_ref!r}"
                 )
+            if step_id == "workspace-setup" and child_argv != [
+                "gc",
+                "gastown",
+                "polecat-conflict",
+                "stage",
+            ]:
+                missing.append(
+                    "mol-polecat-work: workspace-setup must use the exact "
+                    "polecat-conflict stage child"
+                )
 
     workspace_description = str(
         mapping_value(steps.get("workspace-setup")).get("description") or ""
@@ -3132,12 +3164,12 @@ def validate_gastown_polecat_executor_formula(
         r"```bash\n(.*?)\n```", workspace_description, re.DOTALL
     )
     workspace_execute = "gc gastown polecat-workspace execute"
-    if len(workspace_blocks) != 1:
+    if len(workspace_blocks) != 2:
         missing.append(
-            "mol-polecat-work: workspace-setup must contain exactly one shell fence"
+            "mol-polecat-work: workspace-setup must contain exactly two shell fences"
         )
     else:
-        workspace_block = workspace_blocks[0]
+        workspace_block, conflict_block = workspace_blocks
         if (
             workspace_description.count(workspace_execute) != 1
             or workspace_block.count(workspace_execute) != 1
@@ -3147,6 +3179,32 @@ def validate_gastown_polecat_executor_formula(
             missing.append(
                 "mol-polecat-work: workspace-setup must delegate exactly once "
                 "and fail closed"
+            )
+        conflict_commands = continued_commands_containing(
+            conflict_block, "gc gastown polecat-step exec"
+        )
+        if (
+            len(conflict_commands) != 1
+            or polecat_step_exec_argv(conflict_commands[0])
+            != [
+                "gc",
+                "gastown",
+                "polecat-step",
+                "exec",
+                "--convoy",
+                "{{convoy_id}}",
+                "--step-ref",
+                "mol-polecat-work.workspace-setup",
+                "--",
+                "gc",
+                "gastown",
+                "polecat-conflict",
+                "stage",
+            ]
+        ):
+            missing.append(
+                "mol-polecat-work: workspace-setup conflict fence must be the "
+                "exact artifact-bound staging command"
             )
         for forbidden in (
             "polecat-step",
@@ -3477,6 +3535,22 @@ def validate_gastown_orchestration_contract(pack_source: Path) -> None:
             )
         if re.search(r"\bgit push\s+(?:\\\s*)?(?:--force|-f)(?=\s|$)", lease_text):
             missing.append("polecat-lease: unconditional force push is forbidden")
+
+    conflict_path = pack_source / "commands" / "polecat-conflict" / "run.sh"
+    if not conflict_path.is_file():
+        missing.append(
+            f"polecat-conflict: missing deterministic command {conflict_path}"
+        )
+    else:
+        conflict_text = conflict_path.read_text(
+            encoding="utf-8", errors="replace"
+        )
+        for fragment in GASTOWN_POLECAT_CONFLICT_COMMAND_CONTRACT:
+            if fragment not in conflict_text:
+                missing.append(
+                    "polecat-conflict: missing staging contract fragment "
+                    f"{fragment!r}"
+                )
 
     submit_path = pack_source / "commands" / "polecat-submit" / "run.sh"
     if not submit_path.is_file():

@@ -44,14 +44,13 @@ CONVOY_ID=""
 STEP_REF=""
 BLOCK_CODE=""
 BLOCK_REASON=""
-ALLOW_WORKSPACE_TRANSITION=false
+CONFLICT_STAGE_EXEC=false
 declare -a EXEC_ARGV=()
 
 usage() {
     cat >&2 <<'EOF'
 Usage:
   gc gastown polecat-step exec \
-    [--allow-workspace-transition] \
     --convoy ID --step-ref mol-polecat-work.STEP -- COMMAND [ARG...]
   gc gastown polecat-step block \
     --convoy ID --step-ref mol-polecat-work.STEP \
@@ -89,15 +88,6 @@ while (($#)); do
             BLOCK_CODE=$2
             shift 2
             ;;
-        --allow-workspace-transition)
-            if [[ "$ALLOW_WORKSPACE_TRANSITION" == "true" ]]; then
-                echo "polecat-step: duplicate --allow-workspace-transition" >&2
-                usage
-                exit "$EXIT_USAGE"
-            fi
-            ALLOW_WORKSPACE_TRANSITION=true
-            shift
-            ;;
         --)
             shift
             EXEC_ARGV=("$@")
@@ -119,8 +109,7 @@ fi
 case "$ACTION" in
     complete)
         if ((${#EXEC_ARGV[@]})) ||
-           [[ -n "$BLOCK_CODE" || -n "$BLOCK_REASON" ]] ||
-           [[ "$ALLOW_WORKSPACE_TRANSITION" == "true" ]]; then
+           [[ -n "$BLOCK_CODE" || -n "$BLOCK_REASON" ]]; then
             usage
             exit "$EXIT_USAGE"
         fi
@@ -135,7 +124,6 @@ case "$ACTION" in
     block)
         if ((${#EXEC_ARGV[@]})) ||
            [[ -z "$BLOCK_CODE" || -z "$BLOCK_REASON" ]] ||
-           [[ "$ALLOW_WORKSPACE_TRANSITION" == "true" ]] ||
            ((${#BLOCK_CODE} > 128)) || ((${#BLOCK_REASON} > 2048)); then
             usage
             exit "$EXIT_USAGE"
@@ -188,10 +176,18 @@ if [[ "$ACTION" == "exec" &&
     echo "polecat-step: load-context has no task artifact to execute in" >&2
     exit "$EXIT_USAGE"
 fi
-if [[ "$ALLOW_WORKSPACE_TRANSITION" == "true" &&
-      "$STEP_REF" != "mol-polecat-work.workspace-setup" ]]; then
-    echo "polecat-step: --allow-workspace-transition is valid only for workspace-setup exec" >&2
-    exit "$EXIT_USAGE"
+if [[ "$ACTION" == "exec" &&
+      "$STEP_REF" == "mol-polecat-work.workspace-setup" ]]; then
+    if [[ "${#EXEC_ARGV[@]}" -eq 4 &&
+          "${EXEC_ARGV[0]}" == "gc" &&
+          "${EXEC_ARGV[1]}" == "gastown" &&
+          "${EXEC_ARGV[2]}" == "polecat-conflict" &&
+          "${EXEC_ARGV[3]}" == "stage" ]]; then
+        CONFLICT_STAGE_EXEC=true
+    else
+        echo "polecat-step: workspace-setup exec accepts only exact polecat-conflict stage" >&2
+        exit "$EXIT_USAGE"
+    fi
 fi
 
 [[ -n "${GC_CITY_PATH:-}" && -n "${GC_RIG:-}" &&
@@ -1097,10 +1093,9 @@ if [[ "$ACTION" == "exec" ]]; then
             ARTIFACT_VALIDATION_FAILURE="could not read the artifact branch"
             return 1
         }
-        if [[ "$ALLOW_WORKSPACE_TRANSITION" == "true" ]]; then
-            [[ -z "$SOURCE_BRANCH" ||
-               "$SOURCE_BRANCH" == "$EXPECTED_BRANCH" ]] || {
-                ARTIFACT_VALIDATION_FAILURE="source metadata.branch is not empty or the canonical task branch"
+        if [[ "$CONFLICT_STAGE_EXEC" == "true" ]]; then
+            [[ "$SOURCE_BRANCH" == "$EXPECTED_BRANCH" ]] || {
+                ARTIFACT_VALIDATION_FAILURE="source metadata.branch is not the canonical task branch"
                 return 1
             }
             [[ -z "$current_branch" ||
@@ -1118,91 +1113,6 @@ if [[ "$ACTION" == "exec" ]]; then
                 return 1
             }
         fi
-    }
-
-    TRANSITION_VALIDATION_FAILURE=""
-    validate_lease_transition_argv() {
-        local expected_action=$1 index=4 option value
-        local source_value="" convoy_value="" branch_value=""
-        local base_value="" witness_value=""
-        local source_count=0 convoy_count=0 branch_count=0
-        local base_count=0 witness_count=0
-
-        [[ "${#EXEC_ARGV[@]}" -ge 14 &&
-           "${EXEC_ARGV[0]}" == "gc" &&
-           "${EXEC_ARGV[1]}" == "gastown" &&
-           "${EXEC_ARGV[2]}" == "polecat-lease" &&
-           "${EXEC_ARGV[3]}" == "$expected_action" ]] || return 1
-        while ((index < ${#EXEC_ARGV[@]})); do
-            option=${EXEC_ARGV[index]}
-            ((index + 1 < ${#EXEC_ARGV[@]})) || return 1
-            value=${EXEC_ARGV[index + 1]}
-            case "$option" in
-                --source)
-                    source_count=$((source_count + 1))
-                    source_value=$value
-                    ;;
-                --convoy)
-                    convoy_count=$((convoy_count + 1))
-                    convoy_value=$value
-                    ;;
-                --branch)
-                    branch_count=$((branch_count + 1))
-                    branch_value=$value
-                    ;;
-                --base)
-                    base_count=$((base_count + 1))
-                    base_value=$value
-                    ;;
-                --witness)
-                    witness_count=$((witness_count + 1))
-                    witness_value=$value
-                    ;;
-                *)
-                    return 1
-                    ;;
-            esac
-            index=$((index + 2))
-        done
-        [[ "$source_count" -eq 1 && "$convoy_count" -eq 1 &&
-           "$branch_count" -eq 1 && "$base_count" -eq 1 &&
-           "$witness_count" -eq 1 &&
-           "$source_value" == "$SOURCE_ID" &&
-           "$convoy_value" == "$CONVOY_ID" &&
-           "$branch_value" == "$EXPECTED_BRANCH" &&
-           "$SOURCE_BRANCH" == "$EXPECTED_BRANCH" &&
-           -n "$base_value" && -n "$witness_value" ]] || return 1
-        safe_atom "$base_value" && safe_atom "$witness_value"
-    }
-
-    validate_workspace_transition_argv() {
-        TRANSITION_VALIDATION_FAILURE=""
-        [[ "$ALLOW_WORKSPACE_TRANSITION" == "true" ]] || return 0
-
-        if [[ "${#EXEC_ARGV[@]}" -eq 3 &&
-              "${EXEC_ARGV[0]}" == "git" &&
-              "${EXEC_ARGV[1]}" == "rebase" &&
-              "${EXEC_ARGV[2]}" == "--continue" ]]; then
-            [[ "$SOURCE_BRANCH" == "$EXPECTED_BRANCH" ]] || {
-                TRANSITION_VALIDATION_FAILURE="rebase continuation requires the canonical source branch metadata"
-                return 1
-            }
-            return 0
-        fi
-        if validate_lease_transition_argv workspace; then
-            return 0
-        fi
-        if validate_lease_transition_argv publish-rebase; then
-            return 0
-        fi
-        if [[ "${#EXEC_ARGV[@]}" -eq 2 &&
-              "${EXEC_ARGV[0]}" == "bash" &&
-              "${EXEC_ARGV[1]}" == "-se" ]]; then
-            return 0
-        fi
-
-        TRANSITION_VALIDATION_FAILURE="transition argv is not the exact lease, rebase, publish, or branch-recovery operation"
-        return 1
     }
 
     CONVOY_JSON=$(run_gc_convoy status "$CONVOY_ID" --json 2>/dev/null) ||
@@ -1246,8 +1156,6 @@ if [[ "$ACTION" == "exec" ]]; then
 
     validate_artifact_context "$SOURCE_ARTIFACT_DIR" ||
         indeterminate "$ARTIFACT_VALIDATION_FAILURE"
-    validate_workspace_transition_argv ||
-        indeterminate "$TRANSITION_VALIDATION_FAILURE"
 
     cd -- "$ARTIFACT_REAL" ||
         indeterminate "source artifact disappeared before final authoritative reads"

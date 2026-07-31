@@ -204,26 +204,28 @@ if ! gc gastown polecat-workspace execute; then
 fi
 ```
 
-The sole manual exception is an exact
-`POLECAT_LEASE_REBASE_CONFLICT: resolve and stage the detached rebase`
+The sole manual exception is an exact `POLECAT_LEASE_REBASE_CONFLICT`
 diagnostic from that command. Only in that state:
 
 1. Resolve only the files Git already reports as unmerged inside the exact
    artifact returned by this stage's validated executor. Do not create a
    replacement worktree or branch.
-2. Use only the exact artifact-bound workspace-transition executor bound to this
-   stage's current convoy and the exact `mol-polecat-work.workspace-setup` step
-   reference. Inside that executor, enumerate the current unmerged index paths
-   with NUL delimiters, require a nonempty set, run the whitespace and
-   conflict-marker check against exactly that set, and stage exactly the same
-   paths. Refuse any path that was not in that freshly enumerated set.
-3. Rerun only the same deterministic command shown above. The lease owns
-   continuation and publication.
+2. Run exactly the artifact-bound conflict staging command:
+```bash
+gc gastown polecat-step exec \
+  --convoy "{{convoy_id}}" \
+  --step-ref "mol-polecat-work.workspace-setup" \
+  -- gc gastown polecat-conflict stage
+```
+3. Rerun the deterministic workspace command in the first shell fence. The
+   lease owns continuation and publication. If another conflict is reported,
+   repeat only these resolution, staging, and rerun steps.
 
 This exception does not authorize arbitrary Git repair. Never run `git rebase`,
 `git reset`, `git checkout`, `git switch`, `git branch`, `git cherry-pick`,
 `git commit`, publishing commands, or broad staging such as `git add -A`
-directly during workspace recovery.
+directly during workspace recovery. Never replace the exact conflict staging
+child command or add shell wrappers or options to it.
 
 **Exit criteria:** The command prints `POLECAT_WORKSPACE_EXECUTE_COMPLETE`.
 That receipt means the exact workspace step is durably closed/pass with a clean,

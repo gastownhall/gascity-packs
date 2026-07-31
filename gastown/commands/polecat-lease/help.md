@@ -27,12 +27,16 @@ gc gastown polecat-lease submit \
   --auto-push true|false
 ```
 
-`gc gastown polecat-workspace execute` is the normal recovery interface after a
-model resolves and stages a detached rebase conflict. Re-running that same
-command continues the rebase, records a create-only candidate proof, and
-publishes the exact proved result. `publish-rebase` accepts only that
-lease-owned candidate proof; an arbitrary detached descendant, including the
-captured base alone, is never eligible for publication.
+After resolving only the reported unmerged files, the exact
+`gc gastown polecat-conflict stage` child must run through the current
+workspace step executor. Re-running `gc gastown polecat-workspace execute`
+then verifies that generation's immutable done proof, continues the rebase,
+records a create-only candidate proof, and publishes the exact proved result.
+The rebase uses a lease-owned temporary branch plus
+`--reapply-cherry-picks --empty=keep`, and validates that the source commit
+count is preserved. `publish-rebase` accepts only the lease-owned candidate
+proof; an arbitrary detached descendant, including the captured base alone,
+is never eligible for publication.
 
 `auto_push=false` is supported for ordinary, non-rejected work and performs no
 push. It is deliberately unsupported once rejection recovery has published a

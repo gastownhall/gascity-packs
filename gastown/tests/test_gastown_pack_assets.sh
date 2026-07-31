@@ -184,7 +184,8 @@ test_polecat_startup_uses_scripted_hook_claim() {
 }
 
 test_polecat_submit_guard_and_step_completion_contracts() {
-    local formula prompt fragment lease_command step_command submit_command workspace_command
+    local formula prompt fragment lease_command step_command submit_command
+    local workspace_command conflict_command
     formula="$GASTOWN/formulas/mol-polecat-work.toml"
     prompt="$GASTOWN/agents/polecat/prompt.template.md"
     fragment="$GASTOWN/template-fragments/approval-fallacy.template.md"
@@ -192,6 +193,7 @@ test_polecat_submit_guard_and_step_completion_contracts() {
     step_command="$GASTOWN/commands/polecat-step/run.sh"
     submit_command="$GASTOWN/commands/polecat-submit/run.sh"
     workspace_command="$GASTOWN/commands/polecat-workspace/run.sh"
+    conflict_command="$GASTOWN/commands/polecat-conflict/run.sh"
 
     parse_toml "$formula"
     [[ -x "$lease_command" ]] ||
@@ -202,6 +204,8 @@ test_polecat_submit_guard_and_step_completion_contracts() {
         fail "deterministic polecat submit command must be executable"
     [[ -x "$workspace_command" ]] ||
         fail "deterministic polecat workspace command must be executable"
+    [[ -x "$conflict_command" ]] ||
+        fail "deterministic polecat conflict command must be executable"
     ! grep -F 'gc hook' "$step_command" >/dev/null ||
         fail "polecat step completion must never claim unrelated work"
     grep -F 'gc.outcome=pass' "$step_command" >/dev/null &&
@@ -210,6 +214,7 @@ test_polecat_submit_guard_and_step_completion_contracts() {
         fail "polecat step command must bind outcome, Graph-v2 root, and input convoy"
     if ! python3 - "$formula" <<'PY'
 import re
+import shlex
 import sys
 import tomllib
 
@@ -239,6 +244,7 @@ for step_id in expected:
         errors.append(f"{step_id}: must wait for verified completion output")
 
 exec_counts = {
+    "workspace-setup": 1,
     "preflight-tests": 1,
     "implement": 1,
     "self-review": 5,
@@ -265,15 +271,31 @@ workspace_blocks = re.findall(
     r"```bash\n(.*?)\n```", workspace, re.DOTALL
 )
 workspace_execute = "gc gastown polecat-workspace execute"
-if len(workspace_blocks) != 1:
-    errors.append("workspace-setup must contain exactly one shell fence")
-elif (
-    workspace.count(workspace_execute) != 1
-    or workspace_blocks[0].count(workspace_execute) != 1
-    or f"if ! {workspace_execute}; then" not in workspace_blocks[0]
-    or workspace_blocks[0].count("gc ") != 1
-):
-    errors.append("workspace-setup must delegate exactly once and fail closed")
+if len(workspace_blocks) != 2:
+    errors.append("workspace-setup must contain exactly two shell fences")
+else:
+    workspace_block, conflict_block = workspace_blocks
+    if (
+        workspace.count(workspace_execute) != 1
+        or workspace_block.count(workspace_execute) != 1
+        or f"if ! {workspace_execute}; then" not in workspace_block
+        or workspace_block.count("gc ") != 1
+    ):
+        errors.append("workspace-setup must delegate exactly once and fail closed")
+    conflict_command = re.sub(r"\\\s*\n\s*", " ", conflict_block).strip()
+    try:
+        conflict_argv = shlex.split(conflict_command)
+    except ValueError:
+        conflict_argv = []
+    if conflict_argv != [
+        "gc", "gastown", "polecat-step", "exec",
+        "--convoy", "{{convoy_id}}",
+        "--step-ref", "mol-polecat-work.workspace-setup",
+        "--", "gc", "gastown", "polecat-conflict", "stage",
+    ]:
+        errors.append(
+            "workspace-setup conflict fence must use the exact artifact-bound command"
+        )
 for forbidden in (
     "polecat-step",
     "polecat-lease",
@@ -283,7 +305,7 @@ for forbidden in (
     "{{setup_command}}",
     "--allow-workspace-transition",
 ):
-    if forbidden in workspace_blocks[0]:
+    if workspace_blocks and forbidden in workspace_blocks[0]:
         errors.append(
             f"workspace-setup reconstructs deterministic behavior via {forbidden!r}"
         )
@@ -330,8 +352,15 @@ PY
         grep -F '"workspace.canonical-artifact-invalid"' "$workspace_command" >/dev/null &&
         grep -F '"workspace.artifact-path-collision"' "$workspace_command" >/dev/null &&
         grep -F '"workspace.unrecorded-branch-work"' "$workspace_command" >/dev/null &&
-        grep -F '"workspace.recovered-branch-no-fork"' "$workspace_command" >/dev/null ||
+        grep -F '"workspace.recovered-branch-no-fork"' "$workspace_command" >/dev/null &&
+        grep -F 'flock -n "$SETUP_LOCK_FD"' "$workspace_command" >/dev/null &&
+        grep -F '"workspace.setup-execution-ambiguous"' "$workspace_command" >/dev/null &&
+        grep -F 'run_gc mail send "$WITNESS_TARGET"' "$workspace_command" >/dev/null ||
         fail "workspace command must durably quarantine unsafe artifact and branch state"
+    grep -F 'GIT_INDEX_FILE="$INDEX_COPY"' "$conflict_command" >/dev/null &&
+        grep -F '"create $CONFLICT_DONE_REF $EXPECTED_TREE"' "$conflict_command" >/dev/null &&
+        grep -F 'revalidate_authority' "$conflict_command" >/dev/null ||
+        fail "conflict command must bind staging to an immutable authority proof"
     if ! python3 - "$prompt" "$fragment" <<'PY'
 import sys
 

@@ -4,7 +4,6 @@ one claimed nonterminal `mol-polecat-work` Graph-v2 stage.
 Usage:
 
     gc gastown polecat-step exec \
-      [--allow-workspace-transition] \
       --convoy <input-convoy-id> \
       --step-ref mol-polecat-work.<step-id> \
       -- <command> [args...]
@@ -37,15 +36,12 @@ Git-registration, and branch proofs, then replaces itself with the supplied
 argv. It does not use `eval`; argv and stdin reach the executed command
 directly, and the command's exit status is preserved. The supported stages
 are `workspace-setup`, `preflight-tests`, `implement`, and `self-review`.
-By default every supported stage requires both source metadata and worktree
-HEAD to carry the exact `polecat/<source-id>` branch.
-
-`--allow-workspace-transition` is accepted only by `workspace-setup exec`.
-It permits source branch metadata to be absent and worktree HEAD to be
-detached during deterministic branch/rebase setup; either may instead already
-be the exact canonical task branch. A different named branch is always
-rejected. Do not use this flag for ordinary workspace commands after branch
-setup.
+Every ordinary supported stage requires both source metadata and worktree HEAD
+to carry the exact `polecat/<source-id>` branch. The sole workspace exception
+is the exact child argv `gc gastown polecat-conflict stage`. That command may
+run while HEAD is detached by the lease-owned rebase, but source metadata must
+already name the canonical task branch. No caller-selected shell, raw rebase,
+lease action, or other transition argv is accepted for `workspace-setup`.
 
 `complete` records and reads back `gc.outcome=pass` with `status=closed`.
 

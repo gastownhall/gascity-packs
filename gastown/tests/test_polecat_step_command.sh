@@ -312,6 +312,17 @@ if [[ "${1:-}" == "runtime" && "${2:-}" == "drain-ack" &&
     exit 0
 fi
 
+if [[ "${1:-}" == "gastown" && "${2:-}" == "polecat-conflict" &&
+      "${3:-}" == "stage" && "$#" -eq 3 ]]; then
+    [[ "${GC_POLECAT_SOURCE_ID:-}" == "source-1" &&
+       "${GC_POLECAT_SOURCE_BRANCH:-}" == "polecat/source-1" &&
+       "${GC_POLECAT_ARTIFACT_DIR:-}" == "$FAKE_ARTIFACT" &&
+       "${GC_POLECAT_CONVOY_ID:-}" == "convoy-1" ]] || exit 94
+    touch "$FAKE_STATE/conflict-stage-called"
+    printf '%s\n' "POLECAT_CONFLICT_STAGE_COMPLETE"
+    exit 0
+fi
+
 touch "$FAKE_STATE/unknown-call"
 exit 87
 SH
@@ -1007,11 +1018,7 @@ init_exec_case() {
 
 run_exec_from() {
     local cwd=$1
-    local -a transition_args=()
     shift
-    if [[ -n "${TEST_ALLOW_WORKSPACE_TRANSITION:-}" ]]; then
-        transition_args=(--allow-workspace-transition)
-    fi
     set +e
     (
         cd "$cwd" || exit 98
@@ -1052,7 +1059,6 @@ run_exec_from() {
         GIT_CONFIG_KEY_0="${TEST_GIT_CONFIG_KEY_0:-}" \
         GIT_CONFIG_VALUE_0="${TEST_GIT_CONFIG_VALUE_0:-}" \
             "$COMMAND" exec \
-            "${transition_args[@]}" \
             --convoy "${TEST_CONVOY:-convoy-1}" \
             --step-ref "${TEST_STEP_REF:-mol-polecat-work.self-review}" \
             -- "$@"
@@ -1263,93 +1269,74 @@ expect_exec_rejection wrong-branch \
 init_exec_case workspace-default-wrong-named-branch
 configure_workspace_stage
 git -C "$EXEC_ARTIFACT" checkout -qb wrong-workspace-branch
-expect_exec_rejection workspace-default-wrong-named-branch \
-    "source artifact is not on the canonical task branch"
-unset TEST_STEP_REF
-
-init_exec_case workspace-default-detached
-configure_workspace_stage
-git -C "$EXEC_ARTIFACT" checkout -q --detach
-expect_exec_rejection workspace-default-detached \
-    "source artifact is not on the canonical task branch"
-unset TEST_STEP_REF
-
-init_exec_case workspace-transition-detached
-configure_workspace_stage
-jq 'del(.beads["source-1"].metadata.branch)' "$DB" >"$DB.tmp"
-mv "$DB.tmp" "$DB"
-git -C "$EXEC_ARTIFACT" checkout -q --detach
-TEST_ALLOW_WORKSPACE_TRANSITION=1
-run_exec_from "$EXEC_PROVIDER" bash -se <<'SH'
-printf '%s|%s|%s|%s\n' \
-    "$PWD" "$GC_POLECAT_SOURCE_ID" "$GC_POLECAT_CONVOY_ID" \
-    "$GC_POLECAT_SOURCE_BRANCH"
-SH
-unset TEST_ALLOW_WORKSPACE_TRANSITION TEST_STEP_REF
-[[ "$RUN_RC" -eq 0 &&
-   "$(<"$OUTPUT")" == "$EXEC_ARTIFACT|source-1|convoy-1|" ]] ||
-    fail "workspace transition rejected detached HEAD: $(<"$OUTPUT")"
-[[ ! -e "$STATE/update-called" ]] ||
-    fail "detached workspace transition mutated workflow state"
-assert_no_unknown_call
-
-init_exec_case workspace-transition-canonical
-configure_workspace_stage
-TEST_ALLOW_WORKSPACE_TRANSITION=1
-run_exec_from "$EXEC_PROVIDER" bash -se <<'SH'
-printf '%s|%s|%s|%s\n' \
-    "$PWD" "$GC_POLECAT_SOURCE_ID" "$GC_POLECAT_CONVOY_ID" \
-    "$GC_POLECAT_SOURCE_BRANCH"
-SH
-unset TEST_ALLOW_WORKSPACE_TRANSITION TEST_STEP_REF
-[[ "$RUN_RC" -eq 0 &&
-   "$(<"$OUTPUT")" == "$EXEC_ARTIFACT|source-1|convoy-1|polecat/source-1" ]] ||
-    fail "workspace transition rejected canonical branch: $(<"$OUTPUT")"
-[[ ! -e "$STATE/update-called" ]] ||
-    fail "canonical workspace transition mutated workflow state"
-assert_no_unknown_call
-
-init_exec_case workspace-transition-arbitrary-argv
-configure_workspace_stage
-TEST_ALLOW_WORKSPACE_TRANSITION=1
-run_exec_from "$EXEC_PROVIDER" pwd
-unset TEST_ALLOW_WORKSPACE_TRANSITION TEST_STEP_REF
+run_exec_from "$EXEC_PROVIDER" gc gastown polecat-conflict stage
 [[ "$RUN_RC" -eq 75 ]] ||
-    fail "arbitrary workspace transition argv returned $RUN_RC instead of 75"
-grep -F "transition argv is not the exact lease, rebase, publish, or branch-recovery operation" \
-    "$OUTPUT" >/dev/null ||
-    fail "arbitrary transition argv was rejected without the bounded diagnostic"
-[[ ! -e "$STATE/update-called" ]] ||
-    fail "arbitrary transition argv mutated workflow state"
+    fail "wrong named conflict workspace returned $RUN_RC instead of 75"
+grep -F "workspace transition found a wrong named branch" "$OUTPUT" >/dev/null ||
+    fail "wrong named conflict workspace lacked the bounded diagnostic"
+[[ ! -e "$STATE/conflict-stage-called" ]] ||
+    fail "wrong named conflict workspace executed the staging child"
 assert_no_unknown_call
+unset TEST_STEP_REF
 
-init_exec_case workspace-transition-wrong-named
+init_exec_case workspace-conflict-detached
 configure_workspace_stage
-git -C "$EXEC_ARTIFACT" checkout -qb wrong-transition-branch
-TEST_ALLOW_WORKSPACE_TRANSITION=1
-expect_exec_rejection workspace-transition-wrong-named \
-    "workspace transition found a wrong named branch"
-unset TEST_ALLOW_WORKSPACE_TRANSITION TEST_STEP_REF
+git -C "$EXEC_ARTIFACT" checkout -q --detach
+run_exec_from "$EXEC_PROVIDER" gc gastown polecat-conflict stage
+[[ "$RUN_RC" -eq 0 && -e "$STATE/conflict-stage-called" ]] ||
+    fail "exact detached conflict child did not execute: $(<"$OUTPUT")"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "detached conflict staging mutated workflow state"
+assert_no_unknown_call
+unset TEST_STEP_REF
 
-init_exec_case workspace-transition-wrong-metadata
+init_exec_case workspace-conflict-canonical
+configure_workspace_stage
+run_exec_from "$EXEC_PROVIDER" gc gastown polecat-conflict stage
+[[ "$RUN_RC" -eq 0 && -e "$STATE/conflict-stage-called" ]] ||
+    fail "exact canonical conflict child did not execute: $(<"$OUTPUT")"
+[[ ! -e "$STATE/update-called" ]] ||
+    fail "canonical conflict staging mutated workflow state"
+assert_no_unknown_call
+unset TEST_STEP_REF
+
+for forbidden_child in shell raw-rebase lease; do
+    init_exec_case "workspace-conflict-reject-$forbidden_child"
+    configure_workspace_stage
+    case "$forbidden_child" in
+        shell) run_exec_from "$EXEC_PROVIDER" bash -se ;;
+        raw-rebase) run_exec_from "$EXEC_PROVIDER" git rebase --continue ;;
+        lease)
+            run_exec_from "$EXEC_PROVIDER" \
+                gc gastown polecat-lease workspace
+            ;;
+    esac
+    [[ "$RUN_RC" -eq 2 ]] ||
+        fail "$forbidden_child workspace child returned $RUN_RC instead of 2"
+    grep -F "workspace-setup exec accepts only exact polecat-conflict stage" \
+        "$OUTPUT" >/dev/null ||
+        fail "$forbidden_child workspace child lacked exact-child diagnostic"
+    [[ ! -e "$STATE/update-called" && ! -e "$STATE/conflict-stage-called" ]] ||
+        fail "$forbidden_child workspace child mutated or executed"
+    assert_no_unknown_call
+    unset TEST_STEP_REF
+done
+
+init_exec_case workspace-conflict-wrong-metadata
 configure_workspace_stage
 jq '.beads["source-1"].metadata.branch = "polecat/wrong"' \
     "$DB" >"$DB.tmp"
 mv "$DB.tmp" "$DB"
-TEST_ALLOW_WORKSPACE_TRANSITION=1
-expect_exec_rejection workspace-transition-wrong-metadata \
-    "source metadata.branch is not empty or the canonical task branch"
-unset TEST_ALLOW_WORKSPACE_TRANSITION TEST_STEP_REF
-
-init_exec_case transition-flag-non-workspace
-TEST_ALLOW_WORKSPACE_TRANSITION=1
-run_exec_from "$EXEC_PROVIDER" true
-unset TEST_ALLOW_WORKSPACE_TRANSITION
-[[ "$RUN_RC" -eq 2 ]] ||
-    fail "transition flag on non-workspace exec returned $RUN_RC instead of 2"
-[[ ! -e "$STATE/update-called" ]] ||
-    fail "invalid transition flag mutated workflow state"
+run_exec_from "$EXEC_PROVIDER" gc gastown polecat-conflict stage
+[[ "$RUN_RC" -eq 75 ]] ||
+    fail "wrong metadata conflict child returned $RUN_RC instead of 75"
+grep -F "source metadata.branch is not the canonical task branch" \
+    "$OUTPUT" >/dev/null ||
+    fail "wrong metadata conflict child lacked the bounded diagnostic"
+[[ ! -e "$STATE/conflict-stage-called" ]] ||
+    fail "wrong metadata conflict child executed"
 assert_no_unknown_call
+unset TEST_STEP_REF
 
 for final_source_state in closed blocked in_progress tombstone; do
     init_exec_case "final-source-$final_source_state"

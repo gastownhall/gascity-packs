@@ -147,6 +147,13 @@ if [[ "${1:-}" == "bd" ]]; then
                 rm "$state/fail-complete-receipt-once"
                 exit 1
             fi
+            if [[ "$id" == "step-1" &&
+                  -f "$state/attempted-receipt-response-lost-once" &&
+                  " $* " == *"gc.polecat_workspace_setup_state=attempted"* ]]; then
+                rm "$state/attempted-receipt-response-lost-once"
+                update_record "$state/step.json" "$@"
+                exit 1
+            fi
             case "$id" in
                 step-1) update_record "$state/step.json" "$@" ;;
                 source-1) update_record "$state/source.json" "$@" ;;
@@ -162,6 +169,15 @@ fi
 
 if [[ "${1:-}" == "convoy" && "${2:-}" == "status" ]]; then
     cat "$state/convoy.json"
+    exit 0
+fi
+
+if [[ "${1:-}" == "mail" && "${2:-}" == "send" ]]; then
+    [[ ! -f "$state/fail-mail-once" ]] || {
+        rm "$state/fail-mail-once"
+        exit 1
+    }
+    printf '%s\n' "$*" >"$state/mail.log"
     exit 0
 fi
 
@@ -266,6 +282,26 @@ if [[ " $* " == *" update-ref --stdin "* ]]; then
             [[ "$loops" -lt 200 ]] || exit 95
             sleep 0.02
         done
+    fi
+    if [[ -f "$state/setup-intent-response-lost-once" ]] &&
+       grep -q '^create refs/gascity/polecat-workspace-setups/.*/context ' \
+         <<<"$payload"; then
+        rm "$state/setup-intent-response-lost-once"
+        printf '%s\n' "$payload" | "$real_git" "$@"
+        exit 1
+    fi
+    if [[ -f "$state/setup-intent-fail-before-write-once" ]] &&
+       grep -q '^create refs/gascity/polecat-workspace-setups/.*/context ' \
+         <<<"$payload"; then
+        rm "$state/setup-intent-fail-before-write-once"
+        exit 1
+    fi
+    if [[ -f "$state/setup-done-response-lost-once" ]] &&
+       grep -q '^create refs/gascity/polecat-workspace-setups/.*/done ' \
+         <<<"$payload"; then
+        rm "$state/setup-done-response-lost-once"
+        printf '%s\n' "$payload" | "$real_git" "$@"
+        exit 1
     fi
     printf '%s\n' "$payload" | exec "$real_git" "$@"
 fi
@@ -448,10 +484,32 @@ test_successful_block_is_nonzero() {
         fail "successful durable block returned $rc instead of 64: $output"
     rg -q 'workspace.artifact-path-collision' "$tmp/state/block.log" ||
         fail "artifact collision did not invoke the exact durable block"
+    rg -q -- '--notify' "$tmp/state/mail.log" ||
+        fail "durable artifact quarantine did not notify Witness"
     [[ -f "$collision/unrelated" ]] ||
         fail "artifact collision handling destroyed unrelated state"
     ! rg -q 'POLECAT_WORKSPACE_EXECUTE_COMPLETE' <<<"$output" ||
         fail "successful durable block was reported as workspace success"
+
+    rm -rf "$tmp"
+    trap - RETURN
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    init_fixture "$tmp" ""
+    collision="$tmp/city/.gc/worktrees/demo/artifacts/worktrees/source-1"
+    mkdir -p "$collision"
+    touch "$tmp/state/fail-mail-once"
+    set +e
+    output=$(run_workspace "$tmp" 2>&1)
+    rc=$?
+    set -e
+    [[ "$rc" -eq 75 ]] ||
+        fail "failed quarantine notification returned $rc instead of 75: $output"
+    jq -e '.status == "blocked"' "$tmp/state/source.json" >/dev/null &&
+        jq -e '.status == "blocked"' "$tmp/state/step.json" >/dev/null ||
+        fail "notification failure fixture lacked a verified durable quarantine"
+    ! rg -q 'POLECAT_WORKSPACE_EXECUTE_COMPLETE' <<<"$output" ||
+        fail "notification failure was reported as workspace success"
 }
 
 test_partial_receipt_fails_closed_without_replaying_setup() {
@@ -602,41 +660,220 @@ test_setup_receipt_write_failure_never_reexecutes() {
     output=$(run_workspace "$tmp" 2>&1)
     rc=$?
     set -e
-    [[ "$rc" -eq 75 ]] ||
-        fail "attempted setup retry returned $rc instead of 75: $output"
-    rg -q 'durably attempted' <<<"$output" ||
-        fail "attempted setup retry lacked the fail-closed diagnostic"
+    [[ "$rc" -eq 64 ]] ||
+        fail "attempted setup retry returned $rc instead of 64: $output"
+    rg -q 'workspace.setup-execution-ambiguous' "$tmp/state/block.log" ||
+        fail "attempted setup retry lacked the durable ambiguity quarantine"
+    rg -q -- '--notify' "$tmp/state/mail.log" ||
+        fail "attempted setup quarantine did not notify Witness durably"
     [[ "$(wc -l <"$tmp/city/setup.log")" -eq 1 ]] ||
         fail "attempted setup retry executed non-idempotent setup again"
 }
 
-test_concurrent_setup_has_one_exclusive_executor() {
-    local tmp first second first_rc second_rc setup_command
+test_empty_setup_recovers_intent_and_completion_response_loss() {
+    local tmp output rc
+
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' RETURN
-    setup_command='printf "setup\n" >>"$GC_CITY_PATH/setup.log"; sleep 1'
+    init_fixture "$tmp" ""
+    touch "$tmp/state/setup-intent-response-lost-once"
+    set +e
+    output=$(run_workspace "$tmp" 2>&1)
+    rc=$?
+    set -e
+    [[ "$rc" -eq 75 ]] ||
+        fail "empty setup intent response loss returned $rc instead of 75: $output"
+    jq -e '
+      .status == "in_progress" and
+      ([.metadata | keys[] |
+        select(startswith("gc.polecat_workspace_"))] | length) == 0
+    ' "$tmp/state/step.json" >/dev/null ||
+        fail "intent response loss unexpectedly wrote a Graph receipt"
+    output=$(run_workspace "$tmp" 2>&1) ||
+        fail "empty setup did not adopt a receipt-free intent: $output"
+    jq -e '.status == "closed" and .metadata["gc.outcome"] == "pass"' \
+        "$tmp/state/step.json" >/dev/null ||
+        fail "empty intent recovery did not close/pass the exact step"
+    [[ ! -e "$tmp/state/block.log" ]] ||
+        fail "empty intent recovery quarantined a safe setup"
+    rm -rf "$tmp"
+    trap - RETURN
+
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    init_fixture "$tmp" ""
+    touch "$tmp/state/fail-complete-receipt-once"
+    set +e
+    output=$(run_workspace "$tmp" 2>&1)
+    rc=$?
+    set -e
+    [[ "$rc" -eq 75 ]] ||
+        fail "empty completion receipt loss returned $rc instead of 75: $output"
+    jq -e '
+      .status == "in_progress" and
+      .metadata["gc.polecat_workspace_setup_state"] == "attempted"
+    ' "$tmp/state/step.json" >/dev/null ||
+        fail "empty completion loss did not preserve its attempted receipt"
+    touch "$tmp/state/setup-done-response-lost-once"
+    output=$(run_workspace "$tmp" 2>&1) ||
+        fail "empty attempted receipt did not promote safely: $output"
+    jq -e '.status == "closed" and .metadata["gc.outcome"] == "pass"' \
+        "$tmp/state/step.json" >/dev/null ||
+        fail "empty attempted recovery did not close/pass the exact step"
+    [[ ! -e "$tmp/state/block.log" ]] ||
+        fail "empty attempted recovery quarantined a safe setup"
+}
+
+test_nonempty_setup_adopts_only_receipt_free_crash() {
+    local tmp output rc setup_command
+
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    setup_command='printf "setup\n" >>"$GC_CITY_PATH/setup.log"'
+    init_fixture "$tmp" "$setup_command"
+    touch "$tmp/state/setup-intent-response-lost-once"
+    set +e
+    output=$(run_workspace "$tmp" 2>&1)
+    rc=$?
+    set -e
+    [[ "$rc" -eq 75 ]] ||
+        fail "nonempty intent response loss returned $rc instead of 75: $output"
+    [[ ! -e "$tmp/city/setup.log" ]] ||
+        fail "receipt-free crash ran project setup"
+    output=$(run_workspace "$tmp" 2>&1) ||
+        fail "exclusive successor did not adopt receipt-free setup intent: $output"
+    [[ "$(wc -l <"$tmp/city/setup.log")" -eq 1 ]] ||
+        fail "receipt-free intent adoption did not execute setup exactly once"
+    [[ ! -e "$tmp/state/block.log" ]] ||
+        fail "receipt-free intent adoption created a false quarantine"
+
+    rm -rf "$tmp"
+    trap - RETURN
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    init_fixture "$tmp" "$setup_command"
+    touch "$tmp/state/attempted-receipt-response-lost-once"
+    set +e
+    output=$(run_workspace "$tmp" 2>&1)
+    rc=$?
+    set -e
+    [[ "$rc" -eq 75 && ! -e "$tmp/city/setup.log" ]] ||
+        fail "attempted-receipt loss fixture was not pre-execution: rc=$rc output=$output"
+    set +e
+    output=$(run_workspace "$tmp" 2>&1)
+    rc=$?
+    set -e
+    [[ "$rc" -eq 64 ]] ||
+        fail "durable attempted receipt was not quarantined: rc=$rc output=$output"
+    [[ ! -e "$tmp/city/setup.log" ]] ||
+        fail "ambiguous attempted receipt re-executed project setup"
+    rg -q 'workspace.setup-execution-ambiguous' "$tmp/state/block.log" &&
+        rg -q -- '--notify' "$tmp/state/mail.log" ||
+        fail "ambiguous attempted receipt lacked durable quarantine notification"
+}
+
+test_setup_lock_is_restartable_and_hostile_path_safe() {
+    local tmp output rc setup_command lock_file lock_target mode
+
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    setup_command='printf "setup\n" >>"$GC_CITY_PATH/setup.log"'
+    init_fixture "$tmp" "$setup_command"
+    touch "$tmp/state/setup-intent-fail-before-write-once"
+    set +e
+    output=$(run_workspace "$tmp" 2>&1)
+    rc=$?
+    set -e
+    [[ "$rc" -eq 75 && ! -e "$tmp/city/setup.log" ]] ||
+        fail "pre-intent failure after lock acquisition was not safe: rc=$rc output=$output"
+    output=$(run_workspace "$tmp" 2>&1) ||
+        fail "setup lock was not released after pre-intent failure: $output"
+    [[ "$(wc -l <"$tmp/city/setup.log")" -eq 1 ]] ||
+        fail "pre-intent retry did not execute setup exactly once"
+    rm -rf "$tmp"
+    trap - RETURN
+
+    for mode in symlink directory hardlink; do
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' RETURN
+        init_fixture "$tmp" ""
+        touch "$tmp/state/setup-intent-fail-before-write-once"
+        set +e
+        output=$(run_workspace "$tmp" 2>&1)
+        rc=$?
+        set -e
+        [[ "$rc" -eq 75 ]] ||
+            fail "$mode lock fixture did not stop before intent: rc=$rc output=$output"
+        lock_file=$(find \
+            "$tmp/rig/.git/gascity-locks/polecat-workspace-setups-v1" \
+            -mindepth 2 -maxdepth 2 -name lock -print -quit)
+        [[ -n "$lock_file" && -f "$lock_file" && ! -L "$lock_file" ]] ||
+            fail "$mode lock fixture did not create one regular lock file"
+        case "$mode" in
+            symlink)
+                lock_target="$lock_file.target"
+                mv "$lock_file" "$lock_target"
+                ln -s "$(basename "$lock_target")" "$lock_file"
+                ;;
+            directory)
+                mv "$lock_file" "$lock_file.saved"
+                mkdir "$lock_file"
+                ;;
+            hardlink)
+                ln "$lock_file" "$tmp/outside-lock"
+                ;;
+        esac
+        set +e
+        output=$(run_workspace "$tmp" 2>&1)
+        rc=$?
+        set -e
+        [[ "$rc" -eq 75 ]] ||
+            fail "$mode setup lock returned $rc instead of 75: $output"
+        [[ ! -e "$tmp/state/block.log" && ! -e "$tmp/state/mail.log" ]] ||
+            fail "$mode setup lock caused a false durable quarantine"
+        jq -e '
+          .status == "in_progress" and
+          ([.metadata | keys[] |
+            select(startswith("gc.polecat_workspace_"))] | length) == 0
+        ' "$tmp/state/step.json" >/dev/null ||
+            fail "$mode setup lock mutated the Graph receipt"
+        rm -rf "$tmp"
+        trap - RETURN
+    done
+}
+
+test_concurrent_setup_has_one_exclusive_executor() {
+    local tmp first first_rc second_rc setup_command loops
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    setup_command='printf "setup\n" >>"$GC_CITY_PATH/setup.log"; touch "$GC_CITY_PATH/setup-started"; sleep 1'
     init_fixture "$tmp" "$setup_command"
     prepare_existing_workspace "$tmp"
-    touch "$tmp/state/setup-intent-barrier"
 
     set +e
     run_workspace "$tmp" >"$tmp/first.out" 2>&1 &
     first=$!
-    run_workspace "$tmp" >"$tmp/second.out" 2>&1 &
-    second=$!
+    loops=0
+    while [[ ! -e "$tmp/city/setup-started" ]]; do
+        loops=$((loops + 1))
+        [[ "$loops" -lt 200 ]] ||
+            fail "timed out waiting for the setup lock owner"
+        sleep 0.02
+    done
+    run_workspace "$tmp" >"$tmp/second.out" 2>&1
+    second_rc=$?
     wait "$first"
     first_rc=$?
-    wait "$second"
-    second_rc=$?
     set -e
-    [[ "$(( (first_rc == 0) + (second_rc == 0) ))" -eq 1 ]] ||
-        fail "concurrent setup did not produce exactly one successful owner: first=$first_rc second=$second_rc"
-    [[ "$first_rc" -eq 75 || "$second_rc" -eq 75 ]] ||
-        fail "concurrent setup loser was not indeterminate: first=$first_rc second=$second_rc"
+    [[ "$first_rc" -eq 0 && "$second_rc" -eq 75 ]] ||
+        fail "exclusive setup lock did not preserve one winner: first=$first_rc second=$second_rc"
     [[ "$(wc -l <"$tmp/city/setup.log")" -eq 1 ]] ||
         fail "concurrent workspace invocations entered setup more than once"
-    [[ "$(find "$tmp/state/setup-intent-participants" -type f | wc -l)" -eq 2 ]] ||
-        fail "concurrent setup contenders did not both reach the create-only intent CAS: first=$(<"$tmp/first.out") second=$(<"$tmp/second.out")"
+    rg -q 'another executor currently owns this exact workspace setup' \
+        "$tmp/second.out" ||
+        fail "concurrent setup loser lacked the lock diagnostic"
+    [[ ! -e "$tmp/state/block.log" && ! -e "$tmp/state/mail.log" ]] ||
+        fail "concurrent setup loser quarantined or notified against the winner"
 }
 
 test_source_and_graph_mutation_races_fail_closed() {
@@ -751,6 +988,9 @@ test_source_reads_fail_closed_before_workspace_mutation
 test_redirected_artifact_root_is_blocked_and_preserved
 test_response_loss_replay_ignores_reused_session_history
 test_setup_receipt_write_failure_never_reexecutes
+test_empty_setup_recovers_intent_and_completion_response_loss
+test_nonempty_setup_adopts_only_receipt_free_crash
+test_setup_lock_is_restartable_and_hostile_path_safe
 test_concurrent_setup_has_one_exclusive_executor
 test_source_and_graph_mutation_races_fail_closed
 test_hostile_artifact_ancestors_and_git_pointer_fail_closed

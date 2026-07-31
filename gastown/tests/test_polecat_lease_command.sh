@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 COMMAND="$ROOT/gastown/commands/polecat-lease/run.sh"
+CONFLICT_COMMAND="$ROOT/gastown/commands/polecat-conflict/run.sh"
 TEST_TMP=$(mktemp -d)
 trap 'rm -rf "$TEST_TMP"' EXIT
 REAL_GIT=$(command -v git)
@@ -272,6 +273,27 @@ if [[ "${1:-}" == "ls-remote" && "${GIT_LS_REMOTE_UNREADABLE:-0}" == "1" ]]; the
     exit 128
 fi
 
+if [[ "${1:-}" == "rebase" && "${2:-}" == "-h" &&
+      "${GIT_REBASE_HELP_UNSUPPORTED:-0}" == "1" ]]; then
+    printf '%s\n' "usage: git rebase [options]"
+    exit 129
+fi
+
+if [[ "${1:-}" == "rebase" && "${2:-}" == "--continue" &&
+      "${GIT_FAIL_REBASE_CONTINUE_BEFORE_ONCE:-0}" == "1" &&
+      ! -e "$FAKE_STATE/rebase-continue-prewrite-failure-fired" ]]; then
+    touch "$FAKE_STATE/rebase-continue-prewrite-failure-fired"
+    exit 1
+fi
+
+if [[ "${1:-}" == "commit" && " $* " == *" --allow-empty "* &&
+      "${GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE:-0}" == "1" &&
+      ! -e "$FAKE_STATE/empty-commit-response-lost-fired" ]]; then
+    "$REAL_GIT" "$@"
+    touch "$FAKE_STATE/empty-commit-response-lost-fired"
+    exit 1
+fi
+
 if [[ "${1:-}" == "ls-remote" &&
       -n "${GIT_MOVE_BRANCH_AFTER_LS_REMOTE_TO:-}" &&
       ! -e "$FAKE_STATE/ls-remote-branch-move-fired" ]]; then
@@ -284,7 +306,8 @@ if [[ "${1:-}" == "ls-remote" &&
     exit "$remote_code"
 fi
 
-if [[ "${1:-}" == "rebase" && "${GIT_REBASE_RESPONSE_LOST:-0}" == "1" &&
+if [[ "${1:-}" == "rebase" && "${2:-}" != "-h" &&
+      "${GIT_REBASE_RESPONSE_LOST:-0}" == "1" &&
       ! -e "$FAKE_STATE/rebase-response-lost-fired" ]]; then
     touch "$FAKE_STATE/rebase-response-lost-fired"
     "$REAL_GIT" "$@"
@@ -324,6 +347,14 @@ if [[ "${1:-}" == "push" ]]; then
     fi
 fi
 
+if [[ "${1:-}" == "add" && -z "${GIT_INDEX_FILE:-}" &&
+      -n "${GIT_MUTATE_BEFORE_REAL_ADD_PATH:-}" &&
+      ! -e "$FAKE_STATE/real-add-race-fired" ]]; then
+    touch "$FAKE_STATE/real-add-race-fired"
+    printf '%s' "${GIT_MUTATE_BEFORE_REAL_ADD_CONTENT:-raced}" \
+        >"$GIT_MUTATE_BEFORE_REAL_ADD_PATH"
+fi
+
 if [[ "${1:-}" == "update-ref" && "${2:-}" == "--stdin" ]]; then
     payload=$(cat)
     if [[ -n "${GIT_TX_BARRIER_MATCH:-}" &&
@@ -341,6 +372,13 @@ if [[ "${1:-}" == "update-ref" && "${2:-}" == "--stdin" ]]; then
           "$payload" == *"$GIT_FAIL_TX_MATCH"* &&
           ! -e "$FAKE_STATE/transaction-failure-fired" ]]; then
         touch "$FAKE_STATE/transaction-failure-fired"
+        exit 1
+    fi
+    if [[ -n "${GIT_TX_RESPONSE_LOST_MATCH:-}" &&
+          "$payload" == *"$GIT_TX_RESPONSE_LOST_MATCH"* &&
+          ! -e "$FAKE_STATE/transaction-response-lost-fired" ]]; then
+        touch "$FAKE_STATE/transaction-response-lost-fired"
+        printf '%s\n' "$payload" | "$REAL_GIT" "$@"
         exit 1
     fi
     if [[ "${GIT_FAIL_CLEANUP_ONCE:-0}" == "1" &&
@@ -447,7 +485,13 @@ new_case() {
               "gc.input_convoy_id": "convoy-1",
               "gc.var.base_branch": "main",
               "gc.var.rig_name": "rig",
-              "gc.var.binding_prefix": ""
+              "gc.var.binding_prefix": "",
+              "gc.graphv2_vars.v1": {
+                base_branch: "main",
+                rig_name: "rig",
+                binding_prefix: "",
+                setup_command: ""
+              }
             }
           }
         }
@@ -496,13 +540,15 @@ invoke_lease() {
         WRONG_BD_LIST_ASSIGNEE="${WRONG_BD_LIST_ASSIGNEE:-}" \
         DUPLICATE_BD_LIST_ASSIGNEE="${DUPLICATE_BD_LIST_ASSIGNEE:-}" \
         TERMINAL_AUTHORITY_DRIFT="${TERMINAL_AUTHORITY_DRIFT:-}" \
+        GIT_FAIL_REBASE_CONTINUE_BEFORE_ONCE="${GIT_FAIL_REBASE_CONTINUE_BEFORE_ONCE:-0}" \
+        GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE="${GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE:-0}" \
         GIT_PUSH_LOG="$PUSH_LOG" \
         REAL_GIT="$REAL_GIT" \
         "$COMMAND" "$action" \
-            --source source-1 \
-            --convoy convoy-1 \
-            --base main \
-            --branch polecat/source-1 \
+            --source "${LEASE_SOURCE:-source-1}" \
+            --convoy "${LEASE_CONVOY:-convoy-1}" \
+            --base "${LEASE_BASE:-main}" \
+            --branch "${LEASE_BRANCH:-polecat/source-1}" \
             --witness "${LEASE_WITNESS:-rig/witness}" \
             "$@"
     )
@@ -515,6 +561,48 @@ run_lease() {
     set -e
 }
 
+invoke_conflict_stage() {
+    (
+        cd "$WORK"
+        PATH="$TEST_TMP/bin:$PATH" \
+        GC_BIN="$TEST_TMP/bin/gc" \
+        GC_CITY_PATH="$CITY_ROOT" \
+        GC_RIG=rig \
+        GC_RIG_ROOT="$RIG_ROOT" \
+        BEADS_ACTOR=actor-1 \
+        GC_SESSION_NAME="" \
+        GC_SESSION_ID=actor-session-1 \
+        GC_ALIAS="" \
+        GC_AGENT="" \
+        GC_POLECAT_CONVOY_ID=convoy-1 \
+        GC_POLECAT_SOURCE_ID=source-1 \
+        GC_POLECAT_SOURCE_BRANCH=polecat/source-1 \
+        GC_POLECAT_ARTIFACT_DIR="$WORK" \
+        EXPECTED_CITY_ROOT="$CITY_ROOT" \
+        EXPECTED_RIG_ROOT="$RIG_ROOT" \
+        EXPECTED_RUNTIME_RIG=rig \
+        FAKE_DB="$DB" \
+        FAKE_STATE="$STATE" \
+        FAKE_GC_LOG="$STATE/gc.log" \
+        FAKE_CONVOY_SCHEMA_VERSION="${FAKE_CONVOY_SCHEMA_VERSION:-1}" \
+        FAKE_CONVOY_ID="${FAKE_CONVOY_ID:-convoy-1}" \
+        FAKE_CONVOY_SOURCE_ID="${FAKE_CONVOY_SOURCE_ID:-source-1}" \
+        GIT_FAIL_TX_MATCH="${GIT_FAIL_TX_MATCH:-}" \
+        GIT_TX_RESPONSE_LOST_MATCH="${GIT_TX_RESPONSE_LOST_MATCH:-}" \
+        GIT_MUTATE_BEFORE_REAL_ADD_PATH="${GIT_MUTATE_BEFORE_REAL_ADD_PATH:-}" \
+        GIT_MUTATE_BEFORE_REAL_ADD_CONTENT="${GIT_MUTATE_BEFORE_REAL_ADD_CONTENT:-}" \
+        REAL_GIT="$REAL_GIT" \
+            "$CONFLICT_COMMAND" stage
+    )
+}
+
+run_conflict_stage() {
+    set +e
+    invoke_conflict_stage >"$OUTPUT" 2>&1
+    RUN_RC=$?
+    set -e
+}
+
 namespace_count() {
     "$REAL_GIT" -C "$WORK" for-each-ref \
         --format='%(refname)' refs/gascity/polecat-push-leases | wc -l
@@ -523,6 +611,11 @@ namespace_count() {
 submit_proof_count() {
     "$REAL_GIT" -C "$WORK" for-each-ref \
         --format='%(refname)' refs/gascity/polecat-submit-proofs | wc -l
+}
+
+conflict_proof_count() {
+    "$REAL_GIT" -C "$WORK" for-each-ref \
+        --format='%(refname)' refs/gascity/polecat-conflicts | wc -l
 }
 
 proof_receipt_field() {
@@ -673,6 +766,26 @@ prepare_rebased() {
         fail "$name: rebased metadata mirror did not verify"
     [[ "$(jq -r '.beads["source-1"].metadata.polecat_push_lease_manual_pending | type' "$DB")" == "boolean" ]] ||
         fail "$name: fake bd did not preserve real boolean metadata typing"
+}
+
+test_invalid_arguments_stop_before_provenance() {
+    local label
+    for label in wrong-branch invalid-base invalid-source; do
+        new_case "pre-provenance-$label" true
+        case "$label" in
+            wrong-branch) LEASE_BRANCH=polecat/other ;;
+            invalid-base) LEASE_BASE='bad branch' ;;
+            invalid-source) LEASE_SOURCE='bad/source' ;;
+        esac
+        run_lease workspace
+        unset LEASE_BRANCH LEASE_BASE LEASE_SOURCE
+        [[ "$RUN_RC" -eq 2 ]] ||
+            fail "$label returned $RUN_RC instead of usage exit 2: $(<"$OUTPUT")"
+        [[ ! -s "$STATE/gc.log" && "$(namespace_count)" -eq 0 ]] ||
+            fail "$label read Graph provenance or created lease refs"
+        [[ ! -e "$STATE/mail-sent" && ! -e "$STATE/drained" ]] ||
+            fail "$label notified or drained before provenance"
+    done
 }
 
 test_normal_push() {
@@ -1117,7 +1230,7 @@ test_metadata_cleanup_restart() {
         fail "metadata-only cleanup restart left mirror keys"
 }
 
-test_unpublished_rebase_without_zero_exit_stays_unpublished() {
+test_completed_rebase_work_ref_recovers_after_lost_response() {
     new_case unpublished-rebase true
     pre_oid=$(local_feature_oid)
     set +e
@@ -1134,22 +1247,26 @@ test_unpublished_rebase_without_zero_exit_stays_unpublished() {
         fail "lost-rebase-response fixture did not fire"
     [[ "$(namespace_count)" -eq 4 ]] ||
         fail "nonzero rebase exit invented lease-owned candidate evidence"
-    [[ -z "$("$REAL_GIT" -C "$WORK" branch --show-current)" ]] ||
-        fail "unpublished rebase was not left detached"
+    work_ref=$("$REAL_GIT" -C "$WORK" for-each-ref --format='%(refname)' \
+        refs/heads/gascity-polecat-rebase)
+    [[ -n "$work_ref" &&
+       "$("$REAL_GIT" -C "$WORK" branch --show-current)" == \
+         "${work_ref#refs/heads/}" ]] ||
+        fail "completed rebase was not retained on its lease-owned work branch"
 
     run_lease workspace
-    [[ "$RUN_RC" -eq 75 ]] ||
-        fail "workspace restart inferred success from an unowned detached HEAD: $(<"$OUTPUT")"
-    [[ "$(namespace_count)" -eq 4 ]] ||
-        fail "workspace restart mutated refs without candidate evidence"
-    [[ "$(local_feature_oid)" == "$pre_oid" ]] ||
-        fail "workspace restart moved the canonical branch without candidate evidence"
-    rg -q 'detached result lacks lease-owned rebase candidate evidence' "$OUTPUT" ||
-        fail "workspace restart did not diagnose missing candidate evidence"
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "workspace restart did not adopt its lease-owned completed rebase: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 5 ]] ||
+        fail "workspace restart did not publish the recovered rebased phase"
+    [[ "$(local_feature_oid)" != "$pre_oid" ]] ||
+        fail "workspace restart did not move the canonical branch to the rebase result"
+    ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet "$work_ref" ||
+        fail "workspace restart retained the temporary rebase work ref"
 }
 
-test_hostile_detached_base_cannot_publish_captured_lease() {
-    new_case hostile-detached-base true
+test_hostile_base_only_work_ref_cannot_publish_captured_lease() {
+    new_case hostile-base-work-ref true
     set +e
     (
         export GIT_FAIL_TX_MATCH='/candidate '
@@ -1159,31 +1276,33 @@ test_hostile_detached_base_cannot_publish_captured_lease() {
     candidate_tx_rc=$?
     set -e
     [[ "$candidate_tx_rc" -eq 75 && "$(namespace_count)" -eq 4 ]] ||
-        fail "hostile-detached fixture did not preserve captured refs: $(<"$OUTPUT")"
+        fail "hostile work-ref fixture did not preserve captured refs: $(<"$OUTPUT")"
 
     pre_ref=$(lease_ref_with_suffix pre-rebase)
     base_ref=$(lease_ref_with_suffix base)
     pre_oid=$("$REAL_GIT" -C "$WORK" rev-parse "$pre_ref")
     base_oid=$("$REAL_GIT" -C "$WORK" rev-parse "$base_ref")
+    work_ref=$("$REAL_GIT" -C "$WORK" for-each-ref --format='%(refname)' \
+        refs/heads/gascity-polecat-rebase)
+    [[ -n "$work_ref" ]] || fail "hostile work-ref fixture has no temporary ref"
     "$REAL_GIT" -C "$WORK" switch -q --detach "$base_oid"
+    "$REAL_GIT" -C "$WORK" update-ref "$work_ref" "$base_oid"
 
     run_lease workspace
-    [[ "$RUN_RC" -eq 75 ]] ||
-        fail "detached base-only commit returned $RUN_RC instead of 75: $(<"$OUTPUT")"
+    [[ "$RUN_RC" -eq 64 ]] ||
+        fail "base-only work ref returned $RUN_RC instead of 64: $(<"$OUTPUT")"
     [[ "$(namespace_count)" -eq 4 ]] ||
-        fail "detached base-only commit published a lease phase"
+        fail "base-only work ref published a lease phase"
     [[ "$(local_feature_oid)" == "$pre_oid" ]] ||
-        fail "detached base-only commit moved the canonical branch"
+        fail "base-only work ref moved the canonical branch"
     ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet \
         "$(lease_ref_with_suffix candidate)" ||
-        fail "detached base-only commit created candidate evidence"
+        fail "base-only work ref created candidate evidence"
     ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet \
         "$(lease_ref_with_suffix rebased)" ||
-        fail "detached base-only commit created a rebased ref"
-    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "open" ]] ||
-        fail "detached base-only commit terminalized the source"
-    rg -q 'detached result lacks lease-owned rebase candidate evidence' "$OUTPUT" ||
-        fail "detached base-only commit did not diagnose missing candidate evidence"
+        fail "base-only work ref created a rebased ref"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "blocked" ]] ||
+        fail "base-only work ref was not durably quarantined"
 }
 
 test_direct_lease_rejects_symlink_git_pointer() {
@@ -2017,6 +2136,290 @@ test_multi_commit_local_ahead_rebase() {
         fail "multi-commit rebased submit did not publish exactly"
 }
 
+test_count_preserving_rebase_policy() {
+    local feature_oid count base_tree head_tree empty_count commit parent
+
+    new_case already-upstream-commit true
+    feature_oid=$("$REAL_GIT" --git-dir="$ORIGIN" rev-parse \
+        refs/heads/polecat/source-1)
+    "$REAL_GIT" -C "$SEED" cherry-pick "$feature_oid" >/dev/null
+    "$REAL_GIT" -C "$SEED" push -q origin main
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "already-upstream commit rebase failed: $(<"$OUTPUT")"
+    count=$("$REAL_GIT" -C "$WORK" rev-list --count \
+        refs/remotes/origin/main..refs/heads/polecat/source-1)
+    [[ "$count" -eq 1 ]] ||
+        fail "already-upstream commit was dropped instead of kept empty"
+    base_tree=$("$REAL_GIT" -C "$WORK" rev-parse refs/remotes/origin/main^{tree})
+    head_tree=$("$REAL_GIT" -C "$WORK" rev-parse \
+        refs/heads/polecat/source-1^{tree})
+    [[ "$head_tree" == "$base_tree" ]] ||
+        fail "already-upstream kept commit did not preserve the base tree"
+
+    new_case multi-commit-one-empty true
+    printf 'upstream-equivalent\n' >"$WORK/upstream.txt"
+    "$REAL_GIT" -C "$WORK" add upstream.txt
+    "$REAL_GIT" -C "$WORK" commit -qm upstream-equivalent
+    printf 'unique local\n' >"$WORK/unique-local.txt"
+    "$REAL_GIT" -C "$WORK" add unique-local.txt
+    "$REAL_GIT" -C "$WORK" commit -qm unique-local
+    printf 'upstream-equivalent\n' >"$SEED/upstream.txt"
+    "$REAL_GIT" -C "$SEED" add upstream.txt
+    "$REAL_GIT" -C "$SEED" commit -qm main-equivalent
+    "$REAL_GIT" -C "$SEED" push -q origin main
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "multi-commit empty-preserving rebase failed: $(<"$OUTPUT")"
+    count=$("$REAL_GIT" -C "$WORK" rev-list --count \
+        refs/remotes/origin/main..refs/heads/polecat/source-1)
+    [[ "$count" -eq 3 ]] ||
+        fail "multi-commit rebase did not preserve all three source commits"
+    empty_count=0
+    while IFS= read -r commit; do
+        parent=$("$REAL_GIT" -C "$WORK" rev-parse "$commit^")
+        if [[ "$("$REAL_GIT" -C "$WORK" rev-parse "$commit^{tree}")" == \
+              "$("$REAL_GIT" -C "$WORK" rev-parse "$parent^{tree}")" ]]; then
+            empty_count=$((empty_count + 1))
+        fi
+    done < <("$REAL_GIT" -C "$WORK" rev-list \
+        refs/remotes/origin/main..refs/heads/polecat/source-1)
+    [[ "$empty_count" -ge 1 ]] ||
+        fail "multi-commit rebase did not retain the upstream-equivalent empty commit"
+
+    new_case unsupported-count-policy true
+    set +e
+    (
+        export GIT_REBASE_HELP_UNSUPPORTED=1
+        invoke_lease workspace
+    ) >"$OUTPUT" 2>&1
+    unsupported_rc=$?
+    set -e
+    [[ "$unsupported_rc" -eq 75 && "$(namespace_count)" -eq 4 ]] ||
+        fail "unsupported rebase policy did not stop with captured recovery refs"
+    rg -q 'Git lacks the count-preserving rebase policy' "$OUTPUT" ||
+        fail "unsupported rebase policy lacked its exact diagnostic"
+    [[ "$("$REAL_GIT" -C "$WORK" branch --show-current)" == \
+       gascity-polecat-rebase/* ]] ||
+        fail "unsupported policy did not remain on the lease-owned work branch"
+}
+
+test_conflict_resolved_to_base_keeps_empty_commit() {
+    local count canonical_pre materialized_empty
+    new_case conflict-resolved-to-base true
+    "$REAL_GIT" -C "$SEED" switch -q main
+    printf 'base from main\n' >"$SEED/base.txt"
+    "$REAL_GIT" -C "$SEED" add base.txt
+    "$REAL_GIT" -C "$SEED" commit -qm main-conflict
+    "$REAL_GIT" -C "$SEED" push -q origin main
+    printf 'base from feature\n' >"$WORK/base.txt"
+    "$REAL_GIT" -C "$WORK" add base.txt
+    "$REAL_GIT" -C "$WORK" commit -qm feature-conflict
+
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "base-resolution conflict did not stop: $(<"$OUTPUT")"
+    printf 'base from main\n' >"$WORK/base.txt"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "base-resolution staging failed: $(<"$OUTPUT")"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "base-resolution continuation failed: $(<"$OUTPUT")"
+    count=$("$REAL_GIT" -C "$WORK" rev-list --count \
+        refs/remotes/origin/main..refs/heads/polecat/source-1)
+    [[ "$count" -eq 2 ]] ||
+        fail "conflict resolved to base dropped the now-empty source commit"
+    [[ "$("$REAL_GIT" -C "$WORK" rev-parse HEAD^{tree})" == \
+       "$("$REAL_GIT" -C "$WORK" rev-parse HEAD^^{tree})" ]] ||
+        fail "conflict resolved to base did not retain an empty top commit"
+
+    prepare_simple_conflict empty-conflict-continue-crash
+    canonical_pre=$("$REAL_GIT" -C "$WORK" rev-parse \
+        refs/heads/polecat/source-1)
+    printf 'base from main\n' >"$WORK/base.txt"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "empty continuation crash fixture could not stage: $(<"$OUTPUT")"
+    GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE=1 \
+    GIT_FAIL_REBASE_CONTINUE_BEFORE_ONCE=1 \
+        run_lease workspace
+    [[ "$RUN_RC" -eq 75 &&
+       -e "$STATE/empty-commit-response-lost-fired" &&
+       -e "$STATE/rebase-continue-prewrite-failure-fired" ]] ||
+        fail "empty commit response loss/pre-continue crash was not preserved: $(<"$OUTPUT")"
+    materialized_empty=$("$REAL_GIT" -C "$WORK" rev-parse HEAD)
+    [[ "$materialized_empty" != "$canonical_pre" &&
+       "$("$REAL_GIT" -C "$WORK" rev-parse HEAD^{tree})" == \
+         "$("$REAL_GIT" -C "$WORK" rev-parse HEAD^^{tree})" &&
+       "$("$REAL_GIT" -C "$WORK" rev-parse refs/heads/polecat/source-1)" == \
+         "$canonical_pre" ]] ||
+        fail "empty response-loss state did not retain one detached empty commit while freezing the canonical branch"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "empty commit pre-continue retry did not recover: $(<"$OUTPUT")"
+    count=$("$REAL_GIT" -C "$WORK" rev-list --count \
+        refs/remotes/origin/main..refs/heads/polecat/source-1)
+    [[ "$count" -eq 2 ]] ||
+        fail "pre-continue crash retry duplicated or dropped the empty commit"
+    [[ "$("$REAL_GIT" -C "$WORK" rev-list --count \
+            "$materialized_empty..refs/heads/polecat/source-1")" -eq 0 &&
+       "$("$REAL_GIT" -C "$WORK" rev-parse refs/heads/polecat/source-1)" != \
+         "$canonical_pre" ]] ||
+        fail "empty response-loss retry replaced the proved commit or skipped atomic publication"
+}
+
+test_multiple_conflict_generations_and_hostile_paths() {
+    local first_path second_path count
+    first_path=$'hostile\tpath\nname.txt'
+    second_path='second-conflict.txt'
+    new_case multiple-conflict-generations true
+    "$REAL_GIT" -C "$SEED" switch -q main
+    printf 'main one\n' >"$SEED/$first_path"
+    printf 'main two\n' >"$SEED/$second_path"
+    "$REAL_GIT" -C "$SEED" add -- "$first_path" "$second_path"
+    "$REAL_GIT" -C "$SEED" commit -qm main-two-conflicts
+    "$REAL_GIT" -C "$SEED" push -q origin main
+    printf 'feature one\n' >"$WORK/$first_path"
+    "$REAL_GIT" -C "$WORK" add -- "$first_path"
+    "$REAL_GIT" -C "$WORK" commit -qm feature-conflict-one
+    printf 'feature two\n' >"$WORK/$second_path"
+    "$REAL_GIT" -C "$WORK" add -- "$second_path"
+    "$REAL_GIT" -C "$WORK" commit -qm feature-conflict-two
+
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "first hostile conflict did not stop: $(<"$OUTPUT")"
+    printf 'resolved one\n' >"$WORK/$first_path"
+    printf 'untracked\n' >"$WORK/untracked-during-conflict"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "untracked conflict state was accepted"
+    rm -f -- "$WORK/untracked-during-conflict"
+    printf 'outside change\n' >"$WORK/new-base.txt"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "unstaged path outside U was accepted"
+    "$REAL_GIT" -C "$WORK" checkout -- new-base.txt
+    printf 'preserved staged change\n' >"$WORK/feature.txt"
+    "$REAL_GIT" -C "$WORK" add feature.txt
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "hostile NUL-safe conflict staging failed: $(<"$OUTPUT")"
+    "$REAL_GIT" -C "$WORK" diff --cached --quiet -- feature.txt &&
+        fail "conflict staging lost the already-staged nonconflict path"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "second conflict generation did not stop: $(<"$OUTPUT")"
+    printf 'resolved two\n' >"$WORK/$second_path"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "second conflict generation staging failed: $(<"$OUTPUT")"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "multiple conflict continuation failed: $(<"$OUTPUT")"
+    [[ "$(conflict_proof_count)" -eq 6 ]] ||
+        fail "multiple conflicts did not retain two immutable three-ref proofs"
+    count=$("$REAL_GIT" -C "$WORK" rev-list --count \
+        refs/remotes/origin/main..refs/heads/polecat/source-1)
+    [[ "$count" -eq 3 ]] ||
+        fail "multiple conflict rebase changed the source commit count"
+}
+
+prepare_simple_conflict() {
+    local name=$1
+    new_case "$name" true
+    "$REAL_GIT" -C "$SEED" switch -q main
+    printf 'base from main\n' >"$SEED/base.txt"
+    "$REAL_GIT" -C "$SEED" add base.txt
+    "$REAL_GIT" -C "$SEED" commit -qm main-conflict
+    "$REAL_GIT" -C "$SEED" push -q origin main
+    printf 'base from feature\n' >"$WORK/base.txt"
+    "$REAL_GIT" -C "$WORK" add base.txt
+    "$REAL_GIT" -C "$WORK" commit -qm feature-conflict
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "$name did not establish a lease-owned conflict: $(<"$OUTPUT")"
+}
+
+test_conflict_proof_response_loss_and_races() {
+    local done_ref tree_ref
+
+    prepare_simple_conflict conflict-intent-response-loss
+    printf 'resolved intent loss\n' >"$WORK/base.txt"
+    GIT_TX_RESPONSE_LOST_MATCH='/context ' run_conflict_stage
+    [[ "$RUN_RC" -eq 0 && -e "$STATE/transaction-response-lost-fired" &&
+       "$(conflict_proof_count)" -eq 3 ]] ||
+        fail "intent transaction response loss was not recovered exactly: $(<"$OUTPUT")"
+
+    prepare_simple_conflict conflict-done-prewrite-failure
+    printf 'resolved done retry\n' >"$WORK/base.txt"
+    GIT_FAIL_TX_MATCH='/done ' run_conflict_stage
+    [[ "$RUN_RC" -eq 75 && "$(conflict_proof_count)" -eq 2 &&
+       -z "$("$REAL_GIT" -C "$WORK" ls-files -u)" ]] ||
+        fail "post-add/pre-done failure did not preserve recoverable intent"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 && "$(conflict_proof_count)" -eq 3 ]] ||
+        fail "post-add/pre-done retry did not publish exact done proof: $(<"$OUTPUT")"
+    rg -q 'replay=true' "$OUTPUT" ||
+        fail "post-add/pre-done retry did not report proof replay"
+
+    prepare_simple_conflict conflict-done-response-loss
+    printf 'resolved done loss\n' >"$WORK/base.txt"
+    GIT_TX_RESPONSE_LOST_MATCH='/done ' run_conflict_stage
+    [[ "$RUN_RC" -eq 0 && -e "$STATE/transaction-response-lost-fired" &&
+       "$(conflict_proof_count)" -eq 3 ]] ||
+        fail "done transaction response loss was not accepted by exact readback"
+
+    prepare_simple_conflict conflict-symbolic-proof
+    printf 'resolved symbolic\n' >"$WORK/base.txt"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "symbolic proof fixture could not stage: $(<"$OUTPUT")"
+    done_ref=$("$REAL_GIT" -C "$WORK" for-each-ref \
+        --format='%(refname)' refs/gascity/polecat-conflicts | grep '/done$')
+    [[ -n "$done_ref" ]] || fail "symbolic proof fixture has no done ref"
+    tree_ref="${done_ref%/done}/tree"
+    "$REAL_GIT" -C "$WORK" symbolic-ref "$done_ref" "$tree_ref"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "symbolic conflict proof was accepted by lease continuation"
+    jq -e '
+      .beads["source-1"].status == "open" and
+      .beads["workspace-1"].status == "in_progress"
+    ' "$DB" >/dev/null ||
+        fail "symbolic conflict proof caused a false hard quarantine"
+
+    prepare_simple_conflict conflict-resolution-content-race
+    printf 'reviewed resolution\n' >"$WORK/base.txt"
+    GIT_MUTATE_BEFORE_REAL_ADD_PATH="$WORK/base.txt" \
+    GIT_MUTATE_BEFORE_REAL_ADD_CONTENT='raced resolution' \
+        run_conflict_stage
+    [[ "$RUN_RC" -eq 75 && -e "$STATE/real-add-race-fired" &&
+       "$(conflict_proof_count)" -eq 2 ]] ||
+        fail "U-resolution content race was not caught before done publication"
+
+    prepare_simple_conflict conflict-outside-path-race
+    printf 'reviewed resolution\n' >"$WORK/base.txt"
+    GIT_MUTATE_BEFORE_REAL_ADD_PATH="$WORK/new-base.txt" \
+    GIT_MUTATE_BEFORE_REAL_ADD_CONTENT='outside race' \
+        run_conflict_stage
+    [[ "$RUN_RC" -eq 75 && -e "$STATE/real-add-race-fired" &&
+       "$(conflict_proof_count)" -eq 2 ]] ||
+        fail "outside-U race was not caught before done publication"
+
+    prepare_simple_conflict conflict-marker-rejection
+    printf '%s\n' '<<<<<<< ours' 'bad' '=======' 'worse' '>>>>>>> theirs' \
+        >"$WORK/base.txt"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 75 && "$(conflict_proof_count)" -eq 0 ]] ||
+        fail "conflict-marker resolution was accepted"
+    printf 'clean resolution\n' >"$WORK/base.txt"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "clean resolution after marker rejection failed: $(<"$OUTPUT")"
+}
+
 test_true_rebase_conflict_resolution() {
     new_case true-rebase-conflict true
     "$REAL_GIT" -C "$SEED" switch -q main
@@ -2041,7 +2444,11 @@ test_true_rebase_conflict_resolution() {
         fail "true rebase conflict advanced authority before resolution"
 
     printf 'resolved base\n' >"$WORK/base.txt"
-    "$REAL_GIT" -C "$WORK" add base.txt
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "exact conflict staging command failed: $(<"$OUTPUT")"
+    [[ -z "$("$REAL_GIT" -C "$WORK" ls-files -u)" ]] ||
+        fail "conflict staging command left unmerged entries"
     run_lease workspace
     [[ "$RUN_RC" -eq 0 && "$(namespace_count)" -eq 5 ]] ||
         fail "same workspace action did not continue and publish the resolved rebase: $(<"$OUTPUT")"
@@ -2136,6 +2543,7 @@ test_linked_worktree_ref_races() {
         fail "linked-worktree branch and rebased phase disagree"
 }
 
+test_invalid_arguments_stop_before_provenance
 test_normal_push
 test_direct_store_convoy_authority
 test_convoy_schema_and_identity_fail_closed
@@ -2156,8 +2564,8 @@ test_submit_mirror_crash_recovery
 test_push_response_lost_recovery
 test_cleanup_transaction_retry
 test_metadata_cleanup_restart
-test_unpublished_rebase_without_zero_exit_stays_unpublished
-test_hostile_detached_base_cannot_publish_captured_lease
+test_completed_rebase_work_ref_recovers_after_lost_response
+test_hostile_base_only_work_ref_cannot_publish_captured_lease
 test_direct_lease_rejects_symlink_git_pointer
 test_workspace_rejects_absent_branch_metadata_without_quarantine
 test_frozen_push_url
@@ -2186,6 +2594,10 @@ test_symbolic_lease_ref_is_hard_and_preserved
 test_normal_branch_movement_is_indeterminate
 test_command_capture_and_publish_races
 test_multi_commit_local_ahead_rebase
+test_count_preserving_rebase_policy
+test_conflict_resolved_to_base_keeps_empty_commit
+test_multiple_conflict_generations_and_hostile_paths
+test_conflict_proof_response_loss_and_races
 test_true_rebase_conflict_resolution
 test_linked_worktree_ref_races
 
