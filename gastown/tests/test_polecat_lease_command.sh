@@ -26,7 +26,16 @@ if [[ "${1:-}" == "gastown" &&
       "${2:-}" == "polecat-lease" &&
       "${3:-}" == "record-replay" ]]; then
     [[ -n "${POLECAT_LEASE_COMMAND:-}" ]] || exit 99
-    exec "$POLECAT_LEASE_COMMAND" "${@:3}"
+    if "$POLECAT_LEASE_COMMAND" "${@:3}"; then
+        if [[ "${GIT_RECORD_REPLAY_RESPONSE_LOST_ONCE:-0}" == "1" &&
+              ! -e "$FAKE_STATE/record-replay-response-lost-fired" ]]; then
+            touch "$FAKE_STATE/record-replay-response-lost-fired"
+            exit 97
+        fi
+        exit 0
+    else
+        exit $?
+    fi
 fi
 
 write_db() {
@@ -276,24 +285,33 @@ cat >"$TEST_TMP/bin/git" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${1:-}" == "ls-remote" && "${GIT_LS_REMOTE_UNREADABLE:-0}" == "1" ]]; then
+git_args=("$@")
+git_arg_index=0
+while [[ "${git_args[git_arg_index]:-}" == "-c" ]]; do
+    git_arg_index=$((git_arg_index + 2))
+done
+GIT_SUBCOMMAND=${git_args[git_arg_index]:-}
+GIT_SUBARG1=${git_args[git_arg_index + 1]:-}
+
+if [[ "$GIT_SUBCOMMAND" == "ls-remote" &&
+      "${GIT_LS_REMOTE_UNREADABLE:-0}" == "1" ]]; then
     exit 128
 fi
 
-if [[ "${1:-}" == "rebase" && "${2:-}" == "-h" &&
+if [[ "$GIT_SUBCOMMAND" == "rebase" && "$GIT_SUBARG1" == "-h" &&
       "${GIT_REBASE_HELP_UNSUPPORTED:-0}" == "1" ]]; then
     printf '%s\n' "usage: git rebase [options]"
     exit 129
 fi
 
-if [[ "${1:-}" == "rebase" && "${2:-}" == "--continue" &&
+if [[ "$GIT_SUBCOMMAND" == "rebase" && "$GIT_SUBARG1" == "--continue" &&
       "${GIT_FAIL_REBASE_CONTINUE_BEFORE_ONCE:-0}" == "1" &&
       ! -e "$FAKE_STATE/rebase-continue-prewrite-failure-fired" ]]; then
     touch "$FAKE_STATE/rebase-continue-prewrite-failure-fired"
     exit 1
 fi
 
-if [[ "${1:-}" == "commit" && " $* " == *" --allow-empty "* &&
+if [[ "$GIT_SUBCOMMAND" == "commit" && " $* " == *" --allow-empty "* &&
       "${GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE:-0}" == "1" &&
       ! -e "$FAKE_STATE/empty-commit-response-lost-fired" ]]; then
     "$REAL_GIT" "$@"
@@ -301,7 +319,7 @@ if [[ "${1:-}" == "commit" && " $* " == *" --allow-empty "* &&
     exit 1
 fi
 
-if [[ "${1:-}" == "ls-remote" &&
+if [[ "$GIT_SUBCOMMAND" == "ls-remote" &&
       -n "${GIT_MOVE_BRANCH_AFTER_LS_REMOTE_TO:-}" &&
       ! -e "$FAKE_STATE/ls-remote-branch-move-fired" ]]; then
     output=$("$REAL_GIT" "$@")
@@ -313,7 +331,7 @@ if [[ "${1:-}" == "ls-remote" &&
     exit "$remote_code"
 fi
 
-if [[ "${1:-}" == "rebase" && "${2:-}" != "-h" &&
+if [[ "$GIT_SUBCOMMAND" == "rebase" && "$GIT_SUBARG1" != "-h" &&
       "${GIT_REBASE_RESPONSE_LOST:-0}" == "1" &&
       ! -e "$FAKE_STATE/rebase-response-lost-fired" ]]; then
     touch "$FAKE_STATE/rebase-response-lost-fired"
@@ -321,7 +339,7 @@ if [[ "${1:-}" == "rebase" && "${2:-}" != "-h" &&
     exit 1
 fi
 
-if [[ "${1:-}" == "push" ]]; then
+if [[ "$GIT_SUBCOMMAND" == "push" ]]; then
     printf '%q ' "$@" >>"$GIT_PUSH_LOG"
     printf '\n' >>"$GIT_PUSH_LOG"
     if [[ -n "${GIT_RACER_WORK:-}" && ! -e "$FAKE_STATE/race-fired" ]]; then
@@ -354,7 +372,7 @@ if [[ "${1:-}" == "push" ]]; then
     fi
 fi
 
-if [[ "${1:-}" == "add" && -z "${GIT_INDEX_FILE:-}" &&
+if [[ "$GIT_SUBCOMMAND" == "add" && -z "${GIT_INDEX_FILE:-}" &&
       -n "${GIT_MUTATE_BEFORE_REAL_ADD_PATH:-}" &&
       ! -e "$FAKE_STATE/real-add-race-fired" ]]; then
     touch "$FAKE_STATE/real-add-race-fired"
@@ -362,7 +380,7 @@ if [[ "${1:-}" == "add" && -z "${GIT_INDEX_FILE:-}" &&
         >"$GIT_MUTATE_BEFORE_REAL_ADD_PATH"
 fi
 
-if [[ "${1:-}" == "update-ref" && "${2:-}" == "--stdin" ]]; then
+if [[ "$GIT_SUBCOMMAND" == "update-ref" && "$GIT_SUBARG1" == "--stdin" ]]; then
     payload=$(cat)
     if [[ -n "${GIT_TX_BARRIER_MATCH:-}" &&
           "$payload" == *"$GIT_TX_BARRIER_MATCH"* ]]; then
@@ -549,6 +567,7 @@ invoke_lease() {
         TERMINAL_AUTHORITY_DRIFT="${TERMINAL_AUTHORITY_DRIFT:-}" \
         GIT_FAIL_REBASE_CONTINUE_BEFORE_ONCE="${GIT_FAIL_REBASE_CONTINUE_BEFORE_ONCE:-0}" \
         GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE="${GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE:-0}" \
+        GIT_RECORD_REPLAY_RESPONSE_LOST_ONCE="${GIT_RECORD_REPLAY_RESPONSE_LOST_ONCE:-0}" \
         GIT_PUSH_LOG="$PUSH_LOG" \
         REAL_GIT="$REAL_GIT" \
         POLECAT_LEASE_COMMAND="$COMMAND" \
@@ -1303,6 +1322,82 @@ test_completed_rebase_work_ref_recovers_after_lost_response() {
         fail "workspace restart published a tip other than the sealed replay proof"
     ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet "$work_ref" ||
         fail "workspace restart retained the temporary rebase work ref"
+}
+
+test_sealed_replay_exec_response_loss_recovers() {
+    local canonical_pre rebase_dir final_ref
+    new_case sealed-replay-exec-response-loss true
+    printf 'local one\n' >"$WORK/local-one.txt"
+    "$REAL_GIT" -C "$WORK" add local-one.txt
+    "$REAL_GIT" -C "$WORK" commit -q -m local-one
+    printf 'local two\n' >"$WORK/local-two.txt"
+    "$REAL_GIT" -C "$WORK" add local-two.txt
+    "$REAL_GIT" -C "$WORK" commit -q -m local-two
+    canonical_pre=$(local_feature_oid)
+
+    GIT_RECORD_REPLAY_RESPONSE_LOST_ONCE=1 run_lease workspace
+    [[ "$RUN_RC" -eq 75 &&
+       -e "$STATE/record-replay-response-lost-fired" ]] ||
+        fail "sealed replay exec response loss was not restartable: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 4 &&
+       "$(local_feature_oid)" == "$canonical_pre" ]] ||
+        fail "sealed replay exec response loss advanced canonical authority"
+    [[ "$(replay_proof_count)" -eq 3 &&
+       "$(replay_mapping_count source)" -eq 1 &&
+       "$(replay_mapping_count replay)" -eq 1 &&
+       -z "$(replay_proof_ref final)" ]] ||
+        fail "lost first exec response did not retain one exact sealed prefix"
+    rebase_dir=$("$REAL_GIT" -C "$WORK" rev-parse --git-path rebase-merge)
+    [[ "$rebase_dir" == /* ]] || rebase_dir="$WORK/$rebase_dir"
+    [[ -d "$rebase_dir" && ! -e "$rebase_dir/stopped-sha" ]] ||
+        fail "lost replay exec response did not retain the expected non-conflict rebase state"
+    ! "$REAL_GIT" -C "$WORK" rev-parse --verify REBASE_HEAD \
+        >/dev/null 2>&1 ||
+        fail "lost replay exec response unexpectedly retained conflict authority"
+
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "sealed replay exec restart did not continue: $(<"$OUTPUT")"
+    [[ "$(namespace_count)" -eq 5 &&
+       "$(replay_proof_count)" -eq 8 &&
+       "$(replay_mapping_count source)" -eq 3 &&
+       "$(replay_mapping_count replay)" -eq 3 ]] ||
+        fail "sealed replay exec restart did not complete the exact three-entry proof"
+    [[ "$(local_feature_oid)" != "$canonical_pre" &&
+       -f "$WORK/feature.txt" &&
+       -f "$WORK/local-one.txt" &&
+       -f "$WORK/local-two.txt" ]] ||
+        fail "sealed replay exec restart lost or failed to publish captured work"
+
+    new_case sealed-final-exec-response-loss true
+    canonical_pre=$(local_feature_oid)
+    GIT_RECORD_REPLAY_RESPONSE_LOST_ONCE=1 run_lease workspace
+    [[ "$RUN_RC" -eq 75 &&
+       -e "$STATE/record-replay-response-lost-fired" &&
+       "$(namespace_count)" -eq 4 &&
+       "$(local_feature_oid)" == "$canonical_pre" ]] ||
+        fail "sealed final exec response loss advanced authority or was not restartable: $(<"$OUTPUT")"
+    final_ref=$(replay_proof_ref final)
+    [[ "$(replay_proof_count)" -eq 4 &&
+       -n "$final_ref" &&
+       "$(replay_mapping_count source)" -eq 1 &&
+       "$(replay_mapping_count replay)" -eq 1 ]] ||
+        fail "lost final exec response did not atomically retain its completed proof"
+    rebase_dir=$("$REAL_GIT" -C "$WORK" rev-parse --git-path rebase-merge)
+    [[ "$rebase_dir" == /* ]] || rebase_dir="$WORK/$rebase_dir"
+    [[ -d "$rebase_dir" && ! -e "$rebase_dir/stopped-sha" ]] ||
+        fail "lost final exec response did not retain the expected non-conflict rebase state"
+    ! "$REAL_GIT" -C "$WORK" rev-parse --verify REBASE_HEAD \
+        >/dev/null 2>&1 ||
+        fail "lost final exec response unexpectedly retained conflict authority"
+
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 &&
+       "$(namespace_count)" -eq 5 &&
+       "$(local_feature_oid)" == \
+         "$("$REAL_GIT" -C "$WORK" rev-parse "$final_ref")" &&
+       -f "$WORK/feature.txt" ]] ||
+        fail "sealed final exec restart did not publish its exact final proof: $(<"$OUTPUT")"
 }
 
 test_hostile_same_count_work_ref_cannot_publish_captured_lease() {
@@ -2310,6 +2405,68 @@ test_count_preserving_rebase_policy() {
         fail "unsupported policy did not remain on the lease-owned work branch"
 }
 
+test_trusted_replay_disables_hostile_post_commit_hooks() {
+    local scope hooks_dir marker global_config scope_rc
+
+    for scope in repo global environment; do
+        new_case "hostile-post-commit-$scope" true
+        hooks_dir="$STATE/hostile-hooks"
+        marker="$STATE/hostile-post-commit-fired"
+        mkdir -p "$hooks_dir"
+        cat >"$hooks_dir/post-commit" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+touch '$marker'
+git rm -q --ignore-unmatch feature.txt
+git -c core.hooksPath=/dev/null commit --amend --no-edit --no-verify >/dev/null
+SH
+        chmod +x "$hooks_dir/post-commit"
+
+        case "$scope" in
+            repo)
+                "$REAL_GIT" -C "$WORK" config core.hooksPath "$hooks_dir"
+                run_lease workspace
+                scope_rc=$RUN_RC
+                ;;
+            global)
+                global_config="$STATE/hostile-global.config"
+                "$REAL_GIT" config --file "$global_config" \
+                    core.hooksPath "$hooks_dir"
+                set +e
+                (
+                    export GIT_CONFIG_GLOBAL="$global_config"
+                    run_lease workspace
+                    exit "$RUN_RC"
+                )
+                scope_rc=$?
+                set -e
+                ;;
+            environment)
+                set +e
+                (
+                    export GIT_CONFIG_COUNT=1
+                    export GIT_CONFIG_KEY_0=core.hooksPath
+                    export GIT_CONFIG_VALUE_0="$hooks_dir"
+                    run_lease workspace
+                    exit "$RUN_RC"
+                )
+                scope_rc=$?
+                set -e
+                ;;
+        esac
+
+        [[ "$scope_rc" -eq 0 ]] ||
+            fail "$scope hostile post-commit config broke trusted replay: $(<"$OUTPUT")"
+        [[ ! -e "$marker" ]] ||
+            fail "$scope hostile post-commit hook executed during trusted replay"
+        [[ -f "$WORK/feature.txt" &&
+           "$(replay_proof_count)" -eq 4 &&
+           "$(replay_mapping_count source)" -eq 1 &&
+           "$(replay_mapping_count replay)" -eq 1 ]] ||
+            fail "$scope hostile post-commit config altered or bypassed the trusted replay"
+    done
+}
+
 test_conflict_resolved_to_base_keeps_empty_commit() {
     local count canonical_pre materialized_empty
     new_case conflict-resolved-to-base true
@@ -2707,6 +2864,7 @@ test_push_response_lost_recovery
 test_cleanup_transaction_retry
 test_metadata_cleanup_restart
 test_completed_rebase_work_ref_recovers_after_lost_response
+test_sealed_replay_exec_response_loss_recovers
 test_hostile_same_count_work_ref_cannot_publish_captured_lease
 test_direct_lease_rejects_symlink_git_pointer
 test_workspace_rejects_absent_branch_metadata_without_quarantine
@@ -2737,6 +2895,7 @@ test_normal_branch_movement_is_indeterminate
 test_command_capture_and_publish_races
 test_multi_commit_local_ahead_rebase
 test_count_preserving_rebase_policy
+test_trusted_replay_disables_hostile_post_commit_hooks
 test_conflict_resolved_to_base_keeps_empty_commit
 test_multiple_conflict_generations_and_hostile_paths
 test_conflict_proof_response_loss_and_races

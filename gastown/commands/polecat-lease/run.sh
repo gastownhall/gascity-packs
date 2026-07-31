@@ -1041,6 +1041,37 @@ REPLAY_RECORDER_COMMAND=$(build_replay_recorder_command) ||
    "$REPLAY_RECORDER_COMMAND" != *$'\t'* ]] ||
     indeterminate "the constrained rebase recorder command is unsafe"
 
+# Every Git process which can create or advance a trusted replay receives the
+# same command-precedence configuration.  Clear both supported environment
+# config transports before adding fixed -c values, so repo/global config and
+# inherited GIT_CONFIG_* tuples cannot re-enable hooks, todo editors, signing,
+# autostash, rerere, or other state-changing replay policy.
+run_trusted_replay_git() {
+    GIT_CONFIG_PARAMETERS= \
+    GIT_CONFIG_COUNT=0 \
+    GIT_SEQUENCE_EDITOR=: \
+    GIT_EDITOR=true \
+    GIT_MERGE_AUTOEDIT=no \
+    GIT_ATTR_NOSYSTEM=1 \
+        git \
+            -c core.hooksPath=/dev/null \
+            -c core.fsmonitor=false \
+            -c core.commentChar=# \
+            -c commit.gpgSign=false \
+            -c rebase.abbreviateCommands=false \
+            -c rebase.rescheduleFailedExec=false \
+            -c rebase.autoSquash=false \
+            -c rebase.autoStash=false \
+            -c rebase.updateRefs=false \
+            -c rebase.rebaseMerges=false \
+            -c rebase.instructionFormat=%s \
+            -c rebase.missingCommitsCheck=error \
+            -c rerere.enabled=false \
+            -c rerere.autoupdate=false \
+            -c sequence.editor=: \
+            "$@"
+}
+
 # The trusted sequencer records one immutable source/result pair per frozen
 # source commit.  Its last exec creates the final ref in the same transaction
 # as the last pair, so a completed work ref is restart-adoptable only when the
@@ -1136,6 +1167,21 @@ replay_ordinal_ref() {
     printf '%s/%s/%s' "$REPLAY_PROOF_NS" "$kind" "$suffix"
 }
 
+replay_commit_preserves_source_identity() {
+    local replay=$1 source=$2 replay_author source_author
+    local replay_message source_message
+    replay_author=$(git show -s --format='%an%n%ae%n%aI' "$replay" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    source_author=$(git show -s --format='%an%n%ae%n%aI' "$source" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    replay_message=$(git show -s --format='%B' "$replay" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    source_message=$(git show -s --format='%B' "$source" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    [[ "$replay_author" == "$source_author" &&
+       "$replay_message" == "$source_message" ]]
+}
+
 validate_replay_proof_prefix() {
     local context_oid final_oid source_ref replay_ref source_oid replay_oid
     local actual_refs actual_count=0 expected_count=0 ordinal
@@ -1190,6 +1236,8 @@ validate_replay_proof_prefix() {
         read -r observed parent extra <<<"$line"
         [[ "$observed" == "$replay_oid" && "$parent" == "$previous" &&
            -z "${extra:-}" ]] || return 1
+        replay_commit_preserves_source_identity "$replay_oid" "$source_oid" ||
+            return 1
         previous=$replay_oid
         REPLAY_RESULT_COMMITS[ordinal - 1]=$replay_oid
         REPLAY_PROOF_RECORDED=$ordinal
@@ -1901,11 +1949,13 @@ publish_rebase_result() {
         hard_conflict "rebase work ref does not equal the lease-owned candidate"
     validate_candidate_lineage "$result" ||
         hard_conflict "lease-owned candidate no longer preserves captured lineage"
-    status=$(git status --porcelain --untracked-files=all 2>/dev/null) ||
+    status=$(run_trusted_replay_git status \
+        --porcelain --untracked-files=all 2>/dev/null) ||
         indeterminate "could not inspect rebase worktree before publication"
     [[ -z "$status" ]] ||
         indeterminate "rebase worktree is dirty before publication"
-    git switch --detach "$CANDIDATE_REF" >/dev/null 2>&1 ||
+    run_trusted_replay_git switch --detach \
+        "$CANDIDATE_REF" >/dev/null 2>&1 ||
         indeterminate "could not detach from the lease-owned temporary branch"
     [[ "$(git rev-parse --verify HEAD 2>/dev/null)" == "$result" ]] ||
         indeterminate "detached publication HEAD does not equal the candidate"
@@ -1942,7 +1992,7 @@ publish_rebase_result() {
             hard_conflict "another rebase result won the branch CAS"
         fi
     fi
-    git switch "$BRANCH" >/dev/null 2>&1 ||
+    run_trusted_replay_git switch "$BRANCH" >/dev/null 2>&1 ||
         indeterminate "rebase published but branch checkout failed"
     load_namespace || hard_conflict "published rebase namespace is incomplete"
     validate_namespace || hard_conflict "published rebase namespace failed validation"
@@ -2131,7 +2181,7 @@ materialize_empty_conflict_commit() {
         return 1
     if [[ "$current_head" == "$CONFLICT_PARENT_OID" ]]; then
         [[ "$CONFLICT_PROOF_TREE" == "$parent_tree" ]] || return 0
-        if ! GIT_EDITOR=true git commit --allow-empty \
+        if ! run_trusted_replay_git commit --allow-empty \
             --no-verify -C "$REBASE_STOPPED_OID" >/dev/null 2>&1; then
             current_head=$(git rev-parse --verify HEAD 2>/dev/null) ||
                 return 1
@@ -2254,9 +2304,37 @@ load_trusted_replay_exec_sequence() {
        "$REPLAY_EXEC_ORDINAL" -le "$REPLAY_SOURCE_COUNT" &&
        "$REPLAY_SEQUENCE_LAST_DONE_LINE" == \
          "exec $REPLAY_RECORDER_COMMAND" ]] || return 1
-    status=$(git status --porcelain --untracked-files=all 2>/dev/null) ||
+    status=$(run_trusted_replay_git status \
+        --porcelain --untracked-files=all 2>/dev/null) ||
         return 1
     [[ -z "$status" ]] || return 1
+}
+
+load_sealed_replay_exec_stop() {
+    local head_oid state_dir rebase_head_path
+    load_trusted_replay_exec_sequence || return 1
+    validate_replay_proof_prefix || return 1
+    [[ "$REPLAY_PROOF_RECORDED" -eq "$REPLAY_EXEC_ORDINAL" ]] ||
+        return 1
+    head_oid=$(git rev-parse --verify HEAD 2>/dev/null) || return 1
+    [[ "$REPLAY_PROOF_TIP_OID" == "$head_oid" ]] || return 1
+    if [[ "$REPLAY_EXEC_ORDINAL" -eq "$REPLAY_SOURCE_COUNT" ]]; then
+        [[ "$REPLAY_PROOF_STATE" == "complete" &&
+           "$REPLAY_PROOF_FINAL_OID" == "$head_oid" ]] || return 1
+    else
+        [[ "$REPLAY_PROOF_STATE" == "partial" &&
+           -z "$REPLAY_PROOF_FINAL_OID" ]] || return 1
+    fi
+
+    # An exec stop is distinct from a content conflict: Git has already moved
+    # the exec line to done, but has no stopped commit or REBASE_HEAD.
+    state_dir=$(git rev-parse --git-path rebase-merge 2>/dev/null) || return 1
+    rebase_head_path=$(git rev-parse --git-path REBASE_HEAD 2>/dev/null) ||
+        return 1
+    [[ ! -e "$state_dir/stopped-sha" &&
+       ! -L "$state_dir/stopped-sha" &&
+       ! -e "$rebase_head_path" &&
+       ! -L "$rebase_head_path" ]]
 }
 
 load_trusted_replay_conflict_sequence() {
@@ -2275,21 +2353,6 @@ load_trusted_replay_conflict_sequence() {
        "$REBASE_STOPPED_OID" == "$source_oid" ]] || return 1
     validate_replay_proof_prefix || return 1
     [[ "$REPLAY_PROOF_RECORDED" -eq $((ordinal - 1)) ]]
-}
-
-replay_commit_preserves_source_identity() {
-    local replay=$1 source=$2 replay_author source_author
-    local replay_message source_message
-    replay_author=$(git show -s --format='%an%n%ae%n%aI' "$replay" |
-        git hash-object --stdin 2>/dev/null) || return 1
-    source_author=$(git show -s --format='%an%n%ae%n%aI' "$source" |
-        git hash-object --stdin 2>/dev/null) || return 1
-    replay_message=$(git show -s --format='%B' "$replay" |
-        git hash-object --stdin 2>/dev/null) || return 1
-    source_message=$(git show -s --format='%B' "$source" |
-        git hash-object --stdin 2>/dev/null) || return 1
-    [[ "$replay_author" == "$source_author" &&
-       "$replay_message" == "$source_message" ]]
 }
 
 emit_replay_record_transaction() {
@@ -2405,6 +2468,39 @@ record_replay_action() {
         hard_conflict "trusted rebase sequence changed during replay proof recording"
 }
 
+handle_failed_trusted_rebase() {
+    local active=0
+    if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
+          -d "$(git rev-parse --git-path rebase-apply)" ]]; then
+        active=1
+    fi
+    if [[ "$active" -eq 1 ]]; then
+        if load_sealed_replay_exec_stop; then
+            indeterminate "trusted replay ordinal was sealed but Git did not acknowledge its exec; retry will continue the exact durable prefix"
+        fi
+        load_active_rebase_generation ||
+            hard_conflict "failed rebase left an unbound conflict or replay generation"
+        load_trusted_replay_conflict_sequence ||
+            hard_conflict "failed rebase changed its trusted replay sequence"
+        conflict_stage_diagnostic
+        exit "$EXIT_INDETERMINATE"
+    fi
+    load_namespace ||
+        hard_conflict "failed rebase left partial lease refs"
+    validate_namespace ||
+        hard_conflict "failed rebase changed lease-owned authority incoherently"
+    indeterminate "git rebase returned nonzero; retry will inspect only the lease-owned work ref"
+}
+
+finish_trusted_rebase() {
+    load_namespace ||
+        hard_conflict "completed rebase left partial lease refs"
+    validate_namespace ||
+        hard_conflict "completed rebase changed lease-owned work authority"
+    record_rebase_candidate
+    publish_rebase_result
+}
+
 workspace_action() {
     local branch_oid rebase_help
 
@@ -2452,6 +2548,13 @@ workspace_action() {
             hard_conflict "canonical branch changed before lease-owned rebase"
         if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
               -d "$(git rev-parse --git-path rebase-apply)" ]]; then
+            if load_sealed_replay_exec_stop; then
+                if ! run_trusted_replay_git rebase --continue; then
+                    handle_failed_trusted_rebase
+                fi
+                finish_trusted_rebase
+                return 0
+            fi
             load_active_rebase_generation ||
                 hard_conflict "active rebase does not match the captured lease generation"
             load_trusted_replay_conflict_sequence ||
@@ -2476,24 +2579,10 @@ workspace_action() {
             load_active_rebase_generation &&
                 load_trusted_replay_conflict_sequence ||
                 hard_conflict "trusted replay sequence changed before conflict continuation"
-            if ! GIT_EDITOR=true git rebase --continue; then
-                if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
-                      -d "$(git rev-parse --git-path rebase-apply)" ]]; then
-                    load_active_rebase_generation ||
-                        hard_conflict "continued rebase left an unbound conflict generation"
-                    load_trusted_replay_conflict_sequence ||
-                        hard_conflict "continued rebase changed its trusted replay sequence"
-                    conflict_stage_diagnostic
-                    exit "$EXIT_INDETERMINATE"
-                fi
-                indeterminate "git rebase --continue failed without lease-owned success evidence"
+            if ! run_trusted_replay_git rebase --continue; then
+                handle_failed_trusted_rebase
             fi
-            load_namespace ||
-                hard_conflict "completed rebase left partial lease refs"
-            validate_namespace ||
-                hard_conflict "completed rebase changed lease-owned work authority"
-            record_rebase_candidate
-            publish_rebase_result
+            finish_trusted_rebase
             return 0
         fi
         if [[ "$REBASE_WORK_OID" != "$PRE_OID" ]]; then
@@ -2507,50 +2596,20 @@ workspace_action() {
             hard_conflict "replay proof namespace is incoherent before rebase start"
         [[ "$REPLAY_PROOF_STATE" == "absent" ]] ||
             hard_conflict "captured lease has orphaned replay proof without an active rebase"
-        git switch "$REBASE_WORK_BRANCH" >/dev/null 2>&1 ||
+        run_trusted_replay_git switch \
+            "$REBASE_WORK_BRANCH" >/dev/null 2>&1 ||
             indeterminate "could not check out the lease-owned temporary rebase branch"
-        rebase_help=$(LC_ALL=C git rebase -h 2>&1 || true)
+        rebase_help=$(LC_ALL=C run_trusted_replay_git rebase -h 2>&1 || true)
         [[ "$rebase_help" == *"reapply-cherry-picks"* &&
            "$rebase_help" == *"--empty"* &&
            "$rebase_help" == *"--exec"* ]] ||
             indeterminate "Git lacks the count-preserving rebase policy"
-        if ! GIT_CONFIG_PARAMETERS= \
-             GIT_CONFIG_COUNT=6 \
-             GIT_CONFIG_KEY_0=rebase.abbreviateCommands \
-             GIT_CONFIG_VALUE_0=false \
-             GIT_CONFIG_KEY_1=rebase.rescheduleFailedExec \
-             GIT_CONFIG_VALUE_1=false \
-             GIT_CONFIG_KEY_2=rebase.autoSquash \
-             GIT_CONFIG_VALUE_2=false \
-             GIT_CONFIG_KEY_3=rebase.updateRefs \
-             GIT_CONFIG_VALUE_3=false \
-             GIT_CONFIG_KEY_4=rebase.rebaseMerges \
-             GIT_CONFIG_VALUE_4=false \
-             GIT_CONFIG_KEY_5=rebase.instructionFormat \
-             GIT_CONFIG_VALUE_5=%s \
-             git rebase --merge --reapply-cherry-picks --empty=keep \
-                 --exec "$REPLAY_RECORDER_COMMAND" "$BASE_REF"; then
-            if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
-                  -d "$(git rev-parse --git-path rebase-apply)" ]]; then
-                load_active_rebase_generation ||
-                    hard_conflict "failed rebase left an unbound conflict generation"
-                load_trusted_replay_conflict_sequence ||
-                    hard_conflict "failed rebase changed its trusted replay sequence"
-                conflict_stage_diagnostic
-                exit "$EXIT_INDETERMINATE"
-            fi
-            load_namespace ||
-                hard_conflict "failed rebase left partial lease refs"
-            validate_namespace ||
-                hard_conflict "failed rebase changed lease-owned authority incoherently"
-            indeterminate "git rebase returned nonzero; retry will inspect only the lease-owned work ref"
+        if ! run_trusted_replay_git rebase --merge \
+                --reapply-cherry-picks --empty=keep \
+                --exec "$REPLAY_RECORDER_COMMAND" "$BASE_REF"; then
+            handle_failed_trusted_rebase
         fi
-        load_namespace ||
-            hard_conflict "completed rebase left partial lease refs"
-        validate_namespace ||
-            hard_conflict "completed rebase changed lease-owned work authority"
-        record_rebase_candidate
-        publish_rebase_result
+        finish_trusted_rebase
         return 0
     fi
 
@@ -2582,7 +2641,7 @@ workspace_action() {
                 indeterminate "could not read leased push remote"
                 ;;
         esac
-        git switch "$BRANCH" >/dev/null 2>&1 ||
+        run_trusted_replay_git switch "$BRANCH" >/dev/null 2>&1 ||
             indeterminate "could not check out the leased branch"
         sync_mirror || indeterminate "lease mirror did not verify on restart"
         clear_rejection_after_rebase ||
