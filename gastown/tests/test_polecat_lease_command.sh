@@ -22,6 +22,13 @@ printf 'gc ' >>"$FAKE_GC_LOG"
 printf '%q ' "$@" >>"$FAKE_GC_LOG"
 printf '\n' >>"$FAKE_GC_LOG"
 
+if [[ "${1:-}" == "gastown" &&
+      "${2:-}" == "polecat-lease" &&
+      "${3:-}" == "record-replay" ]]; then
+    [[ -n "${POLECAT_LEASE_COMMAND:-}" ]] || exit 99
+    exec "$POLECAT_LEASE_COMMAND" "${@:3}"
+fi
+
 write_db() {
     mv "$FAKE_DB.tmp" "$FAKE_DB"
 }
@@ -544,6 +551,7 @@ invoke_lease() {
         GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE="${GIT_EMPTY_COMMIT_RESPONSE_LOST_ONCE:-0}" \
         GIT_PUSH_LOG="$PUSH_LOG" \
         REAL_GIT="$REAL_GIT" \
+        POLECAT_LEASE_COMMAND="$COMMAND" \
         "$COMMAND" "$action" \
             --source "${LEASE_SOURCE:-source-1}" \
             --convoy "${LEASE_CONVOY:-convoy-1}" \
@@ -616,6 +624,25 @@ submit_proof_count() {
 conflict_proof_count() {
     "$REAL_GIT" -C "$WORK" for-each-ref \
         --format='%(refname)' refs/gascity/polecat-conflicts | wc -l
+}
+
+replay_proof_count() {
+    "$REAL_GIT" -C "$WORK" for-each-ref \
+        --format='%(refname)' refs/gascity/polecat-rebase-proofs | wc -l
+}
+
+replay_proof_ref() {
+    local suffix=$1
+    "$REAL_GIT" -C "$WORK" for-each-ref \
+        --format='%(refname)' refs/gascity/polecat-rebase-proofs |
+        sed -n "\\|/$suffix$|p"
+}
+
+replay_mapping_count() {
+    local kind=$1
+    "$REAL_GIT" -C "$WORK" for-each-ref \
+        --format='%(refname)' refs/gascity/polecat-rebase-proofs |
+        sed -n "\\|/$kind/[0-9][0-9]*$|p" | wc -l
 }
 
 proof_receipt_field() {
@@ -1247,12 +1274,22 @@ test_completed_rebase_work_ref_recovers_after_lost_response() {
         fail "lost-rebase-response fixture did not fire"
     [[ "$(namespace_count)" -eq 4 ]] ||
         fail "nonzero rebase exit invented lease-owned candidate evidence"
+    [[ "$(local_feature_oid)" == "$pre_oid" ]] ||
+        fail "completed rebase response loss moved the canonical branch before publication"
+    ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet \
+        "$(lease_ref_with_suffix candidate)" ||
+        fail "completed rebase response loss created candidate evidence"
     work_ref=$("$REAL_GIT" -C "$WORK" for-each-ref --format='%(refname)' \
         refs/heads/gascity-polecat-rebase)
     [[ -n "$work_ref" &&
        "$("$REAL_GIT" -C "$WORK" branch --show-current)" == \
          "${work_ref#refs/heads/}" ]] ||
         fail "completed rebase was not retained on its lease-owned work branch"
+    final_ref=$(replay_proof_ref final)
+    [[ "$(replay_proof_count)" -eq 4 && -n "$final_ref" &&
+       "$("$REAL_GIT" -C "$WORK" rev-parse "$final_ref")" == \
+         "$("$REAL_GIT" -C "$WORK" rev-parse "$work_ref")" ]] ||
+        fail "completed rebase did not durably seal its one-entry replay proof"
 
     run_lease workspace
     [[ "$RUN_RC" -eq 0 ]] ||
@@ -1261,22 +1298,28 @@ test_completed_rebase_work_ref_recovers_after_lost_response() {
         fail "workspace restart did not publish the recovered rebased phase"
     [[ "$(local_feature_oid)" != "$pre_oid" ]] ||
         fail "workspace restart did not move the canonical branch to the rebase result"
+    [[ "$("$REAL_GIT" -C "$WORK" rev-parse "$final_ref")" == \
+       "$(local_feature_oid)" ]] ||
+        fail "workspace restart published a tip other than the sealed replay proof"
     ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet "$work_ref" ||
         fail "workspace restart retained the temporary rebase work ref"
 }
 
-test_hostile_base_only_work_ref_cannot_publish_captured_lease() {
-    new_case hostile-base-work-ref true
+test_hostile_same_count_work_ref_cannot_publish_captured_lease() {
+    local source_count replacement tree ordinal
+    new_case hostile-same-count-work-ref true
     set +e
     (
-        export GIT_FAIL_TX_MATCH='/candidate '
+        export GIT_REBASE_HELP_UNSUPPORTED=1
         run_lease workspace
         exit "$RUN_RC"
     )
-    candidate_tx_rc=$?
+    unsupported_rc=$?
     set -e
-    [[ "$candidate_tx_rc" -eq 75 && "$(namespace_count)" -eq 4 ]] ||
+    [[ "$unsupported_rc" -eq 75 && "$(namespace_count)" -eq 4 ]] ||
         fail "hostile work-ref fixture did not preserve captured refs: $(<"$OUTPUT")"
+    [[ "$(replay_proof_count)" -eq 0 ]] ||
+        fail "unsupported rebase created replay proof evidence"
 
     pre_ref=$(lease_ref_with_suffix pre-rebase)
     base_ref=$(lease_ref_with_suffix base)
@@ -1285,24 +1328,45 @@ test_hostile_base_only_work_ref_cannot_publish_captured_lease() {
     work_ref=$("$REAL_GIT" -C "$WORK" for-each-ref --format='%(refname)' \
         refs/heads/gascity-polecat-rebase)
     [[ -n "$work_ref" ]] || fail "hostile work-ref fixture has no temporary ref"
-    "$REAL_GIT" -C "$WORK" switch -q --detach "$base_oid"
-    "$REAL_GIT" -C "$WORK" update-ref "$work_ref" "$base_oid"
+    original_base=$("$REAL_GIT" -C "$WORK" merge-base "$pre_oid" "$base_oid")
+    source_count=$("$REAL_GIT" -C "$WORK" rev-list --count \
+        "$original_base..$pre_oid")
+    [[ "$source_count" -gt 0 ]] ||
+        fail "hostile work-ref fixture has no captured source commits"
+    tree=$("$REAL_GIT" -C "$WORK" rev-parse "$base_oid^{tree}")
+    replacement=$base_oid
+    for ((ordinal = 1; ordinal <= source_count; ordinal++)); do
+        replacement=$(printf 'hostile replacement %d\n' "$ordinal" |
+            "$REAL_GIT" -C "$WORK" commit-tree "$tree" -p "$replacement")
+    done
+    [[ "$("$REAL_GIT" -C "$WORK" rev-list --count \
+            "$base_oid..$replacement")" -eq "$source_count" ]] ||
+        fail "hostile replacement did not match the captured commit count"
+    ! "$REAL_GIT" -C "$WORK" cat-file -e "$replacement:feature.txt" \
+        2>/dev/null ||
+        fail "hostile replacement unexpectedly retained the feature tree"
+    "$REAL_GIT" -C "$WORK" switch -q --detach "$replacement"
+    "$REAL_GIT" -C "$WORK" update-ref "$work_ref" "$replacement"
 
     run_lease workspace
     [[ "$RUN_RC" -eq 64 ]] ||
-        fail "base-only work ref returned $RUN_RC instead of 64: $(<"$OUTPUT")"
+        fail "same-count work ref returned $RUN_RC instead of 64: $(<"$OUTPUT")"
     [[ "$(namespace_count)" -eq 4 ]] ||
-        fail "base-only work ref published a lease phase"
+        fail "same-count work ref published a lease phase"
     [[ "$(local_feature_oid)" == "$pre_oid" ]] ||
-        fail "base-only work ref moved the canonical branch"
+        fail "same-count work ref moved the canonical branch"
+    [[ "$("$REAL_GIT" -C "$WORK" show "$pre_oid:feature.txt")" == "feature" ]] ||
+        fail "same-count work ref erased the canonical feature content"
+    [[ "$(replay_proof_count)" -eq 0 ]] ||
+        fail "same-count work ref forged replay proof evidence"
     ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet \
         "$(lease_ref_with_suffix candidate)" ||
-        fail "base-only work ref created candidate evidence"
+        fail "same-count work ref created candidate evidence"
     ! "$REAL_GIT" -C "$WORK" show-ref --verify --quiet \
         "$(lease_ref_with_suffix rebased)" ||
-        fail "base-only work ref created a rebased ref"
+        fail "same-count work ref created a rebased ref"
     [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "blocked" ]] ||
-        fail "base-only work ref was not durably quarantined"
+        fail "same-count work ref was not durably quarantined"
 }
 
 test_direct_lease_rejects_symlink_git_pointer() {
@@ -2131,6 +2195,10 @@ test_multi_commit_local_ahead_rebase() {
         refs/remotes/origin/main..refs/heads/polecat/source-1)
     [[ "$commit_count" -eq 3 ]] ||
         fail "multi-commit rebase did not preserve remote feature plus two local commits"
+    [[ "$(replay_proof_count)" -eq 8 &&
+       "$(replay_mapping_count source)" -eq 3 &&
+       "$(replay_mapping_count replay)" -eq 3 ]] ||
+        fail "multi-commit rebase did not map every frozen source commit exactly once"
     run_lease submit --auto-push true
     [[ "$RUN_RC" -eq 0 && "$(remote_feature_oid)" == "$(local_feature_oid)" ]] ||
         fail "multi-commit rebased submit did not publish exactly"
@@ -2138,6 +2206,40 @@ test_multi_commit_local_ahead_rebase() {
 
 test_count_preserving_rebase_policy() {
     local feature_oid count base_tree head_tree empty_count commit parent
+
+    new_case already-based-rejected false
+    jq '.beads["source-1"].metadata.rejection_reason = "stale rejection"' \
+        "$DB" >"$DB.tmp"
+    mv "$DB.tmp" "$DB"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 &&
+       "$(replay_proof_count)" -eq 4 &&
+       "$(replay_mapping_count source)" -eq 1 &&
+       "$(replay_mapping_count replay)" -eq 1 ]] ||
+        fail "already-based rejected branch did not execute one trusted replay: $(<"$OUTPUT")"
+    [[ -f "$WORK/feature.txt" ]] ||
+        fail "already-based trusted replay lost the feature content"
+
+    new_case hostile-instruction-format true
+    instruction_marker="$STATE/instruction-format-exec-fired"
+    "$REAL_GIT" -C "$WORK" config rebase.instructionFormat \
+        "%s%nexec touch '$instruction_marker'"
+    set +e
+    (
+        export GIT_CONFIG_PARAMETERS="'rebase.instructionFormat=%s%nexec touch $instruction_marker'"
+        run_lease workspace
+        exit "$RUN_RC"
+    )
+    instruction_rc=$?
+    set -e
+    [[ "$instruction_rc" -eq 0 ]] ||
+        fail "pinned rebase instruction format failed: $(<"$OUTPUT")"
+    [[ ! -e "$instruction_marker" ]] ||
+        fail "repository rebase.instructionFormat injected arbitrary shell"
+    [[ "$(replay_proof_count)" -eq 4 &&
+       "$(replay_mapping_count source)" -eq 1 &&
+       "$(replay_mapping_count replay)" -eq 1 ]] ||
+        fail "pinned instruction format did not retain the exact replay mapping"
 
     new_case already-upstream-commit true
     feature_oid=$("$REAL_GIT" --git-dir="$ORIGIN" rev-parse \
@@ -2186,6 +2288,10 @@ test_count_preserving_rebase_policy() {
         refs/remotes/origin/main..refs/heads/polecat/source-1)
     [[ "$empty_count" -ge 1 ]] ||
         fail "multi-commit rebase did not retain the upstream-equivalent empty commit"
+    [[ "$(replay_proof_count)" -eq 8 &&
+       "$(replay_mapping_count source)" -eq 3 &&
+       "$(replay_mapping_count replay)" -eq 3 ]] ||
+        fail "empty-preserving rebase did not map all three source commits exactly once"
 
     new_case unsupported-count-policy true
     set +e
@@ -2267,6 +2373,13 @@ test_conflict_resolved_to_base_keeps_empty_commit() {
        "$("$REAL_GIT" -C "$WORK" rev-parse refs/heads/polecat/source-1)" != \
          "$canonical_pre" ]] ||
         fail "empty response-loss retry replaced the proved commit or skipped atomic publication"
+    mapping_hits=$("$REAL_GIT" -C "$WORK" for-each-ref \
+        --points-at "$materialized_empty" --format='%(refname)' \
+        refs/gascity/polecat-rebase-proofs |
+        sed -n '\|/replay/[0-9][0-9]*$|p')
+    [[ "$(replay_proof_count)" -eq 6 &&
+       "$(printf '%s\n' "$mapping_hits" | sed '/^$/d' | wc -l)" -eq 1 ]] ||
+        fail "empty response-loss retry duplicated or omitted its replay mapping"
 }
 
 test_multiple_conflict_generations_and_hostile_paths() {
@@ -2459,6 +2572,35 @@ test_true_rebase_conflict_resolution() {
         fail "resolved conflict submit did not publish exactly"
 }
 
+test_conflict_todo_injection_stops_before_execution() {
+    local todo marker canonical_pre
+    prepare_simple_conflict conflict-todo-injection
+    canonical_pre=$(local_feature_oid)
+    printf 'reviewed resolution\n' >"$WORK/base.txt"
+    run_conflict_stage
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "todo-injection fixture could not stage its conflict: $(<"$OUTPUT")"
+    todo=$("$REAL_GIT" -C "$WORK" rev-parse --git-path \
+        rebase-merge/git-rebase-todo)
+    [[ "$todo" == /* ]] || todo="$WORK/$todo"
+    marker="$STATE/arbitrary-todo-exec-fired"
+    {
+        printf 'exec touch %q\n' "$marker"
+        sed -n '1,$p' "$todo"
+    } >"$todo.tmp"
+    mv "$todo.tmp" "$todo"
+
+    run_lease workspace
+    [[ "$RUN_RC" -eq 64 ]] ||
+        fail "tampered conflict todo returned $RUN_RC instead of hard failure: $(<"$OUTPUT")"
+    [[ ! -e "$marker" ]] ||
+        fail "tampered conflict todo executed arbitrary shell before validation"
+    [[ "$(local_feature_oid)" == "$canonical_pre" ]] ||
+        fail "tampered conflict todo moved the canonical branch"
+    [[ "$(jq -r '.beads["source-1"].status' "$DB")" == "blocked" ]] ||
+        fail "tampered conflict todo was not durably quarantined"
+}
+
 test_linked_worktree_ref_races() {
     new_case linked-ref-races false
     linked="$CASE_DIR/linked"
@@ -2565,7 +2707,7 @@ test_push_response_lost_recovery
 test_cleanup_transaction_retry
 test_metadata_cleanup_restart
 test_completed_rebase_work_ref_recovers_after_lost_response
-test_hostile_base_only_work_ref_cannot_publish_captured_lease
+test_hostile_same_count_work_ref_cannot_publish_captured_lease
 test_direct_lease_rejects_symlink_git_pointer
 test_workspace_rejects_absent_branch_metadata_without_quarantine
 test_frozen_push_url
@@ -2599,6 +2741,7 @@ test_conflict_resolved_to_base_keeps_empty_commit
 test_multiple_conflict_generations_and_hostile_paths
 test_conflict_proof_response_loss_and_races
 test_true_rebase_conflict_resolution
+test_conflict_todo_injection_stops_before_execution
 test_linked_worktree_ref_races
 
 echo "polecat lease command tests passed"

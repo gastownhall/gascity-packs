@@ -31,6 +31,9 @@ Usage:
     --source ID --convoy ID --base BRANCH --branch BRANCH --witness TARGET
   gc gastown polecat-lease publish-rebase \
     --source ID --convoy ID --base BRANCH --branch BRANCH --witness TARGET
+  gc gastown polecat-lease record-replay \
+    --source ID --convoy ID --base BRANCH --branch BRANCH --witness TARGET
+    (internal; invoked only by the lease-owned Git rebase sequencer)
   gc gastown polecat-lease submit \
     --source ID --convoy ID --base BRANCH --branch BRANCH --witness TARGET \
     --auto-push true|false
@@ -86,7 +89,7 @@ if (($#)); then
     exit "$EXIT_USAGE"
 fi
 case "$ACTION" in
-    workspace|publish-rebase|submit) ;;
+    workspace|publish-rebase|record-replay|submit) ;;
     *)
         usage
         exit "$EXIT_USAGE"
@@ -1008,21 +1011,242 @@ validate_commit_ref() {
     [[ "$observed" == "$oid" ]]
 }
 
+shell_single_quote() {
+    local value=${1//\'/\'\\\'\'}
+    printf "'%s'" "$value"
+}
+
+build_replay_recorder_command() {
+    local value command=""
+    for value in \
+        "$GC_CMD" gastown polecat-lease record-replay \
+        --source "$SOURCE_ID" \
+        --convoy "$CONVOY_ID" \
+        --base "$BASE_BRANCH" \
+        --branch "$BRANCH" \
+        --witness "$WITNESS_TARGET"; do
+        if [[ -n "${command:-}" ]]; then
+            command+=" "
+        fi
+        command+=$(shell_single_quote "$value") || return 1
+    done
+    printf '%s' "$command"
+}
+
+REPLAY_RECORDER_COMMAND=$(build_replay_recorder_command) ||
+    indeterminate "could not construct the constrained rebase recorder command"
+[[ -n "$REPLAY_RECORDER_COMMAND" &&
+   "$REPLAY_RECORDER_COMMAND" != *$'\n'* &&
+   "$REPLAY_RECORDER_COMMAND" != *$'\r'* &&
+   "$REPLAY_RECORDER_COMMAND" != *$'\t'* ]] ||
+    indeterminate "the constrained rebase recorder command is unsafe"
+
+# The trusted sequencer records one immutable source/result pair per frozen
+# source commit.  Its last exec creates the final ref in the same transaction
+# as the last pair, so a completed work ref is restart-adoptable only when the
+# entire exact replay chain was sealed before Git removed its rebase state.
+REPLAY_PROOF_READY=0
+REPLAY_PROOF_STATE="absent"
+REPLAY_PROOF_RECORDED=0
+REPLAY_PROOF_TIP_OID=""
+REPLAY_PROOF_FINAL_OID=""
+REPLAY_ORIGINAL_BASE=""
+REPLAY_SOURCE_COUNT=0
+REPLAY_SOURCE_DIGEST=""
+REPLAY_RECORDER_DIGEST=""
+REPLAY_PROOF_GENERATION=""
+REPLAY_PROOF_NS=""
+REPLAY_PROOF_CONTEXT_REF=""
+REPLAY_PROOF_FINAL_REF=""
+REPLAY_SOURCE_COMMITS=()
+REPLAY_RESULT_COMMITS=()
+
+emit_replay_proof_context() {
+    printf '%s\n' \
+        "schema=gascity-polecat-rebase-proof-v1" \
+        "lease_context_oid=$CONTEXT_OID" \
+        "source=$SOURCE_ID" \
+        "workflow_root=$ROOT_BEAD_ID" \
+        "input_convoy=$CONVOY_ID" \
+        "branch=$BRANCH" \
+        "rebase_work_ref=$REBASE_WORK_REF" \
+        "pre_oid=$PRE_OID" \
+        "base_oid=$BASE_OID" \
+        "original_base_oid=$REPLAY_ORIGINAL_BASE" \
+        "source_count=$REPLAY_SOURCE_COUNT" \
+        "source_sequence_digest=$REPLAY_SOURCE_DIGEST" \
+        "recorder_command_digest=$REPLAY_RECORDER_DIGEST"
+}
+
+initialize_replay_proof() {
+    local commit line observed parent extra previous
+
+    [[ "$REPLAY_PROOF_READY" -eq 0 ]] || return 0
+    is_oid "$CONTEXT_OID" && is_oid "$PRE_OID" && is_oid "$BASE_OID" ||
+        return 1
+    REPLAY_ORIGINAL_BASE=$(git merge-base "$PRE_OID" "$BASE_OID" 2>/dev/null) ||
+        return 1
+    is_oid "$REPLAY_ORIGINAL_BASE" || return 1
+    mapfile -t REPLAY_SOURCE_COMMITS < <(
+        git rev-list --reverse --topo-order \
+            "$REPLAY_ORIGINAL_BASE..$PRE_OID" 2>/dev/null
+    )
+    REPLAY_SOURCE_COUNT=${#REPLAY_SOURCE_COMMITS[@]}
+    [[ "$REPLAY_SOURCE_COUNT" -gt 0 ]] || return 1
+
+    previous=$REPLAY_ORIGINAL_BASE
+    for commit in "${REPLAY_SOURCE_COMMITS[@]}"; do
+        is_oid "$commit" || return 1
+        line=$(git rev-list --parents -n 1 "$commit" 2>/dev/null) || return 1
+        read -r observed parent extra <<<"$line"
+        [[ "$observed" == "$commit" && "$parent" == "$previous" &&
+           -z "${extra:-}" ]] || return 1
+        previous=$commit
+    done
+    [[ "$previous" == "$PRE_OID" ]] || return 1
+
+    REPLAY_SOURCE_DIGEST=$(
+        printf '%s\n' "${REPLAY_SOURCE_COMMITS[@]}" |
+            git hash-object --stdin 2>/dev/null
+    ) || return 1
+    REPLAY_RECORDER_DIGEST=$(
+        printf '%s\n' "$REPLAY_RECORDER_COMMAND" |
+            git hash-object --stdin 2>/dev/null
+    ) || return 1
+    is_oid "$REPLAY_SOURCE_DIGEST" && is_oid "$REPLAY_RECORDER_DIGEST" ||
+        return 1
+    REPLAY_PROOF_GENERATION=$(emit_replay_proof_context |
+        git hash-object --stdin 2>/dev/null) || return 1
+    is_oid "$REPLAY_PROOF_GENERATION" || return 1
+    REPLAY_PROOF_NS="refs/gascity/polecat-rebase-proofs/v1/$LEASE_KEY/$REPLAY_PROOF_GENERATION"
+    REPLAY_PROOF_CONTEXT_REF="$REPLAY_PROOF_NS/context"
+    REPLAY_PROOF_FINAL_REF="$REPLAY_PROOF_NS/final"
+    git check-ref-format "$REPLAY_PROOF_CONTEXT_REF" >/dev/null 2>&1 ||
+        return 1
+    git check-ref-format "$REPLAY_PROOF_FINAL_REF" >/dev/null 2>&1 ||
+        return 1
+    REPLAY_PROOF_READY=1
+}
+
+replay_ordinal_ref() {
+    local kind=$1 ordinal=$2 suffix
+    [[ "$kind" == "source" || "$kind" == "replay" ]] || return 1
+    [[ "$ordinal" =~ ^[1-9][0-9]*$ ]] || return 1
+    printf -v suffix '%08d' "$ordinal" || return 1
+    printf '%s/%s/%s' "$REPLAY_PROOF_NS" "$kind" "$suffix"
+}
+
+validate_replay_proof_prefix() {
+    local context_oid final_oid source_ref replay_ref source_oid replay_oid
+    local actual_refs actual_count=0 expected_count=0 ordinal
+    local line observed parent extra previous
+
+    initialize_replay_proof || return 1
+    actual_refs=$(git for-each-ref --format='%(refname)' \
+        "$REPLAY_PROOF_NS/" 2>/dev/null) || return 1
+    if [[ -n "$actual_refs" ]]; then
+        while IFS= read -r ref; do
+            [[ -n "$ref" ]] || return 1
+            actual_count=$((actual_count + 1))
+        done <<<"$actual_refs"
+    fi
+
+    context_oid=$(read_ref "$REPLAY_PROOF_CONTEXT_REF") || return 1
+    if [[ -z "$context_oid" ]]; then
+        [[ "$actual_count" -eq 0 ]] || return 1
+        REPLAY_PROOF_STATE="absent"
+        REPLAY_PROOF_RECORDED=0
+        REPLAY_PROOF_TIP_OID=""
+        REPLAY_PROOF_FINAL_OID=""
+        return 0
+    fi
+    ! git symbolic-ref -q "$REPLAY_PROOF_CONTEXT_REF" >/dev/null 2>&1 ||
+        return 1
+    [[ "$context_oid" == "$REPLAY_PROOF_GENERATION" &&
+       "$(git cat-file -t "$context_oid" 2>/dev/null)" == "blob" &&
+       "$(git cat-file blob "$context_oid" 2>/dev/null)" == \
+         "$(emit_replay_proof_context)" ]] || return 1
+
+    REPLAY_PROOF_RECORDED=0
+    REPLAY_RESULT_COMMITS=()
+    previous=$BASE_OID
+    for ((ordinal = 1; ordinal <= REPLAY_SOURCE_COUNT; ordinal++)); do
+        source_ref=$(replay_ordinal_ref source "$ordinal") || return 1
+        replay_ref=$(replay_ordinal_ref replay "$ordinal") || return 1
+        git check-ref-format "$source_ref" >/dev/null 2>&1 || return 1
+        git check-ref-format "$replay_ref" >/dev/null 2>&1 || return 1
+        source_oid=$(read_ref "$source_ref") || return 1
+        replay_oid=$(read_ref "$replay_ref") || return 1
+        if [[ -z "$source_oid" && -z "$replay_oid" ]]; then
+            break
+        fi
+        [[ -n "$source_oid" && -n "$replay_oid" ]] || return 1
+        validate_commit_ref "$source_ref" "$source_oid" || return 1
+        validate_commit_ref "$replay_ref" "$replay_oid" || return 1
+        [[ "$source_oid" == "${REPLAY_SOURCE_COMMITS[ordinal - 1]}" ]] ||
+            return 1
+        line=$(git rev-list --parents -n 1 "$replay_oid" 2>/dev/null) ||
+            return 1
+        read -r observed parent extra <<<"$line"
+        [[ "$observed" == "$replay_oid" && "$parent" == "$previous" &&
+           -z "${extra:-}" ]] || return 1
+        previous=$replay_oid
+        REPLAY_RESULT_COMMITS[ordinal - 1]=$replay_oid
+        REPLAY_PROOF_RECORDED=$ordinal
+    done
+    REPLAY_PROOF_TIP_OID=""
+    if [[ "$REPLAY_PROOF_RECORDED" -gt 0 ]]; then
+        REPLAY_PROOF_TIP_OID=$previous
+    fi
+
+    final_oid=$(read_ref "$REPLAY_PROOF_FINAL_REF") || return 1
+    if [[ -n "$final_oid" ]]; then
+        validate_commit_ref "$REPLAY_PROOF_FINAL_REF" "$final_oid" || return 1
+        [[ "$REPLAY_PROOF_RECORDED" -eq "$REPLAY_SOURCE_COUNT" &&
+           "$final_oid" == "$previous" ]] || return 1
+        REPLAY_PROOF_STATE="complete"
+        REPLAY_PROOF_FINAL_OID=$final_oid
+        expected_count=$((2 + 2 * REPLAY_PROOF_RECORDED))
+    else
+        [[ "$REPLAY_PROOF_RECORDED" -lt "$REPLAY_SOURCE_COUNT" ]] || return 1
+        REPLAY_PROOF_STATE="partial"
+        REPLAY_PROOF_FINAL_OID=""
+        expected_count=$((1 + 2 * REPLAY_PROOF_RECORDED))
+    fi
+    [[ "$actual_count" -eq "$expected_count" ]]
+}
+
+validate_complete_replay_proof() {
+    local candidate=$1
+    validate_replay_proof_prefix || return 1
+    [[ "$REPLAY_PROOF_STATE" == "complete" &&
+       "$REPLAY_PROOF_RECORDED" -eq "$REPLAY_SOURCE_COUNT" &&
+       "$REPLAY_PROOF_FINAL_OID" == "$candidate" ]]
+}
+
+emit_complete_replay_proof_verifications() {
+    local expected_tip=$1 ordinal source_ref replay_ref
+    [[ "$REPLAY_PROOF_STATE" == "complete" &&
+       "$REPLAY_PROOF_RECORDED" -eq "$REPLAY_SOURCE_COUNT" &&
+       "$REPLAY_PROOF_FINAL_OID" == "$expected_tip" ]] || return 1
+    printf '%s\n' "verify $REPLAY_PROOF_CONTEXT_REF $REPLAY_PROOF_GENERATION"
+    for ((ordinal = 1; ordinal <= REPLAY_SOURCE_COUNT; ordinal++)); do
+        source_ref=$(replay_ordinal_ref source "$ordinal") || return 1
+        replay_ref=$(replay_ordinal_ref replay "$ordinal") || return 1
+        printf '%s\n' \
+            "verify $source_ref ${REPLAY_SOURCE_COMMITS[ordinal - 1]}" \
+            "verify $replay_ref ${REPLAY_RESULT_COMMITS[ordinal - 1]}"
+    done
+    printf '%s\n' "verify $REPLAY_PROOF_FINAL_REF $expected_tip"
+}
+
 validate_candidate_lineage() {
-    local candidate=$1 original_base pre_count candidate_count
+    local candidate=$1
     is_oid "$candidate" || return 1
     [[ "$(git cat-file -t "$candidate" 2>/dev/null)" == "commit" ]] || return 1
     git merge-base --is-ancestor "$BASE_OID" "$candidate" >/dev/null 2>&1 ||
         return 1
-    original_base=$(git merge-base "$PRE_OID" "$BASE_OID" 2>/dev/null) ||
-        return 1
-    is_oid "$original_base" || return 1
-    pre_count=$(git rev-list --count "$original_base..$PRE_OID" 2>/dev/null) ||
-        return 1
-    candidate_count=$(git rev-list --count "$BASE_OID..$candidate" 2>/dev/null) ||
-        return 1
-    [[ "$pre_count" -gt 0 && "$candidate_count" -eq "$pre_count" ]] ||
-        return 1
+    validate_complete_replay_proof "$candidate"
 }
 
 validate_namespace() {
@@ -1052,6 +1276,7 @@ validate_namespace() {
     fi
     if [[ "$NS_STATE" == "rebased" || "$NS_STATE" == "submit-frozen" ]]; then
         validate_commit_ref "$REBASED_REF" "$REBASED_OID" || return 1
+        validate_candidate_lineage "$REBASED_OID" || return 1
     fi
     if [[ "$NS_STATE" == "submit-frozen" ]]; then
         validate_commit_ref "$SUBMIT_REF" "$SUBMIT_OID" || return 1
@@ -1626,17 +1851,22 @@ record_rebase_candidate() {
     [[ "$branch_oid" == "$PRE_OID" ]] ||
         hard_conflict "canonical branch changed before candidate recording"
 
-    if printf '%s\n' \
-        start \
-        "option no-deref" \
-        "verify $CONTEXT_REF $CONTEXT_OID" \
-        "verify $EXPECTED_REF $EXPECTED_OID" \
-        "verify $PRE_REF $PRE_OID" \
-        "verify $BASE_REF $BASE_OID" \
-        "verify $BRANCH_REF $PRE_OID" \
-        "create $CANDIDATE_REF $result" \
-        prepare \
-        commit | git update-ref --stdin >/dev/null 2>&1; then
+    if {
+        printf '%s\n' \
+            start \
+            "option no-deref" \
+            "verify $CONTEXT_REF $CONTEXT_OID" \
+            "verify $EXPECTED_REF $EXPECTED_OID" \
+            "verify $PRE_REF $PRE_OID" \
+            "verify $BASE_REF $BASE_OID" \
+            "verify $BRANCH_REF $PRE_OID" \
+            "verify $REBASE_WORK_REF $result"
+        emit_complete_replay_proof_verifications "$result" || exit 1
+        printf '%s\n' \
+            "create $CANDIDATE_REF $result" \
+            prepare \
+            commit
+    } | git update-ref --stdin >/dev/null 2>&1; then
         :
     else
         load_namespace || hard_conflict "candidate recording left partial refs"
@@ -1680,19 +1910,23 @@ publish_rebase_result() {
     [[ "$(git rev-parse --verify HEAD 2>/dev/null)" == "$result" ]] ||
         indeterminate "detached publication HEAD does not equal the candidate"
 
-    if printf '%s\n' \
-        start \
-        "option no-deref" \
-        "verify $CONTEXT_REF $CONTEXT_OID" \
-        "verify $EXPECTED_REF $EXPECTED_OID" \
-        "verify $PRE_REF $PRE_OID" \
-        "verify $BASE_REF $BASE_OID" \
-        "update $BRANCH_REF $result $PRE_OID" \
-        "create $REBASED_REF $result" \
-        "delete $CANDIDATE_REF $CANDIDATE_OID" \
-        "delete $REBASE_WORK_REF $result" \
-        prepare \
-        commit | git update-ref --stdin >/dev/null 2>&1; then
+    if {
+        printf '%s\n' \
+            start \
+            "option no-deref" \
+            "verify $CONTEXT_REF $CONTEXT_OID" \
+            "verify $EXPECTED_REF $EXPECTED_OID" \
+            "verify $PRE_REF $PRE_OID" \
+            "verify $BASE_REF $BASE_OID"
+        emit_complete_replay_proof_verifications "$result" || exit 1
+        printf '%s\n' \
+            "update $BRANCH_REF $result $PRE_OID" \
+            "create $REBASED_REF $result" \
+            "delete $CANDIDATE_REF $CANDIDATE_OID" \
+            "delete $REBASE_WORK_REF $result" \
+            prepare \
+            commit
+    } | git update-ref --stdin >/dev/null 2>&1; then
         REBASED_OID=$result
         CANDIDATE_OID=""
         REBASE_WORK_OID=""
@@ -1919,6 +2153,258 @@ materialize_empty_conflict_commit() {
         "$REBASE_STOPPED_OID" "$CONFLICT_PROOF_TREE"
 }
 
+REPLAY_EXEC_ORDINAL=0
+REPLAY_SEQUENCE_DONE_COUNT=0
+REPLAY_SEQUENCE_LAST_DONE_LINE=""
+REPLAY_SEQUENCE_FIRST_TODO_LINE=""
+
+replay_pick_line_matches() {
+    local line=$1 source_oid=$2
+    [[ "$line" == "pick $source_oid" ||
+       "$line" == "pick $source_oid "* ]]
+}
+
+load_trusted_replay_sequence() {
+    local state_dir done_file todo_file backup_file line source_oid
+    local ordinal line_index backup_commands_done=0 current_branch
+    local -a done_lines=() todo_lines=() sequence_lines=() backup_lines=()
+
+    initialize_replay_proof || return 1
+    state_dir=$(git rev-parse --git-path rebase-merge 2>/dev/null) || return 1
+    [[ -d "$state_dir" && ! -L "$state_dir" ]] || return 1
+    [[ ! -e "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]] ||
+        return 1
+    read_rebase_line "$state_dir/head-name" || return 1
+    [[ "$REBASE_LINE" == "$REBASE_WORK_REF" ]] || return 1
+    read_rebase_line "$state_dir/orig-head" || return 1
+    [[ "$REBASE_LINE" == "$PRE_OID" ]] || return 1
+    read_rebase_line "$state_dir/onto" || return 1
+    [[ "$REBASE_LINE" == "$BASE_OID" ]] || return 1
+    [[ -f "$state_dir/interactive" && ! -L "$state_dir/interactive" &&
+       -f "$state_dir/keep_redundant_commits" &&
+       ! -L "$state_dir/keep_redundant_commits" &&
+       -f "$state_dir/no-reschedule-failed-exec" &&
+       ! -L "$state_dir/no-reschedule-failed-exec" ]] || return 1
+
+    done_file="$state_dir/done"
+    todo_file="$state_dir/git-rebase-todo"
+    backup_file="$state_dir/git-rebase-todo.backup"
+    for file in "$done_file" "$todo_file" "$backup_file"; do
+        [[ -f "$file" && ! -L "$file" ]] || return 1
+    done
+    mapfile -t done_lines <"$done_file" || return 1
+    mapfile -t todo_lines <"$todo_file" || return 1
+    sequence_lines=("${done_lines[@]}" "${todo_lines[@]}")
+    [[ "${#sequence_lines[@]}" -eq $((2 * REPLAY_SOURCE_COUNT)) ]] ||
+        return 1
+
+    for ((ordinal = 1; ordinal <= REPLAY_SOURCE_COUNT; ordinal++)); do
+        line_index=$((2 * (ordinal - 1)))
+        source_oid=${REPLAY_SOURCE_COMMITS[ordinal - 1]}
+        replay_pick_line_matches "${sequence_lines[line_index]}" "$source_oid" ||
+            return 1
+        [[ "${sequence_lines[line_index + 1]}" == \
+           "exec $REPLAY_RECORDER_COMMAND" ]] || return 1
+    done
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$backup_commands_done" -eq 1 ]]; then
+            continue
+        fi
+        if [[ -z "$line" ]]; then
+            backup_commands_done=1
+            continue
+        fi
+        backup_lines+=("$line")
+    done <"$backup_file"
+    [[ "$backup_commands_done" -eq 1 &&
+       "${#backup_lines[@]}" -eq $((2 * REPLAY_SOURCE_COUNT)) ]] ||
+        return 1
+    for ((ordinal = 1; ordinal <= REPLAY_SOURCE_COUNT; ordinal++)); do
+        line_index=$((2 * (ordinal - 1)))
+        source_oid=${REPLAY_SOURCE_COMMITS[ordinal - 1]}
+        replay_pick_line_matches "${backup_lines[line_index]}" "$source_oid" ||
+            return 1
+        [[ "${backup_lines[line_index + 1]}" == \
+           "exec $REPLAY_RECORDER_COMMAND" ]] || return 1
+    done
+
+    REPLAY_SEQUENCE_DONE_COUNT=${#done_lines[@]}
+    REPLAY_SEQUENCE_LAST_DONE_LINE=""
+    if [[ "$REPLAY_SEQUENCE_DONE_COUNT" -gt 0 ]]; then
+        REPLAY_SEQUENCE_LAST_DONE_LINE=${done_lines[REPLAY_SEQUENCE_DONE_COUNT - 1]}
+    fi
+    REPLAY_SEQUENCE_FIRST_TODO_LINE=""
+    if [[ "${#todo_lines[@]}" -gt 0 ]]; then
+        REPLAY_SEQUENCE_FIRST_TODO_LINE=${todo_lines[0]}
+    fi
+    current_branch=$(git branch --show-current 2>/dev/null) || return 1
+    [[ -z "$current_branch" ]] || return 1
+    ref_equals "$BRANCH_REF" "$PRE_OID" || return 1
+    ref_equals "$REBASE_WORK_REF" "$PRE_OID" || return 1
+}
+
+load_trusted_replay_exec_sequence() {
+    local status
+    load_trusted_replay_sequence || return 1
+    [[ "$REPLAY_SEQUENCE_DONE_COUNT" -ge 2 &&
+       $((REPLAY_SEQUENCE_DONE_COUNT % 2)) -eq 0 ]] || return 1
+    REPLAY_EXEC_ORDINAL=$((REPLAY_SEQUENCE_DONE_COUNT / 2))
+    [[ "$REPLAY_EXEC_ORDINAL" -ge 1 &&
+       "$REPLAY_EXEC_ORDINAL" -le "$REPLAY_SOURCE_COUNT" &&
+       "$REPLAY_SEQUENCE_LAST_DONE_LINE" == \
+         "exec $REPLAY_RECORDER_COMMAND" ]] || return 1
+    status=$(git status --porcelain --untracked-files=all 2>/dev/null) ||
+        return 1
+    [[ -z "$status" ]] || return 1
+}
+
+load_trusted_replay_conflict_sequence() {
+    local ordinal source_oid
+    load_trusted_replay_sequence || return 1
+    [[ "$REPLAY_SEQUENCE_DONE_COUNT" -ge 1 &&
+       $((REPLAY_SEQUENCE_DONE_COUNT % 2)) -eq 1 ]] || return 1
+    ordinal=$(((REPLAY_SEQUENCE_DONE_COUNT + 1) / 2))
+    [[ "$ordinal" -ge 1 && "$ordinal" -le "$REPLAY_SOURCE_COUNT" ]] ||
+        return 1
+    source_oid=${REPLAY_SOURCE_COMMITS[ordinal - 1]}
+    replay_pick_line_matches "$REPLAY_SEQUENCE_LAST_DONE_LINE" "$source_oid" ||
+        return 1
+    [[ "$REPLAY_SEQUENCE_FIRST_TODO_LINE" == \
+       "exec $REPLAY_RECORDER_COMMAND" &&
+       "$REBASE_STOPPED_OID" == "$source_oid" ]] || return 1
+    validate_replay_proof_prefix || return 1
+    [[ "$REPLAY_PROOF_RECORDED" -eq $((ordinal - 1)) ]]
+}
+
+replay_commit_preserves_source_identity() {
+    local replay=$1 source=$2 replay_author source_author
+    local replay_message source_message
+    replay_author=$(git show -s --format='%an%n%ae%n%aI' "$replay" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    source_author=$(git show -s --format='%an%n%ae%n%aI' "$source" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    replay_message=$(git show -s --format='%B' "$replay" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    source_message=$(git show -s --format='%B' "$source" |
+        git hash-object --stdin 2>/dev/null) || return 1
+    [[ "$replay_author" == "$source_author" &&
+       "$replay_message" == "$source_message" ]]
+}
+
+emit_replay_record_transaction() {
+    local ordinal=$1 source_ref=$2 replay_ref=$3
+    local source_oid=$4 replay_oid=$5 previous_source_ref previous_replay_ref
+
+    printf '%s\n' \
+        start \
+        "option no-deref" \
+        "verify $CONTEXT_REF $CONTEXT_OID" \
+        "verify $EXPECTED_REF $EXPECTED_OID" \
+        "verify $PRE_REF $PRE_OID" \
+        "verify $BASE_REF $BASE_OID" \
+        "verify $BRANCH_REF $PRE_OID" \
+        "verify $REBASE_WORK_REF $PRE_OID"
+    if [[ "$ordinal" -eq 1 ]]; then
+        printf '%s\n' "create $REPLAY_PROOF_CONTEXT_REF $REPLAY_PROOF_GENERATION"
+    else
+        previous_source_ref=$(replay_ordinal_ref source "$((ordinal - 1))") ||
+            return 1
+        previous_replay_ref=$(replay_ordinal_ref replay "$((ordinal - 1))") ||
+            return 1
+        printf '%s\n' \
+            "verify $REPLAY_PROOF_CONTEXT_REF $REPLAY_PROOF_GENERATION" \
+            "verify $previous_source_ref ${REPLAY_SOURCE_COMMITS[ordinal - 2]}" \
+            "verify $previous_replay_ref $REPLAY_PROOF_TIP_OID"
+    fi
+    printf '%s\n' \
+        "create $source_ref $source_oid" \
+        "create $replay_ref $replay_oid"
+    if [[ "$ordinal" -eq "$REPLAY_SOURCE_COUNT" ]]; then
+        printf '%s\n' "create $REPLAY_PROOF_FINAL_REF $replay_oid"
+    fi
+    printf '%s\n' prepare commit
+}
+
+record_replay_action() {
+    local ordinal source_oid replay_oid source_ref replay_ref
+    local previous written line observed parent extra
+
+    prove_live_source_step
+    [[ "$NS_STATE" == "captured" &&
+       "$REBASE_WORK_OID" == "$PRE_OID" ]] ||
+        hard_conflict "internal replay recorder requires the frozen captured lease"
+    validate_replay_proof_prefix ||
+        hard_conflict "existing replay proof prefix is incomplete or incoherent"
+    load_trusted_replay_exec_sequence ||
+        hard_conflict "internal replay recorder is outside the exact trusted rebase sequence"
+    ordinal=$REPLAY_EXEC_ORDINAL
+    [[ "$REPLAY_PROOF_RECORDED" -eq $((ordinal - 1)) ]] ||
+        hard_conflict "trusted rebase recorder ordinal does not extend its durable prefix"
+
+    source_oid=${REPLAY_SOURCE_COMMITS[ordinal - 1]}
+    replay_oid=$(git rev-parse --verify HEAD 2>/dev/null) ||
+        indeterminate "could not resolve the trusted replay commit"
+    is_oid "$replay_oid" || indeterminate "trusted replay commit id is invalid"
+    previous=$BASE_OID
+    if [[ "$ordinal" -gt 1 ]]; then
+        previous=$REPLAY_PROOF_TIP_OID
+    fi
+    line=$(git rev-list --parents -n 1 "$replay_oid" 2>/dev/null) ||
+        indeterminate "could not inspect the trusted replay parent"
+    read -r observed parent extra <<<"$line"
+    [[ "$observed" == "$replay_oid" && "$parent" == "$previous" &&
+       -z "${extra:-}" ]] ||
+        hard_conflict "trusted replay commit does not extend the exact prior replay"
+    replay_commit_preserves_source_identity "$replay_oid" "$source_oid" ||
+        hard_conflict "trusted replay commit changed source author or message identity"
+
+    source_ref=$(replay_ordinal_ref source "$ordinal") ||
+        indeterminate "could not derive the replay source proof ref"
+    replay_ref=$(replay_ordinal_ref replay "$ordinal") ||
+        indeterminate "could not derive the replay result proof ref"
+    if [[ "$ordinal" -eq 1 ]]; then
+        written=$(emit_replay_proof_context |
+            git hash-object -w --stdin 2>/dev/null) ||
+            indeterminate "could not write the replay proof context object"
+        [[ "$written" == "$REPLAY_PROOF_GENERATION" ]] ||
+            indeterminate "written replay proof context changed its content address"
+    fi
+
+    if emit_replay_record_transaction \
+            "$ordinal" "$source_ref" "$replay_ref" \
+            "$source_oid" "$replay_oid" |
+        git update-ref --stdin >/dev/null 2>&1; then
+        :
+    else
+        validate_replay_proof_prefix ||
+            hard_conflict "replay proof transaction left incoherent evidence"
+        if [[ "$REPLAY_PROOF_RECORDED" -eq $((ordinal - 1)) ]]; then
+            indeterminate "replay proof transaction failed without recording its ordinal"
+        fi
+        [[ "$REPLAY_PROOF_RECORDED" -eq "$ordinal" ]] ||
+            hard_conflict "another replay proof writer advanced a different ordinal"
+    fi
+
+    validate_replay_proof_prefix ||
+        hard_conflict "recorded replay proof failed exact readback"
+    [[ "$REPLAY_PROOF_RECORDED" -eq "$ordinal" ]] ||
+        hard_conflict "recorded replay proof did not advance exactly one ordinal"
+    if [[ "$ordinal" -eq "$REPLAY_SOURCE_COUNT" ]]; then
+        [[ "$REPLAY_PROOF_STATE" == "complete" &&
+           "$REPLAY_PROOF_TIP_OID" == "$replay_oid" &&
+           "$REPLAY_PROOF_FINAL_OID" == "$replay_oid" ]] ||
+            hard_conflict "final replay ordinal did not atomically seal its exact tip"
+    else
+        [[ "$REPLAY_PROOF_STATE" == "partial" &&
+           "$REPLAY_PROOF_TIP_OID" == "$replay_oid" &&
+           -z "$REPLAY_PROOF_FINAL_OID" ]] ||
+            hard_conflict "nonfinal replay ordinal did not retain its exact prefix tip"
+    fi
+    load_trusted_replay_exec_sequence ||
+        hard_conflict "trusted rebase sequence changed during replay proof recording"
+}
+
 workspace_action() {
     local branch_oid rebase_help
 
@@ -1968,6 +2454,8 @@ workspace_action() {
               -d "$(git rev-parse --git-path rebase-apply)" ]]; then
             load_active_rebase_generation ||
                 hard_conflict "active rebase does not match the captured lease generation"
+            load_trusted_replay_conflict_sequence ||
+                hard_conflict "active conflict rebase changed its trusted replay sequence"
             if [[ -n "$(git ls-files -u 2>/dev/null)" ]]; then
                 conflict_stage_diagnostic
                 exit "$EXIT_INDETERMINATE"
@@ -1985,11 +2473,16 @@ workspace_action() {
                 indeterminate "conflict proof changed before rebase continuation"
             git diff --cached --check >/dev/null 2>&1 ||
                 indeterminate "conflict proof failed its final continuation check"
+            load_active_rebase_generation &&
+                load_trusted_replay_conflict_sequence ||
+                hard_conflict "trusted replay sequence changed before conflict continuation"
             if ! GIT_EDITOR=true git rebase --continue; then
                 if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
                       -d "$(git rev-parse --git-path rebase-apply)" ]]; then
                     load_active_rebase_generation ||
                         hard_conflict "continued rebase left an unbound conflict generation"
+                    load_trusted_replay_conflict_sequence ||
+                        hard_conflict "continued rebase changed its trusted replay sequence"
                     conflict_stage_diagnostic
                     exit "$EXIT_INDETERMINATE"
                 fi
@@ -2005,22 +2498,44 @@ workspace_action() {
         fi
         if [[ "$REBASE_WORK_OID" != "$PRE_OID" ]]; then
             validate_candidate_lineage "$REBASE_WORK_OID" ||
-                hard_conflict "lease-owned completed rebase has invalid lineage"
+                hard_conflict "lease-owned completed rebase lacks its exact replay proof"
             record_rebase_candidate
             publish_rebase_result
             return 0
         fi
+        validate_replay_proof_prefix ||
+            hard_conflict "replay proof namespace is incoherent before rebase start"
+        [[ "$REPLAY_PROOF_STATE" == "absent" ]] ||
+            hard_conflict "captured lease has orphaned replay proof without an active rebase"
         git switch "$REBASE_WORK_BRANCH" >/dev/null 2>&1 ||
             indeterminate "could not check out the lease-owned temporary rebase branch"
         rebase_help=$(LC_ALL=C git rebase -h 2>&1 || true)
         [[ "$rebase_help" == *"reapply-cherry-picks"* &&
-           "$rebase_help" == *"--empty"* ]] ||
+           "$rebase_help" == *"--empty"* &&
+           "$rebase_help" == *"--exec"* ]] ||
             indeterminate "Git lacks the count-preserving rebase policy"
-        if ! git rebase --merge --reapply-cherry-picks --empty=keep "$BASE_REF"; then
+        if ! GIT_CONFIG_PARAMETERS= \
+             GIT_CONFIG_COUNT=6 \
+             GIT_CONFIG_KEY_0=rebase.abbreviateCommands \
+             GIT_CONFIG_VALUE_0=false \
+             GIT_CONFIG_KEY_1=rebase.rescheduleFailedExec \
+             GIT_CONFIG_VALUE_1=false \
+             GIT_CONFIG_KEY_2=rebase.autoSquash \
+             GIT_CONFIG_VALUE_2=false \
+             GIT_CONFIG_KEY_3=rebase.updateRefs \
+             GIT_CONFIG_VALUE_3=false \
+             GIT_CONFIG_KEY_4=rebase.rebaseMerges \
+             GIT_CONFIG_VALUE_4=false \
+             GIT_CONFIG_KEY_5=rebase.instructionFormat \
+             GIT_CONFIG_VALUE_5=%s \
+             git rebase --merge --reapply-cherry-picks --empty=keep \
+                 --exec "$REPLAY_RECORDER_COMMAND" "$BASE_REF"; then
             if [[ -d "$(git rev-parse --git-path rebase-merge)" ||
                   -d "$(git rev-parse --git-path rebase-apply)" ]]; then
                 load_active_rebase_generation ||
                     hard_conflict "failed rebase left an unbound conflict generation"
+                load_trusted_replay_conflict_sequence ||
+                    hard_conflict "failed rebase changed its trusted replay sequence"
                 conflict_stage_diagnostic
                 exit "$EXIT_INDETERMINATE"
             fi
@@ -2166,18 +2681,22 @@ freeze_submit() {
         "submit head abandoned the captured base"
     require_ancestor "$REBASED_REF" "$head_oid" \
         "submit head rewrote the published rebase"
-    if printf '%s\n' \
-        start \
-        "option no-deref" \
-        "verify $CONTEXT_REF $CONTEXT_OID" \
-        "verify $EXPECTED_REF $EXPECTED_OID" \
-        "verify $PRE_REF $PRE_OID" \
-        "verify $BASE_REF $BASE_OID" \
-        "verify $REBASED_REF $REBASED_OID" \
-        "verify $BRANCH_REF $head_oid" \
-        "create $SUBMIT_REF $head_oid" \
-        prepare \
-        commit | git update-ref --stdin >/dev/null 2>&1; then
+    if {
+        printf '%s\n' \
+            start \
+            "option no-deref" \
+            "verify $CONTEXT_REF $CONTEXT_OID" \
+            "verify $EXPECTED_REF $EXPECTED_OID" \
+            "verify $PRE_REF $PRE_OID" \
+            "verify $BASE_REF $BASE_OID" \
+            "verify $REBASED_REF $REBASED_OID" \
+            "verify $BRANCH_REF $head_oid"
+        emit_complete_replay_proof_verifications "$REBASED_OID" || exit 1
+        printf '%s\n' \
+            "create $SUBMIT_REF $head_oid" \
+            prepare \
+            commit
+    } | git update-ref --stdin >/dev/null 2>&1; then
         SUBMIT_OID=$head_oid
     else
         load_namespace || hard_conflict "submit freeze left partial refs"
@@ -2570,6 +3089,9 @@ case "$ACTION" in
         ;;
     publish-rebase)
         publish_action
+        ;;
+    record-replay)
+        record_replay_action
         ;;
     submit)
         submit_action
