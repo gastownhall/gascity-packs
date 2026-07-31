@@ -99,7 +99,7 @@ GASTOWN_POLECAT_LEASE_COMMAND_CONTRACT = (
     "source metadata has no recorded artifact_dir",
     "current Git worktree does not equal source metadata.artifact_dir",
     "source metadata.branch is absent; run gc gastown polecat-workspace execute",
-    "GIT_EDITOR=true git rebase --continue",
+    "run_trusted_replay_git rebase --continue",
     'RUNTIME_IDENTITIES+=("$value")',
     '--arg actor "$STEP_ASSIGNEE"',
     "exact Graph step ownership/state changed during the lease protocol",

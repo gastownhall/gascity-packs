@@ -1230,6 +1230,8 @@ test_push_response_lost_recovery() {
         fail "lost-response recovery did not verify the remote"
     [[ "$(namespace_count)" -eq 0 ]] ||
         fail "lost-response recovery did not clean refs"
+    [[ "$(replay_proof_count)" -eq 0 ]] ||
+        fail "lost-response recovery retained completed replay-proof refs"
 }
 
 test_cleanup_transaction_retry() {
@@ -1246,6 +1248,8 @@ test_cleanup_transaction_retry() {
         fail "cleanup transaction failure was not indeterminate: $(<"$OUTPUT")"
     [[ "$(namespace_count)" -eq 6 ]] ||
         fail "failed cleanup transaction changed authoritative refs"
+    [[ "$(replay_proof_count)" -gt 0 ]] ||
+        fail "failed cleanup transaction partially removed replay-proof refs"
     [[ "$(remote_feature_oid)" == "$(local_feature_oid)" ]] ||
         fail "cleanup failure fixture did not occur after verified push"
 
@@ -1254,6 +1258,8 @@ test_cleanup_transaction_retry() {
         fail "cleanup transaction retry did not recover: $(<"$OUTPUT")"
     [[ "$(namespace_count)" -eq 0 ]] ||
         fail "cleanup transaction retry left refs"
+    [[ "$(replay_proof_count)" -eq 0 ]] ||
+        fail "cleanup transaction retry retained replay-proof refs"
 }
 
 test_metadata_cleanup_restart() {
@@ -1264,6 +1270,8 @@ test_metadata_cleanup_restart() {
         fail "metadata cleanup failure was not indeterminate: $(<"$OUTPUT")"
     [[ "$(namespace_count)" -eq 0 ]] ||
         fail "metadata cleanup failure did not occur after atomic ref cleanup"
+    [[ "$(replay_proof_count)" -eq 0 ]] ||
+        fail "metadata cleanup failure retained replay-proof refs"
     [[ "$(jq -r '.beads["source-1"].metadata.polecat_push_lease_submit_sha // ""' "$DB")" != "" ]] ||
         fail "metadata cleanup fixture did not preserve the stale mirror"
 
@@ -2467,6 +2475,109 @@ SH
     done
 }
 
+test_trusted_replay_excludes_custom_content_drivers() {
+    local scope marker driver global_config source_oid scope_rc filter_driver
+
+    for scope in global environment repo; do
+        new_case "hostile-merge-driver-$scope" true
+        marker="$STATE/hostile-merge-driver-fired"
+        driver="$STATE/drop-source-driver"
+        cat >"$driver" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+touch '$marker'
+# A successful custom driver may leave %A unchanged, silently dropping the
+# source side of the conflict.
+exit 0
+SH
+        chmod +x "$driver"
+
+        "$REAL_GIT" -C "$SEED" switch -q main
+        printf 'driver.txt merge=drop-source\n' >"$SEED/.gitattributes"
+        printf 'main side\n' >"$SEED/driver.txt"
+        "$REAL_GIT" -C "$SEED" add .gitattributes driver.txt
+        "$REAL_GIT" -C "$SEED" commit -qm main-driver-conflict
+        "$REAL_GIT" -C "$SEED" push -q origin main
+        printf 'source side\n' >"$WORK/driver.txt"
+        "$REAL_GIT" -C "$WORK" add driver.txt
+        "$REAL_GIT" -C "$WORK" commit -qm source-driver-conflict
+        source_oid=$(local_feature_oid)
+
+        case "$scope" in
+            global)
+                global_config="$STATE/hostile-global.config"
+                "$REAL_GIT" config --file "$global_config" \
+                    merge.drop-source.driver "$driver %O %A %B %L %P"
+                set +e
+                (
+                    export GIT_CONFIG_GLOBAL="$global_config"
+                    run_lease workspace
+                    exit "$RUN_RC"
+                )
+                scope_rc=$?
+                set -e
+                ;;
+            environment)
+                set +e
+                (
+                    export GIT_CONFIG_COUNT=1
+                    export GIT_CONFIG_KEY_0=merge.drop-source.driver
+                    export GIT_CONFIG_VALUE_0="$driver %O %A %B %L %P"
+                    run_lease workspace
+                    exit "$RUN_RC"
+                )
+                scope_rc=$?
+                set -e
+                ;;
+            repo)
+                "$REAL_GIT" -C "$WORK" config merge.drop-source.driver \
+                    "$driver %O %A %B %L %P"
+                run_lease workspace
+                scope_rc=$RUN_RC
+                ;;
+        esac
+
+        [[ "$scope_rc" -eq 75 ]] ||
+            fail "$scope custom merge driver did not fail closed: $(<"$OUTPUT")"
+        [[ ! -e "$marker" ]] ||
+            fail "$scope custom merge driver executed during trusted replay"
+        [[ "$(local_feature_oid)" == "$source_oid" ]] ||
+            fail "$scope custom merge driver changed the canonical source branch"
+        if [[ "$scope" == "repo" ]]; then
+            rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
+                fail "repository custom merge driver lacked its fail-closed diagnostic"
+        fi
+    done
+
+    new_case hostile-local-filter-driver true
+    marker="$STATE/hostile-filter-driver-fired"
+    filter_driver="$STATE/filter-driver"
+    cat >"$filter_driver" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+touch '$marker'
+cat
+SH
+    chmod +x "$filter_driver"
+    "$REAL_GIT" -C "$WORK" config filter.hostile.clean "$filter_driver"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 && ! -e "$marker" ]] ||
+        fail "repository filter driver did not fail closed: $(<"$OUTPUT")"
+    rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
+        fail "repository filter driver lacked its fail-closed diagnostic"
+
+    new_case hostile-local-config-include true
+    global_config="$STATE/included-hostile.config"
+    "$REAL_GIT" config --file "$global_config" \
+        merge.drop-source.driver /bin/false
+    "$REAL_GIT" -C "$WORK" config include.path "$global_config"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 75 ]] ||
+        fail "repository config include did not fail closed: $(<"$OUTPUT")"
+    rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
+        fail "repository config include lacked its fail-closed diagnostic"
+}
+
 test_conflict_resolved_to_base_keeps_empty_commit() {
     local count canonical_pre materialized_empty
     new_case conflict-resolved-to-base true
@@ -2896,6 +3007,7 @@ test_command_capture_and_publish_races
 test_multi_commit_local_ahead_rebase
 test_count_preserving_rebase_policy
 test_trusted_replay_disables_hostile_post_commit_hooks
+test_trusted_replay_excludes_custom_content_drivers
 test_conflict_resolved_to_base_keeps_empty_commit
 test_multiple_conflict_generations_and_hostile_paths
 test_conflict_proof_response_loss_and_races

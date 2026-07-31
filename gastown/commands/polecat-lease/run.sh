@@ -1041,36 +1041,79 @@ REPLAY_RECORDER_COMMAND=$(build_replay_recorder_command) ||
    "$REPLAY_RECORDER_COMMAND" != *$'\t'* ]] ||
     indeterminate "the constrained rebase recorder command is unsafe"
 
+# A repository-local include, filter, merge driver, or external diff command
+# is executable policy controlled outside the captured commit graph.  Global
+# and system configuration can be excluded from trusted Git below; local
+# configuration cannot, because Git always reads the repository config.
+# Refuse those extension points before every trusted operation.  --no-includes
+# is intentional: an include is itself rejected without opening its target.
+trusted_replay_local_config_is_safe() (
+    local keys key lower
+    unset GIT_CONFIG
+    keys=$(
+        GIT_CONFIG_PARAMETERS= \
+        GIT_CONFIG_COUNT=0 \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_SYSTEM=/dev/null \
+        GIT_CONFIG_GLOBAL=/dev/null \
+            git config --local --no-includes --name-only --list 2>/dev/null
+    ) || return 1
+    while IFS= read -r key; do
+        [[ -n "$key" ]] || continue
+        lower=${key,,}
+        case "$lower" in
+            include.*|includeif.*|filter.*|merge.*.driver|\
+            diff.*.command|diff.*.textconv|core.attributesfile)
+                printf '%s\n' \
+                    "polecat-lease: trusted replay refuses local Git configuration key $key" >&2
+                return 1
+                ;;
+        esac
+    done <<<"$keys"
+)
+
 # Every Git process which can create or advance a trusted replay receives the
-# same command-precedence configuration.  Clear both supported environment
-# config transports before adding fixed -c values, so repo/global config and
-# inherited GIT_CONFIG_* tuples cannot re-enable hooks, todo editors, signing,
-# autostash, rerere, or other state-changing replay policy.
-run_trusted_replay_git() {
-    GIT_CONFIG_PARAMETERS= \
-    GIT_CONFIG_COUNT=0 \
-    GIT_SEQUENCE_EDITOR=: \
-    GIT_EDITOR=true \
-    GIT_MERGE_AUTOEDIT=no \
-    GIT_ATTR_NOSYSTEM=1 \
-        git \
-            -c core.hooksPath=/dev/null \
-            -c core.fsmonitor=false \
-            -c core.commentChar=# \
-            -c commit.gpgSign=false \
-            -c rebase.abbreviateCommands=false \
-            -c rebase.rescheduleFailedExec=false \
-            -c rebase.autoSquash=false \
-            -c rebase.autoStash=false \
-            -c rebase.updateRefs=false \
-            -c rebase.rebaseMerges=false \
-            -c rebase.instructionFormat=%s \
-            -c rebase.missingCommitsCheck=error \
-            -c rerere.enabled=false \
-            -c rerere.autoupdate=false \
-            -c sequence.editor=: \
-            "$@"
-}
+# same command-precedence configuration.  Exclude system/global config and
+# attributes, clear both supported environment config transports, reject
+# executable local extension points above, and add fixed -c policy so hooks,
+# todo editors, signing, filters, custom merge/diff drivers, autostash, rerere,
+# and other state-changing replay policy cannot influence the replay.
+run_trusted_replay_git() (
+    trusted_replay_local_config_is_safe || return 1
+    unset GIT_CONFIG GIT_ATTR_SOURCE GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
+    export GIT_CONFIG_PARAMETERS=
+    export GIT_CONFIG_COUNT=0
+    export GIT_CONFIG_NOSYSTEM=1
+    export GIT_CONFIG_SYSTEM=/dev/null
+    export GIT_CONFIG_GLOBAL=/dev/null
+    export GIT_SEQUENCE_EDITOR=:
+    export GIT_EDITOR=true
+    export GIT_MERGE_AUTOEDIT=no
+    export GIT_ATTR_NOSYSTEM=1
+    export GIT_ATTR_SYSTEM=/dev/null
+    export GIT_ATTR_GLOBAL=/dev/null
+    git \
+        -c core.hooksPath=/dev/null \
+        -c core.attributesFile=/dev/null \
+        -c core.autocrlf=false \
+        -c core.eol=lf \
+        -c core.fsmonitor=false \
+        -c core.commentChar=# \
+        -c commit.gpgSign=false \
+        -c merge.renormalize=false \
+        -c rebase.abbreviateCommands=false \
+        -c rebase.rescheduleFailedExec=false \
+        -c rebase.autoSquash=false \
+        -c rebase.autoStash=false \
+        -c rebase.updateRefs=false \
+        -c rebase.rebaseMerges=false \
+        -c rebase.instructionFormat=%s \
+        -c rebase.missingCommitsCheck=error \
+        -c rerere.enabled=false \
+        -c rerere.autoupdate=false \
+        -c sequence.editor=: \
+        "$@"
+)
 
 # The trusted sequencer records one immutable source/result pair per frozen
 # source commit.  Its last exec creates the final ref in the same transaction
@@ -1286,6 +1329,23 @@ emit_complete_replay_proof_verifications() {
             "verify $replay_ref ${REPLAY_RESULT_COMMITS[ordinal - 1]}"
     done
     printf '%s\n' "verify $REPLAY_PROOF_FINAL_REF $expected_tip"
+}
+
+emit_complete_replay_proof_deletions() {
+    local expected_tip=$1 ordinal source_ref replay_ref
+    [[ "$REPLAY_PROOF_STATE" == "complete" &&
+       "$REPLAY_PROOF_RECORDED" -eq "$REPLAY_SOURCE_COUNT" &&
+       "$REPLAY_PROOF_FINAL_OID" == "$expected_tip" ]] || return 1
+    printf '%s\n' \
+        "delete $REPLAY_PROOF_CONTEXT_REF $REPLAY_PROOF_GENERATION"
+    for ((ordinal = 1; ordinal <= REPLAY_SOURCE_COUNT; ordinal++)); do
+        source_ref=$(replay_ordinal_ref source "$ordinal") || return 1
+        replay_ref=$(replay_ordinal_ref replay "$ordinal") || return 1
+        printf '%s\n' \
+            "delete $source_ref ${REPLAY_SOURCE_COMMITS[ordinal - 1]}" \
+            "delete $replay_ref ${REPLAY_RESULT_COMMITS[ordinal - 1]}"
+    done
+    printf '%s\n' "delete $REPLAY_PROOF_FINAL_REF $expected_tip"
 }
 
 validate_candidate_lineage() {
@@ -2504,6 +2564,9 @@ finish_trusted_rebase() {
 workspace_action() {
     local branch_oid rebase_help
 
+    trusted_replay_local_config_is_safe ||
+        indeterminate "local Git configuration enables an unsafe trusted-replay extension point"
+
     if [[ "$NS_STATE" == "candidate" ]]; then
         read_push_remote
         case "$REMOTE_STATE" in
@@ -2774,19 +2837,26 @@ freeze_submit() {
 }
 
 cleanup_namespace() {
+    local remaining_replay_refs
     prove_live_source_step
-    if printf '%s\n' \
-        start \
-        "option no-deref" \
-        "verify $BRANCH_REF $SUBMIT_OID" \
-        "delete $CONTEXT_REF $CONTEXT_OID" \
-        "delete $EXPECTED_REF $EXPECTED_OID" \
-        "delete $PRE_REF $PRE_OID" \
-        "delete $BASE_REF $BASE_OID" \
-        "delete $REBASED_REF $REBASED_OID" \
-        "delete $SUBMIT_REF $SUBMIT_OID" \
-        prepare \
-        commit | git update-ref --stdin >/dev/null 2>&1; then
+    validate_complete_replay_proof "$REBASED_OID" ||
+        hard_conflict "lease cleanup requires its exact complete replay proof"
+    if {
+        printf '%s\n' \
+            start \
+            "option no-deref" \
+            "verify $BRANCH_REF $SUBMIT_OID" \
+            "delete $CONTEXT_REF $CONTEXT_OID" \
+            "delete $EXPECTED_REF $EXPECTED_OID" \
+            "delete $PRE_REF $PRE_OID" \
+            "delete $BASE_REF $BASE_OID" \
+            "delete $REBASED_REF $REBASED_OID" \
+            "delete $SUBMIT_REF $SUBMIT_OID"
+        emit_complete_replay_proof_deletions "$REBASED_OID" || exit 1
+        printf '%s\n' \
+            prepare \
+            commit
+    } | git update-ref --stdin >/dev/null 2>&1; then
         :
     else
         load_namespace || hard_conflict "lease cleanup exposed partial refs"
@@ -2798,6 +2868,11 @@ cleanup_namespace() {
     load_namespace || hard_conflict "post-cleanup namespace is partial"
     [[ "$NS_STATE" == "absent" ]] ||
         indeterminate "lease refs remain after cleanup"
+    remaining_replay_refs=$(git for-each-ref --format='%(refname)' \
+        "$REPLAY_PROOF_NS/" 2>/dev/null) ||
+        indeterminate "could not verify replay-proof cleanup"
+    [[ -z "$remaining_replay_refs" ]] ||
+        indeterminate "replay-proof refs remain after cleanup"
     clear_mirror || indeterminate "lease metadata remains after ref cleanup"
 }
 
