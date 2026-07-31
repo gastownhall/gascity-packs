@@ -4898,7 +4898,6 @@ description = "Override sink that writes the base triage report contract."
     def test_build_artifact_check_failure_surfaces_gc_bd_stderr(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
-        jq_dir = pathlib.Path(shutil.which("jq") or "/usr/bin/jq").parent
 
         with tempfile.TemporaryDirectory() as tmp:
             bin_dir = pathlib.Path(tmp) / "bin"
@@ -4914,7 +4913,7 @@ description = "Override sink that writes the base triage report contract."
             env = {
                 **os.environ,
                 "GC_BEAD_ID": "bd-err",
-                "PATH": f"{bin_dir}:{jq_dir}:/usr/bin:/bin",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
             }
             result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
 
@@ -4925,7 +4924,6 @@ description = "Override sink that writes the base triage report contract."
     def test_implementation_review_check_notes_gc_bd_stderr_on_tolerant_paths(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
-        jq_dir = pathlib.Path(shutil.which("jq") or "/usr/bin/jq").parent
 
         with tempfile.TemporaryDirectory() as tmp:
             bin_dir = pathlib.Path(tmp) / "bin"
@@ -4933,8 +4931,15 @@ description = "Override sink that writes the base triage report contract."
             fake_gc = bin_dir / "gc"
             fake_gc.write_text(
                 "#!/bin/sh\n"
-                "echo 'STORE_UNAVAILABLE backing store offline' >&2\n"
-                "exit 3\n",
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  echo 'STDERR_A root lookup unavailable' >&2\n"
+                "  exit 3\n"
+                "fi\n"
+                "if [ \"$2\" = \"list\" ]; then\n"
+                "  echo 'STDERR_B list lookup unavailable' >&2\n"
+                "  exit 3\n"
+                "fi\n"
+                "exit 99\n",
                 encoding="utf-8",
             )
             fake_gc.chmod(0o755)
@@ -4942,7 +4947,7 @@ description = "Override sink that writes the base triage report contract."
                 **os.environ,
                 "GC_BEAD_ID": "root-err",
                 "GC_ITERATION": "1",
-                "PATH": f"{bin_dir}:{jq_dir}:/usr/bin:/bin",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
             }
             result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
 
@@ -4950,7 +4955,74 @@ description = "Override sink that writes the base triage report contract."
         # than crashing), but the attempt log now carries the real error.
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("review check: note: gc bd show root-err failed", result.stderr)
-        self.assertIn("STORE_UNAVAILABLE", result.stderr)
+        self.assertIn("STDERR_A", result.stderr)
+        self.assertIn("review check: note: gc bd list for root root-err failed", result.stderr)
+        self.assertIn("STDERR_B", result.stderr)
+        self.assertIn("Implementation review needs another iteration: missing verdict", result.stdout)
+
+    def test_design_review_check_surfaces_gc_bd_list_pipeline_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"root-ok\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "echo 'DISTINCTIVE_LIST_FAILURE' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "bead-ok",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR: gc bd list/jq pipeline for root root-ok failed", result.stderr)
+        self.assertIn("DISTINCTIVE_LIST_FAILURE", result.stderr)
+
+    def test_gap_analysis_check_notes_gc_bd_stderr_on_tolerant_paths(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "gap-analysis-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  echo 'GAP_SHOW_FAILURE' >&2\n"
+                "else\n"
+                "  echo 'GAP_LIST_FAILURE' >&2\n"
+                "fi\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "gap-root",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("gap check: note: gc bd show gap-root failed", result.stderr)
+        self.assertIn("GAP_SHOW_FAILURE", result.stderr)
+        self.assertIn("gap check: note: gc bd list for root gap-root failed", result.stderr)
+        self.assertIn("GAP_LIST_FAILURE", result.stderr)
+        self.assertIn("Gap analysis needs another iteration: missing verdict", result.stdout)
 
 
 if __name__ == "__main__":

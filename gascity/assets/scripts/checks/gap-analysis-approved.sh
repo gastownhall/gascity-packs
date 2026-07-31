@@ -23,15 +23,17 @@ metadata_value() {
 }
 
 GC_ERR="$(mktemp)"
-ROOT_JSON="$(gc bd show "$ROOT_ID" --json 2>"$GC_ERR" || true)"
-[ -n "$ROOT_JSON" ] || echo "gap check: note: gc bd show $ROOT_ID failed: $(head -c 400 "$GC_ERR" | tr '\n' ' ')" >&2
+trap 'rm -f "$GC_ERR"' EXIT
+if ! ROOT_JSON="$(gc bd show "$ROOT_ID" --json 2>"$GC_ERR")"; then
+  echo "gap check: note: gc bd show $ROOT_ID failed: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')" >&2
+fi
 PARENT_ROOT="$(metadata_value "$ROOT_JSON" "gc.root_bead_id")"
 if [ -z "$PARENT_ROOT" ]; then
   PARENT_ROOT="$ROOT_ID"
 fi
 
 MATCHES="$(gc bd list --all --metadata-field "gc.root_bead_id=$PARENT_ROOT" --json --limit=0 2>"$GC_ERR")" || {
-  echo "gap check: note: gc bd list for root $PARENT_ROOT failed: $(head -c 400 "$GC_ERR" | tr '\n' ' ')" >&2
+  echo "gap check: note: gc bd list for root $PARENT_ROOT failed: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')" >&2
   MATCHES='[]'
 }
 
