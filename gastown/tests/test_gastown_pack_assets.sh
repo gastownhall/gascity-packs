@@ -594,6 +594,73 @@ PY
         fail "polecat prompt must distinguish lease refs from the metadata mirror"
 }
 
+test_self_review_renders_valid_affected_test_shell() {
+    local formula="$GASTOWN/formulas/mol-polecat-work.toml"
+
+    if ! python3 - "$formula" <<'PY'
+import re
+import subprocess
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    document = tomllib.load(handle)
+
+self_review = next(
+    step["description"]
+    for step in document["steps"]
+    if step["id"] == "self-review"
+)
+fences = [
+    block
+    for block in re.findall(r"```bash\n(.*?)\n```", self_review, re.DOTALL)
+    if "POLECAT_AFFECTED_TESTS" in block
+]
+if len(fences) != 1:
+    raise SystemExit(
+        f"self-review has {len(fences)} affected-test shell fences, want 1"
+    )
+
+outer = fences[0]
+opener = "-- bash -se <<'POLECAT_AFFECTED_TESTS'\n"
+closer = "\nPOLECAT_AFFECTED_TESTS"
+if opener not in outer or not outer.endswith(closer):
+    raise SystemExit("self-review affected-test executor fence is malformed")
+body = outer.split(opener, 1)[1][:-len(closer)]
+
+cases = {
+    "empty": "",
+    "nonempty": "printf '%s\\n' affected",
+}
+for label, affected_command in cases.items():
+    rendered = body
+    for template, value in {
+        "{{affected_tests_command}}": affected_command,
+        "{{test_command}}": "printf '%s\\n' full",
+        "{{base_branch}}": "main",
+    }.items():
+        rendered = rendered.replace(template, value)
+    if "{{" in rendered or "}}" in rendered:
+        raise SystemExit(
+            f"{label} affected-test render retained a template expression"
+        )
+    result = subprocess.run(
+        ["bash", "-n"],
+        input=rendered,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"{label} affected-test render is invalid Bash: {result.stderr.strip()}"
+        )
+PY
+    then
+        fail "self-review affected-test rendering must be valid with empty and nonempty commands"
+    fi
+}
+
 test_polecat_workflow_is_fail_fast_scoped() {
     local formula="$GASTOWN/formulas/mol-polecat-work.toml"
 
@@ -1010,6 +1077,7 @@ test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
 test_polecat_startup_uses_scripted_hook_claim
 test_polecat_submit_guard_and_step_completion_contracts
+test_self_review_renders_valid_affected_test_shell
 test_polecat_workflow_is_fail_fast_scoped
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed

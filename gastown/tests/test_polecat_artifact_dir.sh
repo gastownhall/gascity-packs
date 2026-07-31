@@ -227,6 +227,61 @@ test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt() {
         fail "dirty sync moved provider HEAD"
 }
 
+test_worktree_sync_ignores_stale_marker_but_rejects_unrelated_dirt() {
+    local tmp rig remote city provider exclude head_before status stderr
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    rig="$tmp/rig"
+    remote="$tmp/remote.git"
+    city="$tmp/city"
+    provider="$city/.gc/worktrees/demo/refinery"
+    stderr="$tmp/sync.stderr"
+
+    init_repo "$rig"
+    git -C "$rig" branch -M main
+    git init -q --bare "$remote"
+    git -C "$remote" symbolic-ref HEAD refs/heads/main
+    git -C "$rig" remote add origin "$remote"
+    git -C "$rig" push -qu origin main
+
+    "$WORKTREE_SETUP" "$rig" "$provider" refinery
+
+    exclude=$(git -C "$provider" rev-parse --git-path info/exclude)
+    [[ "$(grep -cxF '.worktree-stale' "$exclude")" -eq 1 ]] ||
+        fail "resolved repository-local exclude does not contain exactly one .worktree-stale entry"
+
+    # The supervisor's stale marker is runtime-owned state. A provider whose
+    # only new entry is this marker must remain synchronizable, and sync must
+    # neither consume the marker nor duplicate its local-exclude rule.
+    touch "$provider/.worktree-stale"
+    [[ -z "$(git -C "$provider" status --porcelain --untracked-files=all)" ]] ||
+        fail ".worktree-stale remains visible to git status"
+    "$WORKTREE_SETUP" "$rig" "$provider" refinery --sync
+    [[ -f "$provider/.worktree-stale" ]] ||
+        fail "strict sync removed the supervisor's .worktree-stale marker"
+    [[ "$(grep -cxF '.worktree-stale' "$exclude")" -eq 1 ]] ||
+        fail "strict sync did not preserve exactly one .worktree-stale exclude"
+
+    # Ignoring the exact runtime marker must not weaken the fail-closed guard
+    # for any other untracked provider content.
+    head_before=$(git -C "$provider" rev-parse HEAD)
+    printf '%s\n' 'preserve me' >"$provider/dirty.txt"
+    set +e
+    "$WORKTREE_SETUP" "$rig" "$provider" refinery --sync 2>"$stderr"
+    status=$?
+    set -e
+    [[ "$status" -ne 0 ]] ||
+        fail "strict sync accepted unrelated dirt beside .worktree-stale"
+    grep -qF "refusing to sync dirty provider worktree at $provider" "$stderr" ||
+        fail "dirty sync beside .worktree-stale did not report the fail-closed refusal"
+    [[ -f "$provider/.worktree-stale" ]] ||
+        fail "dirty sync discarded the supervisor's .worktree-stale marker"
+    [[ -f "$provider/dirty.txt" ]] ||
+        fail "dirty sync discarded unrelated provider worktree dirt"
+    [[ "$(git -C "$provider" rev-parse HEAD)" == "$head_before" ]] ||
+        fail "dirty sync beside .worktree-stale moved provider HEAD"
+}
+
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch() {
     local tmp rig remote city provider stable hash task_sha detached_sha
     local stable_sha foreign foreign_head foreign_exclude_before status
@@ -1468,6 +1523,7 @@ test_validator_rejects_provider_and_unrelated_paths
 # test_polecat_workspace_command.sh instead of extracting formula prose.
 test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores
 test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt
+test_worktree_sync_ignores_stale_marker_but_rejects_unrelated_dirt
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch
 test_shutdown_probe_scopes_rig_and_fails_closed
 test_cleanup_command_is_idempotent_and_mr_retryable

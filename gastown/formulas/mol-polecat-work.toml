@@ -489,6 +489,7 @@ gc gastown polecat-step exec \
   --step-ref "mol-polecat-work.self-review" \
   -- bash -se <<'POLECAT_AFFECTED_TESTS'
 if [ -n "{{affected_tests_command}}" ]; then
+    :
     # Rig has an affected-tests detector. Run only the tests our diff
     # touches — same logic the rig's CI uses to dispatch test workflows.
     # The command must read `git diff --name-only origin/{{base_branch}}...HEAD`

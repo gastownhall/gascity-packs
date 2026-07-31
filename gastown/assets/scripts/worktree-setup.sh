@@ -200,6 +200,7 @@ install_local_excludes() {
     append_exclude ".github/hooks/"
     append_exclude ".github/copilot-instructions.md"
     append_exclude "state.json"
+    append_exclude ".worktree-stale"
 }
 
 # Idempotent: skip if worktree already exists.
