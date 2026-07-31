@@ -293,6 +293,25 @@ done
 GIT_SUBCOMMAND=${git_args[git_arg_index]:-}
 GIT_SUBARG1=${git_args[git_arg_index + 1]:-}
 
+case "$GIT_SUBCOMMAND" in
+    fetch|switch|merge)
+        [[ " ${git_args[*]} " == *" -c core.fsmonitor=false "* &&
+           " ${git_args[*]} " == *" -c submodule.recurse=false "* ]] ||
+            exit 89
+        ;;
+esac
+if [[ "$GIT_SUBCOMMAND" == "fetch" ]]; then
+    [[ " ${git_args[*]} " == *" --no-recurse-submodules "* ]] || exit 89
+fi
+if [[ "$GIT_SUBCOMMAND" == "merge" ]]; then
+    [[ " ${git_args[*]} " == *" --no-autostash "* &&
+       " ${git_args[*]} " == *" --no-squash "* ]] || exit 89
+fi
+if [[ "$GIT_SUBCOMMAND" == "push" ]]; then
+    [[ " ${git_args[*]} " == *" --no-follow-tags "* &&
+       " ${git_args[*]} " == *" --no-recurse-submodules "* ]] || exit 89
+fi
+
 if [[ "$GIT_SUBCOMMAND" == "ls-remote" &&
       "${GIT_LS_REMOTE_UNREADABLE:-0}" == "1" ]]; then
     exit 128
@@ -2475,6 +2494,62 @@ SH
     done
 }
 
+test_trusted_mutations_disable_reference_transaction_hooks() {
+    local hooks_dir marker global_home global_config driver scope_rc
+
+    new_case hostile-reference-transaction-hook true
+    hooks_dir="$STATE/hostile-reference-hooks"
+    marker="$STATE/hostile-reference-transaction-fired"
+    mkdir -p "$hooks_dir"
+    cat >"$hooks_dir/reference-transaction" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+touch '$marker'
+exit 1
+SH
+    chmod +x "$hooks_dir/reference-transaction"
+    "$REAL_GIT" -C "$WORK" config core.hooksPath "$hooks_dir"
+    run_lease workspace
+    [[ "$RUN_RC" -eq 0 ]] ||
+        fail "filesystem reference-transaction hook broke trusted mutations: $(<"$OUTPUT")"
+    [[ ! -e "$marker" ]] ||
+        fail "filesystem reference-transaction hook executed during trusted mutations"
+    [[ "$(replay_proof_count)" -eq 4 &&
+       "$(replay_mapping_count source)" -eq 1 &&
+       "$(replay_mapping_count replay)" -eq 1 ]] ||
+        fail "hook-isolated mutations did not retain the exact replay mapping"
+
+    new_case hostile-standard-global-config-hook true
+    marker="$STATE/hostile-global-config-hook-fired"
+    driver="$STATE/hostile-global-config-hook"
+    global_home="$STATE/home"
+    global_config="$global_home/.gitconfig"
+    mkdir -p "$global_home"
+    cat >"$driver" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+touch '$marker'
+exit 1
+SH
+    chmod +x "$driver"
+    "$REAL_GIT" config --file "$global_config" \
+        hook.hostile.command "$driver"
+    "$REAL_GIT" config --file "$global_config" --add \
+        hook.hostile.event reference-transaction
+    set +e
+    (
+        export HOME="$global_home"
+        run_lease workspace
+        exit "$RUN_RC"
+    )
+    scope_rc=$?
+    set -e
+    [[ "$scope_rc" -eq 75 && ! -e "$marker" ]] ||
+        fail "standard global configured hook did not fail closed: $(<"$OUTPUT")"
+    rg -q 'unsafe trusted-replay extension point' "$OUTPUT" ||
+        fail "standard global configured hook lacked its fail-closed diagnostic"
+}
+
 test_trusted_replay_excludes_custom_content_drivers() {
     local scope marker driver global_config source_oid scope_rc filter_driver
     local key value common_dir git_dir attributes_file
@@ -2588,7 +2663,8 @@ SH
         fail "repository config include lacked its fail-closed diagnostic"
 
     for key in merge.default merge.drop-source.recursive diff.external \
-        hook.hostile.command gc.recentObjectsHook; do
+        hook.hostile.command gc.recentObjectsHook core.fsmonitor \
+        core.alternateRefsCommand; do
         new_case "hostile-local-${key//./-}" true
         marker="$STATE/hostile-$key-fired"
         driver="$STATE/hostile-$key-driver"
@@ -3126,6 +3202,7 @@ test_command_capture_and_publish_races
 test_multi_commit_local_ahead_rebase
 test_count_preserving_rebase_policy
 test_trusted_replay_disables_hostile_post_commit_hooks
+test_trusted_mutations_disable_reference_transaction_hooks
 test_trusted_replay_excludes_custom_content_drivers
 test_conflict_resolved_to_base_keeps_empty_commit
 test_multiple_conflict_generations_and_hostile_paths

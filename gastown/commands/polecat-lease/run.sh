@@ -288,11 +288,6 @@ for ref in "$REBASE_WORK_REF" "$CONTEXT_REF" "$EXPECTED_REF" "$PRE_REF" "$BASE_R
         indeterminate "Git rejected an internal lease ref"
 done
 
-if ! printf 'start\noption no-deref\nprepare\nabort\n' |
-     git update-ref --stdin >/dev/null 2>&1; then
-    indeterminate "Git lacks transactional update-ref support"
-fi
-
 EXPECTED_STEP_REF="mol-polecat-work.workspace-setup"
 if [[ "$ACTION" == "submit" ]]; then
     EXPECTED_STEP_REF="mol-polecat-work.submit-and-exit"
@@ -1087,9 +1082,32 @@ trusted_replay_config_file_is_safe() {
             include.*|includeif.*|filter.*|hook.*|\
             merge.*.driver|merge.*.recursive|\
             merge.default|diff.external|diff.*.command|diff.*.textconv|\
-            core.attributesfile|core.worktree|gc.recentobjectshook)
+            core.alternaterefscommand|core.attributesfile|\
+            core.fsmonitor|core.worktree|\
+            gc.recentobjectshook)
                 printf '%s\n' \
                     "polecat-lease: trusted replay refuses $scope Git configuration key $key" >&2
+                return 1
+                ;;
+        esac
+    done <<<"$keys"
+}
+
+trusted_replay_effective_hooks_are_absent() {
+    local keys key lower
+
+    keys=$(
+        GIT_CONFIG_PARAMETERS= \
+        GIT_CONFIG_COUNT=0 \
+            git config --includes --name-only --list 2>/dev/null
+    ) || return 1
+    while IFS= read -r key; do
+        [[ -n "$key" ]] || continue
+        lower=${key,,}
+        case "$lower" in
+            hook.*)
+                printf '%s\n' \
+                    "polecat-lease: trusted mutation refuses effective Git hook configuration key $key" >&2
                 return 1
                 ;;
         esac
@@ -1149,6 +1167,7 @@ trusted_replay_external_policy_is_safe() (
         "$common_dir/config" "repository-local" || return 1
     trusted_replay_config_file_is_safe \
         "$git_dir/config.worktree" "linked-worktree" || return 1
+    trusted_replay_effective_hooks_are_absent || return 1
 
     common_attributes="$common_dir/info/attributes"
     worktree_attributes="$git_dir/info/attributes"
@@ -1167,6 +1186,63 @@ trusted_replay_external_policy_is_safe() (
             "$worktree_grafts" "linked-worktree grafts" || return 1
     fi
 )
+
+# Fetch, checkout, merge, and local-ref transactions can invoke filesystem or
+# config-defined hooks.  Preserve ordinary user/system auth and URL policy for
+# networked mutations, but reject every effective configured hook and suppress
+# the repository hook directory around the exact command.
+run_hook_isolated_git() (
+    local rc=0
+    trusted_replay_external_policy_is_safe || return 1
+    unset GIT_CONFIG GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+    unset GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    unset GIT_QUARANTINE_PATH GIT_SHALLOW_FILE GIT_GRAFT_FILE
+    unset GIT_REPLACE_REF_BASE GIT_NAMESPACE
+    unset GIT_ATTR_SOURCE GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
+    export GIT_CONFIG_PARAMETERS=
+    export GIT_CONFIG_COUNT=0
+    git \
+        -c core.fsmonitor=false \
+        -c core.hooksPath=/dev/null \
+        -c gc.auto=0 \
+        -c maintenance.auto=false \
+        -c submodule.recurse=false \
+        "$@" || rc=$?
+    trusted_replay_external_policy_is_safe || return 1
+    return "$rc"
+)
+
+# Ref/proof CAS transactions need no user configuration.  Excluding those
+# scopes as well makes update-ref's prepared/committed hook phases inert while
+# retaining the same before/after persistent-policy checks.
+run_trusted_ref_transaction() (
+    local rc=0
+    trusted_replay_external_policy_is_safe || return 1
+    unset GIT_CONFIG GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+    unset GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    unset GIT_QUARANTINE_PATH GIT_SHALLOW_FILE GIT_GRAFT_FILE
+    unset GIT_REPLACE_REF_BASE GIT_NAMESPACE
+    unset GIT_ATTR_SOURCE GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
+    export GIT_CONFIG_PARAMETERS=
+    export GIT_CONFIG_COUNT=0
+    export GIT_CONFIG_NOSYSTEM=1
+    export GIT_CONFIG_SYSTEM=/dev/null
+    export GIT_CONFIG_GLOBAL=/dev/null
+    git \
+        -c core.hooksPath=/dev/null \
+        -c gc.auto=0 \
+        -c maintenance.auto=false \
+        update-ref --stdin || rc=$?
+    trusted_replay_external_policy_is_safe || return 1
+    return "$rc"
+)
+
+trusted_replay_external_policy_is_safe ||
+    indeterminate "repository, worktree, or effective hook policy enables an unsafe trusted-replay extension point"
+if ! printf 'start\noption no-deref\nprepare\nabort\n' |
+     run_trusted_ref_transaction >/dev/null 2>&1; then
+    indeterminate "Git lacks isolated transactional update-ref support"
+fi
 
 # Every Git process which can create or advance a trusted replay receives the
 # same command-precedence configuration.  Exclude system/global config and
@@ -1994,12 +2070,14 @@ if [[ "$NS_STATE" == "absent" && "$MIRROR_COUNT" -ne 0 ]]; then
 fi
 
 fetch_base() {
-    git fetch --no-tags -- "$FETCH_URL" \
+    run_hook_isolated_git fetch --no-tags --no-recurse-submodules \
+        -- "$FETCH_URL" \
         "+refs/heads/$BASE_BRANCH:$BASE_REMOTE_REF" >/dev/null 2>&1
 }
 
 fetch_feature_from_push_remote() {
-    git fetch --no-tags -- "$PUSH_URL" \
+    run_hook_isolated_git fetch --no-tags --no-recurse-submodules \
+        -- "$PUSH_URL" \
         "+$BRANCH_REF:$TRACKING_REF" >/dev/null 2>&1
 }
 
@@ -2035,7 +2113,7 @@ capture_lease() {
         "create $BASE_REF $BASE_OID" \
         "create $REBASE_WORK_REF $PRE_OID" \
         prepare \
-        commit | git update-ref --stdin >/dev/null 2>&1; then
+        commit | run_trusted_ref_transaction >/dev/null 2>&1; then
         :
     else
         load_namespace || hard_conflict "concurrent lease creation left partial refs"
@@ -2093,7 +2171,7 @@ record_rebase_candidate() {
             "create $CANDIDATE_REF $result" \
             prepare \
             commit
-    } | git update-ref --stdin >/dev/null 2>&1; then
+    } | run_trusted_ref_transaction >/dev/null 2>&1; then
         :
     else
         load_namespace || hard_conflict "candidate recording left partial refs"
@@ -2161,7 +2239,7 @@ publish_rebase_result() {
             "delete $REBASE_WORK_REF $result" \
             prepare \
             commit
-    } | git update-ref --stdin >/dev/null 2>&1; then
+    } | run_trusted_ref_transaction >/dev/null 2>&1; then
         REBASED_OID=$result
         CANDIDATE_OID=""
         REBASE_WORK_OID=""
@@ -2629,7 +2707,7 @@ record_replay_action() {
     if emit_replay_record_transaction \
             "$ordinal" "$source_ref" "$replay_ref" \
             "$source_oid" "$replay_oid" |
-        git update-ref --stdin >/dev/null 2>&1; then
+        run_trusted_ref_transaction >/dev/null 2>&1; then
         :
     else
         validate_replay_proof_prefix ||
@@ -2858,7 +2936,7 @@ workspace_action() {
             branch_oid=$(read_ref "$BRANCH_REF") ||
                 indeterminate "could not inspect the local feature branch"
             if [[ -n "$branch_oid" ]]; then
-                git switch --no-recurse-submodules \
+                run_hook_isolated_git switch --no-recurse-submodules \
                     "$BRANCH" >/dev/null 2>&1 ||
                     indeterminate "could not check out the existing branch"
                 if checked_ancestor "$TRACKING_REF" "$branch_oid" \
@@ -2866,13 +2944,14 @@ workspace_action() {
                     :
                 elif checked_ancestor "$branch_oid" "$TRACKING_REF" \
                     "local branch versus fetched feature tip"; then
-                    git merge --ff-only "$TRACKING_REF" >/dev/null 2>&1 ||
+                    run_hook_isolated_git merge --ff-only --no-autostash \
+                        --no-squash "$TRACKING_REF" >/dev/null 2>&1 ||
                         indeterminate "local branch could not fast-forward to the fetched feature tip"
                 else
                     hard_conflict "local branch diverged before lease capture"
                 fi
             else
-                git switch --no-recurse-submodules \
+                run_hook_isolated_git switch --no-recurse-submodules \
                     -c "$BRANCH" "$TRACKING_REF" >/dev/null 2>&1 ||
                     indeterminate "could not create the local tracking branch"
             fi
@@ -2886,7 +2965,7 @@ workspace_action() {
                 indeterminate "could not inspect the local-only feature branch"
             [[ -n "$branch_oid" ]] ||
                 hard_conflict "metadata branch exists neither locally nor remotely"
-            git switch --no-recurse-submodules \
+            run_hook_isolated_git switch --no-recurse-submodules \
                 "$BRANCH" >/dev/null 2>&1 ||
                 indeterminate "could not check out the local-only branch"
             ;;
@@ -2956,7 +3035,7 @@ freeze_submit() {
             "create $SUBMIT_REF $head_oid" \
             prepare \
             commit
-    } | git update-ref --stdin >/dev/null 2>&1; then
+    } | run_trusted_ref_transaction >/dev/null 2>&1; then
         SUBMIT_OID=$head_oid
     else
         load_namespace || hard_conflict "submit freeze left partial refs"
@@ -2994,7 +3073,7 @@ cleanup_namespace() {
         printf '%s\n' \
             prepare \
             commit
-    } | git update-ref --stdin >/dev/null 2>&1; then
+    } | run_trusted_ref_transaction >/dev/null 2>&1; then
         :
     else
         load_namespace || hard_conflict "lease cleanup exposed partial refs"
@@ -3030,7 +3109,8 @@ normal_push() {
     fi
     ref_equals "$BRANCH_REF" "$head_oid" ||
         indeterminate "ordinary branch changed before its frozen oid could be pushed"
-    git push -- "$PUSH_URL" "$head_oid:$BRANCH_REF"
+    git push --no-follow-tags --no-recurse-submodules \
+        -- "$PUSH_URL" "$head_oid:$BRANCH_REF"
     push_code=$?
     if [[ "$push_code" -ne 0 ]]; then
         read_push_remote
@@ -3076,6 +3156,8 @@ leased_push() {
 
     prove_live_source_step
     git push \
+        --no-follow-tags \
+        --no-recurse-submodules \
         --force-with-lease="$BRANCH_REF:$EXPECTED_OID" \
         -- "$PUSH_URL" "$SUBMIT_REF:$BRANCH_REF"
     push_code=$?
@@ -3204,7 +3286,8 @@ revalidate_submit_proof_inputs() {
         indeterminate "could not read the branch before submit-proof publication"
     [[ "$branch_oid" == "$expected_head" ]] ||
         indeterminate "canonical branch changed before submit-proof publication"
-    clean_status=$(git status --porcelain --untracked-files=all 2>/dev/null) ||
+    clean_status=$(run_hook_isolated_git status \
+        --porcelain --untracked-files=all 2>/dev/null) ||
         indeterminate "could not inspect final task-artifact status"
     [[ -z "$clean_status" ]] ||
         indeterminate "task artifact is dirty; refusing submit-proof publication"
@@ -3280,7 +3363,7 @@ persist_submit_proof() {
         "create $SUBMIT_PROOF_CONTEXT_REF $context_oid" \
         "create $SUBMIT_PROOF_HEAD_REF $head_oid" \
         prepare \
-        commit | git update-ref --stdin >/dev/null 2>&1; then
+        commit | run_trusted_ref_transaction >/dev/null 2>&1; then
         :
     else
         load_submit_proof ||
