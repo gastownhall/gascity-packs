@@ -247,20 +247,20 @@ test_worktree_sync_ignores_stale_marker_but_rejects_unrelated_dirt() {
     "$WORKTREE_SETUP" "$rig" "$provider" refinery
 
     exclude=$(git -C "$provider" rev-parse --git-path info/exclude)
-    [[ "$(grep -cxF '.worktree-stale' "$exclude")" -eq 1 ]] ||
-        fail "resolved repository-local exclude does not contain exactly one .worktree-stale entry"
+    [[ "$(grep -cxF '/.worktree-stale' "$exclude")" -eq 1 ]] ||
+        fail "resolved repository-local exclude does not contain exactly one root-anchored /.worktree-stale entry"
 
     # The supervisor's stale marker is runtime-owned state. A provider whose
     # only new entry is this marker must remain synchronizable, and sync must
     # neither consume the marker nor duplicate its local-exclude rule.
     touch "$provider/.worktree-stale"
     [[ -z "$(git -C "$provider" status --porcelain --untracked-files=all)" ]] ||
-        fail ".worktree-stale remains visible to git status"
+        fail "root .worktree-stale marker was not ignored by git status"
     "$WORKTREE_SETUP" "$rig" "$provider" refinery --sync
     [[ -f "$provider/.worktree-stale" ]] ||
         fail "strict sync removed the supervisor's .worktree-stale marker"
-    [[ "$(grep -cxF '.worktree-stale' "$exclude")" -eq 1 ]] ||
-        fail "strict sync did not preserve exactly one .worktree-stale exclude"
+    [[ "$(grep -cxF '/.worktree-stale' "$exclude")" -eq 1 ]] ||
+        fail "strict sync did not preserve exactly one root-anchored /.worktree-stale exclude"
 
     # Ignoring the exact runtime marker must not weaken the fail-closed guard
     # for any other untracked provider content.
@@ -280,6 +280,53 @@ test_worktree_sync_ignores_stale_marker_but_rejects_unrelated_dirt() {
         fail "dirty sync discarded unrelated provider worktree dirt"
     [[ "$(git -C "$provider" rev-parse HEAD)" == "$head_before" ]] ||
         fail "dirty sync beside .worktree-stale moved provider HEAD"
+}
+
+test_worktree_sync_rejects_nested_stale_marker() {
+    local tmp rig remote city provider exclude head_before status stderr visible
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    rig="$tmp/rig"
+    remote="$tmp/remote.git"
+    city="$tmp/city"
+    provider="$city/.gc/worktrees/demo/refinery"
+    stderr="$tmp/sync.stderr"
+
+    init_repo "$rig"
+    git -C "$rig" branch -M main
+    git init -q --bare "$remote"
+    git -C "$remote" symbolic-ref HEAD refs/heads/main
+    git -C "$rig" remote add origin "$remote"
+    git -C "$rig" push -qu origin main
+
+    "$WORKTREE_SETUP" "$rig" "$provider" refinery
+
+    exclude=$(git -C "$provider" rev-parse --git-path info/exclude)
+    [[ "$(grep -cxF '/.worktree-stale' "$exclude")" -eq 1 ]] ||
+        fail "nested-marker fixture lacks exactly one root-anchored /.worktree-stale exclude"
+
+    touch "$provider/.worktree-stale"
+    mkdir -p "$provider/subdir"
+    touch "$provider/subdir/.worktree-stale"
+    visible=$(git -C "$provider" status --porcelain --untracked-files=all)
+    [[ "$visible" == "?? subdir/.worktree-stale" ]] ||
+        fail "nested .worktree-stale was not the sole visible provider entry: $visible"
+
+    head_before=$(git -C "$provider" rev-parse HEAD)
+    set +e
+    "$WORKTREE_SETUP" "$rig" "$provider" refinery --sync 2>"$stderr"
+    status=$?
+    set -e
+    [[ "$status" -ne 0 ]] ||
+        fail "strict sync accepted a nested .worktree-stale lookalike"
+    grep -qF "refusing to sync dirty provider worktree at $provider" "$stderr" ||
+        fail "nested .worktree-stale sync did not report the fail-closed refusal"
+    [[ -f "$provider/.worktree-stale" ]] ||
+        fail "nested-marker refusal discarded the root supervisor marker"
+    [[ -f "$provider/subdir/.worktree-stale" ]] ||
+        fail "nested-marker refusal discarded the hostile nested marker"
+    [[ "$(git -C "$provider" rev-parse HEAD)" == "$head_before" ]] ||
+        fail "nested-marker refusal moved provider HEAD"
 }
 
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch() {
@@ -1524,6 +1571,7 @@ test_validator_rejects_provider_and_unrelated_paths
 test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores
 test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt
 test_worktree_sync_ignores_stale_marker_but_rejects_unrelated_dirt
+test_worktree_sync_rejects_nested_stale_marker
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch
 test_shutdown_probe_scopes_rig_and_fails_closed
 test_cleanup_command_is_idempotent_and_mr_retryable
