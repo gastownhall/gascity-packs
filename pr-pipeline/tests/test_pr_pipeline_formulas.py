@@ -27,7 +27,7 @@ class MolPrFromIssueVarBindingTests(unittest.TestCase):
     def test_formula_is_present_and_well_formed(self) -> None:
         self.assertTrue(self.path.exists(), "mol-pr-from-issue must live in the pr-pipeline pack")
         self.assertEqual(self.data["formula"], "mol-pr-from-issue")
-        self.assertEqual(self.data["contract"], "graph.v2")
+        self.assertEqual(self.data["requires"]["formula_compiler"], ">=2.0.0")
 
     def test_github_issue_input_is_named_issue_number(self) -> None:
         variables = self.data.get("vars", {})
