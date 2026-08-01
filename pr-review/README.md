@@ -1,8 +1,8 @@
 # PR Review Pack
 
-Formula-driven adopt-PR workflow for Gas City. Reviews and merges contributor
+Formula-driven adopt-PR workflow for Gas City. Reviews contributor
 PRs using a multi-model review engine (Claude + Codex + Gemini), with a human
-gate between review and merge.
+gate before finalize and a publish/merge handoff to mayor.
 
 ## What's Included
 
