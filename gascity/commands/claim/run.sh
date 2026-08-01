@@ -92,6 +92,23 @@ print(value if isinstance(value, str) else str(value))
 ' "$1"
 }
 
+json_child_ids() {
+    python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+
+children = data.get("children", []) if isinstance(data, dict) else []
+for child in children:
+    if isinstance(child, dict) and isinstance(child.get("id"), str) and child["id"]:
+        print(child["id"])
+'
+}
+
 EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
 EXPECTED_ROUTE="${GC_TEMPLATE:-${GC_AGENT:-}}"
 
@@ -103,9 +120,11 @@ fi
 
 claim_file="$(mktemp)"
 show_file="$(mktemp)"
+convoy_file="$(mktemp)"
+member_file="$(mktemp)"
 err_file="$(mktemp)"
 cleanup() {
-    rm -f "$claim_file" "$show_file" "$err_file"
+    rm -f "$claim_file" "$show_file" "$convoy_file" "$member_file" "$err_file"
 }
 trap cleanup EXIT
 trap 'exit 129' HUP
@@ -212,6 +231,77 @@ if [ "$verified" -ne 1 ]; then
         "$work_id" "$verify_try" >&2
     exit 1
 fi
+
+restore_explicit_run_pointer() {
+    run_id="${GASWORKS_RUN_ID:-}"
+    session_id="${GC_SESSION_ID:-}"
+    if [ -z "$run_id" ] || [ -z "$session_id" ]; then
+        return
+    fi
+    if ! gc bd update "$session_id" --set-metadata "gc.current_run_id=$run_id" \
+        >/dev/null 2>"$err_file"; then
+        printf 'RUN_POINTER_FAILED could not restore explicit run %s on session %s: %s\n' \
+            "$run_id" "$session_id" "$(sed -n '1p' "$err_file")" >&2
+    fi
+}
+
+declare_source_file() {
+    source_file="$1"
+    source_store="$(json_pick metadata:gc.source_store_ref <"$source_file")"
+    source_bead="$(json_pick metadata:gc.source_bead_id <"$source_file")"
+    if [ "$source_store" != "city:" ]; then
+        return
+    fi
+    if [ -z "$source_bead" ]; then
+        echo "WORK_REF_SKIPPED city source is missing gc.source_bead_id" >&2
+        return
+    fi
+    if ! "$observer_bin" declare-work \
+        -beads-project "$beads_project" -work-item "$source_bead" \
+        >/dev/null 2>"$err_file"; then
+        printf 'WORK_REF_FAILED could not declare %s/%s: %s\n' \
+            "$beads_project" "$source_bead" "$(sed -n '1p' "$err_file")" >&2
+    fi
+}
+
+declare_explicit_work() {
+    if [ -z "${GASWORKS_RUN_ID:-}" ]; then
+        return
+    fi
+    beads_project="${GC_BEADS_PROJECT_ID:-}"
+    if [ -z "$beads_project" ]; then
+        echo "WORK_REF_SKIPPED explicit run has no GC_BEADS_PROJECT_ID" >&2
+        return
+    fi
+    observer_bin="${GASWORKS_OBSERVER_BIN:-gasworks-observer}"
+    if ! command -v "$observer_bin" >/dev/null 2>&1; then
+        printf 'WORK_REF_SKIPPED observer binary not found: %s\n' "$observer_bin" >&2
+        return
+    fi
+
+    declare_source_file "$show_file"
+
+    input_convoy="$(json_pick metadata:gc.input_convoy_id <"$show_file")"
+    if [ -z "$input_convoy" ]; then
+        return
+    fi
+    if ! gc convoy status "$input_convoy" --json >"$convoy_file" 2>"$err_file"; then
+        printf 'WORK_REF_FAILED could not read input convoy %s: %s\n' \
+            "$input_convoy" "$(sed -n '1p' "$err_file")" >&2
+        return
+    fi
+    json_child_ids <"$convoy_file" | while IFS= read -r member_id; do
+        if ! gc bd show "$member_id" --json >"$member_file" 2>"$err_file"; then
+            printf 'WORK_REF_FAILED could not read convoy member %s: %s\n' \
+                "$member_id" "$(sed -n '1p' "$err_file")" >&2
+            continue
+        fi
+        declare_source_file "$member_file"
+    done
+}
+
+restore_explicit_run_pointer
+declare_explicit_work
 
 python3 - "$show_file" <<'PY'
 import json

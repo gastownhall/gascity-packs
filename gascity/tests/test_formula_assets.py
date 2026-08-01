@@ -819,6 +819,94 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {"action": "drain"})
 
+    def test_city_claim_command_declares_authoritative_convoy_source_on_explicit_run(
+        self,
+    ) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            gc_calls = tmp_path / "gc-calls"
+            observer_calls = tmp_path / "observer-calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = hook ]; then\n"
+                "  printf '%s\\n' '{\"action\":\"work\",\"bead_id\":\"gcg-step\",\"assignee\":\"worker\",\"route\":\"gc.implementation-worker\"}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = gcg-step ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"gcg-step\",\"status\":\"in_progress\",\"assignee\":\"worker\",\"metadata\":{\"gc.routed_to\":\"gc.implementation-worker\",\"gc.input_convoy_id\":\"gcg-input\"}}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = update ] && [ \"$3\" = session-1 ]; then\n"
+                "  exit 0\n"
+                "elif [ \"$1\" = convoy ] && [ \"$2\" = status ] && [ \"$3\" = gcg-input ]; then\n"
+                "  printf '%s\\n' '{\"schema_version\":\"1\",\"convoy\":{\"id\":\"gcg-input\"},\"children\":[{\"id\":\"ga-source-anchor\"},{\"id\":\"ga-rig-anchor\"}]}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = ga-source-anchor ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"ga-source-anchor\",\"metadata\":{\"gc.source_store_ref\":\"city:\",\"gc.source_bead_id\":\"mc-tawl\"}}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = ga-rig-anchor ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"ga-rig-anchor\",\"metadata\":{\"gc.source_store_ref\":\"rig:gascity\",\"gc.source_bead_id\":\"ga-local\"}}'\n"
+                "else\n"
+                "  exit 2\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            fake_observer = bin_dir / "gasworks-observer"
+            fake_observer.write_text(
+                "#!/bin/sh\n"
+                "printf '%s|%s\\n' \"${GASWORKS_RUN_ID:-}\" \"$*\" >>\"$OBSERVER_TEST_CALLS\"\n",
+                encoding="utf-8",
+            )
+            fake_observer.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_AGENT": "gc.implementation-worker",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_SESSION_ID": "session-1",
+                "GC_BEADS_PROJECT_ID": "prj_343030dd09cda2fb",
+                "GASWORKS_RUN_ID": "gwr_explicit",
+                "GASWORKS_OBSERVER_BIN": str(fake_observer),
+                "GC_TEST_CALLS": str(gc_calls),
+                "OBSERVER_TEST_CALLS": str(observer_calls),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
+            call_lines = gc_calls.read_text(encoding="utf-8").splitlines()
+            observer_lines = (
+                observer_calls.read_text(encoding="utf-8").splitlines()
+                if observer_calls.exists()
+                else []
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["bead_id"], "gcg-step")
+        self.assertIn(
+            " ".join(
+                (
+                    "b" + "d",
+                    "update",
+                    "session-1",
+                    "--set-metadata",
+                    "gc.current_run_id=gwr_explicit",
+                )
+            ),
+            call_lines,
+        )
+        self.assertIn("convoy status gcg-input --json", call_lines)
+        self.assertIn(" ".join(("b" + "d", "show", "ga-source-anchor", "--json")), call_lines)
+        self.assertIn(" ".join(("b" + "d", "show", "ga-rig-anchor", "--json")), call_lines)
+        self.assertEqual(
+            observer_lines,
+            [
+                "gwr_explicit|declare-work -beads-project "
+                "prj_343030dd09cda2fb -work-item mc-tawl"
+            ],
+        )
+
     def test_city_claim_command_bounds_ambiguous_hook_failures_without_drain_ack(
         self,
     ) -> None:
