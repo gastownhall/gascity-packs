@@ -3,12 +3,6 @@ name: Pack Release Compatibility
 on:
   pull_request:
     branches: [main]
-    paths:
-      - registry.toml
-      - scripts/pack_release_compat.py
-      - tests/test_pack_release_compat.py
-      - .github/workflows/pack-release-compatibility.yml
-      - "*/pack.toml"
   push:
     branches: [main]
     paths:
