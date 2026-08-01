@@ -57,6 +57,17 @@ notes and metadata. Crash-safe: `gc bd mol current` resumes at the right step.
   Slack thread."""
 formula = "mol-pr-from-issue"
 phase = "vapor"
+# pour = true eager-materializes the graph steps. Without it this formula
+# compiles RootOnly and every one of its nine steps is dropped at
+# instantiation, so the root sits in_progress with nothing routed. The
+# predicate (internal/formula/compile.go) is
+#   rootOnly := (!f.Pour && f.Phase == "vapor") || len(f.Steps) == 0
+# which keys only on pour and phase; the graph declaration form is never
+# consulted, so `contract = "graph.v2"` does not protect against it. Note the
+# failure is silent: RecipeHasReadySurface still returns true because RootOnly
+# itself satisfies it, so the pool sling is accepted and only the steps go
+# missing.
+pour = true
 version = 1
 contract = "graph.v2"
 
