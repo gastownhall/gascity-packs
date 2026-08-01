@@ -902,7 +902,7 @@ You are running from a git worktree checked out at the PR head. The full diff is
 ### Gastown-Specific Invariants
 - **Formula TOML contracts:** Step dependencies must form a DAG. No orphan steps. Variable references (Go text/template) must resolve. New steps must appear in TopologicalSort output.
 - **Role boundaries:** Polecats never touch main branch. Refinery never creates worktrees. Deacon never merges. Witness never does implementation work. Mayor never spawns polecats directly.
-- **Hook/bead protocol:** `bd ready`/`bd close` must be paired. Bead sync must happen before `gt done`. Hook environment variables must be set before agent spawn.
+- **Hook/bead protocol:** `gc bd ready`/`gc bd close` must be paired. Bead sync must happen before `gt done`. Hook environment variables must be set before agent spawn.
 - **Agent preset contracts:** `AgentPresetInfo` fields (SessionIDEnv, ResumeFlag, ResumeStyle, SupportsHooks) must match actual CLI behavior of the agent binary.
 - **Self-cleaning contract:** Polecats must call `gt done` which syncs beads, nukes worktree, and exits. No partial cleanup.
 - **Tmux session management:** Session names must be deterministic. Pane targeting must handle "no sessions" and "no current target" errors.
@@ -1004,7 +1004,7 @@ You are running from a git worktree checked out at the base branch, which repres
 ### Gastown-Specific Invariants
 - **Formula TOML contracts:** Step dependencies must form a DAG. No orphan steps. Variable references (Go text/template) must resolve. Changed steps must not break TopologicalSort or ReadySteps computation.
 - **Role boundaries:** Polecats never touch main. Refinery never creates worktrees. Deacon never merges. Witness never implements. Mayor never spawns polecats directly. Violations are silent and catastrophic.
-- **Hook/bead protocol:** `bd ready`/`bd close` pairing. Bead sync before `gt done`. Hook env vars set before agent spawn. Violation means lost work or phantom state.
+- **Hook/bead protocol:** `gc bd ready`/`gc bd close` pairing. Bead sync before `gt done`. Hook env vars set before agent spawn. Violation means lost work or phantom state.
 - **Agent preset contracts:** `AgentPresetInfo` fields must match real CLI behavior. Wrong ResumeStyle = broken session resume. Wrong SupportsHooks = silent hook failure.
 - **Self-cleaning contract:** Polecats call `gt done` → sync beads → nuke worktree → exit. Partial cleanup leaves zombie worktrees that corrupt future operations.
 - **Tmux session management:** Session names deterministic. Pane targeting handles edge cases. Race between session creation and pane targeting is a known fragile area.

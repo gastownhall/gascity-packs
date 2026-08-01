@@ -3,11 +3,11 @@ Merge-Only PR workflow — 3 steps from intake through merge.
 
 Sling a contributor PR to a polecat for rebase + squash merge, SKIPPING the
 review and human-gate steps. Use only when the maintainer has already
-eyeballed the PR and wants a fast merge path. Crash-safe: `bd mol current`
+eyeballed the PR and wants a fast merge path. Crash-safe: `gc bd mol current`
 resumes at the right step.
 
 The molecule root bead IS the control bead — all run state is stored in its
-notes via `bd update <root-id> --notes "key: value"`. No separate tracking
+notes via `gc bd update <root-id> --notes "key: value"`. No separate tracking
 bead needed.
 
 ## Contract
@@ -63,7 +63,7 @@ initial state in the root bead notes.
 
 **1. Find the root bead:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 
 **2. Parse PR identifier from `{{pr}}`:**
@@ -87,7 +87,7 @@ the described scope (e.g., a "fix typo" PR that touches dozens of packages),
 the branch has diverged from main. **STOP immediately:**
 - Post a scope mismatch comment asking the contributor to rebase
 - Request changes: `gh pr review <number> --request-changes --body "Branch has diverged from main"`
-- Close the root bead: `bd close $ROOT_ID --reason "scope mismatch"`
+- Close the root bead: `gc bd close $ROOT_ID --reason "scope mismatch"`
 - Exit
 
 **5. Check maintainer edits:**
@@ -102,7 +102,7 @@ gh pr checkout <number>
 
 **7. Record state in root bead notes:**
 ```bash
-bd update $ROOT_ID --notes "pr_number: <N>
+gc bd update $ROOT_ID --notes "pr_number: <N>
 pr_url: <url>
 repo: <owner/repo>
 pr_title: <title>
@@ -137,7 +137,7 @@ cases; abort on complex conflicts that need the contributor.
 
 **1. Read root bead notes for PR metadata:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 
 **2. Check merge status:**
@@ -153,7 +153,7 @@ MERGEABLE=$(gh pr view <number> --json mergeable --jq '.mergeable')
 If `maintainer_edits` is false → **STOP**:
 - Post conflict comment asking author to rebase
 - Add label: `gh pr edit <number> --add-label "status/needs-info"`
-- Close root bead: `bd close $ROOT_ID --reason "conflicts, maintainerCanModify=false"`
+- Close root bead: `gc bd close $ROOT_ID --reason "conflicts, maintainerCanModify=false"`
 - Exit
 
 **4. Fetch upstream base:**
@@ -190,7 +190,7 @@ If complex conflicts found:
 git rebase --abort
 gh pr comment <number> --body "<conflict comment asking author to rebase>"
 gh pr edit <number> --add-label "status/needs-info"
-bd close $ROOT_ID --reason "complex merge conflicts"
+gc bd close $ROOT_ID --reason "complex merge conflicts"
 ```
 Exit.
 
@@ -216,7 +216,7 @@ synthesis-comment machinery pruned (no review_run_dir to read from).
 
 **1. Read root bead notes:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 Extract state: `pr_number`, `repo`, `base_branch`, `original_head`,
 `head_ref`, `rebase_status`, `pr_title`, `pr_author`.
@@ -240,9 +240,9 @@ MAINTAINER_COMMIT_COUNT=$(git rev-list --count $ORIGINAL_HEAD..HEAD)
 - `MAINTAINER_COMMIT_COUNT > 0` → **STOP**. mol-pr-merge-only does not
   handle maintainer fixup commits. Record the unexpected state and exit:
   ```bash
-  bd update $ROOT_ID --notes "<existing notes>
+  gc bd update $ROOT_ID --notes "<existing notes>
   unexpected_state: maintainer commits present in merge-only flow ($MAINTAINER_COMMIT_COUNT)"
-  bd close $ROOT_ID --reason "merge-only flow saw maintainer commits; re-sling under mol-adopt-pr"
+  gc bd close $ROOT_ID --reason "merge-only flow saw maintainer commits; re-sling under mol-adopt-pr"
   ```
 
 Update notes: `merge_path: A`.
@@ -297,7 +297,7 @@ gh pr merge <number> --squash
 **A.5: Cleanup:**
 ```bash
 git update-ref -d refs/adopt-pr/upstream-base 2>/dev/null || true
-bd update $ROOT_ID --notes "<notes with merge_path: A, status: merged>"
+gc bd update $ROOT_ID --notes "<notes with merge_path: A, status: merged>"
 ```
 
 ---

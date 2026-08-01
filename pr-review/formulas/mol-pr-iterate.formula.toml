@@ -11,8 +11,8 @@ mol-pr-from-issue (issue → PR). It does NOT push or open PRs — the polecat
 commits to the local PR branch and the maintainer pushes after review.
 
 The molecule root bead IS the control bead — all run state is stored in its
-notes via `bd update <root-id> --notes "key: value"` and structured
-evidence in metadata via `bd update <root-id> --set-metadata "key=value"`.
+notes via `gc bd update <root-id> --notes "key: value"` and structured
+evidence in metadata via `gc bd update <root-id> --set-metadata "key=value"`.
 
 ## Contract
 
@@ -46,12 +46,12 @@ The polecat halts the chain AND mails mayor when:
 
 Halt-and-mail-mayor procedure (used by any step that hits one of the above):
 ```bash
-bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                     --set-metadata "gc.escalate_to=mayor" \\
-                     --set-metadata "summary_for_human=<one-line synthesis>"
+gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                        --set-metadata "gc.escalate_to=mayor" \\
+                        --set-metadata "summary_for_human=<one-line synthesis>"
 gc mail send mayor -s "mol-pr-iterate halt: pr-{{pr}} (<reason>)" \\
                     -m "<context with root bead id and failure detail>"
-bd close "$ROOT_ID" --reason "<reason>"
+gc bd close "$ROOT_ID" --reason "<reason>"
 ```
 
 ## Failure Modes
@@ -102,7 +102,7 @@ and record initial state on the root bead.
 
 **1. Find the root bead:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 
 **2. Validate feedback_source enum:**
@@ -110,9 +110,9 @@ ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
 case "{{feedback_source}}" in
   codecov|copilot|review-comment|text) ;;
   *)
-    bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                         --set-metadata "summary_for_human=Invalid feedback_source: '{{feedback_source}}'. Must be one of codecov, copilot, review-comment, text."
-    bd close "$ROOT_ID" --reason "invalid feedback_source"
+    gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                            --set-metadata "summary_for_human=Invalid feedback_source: '{{feedback_source}}'. Must be one of codecov, copilot, review-comment, text."
+    gc bd close "$ROOT_ID" --reason "invalid feedback_source"
     exit 1
     ;;
 esac
@@ -123,9 +123,9 @@ esac
 case "{{feedback_source}}" in
   review-comment|text)
     if [ -z "{{feedback_ref}}" ]; then
-      bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                           --set-metadata "summary_for_human=feedback_source={{feedback_source}} requires --var feedback_ref=<value>."
-      bd close "$ROOT_ID" --reason "feedback_ref required"
+      gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                              --set-metadata "summary_for_human=feedback_source={{feedback_source}} requires --var feedback_ref=<value>."
+      gc bd close "$ROOT_ID" --reason "feedback_ref required"
       exit 1
     fi
     ;;
@@ -140,9 +140,9 @@ gh pr view {{pr}} --json title,author,baseRefName,headRefName,number,state,url,h
 
 If the PR is `CLOSED` or `MERGED` → halt:
 ```bash
-bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                     --set-metadata "summary_for_human=PR #{{pr}} on $REPO is <state>; nothing to iterate on."
-bd close "$ROOT_ID" --reason "PR not open"
+gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                        --set-metadata "summary_for_human=PR #{{pr}} on $REPO is <state>; nothing to iterate on."
+gc bd close "$ROOT_ID" --reason "PR not open"
 exit 1
 ```
 
@@ -166,9 +166,9 @@ if [ -d "$PR_WORKTREE" ]; then
   WT_BRANCH=$(git branch --show-current)
   if [ "$WT_BRANCH" != "$EXPECTED_BRANCH" ] || [ -n "$(git status --porcelain)" ]; then
     echo "[iterate] FATAL: staged worktree $PR_WORKTREE is on branch '$WT_BRANCH' (expected '$EXPECTED_BRANCH') or has uncommitted changes." >&2
-    bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                         --set-metadata "summary_for_human=iterate intake found a dirty or wrong-branch staged worktree at $PR_WORKTREE (branch '$WT_BRANCH', expected '$EXPECTED_BRANCH'). Inspect it, then 'git worktree remove --force $PR_WORKTREE' before re-slinging."
-    bd close "$ROOT_ID" --reason "dirty/wrong-branch staged worktree in intake"
+    gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                            --set-metadata "summary_for_human=iterate intake found a dirty or wrong-branch staged worktree at $PR_WORKTREE (branch '$WT_BRANCH', expected '$EXPECTED_BRANCH'). Inspect it, then 'git worktree remove --force $PR_WORKTREE' before re-slinging."
+    gc bd close "$ROOT_ID" --reason "dirty/wrong-branch staged worktree in intake"
     exit 1
   fi
 else
@@ -184,12 +184,12 @@ Record the staging directory on the root bead. Every later step runs in a
 fresh shell that otherwise lands back in the slot worktree, so they re-enter
 `work_dir` from this metadata:
 ```bash
-bd update "$ROOT_ID" --set-metadata "work_dir=$PR_WORKTREE"
+gc bd update "$ROOT_ID" --set-metadata "work_dir=$PR_WORKTREE"
 ```
 
 **6. Record state in root bead notes:**
 ```bash
-bd update $ROOT_ID --notes "pr_number: {{pr}}
+gc bd update $ROOT_ID --notes "pr_number: {{pr}}
 repo: $REPO
 pr_title: <title>
 pr_author: <author.login>
@@ -230,13 +230,13 @@ A fresh polecat shell starts in the slot worktree, not the per-PR worktree the
 `intake` step staged. Re-enter it from `work_dir` before any git or file work
 (the codecov path diffs the PR branch):
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-WORK_DIR=$(bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+WORK_DIR=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
 if [ -z "$WORK_DIR" ] || [ ! -d "$WORK_DIR" ]; then
   echo "[iterate] FATAL: work_dir metadata missing or not a directory ('$WORK_DIR'). Intake staging did not complete; cannot continue." >&2
-  bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                       --set-metadata "summary_for_human=iterate parse-feedback could not re-enter the staged worktree (work_dir='$WORK_DIR', missing or not a dir). Re-sling from intake."
-  bd close "$ROOT_ID" --reason "work_dir missing in parse-feedback"
+  gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                          --set-metadata "summary_for_human=iterate parse-feedback could not re-enter the staged worktree (work_dir='$WORK_DIR', missing or not a dir). Re-sling from intake."
+  gc bd close "$ROOT_ID" --reason "work_dir missing in parse-feedback"
   exit 1
 fi
 cd "$WORK_DIR"
@@ -302,7 +302,7 @@ If the text is empty or just whitespace → halt-and-mail-mayor.
 
 Serialize the parsed signal as a compact JSON string in notes, e.g.:
 ```bash
-bd update $ROOT_ID --notes "<existing notes>
+gc bd update $ROOT_ID --notes "<existing notes>
 parsed_feedback: <json>"
 ```
 
@@ -313,12 +313,12 @@ For text: `{\"type\": \"text\", \"body\": \"...\"}`
 
 **Halt-and-mail-mayor on ambiguity:**
 ```bash
-bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                     --set-metadata "gc.escalate_to=mayor" \\
-                     --set-metadata "summary_for_human=Cannot extract actionable feedback from {{feedback_source}} for PR #{{pr}}: <reason>."
+gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                        --set-metadata "gc.escalate_to=mayor" \\
+                        --set-metadata "summary_for_human=Cannot extract actionable feedback from {{feedback_source}} for PR #{{pr}}: <reason>."
 gc mail send mayor -s "mol-pr-iterate halt: pr-{{pr}} (feedback ambiguity)" \\
                     -m "Root bead $ROOT_ID. Feedback source {{feedback_source}} yielded no actionable signal. Detail: <reason>."
-bd close "$ROOT_ID" --reason "feedback ambiguity"
+gc bd close "$ROOT_ID" --reason "feedback ambiguity"
 ```
 
 **Exit criteria:** `parsed_feedback` recorded on root bead notes, OR halt-and-mail-mayor fired."""
@@ -338,13 +338,13 @@ A fresh polecat shell starts in the slot worktree, not the per-PR worktree the
 `intake` step staged. Re-enter it from `work_dir` so the plan artifact is
 written under the staged worktree (where `apply` will read it):
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-WORK_DIR=$(bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+WORK_DIR=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
 if [ -z "$WORK_DIR" ] || [ ! -d "$WORK_DIR" ]; then
   echo "[iterate] FATAL: work_dir metadata missing or not a directory ('$WORK_DIR'). Intake staging did not complete; cannot continue." >&2
-  bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                       --set-metadata "summary_for_human=iterate propose-patch could not re-enter the staged worktree (work_dir='$WORK_DIR', missing or not a dir). Re-sling from intake."
-  bd close "$ROOT_ID" --reason "work_dir missing in propose-patch"
+  gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                          --set-metadata "summary_for_human=iterate propose-patch could not re-enter the staged worktree (work_dir='$WORK_DIR', missing or not a dir). Re-sling from intake."
+  gc bd close "$ROOT_ID" --reason "work_dir missing in propose-patch"
   exit 1
 fi
 cd "$WORK_DIR"
@@ -373,20 +373,20 @@ PLAN_PATH=".gc/pr-pipeline/iterate/pr-{{pr}}.md"
 Compute the estimated LOC from the plan (sum of additions + deletions in
 the Diff sketch). If `EST_LOC > 200`:
 ```bash
-bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                     --set-metadata "gc.escalate_to=mayor" \\
-                     --set-metadata "summary_for_human=Iteration plan for PR #{{pr}} exceeds 200 LOC ($EST_LOC). Plan at $PLAN_PATH. Recommend splitting the feedback into separate beads or accepting partial clearance."
+gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                        --set-metadata "gc.escalate_to=mayor" \\
+                        --set-metadata "summary_for_human=Iteration plan for PR #{{pr}} exceeds 200 LOC ($EST_LOC). Plan at $PLAN_PATH. Recommend splitting the feedback into separate beads or accepting partial clearance."
 gc mail send mayor -s "mol-pr-iterate halt: pr-{{pr}} (scope > 200 LOC)" \\
                     -m "Root bead $ROOT_ID. Plan at $PLAN_PATH estimates $EST_LOC LOC, exceeds 200 LOC cap."
-bd close "$ROOT_ID" --reason "scope > 200 LOC"
+gc bd close "$ROOT_ID" --reason "scope > 200 LOC"
 exit 0
 ```
 
 **4. Record evidence on root bead:**
 ```bash
-bd update "$ROOT_ID" --set-metadata "evidence.plan_path=$PLAN_PATH" \\
-                     --set-metadata "evidence.estimated_loc=$EST_LOC"
-bd update $ROOT_ID --notes "<existing notes>
+gc bd update "$ROOT_ID" --set-metadata "evidence.plan_path=$PLAN_PATH" \\
+                        --set-metadata "evidence.estimated_loc=$EST_LOC"
+gc bd update $ROOT_ID --notes "<existing notes>
 plan_path: $PLAN_PATH
 estimated_loc: $EST_LOC"
 ```
@@ -409,13 +409,13 @@ A fresh polecat shell starts in the slot worktree, not the per-PR worktree the
 committing — the on-branch and clean-worktree checks below assume the staged
 worktree:
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-WORK_DIR=$(bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+WORK_DIR=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
 if [ -z "$WORK_DIR" ] || [ ! -d "$WORK_DIR" ]; then
   echo "[iterate] FATAL: work_dir metadata missing or not a directory ('$WORK_DIR'). Intake staging did not complete; cannot continue." >&2
-  bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                       --set-metadata "summary_for_human=iterate apply could not re-enter the staged worktree (work_dir='$WORK_DIR', missing or not a dir). Re-sling from intake."
-  bd close "$ROOT_ID" --reason "work_dir missing in apply"
+  gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                          --set-metadata "summary_for_human=iterate apply could not re-enter the staged worktree (work_dir='$WORK_DIR', missing or not a dir). Re-sling from intake."
+  gc bd close "$ROOT_ID" --reason "work_dir missing in apply"
   exit 1
 fi
 cd "$WORK_DIR"
@@ -427,9 +427,9 @@ Extract `plan_path`, `pr_number`, `head_ref`, `iteration`.
 CURRENT=$(git branch --show-current)
 EXPECTED=<head_ref>
 if [ "$CURRENT" != "$EXPECTED" ]; then
-  bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                       --set-metadata "summary_for_human=apply step expected branch $EXPECTED, found $CURRENT. Did intake checkout fail?"
-  bd close "$ROOT_ID" --reason "branch mismatch in apply"
+  gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                          --set-metadata "summary_for_human=apply step expected branch $EXPECTED, found $CURRENT. Did intake checkout fail?"
+  gc bd close "$ROOT_ID" --reason "branch mismatch in apply"
   exit 1
 fi
 ```
@@ -437,9 +437,9 @@ fi
 **3. Verify worktree is clean (no in-flight changes from a prior partial apply):**
 ```bash
 if [ -n "$(git status --porcelain)" ]; then
-  bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                       --set-metadata "summary_for_human=apply step found dirty worktree on $CURRENT. Manual cleanup needed before re-sling."
-  bd close "$ROOT_ID" --reason "dirty worktree in apply"
+  gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                          --set-metadata "summary_for_human=apply step found dirty worktree on $CURRENT. Manual cleanup needed before re-sling."
+  gc bd close "$ROOT_ID" --reason "dirty worktree in apply"
   exit 1
 fi
 ```
@@ -462,11 +462,11 @@ consuming pack for hints, or run the repo's standard quality gates:
 If build fails:
 ```bash
 git checkout -- .  # revert the unsuccessful changes
-bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                     --set-metadata "summary_for_human=Build failed after apply for PR #{{pr}}. Plan at $plan_path may need revision. Worktree reverted."
+gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                        --set-metadata "summary_for_human=Build failed after apply for PR #{{pr}}. Plan at $plan_path may need revision. Worktree reverted."
 gc mail send mayor -s "mol-pr-iterate halt: pr-{{pr}} (build failed)" \\
                     -m "Root bead $ROOT_ID. apply succeeded in editing files but build verification failed. Worktree reverted."
-bd close "$ROOT_ID" --reason "build failed after apply"
+gc bd close "$ROOT_ID" --reason "build failed after apply"
 exit 1
 ```
 
@@ -486,7 +486,7 @@ Refs: $ROOT_ID"
 ```bash
 NEW_ITER=$(($iteration + 1))
 COMMIT_SHA=$(git rev-parse HEAD)
-bd update $ROOT_ID --notes "<existing notes with iteration: $NEW_ITER, last_apply_commit: $COMMIT_SHA>"
+gc bd update $ROOT_ID --notes "<existing notes with iteration: $NEW_ITER, last_apply_commit: $COMMIT_SHA>"
 ```
 
 **Exit criteria:** New commit on PR branch, build green, iteration counter incremented, last_apply_commit recorded."""
@@ -506,13 +506,13 @@ A fresh polecat shell starts in the slot worktree, not the per-PR worktree the
 `intake` step staged. Re-enter it from `work_dir` before re-running the
 source-specific verification (codecov diffs the PR branch):
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-WORK_DIR=$(bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+WORK_DIR=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
 if [ -z "$WORK_DIR" ] || [ ! -d "$WORK_DIR" ]; then
   echo "[iterate] FATAL: work_dir metadata missing or not a directory ('$WORK_DIR'). Intake staging did not complete; cannot continue." >&2
-  bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                       --set-metadata "summary_for_human=iterate verify-clearance could not re-enter the staged worktree (work_dir='$WORK_DIR', missing or not a dir). Re-sling from intake."
-  bd close "$ROOT_ID" --reason "work_dir missing in verify-clearance"
+  gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                          --set-metadata "summary_for_human=iterate verify-clearance could not re-enter the staged worktree (work_dir='$WORK_DIR', missing or not a dir). Re-sling from intake."
+  gc bd close "$ROOT_ID" --reason "work_dir missing in verify-clearance"
   exit 1
 fi
 cd "$WORK_DIR"
@@ -528,8 +528,8 @@ Codecov coverage is computed by CI. The polecat cannot directly re-trigger
 codecov — instead, the apply commit is local and unpushed, so codecov has
 nothing new to score. Mark verification as **deferred-to-push**:
 ```bash
-bd update "$ROOT_ID" --set-metadata "evidence.verification=deferred-to-push" \\
-                     --set-metadata "evidence.verification_note=Codecov verification runs after maintainer pushes commit $last_apply_commit. Re-sling mol-pr-iterate after the next codecov run if uncovered lines persist."
+gc bd update "$ROOT_ID" --set-metadata "evidence.verification=deferred-to-push" \\
+                        --set-metadata "evidence.verification_note=Codecov verification runs after maintainer pushes commit $last_apply_commit. Re-sling mol-pr-iterate after the next codecov run if uncovered lines persist."
 ```
 Proceed to `report` (do NOT count this as a failed iteration).
 
@@ -571,20 +571,20 @@ it resolved.
 Free-text feedback has no automated verification. Mark as
 **manual-verification**:
 ```bash
-bd update "$ROOT_ID" --set-metadata "evidence.verification=manual" \\
-                     --set-metadata "evidence.verification_note=Text feedback addressed in $last_apply_commit. Manual verification by maintainer."
+gc bd update "$ROOT_ID" --set-metadata "evidence.verification=manual" \\
+                        --set-metadata "evidence.verification_note=Text feedback addressed in $last_apply_commit. Manual verification by maintainer."
 ```
 
 **3. Halt-after-2 check.**
 
 If the signal persists AND `iteration >= 2`:
 ```bash
-bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-                     --set-metadata "gc.escalate_to=mayor" \\
-                     --set-metadata "summary_for_human=PR #{{pr}} feedback signal persists after 2 iterations. Last apply commit $last_apply_commit. Manual review needed."
+gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                        --set-metadata "gc.escalate_to=mayor" \\
+                        --set-metadata "summary_for_human=PR #{{pr}} feedback signal persists after 2 iterations. Last apply commit $last_apply_commit. Manual review needed."
 gc mail send mayor -s "mol-pr-iterate halt: pr-{{pr}} (verify-clearance failed x2)" \\
                     -m "Root bead $ROOT_ID. Feedback source {{feedback_source}}, $iteration iterations attempted, signal still present."
-bd close "$ROOT_ID" --reason "verify-clearance failed after 2 iterations"
+gc bd close "$ROOT_ID" --reason "verify-clearance failed after 2 iterations"
 exit 1
 ```
 
@@ -595,7 +595,7 @@ If the signal persists AND `iteration < 2`:
 
 **4. Record clearance evidence:**
 ```bash
-bd update "$ROOT_ID" --set-metadata "evidence.cleared=<true|false>"
+gc bd update "$ROOT_ID" --set-metadata "evidence.cleared=<true|false>"
 ```
 
 **Exit criteria:** Verification result recorded on root bead metadata,
@@ -612,7 +612,7 @@ root bead so downstream loop-close handlers can surface the outcome.
 
 **1. Read root bead notes:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 Extract all state: `pr_number`, `repo`, `feedback_source`, `iteration`,
 `last_apply_commit`, `plan_path`, `estimated_loc`, and any prior
@@ -626,7 +626,7 @@ A one-to-three-line natural-language outcome. Examples:
 
 **3. Set evidence and summary:**
 ```bash
-bd update "$ROOT_ID" \\
+gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.pr_number={{pr}}" \\
   --set-metadata "evidence.feedback_source={{feedback_source}}" \\
   --set-metadata "evidence.iteration=$iteration" \\
@@ -653,7 +653,7 @@ worktree removal. The ephemeral per-PR worktree is no longer needed, so remove
 it on the success path to keep per-PR worktrees from accumulating. `cd` to the
 main worktree first (git refuses to remove the worktree you are standing in):
 ```bash
-WORK_DIR=$(bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
+WORK_DIR=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata.work_dir // empty')
 if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
   MAIN_WT=$(git -C "$WORK_DIR" worktree list --porcelain | awk '/^worktree /{print $2; exit}')
   cd "$MAIN_WT" 2>/dev/null || cd /

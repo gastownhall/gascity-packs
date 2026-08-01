@@ -45,7 +45,7 @@ gc sling <rig>/polecat mol-adopt-pr --formula \
 3. **Review** — Run `/review-pr` (parallel Claude + Codex + Gemini)
 4. **Human gate** — Blocks until maintainer closes the step manually:
    ```bash
-   bd close <human-gate-step-id>
+   gc bd close <human-gate-step-id>
    ```
 5. **Finalize** — Resolve merge path, prepare local artifacts (squash/rebase/branch/synthesis), hand publish + merge to mayor, then clean up refs and update the root bead
 

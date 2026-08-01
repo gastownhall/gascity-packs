@@ -7,7 +7,7 @@ no review, no human-gate, no merge. Safe to run on PRs in any repo and
 any state.
 
 The molecule root bead IS the control bead — all run state is stored in its
-notes via `bd update <root-id> --notes "key: value"`. Crash-safe: `bd mol
+notes via `gc bd update <root-id> --notes "key: value"`. Crash-safe: `gc bd mol
 current` resumes at the right step.
 
 ## Contract
@@ -47,7 +47,7 @@ bead notes. No checkout — this formula is read-only.
 
 **1. Find the root bead:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 
 **2. Parse PR identifier from `{{pr}}`:**
@@ -61,7 +61,7 @@ gh pr view <number> --repo <owner>/<repo> --json title,author,baseRefName,headRe
 
 **4. Record state in root bead notes:**
 ```bash
-bd update $ROOT_ID --notes "pr_number: <N>
+gc bd update $ROOT_ID --notes "pr_number: <N>
 pr_url: <url>
 repo: <owner/repo>
 pr_title: <title>
@@ -98,7 +98,7 @@ per-check status table for the classify step.
 
 **1. Read root bead notes for PR metadata:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 Extract `pr_number` and `repo` from notes.
 
@@ -113,7 +113,7 @@ gh pr checks <pr_number> --repo <repo> --json name,state,bucket,workflow,link,de
 
 If `/tmp/ci-diagnose-checks.json` is `[]` (no checks reported):
 ```bash
-bd update $ROOT_ID --notes "<existing notes with these overrides>
+gc bd update $ROOT_ID --notes "<existing notes with these overrides>
 verdict: no_checks
 checks_total: 0
 checks_passing: 0
@@ -139,7 +139,7 @@ jq -r '.[] | select(.bucket == "fail" or .bucket == "cancel") | "\\(.name)\\t\\(
 
 **6. Record state in root bead notes:**
 ```bash
-bd update $ROOT_ID --notes "<existing notes with these overrides>
+gc bd update $ROOT_ID --notes "<existing notes with these overrides>
 checks_total: $TOTAL
 checks_passing: $PASS
 checks_failing: $FAIL
@@ -167,7 +167,7 @@ matching (ZFC: keep coded heuristics narrow and transparent).
 
 **1. Read root bead notes:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 Extract `pr_number`, `repo`, `checks_failing`, `failed_checks_artifact`.
 
@@ -222,7 +222,7 @@ jq -s 'group_by(.category) | map({category: .[0].category, count: length}) | sor
 
 **5. Record state in root bead notes:**
 ```bash
-bd update $ROOT_ID --notes "<existing notes with these overrides>
+gc bd update $ROOT_ID --notes "<existing notes with these overrides>
 classifications_artifact: /tmp/ci-diagnose-classifications.jsonl
 category_summary_artifact: /tmp/ci-diagnose-category-summary.json"
 ```
@@ -246,7 +246,7 @@ the root bead, and exit. This is the formula's final output.
 
 **1. Read root bead notes:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 ```
 Extract: `pr_number`, `pr_url`, `pr_title`, `pr_state`, `checks_total`,
 `checks_passing`, `checks_failing`, `checks_pending`, `verdict` (current),
@@ -299,7 +299,7 @@ order listed above.
 
 **4. Update root bead notes with final verdict and report path:**
 ```bash
-bd update $ROOT_ID --notes "<existing notes with these overrides>
+gc bd update $ROOT_ID --notes "<existing notes with these overrides>
 verdict: <green|pending|failing_infra|failing_code|no_checks>
 report_artifact: /tmp/ci-diagnose-report.md
 status: complete"

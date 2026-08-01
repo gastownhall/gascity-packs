@@ -36,7 +36,7 @@ step — scoped to the macro formula's contract, not a polecat-wide
 policy change.
 
 The molecule root bead IS the control bead — all run state lives in its
-notes/metadata. Crash-safe: `bd mol current` resumes at the right step.
+notes/metadata. Crash-safe: `gc bd mol current` resumes at the right step.
 
 ## Contract
 
@@ -96,7 +96,7 @@ root bead notes.
 
 **1. Find root bead and resolve repo:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 UPSTREAM_REPO=$(gh repo view --json parent --jq '.parent.nameWithOwner // empty')
 [ -z "$UPSTREAM_REPO" ] && UPSTREAM_REPO="$REPO"
@@ -115,16 +115,16 @@ Parse the response. Required: `state == "MERGED"`, `mergedAt` non-null,
 
 If not merged:
 ```bash
-bd update "$ROOT_ID" \\
+gc bd update "$ROOT_ID" \\
   --set-metadata "gc.halt_chain=true" \\
   --set-metadata "summary_for_human=Cannot revert PR #{{pr}}: state=<state>, mergedAt=<value>. Only merged PRs are revertable through this formula."
-bd close "$ROOT_ID" --reason "PR #{{pr}} not merged"
+gc bd close "$ROOT_ID" --reason "PR #{{pr}} not merged"
 exit 0
 ```
 
 **4. Record state in root bead notes:**
 ```bash
-bd update "$ROOT_ID" --notes "pr_number: {{pr}}
+gc bd update "$ROOT_ID" --notes "pr_number: {{pr}}
 pr_url: <url>
 pr_title: <title>
 pr_author: <author.login>
@@ -160,8 +160,8 @@ which the carve-out at revert-branch reads.
 
 **1. Find root bead and resolve identifiers:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 MERGE_SHA=$(echo "$NOTES" | awk -F': ' '/^merge_sha:/ {print $2}')
 UPSTREAM_REPO=$(echo "$NOTES" | awk -F': ' '/^upstream_repo:/ {print $2}')
 DEFAULT_BRANCH=$(gh repo view "$UPSTREAM_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name // "main"')
@@ -178,22 +178,22 @@ git cat-file -e "$MERGE_SHA" 2>/dev/null || git fetch origin "$MERGE_SHA"
 If `git cat-file -e` still fails after fetch, the merge SHA is not
 reachable — halt:
 ```bash
-bd update "$ROOT_ID" \\
+gc bd update "$ROOT_ID" \\
   --set-metadata "gc.halt_chain=true" \\
   --set-metadata "evidence.reviewer_verdict=blocked" \\
   --set-metadata "summary_for_human=Cannot revert PR #{{pr}}: merge_sha $MERGE_SHA is not reachable from this checkout. Branch may have been force-pushed or deleted."
-bd close "$ROOT_ID" --reason "merge_sha not reachable"
+gc bd close "$ROOT_ID" --reason "merge_sha not reachable"
 exit 0
 ```
 
 **3. Assert merge_sha is on default branch:**
 ```bash
 if ! git merge-base --is-ancestor "$MERGE_SHA" "origin/$DEFAULT_BRANCH"; then
-    bd update "$ROOT_ID" \\
+    gc bd update "$ROOT_ID" \\
       --set-metadata "gc.halt_chain=true" \\
       --set-metadata "evidence.reviewer_verdict=blocked" \\
       --set-metadata "summary_for_human=Cannot revert PR #{{pr}}: merge_sha $MERGE_SHA is not an ancestor of origin/$DEFAULT_BRANCH. The merge may have already been reverted, or $DEFAULT_BRANCH was reset."
-    bd close "$ROOT_ID" --reason "merge_sha not on default branch"
+    gc bd close "$ROOT_ID" --reason "merge_sha not on default branch"
     exit 0
 fi
 ```
@@ -225,12 +225,12 @@ succeed, and if it conflicts we catch it in revert-branch. Overlap is
 recorded as evidence so the report and PR body can reference it.
 
 ```bash
-bd update "$ROOT_ID" \\
+gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.reviewer_verdict=pass" \\
   --set-metadata "evidence.reviewer_agent=<this polecat session>" \\
   --set-metadata "evidence.subsequent_commits=$SUBSEQUENT_COUNT" \\
   --set-metadata "evidence.overlap_files=$OVERLAP_COUNT"
-bd update "$ROOT_ID" --notes "$(echo "$NOTES")
+gc bd update "$ROOT_ID" --notes "$(echo "$NOTES")
 default_branch: $DEFAULT_BRANCH
 subsequent_commits: $SUBSEQUENT_COUNT
 overlap_files: $OVERLAP_COUNT
@@ -263,12 +263,12 @@ fails, the step halts BEFORE any upstream write.
 
 **1. Find root bead and read state:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-META=$(bd show "$ROOT_ID" --json | jq '.[0].metadata')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+META=$(gc bd show "$ROOT_ID" --json | jq '.[0].metadata')
 AUTO_PUSH=$(echo "$META" | jq -r '.auto_push // "false"')
 VERDICT=$(echo "$META" | jq -r '."evidence.reviewer_verdict" // ""')
 BYPASS="${GASCITY_SHIP_BYPASS:-}"
-NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
+NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 MERGE_SHA=$(echo "$NOTES" | awk -F': ' '/^merge_sha:/ {print $2}')
 DEFAULT_BRANCH=$(echo "$NOTES" | awk -F': ' '/^default_branch:/ {print $2}')
 PR_TITLE=$(echo "$NOTES" | awk -F': ' '/^pr_title:/ {print $2}')
@@ -289,24 +289,24 @@ elif [ "$BYPASS" = "mayor_revert" ]; then
 fi
 
 if [ "$CARVE_OK" != "true" ]; then
-    bd update "$ROOT_ID" \\
+    gc bd update "$ROOT_ID" \\
       --set-metadata "gc.halt_chain=true" \\
       --set-metadata "summary_for_human=Refusing to push revert of PR #{{pr}}. auto_push=$AUTO_PUSH, verify-revertable verdict=$VERDICT, GASCITY_SHIP_BYPASS=${BYPASS:-unset}. Polecat's default policy forbids git push; carve-out requires either (a) --metadata auto_push=true at sling time with a clean verify-revertable verdict, or (b) GASCITY_SHIP_BYPASS=mayor_revert in env. No upstream writes performed."
-    bd close "$ROOT_ID" --reason "push carve-out not satisfied"
+    gc bd close "$ROOT_ID" --reason "push carve-out not satisfied"
     exit 0
 fi
 
-bd update "$ROOT_ID" --set-metadata "evidence.carve_out_verified=true" \\
-                      --set-metadata "evidence.carve_out_path=$CARVE_PATH"
+gc bd update "$ROOT_ID" --set-metadata "evidence.carve_out_verified=true" \\
+                         --set-metadata "evidence.carve_out_path=$CARVE_PATH"
 ```
 
 **3. Confirm tree is clean before creating the branch:**
 ```bash
 if [ -n "$(git status --porcelain | grep -v '^??')" ]; then
-    bd update "$ROOT_ID" \\
+    gc bd update "$ROOT_ID" \\
       --set-metadata "gc.halt_chain=true" \\
       --set-metadata "summary_for_human=Refusing to revert PR #{{pr}}: working tree is dirty. Commit or stash before retrying."
-    bd close "$ROOT_ID" --reason "dirty working tree"
+    gc bd close "$ROOT_ID" --reason "dirty working tree"
     exit 0
 fi
 ```
@@ -331,10 +331,10 @@ fi
 
 if ! "${REVERT_CMD[@]}"; then
     git revert --abort 2>/dev/null || true
-    bd update "$ROOT_ID" \\
+    gc bd update "$ROOT_ID" \\
       --set-metadata "gc.halt_chain=true" \\
       --set-metadata "summary_for_human=git revert of $MERGE_SHA produced conflicts on branch $BRANCH. Aborted. Manual revert recommended — subsequent commits likely modified the same code paths."
-    bd close "$ROOT_ID" --reason "git revert conflict"
+    gc bd close "$ROOT_ID" --reason "git revert conflict"
     exit 0
 fi
 ```
@@ -356,21 +356,21 @@ FORK_REMOTE=$(git remote -v | awk -v fork="$LOCAL_REPO" 'index($2, fork) && /\\(
 [ -z "$FORK_REMOTE" ] && FORK_REMOTE="origin"
 
 if ! git push -u "$FORK_REMOTE" "$BRANCH"; then
-    bd update "$ROOT_ID" \\
+    gc bd update "$ROOT_ID" \\
       --set-metadata "gc.halt_chain=true" \\
       --set-metadata "summary_for_human=git push of $BRANCH to $FORK_REMOTE failed for PR #{{pr}} revert. Revert commit is local at $REVERT_SHA; investigate push permissions and retry manually."
-    bd close "$ROOT_ID" --reason "git push failed"
+    gc bd close "$ROOT_ID" --reason "git push failed"
     exit 0
 fi
 ```
 
 **7. Record state:**
 ```bash
-bd update "$ROOT_ID" \\
+gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.revert_branch=$BRANCH" \\
   --set-metadata "evidence.revert_sha=$REVERT_SHA" \\
   --set-metadata "evidence.fork_remote=$FORK_REMOTE"
-bd update "$ROOT_ID" --notes "$(echo "$NOTES")
+gc bd update "$ROOT_ID" --notes "$(echo "$NOTES")
 revert_branch: $BRANCH
 revert_sha: $REVERT_SHA
 fork_remote: $FORK_REMOTE
@@ -400,10 +400,10 @@ no env carryover stays authorized.
 
 **1. Find root bead and read state:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-META=$(bd show "$ROOT_ID" --json | jq '.[0].metadata')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+META=$(gc bd show "$ROOT_ID" --json | jq '.[0].metadata')
 CARVE_OK=$(echo "$META" | jq -r '."evidence.carve_out_verified" // "false"')
-NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
+NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 UPSTREAM_REPO=$(echo "$NOTES" | awk -F': ' '/^upstream_repo:/ {print $2}')
 DEFAULT_BRANCH=$(echo "$NOTES" | awk -F': ' '/^default_branch:/ {print $2}')
 BRANCH=$(echo "$NOTES" | awk -F': ' '/^revert_branch:/ {print $2}')
@@ -419,10 +419,10 @@ FORK_OWNER=$(echo "$LOCAL_REPO" | cut -d/ -f1)
 **2. Gate on carve-out:**
 ```bash
 if [ "$CARVE_OK" != "true" ]; then
-    bd update "$ROOT_ID" \\
+    gc bd update "$ROOT_ID" \\
       --set-metadata "gc.halt_chain=true" \\
       --set-metadata "summary_for_human=Refusing to open revert PR for #{{pr}}: evidence.carve_out_verified is not true. Branch $BRANCH at $REVERT_SHA is on the fork but no PR was opened. Re-sling with auto_push=true or set GASCITY_SHIP_BYPASS=mayor_revert."
-    bd close "$ROOT_ID" --reason "open-pr carve-out not satisfied"
+    gc bd close "$ROOT_ID" --reason "open-pr carve-out not satisfied"
     exit 0
 fi
 ```
@@ -471,10 +471,10 @@ if [ "$PR_EXIT" -eq 0 ] && [ -z "$(echo "$PR_URL_OUT" | grep -oE 'https://[^ ]+/
 fi
 
 if [ "$PR_EXIT" -ne 0 ] || [ -z "$PR_URL_OUT" ]; then
-    bd update "$ROOT_ID" \\
+    gc bd update "$ROOT_ID" \\
       --set-metadata "gc.halt_chain=true" \\
       --set-metadata "summary_for_human=Revert branch $BRANCH pushed at $REVERT_SHA but gh pr create failed for PR #{{pr}}. Investigate before retrying. Manual command: gh pr create --repo $UPSTREAM_REPO --base $DEFAULT_BRANCH --head $FORK_OWNER:$BRANCH --title \\"$REVERT_TITLE\\""
-    bd close "$ROOT_ID" --reason "gh pr create failed"
+    gc bd close "$ROOT_ID" --reason "gh pr create failed"
     exit 0
 fi
 
@@ -484,10 +484,10 @@ REVERT_PR_NUM=$(echo "$REVERT_PR_URL" | grep -oE '/pull/[0-9]+' | sed 's|/pull/|
 
 **5. Record state:**
 ```bash
-bd update "$ROOT_ID" \\
+gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.revert_pr_url=$REVERT_PR_URL" \\
   --set-metadata "evidence.revert_pr_number=$REVERT_PR_NUM"
-bd update "$ROOT_ID" --notes "$(echo "$NOTES")
+gc bd update "$ROOT_ID" --notes "$(echo "$NOTES")
 revert_pr_url: $REVERT_PR_URL
 revert_pr_number: $REVERT_PR_NUM"
 ```
@@ -513,9 +513,9 @@ visible to the maintainer).
 
 **1. Find root bead and read state:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-CARVE_OK=$(bd show "$ROOT_ID" --json | jq -r '.[0].metadata."evidence.carve_out_verified" // "false"')
-NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+CARVE_OK=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata."evidence.carve_out_verified" // "false"')
+NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 UPSTREAM_REPO=$(echo "$NOTES" | awk -F': ' '/^upstream_repo:/ {print $2}')
 REVERT_PR_URL=$(echo "$NOTES" | awk -F': ' '/^revert_pr_url:/ {print $2}')
 ```
@@ -523,7 +523,7 @@ REVERT_PR_URL=$(echo "$NOTES" | awk -F': ' '/^revert_pr_url:/ {print $2}')
 **2. Gate on carve-out (defensive — should always be true at this point):**
 ```bash
 if [ "$CARVE_OK" != "true" ]; then
-    bd update "$ROOT_ID" \\
+    gc bd update "$ROOT_ID" \\
       --set-metadata "evidence.comment_status=skipped_carve_out"
     echo "[pr-revert] comment-on-original: skipped (carve_out_verified != true)"
     exit 0
@@ -551,9 +551,9 @@ rm -f "$BODY_FILE"
 
 **4. Record state (NEVER halt on failure — revert PR is already open):**
 ```bash
-bd update "$ROOT_ID" \\
+gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.comment_status=$COMMENT_STATUS"
-bd update "$ROOT_ID" --notes "$(echo "$NOTES")
+gc bd update "$ROOT_ID" --notes "$(echo "$NOTES")
 comment_status: $COMMENT_STATUS"
 ```
 
@@ -575,9 +575,9 @@ Final step. Compose `summary_for_human` from collected evidence, ensure
 
 **1. Find root bead and read state:**
 ```bash
-ROOT_ID=$(bd mol current --json | jq -r '.molecule_id')
-META=$(bd show "$ROOT_ID" --json | jq '.[0].metadata')
-NOTES=$(bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
+ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
+META=$(gc bd show "$ROOT_ID" --json | jq '.[0].metadata')
+NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 PR_NUM={{pr}}
 PR_URL=$(echo "$NOTES" | awk -F': ' '/^pr_url:/ {print $2}')
 PR_TITLE=$(echo "$NOTES" | awk -F': ' '/^pr_title:/ {print $2}')
@@ -605,7 +605,7 @@ esac
 OVERLAP_NOTE=""
 [ "$OVERLAP_COUNT" -gt 0 ] && OVERLAP_NOTE=" $OVERLAP_COUNT files were modified after the original merge — watch CI on the revert PR."
 
-bd update "$ROOT_ID" \\
+gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.reviewer_verdict=pass" \\
   --set-metadata "evidence.artifact_path=github-pr:$REVERT_PR_URL" \\
   --set-metadata "summary_for_human=Reverted PR #$PR_NUM (\\"$PR_TITLE\\"). Revert PR: $REVERT_PR_URL (#$REVERT_PR_NUM). Revert commit: $REVERT_SHA. Carve-out path: $CARVE_PATH. $COMMENT_NOTE$OVERLAP_NOTE Reason: {{reason}}"
@@ -613,7 +613,7 @@ bd update "$ROOT_ID" \\
 
 **3. Close the molecule:**
 ```bash
-bd close "$ROOT_ID" --reason "revert PR #$REVERT_PR_NUM opened for #$PR_NUM"
+gc bd close "$ROOT_ID" --reason "revert PR #$REVERT_PR_NUM opened for #$PR_NUM"
 ```
 
 **4. Display:**
