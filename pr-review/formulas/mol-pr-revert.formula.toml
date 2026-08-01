@@ -466,7 +466,7 @@ rm -f "$BODY_FILE"
 
 if [ "$PR_EXIT" -eq 0 ] && [ -z "$(echo "$PR_URL_OUT" | grep -oE 'https://[^ ]+/pull/[0-9]+')" ]; then
     # No URL — recover by looking up an existing PR on this head.
-    PR_URL_OUT=$(gh pr list --repo "$UPSTREAM_REPO" --head "$BRANCH" --state open \\
+    PR_URL_OUT=$(gh pr list --repo "$UPSTREAM_REPO" --head "$FORK_OWNER:$BRANCH" --state open \\
                   --json url --jq '.[0].url // empty')
 fi
 
