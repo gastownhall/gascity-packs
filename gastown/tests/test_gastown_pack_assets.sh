@@ -245,6 +245,36 @@ test_prime_prompts_are_city_generic_and_compact() {
         fail "operational awareness should direct agents to the effective Dolt port"
 }
 
+test_refinery_wisp_pour_is_resumable() {
+    local formula pours assigns resolves stale_list
+    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+
+    # Every pour must be paired with an assign that also transitions the new
+    # wisp to in_progress. A wisp left at status=open is invisible to the
+    # startup resume check, so the next session pours a duplicate and orphans
+    # this one (open, assigned, never burned, never resumed).
+    # `|| true` on every count: grep -c exits 1 on zero matches, which under
+    # `set -e` would abort the script before the explanatory fail() ran.
+    pours=$(grep -c 'NEXT=\$(gc bd mol wisp mol-refinery-patrol --root-only' "$formula" || true)
+    assigns=$(grep -c 'gc bd update "\$NEXT" --assignee="\$GC_AGENT" --status=in_progress' "$formula" || true)
+    [[ "$assigns" -eq "$pours" ]] ||
+        fail "refinery pour sites ($pours) must each assign with --status=in_progress ($assigns)"
+    ! grep -E 'gc bd update "\$NEXT" --assignee="\$GC_AGENT";' "$formula" >/dev/null ||
+        fail "refinery pour must not assign the next wisp without --status=in_progress"
+    grep -F 'gc bd update $WISP --assignee=$GC_AGENT --status=in_progress' "$formula" >/dev/null ||
+        fail "refinery bootstrap snippet must pour the first wisp as in_progress"
+
+    # Current-wisp resolution must use `gc bd query` on ephemeral beads.
+    # `gc bd list` never returns ephemeral beads regardless of --type, so a
+    # list-based fallback silently resolves empty and the loop refuses to burn.
+    resolves=$(grep -c "CURRENT_WISP=\$(gc bd query --json 'ephemeral=true AND status=in_progress'" "$formula" || true)
+    [[ "$resolves" -eq "$pours" ]] ||
+        fail "refinery pour sites ($pours) must each resolve the current wisp via gc bd query ($resolves)"
+    stale_list=$(grep -c 'CURRENT_WISP=\$(gc bd list' "$formula" || true)
+    [[ "$stale_list" -eq 0 ]] ||
+        fail "refinery must not resolve the current wisp with gc bd list (ephemeral beads are excluded)"
+}
+
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
@@ -254,5 +284,6 @@ test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_refinery_wisp_pour_is_resumable
 
 echo "gastown pack asset tests passed"
