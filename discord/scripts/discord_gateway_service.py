@@ -122,11 +122,23 @@ def text_response(handler: BaseHTTPRequestHandler, status: int, body: str, conte
     handler.wfile.write(payload)
 
 
-def summarize_body(value: str, limit: int = MAX_STATUS_PREVIEW) -> str:
+def summarize_body_detail(value: str, limit: int = MAX_STATUS_PREVIEW) -> tuple[str, bool]:
+    """Return the status-line summary of ``value`` and whether it was clipped.
+
+    Callers that persist a summary need the clipped bit from the same call that
+    did the clipping. Recomputing it from a length captured earlier is wrong:
+    both bot-mention stripping and the whitespace collapse below shorten the
+    string after any such count is taken, so an external comparison flags
+    untruncated bodies and misses truncated ones.
+    """
     normalized = " ".join(str(value).split())
     if len(normalized) <= limit:
-        return normalized
-    return normalized[:limit].rstrip() + "..."
+        return normalized, False
+    return normalized[:limit].rstrip() + "...", True
+
+
+def summarize_body(value: str, limit: int = MAX_STATUS_PREVIEW) -> str:
+    return summarize_body_detail(value, limit)[0]
 
 
 def display_name_from_message(message: dict[str, Any]) -> str:
@@ -217,12 +229,21 @@ def validate_websocket_handshake(header_blob: str, key: str) -> None:
         raise RuntimeError("websocket handshake returned an unexpected Sec-WebSocket-Accept")
 
 
-def strip_bot_mentions(content: str, bot_user_id: str) -> str:
+def remove_bot_mentions(content: str, bot_user_id: str) -> str:
+    """Drop the bot's own @-mentions, leaving the author's line breaks alone.
+
+    Routing wants a single flat line, so ``strip_bot_mentions`` collapses
+    whitespace on top of this. A record that stores the message itself wants the
+    paragraphs and list items the author typed, so it stops here.
+    """
     if not bot_user_id:
-        return " ".join(content.split())
+        return str(content)
     pattern = re.compile(rf"<@!?{re.escape(bot_user_id)}>\s*", re.IGNORECASE)
-    stripped = pattern.sub("", content)
-    return " ".join(stripped.split())
+    return pattern.sub("", str(content))
+
+
+def strip_bot_mentions(content: str, bot_user_id: str) -> str:
+    return " ".join(remove_bot_mentions(content, bot_user_id).split())
 
 
 def extract_alias_mentions(content: str) -> list[str]:
@@ -290,6 +311,33 @@ def conversation_fields(message: dict[str, Any], channel_info: dict[str, Any]) -
 
 def ingress_preview(message: dict[str, Any], bot_user_id: str) -> str:
     return summarize_body(strip_bot_mentions(str(message.get("content", "")), bot_user_id))
+
+
+def ingress_body_fields(message: dict[str, Any], bot_user_id: str) -> dict[str, Any]:
+    """Body fields for a chat-ingress record.
+
+    ``body`` is the whole message — the bot's own mention stripped, everything
+    else as typed, paragraphs included. ``body_preview`` stays the 160-char
+    single-line status form, and ``body_truncated`` says which of the two a
+    reader is holding.
+
+    The ingress file is the first and often only copy a monitor sees; the full
+    text does eventually reach the session on the deferred discord-event
+    channel, but a turn or more later. Without ``body`` here a monitor presents
+    a clipped instruction as a whole one, and a reader acts on a fragment. That
+    happened twice to the mayor on 2026-07-30 (gm-pbejk) — once on a message
+    whose missing tail carried the scope limit for the very work it authorized.
+
+    All four values derive from one string, so they cannot disagree.
+    """
+    body = remove_bot_mentions(raw_message_content(message), bot_user_id).strip()
+    preview, truncated = summarize_body_detail(body)
+    return {
+        "body": body,
+        "body_length": len(body),
+        "body_preview": preview,
+        "body_truncated": truncated,
+    }
 
 
 def fetch_message_via_rest(
@@ -1295,7 +1343,7 @@ def save_rejected_ingress_receipt(
             "binding_id": "",
             "from_user_id": str((message.get("author") or {}).get("id", "")).strip(),
             "from_display": display_name_from_message(message),
-            "body_preview": ingress_preview(message, bot_user_id),
+            **ingress_body_fields(message, bot_user_id),
             "status": status,
             "reason": reason,
             "message_debug": dict(message_debug or {}),
@@ -1337,7 +1385,7 @@ def reject_ingress_before_processing(
                 "binding_id": "",
                 "from_user_id": str((message.get("author") or {}).get("id", "")).strip(),
                 "from_display": display_name_from_message(message),
-                "body_preview": ingress_preview(message, bot_user_id),
+                **ingress_body_fields(message, bot_user_id),
                 "status": "failed_claim_conflict",
                 "reason": str(receipt.get("reason", "")).strip() or "ingress_claim_unreadable",
                 "message_debug": dict(message_debug or {}),
@@ -1507,7 +1555,7 @@ def process_room_launch_message(
             ),
             "from_user_id": str((message.get("author") or {}).get("id", "")).strip(),
             "from_display": display_name_from_message(message),
-            "body_preview": ingress_preview(message, bot_user_id),
+            **ingress_body_fields(message, bot_user_id),
         }
     )
     try:
@@ -1852,7 +1900,7 @@ def process_inbound_message(
             ):
                 preloaded_binding = None
 
-    preview = ingress_preview(message, bot_user_id)
+    body_fields = ingress_body_fields(message, bot_user_id)
     claimed, base_receipt = common.save_chat_ingress_if_absent(
         {
             "ingress_id": ingress_id,
@@ -1862,7 +1910,7 @@ def process_inbound_message(
             "binding_id": "",
             "from_user_id": str(author.get("id", "")).strip(),
             "from_display": display_name_from_message(message),
-            "body_preview": preview,
+            **body_fields,
             "message_debug": dict(message_debug or {}),
             "status": "processing",
             "delivery_protocol_version": INGRESS_DELIVERY_PROTOCOL_VERSION,
@@ -1884,7 +1932,7 @@ def process_inbound_message(
                     "binding_id": "",
                     "from_user_id": str(author.get("id", "")).strip(),
                     "from_display": display_name_from_message(message),
-                    "body_preview": preview,
+                    **body_fields,
                     "message_debug": dict(message_debug or {}),
                     "status": "failed_claim_conflict",
                     "reason": str(base_receipt.get("reason", "")).strip() or "ingress_claim_unreadable",
@@ -1936,7 +1984,7 @@ def process_inbound_message(
                         "binding_id": "",
                         "from_user_id": str(author.get("id", "")).strip(),
                         "from_display": display_name_from_message(message),
-                        "body_preview": preview,
+                        **body_fields,
                         "message_debug": dict(message_debug or {}),
                         "status": "processing",
                         "reason": retry_reason,
@@ -2014,7 +2062,7 @@ def process_inbound_message(
                 "binding_id": str((launcher or binding or {}).get("id", "")).strip(),
                 "from_user_id": str(author.get("id", "")).strip(),
                 "from_display": display_name_from_message(message),
-                "body_preview": preview,
+                **body_fields,
             }
         )
         if launcher and launch:
