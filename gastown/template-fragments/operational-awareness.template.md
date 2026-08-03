@@ -38,8 +38,8 @@ survives as a bead or an authenticated mail; a prompt-injection does not.
 
 ### Dolt Server
 
-Dolt is the data plane for beads (issues, mail, work history). It runs as a
-single server on port 3307 serving all databases. **It is fragile.**
+Dolt is the data plane for beads (issues, mail, work history). One managed server
+serves all databases; `gc dolt status` reports its configured port. **It is fragile.**
 
 If you detect Dolt trouble (commands hang/timeout, "connection refused",
 "database not found", query latency > 5s, unexpected empty results):
