@@ -150,13 +150,24 @@ timeout = "5m"
 id = "plan-review"
 title = "Review implementation plan"
 needs = ["plan"]
-metadata = { "gc.run_target" = "gc.review-synthesizer" }
+metadata = { "gc.run_target" = "gc.review-synthesizer", "gc.build.artifact_path_keys" = "gc.build.plan_review_path,gc.var.plan_review_path" }
 description_file = "../assets/workflows/build-base/plan-review.md"
+
+# Outcome-aware decompose gate (dip-duj3e6): an operator step between plan-review
+# and decompose. On refusal it stays OPEN and BLOCKED (never closed), so the
+# plain `blocks` edge to decompose never releases and the task-decomposer cannot
+# activate on an unapproved plan. Proven live as the dip-b78hkn rig interim.
+[[steps]]
+id = "plan-review-approved-gate"
+title = "Require approved plan review before decomposition"
+needs = ["plan-review"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-base/plan-review-approved-gate.md"
 
 [[steps]]
 id = "decompose"
 title = "Decompose approved plan"
-needs = ["plan-review"]
+needs = ["plan-review-approved-gate"]
 metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
 description_file = "../assets/workflows/build-base/decompose.md"
 
