@@ -18,9 +18,19 @@ setup only. Do not edit source files in the launcher checkout.
 3. Validate context path {{context_path}}, files ownership, and verification
    policy for the resolved source anchor.
 4. Create or reuse a deterministic git worktree at
-   `$(pwd)/worktrees/<source-anchor-id>`. If the path is missing, run
-   `git worktree add "$WORKTREE" --detach HEAD`. If the path exists but is not
-   the worktree for this repository, fail closed.
+   `$(pwd)/worktrees/<source-anchor-id>`, based on the current upstream default
+   branch — never the launcher checkout's local `HEAD`, which drifts behind
+   `origin` as PRs merge and would otherwise produce stale-base worktrees whose
+   PRs conflict with already-merged work. If the path is missing:
+   - Resolve the repo default branch into `DEF`:
+     `DEF=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')`.
+     If `DEF` is empty, populate the remote head once with
+     `git remote set-head origin --auto` and re-read (fall back to `main` only
+     if the remote advertises no default branch).
+   - Fetch the latest tip: `git fetch origin "$DEF"`.
+   - Create the worktree from the freshly-fetched remote tip:
+     `git worktree add "$WORKTREE" --detach "origin/$DEF"`.
+   If the path exists but is not the worktree for this repository, fail closed.
 5. Persist the absolute path on the source anchor with
    `gc bd update <source-anchor-id> --set-metadata work_dir=<absolute worktree path>`.
    For synthetic drain-unit convoys, never persist `work_dir` on the synthetic drain-unit convoy; the original drain member/source anchor is authoritative.
