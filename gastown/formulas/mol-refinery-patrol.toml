@@ -212,12 +212,37 @@ BRANCH=$(gc bd show $WORK --json | jq -r '.[0].metadata.branch')
 TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_branch}}"')
 ```
 
-Fetch and attempt mechanical rebase:
+Fetch the exact metadata branch and target ref. Do not rely on
+`remote.origin.fetch`: refinery clones may deliberately track only the target
+branch, so the configured refspec can leave a newly-pushed polecat branch
+invisible locally even though it exists on the remote.
 ```bash
-git fetch --prune origin
-git checkout -b temp origin/$BRANCH
-git rebase origin/$TARGET
+if ! git fetch origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" "+refs/heads/${TARGET}:refs/remotes/origin/${TARGET}"; then
+  echo "Could not fetch metadata.branch=$BRANCH or target=$TARGET from origin. STOP. Do not mutate bead state."
+  gc runtime drain-ack
+  exit 1
+fi
+if ! git checkout -B temp "origin/$BRANCH"; then
+  echo "Could not check out fetched metadata.branch=$BRANCH. STOP. Do not mutate bead state."
+  gc runtime drain-ack
+  exit 1
+fi
+git rebase "origin/$TARGET"
+REBASE_STATUS=$?
+if [ "$REBASE_STATUS" -ne 0 ] && [ -z "$(git diff --name-only --diff-filter=U)" ]; then
+  git rebase --abort >/dev/null 2>&1 || true
+  echo "Rebase failed with status $REBASE_STATUS but produced no unmerged paths. STOP. Do not mutate bead state."
+  gc runtime drain-ack
+  exit 1
+fi
+if [ "$REBASE_STATUS" -ne 0 ]; then
+  exit "$REBASE_STATUS"
+fi
 ```
+
+Only a nonzero rebase with actual unmerged paths is a conflict. Fetch,
+checkout, and non-conflict rebase failures stop above without reopening,
+rejecting, or otherwise mutating the work bead.
 
 If rebase SUCCEEDED (exit 0): close this step, proceed to run-tests.
 
