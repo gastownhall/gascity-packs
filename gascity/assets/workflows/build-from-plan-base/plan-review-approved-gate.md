@@ -1,4 +1,4 @@
-This is the `build-base` plan-review-approved-gate stage. Treat it as a virtual contract that concrete formulas may override.
+This is the `build-from-plan-base` plan-review-approved-gate stage.
 
 Enforce the build's plan-review approval precondition before decomposition.
 This is the canonical outcome-aware decompose gate (platform bug dip-duj3e6):

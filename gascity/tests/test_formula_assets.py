@@ -83,6 +83,7 @@ BUILD_BASE_STEPS = [
     "requirements",
     "plan",
     "plan-review",
+    "plan-review-approved-gate",
     "decompose",
     "implement",
     "implement-same-session",
@@ -115,6 +116,7 @@ BUILD_FROM_PLAN_STEPS = BUILD_FROM_DECOMPOSE_STEPS | {
     "prepare-plan",
     "plan",
     "plan-review",
+    "plan-review-approved-gate",
 }
 
 BUILD_FROM_REQUIREMENTS_STEPS = BUILD_FROM_PLAN_STEPS | {
@@ -1743,7 +1745,8 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["prepare-plan"]["needs"], ["requirements"])
         self.assertEqual(steps["plan"]["needs"], ["prepare-plan"])
         self.assertEqual(steps["plan-review"]["needs"], ["plan"])
-        self.assertEqual(steps["prepare-decompose"]["needs"], ["plan-review"])
+        self.assertEqual(steps["plan-review-approved-gate"]["needs"], ["plan-review"])
+        self.assertEqual(steps["prepare-decompose"]["needs"], ["plan-review-approved-gate"])
         self.assertEqual(steps["decompose"]["needs"], ["prepare-decompose"])
         self.assertEqual(steps["prepare-convoy"]["needs"], ["decompose"])
         self.assertEqual(steps["implement"]["needs"], ["prepare-convoy"])
@@ -3987,9 +3990,11 @@ description = "Override sink that writes the base triage report contract."
             [script.name for script in scripts],
             [
                 "build-artifact-valid.sh",
+                "decompose-inputs-present.sh",
                 "design-review-approved.sh",
                 "gap-analysis-approved.sh",
                 "implementation-review-approved.sh",
+                "plan-review-approved.sh",
             ],
         )
         for script in scripts:
