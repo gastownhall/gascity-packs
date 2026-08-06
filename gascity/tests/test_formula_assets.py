@@ -84,6 +84,7 @@ BUILD_BASE_STEPS = [
     "plan",
     "plan-review",
     "decompose",
+    "route-workunits",
     "implement",
     "implement-same-session",
     "summarize-implementation",
@@ -109,6 +110,7 @@ BUILD_FROM_CONVOY_STEPS = BUILD_FROM_REVIEW_STEPS | {
 BUILD_FROM_DECOMPOSE_STEPS = BUILD_FROM_CONVOY_STEPS | {
     "prepare-decompose",
     "decompose",
+    "route-workunits",
 }
 
 BUILD_FROM_PLAN_STEPS = BUILD_FROM_DECOMPOSE_STEPS | {
@@ -1632,7 +1634,13 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["prepare-decompose"]["metadata"]["gc.run_target"], "gc.run-operator")
         self.assertEqual(steps["decompose"]["metadata"]["gc.run_target"], "gc.task-decomposer")
         self.assertEqual(steps["decompose"]["needs"], ["prepare-decompose"])
-        self.assertEqual(steps["prepare-convoy"]["needs"], ["decompose"])
+        self.assertEqual(steps["route-workunits"]["needs"], ["decompose"])
+        self.assertEqual(steps["route-workunits"]["metadata"]["gc.run_target"], "gc.run-operator")
+        self.assertEqual(
+            steps["route-workunits"]["check"]["check"]["path"],
+            ".gc/scripts/checks/route-workunits.sh",
+        )
+        self.assertEqual(steps["prepare-convoy"]["needs"], ["route-workunits"])
         self.assertEqual(steps["implement"]["needs"], ["prepare-convoy"])
         self.assertEqual(steps["implement"]["condition"], "{{drain_policy}} == separate")
         self.assertEqual(steps["implement"]["metadata"]["gc.run_target"], "{{implementation_target}}")
@@ -1745,7 +1753,8 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["plan-review"]["needs"], ["plan"])
         self.assertEqual(steps["prepare-decompose"]["needs"], ["plan-review"])
         self.assertEqual(steps["decompose"]["needs"], ["prepare-decompose"])
-        self.assertEqual(steps["prepare-convoy"]["needs"], ["decompose"])
+        self.assertEqual(steps["route-workunits"]["needs"], ["decompose"])
+        self.assertEqual(steps["prepare-convoy"]["needs"], ["route-workunits"])
         self.assertEqual(steps["implement"]["needs"], ["prepare-convoy"])
         self.assertEqual(steps["implement-same-session"]["needs"], ["prepare-convoy"])
         self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session"])
@@ -3990,6 +3999,7 @@ description = "Override sink that writes the base triage report contract."
                 "design-review-approved.sh",
                 "gap-analysis-approved.sh",
                 "implementation-review-approved.sh",
+                "route-workunits.sh",
             ],
         )
         for script in scripts:
@@ -4029,6 +4039,177 @@ description = "Override sink that writes the base triage report contract."
                 )
                 self.assertEqual(step["metadata"]["gc.build.artifact_schema"], schema)
                 self.assertEqual(step["metadata"]["gc.build.artifact_path_keys"], path_keys)
+
+    # --- route-workunits gate (auto-routing of decomposed work-units) ---
+
+    FAKE_GC_ROUTE_STATEFUL = '''#!/usr/bin/env python3
+import json
+import os
+import sys
+
+args = sys.argv[1:]
+# Record each invocation as the operator would type it (through gc), so this
+# fixture never reads as a bare beads command to the pack-asset scanner.
+with open(os.environ["GC_TEST_CALLS"], "a", encoding="utf-8") as fh:
+    fh.write("gc " + " ".join(args) + "\\n")
+state_path = os.environ["GC_TEST_STATE"]
+with open(state_path, encoding="utf-8") as fh:
+    state = json.load(fh)
+
+verb = args[0] if args else ""
+sub = args[1] if len(args) > 1 else ""
+
+
+def emit(obj):
+    print(json.dumps(obj))
+
+
+if verb == "bd" and sub == "show":
+    bid = args[2]
+    if bid == "step-1":
+        emit({"id": bid, "metadata": {"gc.root_bead_id": "root-1"}})
+    elif bid == "root-1":
+        emit({"id": bid, "metadata": state["root"]})
+    elif bid in state["members"]:
+        route = state["members"][bid]
+        emit({"id": bid, "metadata": ({"gc.routed_to": route} if route else {})})
+    else:
+        emit({})
+elif verb == "convoy" and sub == "status":
+    emit({
+        "schema_version": "1",
+        "convoy": {"id": args[2]},
+        "children": [{"id": m} for m in state["members"]],
+    })
+elif verb == "bd" and sub == "update":
+    bid = args[2]
+    for i, a in enumerate(args):
+        if a == "--set-metadata" and args[i + 1].startswith("gc.routed_to="):
+            state["members"][bid] = args[i + 1].split("=", 1)[1]
+    with open(state_path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+else:
+    sys.exit(2)
+'''
+
+    def _run_route_workunits_check(self, root_metadata: dict, members: dict):
+        """Run route-workunits.sh against a stateful fake gc.
+
+        members maps member-id -> starting gc.routed_to ("" == route-less).
+        Returns (result, call_lines, final_members).
+        """
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "route-workunits.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            calls.write_text("", encoding="utf-8")
+            state = tmp_path / "state.json"
+            state.write_text(
+                json.dumps({"root": root_metadata, "members": dict(members)}),
+                encoding="utf-8",
+            )
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(self.FAKE_GC_ROUTE_STATEFUL, encoding="utf-8")
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "step-1",
+                "GC_TEST_CALLS": str(calls),
+                "GC_TEST_STATE": str(state),
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+            final_members = json.loads(state.read_text(encoding="utf-8"))["members"]
+        return result, call_lines, final_members
+
+    def test_route_workunits_check_stamps_declared_target_on_routeless_members(self) -> None:
+        # Decomposed work-units land route-less; the coded gate must stamp the
+        # DECLARED implementation_target so they become claimable -- no agent
+        # memory, no manual sling.
+        result, call_lines, final = self._run_route_workunits_check(
+            {
+                "gc.build.implementation_convoy_id": "conv-1",
+                "gc.var.implementation_target": "gc.implementation-worker",
+            },
+            {"unit-1": "", "unit-2": "", "unit-3": ""},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            final,
+            {
+                "unit-1": "gc.implementation-worker",
+                "unit-2": "gc.implementation-worker",
+                "unit-3": "gc.implementation-worker",
+            },
+        )
+        # Both routing keys are stamped, mirroring the formula-graph stamper.
+        for unit in ("unit-1", "unit-2", "unit-3"):
+            self.assertIn(
+                f"gc bd update {unit} --set-metadata gc.routed_to=gc.implementation-worker "
+                "--set-metadata gc.execution_routed_to=gc.implementation-worker",
+                call_lines,
+            )
+
+    def test_route_workunits_check_reads_target_from_input_convoy_and_packed_vars(self) -> None:
+        # Fallbacks: convoy id via gc.input_convoy_id, target via the packed
+        # gc.graphv2_vars.v1 runtime-vars blob.
+        result, _calls, final = self._run_route_workunits_check(
+            {
+                "gc.input_convoy_id": "conv-1",
+                "gc.graphv2_vars.v1": json.dumps(
+                    {"implementation_target": "compound-engineering.ce-work"}
+                ),
+            },
+            {"unit-1": ""},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(final, {"unit-1": "compound-engineering.ce-work"})
+
+    def test_route_workunits_check_does_not_clobber_an_explicit_route(self) -> None:
+        # ZFC: an already-routed member keeps its route; only route-less units
+        # are stamped.
+        result, call_lines, final = self._run_route_workunits_check(
+            {
+                "gc.build.implementation_convoy_id": "conv-1",
+                "gc.var.implementation_target": "gc.implementation-worker",
+            },
+            {"unit-keep": "gc.other-worker", "unit-fill": ""},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            final,
+            {"unit-keep": "gc.other-worker", "unit-fill": "gc.implementation-worker"},
+        )
+        self.assertFalse(
+            any(line.startswith("gc bd update unit-keep") for line in call_lines),
+            "must not re-stamp a member that already carries a route",
+        )
+
+    def test_route_workunits_check_fails_loudly_without_target(self) -> None:
+        # NO-SILENT-FAILURE: if implementation_target is undeclared the units
+        # would sit unclaimable; the gate must fail loudly, not pass silently.
+        result, call_lines, final = self._run_route_workunits_check(
+            {"gc.build.implementation_convoy_id": "conv-1"},
+            {"unit-1": ""},
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("implementation_target", result.stderr)
+        self.assertEqual(final, {"unit-1": ""})
+        self.assertFalse(any(line.startswith("gc bd update") for line in call_lines))
+
+    def test_route_workunits_check_fails_loudly_without_convoy(self) -> None:
+        # NO-SILENT-FAILURE: a missing implementation convoy is surfaced, not
+        # swallowed.
+        result, _calls, _final = self._run_route_workunits_check(
+            {"gc.var.implementation_target": "gc.implementation-worker"},
+            {"unit-1": ""},
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("convoy", result.stderr)
 
     def _run_build_artifact_check(
         self,

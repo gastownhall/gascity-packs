@@ -169,9 +169,24 @@ path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
 
 [[steps]]
+id = "route-workunits"
+title = "Route decomposed work-units to the implementation target"
+needs = ["decompose"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-base/route-workunits.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/route-workunits.sh"
+timeout = "5m"
+
+[[steps]]
 id = "implement"
 title = "Drain implementation convoy into separate sessions"
-needs = ["decompose"]
+needs = ["route-workunits"]
 condition = "{{drain_policy}} == separate"
 metadata = { "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/build-base/implement.md"
@@ -184,7 +199,7 @@ member_access = "exclusive"
 [[steps]]
 id = "implement-same-session"
 title = "Drain implementation convoy in one shared session"
-needs = ["decompose"]
+needs = ["route-workunits"]
 condition = "{{drain_policy}} == same-session"
 metadata = { "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/build-base/implement-same-session.md"

@@ -83,8 +83,23 @@ path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
 
 [[steps]]
+id = "route-workunits"
+title = "Route decomposed work-units to the implementation target"
+needs = ["decompose"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-decompose-base/route-workunits.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/route-workunits.sh"
+timeout = "5m"
+
+[[steps]]
 id = "prepare-convoy"
 title = "Validate implementation convoy"
-needs = ["decompose"]
+needs = ["route-workunits"]
 metadata = { "gc.run_target" = "gc.run-operator" }
 description_file = "../assets/workflows/build-from-decompose-base/prepare-convoy.md"
