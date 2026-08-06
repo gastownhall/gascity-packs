@@ -382,9 +382,100 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
 **FORBIDDEN**: Writing code to fix failures. You are a merge processor."""
 
 [[steps]]
+id = "review-diff"
+title = "Review the diff before it lands"
+needs = ["handle-failures"]
+description = """
+Quality checks prove the branch does not break the build. They do not say
+whether the change is CORRECT. This step reads the diff before it lands.
+
+Reached only when checks PASSED — a failing branch is handled by
+handle-failures and never arrives here.
+
+Read the branch, target and strategy:
+```bash
+BRANCH=$(gc bd show $WORK --json | jq -r '.[0].metadata.branch')
+TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_branch}}"')
+MERGE_STRATEGY=$(gc bd show $WORK --json | jq -r '.[0].metadata.merge_strategy // "direct"')
+git --no-pager diff --stat "origin/$TARGET...origin/$BRANCH"
+git --no-pager diff "origin/$TARGET...origin/$BRANCH"
+```
+
+Review for:
+1. **Correctness** — does it do what the bead asked? Read the bead's own
+   description and acceptance criteria; a change that builds cleanly and
+   solves the wrong problem is the expensive failure this step exists to
+   catch.
+2. **Silent failures** — swallowed errors, empty catch blocks, a fallback
+   that hides the fault it was meant to report.
+3. **Blast radius** — does it touch shared state, migrations, or config
+   that reaches beyond this bead's stated scope?
+
+## 🔴 ATTRIBUTION — read before posting anything
+
+In most installs `gh` authenticates as a HUMAN's account, not a bot. Check
+once with `gh api user --jq .login`. Whatever it prints is the name your
+review appears under.
+
+⛔ NEVER run `gh pr review --approve` or `--request-changes`. Under a human
+   account those fabricate a human sign-off that never happened — on exactly
+   the PRs whose open question is whether anyone reviewed them. An approval
+   is an attestation; you are not the attester.
+✅ Post `gh pr comment`, and BEGIN the body with a literal disclosure line:
+
+       **Automated review (refinery) — not a human approval.**
+
+Approval stays a human act. Your job is to surface findings so a human can
+approve quickly. Comments are safe because they read as claims; verdicts are
+not, because they read as testimony.
+
+## Recording the review
+
+For `mr`/`pr` strategy, post the comment on the PR:
+```bash
+gh pr comment "$PR_NUMBER" --body "$(cat <<'REVIEW'
+**Automated review (refinery) — not a human approval.**
+
+<findings, each citing file:line — or an explicit "no blocking issues found">
+REVIEW
+)"
+```
+
+For `direct` strategy there is no PR, so record the review on the work bead
+so it survives this session:
+```bash
+gc bd comment $WORK --stdin <<'REVIEW'
+Refinery pre-merge review (automated — not a human approval):
+<findings, or "no blocking issues found">
+REVIEW
+```
+
+Say "no blocking issues found" plainly when that is the answer. Do NOT
+manufacture findings to look thorough — a review that always finds something
+trains the next reader to ignore it.
+
+## Blocking is deliberately RARE
+
+**Default to NOT blocking.** Record the finding, proceed to merge-push.
+
+Block ONLY when you can state a concrete failure: the inputs, and the wrong
+output or crash they produce. "This looks fragile" is a comment, not a block.
+
+If — and only if — you can state that failure, treat it exactly as a test
+failure: do NOT merge, and follow handle-failures' rejection path to reopen
+the source bead with your reasoning in the rejection metadata.
+
+The bar is high on purpose. A refinery that blocks on suspicion starves its
+own lane, and every bead behind this one waits on a guess. A wrong merge is
+recoverable by a follow-up commit; a stalled lane is not self-healing.
+
+Close this step when the review is recorded (and posted, in mr/pr mode).
+"""
+
+[[steps]]
 id = "merge-push"
 title = "Merge and push"
-needs = ["handle-failures"]
+needs = ["review-diff"]
 description = """
 **Config: target_branch = {{target_branch}}**
 **Config: delete_merged_branches = {{delete_merged_branches}}**
