@@ -49,9 +49,9 @@ test_shutdown_dance_contracts_are_executable() {
 
     ! grep -F '[vars.warrant_id]' "$formula" >/dev/null ||
         fail "warrant_id should be the claimed work bead, not a required formula var"
-    grep -F 'gc bd show "$GC_BEAD_ID"' "$formula" >/dev/null ||
+    grep -F 'gc bd show "$WORK_BEAD"' "$formula" >/dev/null ||
         fail "shutdown dance should inspect the claimed warrant bead"
-    grep -F 'gc bd close "$GC_BEAD_ID"' "$formula" >/dev/null ||
+    grep -F 'gc bd close "$WORK_BEAD"' "$formula" >/dev/null ||
         fail "shutdown dance should close the claimed warrant bead"
     ! grep -F '<wisp-id>' "$formula" >/dev/null ||
         fail "shutdown dance should not contain raw wisp placeholders"
@@ -85,7 +85,7 @@ test_shutdown_dance_lifecycle_and_audit_contracts() {
         fail "every early-exit path and the epitaph should end with gc runtime drain-ack"
     local malformed_branches malformed_closes malformed_drains
     malformed_branches="$(grep -c 'is missing target or reason' "$formula" || true)"
-    malformed_closes="$(grep -A4 'is missing target or reason' "$formula" | grep -cF 'gc bd close "$GC_BEAD_ID"' || true)"
+    malformed_closes="$(grep -A4 'is missing target or reason' "$formula" | grep -cF 'gc bd close "$WORK_BEAD"' || true)"
     malformed_drains="$(grep -A4 'is missing target or reason' "$formula" | grep -cF 'gc runtime drain-ack' || true)"
     [[ "$malformed_branches" -ge 1 ]] ||
         fail "shutdown dance should validate warrant target/reason metadata"
@@ -109,6 +109,41 @@ test_shutdown_dance_lifecycle_and_audit_contracts() {
         fail "dog prompt should notify the warrant's requester, not a hardcoded deacon endpoint"
     grep -F 'gc session nudge "$requester_endpoint"' "$prompt" >/dev/null ||
         fail "dog prompt DOG_DONE guidance should use the normalized requester endpoint"
+}
+
+# The claude provider never exports GC_BEAD_ID — it exports GC_TRIGGER_BEAD_ID
+# and GC_TRIGGER_WORK_BEAD_ID (ga-oyp60, porting gastownhall/gascity#4693). Every
+# formula that needs the claimed bead id must therefore read GC_BEAD_ID first, so
+# providers that do export it keep working, and fall back to
+# GC_TRIGGER_WORK_BEAD_ID instead of acting on an empty id.
+test_formulas_resolve_bead_id_without_gc_bead_id() {
+    local dance="$GASTOWN/formulas/mol-shutdown-dance.toml"
+    local patrol file
+
+    # The dance has no other source for the warrant id, and `gc bd close ""`
+    # fuzzy-matches an unrelated bead, so an unresolvable id must hard-abort.
+    # Both bootstrap blocks (preamble + receive-warrant) need the resolution:
+    # shell variables do not survive between steps.
+    [[ "$(grep -cF 'WORK_BEAD="${GC_BEAD_ID:-${GC_TRIGGER_WORK_BEAD_ID:?no work bead id in env}}"' "$dance")" -ge 2 ]] ||
+        fail "every shutdown dance bootstrap block should resolve WORK_BEAD from GC_BEAD_ID or GC_TRIGGER_WORK_BEAD_ID"
+    ! grep -E 'gc (bd|session|runtime|mail) [^|]*\$GC_BEAD_ID' "$dance" >/dev/null ||
+        fail "shutdown dance commands should use the resolved WORK_BEAD, not a bare GC_BEAD_ID"
+
+    # The patrols already degrade to a `gc bd list` lookup, and that path ends in
+    # `gc runtime drain-ack`. A `:?` rung would abort the shell before reaching
+    # either, leaking the wisp — so the env fallback is soft here, and sits ahead
+    # of the query, which picks by --limit=1 and can choose the wrong molecule.
+    for patrol in mol-refinery-patrol mol-deacon-patrol; do
+        file="$GASTOWN/formulas/$patrol.toml"
+        grep -F 'CURRENT_WISP="${GC_BEAD_ID:-${GC_TRIGGER_WORK_BEAD_ID:-}}"' "$file" >/dev/null ||
+            fail "$patrol should resolve the current wisp from GC_BEAD_ID or GC_TRIGGER_WORK_BEAD_ID"
+        ! grep -F 'CURRENT_WISP=${GC_BEAD_ID:-}' "$file" >/dev/null ||
+            fail "$patrol should not read GC_BEAD_ID without the GC_TRIGGER_WORK_BEAD_ID fallback"
+        ! grep -F 'CURRENT_WISP="${GC_BEAD_ID:-${GC_TRIGGER_WORK_BEAD_ID:?' "$file" >/dev/null ||
+            fail "$patrol wisp resolution must stay soft; a hard abort skips the gc bd list fallback and drain-ack"
+        [[ "$(grep -cF 'CURRENT_WISP="${GC_BEAD_ID' "$file")" -eq "$(grep -cF 'CURRENT_WISP=$(gc bd list' "$file")" ]] ||
+            fail "$patrol should keep one gc bd list fallback for every wisp resolution"
+    done
 }
 
 test_composition_is_documented() {
@@ -220,6 +255,7 @@ test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
 test_shutdown_dance_lifecycle_and_audit_contracts
+test_formulas_resolve_bead_id_without_gc_bead_id
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation

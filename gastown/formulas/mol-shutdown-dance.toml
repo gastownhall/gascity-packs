@@ -12,25 +12,30 @@ gc bd create --type=task \
 
 The dog pool picks up the warrant and runs this formula against the
 claimed warrant bead. The claimed bead is the warrant id; use
-`$GC_BEAD_ID` for warrant verification, closure, and audit output.
+`$WORK_BEAD` — resolved in the bootstrap below — for warrant verification,
+closure, and audit output.
 Existing warrant producers provide `target`, `reason`, and `requester`
 metadata, not a separate `warrant_id`. Each warrant is one shutdown dance
 for one target. On crash, re-read formula steps and resume from context
 (check target state, attempt history).
 
-Before running command snippets in any step, load warrant metadata into quoted
-shell variables:
+Before running command snippets in any step, resolve the claimed warrant id and
+load its metadata into quoted shell variables. `$GC_BEAD_ID` is not exported by
+every provider — the claude provider exports `$GC_TRIGGER_WORK_BEAD_ID` instead
+— so read the first that is set and abort loudly when neither is, rather than
+running `gc bd close ""` against an empty id:
 
 ```bash
-warrant_json="$(gc bd show "$GC_BEAD_ID" --json)"
+WORK_BEAD="${GC_BEAD_ID:-${GC_TRIGGER_WORK_BEAD_ID:?no work bead id in env}}"
+warrant_json="$(gc bd show "$WORK_BEAD" --json)"
 target="$(printf '%s' "$warrant_json" | jq -r '.[0].metadata.target // empty')"
 reason="$(printf '%s' "$warrant_json" | jq -r '.[0].metadata.reason // empty')"
 requester="$(printf '%s' "$warrant_json" | jq -r '.[0].metadata.requester // "deacon"')"
 requester_endpoint="${requester%/}/"
 if [ -z "$target" ] || [ -z "$reason" ]; then
-  echo "warrant $GC_BEAD_ID is missing target or reason" >&2
-  gc bd close "$GC_BEAD_ID" --reason "MALFORMED_WARRANT: missing target or reason metadata"
-  gc session nudge "$requester_endpoint" "DOG_DONE: warrant $GC_BEAD_ID - MALFORMED_WARRANT (missing target or reason)" || true
+  echo "warrant $WORK_BEAD is missing target or reason" >&2
+  gc bd close "$WORK_BEAD" --reason "MALFORMED_WARRANT: missing target or reason metadata"
+  gc session nudge "$requester_endpoint" "DOG_DONE: warrant $WORK_BEAD - MALFORMED_WARRANT (missing target or reason)" || true
   gc runtime drain-ack
   exit 1
 fi
@@ -82,21 +87,24 @@ Entry point. Read the warrant metadata from the claimed warrant bead.
 
 **1. Read warrant details:**
 ```bash
-warrant_json="$(gc bd show "$GC_BEAD_ID" --json)"
+WORK_BEAD="${GC_BEAD_ID:-${GC_TRIGGER_WORK_BEAD_ID:?no work bead id in env}}"
+warrant_json="$(gc bd show "$WORK_BEAD" --json)"
 target="$(printf '%s' "$warrant_json" | jq -r '.[0].metadata.target // empty')"
 reason="$(printf '%s' "$warrant_json" | jq -r '.[0].metadata.reason // empty')"
 requester="$(printf '%s' "$warrant_json" | jq -r '.[0].metadata.requester // "deacon"')"
 requester_endpoint="${requester%/}/"
 if [ -z "$target" ] || [ -z "$reason" ]; then
-  echo "warrant $GC_BEAD_ID is missing target or reason" >&2
-  gc bd close "$GC_BEAD_ID" --reason "MALFORMED_WARRANT: missing target or reason metadata"
-  gc session nudge "$requester_endpoint" "DOG_DONE: warrant $GC_BEAD_ID - MALFORMED_WARRANT (missing target or reason)" || true
+  echo "warrant $WORK_BEAD is missing target or reason" >&2
+  gc bd close "$WORK_BEAD" --reason "MALFORMED_WARRANT: missing target or reason metadata"
+  gc session nudge "$requester_endpoint" "DOG_DONE: warrant $WORK_BEAD - MALFORMED_WARRANT (missing target or reason)" || true
   gc runtime drain-ack
   exit 1
 fi
 ```
 Extract: `target`, `reason`, and `requester`. The warrant id is the
-claimed work bead, `$GC_BEAD_ID`.
+claimed work bead, `$WORK_BEAD` — `$GC_BEAD_ID` when the provider exports it,
+`$GC_TRIGGER_WORK_BEAD_ID` (claude) otherwise. Re-run that one-line resolution
+at the top of every later step: shell variables do not survive between steps.
 
 A warrant missing `target` or `reason` is malformed and cannot be danced.
 The branch above is a terminal cleanup path: it closes the claimed warrant
@@ -106,7 +114,7 @@ still `in_progress` — that leaks the warrant and wedges this pool slot.
 
 **2. Verify the warrant bead exists and is not closed:**
 ```bash
-gc bd show "$GC_BEAD_ID" --json | jq '.[0].status'
+gc bd show "$WORK_BEAD" --json | jq '.[0].status'
 ```
 Both `open` and `in_progress` are valid warrant states — a claimed
 warrant is normally already `in_progress`. Only `closed` stops the
@@ -120,7 +128,7 @@ attempt any step or bead updates against the closed warrant. Run
 gc session peek "$target" --lines 1
 ```
 If target session doesn't exist (already dead):
-- Close warrant: `gc bd close "$GC_BEAD_ID" --reason "Target already dead"`
+- Close warrant: `gc bd close "$WORK_BEAD" --reason "Target already dead"`
 - Nudge requester: `gc session nudge "$requester_endpoint" "DOG_DONE: $target - already dead"`
 - Run `gc runtime drain-ack`, then exit
 
@@ -136,7 +144,7 @@ First attempt to contact the stuck agent. Give it 60 seconds.
 **1. Send health check via nudge:**
 ```bash
 gc session nudge "$target" "[DOG] HEALTH CHECK: Respond ALIVE within 60s or face termination.
-Warrant: $GC_BEAD_ID
+Warrant: $WORK_BEAD
 Reason: $reason
 Filed by: $requester
 Attempt: 1/3"
@@ -158,7 +166,7 @@ generated). Use judgment — explicit "ALIVE" is definitive, but active
 output also indicates the agent is functioning.
 
 **4. If ALIVE or active:**
-- Close warrant: `gc bd close "$GC_BEAD_ID" --reason "Session responded at attempt 1"`
+- Close warrant: `gc bd close "$WORK_BEAD" --reason "Session responded at attempt 1"`
 - Nudge requester: `gc session nudge "$requester_endpoint" "DOG_DONE: $target - PARDONED after attempt 1"`
 - Run `gc runtime drain-ack`, then exit
 
@@ -175,7 +183,7 @@ got no response.
 **1. Send health check:**
 ```bash
 gc session nudge "$target" "[DOG] HEALTH CHECK: Respond ALIVE within 120s or face termination.
-Warrant: $GC_BEAD_ID
+Warrant: $WORK_BEAD
 Reason: $reason
 Filed by: $requester
 Attempt: 2/3"
@@ -194,7 +202,7 @@ gc session peek "$target" --lines 50
 Same evaluation as attempt 1: ALIVE keyword or active output.
 
 **4. If ALIVE or active:**
-- Close warrant: `gc bd close "$GC_BEAD_ID" --reason "Session responded at attempt 2"`
+- Close warrant: `gc bd close "$WORK_BEAD" --reason "Session responded at attempt 2"`
 - Nudge requester: `gc session nudge "$requester_endpoint" "DOG_DONE: $target - PARDONED after attempt 2"`
 - Run `gc runtime drain-ack`, then exit
 
@@ -211,7 +219,7 @@ respond in 4 minutes after 3 attempts, it's genuinely stuck.
 **1. Send health check:**
 ```bash
 gc session nudge "$target" "[DOG] HEALTH CHECK: FINAL WARNING. Respond ALIVE within 240s.
-Warrant: $GC_BEAD_ID
+Warrant: $WORK_BEAD
 Reason: $reason
 Filed by: $requester
 Attempt: 3/3 — session will be terminated if no response"
@@ -228,7 +236,7 @@ gc session peek "$target" --lines 50
 ```
 
 **4. If ALIVE or active:**
-- Close warrant: `gc bd close "$GC_BEAD_ID" --reason "Session responded at attempt 3"`
+- Close warrant: `gc bd close "$WORK_BEAD" --reason "Session responded at attempt 3"`
 - Nudge requester: `gc session nudge "$requester_endpoint" "DOG_DONE: $target - PARDONED after attempt 3"`
 - Run `gc runtime drain-ack`, then exit
 
@@ -277,7 +285,7 @@ spent. If either signal shows movement inside it, the target is progressing —
 PARDON it instead of killing. A polecat inside a full test suite is not dead:
 ```bash
 if [ "$progress" != "none" ]; then
-  gc bd close "$GC_BEAD_ID" --reason "PARDONED: $target showed work progress within the interrogation window ($progress)"
+  gc bd close "$WORK_BEAD" --reason "PARDONED: $target showed work progress within the interrogation window ($progress)"
   gc session nudge "$requester_endpoint" "DOG_DONE: $target - PARDONED (progress within interrogation window; likely inside one long tool call)"
   gc runtime drain-ack
   exit 0
@@ -313,7 +321,7 @@ state captured in step 1.
 
 **4. If the kill succeeded, record the execution on the warrant:**
 ```bash
-gc bd close "$GC_BEAD_ID" --reason "Executed after 3 failed attempts (420s total)"
+gc bd close "$WORK_BEAD" --reason "Executed after 3 failed attempts (420s total)"
 ```
 
 **5. If the kill did not take effect** (the session still shows the
@@ -324,8 +332,8 @@ mayor and close the warrant with the failure on the audit record:
 gc mail send mayor/ -s "EXECUTE_FAILED: $target" \
   -m "session kill didn't take effect. Agent may need manual intervention.
 Requester: $requester
-Warrant: $GC_BEAD_ID"
-gc bd close "$GC_BEAD_ID" --reason "EXECUTE_FAILED: kill did not take effect, escalated to mayor"
+Warrant: $WORK_BEAD"
+gc bd close "$WORK_BEAD" --reason "EXECUTE_FAILED: kill did not take effect, escalated to mayor"
 ```
 
 Close this step, proceed to epitaph. Carry the outcome (EXECUTED or
@@ -343,7 +351,7 @@ Final step. Create audit record and exit.
 If the kill took effect (warrant closed as Executed):
 ```bash
 gc session nudge "$requester_endpoint" "DOG_DONE: $target - EXECUTED after 3 failed attempts.
-Warrant: $GC_BEAD_ID
+Warrant: $WORK_BEAD
 Target: $target
 Reason: $reason
 Outcome: EXECUTED after 3 attempts (60s + 120s + 240s = 420s)
@@ -353,7 +361,7 @@ Action: session killed, reconciler will restart"
 If the kill did not take effect (warrant closed as EXECUTE_FAILED):
 ```bash
 gc session nudge "$requester_endpoint" "DOG_DONE: $target - EXECUTE_FAILED (escalated).
-Warrant: $GC_BEAD_ID
+Warrant: $WORK_BEAD
 Target: $target
 Reason: $reason
 Outcome: EXECUTE_FAILED after 3 attempts (60s + 120s + 240s = 420s)
