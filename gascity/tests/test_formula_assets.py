@@ -124,6 +124,21 @@ BUILD_FROM_REQUIREMENTS_STEPS = BUILD_FROM_PLAN_STEPS | {
     "requirements",
 }
 
+# Concrete build formulas that extend build-base and RE-DECLARE their own
+# implement / implement-same-session step bodies (to swap description_file /
+# drain formula). Because formula composition is per-step-id REPLACEMENT (see
+# merged_steps), such an override drops the inherited route-workunits wiring
+# unless it repoints needs itself -- so the auto-routing gate must be asserted
+# on every one of them. Each entry is (formula-name, pack-subdir or None when
+# the formula lives in gascity/formulas).
+CONCRETE_BUILD_FORMULAS = [
+    ("build-basic", None),
+    ("compound-build", "compound-engineering"),
+    ("gstack-build", "gstack"),
+    ("bmad-build", "bmad"),
+    ("superpowers-build", "superpowers"),
+]
+
 METHODOLOGY_STAGE_CONTRACTS = {
     "planning-base": {
         "steps": ["prepare-planning", "requirements", "plan", "plan-review"],
@@ -570,6 +585,19 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
     if data.get("description"):
         merged["description"] = data["description"]
     return merged
+
+
+def transitive_needs(steps_by_id: dict, start: str) -> set:
+    """All step ids reachable from ``start`` through the needs graph (excludes start)."""
+    seen: set = set()
+    stack = list(steps_by_id.get(start, {}).get("needs", []))
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(steps_by_id.get(node, {}).get("needs", []))
+    return seen
 
 
 def effective_formula_text(root: pathlib.Path, name: str) -> str:
@@ -2143,7 +2171,10 @@ class FormulaAssetTests(unittest.TestCase):
                 self.assertNotIn("compound", [step["id"] for step in resolved["steps"]])
                 step_by_id = {step["id"]: step for step in data["steps"]}
                 if "implementation-readiness" in expected.get("extra_steps", []):
-                    self.assertEqual(step_by_id["implementation-readiness"]["needs"], ["decompose"])
+                    # bmad threads the auto-routing gate through its readiness
+                    # step: decompose -> route-workunits -> implementation-readiness
+                    # -> implement, so the drain transitively depends on the gate.
+                    self.assertEqual(step_by_id["implementation-readiness"]["needs"], ["route-workunits"])
                     self.assertEqual(
                         step_by_id["implementation-readiness"]["metadata"]["gc.run_target"],
                         "bmad.readiness-reviewer",
@@ -4210,6 +4241,54 @@ else:
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("convoy", result.stderr)
+
+    def test_concrete_build_formulas_gate_implement_through_route_workunits(self) -> None:
+        # REGRESSION GUARD (dip-ppvr7p): build-base wires implement's needs to
+        # route-workunits so decomposed work-units are stamped claimable BEFORE
+        # the convoy drain claim-scans them. But every concrete build pack
+        # RE-DECLARES its own implement / implement-same-session step bodies, and
+        # formula composition is per-step-id REPLACEMENT (see merged_steps). An
+        # override that still says needs = ["decompose"] therefore ORPHANS the
+        # gate: route-workunits still runs, but with no ordering guarantee vs the
+        # drain's claim-scan -- reproducing the original invisible-work-unit race.
+        # We must assert on the transitive NEEDS-CHAIN, not just the resolved
+        # step-id LIST: the gate step existing in the graph is exactly the
+        # condition that masked the gap from the list-only checks.
+        gascity_root = pathlib.Path(__file__).resolve().parents[1]
+        packs_root = gascity_root.parent
+        for name, pack_subdir in CONCRETE_BUILD_FORMULAS:
+            with self.subTest(formula=name):
+                if pack_subdir is None:
+                    resolved = resolve_formula(gascity_root, name)
+                else:
+                    formula_dirs = [gascity_root / "formulas", packs_root / pack_subdir / "formulas"]
+                    resolved = resolve_formula_from_dirs(formula_dirs, name)
+                steps_by_id = {step["id"]: step for step in resolved["steps"]}
+
+                # The gate step must actually exist in the resolved graph...
+                self.assertIn(
+                    "route-workunits",
+                    steps_by_id,
+                    f"{name}: route-workunits gate missing from the resolved graph",
+                )
+                # ...and be ordered AFTER decompose (the convoy must exist before
+                # its members can be stamped), never floating unordered.
+                self.assertIn(
+                    "decompose",
+                    transitive_needs(steps_by_id, "route-workunits"),
+                    f"{name}: route-workunits must depend transitively on decompose",
+                )
+                # Every implementation-drain step must depend TRANSITIVELY on the
+                # gate, so no override can claim-scan the convoy before routing
+                # has stamped its members claimable.
+                for drain in ("implement", "implement-same-session"):
+                    self.assertIn(drain, steps_by_id, f"{name}: missing {drain} step")
+                    self.assertIn(
+                        "route-workunits",
+                        transitive_needs(steps_by_id, drain),
+                        f"{name}: {drain}.needs must transitively include route-workunits "
+                        "(a per-step-id override silently dropped the auto-routing gate)",
+                    )
 
     def _run_build_artifact_check(
         self,

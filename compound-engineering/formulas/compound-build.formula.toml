@@ -91,7 +91,7 @@ description_file = "../assets/workflows/compound-build/plan-review.md"
 [[steps]]
 id = "implement"
 title = "Drain Compound Engineering work"
-needs = ["decompose"]
+needs = ["route-workunits"]
 condition = "{{drain_policy}} == separate"
 metadata = { "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/compound-build/implement.md"
@@ -104,7 +104,7 @@ member_access = "exclusive"
 [[steps]]
 id = "implement-same-session"
 title = "Drain Compound Engineering work in one shared session"
-needs = ["decompose"]
+needs = ["route-workunits"]
 condition = "{{drain_policy}} == same-session"
 metadata = { "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/compound-build/implement-same-session.md"

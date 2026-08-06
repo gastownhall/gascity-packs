@@ -406,7 +406,10 @@ METHODOLOGY_FLOW_CONTRACTS = {
             },
             "implementation-readiness": {
                 "run_target": "bmad.readiness-reviewer",
-                "needs": ("decompose",),
+                # Auto-routing gate (dip-ppvr7p): decompose -> route-workunits ->
+                # implementation-readiness, so the drain transitively waits on the
+                # route-stamp that makes decomposed work-units claimable.
+                "needs": ("route-workunits",),
             },
             "implement": {
                 "run_target": "{{implementation_target}}",

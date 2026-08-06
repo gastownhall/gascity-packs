@@ -105,7 +105,7 @@ timeout = "5m"
 [[steps]]
 id = "implementation-readiness"
 title = "BMAD implementation readiness"
-needs = ["decompose"]
+needs = ["route-workunits"]
 metadata = { "gc.run_target" = "bmad.readiness-reviewer" }
 description_file = "../assets/workflows/bmad-build/implementation-readiness.md"
 

@@ -76,7 +76,7 @@ timeout = "5m"
 [[steps]]
 id = "implement"
 title = "Drain build implementation"
-needs = ["decompose"]
+needs = ["route-workunits"]
 condition = "{{drain_policy}} == separate"
 metadata = { "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/build-basic/implement.md"
@@ -89,7 +89,7 @@ member_access = "exclusive"
 [[steps]]
 id = "implement-same-session"
 title = "Drain build implementation in one shared session"
-needs = ["decompose"]
+needs = ["route-workunits"]
 condition = "{{drain_policy}} == same-session"
 metadata = { "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/build-basic/implement-same-session.md"
