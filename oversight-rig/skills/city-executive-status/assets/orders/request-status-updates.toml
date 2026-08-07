@@ -1,0 +1,11 @@
+# Example scheduler entry. Replace /path/to/city-executive-status with the
+# copied or materialized skill directory. Supply configuration through the
+# scheduler's service environment; keep vault paths and integration identifiers
+# out of this file.
+[order]
+description = "Twice daily: request one executive-status input from each project owner."
+trigger = "cron"
+schedule = "30 9,16 * * *"
+exec = "python3 /path/to/city-executive-status/scripts/request_status_updates.py"
+timeout = "5m"
+idempotent = true
