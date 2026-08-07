@@ -1,0 +1,42 @@
+[pack]
+name = "mattermost"
+version = "0.1.0"
+schema = 2
+
+[[service]]
+name = "mattermost-interactions"
+kind = "proxy_process"
+state_root = ".gc/services/mattermost"
+
+[service.publication]
+visibility = "public"
+hostname = "mattermost"
+
+[service.process]
+command = ["python3", "-u", "scripts/mattermost_intake_service.py"]
+health_path = "/healthz"
+
+[[service]]
+name = "mattermost-admin"
+kind = "proxy_process"
+state_root = ".gc/services/mattermost"
+
+[service.publication]
+visibility = "tenant"
+hostname = "mattermost-admin"
+
+[service.process]
+command = ["python3", "-u", "scripts/mattermost_intake_service.py"]
+health_path = "/healthz"
+
+[[service]]
+name = "mattermost-gateway"
+kind = "proxy_process"
+state_root = ".gc/services/mattermost"
+
+[service.publication]
+visibility = "private"
+
+[service.process]
+command = ["python3", "-u", "scripts/mattermost_gateway_service.py"]
+health_path = "/healthz"

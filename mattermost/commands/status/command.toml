@@ -1,0 +1,2 @@
+description = 'Show Mattermost provider status, URLs, mappings, bindings, and recent activity'
+run = '../status.sh'

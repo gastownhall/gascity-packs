@@ -41,7 +41,7 @@ jobs:
         run: python3 validate_registry.py --require-git
 
       - name: Run Python pack tests
-        run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
+        run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests mattermost/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
 
       - name: Lint and exercise shared role prompt composition
         run: |

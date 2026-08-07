@@ -1,0 +1,2 @@
+description = 'openssl is available for the mattermost pack token and webhook verification'
+run = '../check-openssl.sh'

@@ -1,0 +1,2 @@
+description = 'gc bd is available for Mattermost bead lifecycle commands'
+run = '../check-bd.sh'

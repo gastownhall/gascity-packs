@@ -1,0 +1,2 @@
+description = 'Bind a Mattermost DM channel to one named session'
+run = '../bind-dm.sh'

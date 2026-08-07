@@ -1,0 +1,2 @@
+description = 'Post a Mattermost status update for a request or channel'
+run = '../post-message.sh'

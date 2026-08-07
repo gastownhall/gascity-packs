@@ -1,0 +1,2 @@
+description = 'Upload a local file into a session bound Mattermost channel'
+run = '../upload.sh'

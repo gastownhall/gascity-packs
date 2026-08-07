@@ -1,0 +1,2 @@
+description = 'Register team-scoped /gc slash commands with Mattermost'
+run = '../sync-commands.sh'
