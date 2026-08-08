@@ -112,6 +112,20 @@ test_next_iteration_empty_gc_bead_id_one_open_wisp_noop() {
     rm -rf "$work"
 }
 
+test_next_iteration_burns_surplus_without_gc_bead_id() {
+    run_next_iteration '[{"id":"wisp-current"},{"id":"wisp-surplus"}]'
+
+    [[ "$RC" -eq 0 ]] ||
+        fail "next-iteration must exit 0 reconciling a surplus wisp without GC_BEAD_ID (got rc=$RC); output: $(cat "$STDOUT_FILE")"
+    [[ "$(cat "$BURNS_FILE")" == "wisp-surplus" ]] ||
+        fail "next-iteration must burn exactly the surplus wisp (wisp-surplus) and keep wisp-current; burned: $(cat "$BURNS_FILE")"
+    ! grep -q '^bd mol wisp ' "$CALLS_FILE" ||
+        fail "next-iteration must not pour a new wisp when the reconciled set already has an assigned wisp"
+
+    rm -rf "$work"
+}
+
 test_next_iteration_empty_gc_bead_id_one_open_wisp_noop
+test_next_iteration_burns_surplus_without_gc_bead_id
 
 echo "mol-witness-patrol next-iteration tests passed"
