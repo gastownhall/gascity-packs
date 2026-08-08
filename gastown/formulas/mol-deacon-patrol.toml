@@ -393,6 +393,7 @@ gc dolt health --json
 ```
 
 Parse the JSON output (HealthReport schema):
+- `applicable`: false when this city has no Dolt data plane at all
 - `server`: running, reachable, pid, port, latency_ms
 - `databases[]`: name, commits, open_beads
 - `backups`: dolt_freshness, dolt_age_seconds, dolt_stale
@@ -404,7 +405,25 @@ state is signalled in-band. Key decisions off `server.reachable`, not
 `server.running` — a process can hold the port while its goroutines
 are wedged (the latter is what first prompted this check to exist).
 
-**Step 2: Evaluate thresholds**
+**Step 1a: Check applicability BEFORE any threshold.**
+
+A city whose bead ledger is on another backend (MySQL, Postgres) has no
+managed Dolt runtime, so there is no data plane to report on. That city
+reports `applicable: false` with a `reason`, and its remaining fields are
+zero-valued placeholders — `server.reachable` is `false` because no Dolt
+server exists, NOT because one is down. Evaluating the table below on such
+a payload escalates a CRITICAL that no one can act on, every patrol cycle.
+
+```bash
+gc dolt health --json | jq -r 'if .applicable == false then "skip: " + .reason else "evaluate" end'
+```
+
+If it reports `skip`, log `Dolt health: not applicable (<reason>)` and move
+on to the next step. Do NOT escalate and do NOT nudge a dog. An older
+`gc dolt health` omits the field entirely; a payload without `applicable`
+is evaluated normally, exactly as before.
+
+**Step 2: Evaluate thresholds** (only when `applicable` is not false)
 
 | Signal | Threshold | Meaning |
 |--------|-----------|---------|
