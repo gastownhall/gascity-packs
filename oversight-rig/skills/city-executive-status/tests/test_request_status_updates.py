@@ -27,6 +27,12 @@ class RequestStatusUpdatesTest(unittest.TestCase):
         self.assertIn("<!-- executive-status:start -->", message)
         self.assertIn("health: on-track|at-risk|blocked|parked", message)
         self.assertIn("owner: research-pl", message)
+        self.assertIn("Project and owner must be at most 80 characters", message)
+        self.assertIn("Current, next, and risk must be at most 240 characters", message)
+        self.assertIn(
+            "The executive-status-input frontmatter tag is recommended", message
+        )
+        self.assertNotIn("Each content field must be at most 240 characters", message)
         self.assertIn("CEO-level plain language", message)
 
     def test_discover_agents_uses_agent_directories_and_sorts_names(self) -> None:

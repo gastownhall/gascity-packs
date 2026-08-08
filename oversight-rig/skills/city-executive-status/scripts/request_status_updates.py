@@ -28,11 +28,12 @@ def build_message(agent: str, input_dir: pathlib.Path) -> str:
         "updated: ISO-8601 with timezone; "
         "health: on-track|at-risk|blocked|parked; "
         "current: current outcome or focus; next: next planned outcome; "
-        "risk: one material risk or none. Include frontmatter tag "
-        "executive-status-input. Each content field must be at most 240 "
-        "characters. Use CEO-level plain language: omit internal IDs, session "
-        "names, branches, paths, formula names, queue counts, and operational "
-        "incident detail. Write atomically and replace only your own file."
+        "risk: one material risk or none. Project and owner must be at most 80 "
+        "characters. Current, next, and risk must be at most 240 characters. "
+        "The executive-status-input frontmatter tag is recommended. Use "
+        "CEO-level plain language: omit internal IDs, session names, branches, "
+        "paths, formula names, queue counts, and operational incident detail. "
+        "Write atomically and replace only your own file."
     )
 
 
