@@ -143,11 +143,15 @@ BARE_BD_SERIALIZED_ARGV = re.compile(
     rf'''(?:\[|\{{|=|:)\s*["']bd["']\s*,\s*["'](?:{BD_SUBCOMMAND_PATTERN})["']'''
 )
 GC_BD_ARGV_TAIL_MARKER = "gc-bd-argv-tail"
-GC_BD_ARGV_TAIL_FIXTURE = Path("tests/test_gascity_pack_inference_gate.py")
 GC_BD_ARGV_TAIL_LINES = {
-    '*"bd show fi-root --json"*) # gc-bd-argv-tail: fake gc receives the wrapper\'s argv tail',
-    '*"bd list --json --limit 1000"*) # gc-bd-argv-tail: fake gc receives the wrapper\'s argv tail',
-    'assert "bd show fi-root --json" in args_path.read_text(encoding="utf-8")  # gc-bd-argv-tail',
+    Path("tests/test_gascity_pack_inference_gate.py"): {
+        '*"bd show fi-root --json"*) # gc-bd-argv-tail: fake gc receives the wrapper\'s argv tail',
+        '*"bd list --json --limit 1000"*) # gc-bd-argv-tail: fake gc receives the wrapper\'s argv tail',
+        'assert "bd show fi-root --json" in args_path.read_text(encoding="utf-8")  # gc-bd-argv-tail',
+    },
+    Path("gascity/tests/test_workspace_script.py"): {
+        'if sys.argv[1:3] != ["bd", "show"] or len(sys.argv) != 5 or sys.argv[4] != "--json":  # gc-bd-argv-tail: fake gc receives wrapper argv tail',
+    },
 }
 
 
@@ -161,17 +165,29 @@ def tracked_files() -> list[Path]:
     return [REPO_ROOT / path for path in result.stdout.decode().split("\0") if path]
 
 
+def intentional_gc_bd_argv_tail(relative: Path, line: str) -> bool:
+    return (
+        GC_BD_ARGV_TAIL_MARKER in line
+        and line.strip() in GC_BD_ARGV_TAIL_LINES.get(relative, set())
+    )
+
+
 def python_argv_violations(path: Path, text: str) -> list[str]:
     if path.suffix != ".py":
         return []
     tree = ast.parse(text, filename=str(path))
+    relative = path.relative_to(REPO_ROOT)
+    lines = text.splitlines()
     violations = []
     for node in ast.walk(tree):
         if not isinstance(node, (ast.List, ast.Tuple)) or not node.elts:
             continue
         first = node.elts[0]
         if isinstance(first, ast.Constant) and first.value == "bd":
-            violations.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}: argv starts with bd")
+            line = lines[node.lineno - 1]
+            if intentional_gc_bd_argv_tail(relative, line):
+                continue
+            violations.append(f"{relative}:{node.lineno}: argv starts with bd")
     return violations
 
 
@@ -203,14 +219,6 @@ def gc_routes_bd(line: str, bd_start: int) -> bool:
     return True
 
 
-def intentional_gc_bd_argv_tail(relative: Path, line: str) -> bool:
-    return (
-        relative == GC_BD_ARGV_TAIL_FIXTURE
-        and GC_BD_ARGV_TAIL_MARKER in line
-        and line.strip() in GC_BD_ARGV_TAIL_LINES
-    )
-
-
 def bare_bd_violations(path: Path, text: str) -> list[str]:
     violations = []
     relative = path.relative_to(REPO_ROOT)
@@ -236,6 +244,12 @@ def bare_bd_violations(path: Path, text: str) -> list[str]:
         line_number = text.count("\n", 0, match.start()) + 1
         violations.append(f"{relative}:{line_number}: bd command is split across lines")
     for match in BARE_BD_SERIALIZED_ARGV.finditer(text):
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        line_end = text.find("\n", match.start())
+        if line_end == -1:
+            line_end = len(text)
+        if intentional_gc_bd_argv_tail(relative, text[line_start:line_end]):
+            continue
         line_number = text.count("\n", 0, match.start()) + 1
         violations.append(f"{relative}:{line_number}: serialized argv starts with bd")
     violations.extend(python_argv_violations(path, text))
@@ -270,3 +284,20 @@ def test_detector_covers_shell_multiline_and_serialized_argv_forms() -> None:
     assert not bare_bd_violations(fixture, 'command = ["gc", "bd", "show"]')
     assert not bare_bd_violations(fixture, "gc --city /tmp/city bd list --json")
     assert not bare_bd_violations(fixture, "gc --rig demo bd show demo-1")
+
+
+def test_detector_allows_only_audited_fake_gc_argv_tails() -> None:
+    allowed_path = REPO_ROOT / "gascity/tests/test_workspace_script.py"
+    allowed_line = next(iter(GC_BD_ARGV_TAIL_LINES[allowed_path.relative_to(REPO_ROOT)]))
+    allowed_source = f"{allowed_line}\n    pass\n"
+
+    assert not bare_bd_violations(allowed_path, allowed_source)
+    assert bare_bd_violations(REPO_ROOT / "fixture.py", allowed_source)
+    assert bare_bd_violations(
+        allowed_path,
+        allowed_source.replace(f"  # {GC_BD_ARGV_TAIL_MARKER}: fake gc receives wrapper argv tail", ""),
+    )
+    assert bare_bd_violations(
+        allowed_path,
+        allowed_source.replace('["bd", "show"]', '["bd", "update"]'),
+    )

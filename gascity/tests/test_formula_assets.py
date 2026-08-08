@@ -2057,9 +2057,20 @@ class FormulaAssetTests(unittest.TestCase):
             "assets/workflows/build-base/summarize-implementation.md",
         ):
             text = (root / relative_path).read_text(encoding="utf-8")
+            validator_command = (
+                'GC_BEAD_ID="$CLAIMED_STEP_ID" '
+                ".gc/scripts/checks/build-artifact-valid.sh"
+                if relative_path
+                in {
+                    "assets/workflows/do-work/implement.md",
+                    "assets/workflows/implementation-base/implement.md",
+                }
+                else "GC_BEAD_ID=<claimed-step-id> "
+                ".gc/scripts/checks/build-artifact-valid.sh"
+            )
             for fragment in (
                 "read the launcher rig root from the workflow root bead's `gc.work_dir`",
-                "GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh",
+                validator_command,
                 "fix every reported validation error before setting `gc.outcome=pass`",
             ):
                 with self.subTest(asset=relative_path, fragment=fragment):
@@ -3442,58 +3453,52 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(do_work_item["vars"]["implementation_target"]["default"], "gc.implementation-worker")
         self.assertEqual(do_work_item["steps"][0]["metadata"]["gc.run_target"], "{{implementation_target}}")
 
-    def test_do_work_formula_requires_persisted_item_worktree(self) -> None:
+    def test_do_work_formula_uses_orchestrated_workspace_lifecycle(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         do_work = tomllib.loads((root / "formulas" / "do-work.formula.toml").read_text(encoding="utf-8"))
         steps = {step["id"]: step for step in do_work["steps"]}
 
-        prepare = node_description(root, steps["prepare-worktree"])
-        for fragment in (
-            "current step bead metadata",
-            "gc.root_bead_id",
-            "gc.input_convoy_id",
-            "gc.synthetic_kind",
-            "gc.drain_member_id",
-            "do not use the synthetic drain-unit convoy id as `<source-anchor-id>`",
-            "never persist `work_dir` on the synthetic drain-unit convoy",
-            "hard-fail if the selected source anchor id equals the synthetic input convoy id",
-            "worktrees/<source-anchor-id>",
+        expected = {
+            "prepare-worktree": (
+                "gc gc workspace prepare",
+                '"<claimed-step-id>"',
+                '"<input-revision>"',
+                "returned `worktree_path` and `input_oid` as authoritative",
+            ),
+            "implement": (
+                "gc gc workspace path",
+                "gc gc workspace verify-entry",
+                "gc gc workspace record-result",
+                "No-change results are valid",
+            ),
+            "close-source-anchor": (
+                "gc gc workspace result",
+                "exact source anchor, prepared workspace, input revision, and output revision",
+                "close only the recorded source anchor",
+                "status=closed",
+                "gc.outcome=pass",
+                "gc gc workspace cleanup-if-complete",
+                "cleanup=retained",
+                "cleanup=removed",
+                "cleanup=already-removed",
+            ),
+        }
+        forbidden = (
+            "workspace.sh",
+            "pack_root",
+            "$(pwd)/worktrees",
             "git worktree add",
-            "gc bd update <source-anchor-id> --set-metadata work_dir=",
-            "Do not edit source files in the launcher checkout",
-        ):
-            with self.subTest(step="prepare-worktree", fragment=fragment):
-                self.assertIn(fragment, prepare)
+        )
 
-        implement = node_description(root, steps["implement"])
-        for fragment in (
-            "Read `work_dir` from the source anchor",
-            "never read `work_dir` from the synthetic drain-unit convoy",
-            "Do not infer the source anchor from dependency ids",
-            "`gc.work_dir` is the launcher rig root, not the implementation worktree",
-            "if the JSON output is a one-element list, unwrap the",
-            "verify `pwd -P` equals",
-            "cd \"$WORKTREE\"",
-            "fail this step before editing",
-            "Do not edit files in the launcher checkout",
-            "Leave the source anchor open",
-        ):
-            with self.subTest(step="implement", fragment=fragment):
-                self.assertIn(fragment, implement)
-
-        close_source = node_description(root, steps["close-source-anchor"])
-        for fragment in (
-            "Read `work_dir` from the source anchor",
-            "close only `<source-anchor-id>`",
-            "gc bd show <source-anchor-id> --json",
-            "status=closed",
-            "gc.outcome=pass",
-            "if either check fails",
-            "anchor before closing this step",
-            "Do not close this step with pass while the source anchor remains open",
-        ):
-            with self.subTest(step="close-source-anchor", fragment=fragment):
-                self.assertIn(fragment, close_source)
+        for step_id, fragments in expected.items():
+            description = node_description(root, steps[step_id])
+            description = " ".join(description.split())
+            for fragment in fragments:
+                with self.subTest(step=step_id, fragment=fragment):
+                    self.assertIn(fragment, description)
+            for fragment in forbidden:
+                with self.subTest(step=step_id, forbidden=fragment):
+                    self.assertNotIn(fragment, description)
 
     def test_wrapper_formulas_route_role_agents(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -4980,6 +4985,96 @@ description = "Override sink that writes the base triage report contract."
             write_report_step["expand_vars"]["artifact_path_keys"],
             artifact_keys,
         )
+
+
+    def test_separate_worktree_prompts_use_orchestrated_workspace_lifecycle(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflow_root = root / "assets" / "workflows"
+        prompt_pairs = {
+            "prepare": (
+                workflow_root / "do-work" / "prepare-worktree.md",
+                workflow_root / "implementation-base" / "prepare-worktree.md",
+            ),
+            "implement": (
+                workflow_root / "do-work" / "implement.md",
+                workflow_root / "implementation-base" / "implement.md",
+            ),
+            "close": (
+                workflow_root / "do-work" / "close-source-anchor.md",
+                workflow_root / "implementation-base" / "close-source-anchor.md",
+            ),
+        }
+        required = {
+            "prepare": (
+                "gc gc workspace prepare",
+                "input revision matches the intended source revision",
+            ),
+            "implement": (
+                "gc gc workspace path",
+                "gc gc workspace verify-entry",
+                "gc gc workspace record-result",
+                "No-change results are valid",
+            ),
+            "close": (
+                "gc gc workspace result",
+                "exact source anchor, prepared workspace, input revision, and output revision",
+                "recorded source anchor",
+            ),
+        }
+        forbidden = (
+            "workspace.sh",
+            "pack_root",
+            "$(pwd)/worktrees",
+            "git worktree add",
+        )
+
+        for stage, paths in prompt_pairs.items():
+            for path in paths:
+                text = path.read_text(encoding="utf-8")
+                text = " ".join(text.split())
+                for fragment in required[stage]:
+                    with self.subTest(path=path.relative_to(root), fragment=fragment):
+                        self.assertIn(fragment, text)
+                for fragment in forbidden:
+                    with self.subTest(path=path.relative_to(root), forbidden=fragment):
+                        self.assertNotIn(fragment, text)
+
+    def test_shared_session_assets_remain_legacy_without_workspace_script_wiring(self) -> None:
+        packs_root = pathlib.Path(__file__).resolve().parents[2]
+        shared_formulas = {
+            "gascity/formulas/implementation-item-base.formula.toml": "implementation-item-base",
+            "gascity/formulas/do-work-item.formula.toml": "do-work-item",
+            "bmad/formulas/bmad-story-development-item.formula.toml": "bmad-story-development-item",
+            "compound-engineering/formulas/compound-work-item.formula.toml": "compound-work-item",
+            "gstack/formulas/gstack-work-item.formula.toml": "gstack-work-item",
+            "superpowers/formulas/superpowers-development-item.formula.toml": "superpowers-development-item",
+        }
+
+        for relative_path, formula_name in shared_formulas.items():
+            formula_path = packs_root / relative_path
+            formula_text = formula_path.read_text(encoding="utf-8")
+            formula = tomllib.loads(formula_text)
+            self.assertEqual(formula["formula"], formula_name)
+            if formula_name != "implementation-item-base":
+                self.assertIn(
+                    "implementation-item-base" if formula_name == "do-work-item" else "do-work-item",
+                    formula.get("extends", []),
+                )
+            self.assertNotIn("workspace.sh", formula_text)
+
+            owner_prompt_paths = {
+                (formula_path.parent / step["description_file"]).resolve()
+                for step in formula.get("steps", [])
+                if "description_file" in step
+            }
+            with self.subTest(formula=formula_name, contract="prompt ownership"):
+                self.assertTrue(owner_prompt_paths)
+            for path in owner_prompt_paths:
+                text = path.read_text(encoding="utf-8")
+                with self.subTest(formula=formula_name, path=path.relative_to(packs_root)):
+                    self.assertNotIn("workspace.sh", text)
+                    self.assertNotIn("verify-entry", text)
+                    self.assertNotIn("record-result", text)
 
 
 if __name__ == "__main__":

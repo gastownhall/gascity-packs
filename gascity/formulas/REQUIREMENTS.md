@@ -71,6 +71,13 @@ For every formula change:
   prompt assets.
 - `build-basic` owns stable path-shadow override files for its major prompt
   pieces, including exactly one override file per default review lane.
+- Separately drained `implementation-base` and `do-work` prompt stages use the
+  `gc gc workspace` command lifecycle for deterministic convoy- or nested
+  convoy/epic-owned serialization, preparation, safe sequential reuse, verified
+  entry, exact current-item result handoff, and conditional terminal cleanup.
+  Same-session item formulas and their derived owners remain outside that
+  lifecycle.
+
 
 ## User Stories
 
@@ -122,6 +129,11 @@ this ledger against the `FORMULAS` constant and formula directory.
 | GC-BF-BR-011 | GC-BF-US-002 | WHEN shared artifact validation fails, THE formula graph SHALL route back to the producer for bounded repair or stop as `blocked` after finite attempts. |
 | GC-BF-BR-012 | GC-BF-US-002 | WHEN formula output includes traceability, THE formula SHALL preserve YAML coverage as the machine-readable source and mirrored markdown coverage for humans. |
 | GC-BF-BR-013 | GC-BF-US-002 | WHEN a continuation review, drain, or repair stage cannot reach approval, THE formula graph SHALL record `gc.build.repair_status`, `gc.restart.*` metadata, and a failing blocked outcome instead of allowing finalize or publish no-op to close the workflow as pass. |
+| GC-BF-BR-014 | GC-BF-US-001 | WHEN `implementation-base` or `do-work` executes a separately drained lifecycle, prepare SHALL call `gc gc workspace prepare` with an explicit input ref, implementation SHALL call `path`, `verify-entry`, and `record-result`, and close SHALL call `result`. |
+| GC-BF-BR-015 | GC-BF-US-001 | WHEN separately drained prompts consume workspace data, they SHALL NOT derive paths from ambient `$PWD`, create or repair Git worktrees directly, or read/write source-anchor `work_dir`; `gc.work_dir` remains launcher rig root only. |
+| GC-BF-BR-016 | GC-BF-US-001 | WHEN `implementation-item-base`, `do-work-item`, or a derived same-session item formula executes, its formula and prompt assets SHALL remain outside `gc gc workspace` wiring and SHALL make no deterministic graph-owned lifecycle claim. |
+| GC-BF-BR-017 | GC-BF-US-001 | WHEN `implement` separately drains a convoy, the workspace command SHALL derive each item's owner from existing source-anchor and parent-convoy graph fields without a new selector or metadata protocol. |
+| GC-BF-BR-018 | GC-BF-US-001 | WHEN a separately drained close-source-anchor step closes and verifies its exact source anchor, IT SHALL invoke `gc gc workspace cleanup-if-complete`; retained, removed, and already-removed SHALL be valid outcomes while command failure remains hard. |
 
 ## Scenario Ledger
 
@@ -132,8 +144,8 @@ this ledger against the `FORMULAS` constant and formula directory.
 | GC-BF-001 | `build-base` | Virtual targeted full-lifecycle contract | Defines the stable build stage sequence, selector variables, mode variables, methodology metadata, implementation strategy selection, artifact validation/repair gates, review/fix loop, finalization, and optional publication contract that concrete methodology packs extend. | `build-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-002 | `planning-base` | Virtual targetless planning contract | Produces approved requirements and implementation-plan artifacts through prepare, requirements, plan, and plan-review stages while preserving strict artifact shape, approval states, hashes, coverage, validator repair, and mode behavior for adapters. | `planning-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-003 | `decomposition-base` | Virtual targetless decomposition contract | Converts an approved plan into durable work units and implementation convoy identity that downstream drain or convoy-step implementation strategies consume, after validating decomposition schema, coverage, and upstream hashes. | `decomposition-base.formula.toml`; `../tests/test_formula_assets.py` |
-| GC-BF-004 | `implementation-base` | Virtual targeted implementation contract | Executes one implementation source anchor with prepare-worktree, implement, and close-source-anchor stages while preserving source-anchor close, work-item evidence, requirement coverage, and neutral producer metadata. | `implementation-base.formula.toml`; `../tests/test_formula_assets.py` |
-| GC-BF-005 | `implementation-item-base` | Virtual targeted shared-drain item contract | Executes exactly one item in a shared single-lane drain while preserving shared-session context, item sequencing, item evidence, requirement coverage, and neutral producer metadata. | `implementation-item-base.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-004 | `implementation-base` | Virtual targeted implementation contract | Executes one separate-item source anchor through `gc gc workspace` prepare, verified entry, exact result recording, and result-backed source-anchor close while preserving work-item evidence, requirement coverage, and neutral producer metadata. Its deterministic claim is host-local and does not extend to shared drains or downstream integration/review/publish. | `implementation-base.formula.toml`; `../assets/workflows/implementation-base/`; `../tests/test_formula_assets.py` |
+| GC-BF-005 | `implementation-item-base` | Virtual targeted shared-drain item contract | Executes exactly one item in a legacy shared single-lane drain while preserving shared-session context, item sequencing, item evidence, requirement coverage, and neutral producer metadata. It does not invoke or fall back to the separate-item `gc gc workspace` lifecycle. | `implementation-item-base.formula.toml`; `../assets/workflows/implementation-item-base/`; `../tests/test_formula_assets.py` |
 | GC-BF-006 | `code-review-base` | Virtual targetless report contract | Writes validated review output over a supplied subject, maps verdicts to base approval states, honors `review_mode`, preserves coverage/drift evidence, and leaves external lifecycle ownership to callers. | `code-review-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-007 | `fix-loop-base` | Virtual targetless review-fix contract | Turns failed review findings into planned fixes, applies fixes with the selected implementation path, records per-attempt validated fix artifacts, and re-runs the selected review formula up to the iteration limit. | `fix-loop-base.formula.toml`; `../tests/test_formula_assets.py` |
 
@@ -164,9 +176,9 @@ this ledger against the `FORMULAS` constant and formula directory.
 | ID | Formula | Type | Required behavior | Evidence |
 | --- | --- | --- | --- | --- |
 | GC-BF-010 | `implement` | Cataloged targeted implementation entrypoint | Validates the input convoy, drains implementation work using an allowed policy, waits for completion, writes validated item-mapped implementation summary evidence, and optionally delegates publishing. | `implement.formula.toml`; `../tests/test_formula_assets.py` |
-| GC-BF-011 | `do-work` | Targeted implementation item helper | Extends `implementation-base`, prepares one item worktree, implements owned work with the selected implementation target, and closes the source anchor after implementation succeeds. | `do-work.formula.toml`; `../tests/test_formula_assets.py` |
-| GC-BF-012 | `do-work-item` | Targeted shared-drain item helper | Extends `implementation-item-base`, runs exactly one shared-drain item with the selected implementation target, and stays internal/single-lane. | `do-work-item.formula.toml`; `../tests/test_formula_assets.py` |
-| GC-BF-013 | `same-session-implement` | Targeted internal shared-drain helper | Documents and executes the pack-facing same-session policy by draining through `do-work-item` with exclusive member access and single-lane sequencing. | `same-session-implement.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-011 | `do-work` | Targeted implementation item helper | Extends `implementation-base`; invokes `gc gc workspace` to prepare one exact detached workspace, verify entry before owned work, record the clean linear result, and validate that result before closing the returned source anchor. | `do-work.formula.toml`; `../assets/workflows/do-work/`; `../tests/test_formula_assets.py` |
+| GC-BF-012 | `do-work-item` | Targeted shared-drain item helper | Extends `implementation-item-base`, runs exactly one legacy shared-drain item with the selected implementation target, stays internal/single-lane, and remains outside `gc gc workspace` setup, checkpoint, fallback, and result semantics. | `do-work-item.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-013 | `same-session-implement` | Targeted internal shared-drain helper | Documents and executes the pack-facing legacy same-session policy by draining through `do-work-item` with exclusive member access and single-lane sequencing; it makes no deterministic-workspace claim. | `same-session-implement.formula.toml`; `../tests/test_formula_assets.py` |
 
 ### Review And Fix Utilities
 
