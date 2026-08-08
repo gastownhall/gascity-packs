@@ -69,13 +69,16 @@ MOCKGC
     chmod +x "$1/gc"
 }
 
-# Run the extracted reconciliation bash under a mocked gc (real jq) with
-# GC_BEAD_ID unset — the proven live-witness-runtime shape, see bd memory
-# vg-5kv-gc-bead-id-empty-confirmed-live-witness — and a scripted
-# --status=open wisp set. Leaves RC/CALLS_FILE/BURNS_FILE/STDOUT_FILE/work
-# set in the caller's scope for assertions.
+# Run the extracted reconciliation bash under a mocked gc (real jq). By
+# default GC_BEAD_ID is unset — the proven live-witness-runtime shape, see
+# bd memory vg-5kv-gc-bead-id-empty-confirmed-live-witness. Pass a non-empty
+# 2nd arg to instead exercise the (currently dead-in-production, but not
+# guaranteed to stay dead — see Finding 1, review pass 4) populated-GC_BEAD_ID
+# path. Leaves RC/CALLS_FILE/BURNS_FILE/STDOUT_FILE/work set in the caller's
+# scope for assertions.
 run_next_iteration() {
     local open_wisps_json="$1"
+    local gc_bead_id="${2:-}"
     work=$(mktemp -d)
     write_mock_gc "$work"
     extract_next_iteration_bash "$FORMULA" > "$work/script.sh"
@@ -94,7 +97,11 @@ run_next_iteration() {
       export MOCK_BURN_LOG="$BURNS_FILE"
       export MOCK_OPEN_WISPS_JSON="$open_wisps_json"
       export MOCK_INPROGRESS_JSON='[]'
-      unset GC_BEAD_ID
+      if [ -n "$gc_bead_id" ]; then
+        export GC_BEAD_ID="$gc_bead_id"
+      else
+        unset GC_BEAD_ID
+      fi
       bash "$work/script.sh"
     ) >"$STDOUT_FILE" 2>&1 || RC=$?
 }
@@ -125,7 +132,29 @@ test_next_iteration_burns_surplus_without_gc_bead_id() {
     rm -rf "$work"
 }
 
+test_next_iteration_populated_gc_bead_id_excludes_self() {
+    # Reviewer finding (vg-5kv, review pass 4, Finding 1 [HIGH]): OPEN_WISPS is
+    # computed with the unfiltered --status=open scan, never excluding
+    # $CURRENT_WISP by id. When GC_BEAD_ID happens to be populated (dead code
+    # in production today, but the PR's own prose calls it "an unpopulated
+    # optimization" -- wording that anticipates it becoming populated) and
+    # equals the sole open wisp, ASSIGNED_WISP resolves to that SAME id, the
+    # "-z ASSIGNED_WISP" pour-branch never fires, and the current wisp is
+    # burned with zero replacement -- this bead's original defect, reproduced.
+    run_next_iteration '[{"id":"wisp-current"}]' 'wisp-current'
+
+    [[ "$RC" -eq 0 ]] ||
+        fail "next-iteration must exit 0 when GC_BEAD_ID equals the sole open wisp (got rc=$RC); output: $(cat "$STDOUT_FILE")"
+    grep -q '^bd mol wisp ' "$CALLS_FILE" ||
+        fail "next-iteration must pour a replacement wisp before burning the current one when GC_BEAD_ID matches the only open wisp; calls: $(cat "$CALLS_FILE")"
+    [[ "$(cat "$BURNS_FILE")" == "wisp-current" ]] ||
+        fail "next-iteration must burn exactly the OLD id (wisp-current), never the newly-poured one; burned: $(cat "$BURNS_FILE")"
+
+    rm -rf "$work"
+}
+
 test_next_iteration_empty_gc_bead_id_one_open_wisp_noop
 test_next_iteration_burns_surplus_without_gc_bead_id
+test_next_iteration_populated_gc_bead_id_excludes_self
 
 echo "mol-witness-patrol next-iteration tests passed"
