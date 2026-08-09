@@ -5,7 +5,7 @@ terminal metadata and that metadata has been read back from `gc bd show`. Closin
 without `gc.outcome`, `design_review.verdict`, and
 `design_review.output_path` makes the approval loop retry forever.
 
-Do not run `.gc/scripts/checks/design-review-approved.sh` before writing this
+Do not run `../assets/scripts/checks/design-review-approved.sh` before writing this
 bead's terminal metadata; that script checks this approval bead and will report
 that another pass is needed until `design_review.verdict` is present. Do not use
 `gc bd update --metadata` for this lane. Use `--set-metadata` exactly as shown

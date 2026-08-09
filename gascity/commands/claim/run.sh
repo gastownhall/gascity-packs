@@ -109,14 +109,8 @@ for child in children:
 '
 }
 
-EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
 EXPECTED_ROUTE="${GC_TEMPLATE:-${GC_AGENT:-}}"
 
-if [ -z "$EXPECTED_ASSIGNEE" ]; then
-    echo "CONFIG_REJECTED gc ${GC_PACK_NAME:-gascity} claim: missing expected assignee" >&2
-    acknowledge_drain_or_report || true
-    exit 1
-fi
 
 claim_file="$(mktemp)"
 show_file="$(mktemp)"
@@ -208,9 +202,6 @@ while [ "$verify_try" -lt "$max_attempts" ]; do
         elif [ "$claim_status" != "open" ] && [ "$claim_status" != "in_progress" ]; then
             printf 'CLAIM_REJECTED unexpected status for %s: %s\n' \
                 "$work_id" "$claim_status" >&2
-            break
-        elif [ "$claim_assignee" != "$EXPECTED_ASSIGNEE" ]; then
-            printf 'CLAIM_REJECTED assignee mismatch for %s\n' "$work_id" >&2
             break
         elif [ -n "$EXPECTED_ROUTE" ] && [ -n "$claim_route" ] && [ "$claim_route" != "$EXPECTED_ROUTE" ]; then
             printf 'CLAIM_REJECTED route mismatch for %s\n' "$work_id" >&2

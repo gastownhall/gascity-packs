@@ -219,7 +219,7 @@ MODE_VAR_DEFAULTS = {
     "github-pr-review": {"interaction_mode": "interactive", "review_mode": "report"},
 }
 
-BUILD_ARTIFACT_CHECK_SCRIPT = ".gc/scripts/checks/build-artifact-valid.sh"
+BUILD_ARTIFACT_CHECK_SCRIPT = "../assets/scripts/checks/build-artifact-valid.sh"
 
 # One produce attempt plus two bounded schema-repair attempts per artifact stage.
 BUILD_ARTIFACT_GATE_MAX_ATTEMPTS = 3
@@ -760,6 +760,7 @@ class FormulaAssetTests(unittest.TestCase):
             env = {
                 **os.environ,
                 "BEADS_ACTOR": "worker",
+                "GC_TEMPLATE": "gc.implementation-worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
@@ -863,6 +864,7 @@ class FormulaAssetTests(unittest.TestCase):
             env = {
                 **os.environ,
                 "BEADS_ACTOR": "worker",
+                "GC_TEMPLATE": "gc.implementation-worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
@@ -957,7 +959,7 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(call_lines.count("hook --claim --drain-ack --json"), 3)
         self.assertNotIn("runtime drain-ack", call_lines)
 
-    def test_city_claim_command_drain_acks_missing_assignee_configuration(self) -> None:
+    def test_city_claim_command_accepts_hook_canonical_assignee(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         command = root / "commands" / "claim" / "run.sh"
 
@@ -965,31 +967,32 @@ class FormulaAssetTests(unittest.TestCase):
             tmp_path = pathlib.Path(tmp)
             bin_dir = tmp_path / "bin"
             bin_dir.mkdir()
-            calls = tmp_path / "calls"
             fake_gc = bin_dir / "gc"
             fake_gc.write_text(
                 "#!/bin/sh\n"
-                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
-                "if [ \"$1\" = runtime ] && [ \"$2\" = drain-ack ]; then exit 0; fi\n"
-                "exit 2\n",
+                "if [ \"$1\" = hook ] && [ \"$2\" = --claim ] && [ \"$3\" = --drain-ack ] && [ \"$4\" = --json ]; then\n"
+                "  printf '%s\\n' '{\"action\":\"work\",\"bead_id\":\"bd-canonical\",\"assignee\":\"gc.implementation-worker-1\",\"route\":\"gc.implementation-worker\"}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = bd-canonical ] && [ \"$4\" = --json ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"bd-canonical\",\"status\":\"in_progress\",\"assignee\":\"gc.implementation-worker-1\",\"metadata\":{\"gc.routed_to\":\"gc.implementation-worker\",\"gc.root_bead_id\":\"root-1\",\"gc.continuation_group\":\"group-1\"}}'\n"
+                "else\n"
+                "  exit 2\n"
+                "fi\n",
                 encoding="utf-8",
             )
             fake_gc.chmod(0o755)
             env = {
                 **os.environ,
+                "BEADS_ACTOR": "qcore",
+                "GC_AGENT": "gc.implementation-worker-1",
+                "GC_TEMPLATE": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
-                "GC_TEST_CALLS": str(calls),
                 "PATH": f"{bin_dir}:/usr/bin:/bin",
             }
-            for key in ("BEADS_ACTOR", "GC_SESSION_NAME", "GC_SESSION_ID", "GC_AGENT"):
-                env.pop(key, None)
             result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
-            call_lines = calls.read_text(encoding="utf-8").splitlines()
 
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("CONFIG_REJECTED", result.stderr)
-        self.assertEqual(call_lines, ["runtime drain-ack"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["bead_id"], "bd-canonical")
 
     def test_city_claim_command_drain_acks_missing_python_configuration(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -1024,40 +1027,6 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertIn("CONFIG_REJECTED", result.stderr)
         self.assertEqual(call_lines, ["runtime drain-ack"])
 
-    def test_city_claim_command_reports_failed_drain_ack(self) -> None:
-        root = pathlib.Path(__file__).resolve().parents[1]
-        command = root / "commands" / "claim" / "run.sh"
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = pathlib.Path(tmp)
-            bin_dir = tmp_path / "bin"
-            bin_dir.mkdir()
-            calls = tmp_path / "calls"
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/bin/sh\n"
-                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
-                "if [ \"$1\" = runtime ] && [ \"$2\" = drain-ack ]; then exit 9; fi\n"
-                "exit 2\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
-            env = {
-                **os.environ,
-                "GC_PACK_DIR": str(root),
-                "GC_PACK_NAME": "gc",
-                "GC_TEST_CALLS": str(calls),
-                "PATH": f"{bin_dir}:/usr/bin:/bin",
-            }
-            for key in ("BEADS_ACTOR", "GC_SESSION_NAME", "GC_SESSION_ID", "GC_AGENT"):
-                env.pop(key, None)
-            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
-            call_lines = calls.read_text(encoding="utf-8").splitlines()
-
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("CONFIG_REJECTED", result.stderr)
-        self.assertIn("DRAIN_ACK_FAILED", result.stderr)
-        self.assertEqual(call_lines, ["runtime drain-ack"])
 
     def test_city_claim_command_termination_signal_stops_before_retry(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -2058,8 +2027,7 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             text = (root / relative_path).read_text(encoding="utf-8")
             for fragment in (
-                "read the launcher rig root from the workflow root bead's `gc.work_dir`",
-                "GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh",
+                "the validation loop runs it automatically and fails the attempt on any error",
                 "fix every reported validation error before setting `gc.outcome=pass`",
             ):
                 with self.subTest(asset=relative_path, fragment=fragment):
@@ -2953,7 +2921,7 @@ class FormulaAssetTests(unittest.TestCase):
             design_loop["check"]["check"],
             {
                 "mode": "exec",
-                "path": ".gc/scripts/checks/design-review-approved.sh",
+                "path": "../assets/scripts/checks/design-review-approved.sh",
                 "timeout": "10m",
             },
         )
@@ -2973,7 +2941,7 @@ class FormulaAssetTests(unittest.TestCase):
             spec_loop["check"]["check"],
             {
                 "mode": "exec",
-                "path": ".gc/scripts/checks/design-review-approved.sh",
+                "path": "../assets/scripts/checks/design-review-approved.sh",
                 "timeout": "10m",
             },
         )
@@ -3063,7 +3031,7 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertIn("waiting-human", spec_approval)
         self.assertIn("silence", spec_approval)
         self.assertIn("spec revision summary", spec_approval)
-        self.assertIn("Do not run `.gc/scripts/checks/design-review-approved.sh`", spec_approval)
+        self.assertIn("Do not run `../assets/scripts/checks/design-review-approved.sh`", spec_approval)
         self.assertIn("Do not use\n`gc bd update --metadata`", spec_approval)
         self.assertIn("--metadata-field gc.step_id=requirements.review-written-spec", spec_approval)
         self.assertIn("--metadata-field gc.step_id=requirements.apply-spec-feedback", spec_approval)
@@ -3458,12 +3426,25 @@ class FormulaAssetTests(unittest.TestCase):
             "never persist `work_dir` on the synthetic drain-unit convoy",
             "hard-fail if the selected source anchor id equals the synthetic input convoy id",
             "worktrees/<source-anchor-id>",
-            "git worktree add",
+            "git fetch origin",
+            "git remote set-head origin --auto",
+            "refs/remotes/origin/HEAD",
+            'git worktree add "$WORKTREE" --detach "$DEFAULT_REF"',
+            'git rev-parse --verify "$DEFAULT_REF^{commit}"',
+            "fail closed on any default-resolution error",
+            "never reset, remove, or overwrite it",
             "gc bd update <source-anchor-id> --set-metadata work_dir=",
             "Do not edit source files in the launcher checkout",
         ):
             with self.subTest(step="prepare-worktree", fragment=fragment):
                 self.assertIn(fragment, prepare)
+
+        self.assertNotIn('git worktree add "$WORKTREE" --detach HEAD', prepare)
+        self.assertNotIn("origin/main", prepare)
+        self.assertLess(prepare.index("git fetch origin"), prepare.index("git worktree add"))
+        self.assertLess(prepare.index("git remote set-head origin --auto"), prepare.index("git worktree add"))
+        self.assertLess(prepare.index("refs/remotes/origin/HEAD"), prepare.index("git worktree add"))
+        self.assertLess(prepare.index("git rev-parse --verify"), prepare.index("git worktree add"))
 
         implement = node_description(root, steps["implement"])
         for fragment in (
@@ -3997,6 +3978,53 @@ description = "Override sink that writes the base triage report contract."
             self.assertTrue(os.access(script, os.X_OK), f"{script} must be executable")
             self.assertNotIn("/data/projects", text)
             self.assertNotIn("gascity-packs-worktrees", text)
+
+    def test_formula_checks_use_pack_asset_paths(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        packs_root = root.parent
+        gascity_asset_root = (root / "assets" / "scripts" / "checks").resolve()
+        pack_roots = (
+            root,
+            packs_root / "bmad",
+            packs_root / "compound-engineering",
+            packs_root / "gstack",
+            packs_root / "superpowers",
+        )
+        legacy_prefix = ".gc/scripts/checks/"
+        asset_prefix = "../assets/scripts/checks/"
+
+        for pack_root in pack_roots:
+            for formula_path in sorted((pack_root / "formulas").glob("*.formula.toml")):
+                formula_text = formula_path.read_text(encoding="utf-8")
+                with self.subTest(pack=pack_root.name, formula=formula_path.name, reference="launcher path"):
+                    self.assertNotIn(legacy_prefix, formula_text)
+
+                data = tomllib.loads(formula_text)
+
+                def visit(value: object) -> None:
+                    if isinstance(value, dict):
+                        check = value.get("check")
+                        if isinstance(check, dict):
+                            check_definition = check.get("check")
+                            if isinstance(check_definition, dict) and "path" in check_definition:
+                                check_path = check_definition["path"]
+                                with self.subTest(pack=pack_root.name, formula=formula_path.name, path=check_path):
+                                    self.assertIsInstance(check_path, str)
+                                    self.assertTrue(check_path.startswith(asset_prefix))
+                                    if pack_root == root:
+                                        resolved = (formula_path.parent / check_path).resolve()
+                                        self.assertEqual(resolved.parent, gascity_asset_root)
+                                        self.assertTrue(
+                                            resolved.is_file(),
+                                            f"{formula_path.name} check {check_path!r} must be a pack asset",
+                                        )
+                        for child in value.values():
+                            visit(child)
+                    elif isinstance(value, list):
+                        for child in value:
+                            visit(child)
+
+                visit(data)
 
     def test_producer_stages_gate_artifacts_with_bounded_repair(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -4549,7 +4577,7 @@ description = "Override sink that writes the base triage report contract."
                 step = next(step for step in formula["steps"] if step["id"] == step_id)
                 self.assertEqual(
                     step["check"]["check"]["path"],
-                    ".gc/scripts/checks/implementation-review-approved.sh",
+                    "../assets/scripts/checks/implementation-review-approved.sh",
                 )
 
         story_root = bmad_root / "assets" / "workflows" / "bmad-story-development"

@@ -11,7 +11,7 @@ Recover context from bead metadata, not from a side-channel context file:
 5. Set `REVIEW_DIR=<run-dir>/design-review`, create it, and copy this pack's
    scripts into the rig-local script cache:
    `rm -rf .gc/scripts && mkdir -p .gc && cp -R {{pack_root}}/assets/scripts .gc/scripts`.
-6. Verify `.gc/scripts/checks/design-review-approved.sh` is executable.
+6. Verify `../assets/scripts/checks/design-review-approved.sh` is executable.
 
 Write `<REVIEW_DIR>/initial-implementation-plan.md` and update workflow root metadata:
 - `gc.github.design_review_dir=<absolute REVIEW_DIR>`
