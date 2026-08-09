@@ -7,13 +7,13 @@ otherwise default to `autonomous`.
 
 Create the brainstorming artifact directory under the build artifact root and
 ensure the rig-local script cache contains the imported `gc` pack checks. If
-`.gc/scripts/checks/design-review-approved.sh` is missing, locate the imported
+`../assets/scripts/checks/design-review-approved.sh` is missing, locate the imported
 `gc` formula search path with `gc formula show superpowers-build --json`, use
 its sibling `../assets/scripts` directory as the source, and refresh
 `.gc/scripts` from that directory.
 
 Write a compact context note for the design-approval loop and written-spec
-loop. Confirm that `.gc/scripts/checks/design-review-approved.sh` is
+loop. Confirm that `../assets/scripts/checks/design-review-approved.sh` is
 executable.
 
 Do not invoke provider-native subagents or upstream plugin runtime commands.

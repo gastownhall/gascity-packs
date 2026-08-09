@@ -6,7 +6,7 @@ artifacts, deployment-verification notes, and gap-analysis findings into one
 implementation-review report. Count skipped conditional artifacts as coverage
 records, not reviewer failures. Deduplicate overlaps, suppress non-actionable
 noise, classify required fixes, and write the approval verdict used by
-`.gc/scripts/checks/implementation-review-approved.sh`. Required fixes must be
+`../assets/scripts/checks/implementation-review-approved.sh`. Required fixes must be
 specific enough for the single apply step to resolve them directly.
 
 Read the review context from `gc.build.code_review_context_path` and all lane

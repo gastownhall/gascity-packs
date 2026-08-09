@@ -1,6 +1,6 @@
 Synthesize the Compound Engineering plan-review lanes.
 
-Merge coherence, feasibility, scope, and architecture findings into one plan-review report. Deduplicate overlapping findings, classify each as required change or residual risk, and write the approval verdict used by `.gc/scripts/checks/design-review-approved.sh`.
+Merge coherence, feasibility, scope, and architecture findings into one plan-review report. Deduplicate overlapping findings, classify each as required change or residual risk, and write the approval verdict used by `../assets/scripts/checks/design-review-approved.sh`.
 
 Read the review context from `gc.build.plan_review_context_path` and write the
 synthesized report to `gc.build.plan_review_report_path`, which should be

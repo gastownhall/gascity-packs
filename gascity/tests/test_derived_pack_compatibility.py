@@ -504,7 +504,7 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
             with self.subTest(pack="bmad", formula=formula_name, step=step_id):
                 self.assertEqual(
                     steps[step_id]["check"]["check"]["path"],
-                    ".gc/scripts/checks/implementation-review-approved.sh",
+                    "../assets/scripts/checks/implementation-review-approved.sh",
                     "bmad story development must keep its methodology "
                     "review check",
                 )
