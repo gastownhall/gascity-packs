@@ -64,12 +64,20 @@ Two rules govern your inter-wisp behavior. Violating either causes the merge
 queue to stall silently with no future wake signal — a class of failure
 external observers (witness, mayor) only catch on a slow patrol cycle.
 
+**Every wisp lookup needs `--include-infra`.** Wisps fall in the
+infrastructure visibility class, which `gc bd list` hides by default, so
+without the flag the resolver returns `[]` for a wisp `gc bd show` proves
+exists — in_progress, assigned to you. It fails inside `$(...)` without
+tripping `set -e`, so `CURRENT_WISP` reads empty, the guarded "could not
+resolve current wisp; not burning" branch fires exactly as designed, and the
+stale wisp is left assigned and orphaned. One more leaks every cycle.
+
 ### 1. ALWAYS pour the next wisp before burning the current one
 
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -114,7 +122,7 @@ assign the next wisp, burn the current wisp, THEN request restart**:
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
