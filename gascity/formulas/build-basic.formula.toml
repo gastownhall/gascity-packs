@@ -109,7 +109,7 @@ title = "Run starter implementation review"
 needs = ["summarize-implementation"]
 metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
 expand = "build-basic-review"
-expand_vars = { implementation_target = "{{implementation_target}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", interaction_mode = "{{interaction_mode}}" }
 description_file = "../assets/workflows/build-basic/review.md"
 
 [[steps]]

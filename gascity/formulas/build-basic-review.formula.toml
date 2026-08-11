@@ -15,6 +15,10 @@ contract = "graph.v2"
 description = "Role target used to apply starter review findings."
 default = "gc.implementation-worker"
 
+[vars.interaction_mode]
+description = "Workflow interaction posture: interactive, autonomous, or headless."
+default = "interactive"
+
 [[template]]
 id = "{target}.setup-build-basic-review"
 title = "Prepare build-basic starter review"
@@ -25,7 +29,7 @@ description_file = "../assets/workflows/build-basic-review/{target}.setup-build-
 id = "{target}.build-basic-review-loop"
 title = "Run build-basic starter review until approved"
 needs = ["{target}.setup-build-basic-review"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.review_gate_enabled" = "true" }
 description_file = "../assets/workflows/build-basic-review/{target}.build-basic-review-loop.md"
 
 [template.check]
@@ -71,6 +75,13 @@ title = "Apply starter review findings"
 needs = ["{target}.synthesize-review"]
 metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group" = "build-basic-review-fixes" }
 description_file = "../assets/workflows/build-basic-review/{target}.apply-review-findings.md"
+
+[[template.children]]
+id = "{target}.human-review-gate"
+title = "Human review gate (interactive mode)"
+needs = ["{target}.apply-review-findings"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-basic-review/{target}.human-review-gate.md"
 
 [[template]]
 id = "{target}"

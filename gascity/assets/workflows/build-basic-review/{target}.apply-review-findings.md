@@ -1,7 +1,10 @@
 Apply build-basic starter review findings.
 
 Use implementation target {{implementation_target}} for any code changes. Read
-the starter review synthesis. If all three review lanes approve, write a no-op
+the starter review synthesis, and — when the workflow root records
+`gc.build.human_findings_path` — that file as well: human-requested changes
+are required fixes even if the synthesis missed them. If all three review
+lanes approve and no unaddressed human findings remain, write a no-op
 review summary. If required fixes or missing evidence remain, make the smallest
 focused changes, run the relevant proof commands, and write the review-fix
 summary under the build artifact root.

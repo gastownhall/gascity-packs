@@ -37,6 +37,57 @@ if [ -z "$SCOPE_REF" ]; then
   SCOPE_REF="$(metadata_value "$ROOT_JSON" "gc.step_ref")"
 fi
 
+# Interactive human gate (interaction_mode=interactive): the gate child
+# records the explicit human verdict in workflow-root metadata. The gate
+# is authoritative over the machine verdict — a human "request changes"
+# after the apply lane emitted done must force another iteration, and an
+# unanswered gate must not pass. In interactive mode the check FAILS
+# CLOSED on an empty gate too: no recorded human approval means the loop
+# is not done, so a machine `done` verdict alone can never conclude it.
+# Autonomous/headless runs skip the gate entirely.
+#
+# Gate enforcement is OPT-IN via gc.build.review_gate_enabled=true on the
+# loop step (build-basic-review sets it): this check is shared by review
+# loops in other packs (bmad, gstack, compound-engineering, superpowers)
+# that run interactive builds but have no gate child writing
+# gc.build.review_gate — failing closed there would spin an
+# already-approved review to max_attempts.
+GATE_ENABLED="$(metadata_value "$ROOT_JSON" "gc.build.review_gate_enabled")"
+if [ -z "$GATE_ENABLED" ]; then
+  GATE_ENABLED="$(metadata_value "$PARENT_JSON" "gc.build.review_gate_enabled")"
+fi
+INTERACTION_MODE="$(metadata_value "$ROOT_JSON" "gc.var.interaction_mode")"
+if [ -z "$INTERACTION_MODE" ]; then
+  INTERACTION_MODE="$(metadata_value "$PARENT_JSON" "gc.var.interaction_mode")"
+fi
+REVIEW_GATE="$(metadata_value "$PARENT_JSON" "gc.build.review_gate")"
+if [ "$GATE_ENABLED" = "true" ] && [ "$INTERACTION_MODE" = "interactive" ]; then
+  case "$REVIEW_GATE" in
+    approved)
+      ;;
+    "")
+      echo "Implementation review needs the human gate: no approval recorded (interactive mode fails closed)"
+      exit 1
+      ;;
+    waiting-human)
+      echo "Implementation review awaiting the human gate decision"
+      exit 1
+      ;;
+    revision_requested)
+      echo "Implementation review needs another iteration: human requested changes"
+      exit 1
+      ;;
+    rejected)
+      echo "Implementation review rejected by the human gate"
+      exit 1
+      ;;
+    *)
+      echo "Implementation review gate in unrecognized state: $REVIEW_GATE"
+      exit 1
+      ;;
+  esac
+fi
+
 MATCHES="$(gc bd list --all --metadata-field "gc.root_bead_id=$PARENT_ROOT" --json --limit=0 2>/dev/null || printf '[]')"
 
 VERDICT="$(printf '%s\n' "$MATCHES" | jq -r --arg attempt "$ATTEMPT" '
