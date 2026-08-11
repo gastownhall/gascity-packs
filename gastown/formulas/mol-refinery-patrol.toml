@@ -1106,8 +1106,9 @@ If the cycle ended early (conflict rejection, no work found), note
 why and what state was left.
 
 This summary is not stored separately — it lives in the wisp's
-closing reason. The next session can find it via `gc bd list --type=molecule
---status=closed --limit=5` if it needs predecessor context."""
+closing reason. The next session can find it via
+`gc bd query --all --json 'ephemeral=true AND status=closed' --limit=0 | jq --arg agent "$GC_AGENT" '[.[] | select(.issue_type == "molecule" and .assignee == $agent)][:5]'`
+if it needs predecessor context."""
 
 [[steps]]
 id = "next-iteration"

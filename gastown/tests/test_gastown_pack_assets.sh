@@ -20,6 +20,20 @@ for path in sys.argv[1:]:
 PY
 }
 
+test_refinery_patrol_lifecycle_contracts() {
+    local agent="$GASTOWN/agents/refinery/agent.toml"
+    local formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+
+    parse_toml "$agent" "$formula"
+    grep -F 'sleep_after_idle = "300s"' "$agent" >/dev/null ||
+        fail "refinery should use sleep_after_idle for cold-slot cycling"
+    ! grep -F 'idle_timeout =' "$agent" >/dev/null ||
+        fail "refinery idle_timeout masks sleep_after_idle and must stay unset"
+    grep -F "gc bd query --all --json 'ephemeral=true AND status=closed' --limit=0 | jq --arg agent \"\$GC_AGENT\" '[.[] | select(.issue_type == \"molecule\" and .assignee == \$agent)][:5]'" \
+        "$formula" >/dev/null ||
+        fail "refinery predecessor lookup must filter slash-qualified assignees and molecule roots before limiting"
+}
+
 test_dog_assets_are_pack_local() {
     [[ -f "$GASTOWN/agents/dog/agent.toml" ]] || fail "missing dog agent config"
     [[ -f "$GASTOWN/agents/dog/prompt.template.md" ]] || fail "missing dog prompt"
@@ -216,6 +230,7 @@ if verify >= metadata:
 PY
 }
 
+test_refinery_patrol_lifecycle_contracts
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
