@@ -42,6 +42,7 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
+        self.gc_bin = os.environ.get("GC_BIN", "gc")
 
     def tearDown(self) -> None:
         os.environ.clear()
@@ -887,7 +888,7 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertEqual(
             commands[2][:8],
             [
-                "gc",
+                self.gc_bin,
                 "--city",
                 self.tempdir.name,
                 "--rig",
@@ -907,7 +908,7 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertEqual(commands[2][-1], "--json")
         self.assertEqual(
             commands[3][:8],
-            ["gc", "--rig", "github-owner-repo", "sling", "--json", "github-owner-repo/mayor", "ga-launch", "--force"],
+            [self.gc_bin, "--rig", "github-owner-repo", "sling", "--json", "github-owner-repo/mayor", "ga-launch", "--force"],
         )
         self.assertIn("--var", commands[3])
         sling_vars = {
@@ -920,7 +921,7 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertEqual(sling_vars["github_app_installation_id"], "profile-installation")
         self.assertEqual(sling_vars["github_app_identity"], "mayor")
         self.assertEqual(sling_vars["acknowledgement_requested"], "true")
-        city_prefix = ["gc", "--city", self.tempdir.name, "bd"]
+        city_prefix = [self.gc_bin, "--city", self.tempdir.name, "bd"]
         self.assertEqual(commands[1][0:6], city_prefix + ["update", "ga-src1"])
         self.assertEqual(commands[4][0:6], city_prefix + ["update", "ga-src1"])
         self.assertEqual(
@@ -983,7 +984,7 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertEqual(outcome["workflow_root_id"], "ga-root")
         run_subprocess.assert_called_once_with(
             [
-                "gc",
+                self.gc_bin,
                 "--city",
                 self.tempdir.name,
                 "bd",
@@ -1271,7 +1272,7 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertEqual(outcome["bead_id"], "bd-1")
         self.assertTrue(outcome["bead_closed"])
         commands = [call.args[0] for call in run_subprocess.call_args_list]
-        prefix = ["gc", "--city", self.tempdir.name, "--rig", "product", "bd"]
+        prefix = [self.gc_bin, "--city", self.tempdir.name, "--rig", "product", "bd"]
         self.assertEqual(
             commands[0],
             prefix + ["update", "bd-1", "--set-metadata", "close_reason=github:bead_update_failed"],
@@ -1319,8 +1320,8 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
         self.assertEqual(outcome["bead_id"], "mc-source")
         self.assertEqual(outcome["workflow_root_id"], "ga-root")
         commands = [call.args[0] for call in run_subprocess.call_args_list]
-        self.assertEqual(commands[0], ["gc", "workflows", "bugflow", "create", "https://github.com/owner/repo/issues/42"])
-        self.assertEqual(commands[1], ["gc", "workflows", "bugflow", "router-scan"])
+        self.assertEqual(commands[0], [self.gc_bin, "workflows", "bugflow", "create", "https://github.com/owner/repo/issues/42"])
+        self.assertEqual(commands[1], [self.gc_bin, "workflows", "bugflow", "router-scan"])
         self.assertEqual(run_subprocess.call_args_list[0].kwargs["env"]["GH_TOKEN"], "token-123")
         self.assertEqual(run_subprocess.call_args_list[1].kwargs["env"]["GH_TOKEN"], "token-123")
 
@@ -1413,7 +1414,7 @@ GITHUB_INTAKE_APP_IDENTITY = "mayor"
 
         self.assertTrue(closed)
         commands = [call.args[0] for call in run_subprocess.call_args_list]
-        prefix = ["gc", "--city", self.tempdir.name, "bd"]
+        prefix = [self.gc_bin, "--city", self.tempdir.name, "bd"]
         self.assertEqual(
             commands[0],
             prefix + ["update", "bd-1", "--set-metadata", "close_reason=github:dispatch_failed"],

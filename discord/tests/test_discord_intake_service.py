@@ -58,6 +58,7 @@ class DiscordIntakeServiceTests(unittest.TestCase):
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
+        self.gc_bin = os.environ.get("GC_BIN", "gc")
         service.LAST_REQUEST_PRUNE_AT = 0.0
         service.LAST_REQUEST_RECOVERY_AT = 0.0
 
@@ -331,7 +332,7 @@ class DiscordIntakeServiceTests(unittest.TestCase):
         self.assertEqual(outcome["bead_id"], "bd-1")
         self.assertTrue(outcome["bead_closed"])
         commands = [call.args[0] for call in run_subprocess.call_args_list]
-        prefix = ["gc", "--city", self.tempdir.name, "--rig", "product", "bd"]
+        prefix = [self.gc_bin, "--city", self.tempdir.name, "--rig", "product", "bd"]
         self.assertEqual(
             commands[0],
             prefix + ["update", "bd-1", "--set-metadata", "close_reason=discord:bead_update_failed"],
