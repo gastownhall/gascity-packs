@@ -34,6 +34,78 @@ SH
     chmod +x "$bin/gc"
 }
 
+# Every external command status-line.sh reaches for. The bound probes below run
+# with a PATH holding only these, so the helper can be exercised on a host where
+# timeout(1) does not exist. A tool missing here does not fail the run cleanly —
+# it breaks the cache path and quietly changes what is under test — so resolve
+# them all up front and fail loudly instead.
+STATUS_LINE_PROBE_TOOLS=(sh sleep mktemp cat rm awk stat jq tr cksum date)
+
+write_bounded_probe_bin() {
+    local bin="$1" tool resolved
+    mkdir -p "$bin"
+    for tool in "${STATUS_LINE_PROBE_TOOLS[@]}"; do
+        resolved=$(command -v "$tool" 2>/dev/null) ||
+            fail "status-line bound probe needs $tool on PATH"
+        ln -sf "$resolved" "$bin/$tool"
+    done
+}
+
+# Stub gc whose behaviour is chosen by mode: hang stands in for a query wedged
+# on a lock, background for one that returns promptly but leaves work running.
+write_bounded_probe_gc() {
+    local bin="$1" mode="$2" sleeper="$3"
+
+    cat >"$sleeper" <<'SH'
+#!/usr/bin/env sh
+sleep 60
+SH
+    chmod +x "$sleeper"
+
+    cat >"$bin/gc" <<SH
+#!/usr/bin/env sh
+case "$mode" in
+    hang)       "$sleeper" ;;
+    background) "$sleeper" & ;;
+esac
+printf '[]\n'
+SH
+    chmod +x "$bin/gc"
+}
+
+# Run status-line.sh detached from this suite's stdio and wait up to cap
+# seconds. A wedged run outlives the call, and anything it still holds would
+# keep the caller's pipe open — the very failure under test, turned on the
+# runner.
+run_status_line_watchdog() {
+    local run="$1" cap="$2" bin="$3" city="$4" waited=0
+    (
+        PATH="$bin" GC_STATUSLINE_CACHE_DIR="$run/cache" GC_STATUSLINE_TTL=0 \
+            GC_STATUSLINE_BOUND=1 "$SCRIPTS/status-line.sh" alpha "$city" \
+            >"$run/out" 2>/dev/null
+        : >"$run/done"
+    ) >/dev/null 2>&1 &
+    while [[ ! -f "$run/done" && "$waited" -lt "$cap" ]]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    [[ -f "$run/done" ]]
+}
+
+# Reap only our own marked probes, by exact pid — never a broad pattern kill.
+# pgrep exits non-zero when nothing matches, which is the expected case here, so
+# neither helper may let that status escape into the suite's errexit.
+reap_marked() {
+    local marker="$1" pid
+    for pid in $(pgrep -f "$marker" 2>/dev/null || true); do
+        kill -KILL "$pid" 2>/dev/null || true
+    done
+}
+
+marked_survivors() {
+    pgrep -f "$1" 2>/dev/null | grep -c . || true
+}
+
 test_status_line_counts_with_bounded_gc_commands_and_cache() {
     local tmp city bin cache log output
     tmp=$(mktemp -d)
@@ -185,6 +257,56 @@ SH
     [[ "$output" == "alpha" ]] || fail "expected read mail to be omitted, got: $output"
 }
 
+test_status_line_bounds_a_hanging_query_without_timeout_binary() {
+    local tmp bin city run marker
+    tmp=$(mktemp -d)
+    bin="$tmp/bin"
+    city="$tmp/city"
+    run="$tmp/run"
+    marker="statusline_bound_hang_$$"
+    mkdir -p "$city" "$run"
+
+    write_bounded_probe_bin "$bin"
+    # Positive control: the probe bin is the whole PATH for the run below, so
+    # timeout(1) is reachable only if it was linked in. Assert it was not — if
+    # it ever is, this case silently degrades into "timeout did the bounding"
+    # and stops covering the platforms that ship no coreutils.
+    [[ ! -e "$bin/timeout" ]] ||
+        fail "probe PATH still resolves timeout(1); the no-timeout case would be vacuous"
+    write_bounded_probe_gc "$bin" hang "$tmp/$marker.sh"
+
+    if ! run_status_line_watchdog "$run" 20 "$bin" "$city"; then
+        reap_marked "$marker"
+        fail "hanging query was never bounded where timeout(1) is absent"
+    fi
+    reap_marked "$marker"
+}
+
+test_status_line_reaps_work_the_query_leaves_behind() {
+    local tmp bin city run marker survivors wedged=0
+    tmp=$(mktemp -d)
+    bin="$tmp/bin"
+    city="$tmp/city"
+    run="$tmp/run"
+    marker="statusline_bound_bg_$$"
+    mkdir -p "$city" "$run"
+
+    write_bounded_probe_bin "$bin"
+    write_bounded_probe_gc "$bin" background "$tmp/$marker.sh"
+
+    # A bound on the direct child alone leaves the backgrounded grandchild
+    # running, and that grandchild inherits stdout — so the refresh both leaks
+    # a process and blocks the caller reading through the pipe.
+    run_status_line_watchdog "$run" 20 "$bin" "$city" || wedged=1
+    survivors=$(marked_survivors "$marker")
+    reap_marked "$marker"
+
+    [[ "$wedged" -eq 0 ]] ||
+        fail "refresh never completed — caller wedged by a grandchild holding stdout"
+    [[ "$survivors" -eq 0 ]] ||
+        fail "backgrounded work survived the bound ($survivors still running)"
+}
+
 test_tmux_theme_passes_city_path_to_status_helper() {
     local tmp bin log city
     tmp=$(mktemp -d)
@@ -210,6 +332,8 @@ test_status_line_cache_is_city_scoped
 test_status_line_falls_back_to_agent_only_on_query_failure
 test_status_line_counts_ready_work_not_queued_nudges
 test_status_line_uses_unread_mail_check_semantics
+test_status_line_bounds_a_hanging_query_without_timeout_binary
+test_status_line_reaps_work_the_query_leaves_behind
 test_tmux_theme_passes_city_path_to_status_helper
 
 echo "gastown theme script tests passed"
