@@ -8,9 +8,10 @@
 #       triggers from <rig>/.gc/project-brief.md (each project owns its
 #       own brief, so scoping context stays local instead of piling onto
 #       the mayor).
-#     • Triages its rig every tick and dispatches ready, in-scope work in
-#       its own rig directly — it does not route every dispatch through
-#       the mayor.
+#     • Triages its rig every tick and reconciles committed ready work in
+#       its own rig. It observes existing eligible routes and controller
+#       progress but never creates routing from readiness alone or treats
+#       a pool route as a concrete session identity.
 #     • Judges severity (info vs escalate) and writes structured rollup
 #       beads with explicit labels.
 #
@@ -43,8 +44,8 @@
 #   │  │ • reads foo/.gc/       │  │ • reads bar/.gc/       │          │
 #   │  │   project-brief.md     │  │   project-brief.md     │          │
 #   │  │ • bounded to foo's     │  │ • bounded to bar's     │          │
-#   │  │   beads; dispatches    │  │   beads; dispatches    │          │
-#   │  │   its own ready work   │  │   its own ready work   │          │
+#   │  │   beads; reconciles   │  │   beads; reconciles   │          │
+#   │  │   committed intent     │  │   committed intent     │          │
 #   │  │ + your existing rig    │  │ + your existing rig    │          │
 #   │  │   agents (witness etc) │  │   agents               │          │
 #   │  └────────────────────────┘  └────────────────────────┘          │
@@ -62,10 +63,9 @@
 # slack-channel, or slack-mini). This pack ships only the oversight role and
 # its escalation machinery, not a slack bridge.
 #
-# Optional: the project-lead's rig-scoped dispatch examples use convoy
-# formulas (mol-decompose, mol-pr-from-issue) supplied by a workflow/formula
-# pack (e.g. gastown). The oversight role works without them — it just won't
-# offer those particular dispatch shortcuts.
+# Optional: a workflow/formula pack (for example gastown) supplies the
+# durable Formula/run metadata Project Lead can reconcile. Project Lead does
+# not initiate new formulas or route uncommitted work.
 #
 # To install in an existing city:
 #   1. Add the pack to city.toml (and stamp a project-lead per rig).

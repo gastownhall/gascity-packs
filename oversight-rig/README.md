@@ -16,15 +16,36 @@ mayor (city, unchanged) ──── plans cross-cutting work, handles escalatio
   • bounded to foo's beads      • bounded to bar's beads
   • reads foo/.gc/              • reads bar/.gc/
     project-brief.md              project-brief.md
-  • dispatches its own          • dispatches its own
-    ready work directly           ready work directly
+  • reconciles committed         • reconciles committed
+    execution intent              execution intent
 ```
 
 - **`project-lead`** (rig scope, always-on, one per rig)
   - Bounded to a single rig's beads. Reads its persona, current focus, and escalation triggers from `<rig>/.gc/project-brief.md` — each project owns its own scoping context, so it never piles onto the mayor.
-  - Triages its rig every tick and **dispatches ready, in-scope work in its own rig directly** — it does not route every dispatch through the mayor.
+  - Triages its rig every tick and **reconciles committed ready work in its own rig**. It observes existing eligible routes and controller progress but does not create a route from Beads readiness alone or treat a pool route as a concrete session identity.
   - Judges severity (info vs escalate) and writes structured rollup beads.
 - **The mayor stays unchanged** and shrinks to what is genuinely cross-cutting: planning work that spans rigs, and reacting to escalations.
+
+## Dispatch safety: READY != RUN
+
+Project Lead dispatch is intentionally narrower than Beads readiness. A plain
+ready backlog bead is not execution-authorized and must never be slung merely
+because a worker pool exists. On each tick, Project Lead uses the pack's
+read-only bounded selector:
+
+```sh
+python3 "$GC_PACK_DIR/assets/scripts/select-execution-candidates.py" --rig <rig> --json
+```
+
+Only its routed output may be monitored as committed execution intent. It
+recognizes an existing valid `gc.routed_to` in the same rig, or a Formula/run
+member whose existing root metadata resolves to a live workflow root in that
+rig. It fails closed on query, JSON, schema, route, root, or bound uncertainty.
+It does not invent or rewrite routes, infer arbitrary bead-tree intent, or add
+a committed-root marker. Pool routes remain controller scheduling demand and
+are never passed directly to session wake/nudge commands. Missing routing,
+Formula control state, or persistent routed-but-open work is surfaced instead
+of repaired by Project Lead.
 
 ## Deterministic escalation (no relay agent)
 
@@ -53,7 +74,7 @@ city, configure local paths, and verify dry-run output before scheduling writes.
 ## Requirements
 
 - An extmsg/slack adapter in the city for outbound delivery and inbound replies — **compose this pack with your slack pack** (e.g. `slack-full`, `slack-channel`, or `slack-mini`). This pack ships only the oversight role and its escalation machinery, not a slack bridge.
-- Optional: the project-lead's rig-scoped dispatch examples use convoy formulas (`mol-decompose`, `mol-pr-from-issue`) supplied by a workflow pack (e.g. `gastown`). The role works without them.
+- Optional: a workflow/formula pack (for example `gastown`) supplies the durable Formula/run metadata that Project Lead can safely reconcile. Project Lead does not initiate new convoy formulas.
 - Optional: the executive-status skill needs Python 3.11 or newer. Obsidian and a publishing adapter are not required; without them it writes ordinary Markdown to a configured path.
 
 ## Install
