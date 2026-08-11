@@ -235,6 +235,7 @@ def test_registered_claim_command_dispatches_store_aware_show_and_normalizes_jso
         **workspace.env,
         "BEADS_ACTOR": "worker",
         "GC_AGENT": "gc.implementation-worker",
+        "GC_TEMPLATE": "gc.implementation-worker",
         "GC_TEST_CALLS": str(calls),
         "PATH": f"{fake_bin}:/usr/bin:/bin",
     }
