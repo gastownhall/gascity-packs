@@ -22,14 +22,20 @@ metadata_value() {
   ' 2>/dev/null
 }
 
-ROOT_JSON="$(gc bd show "$ROOT_ID" --json 2>/dev/null || true)"
+GC_ERR="$(mktemp)"
+trap 'rm -f "$GC_ERR"' EXIT
+if ! ROOT_JSON="$(gc bd show "$ROOT_ID" --json 2>"$GC_ERR")"; then
+  echo "review check: note: gc bd show $ROOT_ID failed: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')" >&2
+fi
 PARENT_ROOT="$(metadata_value "$ROOT_JSON" "gc.root_bead_id")"
 if [ -z "$PARENT_ROOT" ]; then
   PARENT_ROOT="$ROOT_ID"
 fi
 PARENT_JSON="$ROOT_JSON"
 if [ "$PARENT_ROOT" != "$ROOT_ID" ]; then
-  PARENT_JSON="$(gc bd show "$PARENT_ROOT" --json 2>/dev/null || true)"
+  if ! PARENT_JSON="$(gc bd show "$PARENT_ROOT" --json 2>"$GC_ERR")"; then
+    echo "review check: note: gc bd show $PARENT_ROOT failed: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')" >&2
+  fi
 fi
 STEP_ID="$(metadata_value "$ROOT_JSON" "gc.step_id")"
 SCOPE_REF="$(metadata_value "$ROOT_JSON" "gc.scope_ref")"
@@ -37,7 +43,10 @@ if [ -z "$SCOPE_REF" ]; then
   SCOPE_REF="$(metadata_value "$ROOT_JSON" "gc.step_ref")"
 fi
 
-MATCHES="$(gc bd list --all --metadata-field "gc.root_bead_id=$PARENT_ROOT" --json --limit=0 2>/dev/null || printf '[]')"
+MATCHES="$(gc bd list --all --metadata-field "gc.root_bead_id=$PARENT_ROOT" --json --limit=0 2>"$GC_ERR")" || {
+  echo "review check: note: gc bd list for root $PARENT_ROOT failed: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')" >&2
+  MATCHES='[]'
+}
 
 VERDICT="$(printf '%s\n' "$MATCHES" | jq -r --arg attempt "$ATTEMPT" '
   [
