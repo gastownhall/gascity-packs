@@ -351,6 +351,37 @@ class MattermostGatewayServiceTests(unittest.TestCase):
         self.assertIn(f"conversation: dm:{DM_CHANNEL}", envelope)
         self.assertEqual(common.load_chat_ingress(f"in-{post_id}")["status"], "delivered")
 
+    def test_process_inbound_dm_routes_flat_when_thread_replies_disabled(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "dm",
+            DM_CHANNEL,
+            ["sky"],
+            policy={"thread_replies": False},
+        )
+        post_id = mm_id("post101b")
+        post = make_post(post_id, channel_id=DM_CHANNEL, message="hello from mattermost")
+
+        with mock.patch.object(
+            common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "suspended"}}
+        ), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-1"},
+        ) as deliver_session_message:
+            outcome = self._process(post)
+
+        self.assertEqual(outcome["status"], "delivered")
+        deliver_session_message.assert_called_once()
+        envelope = deliver_session_message.call_args.args[1]
+        reply_tool_line = next(line for line in envelope.splitlines() if line.startswith("reply_tool:"))
+        self.assertEqual(
+            reply_tool_line,
+            f"reply_tool: gc mattermost reply-current --conversation-id {DM_CHANNEL} --body-file <path> "
+            "(this binding posts flat — do NOT pass --root-id yourself)",
+        )
+        self.assertIn("publish_root_post_id: \n", envelope)
+
     def test_process_inbound_room_message_targets_only_named_alias(self) -> None:
         common.set_chat_binding(common.load_config(), "room", ROOM_CHANNEL, ["sky", "lawrence"], TEAM_ID)
         post_id = mm_id("post202")

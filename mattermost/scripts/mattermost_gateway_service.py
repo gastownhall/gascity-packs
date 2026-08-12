@@ -801,6 +801,15 @@ def build_human_envelope(
     channel_id = str(post.get("channel_id", "")).strip()
     post_id = str(post.get("id", "")).strip()
     root_post_id = message_root_post_id(post)
+    # A binding can opt out of threading (bind-room/bind-dm
+    # --disable-thread-replies) to force flat, top-level replies instead of
+    # threading under the message being answered.
+    thread_replies = common.binding_peer_policy(binding).get("thread_replies", True)
+    reply_root_arg = f" --root-id {root_post_id}" if (thread_replies and root_post_id) else ""
+    reply_tool_line = f"reply_tool: gc mattermost reply-current --conversation-id {channel_id}{reply_root_arg} --body-file <path>"
+    if not thread_replies:
+        reply_tool_line += " (this binding posts flat — do NOT pass --root-id yourself)"
+    publish_root_post_id = root_post_id if thread_replies else ""
     lines = [
         f"<{common.EVENT_TAG}>",
         "version: 1",
@@ -822,10 +831,10 @@ def build_human_envelope(
         f"publish_binding_id: {binding_id}",
         f"publish_conversation_id: {channel_id}",
         f"publish_trigger_id: {post_id}",
-        f"publish_root_post_id: {root_post_id}",
+        f"publish_root_post_id: {publish_root_post_id}",
         "normal_output_visibility: internal_only",
         "reply_contract: explicit_publish_required",
-        f"reply_tool: gc mattermost reply-current --conversation-id {channel_id} --root-id {root_post_id} --body-file <path>",
+        reply_tool_line,
         "reply_success_signal: record.remote_message_id",
         "reply_turn_requirement: if you intend to answer, do not end the turn without a successful reply-current",
         f"</{common.EVENT_TAG}>",

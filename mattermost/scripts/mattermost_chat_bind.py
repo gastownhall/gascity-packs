@@ -56,6 +56,16 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--max-peer-triggered-publishes-per-root", type=int, default=None)
     parser.add_argument("--max-total-peer-deliveries-per-root", type=int, default=None)
     parser.add_argument("--max-peer-triggered-publishes-per-session-per-minute", type=int, default=None)
+    parser.add_argument(
+        "--enable-thread-replies",
+        action="store_true",
+        help="Reply-current threads replies under the message being answered (default)",
+    )
+    parser.add_argument(
+        "--disable-thread-replies",
+        action="store_true",
+        help="Force reply-current to post flat, top-level messages instead of threading. Valid for --kind room or dm.",
+    )
     parser.add_argument("conversation_id", help="Mattermost channel id (DM channels are channels too)")
     parser.add_argument("session_name", nargs="+", help="Gas City session name(s)")
     args = parser.parse_args(argv)
@@ -85,6 +95,13 @@ def main(argv: list[str]) -> int:
         disable_flag="--disallow-untargeted-peer-fanout",
     )
 
+    thread_replies = _optional_bool(
+        args.enable_thread_replies,
+        args.disable_thread_replies,
+        enable_flag="--enable-thread-replies",
+        disable_flag="--disable-thread-replies",
+    )
+
     room_policy: dict[str, Any] = {}
     if ambient_read is not None:
         room_policy["ambient_read_enabled"] = ambient_read
@@ -103,6 +120,11 @@ def main(argv: list[str]) -> int:
 
     if args.kind != "room" and room_policy:
         raise SystemExit("room policy flags require --kind room")
+
+    # thread_replies applies to any binding kind (unlike the room-only peer
+    # policy above), so it's merged in after the room-only guard.
+    if thread_replies is not None:
+        room_policy["thread_replies"] = thread_replies
 
     root_id = str(args.root_id).strip()
     if root_id and args.kind != "room":

@@ -405,6 +405,11 @@ def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
                     normalized_bindings[binding_id].update(channel_metadata)
                 if kind == "room":
                     normalized_bindings[binding_id]["policy"] = normalize_room_peer_policy(value.get("policy"))
+                elif isinstance(value.get("policy"), dict) and value.get("policy"):
+                    # Non-room bindings don't carry the full room peer-policy
+                    # surface, but a simple override (e.g. thread_replies)
+                    # applies to any kind and must survive normalization too.
+                    normalized_bindings[binding_id]["policy"] = normalize_room_peer_policy(value.get("policy"))
         launchers = chat.get("launchers")
         if isinstance(launchers, dict):
             for key, value in launchers.items():
@@ -539,6 +544,10 @@ def default_room_peer_policy() -> dict[str, Any]:
         "max_peer_triggered_publishes_per_root": 1,
         "max_total_peer_deliveries_per_root": 8,
         "max_peer_triggered_publishes_per_session_per_minute": 5,
+        # Default True preserves existing behavior (replies thread under the
+        # message they're answering). Set False via bind-room/bind-dm
+        # --disable-thread-replies to force flat, top-level replies instead.
+        "thread_replies": True,
     }
 
 
@@ -560,6 +569,7 @@ def _normalize_peer_policy(policy: dict[str, Any] | None, defaults: dict[str, An
         "allow_untargeted_peer_fanout": _coerce_bool(
             raw.get("allow_untargeted_peer_fanout"), defaults["allow_untargeted_peer_fanout"]
         ),
+        "thread_replies": _coerce_bool(raw.get("thread_replies"), defaults.get("thread_replies", True)),
         "max_peer_triggered_publishes_per_root": max(
             0, int(raw.get("max_peer_triggered_publishes_per_root", defaults["max_peer_triggered_publishes_per_root"]) or 0)
         ),
@@ -589,7 +599,10 @@ def normalize_room_launch_peer_policy(policy: dict[str, Any] | None = None) -> d
 
 def binding_peer_policy(binding: dict[str, Any]) -> dict[str, Any]:
     if str(binding.get("kind", "")).strip() != "room":
-        return default_room_peer_policy()
+        # DM (and any future non-room) bindings only ever carry a minimal
+        # override subset (e.g. thread_replies) via set_chat_binding, but
+        # still deserve to have it respected rather than silently dropped.
+        return normalize_room_peer_policy(binding.get("policy"))
     if str(binding.get("publish_route_kind", "")).strip() == "room_launch" or str(binding.get("id", "")).strip().startswith(
         "launch-room:"
     ):
@@ -850,6 +863,11 @@ def set_chat_binding(
     if normalized_kind == "room":
         if raw_channel_metadata:
             binding.update(raw_channel_metadata)
+        binding["policy"] = room_policy
+    elif isinstance(policy, dict) and policy:
+        # Non-room bindings don't carry the full room peer-policy surface
+        # (ambient read / peer fanout are room-only concepts), but a simple
+        # override like thread_replies applies to any binding kind.
         binding["policy"] = room_policy
     cfg["chat"]["bindings"][binding_id] = binding
     return save_config(cfg)
@@ -4411,6 +4429,8 @@ def resolve_publish_destination(
         # message it's replying to.
         if binding_root_id:
             root_post_id = binding_root_id
+        elif not binding_peer_policy(binding).get("thread_replies", True):
+            root_post_id = ""
         else:
             root_post_id = resolve_thread_root_id(conversation_id, reply_target) if reply_target else ""
         return conversation_id, root_post_id, None

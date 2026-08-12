@@ -538,6 +538,102 @@ class MattermostIntakeCommonTests(unittest.TestCase):
         self.assertIsNone(launch)
         resolve_thread_root_id.assert_not_called()
 
+    def test_default_room_peer_policy_threads_by_default(self) -> None:
+        self.assertTrue(common.default_room_peer_policy()["thread_replies"])
+        self.assertTrue(common.normalize_room_peer_policy(None)["thread_replies"])
+        self.assertTrue(common.normalize_room_peer_policy({})["thread_replies"])
+
+    def test_resolve_publish_destination_room_binding_threads_by_default(self) -> None:
+        common.set_chat_binding(common.load_config(), "room", CHANNEL_ID, ["corp--sky"], TEAM_ID)
+        binding = common.resolve_chat_binding(common.load_config(), f"room:{CHANNEL_ID}")
+        assert binding is not None
+
+        with mock.patch.object(common, "resolve_thread_root_id", return_value=ROOT_POST_ID) as resolve_thread_root_id:
+            channel_id, root_post_id, launch = common.resolve_publish_destination(
+                binding,
+                reply_to_message_id=REPLY_POST_ID,
+            )
+
+        self.assertEqual(channel_id, CHANNEL_ID)
+        self.assertEqual(root_post_id, ROOT_POST_ID)
+        self.assertIsNone(launch)
+        resolve_thread_root_id.assert_called_once_with(CHANNEL_ID, REPLY_POST_ID)
+
+    def test_resolve_publish_destination_room_binding_forces_flat_reply_when_thread_replies_disabled(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            CHANNEL_ID,
+            ["corp--sky"],
+            TEAM_ID,
+            policy={"thread_replies": False},
+        )
+        binding = common.resolve_chat_binding(common.load_config(), f"room:{CHANNEL_ID}")
+        assert binding is not None
+
+        with mock.patch.object(common, "resolve_thread_root_id") as resolve_thread_root_id:
+            channel_id, root_post_id, launch = common.resolve_publish_destination(
+                binding,
+                reply_to_message_id=REPLY_POST_ID,
+            )
+
+        self.assertEqual(channel_id, CHANNEL_ID)
+        self.assertEqual(root_post_id, "")
+        self.assertIsNone(launch)
+        resolve_thread_root_id.assert_not_called()
+
+    def test_set_chat_binding_dm_kind_omits_policy_key_when_not_overridden(self) -> None:
+        common.set_chat_binding(common.load_config(), "dm", CHANNEL_ID, ["sky"], TEAM_ID)
+        binding = common.resolve_chat_binding(common.load_config(), f"dm:{CHANNEL_ID}")
+        assert binding is not None
+
+        self.assertNotIn("policy", binding)
+
+    def test_binding_peer_policy_respects_dm_stored_policy(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "dm",
+            CHANNEL_ID,
+            ["sky"],
+            TEAM_ID,
+            policy={"thread_replies": False},
+        )
+        binding = common.resolve_chat_binding(common.load_config(), f"dm:{CHANNEL_ID}")
+        assert binding is not None
+
+        self.assertIn("policy", binding)
+        self.assertFalse(common.binding_peer_policy(binding)["thread_replies"])
+
+    def test_binding_peer_policy_dm_without_override_still_threads(self) -> None:
+        common.set_chat_binding(common.load_config(), "dm", CHANNEL_ID, ["sky"], TEAM_ID)
+        binding = common.resolve_chat_binding(common.load_config(), f"dm:{CHANNEL_ID}")
+        assert binding is not None
+
+        self.assertTrue(common.binding_peer_policy(binding)["thread_replies"])
+
+    def test_resolve_publish_destination_dm_binding_forces_flat_reply_when_thread_replies_disabled(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "dm",
+            CHANNEL_ID,
+            ["sky"],
+            TEAM_ID,
+            policy={"thread_replies": False},
+        )
+        binding = common.resolve_chat_binding(common.load_config(), f"dm:{CHANNEL_ID}")
+        assert binding is not None
+
+        with mock.patch.object(common, "resolve_thread_root_id") as resolve_thread_root_id:
+            channel_id, root_post_id, launch = common.resolve_publish_destination(
+                binding,
+                reply_to_message_id=REPLY_POST_ID,
+            )
+
+        self.assertEqual(channel_id, CHANNEL_ID)
+        self.assertEqual(root_post_id, "")
+        self.assertIsNone(launch)
+        resolve_thread_root_id.assert_not_called()
+
     def test_publish_binding_message_thread_scoped_binding_posts_to_real_channel(self) -> None:
         conversation_id = common.mattermost_conversation_key(CHANNEL_ID, ROOT_POST_ID)
         common.set_chat_binding(common.load_config(), "room", conversation_id, ["corp--sky"], TEAM_ID)
