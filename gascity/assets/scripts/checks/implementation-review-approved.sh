@@ -1,6 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+gmol() {   # root_id -> molecule-member JSON array
+    # `gc bd list --metadata-field` is a collection query carrying no bead id,
+    # so on a city that relocates the graph class bd has nothing to route on and
+    # refuses the read -- and the `2>/dev/null` below turned that refusal into an
+    # empty set, so this gate never saw code_review.verdict and looped until Ralph
+    # ran out of attempts.
+    #
+    # `gc ready` is the federating reader: city store, rig stores and the
+    # relocated graph store, across both tiers. It takes exactly one --status
+    # and has no --all, so the member set is the union of one leg per status.
+    # The four legs are independent reads, so run them concurrently: a check
+    # gate has a 10m budget and each `gc ready` costs ~17s on a loaded city.
+    # A leg that fails is reported on stderr and fails the function rather than
+    # contributing an empty set -- silent starvation is the bug being fixed.
+    local root="$1" tmp st rc=0
+    tmp="$(mktemp -d)" || return 1
+    for st in open in_progress blocked closed; do
+        { gc ready --metadata-field "gc.root_bead_id=$root" --status "$st" --limit 0 --json \
+            >"$tmp/$st.json" || printf '%s\n' "$st" >>"$tmp/failed"; } &
+    done
+    wait
+    if [ -s "$tmp/failed" ]; then
+        echo "gmol: gc ready failed for status: $(tr '\n' ' ' <"$tmp/failed")" >&2
+        rc=1
+    fi
+    jq -s 'map(select(type=="array")) | add // [] | unique_by(.id)' "$tmp"/*.json || rc=1
+    rm -rf "$tmp"
+    return "$rc"
+}
+
 ROOT_ID="${GC_BEAD_ID:-}"
 ATTEMPT="${GC_ITERATION:-}"
 
@@ -37,7 +67,7 @@ if [ -z "$SCOPE_REF" ]; then
   SCOPE_REF="$(metadata_value "$ROOT_JSON" "gc.step_ref")"
 fi
 
-MATCHES="$(gc bd list --all --metadata-field "gc.root_bead_id=$PARENT_ROOT" --json --limit=0 2>/dev/null || printf '[]')"
+MATCHES="$(gmol "$PARENT_ROOT")"
 
 VERDICT="$(printf '%s\n' "$MATCHES" | jq -r --arg attempt "$ATTEMPT" '
   [
