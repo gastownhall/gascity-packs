@@ -1932,5 +1932,33 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         sleep.assert_called_once_with(0.0)
 
 
+class WakeSessionTests(unittest.TestCase):
+    def test_wake_session_posts_to_wake_endpoint(self) -> None:
+        with mock.patch.object(common, "gc_api_request", return_value={"status": "ok"}) as api:
+            result = common.wake_session("gastown.mayor")
+        api.assert_called_once()
+        args, _kwargs = api.call_args
+        self.assertEqual(args[0], "POST")
+        self.assertEqual(args[1], "/v0/session/gastown.mayor/wake")
+        self.assertEqual(result, {"status": "ok"})
+
+    def test_wake_session_url_quotes_name(self) -> None:
+        with mock.patch.object(common, "gc_api_request", return_value={}) as api:
+            common.wake_session("thriva/devpipeline.backend_dev")
+        args, _kwargs = api.call_args
+        self.assertEqual(args[1], "/v0/session/thriva%2Fdevpipeline.backend_dev/wake")
+
+    def test_wake_session_best_effort_on_api_error(self) -> None:
+        with mock.patch.object(common, "gc_api_request", side_effect=common.GCAPIError("boom")):
+            result = common.wake_session("gastown.mayor")
+        self.assertEqual(result.get("status"), "wake_failed")
+
+    def test_wake_session_empty_name_is_noop(self) -> None:
+        with mock.patch.object(common, "gc_api_request") as api:
+            result = common.wake_session("   ")
+        api.assert_not_called()
+        self.assertEqual(result, {})
+
+
 if __name__ == "__main__":
     unittest.main()

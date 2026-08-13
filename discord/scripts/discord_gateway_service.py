@@ -1577,6 +1577,18 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
                         "response": response,
                     }
                 )
+                # Force-wake on an inbound HUMAN DM so it pushes in live rather
+                # than riding the target's next scheduled wake (the deferred-
+                # reminder latency a DM hits when the target is idle between
+                # turns). DM-scoped (binding kind == "dm") so we never wake the
+                # fleet on room/channel traffic. Best-effort + double-guarded:
+                # a wake miss (or a wake-resistant session) never affects the
+                # delivery that already succeeded above.
+                if str(binding.get("kind", "")).strip().lower() == "dm":
+                    try:
+                        updated_targets[-1]["wake"] = common.wake_session(target)
+                    except Exception as wake_exc:  # delivery already succeeded; wake is advisory
+                        updated_targets[-1]["wake"] = {"status": "wake_error", "error": str(wake_exc)}
             except common.GCAPIError as exc:
                 failures += 1
                 updated_targets.append(

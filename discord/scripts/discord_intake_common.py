@@ -4834,6 +4834,34 @@ def deliver_session_message(
     return payload
 
 
+def wake_session(
+    session_name: str,
+    timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Best-effort force-wake of a session via the gc API.
+
+    POSTs to /v0/session/<name>/wake (no body; 200 on success) to push an
+    inbound HUMAN DM into a sleeping target immediately, rather than letting
+    it wait for the target's next scheduled wake (the deferred-reminder
+    latency a human DM hits when the target is idle between turns).
+
+    Wake is ADVISORY: an API error — or a wake-resistant deep-idle /
+    stale-'active' session — returns a status dict and never raises, so a
+    wake miss can never fail the delivery that preceded it.
+    """
+    name = str(session_name).strip()
+    if not name:
+        return {}
+    path = f"/v0/session/{urllib.parse.quote(name, safe='')}/wake"
+    try:
+        payload = gc_api_request("POST", path, timeout=timeout)
+    except GCAPIError as exc:
+        return {"status": "wake_failed", "error": str(exc)}
+    if not isinstance(payload, dict):
+        return {"status": "woken"}
+    return payload
+
+
 def command_name(config: dict[str, Any]) -> str:
     return str(normalize_config(config).get("app", {}).get("command_name", COMMAND_NAME_DEFAULT)).strip() or COMMAND_NAME_DEFAULT
 
