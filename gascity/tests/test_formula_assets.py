@@ -669,6 +669,66 @@ def assert_pack_or_role_route_target(
     test_case.assertTrue((pack_root / "agents" / local_agent / "agent.toml").is_file())
 
 
+def write_check_gc_stub(bin_dir: pathlib.Path, *, parent_show: bool = False) -> pathlib.Path:
+    """Write a fake `gc` for the check-script tests, and return its path.
+
+    The check gates enumerate molecule members with `gc ready` (one leg per
+    --status) rather than a metadata-filtered `gc bd list`, because a collection
+    query carries no bead id and is refused on a city that relocates the graph
+    class. The stub answers every `ready` leg from BD_LIST_JSON, so the union
+    the gate builds is the same member set the old single list call returned.
+
+    `ready` without --metadata-field is rejected: unscoped, it would return the
+    whole city and the gate could read a *different* molecule's verdict. Any
+    other verb exits 2, so a gate that starts shelling out to something new
+    fails here instead of silently reading an empty set.
+
+    A member carrying an explicit "status" is served only by that status's leg;
+    a member without one is served by every leg (the gate dedupes by id). That
+    lets a test place a bead in exactly one leg and prove the gate unions all
+    four — without disturbing the fixtures that don't model status at all.
+    """
+    show = (
+        "    if [ \"${2:-}\" = \"root\" ]; then\n"
+        "      cat \"$BD_PARENT_SHOW_JSON\"\n"
+        "    else\n"
+        "      cat \"$BD_SHOW_JSON\"\n"
+        "    fi\n"
+        if parent_show
+        else "    cat \"$BD_SHOW_JSON\"\n"
+    )
+    fake_gc = bin_dir / "gc"
+    fake_gc.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [ \"${1:-}\" = \"ready\" ]; then\n"
+        "  case \" $* \" in\n"
+        "    *\" --metadata-field \"*) : ;;\n"
+        "    *) echo \"stub: gc ready without --metadata-field\" >&2; exit 2 ;;\n"
+        "  esac\n"
+        "  st=\"\"\n"
+        "  while [ \"$#\" -gt 0 ]; do\n"
+        "    if [ \"$1\" = \"--status\" ]; then st=\"${2:-}\"; break; fi\n"
+        "    shift\n"
+        "  done\n"
+        "  if [ -z \"$st\" ]; then echo \"stub: gc ready without --status\" >&2; exit 2; fi\n"
+        "  jq --arg st \"$st\" 'map(select((.status // $st) == $st))' \"$BD_LIST_JSON\"\n"
+        "  exit 0\n"
+        "fi\n"
+        "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
+        "shift\n"
+        "case \"$1\" in\n"
+        "  version) exit 0 ;;\n"
+        "  show)\n" + show + "    ;;\n"
+        "  list) cat \"$BD_LIST_JSON\" ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_gc.chmod(0o755)
+    return fake_gc
+
+
 class FormulaAssetTests(unittest.TestCase):
     def test_expected_formula_set_is_convoy_first(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -4098,27 +4158,7 @@ description = "Override sink that writes the base triage report contract."
             show_path.write_text(show_json, encoding="utf-8")
             parent_show_path.write_text(parent_show_json or show_json, encoding="utf-8")
             list_path.write_text(list_json, encoding="utf-8")
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show)\n"
-                "    if [ \"${2:-}\" = \"root\" ]; then\n"
-                "      cat \"$BD_PARENT_SHOW_JSON\"\n"
-                "    else\n"
-                "      cat \"$BD_SHOW_JSON\"\n"
-                "    fi\n"
-                "    ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
+            write_check_gc_stub(bin_dir, parent_show=True)
 
             env = {
                 **os.environ,
@@ -4564,6 +4604,65 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("code_review.verdict=iterate", apply_text)
         self.assertIn("code_review.report_path=<fix summary path>", apply_text)
 
+    def test_design_review_check_unions_every_status_leg(self) -> None:
+        """The verdict usually lands on a bead the review just closed.
+
+        `gc ready` takes exactly one --status, so the gate queries open,
+        in_progress, blocked and closed and unions the results. Drop any leg and
+        a verdict parked in that state disappears — which is the original bug:
+        the gate reports a member set it could not actually read, and Ralph
+        iterates until it runs out of attempts. Pin the closed leg specifically,
+        because that is where an approval comes to rest.
+        """
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            write_check_gc_stub(bin_dir)
+
+            show_json = tmp / "show.json"
+            list_json = tmp / "list.json"
+            show_json.write_text(
+                json.dumps(
+                    [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+                ),
+                encoding="utf-8",
+            )
+            list_json.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "approved-and-closed",
+                            "status": "closed",
+                            "metadata": {
+                                "gc.root_bead_id": "root",
+                                "gc.attempt": "1",
+                                "gc.continuation_group": "design-review-fixes",
+                                "design_review.verdict": "done",
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "BD_SHOW_JSON": str(show_json),
+                "BD_LIST_JSON": str(list_json),
+                "GC_BEAD_ID": "loop",
+            }
+            result = subprocess.run(
+                [str(script)], env=env, text=True, capture_output=True, check=False
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Design review approved", result.stdout)
+
     def test_design_review_check_scopes_verdict_to_current_loop(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
@@ -4572,21 +4671,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
@@ -4655,21 +4740,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
@@ -4751,21 +4822,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
