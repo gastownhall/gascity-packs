@@ -4604,6 +4604,44 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("code_review.verdict=iterate", apply_text)
         self.assertIn("code_review.report_path=<fix summary path>", apply_text)
 
+    def test_implementation_review_check_takes_newest_verdict_not_highest_id(self) -> None:
+        """`| last` in the verdict extractors has to mean newest, not highest id.
+
+        gmol dedupes the four status legs with `unique_by(.id)`, and jq's
+        unique_by sorts — so without a re-sort the union arrives in bead-id
+        order and this gate's `| last` picks a verdict by id hash. Here the
+        stale `iterate` sorts after the newer `done`, so an already-approved
+        review would loop until Ralph ran out of attempts: the exact symptom
+        the federating-reader fix was written to end, re-entering by ordering
+        rather than by starvation.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        def member(bead_id: str, updated: str, verdict: str) -> dict:
+            return {
+                "id": bead_id,
+                "updated_at": updated,
+                "metadata": {
+                    "gc.root_bead_id": "root",
+                    "gc.attempt": "1",
+                    "code_review.verdict": verdict,
+                    "code_review.report_path": f"/reports/{bead_id}.md",
+                },
+            }
+
+        # "gcg-zzz" sorts last by id but carries the OLDER verdict.
+        list_json = json.dumps(
+            [
+                member("gcg-aaa", "2026-08-13T03:00:00Z", "done"),
+                member("gcg-zzz", "2026-08-13T01:00:00Z", "iterate"),
+            ]
+        )
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_design_review_check_unions_every_status_leg(self) -> None:
         """The verdict usually lands on a bead the review just closed.
 

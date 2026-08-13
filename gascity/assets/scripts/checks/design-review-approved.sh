@@ -28,7 +28,11 @@ gmol() {   # root_id -> molecule-member JSON array
         echo "gmol: gc ready failed for status: $(tr '\n' ' ' <"$tmp/failed")" >&2
         rc=1
     fi
-    jq -s 'map(select(type=="array")) | add // [] | unique_by(.id)' "$tmp"/*.json || rc=1
+    # unique_by sorts by id, so the union comes back in bead-id order. The
+    # verdict extractors below take `| last`, which must mean "most recently
+    # updated" -- without this re-sort the gate picks a verdict by id hash and
+    # can sit on a stale `iterate` forever while a newer `done` is ignored.
+    jq -s 'map(select(type=="array")) | add // [] | unique_by(.id) | sort_by(.updated_at // "")' "$tmp"/*.json || rc=1
     rm -rf "$tmp"
     return "$rc"
 }
