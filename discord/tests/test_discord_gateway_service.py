@@ -25,6 +25,8 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
         gateway_service.CHANNEL_INFO_CACHE.clear()
         gateway_service.CHANNEL_INFO_FETCH_LOCKS.clear()
+        gateway_service.BOT_GUILD_ROLES_CACHE.clear()
+        gateway_service.BOT_GUILD_ROLES_FETCH_LOCKS.clear()
         gateway_service.STALE_RECLAIM_LOCKS.clear()
         gateway_service.INGRESS_PROCESS_LOCKS.clear()
         gateway_service.GC_API_HEALTH_CACHE["checked_at"] = 0.0
@@ -820,6 +822,257 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(outcome["status"], "ignored")
         self.assertEqual(outcome["reason"], "not_mentioned")
         deliver_session_message.assert_not_called()
+
+    def test_process_inbound_room_message_broadcasts_on_mention_everyone(self) -> None:
+        # Discord does NOT add @everyone/@here to mentions[]; it sets the
+        # separate mention_everyone boolean (only when the author has the
+        # "Mention @everyone" permission). A bound room must treat that as
+        # addressed to it and wake every bound selector, with no @bot mention
+        # and no @@alias present.
+        common.set_chat_binding(
+            common.load_config(), "room", "22", ["sky", "lawrence"], guild_id="1",
+            policy={"broadcast_mentions_enabled": True},
+        )
+        message = {
+            "id": "990",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@everyone please surface for a quick sync",
+            "mentions": [],
+            "mention_everyone": True,
+            "author": {"id": "u-90", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(deliver_session_message.call_count, 2)
+        self.assertEqual(deliver_session_message.call_args_list[0].args[0], "sky")
+        self.assertEqual(deliver_session_message.call_args_list[1].args[0], "lawrence")
+        receipt = common.load_chat_ingress("in-990")
+        self.assertEqual(receipt["delivery"], "broadcast")
+
+    def test_process_inbound_room_message_broadcasts_on_mention_here(self) -> None:
+        # @here shares the same mention_everyone boolean as @everyone, so it
+        # must wake the bound mayor identically.
+        common.set_chat_binding(
+            common.load_config(), "room", "22", ["sky"], guild_id="1",
+            policy={"broadcast_mentions_enabled": True},
+        )
+        message = {
+            "id": "991",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@here anyone around?",
+            "mentions": [],
+            "mention_everyone": True,
+            "author": {"id": "u-91", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        deliver_session_message.assert_called_once()
+        self.assertEqual(deliver_session_message.call_args.args[0], "sky")
+
+    def test_process_inbound_room_message_ignores_when_mention_everyone_false(self) -> None:
+        # A plain message that does not mention the bot and is not an
+        # everyone/here ping (e.g. an unprivileged user typing the literal
+        # text, where Discord leaves mention_everyone False) stays ignored.
+        common.set_chat_binding(
+            common.load_config(), "room", "22", ["sky", "lawrence"], guild_id="1",
+            policy={"broadcast_mentions_enabled": True},
+        )
+        message = {
+            "id": "992",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@everyone (just typing this, no permission to ping)",
+            "mentions": [],
+            "mention_everyone": False,
+            "author": {"id": "u-92", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored")
+        self.assertEqual(outcome["reason"], "not_mentioned")
+        deliver_session_message.assert_not_called()
+
+    def test_process_inbound_unbound_room_mention_everyone_does_not_deliver(self) -> None:
+        # @everyone in a channel with no bound session must not deliver
+        # anywhere (no fan-out to unbound rooms).
+        message = {
+            "id": "993",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@everyone hello",
+            "mentions": [],
+            "mention_everyone": True,
+            "author": {"id": "u-93", "username": "alice"},
+        }
+
+        with mock.patch.object(gateway_service, "resolve_binding", return_value=(None, {})), mock.patch.object(
+            common, "deliver_session_message"
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertNotEqual(outcome["status"], "delivered")
+        deliver_session_message.assert_not_called()
+
+    @staticmethod
+    def _member_roles_api(role_ids: list[str]):
+        # discord_api_request side effect: return the bot's member (with roles)
+        # for the GET /guilds/.../members/<bot> call; empty dict otherwise.
+        def _fake(method: str, path: str, *args, **kwargs):
+            if "/members/" in path:
+                return {"roles": list(role_ids)}
+            return {}
+        return _fake
+
+    def test_process_inbound_room_message_wakes_on_bot_managed_role_mention(self) -> None:
+        # The exact footgun: tagging the bot's auto-created managed role lands in
+        # mention_roles[] (not mentions[]); the bound session must still wake.
+        common.set_chat_binding(
+            common.load_config(), "room", "22", ["jeeves"], guild_id="1",
+            policy={"broadcast_mentions_enabled": True},
+        )
+        message = {
+            "id": "994",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@&777> all mayors please surface",
+            "mentions": [],
+            "mention_everyone": False,
+            "mention_roles": ["777"],
+            "author": {"id": "u-94", "username": "charlie"},
+        }
+
+        with mock.patch.object(common, "load_bot_token", return_value="tok"), mock.patch.object(
+            common, "discord_api_request", side_effect=self._member_roles_api(["777", "555"])
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        deliver_session_message.assert_called_once()
+        self.assertEqual(deliver_session_message.call_args.args[0], "jeeves")
+
+    def test_process_inbound_room_message_shared_role_broadcasts_to_all_bound(self) -> None:
+        # A shared "Mayor" role assigned to the bot broadcasts to every bound
+        # selector (the deliberate fan-out-to-all-mayors case).
+        common.set_chat_binding(
+            common.load_config(), "room", "22", ["jeeves", "sky"], guild_id="1",
+            policy={"broadcast_mentions_enabled": True},
+        )
+        message = {
+            "id": "995",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@&mayor> standup in 5",
+            "mentions": [],
+            "mention_everyone": False,
+            "mention_roles": ["mayor"],
+            "author": {"id": "u-95", "username": "charlie"},
+        }
+
+        with mock.patch.object(common, "load_bot_token", return_value="tok"), mock.patch.object(
+            common, "discord_api_request", side_effect=self._member_roles_api(["mayor"])
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(deliver_session_message.call_count, 2)
+        self.assertEqual(
+            {c.args[0] for c in deliver_session_message.call_args_list}, {"jeeves", "sky"}
+        )
+
+    def test_process_inbound_room_message_ignores_role_the_bot_lacks(self) -> None:
+        # A role the bot does not have must not wake it.
+        common.set_chat_binding(
+            common.load_config(), "room", "22", ["jeeves"], guild_id="1",
+            policy={"broadcast_mentions_enabled": True},
+        )
+        message = {
+            "id": "996",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@&other> not for the bots",
+            "mentions": [],
+            "mention_everyone": False,
+            "mention_roles": ["other"],
+            "author": {"id": "u-96", "username": "charlie"},
+        }
+
+        with mock.patch.object(common, "load_bot_token", return_value="tok"), mock.patch.object(
+            common, "discord_api_request", side_effect=self._member_roles_api(["role-the-bot-has"])
+        ), mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored")
+        self.assertEqual(outcome["reason"], "not_mentioned")
+        deliver_session_message.assert_not_called()
+
+    def test_load_bot_guild_role_ids_caches_member_roles(self) -> None:
+        with mock.patch.object(common, "discord_api_request", return_value={"roles": ["a", "b"]}) as api:
+            first = gateway_service.load_bot_guild_role_ids("1", "999", "tok")
+            second = gateway_service.load_bot_guild_role_ids("1", "999", "tok")
+        self.assertEqual(first, frozenset({"a", "b"}))
+        self.assertEqual(second, frozenset({"a", "b"}))
+        api.assert_called_once()  # second call served from the TTL cache
+
+    def test_load_bot_guild_role_ids_swallows_api_error(self) -> None:
+        with mock.patch.object(common, "discord_api_request", side_effect=common.DiscordAPIError("boom")):
+            result = gateway_service.load_bot_guild_role_ids("1", "999", "tok")
+        self.assertEqual(result, frozenset())
+
+    def test_process_inbound_room_message_ignores_mention_everyone_without_optin(self) -> None:
+        # DEFAULT-OFF: a bound room that has not opted in still ignores @everyone,
+        # preserving Discord's deliberate reserved-mention exclusion.
+        common.set_chat_binding(common.load_config(), "room", "22", ["jeeves"], guild_id="1")
+        message = {
+            "id": "997",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@everyone please surface",
+            "mentions": [],
+            "mention_everyone": True,
+            "author": {"id": "u-97", "username": "charlie"},
+        }
+
+        with mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored")
+        self.assertEqual(outcome["reason"], "not_mentioned")
+        deliver_session_message.assert_not_called()
+
+    def test_process_inbound_room_message_ignores_role_mention_without_optin(self) -> None:
+        # DEFAULT-OFF: without opt-in, a role mention is ignored AND the bot's
+        # guild member is never fetched (no API call for the role lookup).
+        common.set_chat_binding(common.load_config(), "room", "22", ["jeeves"], guild_id="1")
+        message = {
+            "id": "998",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@&777> all mayors",
+            "mentions": [],
+            "mention_everyone": False,
+            "mention_roles": ["777"],
+            "author": {"id": "u-98", "username": "charlie"},
+        }
+
+        with mock.patch.object(common, "load_bot_token", return_value="tok"), mock.patch.object(
+            common, "discord_api_request"
+        ) as api, mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "ignored")
+        self.assertEqual(outcome["reason"], "not_mentioned")
+        deliver_session_message.assert_not_called()
+        api.assert_not_called()
 
     def test_process_inbound_ambient_room_message_routes_targeted_alias_without_bot_mention(self) -> None:
         common.set_chat_binding(

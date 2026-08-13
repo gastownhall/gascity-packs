@@ -54,6 +54,20 @@ class DiscordChatScriptTests(unittest.TestCase):
             self.assertTrue(script_path.is_file(), f"missing command script for {command.get('name')}: {script_path}")
             self.assertTrue(help_path.is_file(), f"missing help text for {command.get('name')}: {help_path}")
 
+    def test_bind_room_enable_broadcast_mentions_sets_policy(self) -> None:
+        with redirect_stdout(io.StringIO()):
+            rc = bind_script.main(["--kind", "room", "--guild-id", "1", "--enable-broadcast-mentions", "22", "sky"])
+        self.assertEqual(rc, 0)
+        binding = common.resolve_chat_binding(common.load_config(), common.chat_binding_id("room", "22"))
+        self.assertTrue(common.binding_peer_policy(binding)["broadcast_mentions_enabled"])
+
+    def test_bind_room_broadcast_mentions_default_off(self) -> None:
+        with redirect_stdout(io.StringIO()):
+            rc = bind_script.main(["--kind", "room", "--guild-id", "1", "22", "sky"])
+        self.assertEqual(rc, 0)
+        binding = common.resolve_chat_binding(common.load_config(), common.chat_binding_id("room", "22"))
+        self.assertFalse(common.binding_peer_policy(binding)["broadcast_mentions_enabled"])
+
     def test_enable_room_launch_preserves_legacy_launcher_without_policy_flags(self) -> None:
         common.save_config(
             common.normalize_config(

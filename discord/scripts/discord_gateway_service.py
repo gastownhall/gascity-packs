@@ -38,6 +38,7 @@ HEALTH_RECONNECT_GRACE_SECONDS = 90
 GC_API_HEALTH_TTL_SECONDS = 30
 GC_API_HEALTH_PROBE_TIMEOUT_SECONDS = 3.0
 CHANNEL_INFO_TTL_SECONDS = 5 * 60
+BOT_GUILD_ROLES_TTL_SECONDS = 5 * 60
 MAX_FRAME_BYTES = 16 * 1024 * 1024
 STALE_PROCESSING_RECEIPT_SECONDS = 2 * 60
 FAILED_RECEIPT_RETRY_SECONDS = 60
@@ -60,6 +61,10 @@ CHANNEL_INFO_CACHE_LOCK = threading.Lock()
 CHANNEL_INFO_FETCH_LOCKS_LOCK = threading.Lock()
 CHANNEL_INFO_FETCH_LOCKS: dict[str, threading.Lock] = {}
 CHANNEL_INFO_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+BOT_GUILD_ROLES_CACHE_LOCK = threading.Lock()
+BOT_GUILD_ROLES_FETCH_LOCKS_LOCK = threading.Lock()
+BOT_GUILD_ROLES_FETCH_LOCKS: dict[str, threading.Lock] = {}
+BOT_GUILD_ROLES_CACHE: dict[str, tuple[float, frozenset[str]]] = {}
 AMBIENT_ROOM_BINDINGS_CACHE_LOCK = threading.Lock()
 AMBIENT_ROOM_BINDINGS_FETCH_LOCK = threading.Lock()
 AMBIENT_ROOM_BINDINGS_CACHE: dict[str, Any] = {"config_signature": None, "bindings": {}}
@@ -144,6 +149,26 @@ def bot_was_mentioned(message: dict[str, Any], bot_user_id: str) -> bool:
     if not isinstance(mentions, list):
         return False
     return any(str(item.get("id", "")).strip() == bot_user_id for item in mentions if isinstance(item, dict))
+
+
+def message_mentions_everyone(message: dict[str, Any]) -> bool:
+    # Discord does not list @everyone/@here in mentions[]; it reports them via
+    # the dedicated mention_everyone boolean, which the API sets only when the
+    # author actually has permission to mention everyone. Both @everyone and
+    # @here share this one flag, so honoring it covers both. A bound session
+    # treats an everyone/here ping as addressed to it, just like a direct
+    # @mention -- bot_was_mentioned() alone never catches these.
+    return bool(message.get("mention_everyone"))
+
+
+def message_role_mention_ids(message: dict[str, Any]) -> frozenset[str]:
+    # Role @mentions land in mention_roles[], never in mentions[]. This is the
+    # set of role ids a message pinged (the bot's managed role, a shared
+    # "Mayor" role, etc.).
+    raw = message.get("mention_roles") or []
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(str(role_id).strip() for role_id in raw if str(role_id).strip())
 
 
 def websocket_accept_value(key: str) -> str:
@@ -435,6 +460,59 @@ def channel_info_fetch_lock(channel_id: str) -> threading.Lock:
         return lock
 
 
+def bot_guild_roles_fetch_lock(cache_key: str) -> threading.Lock:
+    with BOT_GUILD_ROLES_FETCH_LOCKS_LOCK:
+        lock = BOT_GUILD_ROLES_FETCH_LOCKS.get(cache_key)
+        if lock is None:
+            lock = threading.Lock()
+            BOT_GUILD_ROLES_FETCH_LOCKS[cache_key] = lock
+        return lock
+
+
+def load_bot_guild_role_ids(guild_id: str, bot_user_id: str, bot_token: str) -> frozenset[str]:
+    # Role ids assigned to the bot's own member in this guild (cached, TTL).
+    # A message that mentions one of these roles (mention_roles[]) is addressed
+    # to the bot: this catches the bot's auto-created managed role as well as a
+    # shared role (e.g. a "Mayor" role) assigned to every mayor bot. Discord
+    # never lists role mentions in mentions[], so bot_was_mentioned() misses
+    # them. API failures are swallowed (treated as "no roles") so a transient
+    # error never blocks message processing.
+    guild_id = str(guild_id).strip()
+    bot_user_id = str(bot_user_id).strip()
+    if not guild_id or not bot_user_id:
+        return frozenset()
+    cache_key = f"{guild_id}:{bot_user_id}"
+    now = time.monotonic()
+    with BOT_GUILD_ROLES_CACHE_LOCK:
+        cached = BOT_GUILD_ROLES_CACHE.get(cache_key)
+        if cached and cached[0] > now:
+            return cached[1]
+    # Serialize cache fills so a burst of uncached role mentions does not fan
+    # out into concurrent Discord API reads for the same bot member.
+    with bot_guild_roles_fetch_lock(cache_key):
+        now = time.monotonic()
+        with BOT_GUILD_ROLES_CACHE_LOCK:
+            cached = BOT_GUILD_ROLES_CACHE.get(cache_key)
+            if cached and cached[0] > now:
+                return cached[1]
+        try:
+            member = common.discord_api_request(
+                "GET",
+                f"/guilds/{urllib.parse.quote(guild_id)}/members/{urllib.parse.quote(bot_user_id)}",
+                bot_token=bot_token,
+            )
+        except common.DiscordAPIError:
+            return frozenset()
+        if not isinstance(member, dict):
+            return frozenset()
+        role_ids = frozenset(
+            str(role_id).strip() for role_id in (member.get("roles") or []) if str(role_id).strip()
+        )
+        with BOT_GUILD_ROLES_CACHE_LOCK:
+            BOT_GUILD_ROLES_CACHE[cache_key] = (now + BOT_GUILD_ROLES_TTL_SECONDS, role_ids)
+        return role_ids
+
+
 def ingress_process_lock(ingress_id: str) -> threading.Lock:
     with INGRESS_PROCESS_LOCKS_LOCK:
         lock = INGRESS_PROCESS_LOCKS.get(ingress_id)
@@ -459,6 +537,23 @@ def prune_channel_info_fetch_locks() -> None:
         expired = [key for key, lock in CHANNEL_INFO_FETCH_LOCKS.items() if not lock.locked() and key not in cached_keys]
         for key in expired:
             del CHANNEL_INFO_FETCH_LOCKS[key]
+
+
+def prune_bot_guild_roles_cache() -> None:
+    now = time.monotonic()
+    with BOT_GUILD_ROLES_CACHE_LOCK:
+        expired = [key for key, (expires_at, _) in BOT_GUILD_ROLES_CACHE.items() if expires_at <= now]
+        for key in expired:
+            del BOT_GUILD_ROLES_CACHE[key]
+
+
+def prune_bot_guild_roles_fetch_locks() -> None:
+    with BOT_GUILD_ROLES_CACHE_LOCK:
+        cached_keys = set(BOT_GUILD_ROLES_CACHE.keys())
+    with BOT_GUILD_ROLES_FETCH_LOCKS_LOCK:
+        expired = [key for key, lock in BOT_GUILD_ROLES_FETCH_LOCKS.items() if not lock.locked() and key not in cached_keys]
+        for key in expired:
+            del BOT_GUILD_ROLES_FETCH_LOCKS[key]
 
 
 def prune_stale_reclaim_locks() -> None:
@@ -632,6 +727,35 @@ def bound_room_claims_message(config: dict[str, Any], channel_id: str, parent_id
     if parent and explicit_room_binding(config, parent):
         return True
     return False
+
+
+def bound_room_wakes_on_broadcast_mention(
+    config: dict[str, Any],
+    message: dict[str, Any],
+    guild_id: str,
+    channel_id: str,
+    bot_user_id: str,
+) -> bool:
+    # OPT-IN, default off. @everyone/@here (the mention_everyone boolean) and
+    # @role pings (mention_roles[], incl. the bot's auto-created managed role or
+    # a shared role assigned to it) are never in mentions[] and Discord
+    # deliberately excludes them from default addressing. They wake a bound room
+    # only when that binding sets broadcast_mentions_enabled, preserving the
+    # default for every room that has not opted in. @role is additionally scoped
+    # to roles the bot actually holds.
+    wants_everyone = message_mentions_everyone(message)
+    role_mention_ids = message_role_mention_ids(message)
+    if not wants_everyone and not role_mention_ids:
+        return False
+    binding = explicit_room_binding(config, channel_id)
+    if not binding or not common.binding_peer_policy(binding).get("broadcast_mentions_enabled"):
+        return False
+    if wants_everyone:
+        return True
+    bot_token = common.load_bot_token()
+    if not bot_token:
+        return False
+    return bool(load_bot_guild_role_ids(guild_id, bot_user_id, bot_token) & role_mention_ids)
 
 
 def ambient_bindings_config_signature() -> tuple[int, int, int] | None:
@@ -1257,6 +1381,11 @@ def process_inbound_message(message: dict[str, Any], bot_user_id: str) -> dict[s
     config = common.load_config()
     room_launchers_configured = bool(common.list_room_launchers(config)) if guild_id else False
     mentioned_bot = bot_was_mentioned(message, bot_user_id) if guild_id else False
+    if guild_id and not mentioned_bot:
+        # @everyone/@here and @role pings are NOT in mentions[], and Discord
+        # deliberately excludes them from default addressing. They wake a bound
+        # room only when that binding opts in (broadcast_mentions_enabled).
+        mentioned_bot = bound_room_wakes_on_broadcast_mention(config, message, guild_id, channel_id, bot_user_id)
     preloaded_launcher: dict[str, Any] | None = None
     preloaded_launch: dict[str, Any] | None = None
     preloaded_binding: dict[str, Any] | None = None
@@ -2089,6 +2218,8 @@ class GatewayWorker:
         common.prune_room_launches()
         prune_channel_info_cache()
         prune_channel_info_fetch_locks()
+        prune_bot_guild_roles_cache()
+        prune_bot_guild_roles_fetch_locks()
         prune_stale_reclaim_locks()
         prune_ingress_process_locks()
         self.runtime_state.patch(last_prune_at=common.utcnow())

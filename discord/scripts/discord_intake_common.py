@@ -483,6 +483,7 @@ def default_room_peer_policy() -> dict[str, Any]:
     return {
         "ambient_read_enabled": False,
         "allow_untargeted_ambient_delivery": False,
+        "broadcast_mentions_enabled": False,
         "peer_fanout_enabled": False,
         "allow_untargeted_peer_fanout": False,
         "max_peer_triggered_publishes_per_root": 1,
@@ -504,6 +505,9 @@ def _normalize_peer_policy(policy: dict[str, Any] | None, defaults: dict[str, An
         "ambient_read_enabled": _coerce_bool(raw.get("ambient_read_enabled"), defaults["ambient_read_enabled"]),
         "allow_untargeted_ambient_delivery": _coerce_bool(
             raw.get("allow_untargeted_ambient_delivery"), defaults["allow_untargeted_ambient_delivery"]
+        ),
+        "broadcast_mentions_enabled": _coerce_bool(
+            raw.get("broadcast_mentions_enabled"), defaults["broadcast_mentions_enabled"]
         ),
         "peer_fanout_enabled": _coerce_bool(raw.get("peer_fanout_enabled"), defaults["peer_fanout_enabled"]),
         "allow_untargeted_peer_fanout": _coerce_bool(

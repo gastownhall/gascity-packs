@@ -36,6 +36,16 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="Require explicit @session_name targeting for ambient room messages",
     )
+    parser.add_argument(
+        "--enable-broadcast-mentions",
+        action="store_true",
+        help="Wake the bound session(s) on @everyone/@here and @role mentions (role pings are scoped to roles the bot holds)",
+    )
+    parser.add_argument(
+        "--disable-broadcast-mentions",
+        action="store_true",
+        help="Ignore @everyone/@here and @role mentions (default)",
+    )
     parser.add_argument("--enable-peer-fanout", action="store_true", help="Enable peer fanout for bound room publishes")
     parser.add_argument("--disable-peer-fanout", action="store_true", help="Disable peer fanout for bound room publishes")
     parser.add_argument(
@@ -67,6 +77,12 @@ def main(argv: list[str]) -> int:
         enable_flag="--allow-untargeted-ambient-delivery",
         disable_flag="--disallow-untargeted-ambient-delivery",
     )
+    broadcast_mentions = _optional_bool(
+        args.enable_broadcast_mentions,
+        args.disable_broadcast_mentions,
+        enable_flag="--enable-broadcast-mentions",
+        disable_flag="--disable-broadcast-mentions",
+    )
     peer_fanout = _optional_bool(
         args.enable_peer_fanout,
         args.disable_peer_fanout,
@@ -85,6 +101,8 @@ def main(argv: list[str]) -> int:
         room_policy["ambient_read_enabled"] = ambient_read
     if untargeted_ambient_delivery is not None:
         room_policy["allow_untargeted_ambient_delivery"] = untargeted_ambient_delivery
+    if broadcast_mentions is not None:
+        room_policy["broadcast_mentions_enabled"] = broadcast_mentions
     if peer_fanout is not None:
         room_policy["peer_fanout_enabled"] = peer_fanout
     if untargeted_peer_fanout is not None:
