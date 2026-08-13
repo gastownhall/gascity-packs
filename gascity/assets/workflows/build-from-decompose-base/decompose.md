@@ -1,6 +1,10 @@
 This is the `build-from-decompose-base` decomposition stage.
 
-Read the approved requirements from `{{requirements_path}}`, the approved implementation plan from `{{plan_path}}`, and the plan-review verdict from `{{plan_review_path}}`. Use the selected decomposition methodology `{{decomposition_formula}}` when translating the plan into durable work items.
+Read the approved requirements from `{{requirements_path}}` (provided at launch, so its interpolation is stable).
+
+Resolve the approved implementation plan and the plan-review artifact at RUNTIME from the workflow ROOT var store — do NOT rely on the instantiation-frozen `{{plan_path}}`/`{{plan_review_path}}`. Those render at instantiation, before the plan and plan-review stages produce their paths, so when the paths are produced mid-flow they freeze EMPTY (dip-5hkepo). By the time this step is claimable the producing stages have promoted the real paths to the workflow root (plan via the plan stage, plan-review via the plan-review stage). Run `bd show "<workflow-root-id>" --json` and read `gc.build.plan_path` (fallback `gc.var.plan_path`) for the approved implementation plan and `gc.build.plan_review_path` (fallback `gc.var.plan_review_path`) for the plan-review verdict. Resolve `<workflow-root-id>` via `gc.root_bead_id` on this step bead (a bead with no `gc.root_bead_id` is its own workflow root).
+
+Use the selected decomposition methodology `{{decomposition_formula}}` when translating the plan into durable work items.
 
 Create or adopt an implementation convoy for the work units. The convoy must contain only runnable implementation beads for this continuation; do not reuse any original request, planning, or workflow-control convoy.
 

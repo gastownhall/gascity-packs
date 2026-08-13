@@ -56,12 +56,24 @@ timeout = "5m"
 id = "plan-review"
 title = "Review implementation plan"
 needs = ["plan"]
-metadata = { "gc.run_target" = "gc.review-synthesizer" }
+metadata = { "gc.run_target" = "gc.review-synthesizer", "gc.build.artifact_path_keys" = "gc.build.plan_review_path,gc.var.plan_review_path" }
 description_file = "../assets/workflows/build-from-plan-base/plan-review.md"
+
+# Outcome-aware decompose gate (dip-duj3e6): interposed between plan-review and
+# the decompose handoff. On refusal it stays OPEN and BLOCKED (never closed), so
+# prepare-decompose/decompose never release and the task-decomposer cannot
+# activate on an unapproved plan. Carries its own gate asset (shadowable per
+# build-from-plan-base) and reuses the shared plan-review-approved.sh check script.
+[[steps]]
+id = "plan-review-approved-gate"
+title = "Require approved plan review before decomposition"
+needs = ["plan-review"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-plan-base/plan-review-approved-gate.md"
 
 [[steps]]
 id = "prepare-decompose"
 title = "Validate decompose continuation inputs"
-needs = ["plan-review"]
+needs = ["plan-review-approved-gate"]
 metadata = { "gc.run_target" = "gc.run-operator" }
 description_file = "../assets/workflows/build-from-plan-base/prepare-decompose.md"
