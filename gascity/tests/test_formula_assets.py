@@ -4188,9 +4188,22 @@ description = "Override sink that writes the base triage report contract."
         beads_by_id: dict[str, str],
         bead_id: str,
         extra_env: dict[str, str] | None = None,
+        script_root: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+
+        if script_root is not None:
+            installed_check_dir = script_root / ".gc" / "scripts" / "checks"
+            installed_check_dir.mkdir(parents=True)
+            installed_script = installed_check_dir / script.name
+            installed_script.write_text(script.read_text(encoding="utf-8"), encoding="utf-8")
+            installed_script.chmod(0o755)
+            validator = root / "assets" / "scripts" / "validate_build_artifact.py"
+            (installed_check_dir.parent / validator.name).write_text(
+                validator.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            script = installed_script
 
         with tempfile.TemporaryDirectory() as td:
             tmp = pathlib.Path(td)
@@ -4627,6 +4640,118 @@ description = "Override sink that writes the base triage report contract."
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("build artifact valid", result.stdout)
 
+    def test_build_artifact_check_resolves_relative_path_from_rig_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_uses_beads_scope_root_when_rig_root_is_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": "",
+                    "GC_BEADS_SCOPE_ROOT": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_derives_rig_root_from_installed_script_when_env_is_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+            source_root = pathlib.Path(__file__).resolve().parents[1]
+            validator = source_root / "assets" / "scripts" / "validate_build_artifact.py"
+            worktree_validator = per_bead_worktree / "gascity" / "assets" / "scripts" / validator.name
+            worktree_validator.parent.mkdir(parents=True)
+            worktree_validator.write_text(validator.read_text(encoding="utf-8"), encoding="utf-8")
+            for schema in (source_root / "schemas" / "build").glob("*.yaml"):
+                destination = per_bead_worktree / "gascity" / "schemas" / "build" / schema.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(schema.read_text(encoding="utf-8"), encoding="utf-8")
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": "",
+                    "GC_BEADS_SCOPE_ROOT": "",
+                    "GC_DIR": "",
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+                script_root=rig_root,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
     def test_build_artifact_check_blocks_invalid_artifact_with_repair_context(self) -> None:
         with tempfile.TemporaryDirectory() as artifact_dir:
             artifact = pathlib.Path(artifact_dir) / "requirements.md"
@@ -4668,6 +4793,21 @@ description = "Override sink that writes the base triage report contract."
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("no artifact path recorded", result.stderr)
         self.assertIn("gc.build.requirements_path,gc.var.requirements_path", result.stderr)
+
+    def test_review_report_prompt_writes_to_the_rig_root(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        prompt = (root / "assets" / "workflows" / "review" / "write-report.md").read_text(
+            encoding="utf-8"
+        )
+
+        for fragment in (
+            "GC_RIG_ROOT",
+            "per-bead worktree",
+            "gc.build.review_report_path={{report_path}}",
+            "or `$GC_WORK_DIR`",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, prompt)
 
     def test_bmad_story_development_emits_base_check_verdict(self) -> None:
         gascity_root = pathlib.Path(__file__).resolve().parents[1]
@@ -5109,6 +5249,9 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("gc.build.code_review_report_path", setup)
         self.assertIn("gc.build.gap_analysis_report_path", setup)
         self.assertIn("gc.build.review_fix_summary_path", setup)
+        self.assertIn("implementation_convoy_id: not provided", setup)
+        self.assertIn("Do not invent an external convoy", setup)
+        self.assertIn("per-bead worktree", setup)
 
         self.assertIn("code_review.review_verdict", request)
         self.assertIn("code_review.review_report_path", request)
@@ -5135,12 +5278,28 @@ description = "Override sink that writes the base triage report contract."
         self.assertNotIn("code_review.verdict=done", gap)
         self.assertNotIn("code_review.report_path=<", gap)
 
+        for reviewer_name, reviewer in (("request", request), ("gap", gap)):
+            with self.subTest(reviewer=reviewer_name):
+                self.assertIn("Initial-review baseline", reviewer)
+                self.assertIn("highest numeric `gc.attempt`", reviewer)
+                self.assertIn("gc.build.review_fix_summary_path", reviewer)
+                self.assertIn("fixed implementation worktree", reviewer)
+                self.assertIn("must not issue an `iterate` verdict merely", reviewer)
+
+        self.assertIn("may be intentionally absent", gap)
+        self.assertIn("must not by itself cause `iterate`", gap)
+        self.assertIn("implementation_convoy_id: not provided", gap)
+
         self.assertIn("code_review.verdict=done|iterate", process)
         self.assertIn("code_review.report_path=<review fix summary path>", process)
         self.assertIn("Use `covered` for resolved\nfindings", process)
         self.assertIn("Include `rationale: <why this id is not covered>`", process)
         self.assertIn("gc.build.code_review_status=approved", process)
         self.assertIn("gc.build.code_review_status=draft", process)
+        self.assertIn("non-blocking for this standalone review", process)
+        self.assertIn("implementation_convoy_id: not provided", process)
+        self.assertIn("must not self-approve its own remediation", process)
+        self.assertIn("next attempt must independently re-review", process)
 
         self.assertIn("gc.build.code_review_status=approved", finalize)
         self.assertIn("gc.build.code_review_approved_at", finalize)
