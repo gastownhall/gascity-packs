@@ -216,6 +216,43 @@ if verify >= metadata:
 PY
 }
 
+test_refinery_routes_coverage_outside_the_merge_gate() {
+    local formula
+    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+
+    python3 - "$formula" <<'PY' || fail "refinery coverage boundary must route work outside the merge gate"
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index('id = "run-tests"')
+end = text.index('id = "handle-failures"', start)
+block = text[start:end]
+
+required = (
+    "Coverage boundary (non-negotiable)",
+    "Coverage verification is never a\nrefinery merge gate.",
+    "coverage_verification_required",
+    "COVERAGE_COMMAND_CONFIGURED=false",
+    "COVERAGE_BEAD=$(gc bd create",
+    '--labels "coverage,quality-loop"',
+    '--set-metadata gc.routed_to="{{coverage_route}}"',
+    "coverage_summary.py",
+    "Do not run or wait for coverage",
+    "without turning the refinery into a quality loop",
+)
+for needle in required:
+    if needle not in block:
+        raise SystemExit(f"coverage boundary missing: {needle}")
+
+# The routing guard must run before any configured gate command, so a coverage
+# command can never be adopted as an inline refinery verification task.
+guard = block.index("COVERAGE_COMMAND_CONFIGURED=false")
+first_gate = block.index("{{setup_command}}", guard + 1)
+if guard >= first_gate:
+    raise SystemExit("coverage routing guard runs after configured gates")
+PY
+}
+
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
@@ -224,5 +261,6 @@ test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_refinery_routes_coverage_outside_the_merge_gate
 
 echo "gastown pack asset tests passed"

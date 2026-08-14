@@ -55,8 +55,12 @@ description = "Lint command (e.g., eslint .). Empty = skip."
 default = ""
 
 [vars.test_command]
-description = "Test command to run (if run_tests is true)"
+description = "Local merge-gate test command to run (if run_tests is true). Coverage verification commands are not valid here."
 default = ""
+
+[vars.coverage_route]
+description = "Routing target for non-gating coverage verification work (for example, quality-loop or nightly)."
+default = "quality-loop"
 
 [vars.build_command]
 description = "Build command (e.g., go build ./...). Empty = skip."
@@ -279,6 +283,68 @@ description = """
 **Config: typecheck_command = {{typecheck_command}}**
 **Config: lint_command = {{lint_command}}**
 **Config: build_command = {{build_command}}**
+**Config: coverage_route = {{coverage_route}}**
+
+**Coverage boundary (non-negotiable):** Coverage verification is never a
+refinery merge gate. This loop owns only the documented local merge-gate suite;
+it must not add a serial coverage run, wait for a coverage result, or
+"babysit" a coverage process. A coverage request is post-merge/quality-loop
+work, not a reason to hold the merge train.
+
+Coverage work is requested by setting
+`metadata.coverage_verification_required=true` on the work bead. When that
+metadata is present, file and route the verification task before continuing
+with the local gate. The task must carry evidence requirements: the exact
+commit SHA, exact command, coverage artifact path, and the JSON output from
+the repository's coverage-summary command. Do not run or wait for coverage
+verification from this loop.
+
+```bash
+# A coverage command must never be executed by the refinery. Treat a
+# mistakenly configured command as a routing request, then stop so the rig
+# configuration can be corrected instead of silently adopting the slow work.
+COVERAGE_REQUIRED=$(gc bd show "$WORK" --json | jq -r '.[0].metadata.coverage_verification_required // false')
+COVERAGE_COMMAND_CONFIGURED=false
+case "{{setup_command}} {{typecheck_command}} {{lint_command}} {{build_command}} {{test_command}}" in
+  *--cov*|*test:coverage*|*coverage_summary.py*) COVERAGE_COMMAND_CONFIGURED=true ;;
+esac
+if [ "$COVERAGE_COMMAND_CONFIGURED" = "true" ]; then
+  COVERAGE_REQUIRED=true
+fi
+
+EXISTING_COVERAGE_BEAD=$(gc bd show "$WORK" --json | jq -r '.[0].metadata.coverage_verification_bead // empty')
+if [ "$COVERAGE_REQUIRED" = "true" ] && [ -z "$EXISTING_COVERAGE_BEAD" ]; then
+  COVERAGE_BEAD=$(gc bd create \
+    --title "Coverage verification: $WORK" \
+    --type task --priority 2 \
+    --labels "coverage,quality-loop" \
+    --deps "discovered-from:$WORK" \
+    --description "Run outside the refinery merge loop for source work $WORK. Required evidence: exact commit SHA; exact coverage command; generated coverage artifact path; and coverage-summary JSON with its gate status." \
+    --silent)
+  if [ $? -ne 0 ] || [ -z "$COVERAGE_BEAD" ]; then
+    echo "Could not create the required coverage verification task. Do not substitute a refinery coverage run."
+    gc session nudge "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness" "COVERAGE ROUTE HALT: could not file verification task for $WORK"
+    exit 1
+  fi
+  if ! gc bd update "$COVERAGE_BEAD" \
+      --set-metadata gc.routed_to="{{coverage_route}}" \
+      --set-metadata source_work="$WORK" \
+      --set-metadata target_commit="$(git rev-parse HEAD)"; then
+    echo "Could not route coverage task $COVERAGE_BEAD. Do not substitute a refinery coverage run."
+    exit 1
+  fi
+  if ! gc bd update "$WORK" --set-metadata coverage_verification_bead="$COVERAGE_BEAD"; then
+    echo "Coverage task $COVERAGE_BEAD was created but could not be recorded on $WORK. Stop for recovery."
+    exit 1
+  fi
+  echo "Routed coverage verification for $WORK to $COVERAGE_BEAD via {{coverage_route}}. Continue without waiting for it."
+fi
+
+if [ "$COVERAGE_COMMAND_CONFIGURED" = "true" ]; then
+  echo "Configured refinery gate includes coverage verification. It was routed above; remove it from the merge-gate configuration before retrying."
+  exit 1
+fi
+```
 
 Run each configured check in order (skip empty ones silently):
 ```bash
@@ -299,10 +365,12 @@ If run_tests = "false": skip tests entirely.
 setup_command, typecheck_command, lint_command, build_command, test_command
 empty): do not silently skip. Read the repo's project-instructions file
 (CLAUDE.md or AGENTS.md — whichever the configured provider expects; your
-agent prompt lists the exact filename) and run the quality gates it
-documents. Treat their failures the same way you would treat failures
-from configured commands. The fallback preserves the quality-gate intent
-when pack-specific guidance is missing.
+agent prompt lists the exact filename) and run only its documented local
+merge-gate commands. Exclude coverage, integration, E2E, mutation, and other
+long-running verification chores even when they are documented elsewhere;
+route coverage work using the boundary above. Treat local merge-gate failures
+the same way you would treat failures from configured commands. The fallback
+preserves merge-gate intent without turning the refinery into a quality loop.
 
 Track results: which checks ran, pass/fail, specific failures.
 Close this step when all checks complete (pass or fail)."""
