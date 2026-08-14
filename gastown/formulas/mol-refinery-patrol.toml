@@ -1117,8 +1117,10 @@ If the cycle ended early (conflict rejection, no work found), note
 why and what state was left.
 
 This summary is not stored separately — it lives in the wisp's
-closing reason. The next session can find it via `gc bd list --type=molecule
---status=closed --limit=5` if it needs predecessor context."""
+closing reason. The next session can find it via
+`gc bd query --json 'ephemeral=true AND status=closed' --limit=5` if it
+needs predecessor context. `gc bd list` needs `--include-infra` to return
+wisps at all, so the flagless form finds nothing."""
 
 [[steps]]
 id = "next-iteration"

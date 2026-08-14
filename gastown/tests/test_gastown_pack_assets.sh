@@ -245,9 +245,8 @@ test_prime_prompts_are_city_generic_and_compact() {
         fail "operational awareness should direct agents to the effective Dolt port"
 }
 
-test_refinery_wisp_pour_is_resumable() {
-    local formula pours assigns resolves stale_list
-    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+assert_patrol_wisp_pour_is_resumable() {
+    local role="$1" asset="$2" pours assigns
 
     # Every pour must be paired with an assign that also transitions the new
     # wisp to in_progress. A wisp left at status=open is invisible to the
@@ -255,24 +254,55 @@ test_refinery_wisp_pour_is_resumable() {
     # this one (open, assigned, never burned, never resumed).
     # `|| true` on every count: grep -c exits 1 on zero matches, which under
     # `set -e` would abort the script before the explanatory fail() ran.
-    pours=$(grep -c 'NEXT=\$(gc bd mol wisp mol-refinery-patrol --root-only' "$formula" || true)
-    assigns=$(grep -c 'gc bd update "\$NEXT" --assignee="\$GC_AGENT" --status=in_progress' "$formula" || true)
-    [[ "$assigns" -eq "$pours" ]] ||
-        fail "refinery pour sites ($pours) must each assign with --status=in_progress ($assigns)"
-    ! grep -E 'gc bd update "\$NEXT" --assignee="\$GC_AGENT";' "$formula" >/dev/null ||
-        fail "refinery pour must not assign the next wisp without --status=in_progress"
-    grep -F 'gc bd update $WISP --assignee=$GC_AGENT --status=in_progress' "$formula" >/dev/null ||
-        fail "refinery bootstrap snippet must pour the first wisp as in_progress"
+    pours=$(grep -c "gc bd mol wisp mol-$role-patrol --root-only" "$asset" || true)
+    [[ "$pours" -gt 0 ]] ||
+        fail "$role $(basename "$asset") should pour at least one patrol wisp"
+    assigns=$(grep -cE 'gc bd update "?\$(NEXT|WISP|NEW_WISP)"? --assignee=("?\$GC_(AGENT|ALIAS)"?) --status=in_progress' "$asset" || true)
+    [[ "$assigns" -gt 0 ]] ||
+        fail "$role $(basename "$asset") must assign poured wisps with --status=in_progress"
+    ! grep -E 'gc bd update "?\$(NEXT|WISP|NEW_WISP)"? --assignee=("?\$GC_(AGENT|ALIAS)"?)\s*(;|$)' "$asset" >/dev/null ||
+        fail "$role $(basename "$asset") must not assign a wisp without --status=in_progress"
 
-    # Current-wisp resolution must use `gc bd query` on ephemeral beads.
-    # `gc bd list` never returns ephemeral beads regardless of --type, so a
-    # list-based fallback silently resolves empty and the loop refuses to burn.
+    # Wisp lookups must reach the ephemeral tier. `gc bd list` hides ephemeral
+    # beads unless it is passed --include-infra, so a flagless --type=molecule
+    # lookup silently resolves empty: no surplus is burned, no successor is
+    # reused, and every cycle pours a fresh wisp on top of the leaked one.
+    # A list that does pass --include-infra is not a defect, so only the
+    # flagless form fails here -- pinning the query form instead would make
+    # this a style rule and collide with #278, which fixes the same bug that
+    # way.
+    ! grep -E 'gc bd list[^`]*--type=molecule' "$asset" | grep -vq -- '--include-infra' ||
+        fail "$role $(basename "$asset") looks up wisps with gc bd list and no --include-infra (ephemeral beads are hidden)"
+    grep -F "gc bd query --json 'ephemeral=true" "$asset" >/dev/null ||
+        fail "$role $(basename "$asset") must resolve wisps via gc bd query on ephemeral=true"
+}
+
+test_patrol_wisp_pour_is_resumable() {
+    local role formula
+    for role in refinery witness deacon; do
+        assert_patrol_wisp_pour_is_resumable "$role" "$GASTOWN/formulas/mol-$role-patrol.toml"
+        assert_patrol_wisp_pour_is_resumable "$role" "$GASTOWN/agents/$role/prompt.template.md"
+    done
+
+    # The refinery formula repeats the pour/resolve pair at every exit path;
+    # each one needs its own current-wisp resolution or that path burns nothing.
+    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+    local pours resolves
+    pours=$(grep -c 'NEXT=\$(gc bd mol wisp mol-refinery-patrol --root-only' "$formula" || true)
     resolves=$(grep -c "CURRENT_WISP=\$(gc bd query --json 'ephemeral=true AND status=in_progress'" "$formula" || true)
     [[ "$resolves" -eq "$pours" ]] ||
         fail "refinery pour sites ($pours) must each resolve the current wisp via gc bd query ($resolves)"
-    stale_list=$(grep -c 'CURRENT_WISP=\$(gc bd list' "$formula" || true)
-    [[ "$stale_list" -eq 0 ]] ||
-        fail "refinery must not resolve the current wisp with gc bd list (ephemeral beads are excluded)"
+
+    # The witness reconcile must exclude the wisp it is executing. Without the
+    # self-exclusion it reuses its own wisp as the successor, then burns it in
+    # the next step and the patrol is left holding nothing.
+    local witness_formula="$GASTOWN/formulas/mol-witness-patrol.toml"
+    grep -F -- '--arg self "$CURRENT_WISP"' "$witness_formula" >/dev/null ||
+        fail "witness wisp reconcile must pass the current wisp id into the surplus query"
+    grep -E '\.id != \$self\)\]' "$witness_formula" >/dev/null ||
+        fail "witness wisp reconcile must exclude the current wisp by id"
+    grep -F 'gc bd mol burn "$CURRENT_WISP" --force' "$GASTOWN/formulas/mol-witness-patrol.toml" >/dev/null ||
+        fail "witness must burn the resolved current wisp, not a placeholder id"
 }
 
 test_dog_assets_are_pack_local
@@ -284,6 +314,6 @@ test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
-test_refinery_wisp_pour_is_resumable
+test_patrol_wisp_pour_is_resumable
 
 echo "gastown pack asset tests passed"
