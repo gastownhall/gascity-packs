@@ -24,9 +24,15 @@ setup only. Do not edit source files in the launcher checkout.
    `$(pwd)/worktrees/<source-anchor-id>`, based on the up-to-date remote
    default branch — never the launcher's local `HEAD`, which may be behind
    `origin`. If the path is missing:
-   - Resolve the remote default branch (do not hardcode `main`):
+   - Resolve the remote default branch (do not hardcode `main`), reading the
+     local `origin/HEAD` symref first so a normal prepare does not pay a
+     network round trip on every item:
+     `DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')`.
+     If that is empty (no local record of the remote's default branch —
+     e.g. a repo whose `origin` was added after local setup rather than via
+     `git clone`), fall back to the network form:
      `DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')`.
-     If it is empty, fail closed — do not fall back to local `HEAD`.
+     If both are empty, fail closed — do not fall back to local `HEAD`.
    - Fetch it so the base is current:
      `git fetch --prune origin "$DEFAULT_BRANCH"`.
    - Create the worktree detached at the freshly fetched tip:
