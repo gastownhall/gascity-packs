@@ -1908,6 +1908,7 @@ class FormulaAssetTests(unittest.TestCase):
             "Do not create an empty convoy",
             "Do not call `gc convoy add` for newly-created beads",
             "Do not call `gc bd show <implementation-convoy-id>`",
+            "Do not use `gc bd create --root-bead`",
         ):
             with self.subTest(step="decompose", fragment=fragment):
                 self.assertIn(fragment, decompose_description)
@@ -1970,6 +1971,9 @@ class FormulaAssetTests(unittest.TestCase):
             "not to the launcher rig root",
             "normalized `gc.build.review.v1` artifact with `status: approved`",
             "Do not invoke provider-native subagents",
+            "Implementation Worktrees",
+            "`gc.work_dir` is the launcher rig root, not the implementation worktree",
+            "Do not inspect or edit the launcher checkout",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, asset_text)
@@ -2125,6 +2129,68 @@ class FormulaAssetTests(unittest.TestCase):
                 with self.subTest(asset=relative_path, fragment=fragment):
                     self.assertIn(fragment, text)
 
+    def test_build_basic_review_context_is_worktree_anchored(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflow_dir = root / "assets" / "workflows" / "build-basic-review"
+        setup = (workflow_dir / "{target}.setup-build-basic-review.md").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (workflow_dir / "{target}.acceptance-review.md").read_text(
+            encoding="utf-8"
+        )
+        test_evidence = (workflow_dir / "{target}.test-evidence-review.md").read_text(
+            encoding="utf-8"
+        )
+        simplicity = (workflow_dir / "{target}.simplicity-review.md").read_text(
+            encoding="utf-8"
+        )
+        synthesize = (workflow_dir / "{target}.synthesize-review.md").read_text(
+            encoding="utf-8"
+        )
+        apply = (workflow_dir / "{target}.apply-review-findings.md").read_text(
+            encoding="utf-8"
+        )
+
+        for fragment in (
+            "gc.build.code_review_context_path",
+            "Implementation Worktrees",
+            "metadata.work_dir",
+            "Do not write\nliteral command substitutions",
+            r"rg -n '\$\((cat|date)'",
+        ):
+            with self.subTest(asset="setup", fragment=fragment):
+                self.assertIn(fragment, setup)
+
+        for asset_name, text in (
+            ("acceptance", acceptance),
+            ("test-evidence", test_evidence),
+            ("simplicity", simplicity),
+            ("synthesize", synthesize),
+            ("apply", apply),
+        ):
+            with self.subTest(asset=asset_name, fragment="context path"):
+                self.assertIn("gc.build.code_review_context_path", text)
+            with self.subTest(asset=asset_name, fragment="worktree section"):
+                self.assertIn("Implementation Worktrees", text)
+            with self.subTest(asset=asset_name, fragment="launcher root"):
+                self.assertIn(
+                    "`gc.work_dir` is the launcher rig root, not the implementation worktree",
+                    text,
+                )
+
+        for asset_name, text in (
+            ("acceptance", acceptance),
+            ("test-evidence", test_evidence),
+            ("simplicity", simplicity),
+            ("apply", apply),
+        ):
+            with self.subTest(asset=asset_name, fragment="cd worktree"):
+                self.assertIn('cd "$WORKTREE"', text)
+            with self.subTest(asset=asset_name, fragment="pwd verification"):
+                self.assertIn("pwd -P", text)
+
+        self.assertIn("do not patch the launcher root", apply)
+        self.assertIn("source anchor and implementation\nworktree", synthesize)
     def test_build_artifact_prompts_use_set_metadata_for_paths(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         path_contracts = {
@@ -3569,6 +3635,9 @@ class FormulaAssetTests(unittest.TestCase):
         for fragment in (
             "Read `work_dir` from the source anchor",
             "close only `<source-anchor-id>`",
+            "handle both an object and a",
+            "`gc.work_dir` is the launcher rig",
+            "points at a worktree without the",
             "gc bd show <source-anchor-id> --json",
             "status=closed",
             "gc.outcome=pass",
