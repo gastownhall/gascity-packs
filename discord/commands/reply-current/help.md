@@ -5,6 +5,9 @@ This is the safest agent-facing Discord reply path. It resolves the latest
 `publish_binding_id`, `publish_conversation_id`, and reply threading metadata,
 then publishes the provided body back to Discord.
 
+For a named app binding, the qualified `publish_binding_id` selects the same
+app and isolated token that received the turn. No `--app` flag is needed.
+
 For launcher-backed root-room turns, the first successful `reply-current`
 automatically creates the Discord thread before posting the message. The agent
 does not need to create or target that thread manually.

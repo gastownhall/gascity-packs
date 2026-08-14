@@ -75,6 +75,395 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 },
             )
 
+    def test_named_app_import_preserves_default_app_and_isolates_policy(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "123",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["default-guild"],
+            },
+        )
+
+        config = common.import_app_config(
+            config,
+            {
+                "application_id": "456",
+                "public_key": "cd" * 32,
+                "guild_allowlist": ["ollie-guild"],
+                "channel_allowlist": ["ollie-channel"],
+            },
+            app_name="ollie",
+        )
+
+        self.assertEqual(config["app"]["application_id"], "123")
+        self.assertEqual(config["policy"]["guild_allowlist"], ["default-guild"])
+        self.assertEqual(config["apps"]["ollie"]["application_id"], "456")
+        self.assertEqual(config["apps"]["ollie"]["policy"]["guild_allowlist"], ["ollie-guild"])
+        self.assertEqual(config["apps"]["ollie"]["policy"]["channel_allowlist"], ["ollie-channel"])
+
+    def test_import_app_config_rejects_named_id_change_even_with_a_new_token(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "456", "public_key": "cd" * 32},
+            app_name="ollie",
+        )
+        common.save_bot_token("existing-credential", app_name="ollie")
+
+        with self.assertRaisesRegex(ValueError, "cannot change.*application_id"):
+            common.import_app_config(
+                config,
+                {"application_id": "789", "public_key": "ef" * 32},
+                app_name="ollie",
+                bot_token="replacement-credential",
+            )
+
+        self.assertEqual(common.resolve_app_config(common.load_config(), "ollie")["application_id"], "456")
+        self.assertEqual(common.load_bot_token("ollie"), "existing-credential")
+
+    def test_import_app_config_rejects_empty_id_partial_app_with_an_existing_token(self) -> None:
+        common.save_config(
+            {
+                "apps": {
+                    "ollie": {
+                        "public_key": "cd" * 32,
+                    }
+                }
+            }
+        )
+        common.save_bot_token("orphan-credential", app_name="ollie")
+
+        with self.assertRaisesRegex(ValueError, "orphan bot token.*new app name"):
+            common.import_app_config(
+                common.load_config(),
+                {"application_id": "456", "public_key": "cd" * 32},
+                app_name="ollie",
+            )
+
+        self.assertEqual(common.resolve_app_config(common.load_config(), "ollie")["application_id"], "")
+        self.assertEqual(common.load_bot_token("ollie"), "orphan-credential")
+
+    def test_new_named_identity_rejects_orphan_token_even_when_a_token_is_supplied(self) -> None:
+        common.save_bot_token("orphan-credential", app_name="ollie")
+
+        with self.assertRaisesRegex(ValueError, "orphan bot token.*new app name"):
+            common.import_app_config(
+                common.load_config(),
+                {"application_id": "456", "public_key": "cd" * 32},
+                app_name="ollie",
+                bot_token="replacement-credential",
+            )
+
+        self.assertEqual(common.load_config()["apps"], {})
+        self.assertEqual(common.load_bot_token("ollie"), "orphan-credential")
+
+    def test_named_app_import_rejects_unsafe_app_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "app name"):
+            common.import_app_config(
+                common.load_config(),
+                {
+                    "application_id": "456",
+                    "public_key": "cd" * 32,
+                },
+                app_name="../ollie",
+            )
+
+    def test_named_app_import_rejects_reserved_default_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "reserved"):
+            common.import_app_config(
+                common.load_config(),
+                {
+                    "application_id": "456",
+                    "public_key": "cd" * 32,
+                },
+                app_name="default",
+            )
+
+    def test_config_normalization_drops_empty_named_app_key(self) -> None:
+        config = common.normalize_config(
+            {
+                "apps": {
+                    "": {
+                        "application_id": "456",
+                        "public_key": "cd" * 32,
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(config["apps"], {})
+
+    def test_named_app_import_rejects_duplicate_application_id(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "456",
+                "public_key": "ab" * 32,
+            },
+        )
+
+        with self.assertRaisesRegex(ValueError, "application_id.*already configured"):
+            common.import_app_config(
+                config,
+                {
+                    "application_id": "456",
+                    "public_key": "cd" * 32,
+                },
+                app_name="ollie",
+            )
+
+    def test_concurrent_named_app_imports_preserve_both_apps(self) -> None:
+        stale_config = common.load_config()
+        start = threading.Barrier(2)
+        errors: list[BaseException] = []
+
+        def import_named(app_name: str, application_id: str, public_key_byte: str) -> None:
+            try:
+                start.wait(timeout=2)
+                common.import_app_config(
+                    stale_config,
+                    {
+                        "application_id": application_id,
+                        "public_key": public_key_byte * 32,
+                    },
+                    app_name=app_name,
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=import_named, args=("ollie", "456", "ab")),
+            threading.Thread(target=import_named, args=("olivia", "789", "cd")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+
+        self.assertEqual(errors, [])
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(set(common.load_config()["apps"]), {"ollie", "olivia"})
+
+    def test_concurrent_metadata_import_cannot_split_a_rotated_named_identity(self) -> None:
+        stale_config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.save_bot_token("old-credential", app_name="ollie")
+        rotation_holds_lock = threading.Event()
+        release_rotation = threading.Event()
+        errors: list[BaseException] = []
+        original_save_bot_token = common.save_bot_token
+
+        def blocking_save_bot_token(token: str, app_name: str = "") -> None:
+            if token == "new-credential":
+                rotation_holds_lock.set()
+                if not release_rotation.wait(timeout=2):
+                    raise TimeoutError("timed out waiting to release credential rotation")
+            original_save_bot_token(token, app_name=app_name)
+
+        def rotate_identity() -> None:
+            try:
+                common.import_app_config(
+                    stale_config,
+                    {"application_id": "456", "public_key": "cd" * 32},
+                    app_name="ollie",
+                    bot_token="new-credential",
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        def write_stale_metadata() -> None:
+            try:
+                common.import_app_config(
+                    stale_config,
+                    {"application_id": "456", "public_key": "ef" * 32},
+                    app_name="ollie",
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        with mock.patch.object(common, "save_bot_token", side_effect=blocking_save_bot_token):
+            rotation_thread = threading.Thread(target=rotate_identity)
+            rotation_thread.start()
+            self.assertTrue(rotation_holds_lock.wait(timeout=2))
+            metadata_thread = threading.Thread(target=write_stale_metadata)
+            metadata_thread.start()
+            release_rotation.set()
+            rotation_thread.join(timeout=3)
+            metadata_thread.join(timeout=3)
+
+        self.assertFalse(rotation_thread.is_alive())
+        self.assertFalse(metadata_thread.is_alive())
+        self.assertEqual(errors, [])
+        app = common.resolve_app_config(common.load_config(), "ollie")
+        self.assertEqual(app["application_id"], "456")
+        self.assertEqual(app["public_key"], "ef" * 32)
+        self.assertEqual(common.load_bot_token("ollie"), "new-credential")
+
+    def test_concurrent_named_bindings_preserve_both_bindings(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.import_app_config(
+            config,
+            {"application_id": "789", "public_key": "cd" * 32},
+            app_name="olivia",
+        )
+        stale_config = common.load_config()
+        start = threading.Barrier(2)
+        errors: list[BaseException] = []
+
+        def bind_named(app_name: str, session_name: str) -> None:
+            try:
+                start.wait(timeout=2)
+                common.set_chat_binding(
+                    stale_config,
+                    "room",
+                    "22",
+                    [session_name],
+                    guild_id="1",
+                    app_name=app_name,
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=bind_named, args=("ollie", "teams.lead")),
+            threading.Thread(target=bind_named, args=("olivia", "teams.pm")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+
+        self.assertEqual(errors, [])
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        binding_ids = {item["id"] for item in common.list_chat_bindings(common.load_config())}
+        self.assertEqual(binding_ids, {"room:22@app:ollie", "room:22@app:olivia"})
+
+    def test_room_launcher_mutation_reloads_config_and_preserves_a_concurrent_app_import(self) -> None:
+        stale_config = common.load_config()
+        common.import_app_config(
+            stale_config,
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+
+        common.set_room_launcher(stale_config, "1", "22")
+
+        config = common.load_config()
+        self.assertIn("ollie", config["apps"])
+        self.assertIsNotNone(common.resolve_room_launcher(config, "22"))
+
+    def test_channel_mapping_mutation_reloads_config_and_preserves_a_concurrent_app_import(self) -> None:
+        stale_config = common.load_config()
+        common.import_app_config(
+            stale_config,
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+
+        common.set_channel_mapping(stale_config, "1", "22", "product/polecat", None)
+
+        config = common.load_config()
+        self.assertIn("ollie", config["apps"])
+        self.assertIn("1/22", config["channels"])
+
+    def test_rig_mapping_mutation_reloads_config_and_preserves_a_concurrent_app_import(self) -> None:
+        stale_config = common.load_config()
+        common.import_app_config(
+            stale_config,
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+
+        common.set_rig_mapping(stale_config, "1", "product", "product/polecat", None)
+
+        config = common.load_config()
+        self.assertIn("ollie", config["apps"])
+        self.assertIn("1/product", config["rigs"])
+
+    def test_named_app_tokens_are_isolated_and_mode_0600(self) -> None:
+        common.save_bot_token("default-token")
+        common.save_bot_token("ollie-token", app_name="ollie")
+        common.save_bot_token("olivia-token", app_name="olivia")
+
+        self.assertEqual(common.load_bot_token(), "default-token")
+        self.assertEqual(common.load_bot_token("ollie"), "ollie-token")
+        self.assertEqual(common.load_bot_token("olivia"), "olivia-token")
+        self.assertEqual(
+            pathlib.Path(common.secret_path("bot-token-ollie.txt")).stat().st_mode & 0o777,
+            0o600,
+        )
+        self.assertEqual(
+            pathlib.Path(common.secret_path("bot-token-olivia.txt")).stat().st_mode & 0o777,
+            0o600,
+        )
+
+    def test_redacted_config_reports_named_token_presence_without_token_value(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "456",
+                "public_key": "cd" * 32,
+            },
+            app_name="ollie",
+        )
+        common.save_bot_token("ollie-token", app_name="ollie")
+
+        redacted = common.redact_config(config)
+
+        self.assertTrue(redacted["apps"]["ollie"]["bot_token_present"])
+        self.assertNotIn("bot_token", redacted["apps"]["ollie"])
+
+    def test_app_config_and_policy_resolution_fail_closed_for_unknown_name(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "456",
+                "public_key": "cd" * 32,
+                "guild_allowlist": ["1"],
+                "channel_allowlist": ["22"],
+            },
+            app_name="ollie",
+        )
+
+        self.assertEqual(common.resolve_app_config(config, "ollie")["application_id"], "456")
+        self.assertEqual(common.resolve_app_policy(config, "ollie")["channel_allowlist"], ["22"])
+        with self.assertRaisesRegex(ValueError, "unknown Discord app"):
+            common.resolve_app_config(config, "olivia")
+        with self.assertRaisesRegex(ValueError, "unknown Discord app"):
+            common.resolve_app_policy(config, "olivia")
+
+    def test_gateway_status_is_isolated_per_named_app_and_keeps_legacy_projection(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "123",
+                "public_key": "ab" * 32,
+            },
+        )
+        common.import_app_config(
+            config,
+            {
+                "application_id": "456",
+                "public_key": "cd" * 32,
+            },
+            app_name="ollie",
+        )
+        common.save_gateway_status({"state": "ready", "bot_user_id": "123"})
+        common.save_gateway_status({"state": "waiting_for_config"}, app_name="ollie")
+
+        snapshot = common.build_status_snapshot(limit=1)
+
+        self.assertEqual(snapshot["gateway_status"]["bot_user_id"], "123")
+        self.assertEqual(snapshot["gateway_statuses"]["default"]["bot_user_id"], "123")
+        self.assertEqual(snapshot["gateway_statuses"]["ollie"]["state"], "waiting_for_config")
+
     def test_shared_discord_prompt_requires_bold_speaker_prefix(self) -> None:
         fragment = (
             pathlib.Path(__file__).resolve().parents[1] / "template-fragments" / "discord-v0.template.md"
@@ -117,6 +506,69 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(binding["guild_id"], "1")
         self.assertEqual(binding["session_names"], ["sky", "lawrence"])
         self.assertEqual(binding["policy"], common.default_room_peer_policy())
+
+    def test_named_apps_can_bind_the_same_room_independently(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+        )
+        config = common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.pm"],
+            guild_id="1",
+            app_name="olivia",
+        )
+
+        lead = common.resolve_chat_binding(config, "room:22@app:ollie")
+        product = common.resolve_chat_binding(config, "room:22@app:olivia")
+
+        self.assertEqual(lead["app"], "ollie")
+        self.assertEqual(lead["session_names"], ["teams.lead"])
+        self.assertEqual(product["app"], "olivia")
+        self.assertEqual(product["session_names"], ["teams.pm"])
+        self.assertEqual(len(common.list_chat_bindings(config)), 2)
+
+    def test_legacy_and_named_binding_can_share_a_room(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["legacy"],
+            guild_id="1",
+        )
+        config = common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+        )
+
+        legacy = common.resolve_chat_binding(config, "room:22")
+        named = common.resolve_chat_binding(config, "room:22@app:ollie")
+
+        self.assertNotIn("app", legacy)
+        self.assertEqual(named["app"], "ollie")
+
+    def test_publish_route_rejects_binding_for_unknown_named_app(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ghost",
+        )
+
+        with self.assertRaisesRegex(ValueError, "unknown Discord app"):
+            common.resolve_publish_route(config, "room:22@app:ghost")
 
     def test_set_chat_binding_deduplicates_participants_case_insensitively(self) -> None:
         config = common.set_chat_binding(common.load_config(), "room", "22", ["sky", "Sky", "lawrence"], guild_id="1")
@@ -316,6 +768,15 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             metadata = common.describe_room_channel_metadata("22", bot_token="bot-token")
 
         self.assertEqual(metadata, {"channel_type": 0})
+
+    def test_describe_room_channel_scope_does_not_fall_back_from_an_explicit_empty_token(self) -> None:
+        common.save_bot_token("default-token")
+
+        with mock.patch.object(common, "discord_api_request") as discord_api_request:
+            scope = common.describe_room_channel_scope("22", bot_token="")
+
+        self.assertEqual(scope, {})
+        discord_api_request.assert_not_called()
 
     def test_save_channel_metadata_cache_round_trips_normalized_metadata(self) -> None:
         metadata = common.save_channel_metadata_cache("22", {"type": 11, "parent_id": "7"})
@@ -572,7 +1033,11 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(urlopen.call_args_list[-1].args[0].full_url, "http://127.0.0.1:8372/v0/city/gc/sessions")
 
     def test_deliver_session_message_uses_messages_endpoint_for_default_intent(self) -> None:
-        with mock.patch.object(common, "gc_api_request", return_value={"status": "accepted"}) as gc_api_request:
+        with mock.patch.object(
+            common,
+            "gc_api_request_with_status",
+            return_value=(200, {"status": "accepted"}),
+        ) as gc_api_request:
             payload = common.deliver_session_message("corp--sky", "hello", idempotency_key="ingress:1")
 
         self.assertEqual(payload, {"status": "accepted"})
@@ -585,7 +1050,11 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         )
 
     def test_deliver_session_message_uses_submit_endpoint_for_follow_up_intent(self) -> None:
-        with mock.patch.object(common, "gc_api_request", return_value={"status": "accepted"}) as gc_api_request:
+        with mock.patch.object(
+            common,
+            "gc_api_request_with_status",
+            return_value=(200, {"status": "accepted"}),
+        ) as gc_api_request:
             payload = common.deliver_session_message(
                 "corp--sky",
                 "hello again",
@@ -1930,6 +2399,18 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(payload, {"ok": True})
         self.assertEqual(urlopen.call_count, 2)
         sleep.assert_called_once_with(0.0)
+
+    def test_discord_api_request_explicit_empty_token_never_falls_back_to_default(self) -> None:
+        common.save_bot_token("default-test-token")
+        success = mock.Mock()
+        success.__enter__ = mock.Mock(return_value=mock.Mock(read=mock.Mock(return_value=b'{}')))
+        success.__exit__ = mock.Mock(return_value=False)
+
+        with mock.patch.object(common.urllib.request, "urlopen", return_value=success) as urlopen:
+            common.discord_api_request("GET", "/channels/1", bot_token="")
+
+        request = urlopen.call_args.args[0]
+        self.assertNotIn("Authorization", request.headers)
 
 
 if __name__ == "__main__":

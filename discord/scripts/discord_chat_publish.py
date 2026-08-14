@@ -41,6 +41,7 @@ def _hydrate_launch_source_context(binding: dict[str, object], source_context: d
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Publish a Discord-visible message through a saved chat binding")
     parser.add_argument("--binding", required=True, help="Binding id such as room:1234567890")
+    parser.add_argument("--app", default="", help="Optional named app identity")
     parser.add_argument("--conversation-id", default="", help="Discord channel or thread id to publish into")
     parser.add_argument("--trigger", default="", help="Original Discord message id for reply threading")
     parser.add_argument("--reply-to", default="", help="Explicit Discord message id to reply to")
@@ -71,7 +72,10 @@ def main(argv: list[str]) -> int:
 
     body = _load_body(args)
     config = common.load_config()
-    binding = common.resolve_publish_route(config, args.binding)
+    try:
+        binding = common.resolve_publish_route(config, args.binding, app_name=args.app)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     if not binding:
         raise SystemExit(f"binding not found: {args.binding}")
 
