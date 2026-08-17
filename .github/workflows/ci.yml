@@ -41,16 +41,27 @@ jobs:
         run: python3 validate_registry.py --require-git
 
       - name: Run Python pack tests
-        run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
+        run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests oversight-rig/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
 
       - name: Lint and exercise shared role prompt composition
         run: |
           go install github.com/gastownhall/gascity/cmd/gc@latest
           GC_BIN="$(go env GOPATH)/bin/gc"
-          for pack in gascity gascity/roles bmad compound-engineering gstack superpowers profiler; do
+          for pack in gascity gascity/roles bmad compound-engineering gstack superpowers profiler \
+                      oversight-rig pr-pipeline slack-channel slack-full slack-mini; do
             "$GC_BIN" lint "$pack"
           done
           GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py -q
+
+      # Installed, not parsed. `gc lint` above reads each pack on its own and
+      # the per-pack suites read their own TOML; neither can say what gc does
+      # when a city loads the pack, which is where a user meets it. pr-pipeline
+      # linted clean for months while putting a deprecation warning into every
+      # importing city's `gc doctor`.
+      - name: Stand each maintained pack up against gc
+        run: |
+          GC_TEST_BIN="$(go env GOPATH)/bin/gc" \
+            python3 -m pytest tests/test_maintained_packs_live_gc.py -q
 
       # gastown is not in the lint loop above because seven of its findings are
       # defects in gc's linter rather than in the pack; see
