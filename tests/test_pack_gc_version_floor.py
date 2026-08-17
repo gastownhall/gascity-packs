@@ -34,12 +34,23 @@ import unittest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from formula_compiler_requirement import declares_graph_compiler  # noqa: E402
+from formula_compiler_requirement import (  # noqa: E402
+    UnsupportedConstraint,
+    declares_graph_compiler,
+    satisfies,
+)
 
 # The gc release that first reads `[requires]` in a formula. Refute with:
 #   git -C <gascity checkout> show v1.3.0:internal/formula/types.go \
 #     | grep -n 'Requires \*Requirements'
-REQUIRED_FLOOR = ">=1.3.0"
+SUGGESTED_FLOOR = ">=1.3.0"
+
+# The property, not the spelling: the declared constraint must admit no gc older
+# than 1.3.0, and must admit something. `">=1.4.0"` is a legitimately stricter
+# answer for a pack that needs a later feature, and an equality match against
+# SUGGESTED_FLOOR would reject it while accepting nothing better.
+TOO_OLD = ((0, 9, 0), (1, 0, 0), (1, 2, 0), (1, 2, 99))
+NEW_ENOUGH = ((1, 3, 0), (1, 4, 0), (1, 9, 9), (2, 0, 0), (99, 0, 0))
 
 # Below this, the pack enumeration has broken rather than the repo having
 # shrunk, and every assertion below would pass over an empty set.
@@ -57,6 +68,23 @@ def packs() -> list[pathlib.Path]:
 
 def formulas_of(pack: pathlib.Path) -> list[pathlib.Path]:
     return sorted((pack / "formulas").glob("**/*.toml"))
+
+
+def _floor_defect(floor: str) -> str:
+    """Why `floor` fails to exclude every gc that drops `[requires]`, or ""."""
+    if not floor:
+        return "absent"
+    try:
+        admitted_old = [v for v in TOO_OLD if satisfies(floor, v)]
+        admitted_new = [v for v in NEW_ENOUGH if satisfies(floor, v)]
+    except UnsupportedConstraint as exc:
+        return f"unparseable: {exc}"
+    if admitted_old:
+        oldest = ".".join(str(part) for part in admitted_old[0])
+        return f"admits gc {oldest}, which drops the declaration"
+    if not admitted_new:
+        return "admits no gc version at all"
+    return ""
 
 
 class PackGCVersionFloorTest(unittest.TestCase):
@@ -87,8 +115,9 @@ class PackGCVersionFloorTest(unittest.TestCase):
             declaring.append(pack.name)
             manifest = tomllib.loads((pack / "pack.toml").read_text(encoding="utf-8"))
             floor = str(manifest.get("pack", {}).get("requires_gc", "")).strip()
-            if floor != REQUIRED_FLOOR:
-                missing.append(f"{pack.name}: requires_gc = {floor!r}")
+            reason = _floor_defect(floor)
+            if reason:
+                missing.append(f"{pack.name}: requires_gc = {floor!r} ({reason})")
 
         self.assertTrue(
             declaring,
@@ -98,8 +127,27 @@ class PackGCVersionFloorTest(unittest.TestCase):
         self.assertEqual(
             missing,
             [],
-            "these packs ship formulas requiring the v2 graph compiler but do "
-            f"not declare requires_gc = {REQUIRED_FLOOR!r} in [pack], so they "
-            "install cleanly onto a gc that drops the declaration:\n  "
+            "these packs ship formulas requiring the v2 graph compiler but "
+            "their [pack] requires_gc does not exclude every gc that drops the "
+            f"declaration, so they install cleanly onto one. {SUGGESTED_FLOOR!r} "
+            "is the minimum; a stricter constraint is fine:\n  "
             + "\n  ".join(missing),
         )
+
+    def test_the_floor_check_rejects_a_constraint_that_lets_old_gc_in(self) -> None:
+        """Mutation control for `_floor_defect` itself.
+
+        An equality match against `">=1.3.0"` passes the first row of this
+        table and fails all four of the others, which is the wrong shape: the
+        question is what the constraint ADMITS, not how it is spelled.
+        """
+        self.assertEqual(_floor_defect(">=1.3.0"), "")
+        self.assertEqual(_floor_defect(">=1.4.0"), "")
+        self.assertEqual(_floor_defect(">1.2.99"), "")
+        for rejected in (">=1.2.0", ">=1.0.0", "", ">=1.3.0, <1.2.0", "banana"):
+            self.assertNotEqual(
+                _floor_defect(rejected),
+                "",
+                f"{rejected!r} does not establish the floor, but the check "
+                "accepted it",
+            )
