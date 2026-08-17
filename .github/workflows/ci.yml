@@ -41,7 +41,14 @@ jobs:
         run: python3 validate_registry.py --require-git
 
       - name: Run Python pack tests
-        run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
+        # oversight-rig/tests existed on disk and was absent from this list, so
+        # its tests had never run in CI. The list stays explicit (pytest
+        # discovery from the root would sweep vendored and fixture trees), and
+        # tests/test_ci_covers_every_test_directory.py fails when a */tests
+        # directory holding test_*.py is missing from it. gastown/tests is
+        # deliberately absent: it holds shell tests only, run by the
+        # "Run Gastown shell tests" step below.
+        run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests oversight-rig/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
 
       - name: Lint and exercise shared role prompt composition
         run: |

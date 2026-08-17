@@ -134,7 +134,8 @@ records the entrypoint it started from, and refuses to finalize as a pass when
 review or repair is still blocked — see "Choosing an entrypoint" above for
 which one matches the artifacts you have.
 
-Every formula in this pack uses `contract = "graph.v2"`. Targeted formulas take
+Every formula in this pack declares `[requires] formula_compiler = ">=2.0.0"`,
+the supported form of the graph-v2 contract. Targeted formulas take
 the core-injected reserved convoy target; they do not declare `issue`,
 `bead_id`, or `convoy_id` variables. `drain_policy=separate` is the standalone
 default. Use `same-session` only when preserving one shared worktree and

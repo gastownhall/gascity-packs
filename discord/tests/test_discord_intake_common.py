@@ -17,12 +17,72 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 import discord_intake_common as common
 
+# Every environment-variable prefix this pack's modules read. setUp strips
+# these so a test never inherits the developer's live city; the guard test
+# below re-derives the variable list from the module source and fails if a
+# new read falls outside the prefixes.
+MODULE_ENV_PREFIXES = ("GC_",)
+
+
+def _env_vars_read_by(*module_paths: pathlib.Path) -> set[str]:
+    """Enumerate os.environ keys the given modules read, from their AST."""
+    import ast
+
+    def is_environ(node: ast.AST) -> bool:
+        # os.environ  |  environ (from os import environ)
+        if isinstance(node, ast.Attribute):
+            return node.attr == "environ" and isinstance(node.value, ast.Name)
+        return isinstance(node, ast.Name) and node.id == "environ"
+
+    found: set[str] = set()
+    for path in module_paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            # os.environ.get("X") / os.getenv("X")
+            if isinstance(node, ast.Call) and node.args:
+                func = node.func
+                if isinstance(func, ast.Attribute) and isinstance(
+                    node.args[0], ast.Constant
+                ):
+                    reads_env = (
+                        func.attr in {"get", "setdefault", "pop"}
+                        and is_environ(func.value)
+                    ) or (
+                        func.attr == "getenv"
+                        and isinstance(func.value, ast.Name)
+                        and func.value.id == "os"
+                    )
+                    value = node.args[0].value
+                    if reads_env and isinstance(value, str):
+                        found.add(value)
+            # os.environ["X"]
+            if (
+                isinstance(node, ast.Subscript)
+                and is_environ(node.value)
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)
+            ):
+                found.add(node.slice.value)
+    return found
+
 
 class DiscordIntakeCommonTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
+        # Clear the ambient city before pinning the fixture one. A Gas
+        # City agent seat exports GC_API_BASE_URL, GC_CITY_PATH,
+        # GC_SESSION_NAME and friends into every process it spawns, and
+        # this module reads them at a HIGHER precedence than the city.toml
+        # the fixture writes. Setting GC_CITY_ROOT alone left those in
+        # place, so 13 tests here passed in CI (where no city exists) and
+        # failed on any machine actually running Gas City — green for a
+        # reason unrelated to the code under test. Enumerated from the
+        # module source and held there by
+        # test_env_prefixes_cover_every_variable_the_module_reads.
+        for key in [k for k in os.environ if k.startswith(MODULE_ENV_PREFIXES)]:
+            del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
 
     def tearDown(self) -> None:
@@ -3058,6 +3118,27 @@ class DiscordIntakeCommonTests(unittest.TestCase):
 
         request = urlopen.call_args.args[0]
         self.assertNotIn("Authorization", request.headers)
+
+    def test_env_prefixes_cover_every_variable_the_module_reads(self) -> None:
+        # Keeps MODULE_ENV_PREFIXES honest. Without this, adding a read of
+        # some FOO_BAR variable to the module would silently reintroduce
+        # the ambient-environment leak setUp exists to close, and every
+        # test here would still be green.
+        scripts = pathlib.Path(__file__).resolve().parents[1] / "scripts"
+        read = _env_vars_read_by(
+            scripts / "discord_intake_common.py",
+            scripts / "discord_intake_service.py",
+        )
+        self.assertTrue(read, "AST enumeration found no env reads at all")
+        uncovered = sorted(
+            name for name in read if not name.startswith(MODULE_ENV_PREFIXES)
+        )
+        self.assertEqual(
+            uncovered,
+            [],
+            "these variables are read by the pack but not stripped in setUp; "
+            "add their prefix to MODULE_ENV_PREFIXES",
+        )
 
 
 if __name__ == "__main__":

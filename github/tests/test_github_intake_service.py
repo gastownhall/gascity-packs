@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import io
 import json
 import urllib.parse
@@ -15,6 +16,315 @@ from unittest import mock
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 import github_intake_service as service
+
+# Every environment-variable prefix this pack's modules read. setUp strips
+# these so a test never inherits the developer's live city; the guard test
+# in GitHubIntakeServiceTests re-derives the variable list from the module
+# source and fails if a new read falls outside the prefixes.
+# GC_*/GITHUB_* are the variables the pack READS; the guard test below
+# enumerates those from the module AST and fails if one escapes these
+# prefixes. GITHUB_ is deliberately the whole namespace rather than
+# GITHUB_INTAKE_: app_config_from_env loops over ENV_APP_FIELDS and reads
+# eleven GITHUB_APP_* / GITHUB_WEBHOOK_SECRET / GITHUB_INSTALLATION_ID names,
+# so a developer holding real GitHub App credentials in their environment had
+# them merged into the fixture config by effective_config. GH_*/GIT_* are
+# stripped for a second reason the guard does not cover: gh_env_for_repo and
+# push_branch_with_installation_token build their subprocess environment with
+# os.environ.copy(), so an ambient GH_TOKEN, GH_HOST or GIT_CONFIG_* rides
+# into the `gh` and `git` calls these tests exercise. Stripping more than the
+# guard requires is deliberate.
+MODULE_ENV_PREFIXES = ("GC_", "GITHUB_", "GH_", "GIT_")
+
+
+def _is_environ(node: ast.AST, aliases: frozenset[str] = frozenset()) -> bool:
+    # os.environ  |  environ (from os import environ)  |  a copy of either
+    if isinstance(node, ast.Attribute):
+        return node.attr == "environ" and isinstance(node.value, ast.Name)
+    return isinstance(node, ast.Name) and (node.id == "environ" or node.id in aliases)
+
+
+def _reads_environ(call: ast.Call, aliases: frozenset[str] = frozenset()) -> bool:
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    # setdefault and pop touch the real environment, so they count there. On a
+    # COPY they mutate the copy and read nothing: `env.setdefault(key, value)`
+    # over a workspace dict is how both modules build a subprocess environment,
+    # and counting it reports the pack as reading keys it only writes.
+    if func.attr == "get" and _is_environ(func.value, aliases):
+        return True
+    if func.attr in {"setdefault", "pop"} and _is_environ(func.value):
+        return True
+    return (
+        func.attr == "getenv"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "os"
+    )
+
+
+def _environ_aliases(tree: ast.Module) -> set[str]:
+    """Names bound to a whole copy of the environment.
+
+    `env = os.environ.copy()` (which gh_env_for_repo and
+    push_branch_with_installation_token both do) makes every later `env.get(K)`
+    an environment read that a walker looking only for `os.environ` cannot see.
+    Whole-environment copies are also why MODULE_ENV_PREFIXES strips GH_ and
+    GIT_: those ride into the subprocess without being read by name at all.
+    """
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        call = node.value
+        copied = (
+            isinstance(call.func, ast.Attribute)
+            and call.func.attr == "copy"
+            and _is_environ(call.func.value)
+        ) or (
+            isinstance(call.func, ast.Name)
+            and call.func.id == "dict"
+            and len(call.args) == 1
+            and _is_environ(call.args[0])
+        )
+        if not copied:
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                aliases.add(target.id)
+    return aliases
+
+
+def _module_level_dict_keys(tree: ast.Module) -> dict[str, list[str]]:
+    """Module-level `NAME = {"A": ...}` literals, string keys only.
+
+    A dict with any non-literal key is skipped rather than partially claimed:
+    knowing some of its keys is not knowing the set a loop over it produces.
+    """
+    mapping: dict[str, list[str]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Dict):
+            continue
+        keys = [
+            key.value
+            for key in node.value.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        ]
+        if len(keys) != len(node.value.keys):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                mapping[target.id] = keys
+    return mapping
+
+
+def _walk_scope(scope: ast.AST):
+    """Nodes belonging to `scope`, not descending into nested functions.
+
+    Name resolution has to be per scope. Resolving by bare name across a whole
+    module set merges unrelated bindings: `split_repository`, `read_body` and
+    `main` are each defined in more than one of the guarded scripts, and every
+    one of them has a parameter called `name` somewhere, so a caller of one
+    function answered a read in another.
+    """
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        yield node
+        # Lambdas are deliberately NOT a boundary: they are not in
+        # _function_scopes, so skipping them would drop any read inside one
+        # instead of merely resolving it in the enclosing scope.
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+
+
+def _function_scopes(tree: ast.Module):
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield node
+
+
+def _loop_variable_keys(
+    tree: ast.AST, dicts: dict[str, list[str]]
+) -> dict[str, list[str]]:
+    """Loop variables that range over a known module-level dict's keys.
+
+    Covers `for env_key, field in ENV_APP_FIELDS.items(): os.environ.get(env_key)`
+    in github_intake_common.py, which reads eleven GITHUB_APP_* / GITHUB_* names
+    that a constant-only walker cannot see.
+    """
+    bound: dict[str, list[str]] = {}
+    for node in _walk_scope(tree):
+        if not isinstance(node, ast.For):
+            continue
+        iterated = node.iter
+        source: str | None = None
+        if (
+            isinstance(iterated, ast.Call)
+            and isinstance(iterated.func, ast.Attribute)
+            and iterated.func.attr in {"items", "keys"}
+            and isinstance(iterated.func.value, ast.Name)
+        ):
+            source, kind = iterated.func.value.id, iterated.func.attr
+        elif isinstance(iterated, ast.Name):
+            source, kind = iterated.id, "keys"
+        if source is None or source not in dicts:
+            continue
+        target = node.target
+        if kind == "keys" and isinstance(target, ast.Name):
+            bound.setdefault(target.id, []).extend(dicts[source])
+        elif (
+            kind == "items"
+            and isinstance(target, ast.Tuple)
+            and target.elts
+            and isinstance(target.elts[0], ast.Name)
+        ):
+            bound.setdefault(target.elts[0].id, []).extend(dicts[source])
+    return bound
+
+
+def _parameter_keys(
+    trees: dict[pathlib.Path, ast.Module],
+) -> tuple[dict[str, list[str]], set[str]]:
+    """For `def f(name): os.environ.get(name)`, the constants callers pass.
+
+    Covers workspace_env_value in github_intake_common.py. Call sites are
+    collected across every module in the set, so a caller in a sibling script
+    counts. Returns the resolved names and the names that must NOT be treated
+    as resolved.
+
+    Three limits, each handled rather than assumed away:
+
+    * Only a plain `f(...)` call resolves `f`'s parameters. `client.f("X")` is
+      a method on some object and says nothing about the free function, so
+      attributing it would invent a key the module never reads.
+    * Keyword arguments are read, matched to the parameter by NAME. Positional
+      arguments are matched by position. `f(name="X")` used to vanish.
+    * A call passing a non-constant poisons that parameter: it becomes
+      unresolvable rather than resolved-from-the-other-call-sites, so the read
+      surfaces as unresolved instead of being answered from a partial set.
+
+    Call sites are collected per MODULE and matched to the function defined in
+    that same module. `main`, `split_repository` and `read_body` are each
+    defined in more than one guarded script, so a set-wide bucket answered a
+    read in one module from a caller in another.
+    """
+    positional: dict[tuple[pathlib.Path, str, int], list[str]] = {}
+    keyword: dict[tuple[pathlib.Path, str, str], list[str]] = {}
+    poisoned: set[tuple[pathlib.Path, str, object]] = set()
+
+    for path, tree in trees.items():
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            name = node.func.id
+            for index, arg in enumerate(node.args):
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    positional.setdefault((path, name, index), []).append(arg.value)
+                else:
+                    poisoned.add((path, name, index))
+            for kw in node.keywords:
+                if kw.arg is None:  # **kwargs: we cannot say which parameter
+                    poisoned.add((path, name, "**"))
+                elif isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    keyword.setdefault((path, name, kw.arg), []).append(kw.value.value)
+                else:
+                    poisoned.add((path, name, kw.arg))
+
+    bound: dict[tuple[pathlib.Path, str, str], list[str]] = {}
+    unresolvable: set[tuple[pathlib.Path, str, str]] = set()
+    for path, tree in trees.items():
+        for node in _function_scopes(tree):
+            params = [arg.arg for arg in node.args.args]
+            if params and params[0] in {"self", "cls"}:
+                continue  # a method; its callers are not resolvable by name
+            for index, param in enumerate(params):
+                keys = positional.get((path, node.name, index), []) + keyword.get(
+                    (path, node.name, param), []
+                )
+                if (
+                    (path, node.name, index) in poisoned
+                    or (path, node.name, param) in poisoned
+                    or (path, node.name, "**") in poisoned
+                ):
+                    unresolvable.add((path, node.name, param))
+                elif keys:
+                    bound.setdefault((path, node.name, param), []).extend(keys)
+    return bound, unresolvable
+
+
+def _env_vars_read_by(
+    *module_paths: pathlib.Path,
+) -> tuple[set[str], list[str]]:
+    """os.environ keys the given modules read, plus reads we could not resolve.
+
+    A key read through a variable is resolved from the two shapes this pack
+    actually uses (a loop over a module-level dict, and a function parameter
+    filled by constant call sites), plus reads made through a whole copy of the
+    environment. Anything else is returned as unresolved rather than dropped,
+    because a read the enumeration cannot see is exactly the leak the guard
+    exists to catch.
+
+    Resolution is per scope. Names are not unique across a module set, and a
+    binding borrowed from another module's function is a fabricated answer that
+    looks exactly like a real one.
+    """
+    trees = {
+        path: ast.parse(path.read_text(encoding="utf-8")) for path in module_paths
+    }
+
+    aliases = frozenset().union(*(_environ_aliases(tree) for tree in trees.values()))
+    parameters, poisoned = _parameter_keys(trees)
+
+    found: set[str] = set()
+    unresolved: list[str] = []
+
+    def record(
+        path: pathlib.Path,
+        node: ast.AST,
+        key: ast.expr,
+        resolvable: dict[str, list[str]],
+    ) -> None:
+        if isinstance(key, ast.Constant):
+            if isinstance(key.value, str):
+                found.add(key.value)
+            return
+        if isinstance(key, ast.Name) and key.id in resolvable:
+            found.update(resolvable[key.id])
+            return
+        unresolved.append(
+            f"{path.name}:{getattr(node, 'lineno', '?')}: "
+            "os.environ read with a key this enumeration cannot resolve"
+        )
+
+    for path, tree in trees.items():
+        dicts = _module_level_dict_keys(tree)
+        for scope in (tree, *_function_scopes(tree)):
+            resolvable = dict(_loop_variable_keys(scope, dicts))
+            if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for param in (arg.arg for arg in scope.args.args):
+                    if (path, scope.name, param) in poisoned:
+                        resolvable.pop(param, None)
+                    elif (path, scope.name, param) in parameters:
+                        resolvable.setdefault(param, []).extend(
+                            parameters[(path, scope.name, param)]
+                        )
+            for node in _walk_scope(scope):
+                if (
+                    isinstance(node, ast.Call)
+                    and node.args
+                    and _reads_environ(node, aliases)
+                ):
+                    record(path, node, node.args[0], resolvable)
+                elif (
+                    isinstance(node, ast.Subscript)
+                    and _is_environ(node.value, aliases)
+                    and isinstance(node.ctx, ast.Load)
+                ):
+                    # `env[key] = value` is a write to the copy, not a read.
+                    record(path, node, node.slice, resolvable)
+
+    return found, unresolved
 
 
 class DummyWebhookHandler:
@@ -41,11 +351,211 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
+        # Clear the ambient city before pinning the fixture one. A live
+        # Gas City seat exports GC_API_BASE_URL, GC_CITY_PATH and friends
+        # into every process it spawns, and this pack reads them ahead of
+        # the fixture's city.toml — so these tests passed in CI (no city)
+        # and failed on any machine actually running Gas City. The
+        # PublishImportedIdentityTests class below used to pop two
+        # GITHUB_INTAKE_* names by hand; the prefix sweep replaces that
+        # hand-list, and
+        # test_env_prefixes_cover_every_variable_the_module_reads keeps
+        # the prefixes covering the modules.
+        for key in [k for k in os.environ if k.startswith(MODULE_ENV_PREFIXES)]:
+            del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
 
     def tearDown(self) -> None:
         os.environ.clear()
         os.environ.update(self._old_environ)
+
+    def test_env_prefixes_cover_every_variable_the_module_reads(self) -> None:
+        # Keeps MODULE_ENV_PREFIXES honest: a new read of some variable
+        # outside these prefixes would silently reintroduce the ambient
+        # leak with every test still green.
+        scripts = pathlib.Path(__file__).resolve().parents[1] / "scripts"
+        read, unresolved = _env_vars_read_by(*sorted(scripts.glob("*.py")))
+        self.assertTrue(read, "AST enumeration found no env reads at all")
+        # An unresolvable read is reported before the prefix check, because a
+        # variable the walker cannot see reads as "covered" either way.
+        self.assertEqual(
+            unresolved,
+            [],
+            "these os.environ reads use a key shape the enumeration does not "
+            "model, so they are neither covered nor cleared; teach "
+            "_env_vars_read_by the shape:\n  " + "\n  ".join(unresolved),
+        )
+        uncovered = sorted(
+            name for name in read if not name.startswith(MODULE_ENV_PREFIXES)
+        )
+        self.assertEqual(
+            uncovered,
+            [],
+            "these variables are read by the pack but not stripped in setUp; "
+            "add their prefix to MODULE_ENV_PREFIXES",
+        )
+
+    def test_env_enumeration_sees_reads_made_through_a_variable(self) -> None:
+        """Mutation control for the enumeration itself.
+
+        The previous walker only recorded a key when it was a literal at the
+        call site, so `for k in SOME_DICT: os.environ.get(k)` read as no env
+        access at all. Eleven GitHub App credential variables were read that
+        way and reported as covered. Both rails are asserted here: the shapes
+        the pack uses must resolve, and a shape the walker does not model must
+        surface rather than vanish.
+        """
+        source = pathlib.Path(self.tempdir.name) / "probe_module.py"
+        source.write_text(
+            "import os\n"
+            'FIELDS = {"PROBE_LOOP_ONE": "a", "PROBE_LOOP_TWO": "b"}\n'
+            "def by_loop():\n"
+            "    for key, _field in FIELDS.items():\n"
+            "        os.environ.get(key)\n"
+            "def by_param(name):\n"
+            "    return os.environ.get(name)\n"
+            'by_param("PROBE_PARAM_ONE")\n',
+            encoding="utf-8",
+        )
+        read, unresolved = _env_vars_read_by(source)
+        self.assertEqual(unresolved, [], "these shapes are modelled and must resolve")
+        self.assertEqual(
+            read,
+            {"PROBE_LOOP_ONE", "PROBE_LOOP_TWO", "PROBE_PARAM_ONE"},
+            "a key reached through a loop variable or a parameter was dropped",
+        )
+
+        opaque = pathlib.Path(self.tempdir.name) / "probe_opaque.py"
+        opaque.write_text(
+            "import os\n"
+            "def read(prefix):\n"
+            '    return os.environ.get(prefix + "_SUFFIX")\n',
+            encoding="utf-8",
+        )
+        read, unresolved = _env_vars_read_by(opaque)
+        self.assertEqual(read, set())
+        self.assertEqual(
+            len(unresolved),
+            1,
+            "a computed env key must be reported, not silently dropped: "
+            f"{unresolved}",
+        )
+
+    def test_env_enumeration_sees_reads_through_a_copy_of_the_environment(self) -> None:
+        """`env = os.environ.copy()` then `env.get(K)` is an environment read.
+
+        Both guarded modules make that copy to build a subprocess environment.
+        A walker matching only `os.environ` reports no read for a key taken
+        from the copy, so the prefix check clears a variable it never saw.
+        """
+        source = pathlib.Path(self.tempdir.name) / "probe_copy.py"
+        source.write_text(
+            "import os\n"
+            "def build():\n"
+            "    env = os.environ.copy()\n"
+            '    env.get("PROBE_COPY_GET")\n'
+            '    return env["PROBE_COPY_INDEX"]\n'
+            "def build_dict():\n"
+            "    other = dict(os.environ)\n"
+            '    return other.get("PROBE_DICT_GET")\n',
+            encoding="utf-8",
+        )
+        read, unresolved = _env_vars_read_by(source)
+        self.assertEqual(unresolved, [])
+        self.assertEqual(
+            read,
+            {"PROBE_COPY_GET", "PROBE_COPY_INDEX", "PROBE_DICT_GET"},
+            "a key read from a copy of the environment was dropped",
+        )
+
+    def test_parameter_resolution_handles_keywords_and_ignores_methods(self) -> None:
+        """The three ways parameter resolution used to be wrong.
+
+        A keyword call site vanished; a same-named METHOD call was attributed
+        to the free function, inventing a key the module never reads; and a
+        non-constant call site left the parameter looking fully resolved from
+        the other call sites.
+        """
+        source = pathlib.Path(self.tempdir.name) / "probe_params.py"
+        source.write_text(
+            "import os\n"
+            "def by_keyword(name):\n"
+            "    return os.environ.get(name)\n"
+            'by_keyword(name="PROBE_KEYWORD")\n'
+            "def only_a_method(name):\n"
+            "    return os.environ.get(name)\n"
+            'client.only_a_method("PROBE_NOT_OURS")\n',
+            encoding="utf-8",
+        )
+        read, unresolved = _env_vars_read_by(source)
+        self.assertIn("PROBE_KEYWORD", read, "a keyword call site was dropped")
+        self.assertNotIn(
+            "PROBE_NOT_OURS",
+            read,
+            "a method call was attributed to the free function of the same "
+            "name, inventing a key the module never reads",
+        )
+        self.assertEqual(
+            len(unresolved),
+            1,
+            "only_a_method's parameter has no resolvable call site, so its "
+            f"read must be reported unresolved: {unresolved}",
+        )
+
+        poisoned = pathlib.Path(self.tempdir.name) / "probe_poison.py"
+        poisoned.write_text(
+            "import os\n"
+            "def lookup(name):\n"
+            "    return os.environ.get(name)\n"
+            'lookup("PROBE_CONSTANT")\n'
+            "lookup(computed)\n",
+            encoding="utf-8",
+        )
+        read, unresolved = _env_vars_read_by(poisoned)
+        self.assertEqual(
+            read,
+            set(),
+            "one non-constant call site makes the parameter unknowable; "
+            "answering from the constant sites reports a partial set as whole",
+        )
+        self.assertEqual(len(unresolved), 1)
+
+    def test_a_binding_does_not_leak_between_modules_or_functions(self) -> None:
+        """Two modules define `main(name)`; only one has a constant caller.
+
+        `main`, `split_repository` and `read_body` really are each defined in
+        more than one of the guarded scripts. With call sites bucketed by bare
+        name, the caller in one module answered the read in the other, and the
+        unresolved read it should have reported disappeared.
+        """
+        directory = pathlib.Path(self.tempdir.name)
+        first = directory / "probe_scope_a.py"
+        first.write_text(
+            "import os\n"
+            "def main(name):\n"
+            "    return os.environ.get(name)\n"
+            'main("PROBE_SCOPE_A")\n',
+            encoding="utf-8",
+        )
+        second = directory / "probe_scope_b.py"
+        second.write_text(
+            "import os\n"
+            "def main(name):\n"
+            "    return os.environ.get(name)\n",
+            encoding="utf-8",
+        )
+        read, unresolved = _env_vars_read_by(first, second)
+        self.assertEqual(read, {"PROBE_SCOPE_A"})
+        self.assertEqual(
+            len(unresolved),
+            1,
+            "probe_scope_b's main has no caller at all, so its read is "
+            f"unresolved; it was answered from the other module: {unresolved}",
+        )
+        self.assertTrue(
+            any("probe_scope_b" in entry for entry in unresolved),
+            f"the unresolved read must be attributed to probe_scope_b: {unresolved}",
+        )
 
     def test_fix_command_behavior(self) -> None:
         behavior = service.command_behavior("fix")
@@ -1591,9 +2101,9 @@ class PublishImportedIdentityTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
+        for key in [k for k in os.environ if k.startswith(MODULE_ENV_PREFIXES)]:
+            del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
-        os.environ.pop("GITHUB_INTAKE_IDENTITY_PUBLISHER", None)
-        os.environ.pop("GITHUB_INTAKE_APP_IDENTITY", None)
 
     def tearDown(self) -> None:
         os.environ.clear()

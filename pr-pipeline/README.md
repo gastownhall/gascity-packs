@@ -41,6 +41,22 @@ would be clobbered. It defaults to halt-at-branch-ready (`auto_push`
 absent → no push, no PR); pass `--var auto_push=true` to authorize the
 eligibility-gated push.
 
+## The standard the scorecard is enforcing
+
+[`docs/testing-across-the-layer-boundary.md`](docs/testing-across-the-layer-boundary.md)
+is the reasoning behind `mol-pr-review` and `mol-pr-ship`. One sentence of it
+decides most reviews:
+
+> A fix's test must fail on the unfixed **live build** and pass on the fixed
+> live build, with the fix as the only difference.
+
+It covers the test-tier ladder (and why a bug that reproduces only against
+stubs has not been reproduced), the fidelity claim every stub owes the PR body,
+the two mutations a test has to survive, the probe-not-a-city answer for
+environment-specific bugs, and the dolt / beads / gascity / packs layer map that
+decides which layer owns a given bug. Read it before filing a bug against a
+layer you do not own.
+
 ## Scope
 
 This pack is the **author side** — planning, building, and shipping the
@@ -127,6 +143,11 @@ gc sling api-server/polecat mol-pr-start --formula --var issue=1234
 ```
 pr-pipeline/
 ├── pack.toml
+├── docs/
+│   └── testing-across-the-layer-boundary.md   the review standard, the
+│                                              test-tier ladder, and the
+│                                              dolt/beads/gascity/packs
+│                                              layer map
 ├── formulas/
 │   ├── mol-pr-start.formula.toml          6-step planner
 │   ├── mol-pr-blast-radius.formula.toml   5-step impact mapper
