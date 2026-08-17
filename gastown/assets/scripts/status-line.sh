@@ -7,7 +7,7 @@
 # Counts are cached with a short TTL so tmux's frequent refresh does not query
 # Beads on every render across every agent. TTL override:
 # GC_STATUSLINE_TTL (seconds). Cache directory override:
-# GC_STATUSLINE_CACHE_DIR.
+# GC_STATUSLINE_CACHE_DIR. Bound override: GC_STATUSLINE_BOUND (seconds).
 
 agent="$1"
 city="${2:-${GC_CITY:-${GT_ROOT:-${GC_DIR:-}}}}"
@@ -17,12 +17,62 @@ if [ -n "$city" ] && [ -d "$city" ]; then
     cd "$city" 2>/dev/null || true
 fi
 
+bound_secs="${GC_STATUSLINE_BOUND:-2}"
+case "$bound_secs" in ''|*[!0-9]*) bound_secs=2 ;; esac
+
+# Poll finely where sleep takes a fraction, so the common case — a command that
+# answers promptly — is not padded out to a whole second on every refresh.
+if sleep 0.1 2>/dev/null; then
+    poll_int=0.1
+    poll_max=$((bound_secs * 10))
+else
+    poll_int=1
+    poll_max="$bound_secs"
+fi
+
+# One scratch dir per invocation, cleaned on any ordinary exit, so bounded
+# output never accumulates in TMPDIR.
+rb_dir=$(mktemp -d "${TMPDIR:-/tmp}/gc-statusline-rb.XXXXXX" 2>/dev/null) || rb_dir=
+[ -n "$rb_dir" ] && trap 'rm -rf "$rb_dir" 2>/dev/null' EXIT HUP INT TERM
+
+# Bound a command in wall-clock time and in process-group scope.
+#
+# Two failure modes this must survive, both observed on the fleet:
+#   1. timeout(1) ships with GNU coreutils and is absent on macOS, so a
+#      timeout-only bound degrades silently to no bound at all.
+#   2. Work the command backgrounds outlives a bound placed on the direct
+#      child. It also inherits our stdout, so a caller reading through a pipe
+#      blocks long after the bound expired while the child orphans to init.
+#
+# The command therefore runs in its own process group (set -m) writing to a
+# file rather than to the caller's pipe, and the whole group is signalled on
+# expiry — and swept even after a clean exit, because a command can return
+# promptly and still leave backgrounded work behind.
 run_bounded() {
-    if command -v timeout >/dev/null 2>&1; then
-        timeout 2s "$@"
-    else
-        "$@"
+    [ -n "$rb_dir" ] || return 0
+    _rb_out="$rb_dir/out"
+    : > "$_rb_out" 2>/dev/null || return 0
+
+    set -m 2>/dev/null
+    "$@" >"$_rb_out" 2>/dev/null &
+    _rb_pid=$!
+    set +m 2>/dev/null
+
+    _rb_polls=0
+    while [ "$_rb_polls" -lt "$poll_max" ] && kill -0 "$_rb_pid" 2>/dev/null; do
+        sleep "$poll_int"
+        _rb_polls=$((_rb_polls + 1))
+    done
+
+    if kill -0 "$_rb_pid" 2>/dev/null; then
+        kill -TERM -- "-$_rb_pid" 2>/dev/null
+        sleep "$poll_int"
+        kill -KILL -- "-$_rb_pid" 2>/dev/null
     fi
+    wait "$_rb_pid" 2>/dev/null
+    kill -KILL -- "-$_rb_pid" 2>/dev/null
+
+    cat "$_rb_out" 2>/dev/null
 }
 
 json_array_count() {
