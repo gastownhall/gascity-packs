@@ -322,6 +322,18 @@ class WaiverKeyingTest(unittest.TestCase):
     that drifts fails as the wrong thing. What is under test here is not which
     findings are waived; it is that a report of exactly the waived pairs passes
     at any line numbers, and that one more or one fewer does not.
+
+    KNOWN GAP, left open deliberately. "One fewer" is exercised through
+    `partial_sections`, which covers the tolerated sections only. The universal
+    section's all-present rule lives in
+    `test_every_universal_waiver_entry_is_still_reported`, which needs a real
+    gc, so on a machine without one that rule is unexercised. It is not the
+    rule that broke main -- a universal entry going missing means the upstream
+    linter fixed something, which is loud and expected, where a tolerated
+    section rotting one entry at a time is silent. Raised by the cross-family
+    review at head d40a901 and recorded rather than fixed, because closing it
+    means a second synthetic path for a rule the live test already covers in
+    CI.
     """
 
     def pack_report(self, keys: Counter[str], first_line: int = 1) -> dict:
