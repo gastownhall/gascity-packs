@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import io
 import json
 import urllib.parse
@@ -20,54 +21,189 @@ import github_intake_service as service
 # these so a test never inherits the developer's live city; the guard test
 # in GitHubIntakeServiceTests re-derives the variable list from the module
 # source and fails if a new read falls outside the prefixes.
-# GC_*/GITHUB_INTAKE_* are the variables the pack READS; the guard test
-# below enumerates those from the module AST and fails if one escapes these
-# prefixes. GH_*/GIT_* are stripped for a second reason the guard does not
-# cover: gh_env_for_repo and push_branch_with_installation_token build their
-# subprocess environment with os.environ.copy(), so a developer's ambient
-# GH_TOKEN, GH_HOST or GIT_CONFIG_* rides into the `gh` and `git` calls these
-# tests exercise. Stripping more than the guard requires is deliberate.
-MODULE_ENV_PREFIXES = ("GC_", "GITHUB_INTAKE_", "GH_", "GIT_")
+# GC_*/GITHUB_* are the variables the pack READS; the guard test below
+# enumerates those from the module AST and fails if one escapes these
+# prefixes. GITHUB_ is deliberately the whole namespace rather than
+# GITHUB_INTAKE_: app_config_from_env loops over ENV_APP_FIELDS and reads
+# eleven GITHUB_APP_* / GITHUB_WEBHOOK_SECRET / GITHUB_INSTALLATION_ID names,
+# so a developer holding real GitHub App credentials in their environment had
+# them merged into the fixture config by effective_config. GH_*/GIT_* are
+# stripped for a second reason the guard does not cover: gh_env_for_repo and
+# push_branch_with_installation_token build their subprocess environment with
+# os.environ.copy(), so an ambient GH_TOKEN, GH_HOST or GIT_CONFIG_* rides
+# into the `gh` and `git` calls these tests exercise. Stripping more than the
+# guard requires is deliberate.
+MODULE_ENV_PREFIXES = ("GC_", "GITHUB_", "GH_", "GIT_")
 
 
-def _env_vars_read_by(*module_paths: pathlib.Path) -> set[str]:
-    """Enumerate os.environ keys the given modules read, from their AST."""
-    import ast
+def _is_environ(node: ast.AST) -> bool:
+    # os.environ  |  environ (from os import environ)
+    if isinstance(node, ast.Attribute):
+        return node.attr == "environ" and isinstance(node.value, ast.Name)
+    return isinstance(node, ast.Name) and node.id == "environ"
 
-    def is_environ(node: ast.AST) -> bool:
-        # os.environ  |  environ (from os import environ)
-        if isinstance(node, ast.Attribute):
-            return node.attr == "environ" and isinstance(node.value, ast.Name)
-        return isinstance(node, ast.Name) and node.id == "environ"
+
+def _reads_environ(call: ast.Call) -> bool:
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    if func.attr in {"get", "setdefault", "pop"} and _is_environ(func.value):
+        return True
+    return (
+        func.attr == "getenv"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "os"
+    )
+
+
+def _module_level_dict_keys(tree: ast.Module) -> dict[str, list[str]]:
+    """Module-level `NAME = {"A": ...}` literals, string keys only.
+
+    A dict with any non-literal key is skipped rather than partially claimed:
+    knowing some of its keys is not knowing the set a loop over it produces.
+    """
+    mapping: dict[str, list[str]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Dict):
+            continue
+        keys = [
+            key.value
+            for key in node.value.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        ]
+        if len(keys) != len(node.value.keys):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                mapping[target.id] = keys
+    return mapping
+
+
+def _loop_variable_keys(
+    tree: ast.Module, dicts: dict[str, list[str]]
+) -> dict[str, list[str]]:
+    """Loop variables that range over a known module-level dict's keys.
+
+    Covers `for env_key, field in ENV_APP_FIELDS.items(): os.environ.get(env_key)`
+    in github_intake_common.py, which reads eleven GITHUB_APP_* / GITHUB_* names
+    that a constant-only walker cannot see.
+    """
+    bound: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.For):
+            continue
+        iterated = node.iter
+        source: str | None = None
+        if (
+            isinstance(iterated, ast.Call)
+            and isinstance(iterated.func, ast.Attribute)
+            and iterated.func.attr in {"items", "keys"}
+            and isinstance(iterated.func.value, ast.Name)
+        ):
+            source, kind = iterated.func.value.id, iterated.func.attr
+        elif isinstance(iterated, ast.Name):
+            source, kind = iterated.id, "keys"
+        if source is None or source not in dicts:
+            continue
+        target = node.target
+        if kind == "keys" and isinstance(target, ast.Name):
+            bound.setdefault(target.id, []).extend(dicts[source])
+        elif (
+            kind == "items"
+            and isinstance(target, ast.Tuple)
+            and target.elts
+            and isinstance(target.elts[0], ast.Name)
+        ):
+            bound.setdefault(target.elts[0].id, []).extend(dicts[source])
+    return bound
+
+
+def _parameter_keys(trees: dict[pathlib.Path, ast.Module]) -> dict[str, list[str]]:
+    """For `def f(name): os.environ.get(name)`, the constants callers pass.
+
+    Covers workspace_env_value in github_intake_common.py. Call sites are
+    collected across every module in the set, so a caller in a sibling script
+    counts.
+    """
+    call_args: dict[str, list[str]] = {}
+    for tree in trees.values():
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            name = (
+                func.id
+                if isinstance(func, ast.Name)
+                else func.attr
+                if isinstance(func, ast.Attribute)
+                else None
+            )
+            if name is None:
+                continue
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                call_args.setdefault(name, []).append(first.value)
+
+    bound: dict[str, list[str]] = {}
+    for tree in trees.values():
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            params = [arg.arg for arg in node.args.args]
+            if not params or node.name not in call_args:
+                continue
+            bound.setdefault(params[0], []).extend(call_args[node.name])
+    return bound
+
+
+def _env_vars_read_by(
+    *module_paths: pathlib.Path,
+) -> tuple[set[str], list[str]]:
+    """os.environ keys the given modules read, plus reads we could not resolve.
+
+    A key read through a variable is resolved from the two shapes this pack
+    actually uses (a loop over a module-level dict, and a function parameter
+    filled by constant call sites). Anything else is returned as unresolved
+    rather than dropped, because a read the enumeration cannot see is exactly
+    the leak the guard exists to catch.
+    """
+    trees = {
+        path: ast.parse(path.read_text(encoding="utf-8")) for path in module_paths
+    }
+
+    resolvable: dict[str, list[str]] = {}
+    for tree in trees.values():
+        for variable, keys in _loop_variable_keys(
+            tree, _module_level_dict_keys(tree)
+        ).items():
+            resolvable.setdefault(variable, []).extend(keys)
+    for variable, keys in _parameter_keys(trees).items():
+        resolvable.setdefault(variable, []).extend(keys)
 
     found: set[str] = set()
-    for path in module_paths:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+    unresolved: list[str] = []
+
+    def record(path: pathlib.Path, node: ast.AST, key: ast.expr) -> None:
+        if isinstance(key, ast.Constant):
+            if isinstance(key.value, str):
+                found.add(key.value)
+            return
+        if isinstance(key, ast.Name) and key.id in resolvable:
+            found.update(resolvable[key.id])
+            return
+        unresolved.append(
+            f"{path.name}:{getattr(node, 'lineno', '?')}: "
+            "os.environ read with a key this enumeration cannot resolve"
+        )
+
+    for path, tree in trees.items():
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and node.args:
-                func = node.func
-                if isinstance(func, ast.Attribute) and isinstance(
-                    node.args[0], ast.Constant
-                ):
-                    reads_env = (
-                        func.attr in {"get", "setdefault", "pop"}
-                        and is_environ(func.value)
-                    ) or (
-                        func.attr == "getenv"
-                        and isinstance(func.value, ast.Name)
-                        and func.value.id == "os"
-                    )
-                    value = node.args[0].value
-                    if reads_env and isinstance(value, str):
-                        found.add(value)
-            if (
-                isinstance(node, ast.Subscript)
-                and is_environ(node.value)
-                and isinstance(node.slice, ast.Constant)
-                and isinstance(node.slice.value, str)
-            ):
-                found.add(node.slice.value)
-    return found
+            if isinstance(node, ast.Call) and node.args and _reads_environ(node):
+                record(path, node, node.args[0])
+            elif isinstance(node, ast.Subscript) and _is_environ(node.value):
+                record(path, node, node.slice)
+
+    return found, unresolved
 
 
 class DummyWebhookHandler:
@@ -117,8 +253,17 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         # outside these prefixes would silently reintroduce the ambient
         # leak with every test still green.
         scripts = pathlib.Path(__file__).resolve().parents[1] / "scripts"
-        read = _env_vars_read_by(*sorted(scripts.glob("*.py")))
+        read, unresolved = _env_vars_read_by(*sorted(scripts.glob("*.py")))
         self.assertTrue(read, "AST enumeration found no env reads at all")
+        # An unresolvable read is reported before the prefix check, because a
+        # variable the walker cannot see reads as "covered" either way.
+        self.assertEqual(
+            unresolved,
+            [],
+            "these os.environ reads use a key shape the enumeration does not "
+            "model, so they are neither covered nor cleared; teach "
+            "_env_vars_read_by the shape:\n  " + "\n  ".join(unresolved),
+        )
         uncovered = sorted(
             name for name in read if not name.startswith(MODULE_ENV_PREFIXES)
         )
@@ -127,6 +272,52 @@ class GitHubIntakeServiceTests(unittest.TestCase):
             [],
             "these variables are read by the pack but not stripped in setUp; "
             "add their prefix to MODULE_ENV_PREFIXES",
+        )
+
+    def test_env_enumeration_sees_reads_made_through_a_variable(self) -> None:
+        """Mutation control for the enumeration itself.
+
+        The previous walker only recorded a key when it was a literal at the
+        call site, so `for k in SOME_DICT: os.environ.get(k)` read as no env
+        access at all. Eleven GitHub App credential variables were read that
+        way and reported as covered. Both rails are asserted here: the shapes
+        the pack uses must resolve, and a shape the walker does not model must
+        surface rather than vanish.
+        """
+        source = pathlib.Path(self.tempdir.name) / "probe_module.py"
+        source.write_text(
+            "import os\n"
+            'FIELDS = {"PROBE_LOOP_ONE": "a", "PROBE_LOOP_TWO": "b"}\n'
+            "def by_loop():\n"
+            "    for key, _field in FIELDS.items():\n"
+            "        os.environ.get(key)\n"
+            "def by_param(name):\n"
+            "    return os.environ.get(name)\n"
+            'by_param("PROBE_PARAM_ONE")\n',
+            encoding="utf-8",
+        )
+        read, unresolved = _env_vars_read_by(source)
+        self.assertEqual(unresolved, [], "these shapes are modelled and must resolve")
+        self.assertEqual(
+            read,
+            {"PROBE_LOOP_ONE", "PROBE_LOOP_TWO", "PROBE_PARAM_ONE"},
+            "a key reached through a loop variable or a parameter was dropped",
+        )
+
+        opaque = pathlib.Path(self.tempdir.name) / "probe_opaque.py"
+        opaque.write_text(
+            "import os\n"
+            "def read(prefix):\n"
+            '    return os.environ.get(prefix + "_SUFFIX")\n',
+            encoding="utf-8",
+        )
+        read, unresolved = _env_vars_read_by(opaque)
+        self.assertEqual(read, set())
+        self.assertEqual(
+            len(unresolved),
+            1,
+            "a computed env key must be reported, not silently dropped: "
+            f"{unresolved}",
         )
 
     def test_fix_command_behavior(self) -> None:
