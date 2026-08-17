@@ -117,13 +117,19 @@ def observed_findings(gc_bin: str) -> Counter[str]:
     Paths come back absolute, so they are made relative to the pack directory:
     a finding key must be identical on a contributor's machine and on a runner.
 
-    The line number is deliberately NOT part of the key. It was, for one day,
-    and #265 moved the mayor prompt's rig-routing table without changing a
-    single diagnostic -- same file, same message, same count of two of them
-    where the table had four -- and every open PR in the repo inherited a red
-    main. A guard keyed on position reports edits. What is left still fails on
-    a new path, a new message, or an extra occurrence, because these are
-    Counters: three identical waiver lines waive exactly three findings.
+    The line number is deliberately NOT part of the key. It was, for one day.
+    #265 rewrote the mayor prompt's rig-routing table -- four rows collapsed
+    into one generic row, so the same unknown-flag diagnostic for `--rig`
+    moved from lines 118-121 to lines 23 and 114, four occurrences down to two.
+    Under a line-keyed waiver that read as two brand-new findings plus a
+    partially-reported version section, and every open PR in the repo
+    inherited a red main.
+
+    A guard keyed on position reports edits. Keyed on path and message it
+    reports findings, and the count is still load-bearing, because these are
+    Counters: three identical waiver lines waive exactly three findings and a
+    fourth fails. What survives: a new path, a new message, an extra
+    occurrence. What no longer fails: the same finding at a different line.
     """
     proc = subprocess.run(
         [gc_bin, "lint", PACK, "--json"],
@@ -161,8 +167,20 @@ def observed_findings(gc_bin: str) -> Counter[str]:
             f"gc lint reported on pack {reported!r}, not {PACK!r}"
         )
 
+    return findings_from_pack_report(packs[0])
+
+
+def findings_from_pack_report(pack_report: dict) -> Counter[str]:
+    """Normalize one pack's diagnostics into the keyed, counted form.
+
+    Split out from the subprocess call so the normalization has tests that do
+    not need a gc on PATH. Which gc is installed decides which sections of the
+    waiver are even reachable -- a post-5220 build emits none of `pre-5220` --
+    so without this the largest section of the waiver is exercised by no test
+    a contributor can run.
+    """
     findings: Counter[str] = Counter()
-    for diag in packs[0].get("diagnostics") or []:
+    for diag in pack_report.get("diagnostics") or []:
         path = Path(diag.get("path", ""))
         try:
             rel = path.relative_to(PACK_DIR)
@@ -277,3 +295,106 @@ class GastownLintFindingsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WaiverKeyingTest(unittest.TestCase):
+    """The keying properties, over synthetic reports, with no gc required.
+
+    The tests above can only see what the installed gc emits, and a post-5220
+    build emits none of the `pre-5220` section -- so on a contributor's machine
+    the twenty entries that broke main are read by nothing. These build the
+    report instead of running for it.
+
+    The synthetic reports are DERIVED FROM the waiver rather than restating it.
+    Restating it would put the same twenty lines in two files, where the copy
+    that drifts fails as the wrong thing. What is under test here is not which
+    findings are waived; it is that a report of exactly the waived pairs passes
+    at any line numbers, and that one more or one fewer does not.
+    """
+
+    def pack_report(self, keys: Counter[str], first_line: int = 1) -> dict:
+        """A gc-shaped pack report for these path/message pairs.
+
+        Line numbers ascend and are otherwise arbitrary, which is the point:
+        nothing downstream may depend on them. Paths are made absolute the way
+        gc emits them, so the relative-path step is exercised too.
+        """
+        diagnostics = []
+        line = first_line
+        for key, count in sorted(keys.items()):
+            rel, _, message = key.partition(": ")
+            for _ in range(count):
+                diagnostics.append(
+                    {
+                        "severity": "error",
+                        "path": str(PACK_DIR / rel),
+                        "line": line,
+                        "message": message,
+                    }
+                )
+                line += 7
+        return {"name": PACK, "ok": False, "diagnostics": diagnostics}
+
+    def all_waived(self) -> Counter[str]:
+        sections = waived_findings()
+        total: Counter[str] = Counter()
+        for entries in sections.values():
+            total += entries
+        return total
+
+    def test_the_same_findings_at_different_lines_are_the_same_findings(self) -> None:
+        """The regression that produced this file. Two line-disjoint reports of
+        the same diagnostics must be indistinguishable."""
+        waived = self.all_waived()
+        low = findings_from_pack_report(self.pack_report(waived, first_line=1))
+        high = findings_from_pack_report(self.pack_report(waived, first_line=9000))
+        self.assertEqual(low, high)
+        self.assertEqual(low, waived)
+        self.assertFalse(low - waived)
+
+    def test_repeated_pairs_keep_their_count(self) -> None:
+        """Dropping the line number must not collapse duplicates into one.
+
+        The mayor prompt legitimately carries the identical diagnostic twice
+        and the refinery prompt carries one four times, so a set here would
+        waive an unbounded number of them.
+        """
+        waived = self.all_waived()
+        repeated = {key: n for key, n in waived.items() if n > 1}
+        self.assertTrue(
+            repeated, "no waived pair repeats; this test is no longer meaningful"
+        )
+        observed = findings_from_pack_report(self.pack_report(waived))
+        for key, n in repeated.items():
+            self.assertEqual(observed[key], n, key)
+
+    def test_one_more_occurrence_of_a_waived_pair_is_a_new_finding(self) -> None:
+        """What replaces line sensitivity. A fourth of something waived three
+        times has to survive subtraction."""
+        waived = self.all_waived()
+        target = max(waived, key=lambda k: (waived[k], k))
+        extra = Counter(waived)
+        extra[target] += 1
+        observed = findings_from_pack_report(self.pack_report(extra))
+        self.assertEqual((observed - waived), Counter({target: 1}))
+
+    def test_a_tolerated_section_reported_short_by_one_is_partial(self) -> None:
+        """The all-present-or-all-absent rule, exercised without a v1.4.1 gc."""
+        sections = waived_findings()
+        for name in TOLERATED_SECTIONS:
+            entries = sections[name]
+            with self.subTest(section=name):
+                self.assertTrue(entries, f"section {name} is empty")
+                # One OCCURRENCE, not one key: `del` here would withhold all
+                # three of the deacon entry at once, which is a differently
+                # shaped failure and renders with a count suffix.
+                short = Counter(entries)
+                dropped = sorted(short)[0]
+                short[dropped] -= 1
+                observed = findings_from_pack_report(
+                    self.pack_report(sections[UNIVERSAL] + short)
+                )
+                self.assertTrue(
+                    entries & observed, "the section must be partially present"
+                )
+                self.assertEqual(render(entries - observed), [dropped])
