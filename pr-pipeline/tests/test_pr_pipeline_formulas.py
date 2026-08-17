@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import pathlib
+import sys
 import tomllib
 import unittest
+
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts")
+)
+
+from formula_compiler_requirement import declares_graph_compiler  # noqa: E402
 
 
 PACK_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -30,10 +37,13 @@ class MolPrFromIssueVarBindingTests(unittest.TestCase):
         # The supported declaration is [requires] formula_compiler; the legacy
         # `contract = "graph.v2"` is deprecated and warned on by `gc doctor`.
         # Assert the requirement, not the spelling, so the pack's own suite
-        # does not enforce the deprecated form.
+        # does not enforce the deprecated form -- and evaluate the constraint
+        # rather than checking the key is non-empty, since `">=1.0.0"` and a
+        # typo both survive a presence check while selecting the v1 compiler.
         self.assertTrue(
-            str(self.data.get("requires", {}).get("formula_compiler", "")).strip(),
-            "mol-pr-from-issue must declare a formula_compiler requirement",
+            declares_graph_compiler(dict(self.data)),
+            "mol-pr-from-issue must declare a formula_compiler constraint that "
+            'selects the v2 graph compiler, e.g. ">=2.0.0"',
         )
 
     def test_github_issue_input_is_named_issue_number(self) -> None:

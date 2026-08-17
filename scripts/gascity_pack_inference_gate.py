@@ -28,6 +28,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+# Sibling module. Resolved explicitly rather than relying on sys.path[0], which
+# is the script's directory only when this file is run as a script.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from formula_compiler_requirement import declares_graph_compiler  # noqa: E402
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REVIEW_GATE = "review"
@@ -2608,13 +2614,15 @@ def declares_graph_v2_compiler(payload: Mapping[str, Any]) -> bool:
     warning per formula in every consuming city. The two are equivalent at the
     compiler, so this gate checks the requirement rather than the spelling and
     stops the packs repo enforcing the form its own doctor warns about.
+
+    The constraint is evaluated the way `UsesGraphCompiler` evaluates it, not
+    tested for non-emptiness: this gate routes real inference work, and a
+    formula declaring `">=1.0.0"` or a typo would otherwise be dispatched as a
+    graph-v2 formula that no compiler will treat as one. An unparseable
+    constraint raises rather than reading as False, so it surfaces as a gate
+    error instead of a silent non-selection.
     """
-    if str(payload.get("contract", "")).strip().lower() == "graph.v2":
-        return True
-    requires = payload.get("requires")
-    if not isinstance(requires, Mapping):
-        return False
-    return bool(str(requires.get("formula_compiler", "")).strip())
+    return declares_graph_compiler(dict(payload))
 
 
 def validate_methodology_build_formula(

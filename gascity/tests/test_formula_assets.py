@@ -5,9 +5,16 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
+
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts")
+)
+
+from formula_compiler_requirement import declares_graph_compiler  # noqa: E402
 
 
 # Prefixes the gascity pack's shell commands read from the environment.
@@ -512,11 +519,13 @@ def declares_graph_v2(data: dict) -> bool:
     Asserting the property rather than the spelling is deliberate. The previous
     assertions here keyed on `contract` alone, which meant the pack's own suite
     enforced the deprecated form and went red on the migration away from it.
+
+    The constraint is evaluated, not tested for non-emptiness. A presence check
+    accepts `">=1.0.0"` and `"banana"`, neither of which selects the v2
+    compiler, so it would agree with a formula that opted into nothing. The
+    rule lives once, in `scripts/formula_compiler_requirement.py`.
     """
-    if str(data.get("contract", "")).strip().lower() == "graph.v2":
-        return True
-    requires = data.get("requires") or {}
-    return bool(str(requires.get("formula_compiler", "")).strip())
+    return declares_graph_compiler(dict(data))
 
 
 def load_formula(root: pathlib.Path, name: str) -> dict:
