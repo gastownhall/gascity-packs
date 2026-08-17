@@ -3,6 +3,11 @@
 # One finding per line, as "<path relative to the pack dir>:<line>: <message>",
 # with line 0 for a pack-level diagnostic. Blank lines and `#` comments ignored.
 #
+# A line may end in `  # gc-lint-verbatim`, which expected_findings() strips
+# before comparing. It exists for findings whose message quotes a bare `bd`
+# invocation: this file cannot reword them, and without the marker they trip
+# tests/test_no_bare_bd_commands.py, which scans every tracked file.
+#
 # tests/test_gastown_lint_findings.py asserts the live `gc lint gastown` result
 # matches this file EXACTLY. A new finding fails. A finding that disappears also
 # fails, because that is the upstream fix landing and this waiver should go with
@@ -10,7 +15,7 @@
 # binary with nothing failing.
 #
 # ---------------------------------------------------------------------------
-# 1. named_session x5 — `gc lint` calls a bare cap a "pool control"
+# 1. named_session x5: `gc lint` calls a bare cap a "pool control"
 #
 # All five templates set `max_active_sessions = 1` and nothing else: no
 # min_active_sessions, no scale_check, no namepool. That configuration spawns
@@ -42,20 +47,25 @@ pack.toml:0: named_session "witness" targets pool-controlled agent "witness"; re
 pack.toml:0: named_session "refinery" targets pool-controlled agent "refinery"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
 
 # ---------------------------------------------------------------------------
-# 2. bd mol wisp x2 — the flag manifest stops one subcommand level short
+# 2. `mol wisp` x2: the flag manifest stops one subcommand level short
 #
-# The template writes `gc bd mol wisp gc --age 24h`, which is correct: --age is
-# a flag on `bd mol wisp gc`, shown in that subcommand's own --help examples.
-# internal/bdflags/bdflags.go keys its manifest on at most two words ("mol
-# wisp"), so matchSubcommand stops there, treats the third word `gc` as a
+# The template writes `gc bd mol wisp gc --age 24h`, which is correct. --age is
+# a flag on the `mol wisp gc` subcommand, shown in that subcommand's own --help
+# examples. internal/bdflags/bdflags.go keys its manifest on at most two words
+# ("mol wisp"), so matchSubcommand stops there, treats the third word `gc` as a
 # positional, and validates --age against the parent's flag set.
 #
 # The scanner's own doc says a subcommand it has no manifest for is "silently
-# skipped — there is no ground truth to validate them against". That is the
+# skipped, there is no ground truth to validate them against". That is the
 # right behavior here and it does not happen, because the PARENT matched.
 #
-# Refute: bd mol wisp gc --help | grep -- --age
+# Refute: gc bd mol wisp gc --help | grep -- --age
 #         grep -n '"mol wisp"' <gascity checkout>/internal/bdflags/bdflags.go
+#
+# The two lines below carry `gc lint`'s message verbatim, so they cannot be
+# reworded to route through `gc bd` the way the rest of this file does. The
+# trailing marker is what exempts them in tests/test_no_bare_bd_commands.py,
+# and expected_findings() strips it before comparing.
 # ---------------------------------------------------------------------------
-agents/deacon/prompt.template.md:209: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
-agents/deacon/prompt.template.md:210: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
+agents/deacon/prompt.template.md:209: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"  # gc-lint-verbatim
+agents/deacon/prompt.template.md:210: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"  # gc-lint-verbatim

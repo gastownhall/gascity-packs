@@ -150,6 +150,18 @@ GC_BD_ARGV_TAIL_LINES = {
     'assert "bd show fi-root --json" in args_path.read_text(encoding="utf-8")  # gc-bd-argv-tail',
 }
 
+# `gc lint`'s own diagnostic text, pinned so gastown cannot drift. These are
+# not instructions to run anything; they are the linter's output quoted back at
+# it, and the guard that reads them compares byte for byte, so they cannot be
+# reworded to say `gc bd`. Same three conditions as the fixture above: exact
+# file, explicit marker in the line, and the line in an exact set.
+GC_LINT_VERBATIM_MARKER = "gc-lint-verbatim"
+GC_LINT_VERBATIM_FILE = Path("tests/gastown_lint_upstream_defects.txt")
+GC_LINT_VERBATIM_LINES = {
+    'agents/deacon/prompt.template.md:209: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"  # gc-lint-verbatim',
+    'agents/deacon/prompt.template.md:210: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"  # gc-lint-verbatim',
+}
+
 
 def tracked_files() -> list[Path]:
     result = subprocess.run(
@@ -211,6 +223,14 @@ def intentional_gc_bd_argv_tail(relative: Path, line: str) -> bool:
     )
 
 
+def intentional_gc_lint_verbatim(relative: Path, line: str) -> bool:
+    return (
+        relative == GC_LINT_VERBATIM_FILE
+        and GC_LINT_VERBATIM_MARKER in line
+        and line.strip() in GC_LINT_VERBATIM_LINES
+    )
+
+
 def bare_bd_violations(path: Path, text: str) -> list[str]:
     violations = []
     relative = path.relative_to(REPO_ROOT)
@@ -220,6 +240,8 @@ def bare_bd_violations(path: Path, text: str) -> list[str]:
                 if gc_routes_bd(line, match.start()):
                     continue
                 if intentional_gc_bd_argv_tail(relative, line):
+                    continue
+                if intentional_gc_lint_verbatim(relative, line):
                     continue
                 violations.append(f"{relative}:{line_number}: {line.strip()}")
         if BARE_BD_GO_EXEC.search(line):

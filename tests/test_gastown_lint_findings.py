@@ -20,10 +20,10 @@ pack, so it is not a fixture reimplementation of the linter and it cannot drift
 from it. What it cannot do is check a flag `gc lint` does not know about --
 internal/bdflags/bdflags.go carries a manifest of bd subcommands, and anything
 outside that manifest is skipped by design. It is also line-oriented and does
-not join backslash-continued shell lines, so the three multi-line `bd create
+not join backslash-continued shell lines, so the three multi-line `gc bd create
 ... \\ --labels=warrant` invocations fixed alongside this test were never
 reported by it at all. A green here means "no NEW finding of a kind gc lint can
-see", not "every bd invocation in the pack is valid".
+see", not "every bead command in the pack is valid".
 """
 
 from __future__ import annotations
@@ -40,6 +40,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACK = "gastown"
 PACK_DIR = REPO_ROOT / PACK
 WAIVER = Path(__file__).with_name("gastown_lint_upstream_defects.txt")
+
+# A waived finding whose message quotes a bare `bd` invocation cannot be
+# reworded, because it has to match gc's output byte for byte. It carries this
+# marker so tests/test_no_bare_bd_commands.py can exempt exactly those lines
+# rather than the whole file; stripped here before comparing.
+VERBATIM_MARKER = "  # gc-lint-verbatim"
 
 
 def gc_binary() -> str | None:
@@ -66,6 +72,9 @@ def expected_findings() -> Counter[str]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+        marker = VERBATIM_MARKER.strip()
+        if line.endswith(marker):
+            line = line[: -len(marker)].rstrip()
         findings[line] += 1
     return findings
 
