@@ -516,15 +516,15 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
         "formula": data["formula"],
         "description": data.get("description", ""),
         "version": data.get("version", 1),
-        "contract": data.get("contract", ""),
+        "requires": data.get("requires", {}),
         "target_required": data.get("target_required"),
         "vars": {},
         "steps": [],
     }
     for parent in parents:
         parent_data = resolve_formula(root, parent, (*seen, name))
-        if not merged["contract"]:
-            merged["contract"] = parent_data.get("contract", "")
+        if not merged["requires"]:
+            merged["requires"] = parent_data.get("requires", {})
         if merged["target_required"] is None:
             merged["target_required"] = parent_data.get("target_required")
         merged["vars"].update(parent_data.get("vars", {}))
@@ -549,15 +549,15 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
         "formula": data["formula"],
         "description": data.get("description", ""),
         "version": data.get("version", 1),
-        "contract": data.get("contract", ""),
+        "requires": data.get("requires", {}),
         "target_required": data.get("target_required"),
         "vars": {},
         "steps": [],
     }
     for parent in parents:
         parent_data = resolve_formula_from_dirs(formula_dirs, parent, (*seen, name))
-        if not merged["contract"]:
-            merged["contract"] = parent_data.get("contract", "")
+        if not merged["requires"]:
+            merged["requires"] = parent_data.get("requires", {})
         if merged["target_required"] is None:
             merged["target_required"] = parent_data.get("target_required")
         merged["vars"].update(parent_data.get("vars", {}))
@@ -739,7 +739,7 @@ class FormulaAssetTests(unittest.TestCase):
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             name = path.name.removesuffix(".formula.toml")
             self.assertEqual(data["formula"], name)
-            self.assertEqual(data["contract"], "graph.v2")
+            self.assertEqual(data["requires"]["formula_compiler"], ">=2.0.0")
             var_names = set(data.get("vars", {}))
             self.assertNotIn("issue", var_names)
             self.assertNotIn("bead_id", var_names)
@@ -1334,7 +1334,7 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(formula=name):
                 data = load_formula(root, name)
                 self.assertEqual(data["formula"], name)
-                self.assertEqual(data["contract"], "graph.v2")
+                self.assertEqual(data["requires"]["formula_compiler"], ">=2.0.0")
                 self.assertTrue(data["internal"])
                 self.assertNotIn("catalog", data)
                 self.assertNotIn("extends", data)
@@ -1917,7 +1917,7 @@ class FormulaAssetTests(unittest.TestCase):
         root = pathlib.Path(__file__).resolve().parents[1]
         review = load_formula(root, "build-basic-review")
         self.assertEqual(review["type"], "expansion")
-        self.assertEqual(review["contract"], "graph.v2")
+        self.assertEqual(review["requires"]["formula_compiler"], ">=2.0.0")
         self.assertEqual(
             review["vars"]["implementation_target"]["default"],
             "gc.implementation-worker",
@@ -2370,7 +2370,7 @@ class FormulaAssetTests(unittest.TestCase):
                     expansion = load_formula(pack_root, expansion_name)
                     self.assertEqual(expansion["formula"], expansion_name)
                     self.assertEqual(expansion["type"], "expansion")
-                    self.assertEqual(expansion["contract"], "graph.v2")
+                    self.assertEqual(expansion["requires"]["formula_compiler"], ">=2.0.0")
 
                     nodes = formula_nodes(expansion)
                     self.assertGreaterEqual(len(nodes), 4)
@@ -2397,7 +2397,7 @@ class FormulaAssetTests(unittest.TestCase):
             item_formula = load_formula(pack_root, expected["implementation_formula"])
             with self.subTest(pack=pack_name, item_formula=expected["implementation_formula"]):
                 self.assertEqual(item_formula["formula"], expected["implementation_formula"])
-                self.assertEqual(item_formula["contract"], "graph.v2")
+                self.assertEqual(item_formula["requires"]["formula_compiler"], ">=2.0.0")
                 self.assertEqual(item_formula["extends"], ["do-work"])
                 self.assertNotEqual(item_formula.get("type"), "expansion")
                 self.assertTrue(item_formula["target_required"])
@@ -2473,7 +2473,7 @@ class FormulaAssetTests(unittest.TestCase):
             shared_item_formula = load_formula(pack_root, expected["implementation_item_formula"])
             with self.subTest(pack=pack_name, item_formula=expected["implementation_item_formula"]):
                 self.assertEqual(shared_item_formula["formula"], expected["implementation_item_formula"])
-                self.assertEqual(shared_item_formula["contract"], "graph.v2")
+                self.assertEqual(shared_item_formula["requires"]["formula_compiler"], ">=2.0.0")
                 self.assertEqual(shared_item_formula["extends"], ["do-work-item"])
                 self.assertNotEqual(shared_item_formula.get("type"), "expansion")
                 self.assertTrue(shared_item_formula["target_required"])
@@ -3743,7 +3743,7 @@ class FormulaAssetTests(unittest.TestCase):
         for name, (url_var, optional_vars) in expected.items():
             with self.subTest(name=name):
                 data = resolve_formula(root, name)
-                self.assertEqual(data["contract"], "graph.v2")
+                self.assertEqual(data["requires"]["formula_compiler"], ">=2.0.0")
                 self.assertFalse(data["target_required"])
                 self.assertTrue(data["vars"][url_var]["required"])
                 self.assertEqual(set(data["vars"]) - {url_var}, optional_vars)
