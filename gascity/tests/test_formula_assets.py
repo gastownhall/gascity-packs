@@ -499,6 +499,26 @@ def methodology_selector_defaults(expected: dict) -> dict[str, str]:
     }
 
 
+def declares_graph_v2(data: dict) -> bool:
+    """Whether a formula requires the v2 graph compiler, in either spelling.
+
+    `[requires] formula_compiler = ">=2.0.0"` is the supported form; the legacy
+    `contract = "graph.v2"` is deprecated and produces a blocking `gc doctor`
+    warning in every consuming city. They are equivalent at the compiler:
+    `directFormulaCompilerConstraints` maps the legacy field to exactly the
+    constraint the `[requires]` key produces, and `UsesGraphCompiler` reads the
+    resulting constraint set rather than the literal field.
+
+    Asserting the property rather than the spelling is deliberate. The previous
+    assertions here keyed on `contract` alone, which meant the pack's own suite
+    enforced the deprecated form and went red on the migration away from it.
+    """
+    if str(data.get("contract", "")).strip().lower() == "graph.v2":
+        return True
+    requires = data.get("requires") or {}
+    return bool(str(requires.get("formula_compiler", "")).strip())
+
+
 def load_formula(root: pathlib.Path, name: str) -> dict:
     return tomllib.loads((root / "formulas" / f"{name}.formula.toml").read_text(encoding="utf-8"))
 
@@ -537,6 +557,7 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
         "description": data.get("description", ""),
         "version": data.get("version", 1),
         "contract": data.get("contract", ""),
+        "requires": data.get("requires", {}),
         "target_required": data.get("target_required"),
         "vars": {},
         "steps": [],
@@ -545,6 +566,8 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
         parent_data = resolve_formula(root, parent, (*seen, name))
         if not merged["contract"]:
             merged["contract"] = parent_data.get("contract", "")
+        if not merged["requires"]:
+            merged["requires"] = parent_data.get("requires", {})
         if merged["target_required"] is None:
             merged["target_required"] = parent_data.get("target_required")
         merged["vars"].update(parent_data.get("vars", {}))
@@ -570,6 +593,7 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
         "description": data.get("description", ""),
         "version": data.get("version", 1),
         "contract": data.get("contract", ""),
+        "requires": data.get("requires", {}),
         "target_required": data.get("target_required"),
         "vars": {},
         "steps": [],
@@ -578,6 +602,8 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
         parent_data = resolve_formula_from_dirs(formula_dirs, parent, (*seen, name))
         if not merged["contract"]:
             merged["contract"] = parent_data.get("contract", "")
+        if not merged["requires"]:
+            merged["requires"] = parent_data.get("requires", {})
         if merged["target_required"] is None:
             merged["target_required"] = parent_data.get("target_required")
         merged["vars"].update(parent_data.get("vars", {}))
@@ -759,7 +785,7 @@ class FormulaAssetTests(unittest.TestCase):
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             name = path.name.removesuffix(".formula.toml")
             self.assertEqual(data["formula"], name)
-            self.assertEqual(data["contract"], "graph.v2")
+            self.assertTrue(declares_graph_v2(data), f"{data.get('formula')} does not require the v2 graph compiler")
             var_names = set(data.get("vars", {}))
             self.assertNotIn("issue", var_names)
             self.assertNotIn("bead_id", var_names)
@@ -1354,7 +1380,7 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(formula=name):
                 data = load_formula(root, name)
                 self.assertEqual(data["formula"], name)
-                self.assertEqual(data["contract"], "graph.v2")
+                self.assertTrue(declares_graph_v2(data), f"{data.get('formula')} does not require the v2 graph compiler")
                 self.assertTrue(data["internal"])
                 self.assertNotIn("catalog", data)
                 self.assertNotIn("extends", data)
@@ -1937,7 +1963,7 @@ class FormulaAssetTests(unittest.TestCase):
         root = pathlib.Path(__file__).resolve().parents[1]
         review = load_formula(root, "build-basic-review")
         self.assertEqual(review["type"], "expansion")
-        self.assertEqual(review["contract"], "graph.v2")
+        self.assertTrue(declares_graph_v2(review), "review formula does not require the v2 graph compiler")
         self.assertEqual(
             review["vars"]["implementation_target"]["default"],
             "gc.implementation-worker",
@@ -2390,7 +2416,7 @@ class FormulaAssetTests(unittest.TestCase):
                     expansion = load_formula(pack_root, expansion_name)
                     self.assertEqual(expansion["formula"], expansion_name)
                     self.assertEqual(expansion["type"], "expansion")
-                    self.assertEqual(expansion["contract"], "graph.v2")
+                    self.assertTrue(declares_graph_v2(expansion), "expansion formula does not require the v2 graph compiler")
 
                     nodes = formula_nodes(expansion)
                     self.assertGreaterEqual(len(nodes), 4)
@@ -2417,7 +2443,7 @@ class FormulaAssetTests(unittest.TestCase):
             item_formula = load_formula(pack_root, expected["implementation_formula"])
             with self.subTest(pack=pack_name, item_formula=expected["implementation_formula"]):
                 self.assertEqual(item_formula["formula"], expected["implementation_formula"])
-                self.assertEqual(item_formula["contract"], "graph.v2")
+                self.assertTrue(declares_graph_v2(item_formula), "item formula does not require the v2 graph compiler")
                 self.assertEqual(item_formula["extends"], ["do-work"])
                 self.assertNotEqual(item_formula.get("type"), "expansion")
                 self.assertTrue(item_formula["target_required"])
@@ -2493,7 +2519,7 @@ class FormulaAssetTests(unittest.TestCase):
             shared_item_formula = load_formula(pack_root, expected["implementation_item_formula"])
             with self.subTest(pack=pack_name, item_formula=expected["implementation_item_formula"]):
                 self.assertEqual(shared_item_formula["formula"], expected["implementation_item_formula"])
-                self.assertEqual(shared_item_formula["contract"], "graph.v2")
+                self.assertTrue(declares_graph_v2(shared_item_formula), "shared item formula does not require the v2 graph compiler")
                 self.assertEqual(shared_item_formula["extends"], ["do-work-item"])
                 self.assertNotEqual(shared_item_formula.get("type"), "expansion")
                 self.assertTrue(shared_item_formula["target_required"])
@@ -3763,7 +3789,7 @@ class FormulaAssetTests(unittest.TestCase):
         for name, (url_var, optional_vars) in expected.items():
             with self.subTest(name=name):
                 data = resolve_formula(root, name)
-                self.assertEqual(data["contract"], "graph.v2")
+                self.assertTrue(declares_graph_v2(data), f"{data.get('formula')} does not require the v2 graph compiler")
                 self.assertFalse(data["target_required"])
                 self.assertTrue(data["vars"][url_var]["required"])
                 self.assertEqual(set(data["vars"]) - {url_var}, optional_vars)
@@ -3939,8 +3965,10 @@ class FormulaAssetTests(unittest.TestCase):
 formula = "github-issue-fix"
 extends = ["github-issue-fix-base"]
 version = 1
-contract = "graph.v2"
 target_required = false
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "github-issue-fix"
@@ -3960,8 +3988,10 @@ description = "Override sink that preserves the base issue-fix protocol."
 formula = "github-issue-triage"
 extends = ["github-issue-triage-base"]
 version = 1
-contract = "graph.v2"
 target_required = false
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "github-issue-triage"

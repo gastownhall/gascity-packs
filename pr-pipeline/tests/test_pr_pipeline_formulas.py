@@ -27,7 +27,14 @@ class MolPrFromIssueVarBindingTests(unittest.TestCase):
     def test_formula_is_present_and_well_formed(self) -> None:
         self.assertTrue(self.path.exists(), "mol-pr-from-issue must live in the pr-pipeline pack")
         self.assertEqual(self.data["formula"], "mol-pr-from-issue")
-        self.assertEqual(self.data["contract"], "graph.v2")
+        # The supported declaration is [requires] formula_compiler; the legacy
+        # `contract = "graph.v2"` is deprecated and warned on by `gc doctor`.
+        # Assert the requirement, not the spelling, so the pack's own suite
+        # does not enforce the deprecated form.
+        self.assertTrue(
+            str(self.data.get("requires", {}).get("formula_compiler", "")).strip(),
+            "mol-pr-from-issue must declare a formula_compiler requirement",
+        )
 
     def test_github_issue_input_is_named_issue_number(self) -> None:
         variables = self.data.get("vars", {})

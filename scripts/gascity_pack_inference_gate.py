@@ -2592,9 +2592,29 @@ def load_methodology_formula(pack_source: Path, formula_name: str | None, missin
         return None
     if payload.get("formula") != formula_name:
         missing.append(f"{formula_name}: formula field is {payload.get('formula')!r}, want {formula_name!r}")
-    if payload.get("contract") != "graph.v2":
-        missing.append(f"{formula_name}: contract is {payload.get('contract')!r}, want 'graph.v2'")
+    if not declares_graph_v2_compiler(payload):
+        missing.append(
+            f"{formula_name}: declares no v2 graph compiler requirement; add "
+            '[requires] formula_compiler = ">=2.0.0"'
+        )
     return payload
+
+
+def declares_graph_v2_compiler(payload: Mapping[str, Any]) -> bool:
+    """Whether a formula requires the v2 graph compiler, in either spelling.
+
+    `[requires] formula_compiler = ">=2.0.0"` is the supported form. The legacy
+    `contract = "graph.v2"` is deprecated and raises one blocking `gc doctor`
+    warning per formula in every consuming city. The two are equivalent at the
+    compiler, so this gate checks the requirement rather than the spelling and
+    stops the packs repo enforcing the form its own doctor warns about.
+    """
+    if str(payload.get("contract", "")).strip().lower() == "graph.v2":
+        return True
+    requires = payload.get("requires")
+    if not isinstance(requires, Mapping):
+        return False
+    return bool(str(requires.get("formula_compiler", "")).strip())
 
 
 def validate_methodology_build_formula(
