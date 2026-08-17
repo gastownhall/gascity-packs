@@ -17,8 +17,32 @@ sys.path.insert(
 from formula_compiler_requirement import (  # noqa: E402
     declared_constraints,
     declares_graph_compiler,
+    declares_graph_compiler_from,
     joined_constraints,
 )
+
+# Where a resolved formula carries its accumulated constraint LIST. gc keeps
+# the same list in the unexported `Formula.compilerRequirementSources` and
+# evaluates it one constraint at a time; the comma-joined
+# `Requires.FormulaCompiler` string is what gets serialised, and re-reading
+# that string as a single conjunctive constraint gives a different answer (see
+# `declares_graph_compiler_from`). This key is likewise not part of the TOML.
+CONSTRAINTS_KEY = "_compiler_constraints"
+
+
+def constraints_of(data: dict) -> list[str]:
+    """The constraint list to evaluate for `data`, resolved or straight off disk.
+
+    Known and deliberate: a diamond `extends` chain appends the shared
+    grandparent's constraint twice, here and in gc. Neither implementation
+    deduplicates, and `declaresGraphCompilerRequirement` is an OR over the list,
+    so the repeat cannot change the answer. Left as parity rather than
+    "fixed" on this side, which would make the mirror wrong in a new way.
+    """
+    accumulated = data.get(CONSTRAINTS_KEY)
+    if isinstance(accumulated, list):
+        return list(accumulated)
+    return list(declared_constraints(data))
 
 
 def accumulated_requires(constraints: list[str], fallback: dict) -> dict:
@@ -547,8 +571,11 @@ def declares_graph_v2(data: dict) -> bool:
     accepts `">=1.0.0"` and `"banana"`, neither of which selects the v2
     compiler, so it would agree with a formula that opted into nothing. The
     rule lives once, in `scripts/formula_compiler_requirement.py`.
+
+    Constraints are evaluated separately, never as one joined string, because
+    that is what `declaresGraphCompilerRequirement` does.
     """
-    return declares_graph_compiler(dict(data))
+    return declares_graph_compiler_from(constraints_of(dict(data)))
 
 
 def load_formula(root: pathlib.Path, name: str) -> dict:
@@ -597,7 +624,7 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
     constraints = list(declared_constraints(data))
     for parent in parents:
         parent_data = resolve_formula(root, parent, (*seen, name))
-        constraints.extend(declared_constraints(parent_data))
+        constraints.extend(constraints_of(parent_data))
         if not merged["contract"]:
             merged["contract"] = parent_data.get("contract", "")
         if merged["target_required"] is None:
@@ -606,6 +633,7 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
         merged["steps"].extend(parent_data.get("steps", []))
 
     merged["requires"] = accumulated_requires(constraints, merged["requires"])
+    merged[CONSTRAINTS_KEY] = constraints
     merged["vars"].update(data.get("vars", {}))
     merged["steps"] = merged_steps(merged["steps"], data.get("steps", []))
     if data.get("description"):
@@ -634,7 +662,7 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
     constraints = list(declared_constraints(data))
     for parent in parents:
         parent_data = resolve_formula_from_dirs(formula_dirs, parent, (*seen, name))
-        constraints.extend(declared_constraints(parent_data))
+        constraints.extend(constraints_of(parent_data))
         if not merged["contract"]:
             merged["contract"] = parent_data.get("contract", "")
         if merged["target_required"] is None:
@@ -643,6 +671,7 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
         merged["steps"].extend(parent_data.get("steps", []))
 
     merged["requires"] = accumulated_requires(constraints, merged["requires"])
+    merged[CONSTRAINTS_KEY] = constraints
     merged["vars"].update(data.get("vars", {}))
     merged["steps"] = merged_steps(merged["steps"], data.get("steps", []))
     if data.get("description"):
@@ -5413,10 +5442,6 @@ description = "Override sink that writes the base triage report contract."
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ExtendsConstraintAccumulationTests(unittest.TestCase):
     """gc unions formula_compiler constraints down the extends chain.
 
@@ -5468,6 +5493,67 @@ class ExtendsConstraintAccumulationTests(unittest.TestCase):
             "resolver go red for a reason that is not true of the formula",
         )
 
+    def test_constraints_are_evaluated_separately_not_as_one_conjunction(self) -> None:
+        """The joined string is a serialisation; gc evaluates the LIST.
+
+        `declaresGraphCompilerRequirement` walks `compilerRequirementSources`
+        and returns true as soon as one constraint excludes 1.0.0 and admits
+        2.0.0. Here the child qualifies on its own, so gc compiles this chain
+        as graph-v2 -- while the joined `">=2.0.0, !=2.0.0"` admits neither
+        capability and reads as v1. The pair is not a conflict either: their
+        intersection above 2.0.0 is non-empty, so
+        `validateFormulaCompilerConstraintSet` accepts it.
+        """
+        self.write(
+            "split-base",
+            'formula = "split-base"\n[requires]\nformula_compiler = "!=2.0.0"\n',
+        )
+        self.write(
+            "split-child",
+            'formula = "split-child"\nextends = ["split-base"]\n'
+            '[requires]\nformula_compiler = ">=2.0.0"\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "split-child")
+        self.assertEqual(
+            resolved["requires"]["formula_compiler"], ">=2.0.0, !=2.0.0"
+        )
+        self.assertFalse(
+            declares_graph_compiler(
+                {"requires": {"formula_compiler": ">=2.0.0, !=2.0.0"}}
+            ),
+            "re-reading the joined string as one constraint is the failure "
+            "mode this test exists to pin; if it starts agreeing, the "
+            "assertion below stops proving anything",
+        )
+        self.assertTrue(
+            declares_graph_v2(resolved),
+            "the child constraint alone selects the v2 compiler, so gc does "
+            "too; a resolver that only kept the joined string cannot see that",
+        )
+
+    def test_a_grandparents_constraint_is_not_flattened_by_the_middle_link(self) -> None:
+        """Depth-2: the middle formula must pass a LIST up, not its joined string."""
+        self.write(
+            "deep-base",
+            'formula = "deep-base"\n[requires]\nformula_compiler = "!=2.0.0"\n',
+        )
+        self.write(
+            "deep-mid",
+            'formula = "deep-mid"\nextends = ["deep-base"]\n'
+            '[requires]\nformula_compiler = ">=2.0.0"\n',
+        )
+        self.write(
+            "deep-child",
+            'formula = "deep-child"\nextends = ["deep-mid"]\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "deep-child")
+        self.assertEqual(
+            resolved[CONSTRAINTS_KEY],
+            [">=2.0.0", "!=2.0.0"],
+            "the middle formula collapsed its chain into one string",
+        )
+        self.assertTrue(declares_graph_v2(resolved))
+
     def test_a_chain_declaring_nothing_keeps_an_empty_requires(self) -> None:
         self.write("plain-base", 'formula = "plain-base"\n')
         self.write(
@@ -5489,3 +5575,7 @@ class ExtendsConstraintAccumulationTests(unittest.TestCase):
         )
         resolved = resolve_formula_from_dirs([self.formulas], "legacy-child")
         self.assertTrue(declares_graph_v2(resolved))
+
+
+if __name__ == "__main__":
+    unittest.main()

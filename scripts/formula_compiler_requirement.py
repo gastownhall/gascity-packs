@@ -17,7 +17,10 @@ Masterminds semver, whose grammar is larger than what this repository's packs
 actually use; rather than half-implement it and silently mis-evaluate an
 unsupported form, `parse_constraint` raises `UnsupportedConstraint`. A pack that
 introduces a new constraint shape makes the guard fail loudly, which is the
-outcome we want over a guard that quietly guesses.
+outcome we want over a guard that quietly guesses. Prereleases are refused for
+that reason rather than accepted-and-truncated, and the whole expression is
+parsed before any of it is evaluated, so an unsupported group cannot be skipped
+because an earlier group already decided the answer.
 
 Refute the rule this file encodes:
 
@@ -37,8 +40,21 @@ from typing import Any, Iterable
 DEFAULT_COMPILER_CAPABILITY = (1, 0, 0)
 CURRENT_COMPILER_CAPABILITY = (2, 0, 0)
 
-_VERSION = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+].*)?$")
-_COMPARATOR = re.compile(r"^(>=|<=|!=|==|=|>|<|\^|~)?\s*(.+)$")
+# Build metadata is ignored for precedence by the semver spec and by
+# Masterminds, so it is accepted and dropped. A PRERELEASE is not: Masterminds
+# orders `1.0.0-alpha` below stable `1.0.0`, and a three-integer tuple cannot
+# represent that. Modelling it as `1.0.0` inverts `>1.0.0-alpha` (Python would
+# exclude 1.0.0 and admit 2.0.0, selecting graph-v2; Go admits 1.0.0 and does
+# not), so the form is refused rather than approximated.
+_VERSION = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\+[0-9A-Za-z.\-]+)?$")
+
+# One comparator clause. The version must start with a digit, so `banana` is a
+# parse failure rather than a silently-false clause, and the comparator may be
+# separated from its version by whitespace (`>= 2.0.0`), which Masterminds
+# accepts.
+_CLAUSE = re.compile(r"(>=|<=|!=|==|=|>|<|\^|~)?\s*([0-9][^\s,]*)")
+
+_SEPARATORS = ", \t"
 
 
 class UnsupportedConstraint(ValueError):
@@ -46,7 +62,18 @@ class UnsupportedConstraint(ValueError):
 
 
 def _version(text: str) -> tuple[int, int, int]:
-    match = _VERSION.match(text.strip())
+    stripped = text.strip()
+    # `_VERSION` already refuses a prerelease, so this branch changes the
+    # message and not the outcome. It is here because the message is the whole
+    # value: "not a version: '1.0.0-alpha'" reads like a typo and invites
+    # widening the regex, which is the truncating evaluator this module refuses
+    # to be. Removing this branch alone is not the regression; widening
+    # `_VERSION` to admit `-alpha` is, and `ConstraintEvaluatorTest` catches it.
+    if "-" in stripped.split("+", 1)[0]:
+        raise UnsupportedConstraint(
+            f"prerelease versions are not modelled: {text!r}"
+        )
+    match = _VERSION.match(stripped)
     if not match:
         raise UnsupportedConstraint(f"not a version: {text!r}")
     major, minor, patch = match.groups()
@@ -80,26 +107,48 @@ def _satisfies_one(comparator: str, bound: tuple[int, int, int],
     raise UnsupportedConstraint(f"unsupported comparator: {comparator!r}")
 
 
-def satisfies(constraint: str, candidate: tuple[int, int, int]) -> bool:
-    """Does `candidate` satisfy `constraint`? Raises on forms we do not model."""
+def parse_constraint(constraint: str) -> list[list[tuple[str, tuple[int, int, int]]]]:
+    """`constraint` as OR groups of AND clauses. Raises on forms we do not model.
+
+    The WHOLE expression is parsed before anything is evaluated. Parsing
+    lazily, group by group, made the fail-closed promise conditional on the
+    candidate version: `"<=1.0.0 || banana"` would return False for 1.0.0
+    without ever looking at `banana`, while `semver.NewConstraint` rejects the
+    entire expression. An evaluator that is only strict on some inputs is the
+    guard-agrees-with-a-typo shape this module exists to avoid.
+    """
     if not isinstance(constraint, str) or not constraint.strip():
         raise UnsupportedConstraint("empty constraint")
 
-    for group in constraint.split("||"):  # OR across groups
-        clauses = [c for c in re.split(r"[,\s]+", group.strip()) if c]
+    groups: list[list[tuple[str, tuple[int, int, int]]]] = []
+    for group in constraint.split("||"):
+        text = group.strip()
+        clauses: list[tuple[str, tuple[int, int, int]]] = []
+        position = 0
+        while position < len(text):
+            if text[position] in _SEPARATORS:
+                position += 1
+                continue
+            match = _CLAUSE.match(text, position)
+            if not match:
+                raise UnsupportedConstraint(
+                    f"not a comparator clause at offset {position} of {group!r}"
+                )
+            comparator, bound = match.groups()
+            clauses.append((comparator or "", _version(bound)))
+            position = match.end()
         if not clauses:
             raise UnsupportedConstraint(f"empty constraint group in {constraint!r}")
-        if all(_clause_holds(clause, candidate) for clause in clauses):
-            return True
-    return False
+        groups.append(clauses)
+    return groups
 
 
-def _clause_holds(clause: str, candidate: tuple[int, int, int]) -> bool:
-    match = _COMPARATOR.match(clause)
-    if not match:
-        raise UnsupportedConstraint(f"not a comparator clause: {clause!r}")
-    comparator, bound = match.groups()
-    return _satisfies_one(comparator or "", _version(bound), candidate)
+def satisfies(constraint: str, candidate: tuple[int, int, int]) -> bool:
+    """Does `candidate` satisfy `constraint`? Raises on forms we do not model."""
+    return any(
+        all(_satisfies_one(comparator, bound, candidate) for comparator, bound in group)
+        for group in parse_constraint(constraint)
+    )
 
 
 def _declared_constraints(formula: dict[str, Any]) -> list[str]:
@@ -141,7 +190,12 @@ def joined_constraints(constraints: Iterable[str]) -> str:
     then overwrites `merged.Requires` with the comma-joined set, so a child
     declaring `">=1.0.0"` over a parent declaring `">=2.0.0"` still compiles as
     graph-v2. A resolver that merges the field child-wins reaches the opposite
-    answer. The comma is conjunctive, which `satisfies` already models.
+    answer.
+
+    This is the SERIALISED form only. gc keeps the constraints separate in
+    `compilerRequirementSources` and evaluates them one at a time; re-reading
+    this joined string as a single conjunctive constraint is not equivalent.
+    Decide with `declares_graph_compiler_from(constraints)`.
     """
     return ", ".join(
         constraint.strip()
@@ -150,13 +204,36 @@ def joined_constraints(constraints: Iterable[str]) -> str:
     )
 
 
-def declares_graph_compiler(formula: dict[str, Any]) -> bool:
-    """The packs-side mirror of Gas City's `UsesGraphCompiler`."""
-    for constraint in _declared_constraints(formula):
+def declares_graph_compiler_from(constraints: Iterable[str]) -> bool:
+    """`UsesGraphCompiler` over an already-accumulated constraint LIST.
+
+    Take the list, never a joined string. `declaresGraphCompilerRequirement`
+    walks `compilerRequirementSources` and returns true as soon as ONE
+    constraint excludes 1.0.0 and admits 2.0.0; the comma-joined
+    `Requires.FormulaCompiler` string is a serialisation of that list, not the
+    thing evaluated. The two disagree: a child requiring `>=2.0.0` under a
+    parent requiring `!=2.0.0` is graph-v2 in Go (the child qualifies on its
+    own), and not graph-v2 when the pair is re-read as the single conjunctive
+    constraint `">=2.0.0, !=2.0.0"`, which admits neither 1.0.0 nor 2.0.0.
+    """
+    for constraint in constraints:
         if (not satisfies(constraint, DEFAULT_COMPILER_CAPABILITY)
                 and satisfies(constraint, CURRENT_COMPILER_CAPABILITY)):
             return True
     return False
+
+
+def declares_graph_compiler(formula: dict[str, Any]) -> bool:
+    """The packs-side mirror of Gas City's `UsesGraphCompiler`.
+
+    For a formula read straight off disk, which is what every guard in this
+    repository does. `formulaCompilerConstraints` falls back to
+    `directFormulaCompilerConstraints` when nothing has been accumulated, so
+    the unresolved case is exactly `contract` plus `[requires]` as two
+    constraints. For a RESOLVED `extends` chain use
+    `declares_graph_compiler_from` with the accumulated list.
+    """
+    return declares_graph_compiler_from(_declared_constraints(formula))
 
 
 def formulas_declaring_graph_compiler(

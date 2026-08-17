@@ -17,12 +17,13 @@ Both rails are asserted. `test_no_deprecated_contract_declaration` is the deny
 check; `test_the_guard_has_something_to_check` is its discovery control, so a
 glob that stops matching cannot turn this file into a vacuous pass.
 
-The replacement floor is counted by **parsing** each formula and evaluating the
+The replacement set is derived by **parsing** each formula and evaluating the
 declared constraint the way the compiler does, not by grepping for the text
 `formula_compiler =`. A text match counts the key inside a comment, inside a
-formula's prose description, and when its value is `""` or `"banana"` — so the
-floor could hold at 87 while none of the 87 actually opted into the v2 compiler.
-The rule itself lives in `scripts/formula_compiler_requirement.py`.
+formula's prose description, and when its value is `""` or `"banana"`, so a
+grep-based check would agree with 87 formulas that opted into nothing. The rule
+itself lives in `scripts/formula_compiler_requirement.py`, and the expected set
+in `tests/graph_v2_formulas.txt`.
 """
 
 from __future__ import annotations
@@ -39,6 +40,8 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from formula_compiler_requirement import (  # noqa: E402
     UnsupportedConstraint,
     declares_graph_compiler,
+    declares_graph_compiler_from,
+    satisfies,
 )
 
 DEPRECATED = re.compile(r'^\s*contract\s*=\s*"graph\.v2"', re.MULTILINE)
@@ -46,10 +49,19 @@ DEPRECATED = re.compile(r'^\s*contract\s*=\s*"graph\.v2"', re.MULTILINE)
 # Below this, the enumeration has broken rather than the repo having shrunk.
 MINIMUM_FORMULAS = 50
 
-# 87 formulas declare a formula_compiler requirement that actually selects the
-# v2 compiler, as of 2026-08-17. Refute with:
-#   grep -rl 'formula_compiler' */formulas | wc -l
-MINIMUM_DECLARING = 87
+# The formulas that declare a constraint selecting the v2 compiler, as a SET.
+# A floor on the count cannot separate "one declaration removed, one formula
+# added" from "nothing changed", so the identities are pinned instead.
+DECLARING_FIXTURE = REPO_ROOT / "tests" / "graph_v2_formulas.txt"
+
+
+def expected_declaring() -> set[str]:
+    """The pinned set, from the fixture file."""
+    return {
+        line.strip()
+        for line in DECLARING_FIXTURE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    }
 
 
 def formula_files() -> list[pathlib.Path]:
@@ -92,9 +104,12 @@ class FormulaContractDeclarationTest(unittest.TestCase):
         A graph-v2 formula stripped of both forms does not fail to compile. It
         silently takes the v1 path (`isGraphWorkflow` returns false and
         `compile` skips the graph stages), losing graph validation and the
-        `gc.formula_contract` bead stamp with no error anywhere. This floor is
-        the cheapest guard against that regression: it cannot rise by accident,
-        and a drop means a declaration went away rather than being converted.
+        `gc.formula_contract` bead stamp with no error anywhere.
+
+        Named formulas, not a count. A floor of 87 holds while one formula
+        loses its declaration and an unrelated one gains it, which is the
+        realistic shape of the regression: a migration touches many files and
+        misses one. The fixture makes the miss a named diff.
         """
         declaring = []
         unparseable = []
@@ -118,14 +133,23 @@ class FormulaContractDeclarationTest(unittest.TestCase):
             "scripts/formula_compiler_requirement.py the constraint form:\n  "
             + "\n  ".join(unparseable),
         )
-        self.assertGreaterEqual(
-            len(declaring),
-            MINIMUM_DECLARING,
-            f"only {len(declaring)} formulas declare a formula_compiler "
-            f"requirement that selects the v2 compiler, down from the floor of "
-            f"{MINIMUM_DECLARING}; a declaration was removed rather than "
-            "converted. Raise this floor deliberately when formulas are added, "
-            "never to make it pass.",
+        found = {str(path.relative_to(REPO_ROOT)) for path in declaring}
+        expected = expected_declaring()
+        self.assertEqual(
+            sorted(expected - found),
+            [],
+            "these formulas are pinned in tests/graph_v2_formulas.txt as "
+            "requiring the v2 graph compiler and no longer declare it, so they "
+            "now compile down the v1 path with no error anywhere. Restore the "
+            "declaration; edit the fixture only when the formula was deleted "
+            "or genuinely stopped needing v2.",
+        )
+        self.assertEqual(
+            sorted(found - expected),
+            [],
+            "these formulas declare the v2 compiler and are not in "
+            "tests/graph_v2_formulas.txt. Add them, so the next removal is a "
+            "named diff rather than a count that still adds up.",
         )
 
     def test_the_count_rejects_a_constraint_that_selects_nothing(self) -> None:
@@ -146,6 +170,49 @@ class FormulaContractDeclarationTest(unittest.TestCase):
         self.assertTrue(declares_graph_compiler({"contract": "graph.v2"}))
         with self.assertRaises(UnsupportedConstraint):
             declares_graph_compiler({"requires": {"formula_compiler": "banana"}})
+
+
+class ConstraintEvaluatorTest(unittest.TestCase):
+    """The evaluator's own edges, where it can disagree with Masterminds.
+
+    Each of these is a way a hand-written mirror silently returns the opposite
+    answer to the Go it mirrors. They live here rather than in a comment
+    because the divergence is invisible in the packs' real formulas, which all
+    declare plain `">=2.0.0"` -- the guard would stay green through every one.
+    """
+
+    def test_a_prerelease_bound_is_refused_not_truncated(self) -> None:
+        # Dropping `-alpha` makes `>1.0.0-alpha` exclude 1.0.0 and admit 2.0.0,
+        # so the truncating version reports graph-v2. Masterminds orders
+        # stable 1.0.0 ABOVE 1.0.0-alpha, admits it, and reports v1.
+        with self.assertRaises(UnsupportedConstraint):
+            satisfies(">1.0.0-alpha", (1, 0, 0))
+        # Build metadata does not affect precedence and is accepted.
+        self.assertTrue(satisfies(">=2.0.0+build.7", (2, 0, 0)))
+
+    def test_an_unsupported_group_is_refused_even_when_an_earlier_one_answers(self) -> None:
+        # `semver.NewConstraint` rejects the whole expression. An evaluator
+        # that stops at the first satisfied group is strict only for the
+        # candidate versions that happen to reach the bad group.
+        with self.assertRaises(UnsupportedConstraint):
+            satisfies("<=1.0.0 || banana", (1, 0, 0))
+        self.assertTrue(satisfies(">=2.0.0 || >=3.0.0", (2, 0, 0)))
+
+    def test_whitespace_between_comparator_and_version_is_accepted(self) -> None:
+        # Masterminds accepts it, so refusing it would fail a valid pack.
+        self.assertTrue(satisfies(">= 2.0.0", (2, 0, 0)))
+        self.assertFalse(satisfies(">= 2.0.0", (1, 0, 0)))
+
+    def test_accumulated_constraints_are_evaluated_one_at_a_time(self) -> None:
+        # `declaresGraphCompilerRequirement` walks the constraint list and
+        # returns true on the first that qualifies. The comma-joined
+        # serialisation is conjunctive and reaches the opposite answer.
+        self.assertTrue(declares_graph_compiler_from([">=2.0.0", "!=2.0.0"]))
+        self.assertFalse(
+            declares_graph_compiler({"requires": {"formula_compiler": ">=2.0.0, !=2.0.0"}}),
+            "the joined form is the wrong thing to evaluate; if it starts "
+            "agreeing, the assertion above stops distinguishing anything",
+        )
 
 
 if __name__ == "__main__":
