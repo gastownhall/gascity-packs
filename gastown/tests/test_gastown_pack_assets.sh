@@ -216,6 +216,36 @@ if verify >= metadata:
 PY
 }
 
+test_refinery_rebase_fetches_metadata_branch_explicitly() {
+    local formula prompt rebase_block
+    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+    prompt="$GASTOWN/agents/refinery/prompt.template.md"
+
+    rebase_block=$(python3 - "$formula" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index('id = "rebase"')
+end = text.index('id = "run-tests"')
+print(text[start:end])
+PY
+)
+
+    [[ "$rebase_block" == *'+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}'* ]] ||
+        fail "refinery rebase must fetch metadata.branch independently of remote.origin.fetch"
+    [[ "$rebase_block" == *'+refs/heads/${TARGET}:refs/remotes/origin/${TARGET}'* ]] ||
+        fail "refinery rebase must fetch target independently of remote.origin.fetch"
+    [[ "$rebase_block" == *'STOP. Do not mutate bead state.'* ]] ||
+        fail "refinery rebase fetch failure must leave the work bead untouched"
+    [[ "$rebase_block" == *'git diff --name-only --diff-filter=U'* ]] ||
+        fail "refinery must reject only when rebase produced actual unmerged paths"
+    [[ "$rebase_block" == *'exit "$REBASE_STATUS"'* ]] ||
+        fail "refinery must preserve nonzero rebase status for conflict rejection flow"
+    [[ "$rebase_block" != *'git fetch --prune origin'* ]] ||
+        fail "refinery rebase must not rely on the clone's configured fetch refspec"
+    grep -F 'Fetch metadata branch and target' "$prompt" >/dev/null ||
+        fail "refinery prompt cheatsheet must teach explicit metadata-branch fetches"
+}
+
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
@@ -224,5 +254,6 @@ test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_refinery_rebase_fetches_metadata_branch_explicitly
 
 echo "gastown pack asset tests passed"

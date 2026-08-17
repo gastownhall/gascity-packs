@@ -316,7 +316,7 @@ alert the witness, not `gc mail send`.
 | Read work metadata | `gc bd show $WORK --json \| jq '.[0].metadata'` |
 | Set metadata field | `gc bd update $WORK --set-metadata key=value` |
 | Remove metadata field | `gc bd update $WORK --unset-metadata key` |
-| Fetch remote branches | `git fetch --prune origin` |
+| Fetch metadata branch and target | `git fetch origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" "+refs/heads/${TARGET}:refs/remotes/origin/${TARGET}"` |
 | Rebase on target | `git rebase origin/$TARGET` |
 | Fast-forward merge | `git merge --ff-only temp` |
 | Push merged changes | `git push origin $TARGET` |
