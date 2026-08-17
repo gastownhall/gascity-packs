@@ -63,13 +63,19 @@ phase = "vapor"
 # predicate (internal/formula/compile.go) is
 #   rootOnly := (!f.Pour && f.Phase == "vapor") || len(f.Steps) == 0
 # which keys only on pour and phase; the graph declaration form is never
-# consulted, so `contract = "graph.v2"` does not protect against it. Note the
-# failure is silent: RecipeHasReadySurface still returns true because RootOnly
-# itself satisfies it, so the pool sling is accepted and only the steps go
-# missing.
+# consulted, so declaring a compiler requirement does not protect against it.
+# Note the failure is silent: RecipeHasReadySurface still returns true because
+# RootOnly itself satisfies it, so the pool sling is accepted and only the
+# steps go missing.
 pour = true
 version = 1
-contract = "graph.v2"
+
+# The v2 compiler requirement, in the form gc reads today. This was
+# `contract = "graph.v2"`, which gc still honors and reports as deprecated in
+# `gc doctor` -- one `formula-requirements` warning in every city that imports
+# this pack.
+[requires]
+formula_compiler = ">=2.0.0"
 
 [vars]
 [vars.issue_number]
