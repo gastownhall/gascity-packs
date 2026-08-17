@@ -112,17 +112,42 @@ def _declared_constraints(formula: dict[str, Any]) -> list[str]:
     """
     constraints: list[str] = []
 
+    # Order mirrors `directFormulaCompilerConstraints`: contract, then
+    # [requires]. It does not change the outcome (the set is conjunctive) but
+    # keeps the two implementations comparable line for line.
+    contract = formula.get("contract")
+    if isinstance(contract, str) and contract.strip().lower() == "graph.v2":
+        constraints.append(">=2.0.0")
+
     requires = formula.get("requires")
     if isinstance(requires, dict):
         declared = requires.get("formula_compiler")
         if isinstance(declared, str) and declared.strip():
             constraints.append(declared.strip())
 
-    contract = formula.get("contract")
-    if isinstance(contract, str) and contract.strip().lower() == "graph.v2":
-        constraints.append(">=2.0.0")
-
     return constraints
+
+
+def declared_constraints(formula: dict[str, Any]) -> list[str]:
+    """The formula_compiler constraints one formula declares, in gc's order."""
+    return _declared_constraints(formula)
+
+
+def joined_constraints(constraints: Iterable[str]) -> str:
+    """Combine constraints the way `setFormulaCompilerConstraints` does.
+
+    gc does NOT let a child's `[requires]` replace its parents'. `Resolve`
+    accumulates `formulaCompilerConstraints` down the whole `extends` chain and
+    then overwrites `merged.Requires` with the comma-joined set, so a child
+    declaring `">=1.0.0"` over a parent declaring `">=2.0.0"` still compiles as
+    graph-v2. A resolver that merges the field child-wins reaches the opposite
+    answer. The comma is conjunctive, which `satisfies` already models.
+    """
+    return ", ".join(
+        constraint.strip()
+        for constraint in constraints
+        if isinstance(constraint, str) and constraint.strip()
+    )
 
 
 def declares_graph_compiler(formula: dict[str, Any]) -> bool:

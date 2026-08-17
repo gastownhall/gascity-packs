@@ -14,7 +14,30 @@ sys.path.insert(
     0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts")
 )
 
-from formula_compiler_requirement import declares_graph_compiler  # noqa: E402
+from formula_compiler_requirement import (  # noqa: E402
+    declared_constraints,
+    declares_graph_compiler,
+    joined_constraints,
+)
+
+
+def accumulated_requires(constraints: list[str], fallback: dict) -> dict:
+    """The `requires` table gc leaves on a resolved formula.
+
+    `Resolve` collects formula_compiler constraints from the child and every
+    parent, then overwrites `merged.Requires` with the comma-joined set
+    (`setFormulaCompilerConstraints`). A resolver that instead lets the child's
+    table win drops a parent's stricter constraint, so a child declaring
+    `">=1.0.0"` under a parent declaring `">=2.0.0"` reads as v1 here and
+    compiles as graph-v2 in gc.
+
+    With no constraints anywhere gc leaves `Requires` alone, so the child's own
+    table is returned unchanged.
+    """
+    joined = joined_constraints(constraints)
+    if not joined:
+        return fallback
+    return {"formula_compiler": joined}
 
 
 # Prefixes the gascity pack's shell commands read from the environment.
@@ -571,17 +594,18 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
         "vars": {},
         "steps": [],
     }
+    constraints = list(declared_constraints(data))
     for parent in parents:
         parent_data = resolve_formula(root, parent, (*seen, name))
+        constraints.extend(declared_constraints(parent_data))
         if not merged["contract"]:
             merged["contract"] = parent_data.get("contract", "")
-        if not merged["requires"]:
-            merged["requires"] = parent_data.get("requires", {})
         if merged["target_required"] is None:
             merged["target_required"] = parent_data.get("target_required")
         merged["vars"].update(parent_data.get("vars", {}))
         merged["steps"].extend(parent_data.get("steps", []))
 
+    merged["requires"] = accumulated_requires(constraints, merged["requires"])
     merged["vars"].update(data.get("vars", {}))
     merged["steps"] = merged_steps(merged["steps"], data.get("steps", []))
     if data.get("description"):
@@ -607,17 +631,18 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
         "vars": {},
         "steps": [],
     }
+    constraints = list(declared_constraints(data))
     for parent in parents:
         parent_data = resolve_formula_from_dirs(formula_dirs, parent, (*seen, name))
+        constraints.extend(declared_constraints(parent_data))
         if not merged["contract"]:
             merged["contract"] = parent_data.get("contract", "")
-        if not merged["requires"]:
-            merged["requires"] = parent_data.get("requires", {})
         if merged["target_required"] is None:
             merged["target_required"] = parent_data.get("target_required")
         merged["vars"].update(parent_data.get("vars", {}))
         merged["steps"].extend(parent_data.get("steps", []))
 
+    merged["requires"] = accumulated_requires(constraints, merged["requires"])
     merged["vars"].update(data.get("vars", {}))
     merged["steps"] = merged_steps(merged["steps"], data.get("steps", []))
     if data.get("description"):
@@ -5390,3 +5415,77 @@ description = "Override sink that writes the base triage report contract."
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExtendsConstraintAccumulationTests(unittest.TestCase):
+    """gc unions formula_compiler constraints down the extends chain.
+
+    `Resolve` in internal/formula/parser.go appends each parent's constraints
+    to the child's and then overwrites `merged.Requires` with the comma-joined
+    set. The resolvers in this file used to merge the `requires` table
+    child-wins, which reaches the opposite answer whenever a child declares its
+    own constraint over a parent's stricter one -- and every consumer of
+    `declares_graph_v2` on a resolved formula inherited that answer.
+
+    Refute the rule:
+      grep -n 'compilerConstraints = append' <gascity>/internal/formula/parser.go
+      grep -n 'func setFormulaCompilerConstraints' -A 12 \
+        <gascity>/internal/formula/requirements.go
+    """
+
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.formulas = pathlib.Path(self.tempdir.name)
+
+    def write(self, name: str, body: str) -> None:
+        (self.formulas / f"{name}.formula.toml").write_text(body, encoding="utf-8")
+
+    def test_a_parents_constraint_survives_a_looser_child_declaration(self) -> None:
+        self.write(
+            "probe-base",
+            'formula = "probe-base"\n'
+            "[requires]\n"
+            'formula_compiler = ">=2.0.0"\n',
+        )
+        self.write(
+            "probe-child",
+            'formula = "probe-child"\n'
+            'extends = ["probe-base"]\n'
+            "[requires]\n"
+            'formula_compiler = ">=1.0.0"\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "probe-child")
+        self.assertEqual(
+            resolved["requires"]["formula_compiler"],
+            ">=1.0.0, >=2.0.0",
+            "the parent's constraint was dropped; gc joins the whole chain",
+        )
+        self.assertTrue(
+            declares_graph_v2(resolved),
+            "gc compiles this as graph-v2 because the parent requires it; a "
+            "child-wins merge reports v1 and the assertions built on this "
+            "resolver go red for a reason that is not true of the formula",
+        )
+
+    def test_a_chain_declaring_nothing_keeps_an_empty_requires(self) -> None:
+        self.write("plain-base", 'formula = "plain-base"\n')
+        self.write(
+            "plain-child",
+            'formula = "plain-child"\nextends = ["plain-base"]\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "plain-child")
+        self.assertEqual(resolved["requires"], {})
+        self.assertFalse(declares_graph_v2(resolved))
+
+    def test_the_deprecated_contract_key_on_a_parent_also_carries(self) -> None:
+        self.write(
+            "legacy-base",
+            'formula = "legacy-base"\ncontract = "graph.v2"\n',
+        )
+        self.write(
+            "legacy-child",
+            'formula = "legacy-child"\nextends = ["legacy-base"]\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "legacy-child")
+        self.assertTrue(declares_graph_v2(resolved))
