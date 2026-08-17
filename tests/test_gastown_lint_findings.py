@@ -6,14 +6,22 @@ accumulated fourteen findings that nothing failed on: nine prompt templates and
 formulas telling agents to run bd flags that do not exist, and five pack-level
 diagnostics.
 
-Seven of those were real and are fixed. The other seven are defects in gc's own
+Seven of those were real and are fixed. The rest are defects in gc's own
 linter, enumerated with their gc-side cause in
 `tests/gastown_lint_upstream_defects.txt`.
 
-This test asserts the live result equals that file exactly, in both directions.
-A NEW finding fails, which is the regression this exists to catch. A finding
-that DISAPPEARS also fails, because that is the upstream fix landing and the
-waiver should be deleted in the same change rather than quietly outliving it.
+A NEW finding fails, which is the regression this exists to catch. A pinned
+finding that DISAPPEARS also fails, because that is the upstream fix landing
+and the waiver should be deleted in the same change rather than quietly
+outliving it.
+
+Which findings gc emits depends on which gc ran, and this test does not paper
+over that. `.github/workflows/ci.yml` installs `gc@latest`; twenty-two findings
+that a released gc reports were fixed on gascity main by 7724983de and are
+absent from a dev build. So the waiver file is sectioned: entries every gc
+reports are required, and a version-dependent section is tolerated but has to
+be wholly present or wholly absent. That is what the sections are for, and it
+is why the first run of this test in CI went red while it was green locally.
 
 Fidelity, and where it stops: this runs the real `gc lint` against the real
 pack, so it is not a fixture reimplementation of the linter and it cannot drift
@@ -41,11 +49,16 @@ PACK = "gastown"
 PACK_DIR = REPO_ROOT / PACK
 WAIVER = Path(__file__).with_name("gastown_lint_upstream_defects.txt")
 
-# A waived finding whose message quotes a bare `bd` invocation cannot be
-# reworded, because it has to match gc's output byte for byte. It carries this
-# marker so tests/test_no_bare_bd_commands.py can exempt exactly those lines
-# rather than the whole file; stripped here before comparing.
-VERBATIM_MARKER = "  # gc-lint-verbatim"
+SECTION_DIRECTIVE = "# @section:"
+UNIVERSAL = "universal"
+
+# The findings gc emits depend on which gc ran. `.github/workflows/ci.yml`
+# installs `gc@latest`; a contributor is as likely to have a build from main.
+# So the waiver file separates findings every gc reports from findings a
+# released gc reports and main no longer does, and this test holds each to the
+# assertion that is true of it. Collapsing the two would mean either CI red on
+# an upstream release, or a real regression waved through on a dev build.
+TOLERATED_SECTIONS = ("pre-5220",)
 
 
 def gc_binary() -> str | None:
@@ -61,22 +74,34 @@ def gc_binary() -> str | None:
     return shutil.which("gc")
 
 
-def expected_findings() -> Counter[str]:
-    """The pinned findings, read off disk rather than inlined here.
+def waived_findings() -> dict[str, Counter[str]]:
+    """The pinned findings by section, read off disk rather than inlined here.
 
-    A Counter, not a set: two diagnostics that normalize to the same key are
-    two findings, and collapsing them would let a duplicate arrive unnoticed.
+    Counters, not sets: two diagnostics that normalize to the same key are two
+    findings, and collapsing them would let a duplicate arrive unnoticed.
+
+    An unknown section name is an error rather than a silent extra bucket. A
+    typo there would otherwise waive its lines against nothing and read as a
+    clean pass.
     """
-    findings: Counter[str] = Counter()
+    sections: dict[str, Counter[str]] = {
+        name: Counter() for name in (UNIVERSAL, *TOLERATED_SECTIONS)
+    }
+    current = UNIVERSAL
     for raw in WAIVER.read_text().splitlines():
         line = raw.strip()
+        if line.startswith(SECTION_DIRECTIVE):
+            current = line[len(SECTION_DIRECTIVE) :].strip()
+            if current not in sections:
+                raise AssertionError(
+                    f"{WAIVER.name} names section {current!r}, which this test "
+                    f"does not know. Known: {sorted(sections)}."
+                )
+            continue
         if not line or line.startswith("#"):
             continue
-        marker = VERBATIM_MARKER.strip()
-        if line.endswith(marker):
-            line = line[: -len(marker)].rstrip()
-        findings[line] += 1
-    return findings
+        sections[current][line] += 1
+    return sections
 
 
 # gc lint exits 0 when a pack is clean and 1 when it has findings. Both are
@@ -155,11 +180,18 @@ class GastownLintFindingsTest(unittest.TestCase):
                 "ci.yml installs one for the shared-role-prompt step."
             )
 
-    def test_gastown_lint_matches_the_pinned_upstream_defect_set(self) -> None:
-        observed = observed_findings(self.gc_bin)
-        expected = expected_findings()
+    def waiver_sets(self) -> tuple[Counter[str], Counter[str]]:
+        sections = waived_findings()
+        tolerated: Counter[str] = Counter()
+        for name in TOLERATED_SECTIONS:
+            tolerated += sections[name]
+        return sections[UNIVERSAL], tolerated
 
-        new = render(observed - expected)
+    def test_gastown_lint_reports_nothing_outside_the_waiver(self) -> None:
+        observed = observed_findings(self.gc_bin)
+        universal, tolerated = self.waiver_sets()
+
+        new = render(observed - universal - tolerated)
         self.assertFalse(
             new,
             "gc lint gastown reported findings that are not in "
@@ -169,7 +201,17 @@ class GastownLintFindingsTest(unittest.TestCase):
             "command that refutes the claim.",
         )
 
-        gone = render(expected - observed)
+    def test_every_universal_waiver_entry_is_still_reported(self) -> None:
+        """A waiver that outlives its defect is the failure this catches.
+
+        Only the universal section is held to this. A version-dependent
+        section legitimately vanishes when the gc under test carries the fix,
+        which is the whole reason it is a separate section.
+        """
+        observed = observed_findings(self.gc_bin)
+        universal, _ = self.waiver_sets()
+
+        gone = render(universal - observed)
         self.assertFalse(
             gone,
             "these findings are pinned in "
@@ -179,20 +221,45 @@ class GastownLintFindingsTest(unittest.TestCase):
             "explanatory block) in the same change.",
         )
 
-    def test_no_bd_unknown_flag_finding_outside_the_pinned_wisp_pair(self) -> None:
+    def test_a_version_dependent_section_is_all_present_or_all_absent(self) -> None:
+        """Tolerating a set is not tolerating an arbitrary subset of it.
+
+        Without this, a real regression that happens to reuse one of these
+        file:line pairs is absorbed by the waiver, and the section can rot a
+        line at a time as the pack moves under it.
+        """
+        observed = observed_findings(self.gc_bin)
+        sections = waived_findings()
+        for name in TOLERATED_SECTIONS:
+            entries = sections[name]
+            present = entries & observed
+            with self.subTest(section=name):
+                if not present:
+                    continue
+                missing = render(entries - observed)
+                self.assertFalse(
+                    missing,
+                    f"section {name!r} of {WAIVER.name} is partially reported "
+                    f"by this gc. Present but missing:\n  "
+                    + "\n  ".join(missing)
+                    + "\nEither the pack moved under the waiver or the section "
+                    "is no longer one upstream change. Re-derive it.",
+                )
+
+    def test_no_bd_unknown_flag_finding_outside_the_waiver(self) -> None:
         """The pack's own half of the finding set, stated separately.
 
-        The test above would also go red if a `named_session` diagnostic
+        The first test would also go red if a `named_session` diagnostic
         changed shape upstream, which is not this pack's problem. This one
         fails only on the class gastown actually owns: a prompt template or
         formula telling an agent to run a bd flag that does not exist.
         """
         observed = observed_findings(self.gc_bin)
-        expected = expected_findings()
+        universal, tolerated = self.waiver_sets()
         bd_flag = Counter(
             {k: n for k, n in observed.items() if "bd-unknown-flag:" in k}
         )
-        unexpected = render(bd_flag - expected)
+        unexpected = render(bd_flag - universal - tolerated)
         self.assertFalse(
             unexpected,
             "a bd flag that does not exist is back in a gastown prompt or "

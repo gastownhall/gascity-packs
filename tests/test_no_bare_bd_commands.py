@@ -153,14 +153,19 @@ GC_BD_ARGV_TAIL_LINES = {
 # `gc lint`'s own diagnostic text, pinned so gastown cannot drift. These are
 # not instructions to run anything; they are the linter's output quoted back at
 # it, and the guard that reads them compares byte for byte, so they cannot be
-# reworded to say `gc bd`. Same three conditions as the fixture above: exact
-# file, explicit marker in the line, and the line in an exact set.
-GC_LINT_VERBATIM_MARKER = "gc-lint-verbatim"
-GC_LINT_VERBATIM_FILE = Path("tests/gastown_lint_upstream_defects.txt")
-GC_LINT_VERBATIM_LINES = {
-    'agents/deacon/prompt.template.md:209: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"  # gc-lint-verbatim',
-    'agents/deacon/prompt.template.md:210: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"  # gc-lint-verbatim',
-}
+# reworded to say `gc bd`.
+#
+# Two conditions, and the second is a grammar rather than a line list: the line
+# must be exactly a `bd-unknown-flag` diagnostic, in that one file. A list was
+# the first shape here and it does not survive the waiver growing -- the same
+# twenty-four lines then have to be maintained in two files, and the copy that
+# drifts fails as a bare-bd violation rather than as a stale waiver, which
+# points at the wrong problem. Nothing that matches this grammar is a command
+# anyone could run.
+GC_LINT_DIAGNOSTIC_FILE = Path("tests/gastown_lint_upstream_defects.txt")
+GC_LINT_DIAGNOSTIC = re.compile(
+    r'[\w./-]+:\d+: bd-unknown-flag: bd [a-z][a-z ]* uses unrecognized flag "[-\w]+"'
+)
 
 
 def tracked_files() -> list[Path]:
@@ -224,10 +229,8 @@ def intentional_gc_bd_argv_tail(relative: Path, line: str) -> bool:
 
 
 def intentional_gc_lint_verbatim(relative: Path, line: str) -> bool:
-    return (
-        relative == GC_LINT_VERBATIM_FILE
-        and GC_LINT_VERBATIM_MARKER in line
-        and line.strip() in GC_LINT_VERBATIM_LINES
+    return relative == GC_LINT_DIAGNOSTIC_FILE and bool(
+        GC_LINT_DIAGNOSTIC.fullmatch(line.strip())
     )
 
 
@@ -289,6 +292,15 @@ def test_detector_covers_shell_multiline_and_serialized_argv_forms() -> None:
     assert bare_bd_violations(fixture, "bd show x  # gc-bd-argv-tail")
     assert bare_bd_violations(fixture, "echo gc; bd show x")
     assert bare_bd_violations(fixture, "GC_BIN=gc bd show x")
+    # The gc-lint-diagnostic exemption, proved narrow in both directions: the
+    # grammar alone does not exempt a line elsewhere, and the file alone does
+    # not exempt a line that is not a diagnostic.
+    diagnostic = 'a/b.md:12: bd-unknown-flag: bd create uses unrecognized flag "--rig"'
+    waiver = REPO_ROOT / "tests" / "gastown_lint_upstream_defects.txt"
+    assert bare_bd_violations(fixture, diagnostic)
+    assert bare_bd_violations(waiver, "bd create --labels=x")
+    assert not bare_bd_violations(waiver, diagnostic)
+
     assert not bare_bd_violations(fixture, 'command = ["gc", "bd", "show"]')
     assert not bare_bd_violations(fixture, "gc --city /tmp/city bd list --json")
     assert not bare_bd_violations(fixture, "gc --rig demo bd show demo-1")
