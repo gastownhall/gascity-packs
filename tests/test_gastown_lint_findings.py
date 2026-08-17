@@ -197,6 +197,29 @@ def render(counted: Counter[str]) -> list[str]:
     ]
 
 
+def partial_sections(observed: Counter[str]) -> dict[str, list[str]]:
+    """Tolerated sections this report carries only part of, section to missing.
+
+    The all-present-or-all-absent rule itself, as a function, so the test that
+    runs a real gc and the tests that build a synthetic report go through the
+    same code. Stated twice it would be two rules, and the synthetic copy would
+    keep passing against itself long after the live one moved.
+
+    A section absent in full is not partial -- that is a gc carrying the
+    upstream fix, which is the entire reason the section is separate.
+    """
+    sections = waived_findings()
+    partial: dict[str, list[str]] = {}
+    for name in TOLERATED_SECTIONS:
+        entries = sections[name]
+        if not (entries & observed):
+            continue
+        missing = render(entries - observed)
+        if missing:
+            partial[name] = missing
+    return partial
+
+
 class GastownLintFindingsTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gc_bin = gc_binary()
@@ -254,22 +277,15 @@ class GastownLintFindingsTest(unittest.TestCase):
         path/message pairs is absorbed by the waiver, and the section can rot
         an entry at a time as the pack moves under it.
         """
-        observed = observed_findings(self.gc_bin)
-        sections = waived_findings()
-        for name in TOLERATED_SECTIONS:
-            entries = sections[name]
-            present = entries & observed
+        partial = partial_sections(observed_findings(self.gc_bin))
+        for name, missing in partial.items():
             with self.subTest(section=name):
-                if not present:
-                    continue
-                missing = render(entries - observed)
-                self.assertFalse(
-                    missing,
+                self.fail(
                     f"section {name!r} of {WAIVER.name} is partially reported "
                     f"by this gc. Present but missing:\n  "
                     + "\n  ".join(missing)
                     + "\nEither the pack moved under the waiver or the section "
-                    "is no longer one upstream change. Re-derive it.",
+                    "is no longer one upstream change. Re-derive it."
                 )
 
     def test_no_bd_unknown_flag_finding_outside_the_waiver(self) -> None:
@@ -291,10 +307,6 @@ class GastownLintFindingsTest(unittest.TestCase):
             "a bd flag that does not exist is back in a gastown prompt or "
             "formula:\n  " + "\n  ".join(unexpected),
         )
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class WaiverKeyingTest(unittest.TestCase):
@@ -397,4 +409,14 @@ class WaiverKeyingTest(unittest.TestCase):
                 self.assertTrue(
                     entries & observed, "the section must be partially present"
                 )
-                self.assertEqual(render(entries - observed), [dropped])
+                self.assertEqual(partial_sections(observed), {name: [dropped]})
+
+
+# Placed after every class so that `python tests/test_gastown_lint_findings.py`
+# runs all of them. It sat above WaiverKeyingTest for one commit, and unittest
+# collects by module namespace at call time, so the four keying tests were
+# silently excluded from every direct run -- green, and green about nothing.
+# pytest imports the whole module and was unaffected, which is exactly why
+# nobody would have noticed.
+if __name__ == "__main__":
+    unittest.main()
