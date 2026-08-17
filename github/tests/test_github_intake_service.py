@@ -16,6 +16,59 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 import github_intake_service as service
 
+# Every environment-variable prefix this pack's modules read. setUp strips
+# these so a test never inherits the developer's live city; the guard test
+# in GitHubIntakeServiceTests re-derives the variable list from the module
+# source and fails if a new read falls outside the prefixes.
+# GC_*/GITHUB_INTAKE_* are the variables the pack READS; the guard test
+# below enumerates those from the module AST and fails if one escapes these
+# prefixes. GH_*/GIT_* are stripped for a second reason the guard does not
+# cover: gh_env_for_repo and push_branch_with_installation_token build their
+# subprocess environment with os.environ.copy(), so a developer's ambient
+# GH_TOKEN, GH_HOST or GIT_CONFIG_* rides into the `gh` and `git` calls these
+# tests exercise. Stripping more than the guard requires is deliberate.
+MODULE_ENV_PREFIXES = ("GC_", "GITHUB_INTAKE_", "GH_", "GIT_")
+
+
+def _env_vars_read_by(*module_paths: pathlib.Path) -> set[str]:
+    """Enumerate os.environ keys the given modules read, from their AST."""
+    import ast
+
+    def is_environ(node: ast.AST) -> bool:
+        # os.environ  |  environ (from os import environ)
+        if isinstance(node, ast.Attribute):
+            return node.attr == "environ" and isinstance(node.value, ast.Name)
+        return isinstance(node, ast.Name) and node.id == "environ"
+
+    found: set[str] = set()
+    for path in module_paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and node.args:
+                func = node.func
+                if isinstance(func, ast.Attribute) and isinstance(
+                    node.args[0], ast.Constant
+                ):
+                    reads_env = (
+                        func.attr in {"get", "setdefault", "pop"}
+                        and is_environ(func.value)
+                    ) or (
+                        func.attr == "getenv"
+                        and isinstance(func.value, ast.Name)
+                        and func.value.id == "os"
+                    )
+                    value = node.args[0].value
+                    if reads_env and isinstance(value, str):
+                        found.add(value)
+            if (
+                isinstance(node, ast.Subscript)
+                and is_environ(node.value)
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)
+            ):
+                found.add(node.slice.value)
+    return found
+
 
 class DummyWebhookHandler:
     def __init__(self, body: bytes, headers: dict[str, str]) -> None:
@@ -41,11 +94,40 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
+        # Clear the ambient city before pinning the fixture one. A live
+        # Gas City seat exports GC_API_BASE_URL, GC_CITY_PATH and friends
+        # into every process it spawns, and this pack reads them ahead of
+        # the fixture's city.toml — so these tests passed in CI (no city)
+        # and failed on any machine actually running Gas City. The
+        # PublishImportedIdentityTests class below used to pop two
+        # GITHUB_INTAKE_* names by hand; the prefix sweep replaces that
+        # hand-list, and
+        # test_env_prefixes_cover_every_variable_the_module_reads keeps
+        # the prefixes covering the modules.
+        for key in [k for k in os.environ if k.startswith(MODULE_ENV_PREFIXES)]:
+            del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
 
     def tearDown(self) -> None:
         os.environ.clear()
         os.environ.update(self._old_environ)
+
+    def test_env_prefixes_cover_every_variable_the_module_reads(self) -> None:
+        # Keeps MODULE_ENV_PREFIXES honest: a new read of some variable
+        # outside these prefixes would silently reintroduce the ambient
+        # leak with every test still green.
+        scripts = pathlib.Path(__file__).resolve().parents[1] / "scripts"
+        read = _env_vars_read_by(*sorted(scripts.glob("*.py")))
+        self.assertTrue(read, "AST enumeration found no env reads at all")
+        uncovered = sorted(
+            name for name in read if not name.startswith(MODULE_ENV_PREFIXES)
+        )
+        self.assertEqual(
+            uncovered,
+            [],
+            "these variables are read by the pack but not stripped in setUp; "
+            "add their prefix to MODULE_ENV_PREFIXES",
+        )
 
     def test_fix_command_behavior(self) -> None:
         behavior = service.command_behavior("fix")
@@ -1591,9 +1673,9 @@ class PublishImportedIdentityTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
+        for key in [k for k in os.environ if k.startswith(MODULE_ENV_PREFIXES)]:
+            del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
-        os.environ.pop("GITHUB_INTAKE_IDENTITY_PUBLISHER", None)
-        os.environ.pop("GITHUB_INTAKE_APP_IDENTITY", None)
 
     def tearDown(self) -> None:
         os.environ.clear()

@@ -10,6 +10,26 @@ import tomllib
 import unittest
 
 
+# Prefixes the gascity pack's shell commands read from the environment.
+# The tests below run those commands as subprocesses; inheriting the
+# developer's environment wholesale let a live Gas City seat's own values
+# reach them. GC_TEMPLATE is the concrete case: commands/claim/run.sh reads
+# EXPECTED_ROUTE="${GC_TEMPLATE:-${GC_AGENT:-}}", so on a machine where a
+# seat exports GC_TEMPLATE=mayor the fixture's GC_AGENT was shadowed and the
+# claim came back CLAIM_REJECTED. In CI nothing is exported, so the suite was
+# green there and red on every real installation.
+PACK_ENV_PREFIXES = ("GC_", "BEADS_", "GASWORKS_", "BD_")
+
+
+def hermetic_env() -> dict[str, str]:
+    """os.environ minus everything the pack reads, for subprocess fixtures."""
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(PACK_ENV_PREFIXES)
+    }
+
+
 FORMULAS = {
     "build-base",
     "build-basic",
@@ -818,7 +838,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -868,7 +888,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
@@ -921,7 +941,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_observer.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -998,7 +1018,7 @@ class FormulaAssetTests(unittest.TestCase):
             fake_sleep.write_text("#!/bin/sh\n/bin/sleep 0.05\n", encoding="utf-8")
             fake_sleep.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -1036,7 +1056,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
                 "GC_TEST_CALLS": str(calls),
@@ -1070,7 +1090,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
@@ -1103,7 +1123,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
                 "GC_TEST_CALLS": str(calls),
@@ -1141,7 +1161,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -1188,7 +1208,7 @@ class FormulaAssetTests(unittest.TestCase):
             fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             fake_sleep.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -1247,7 +1267,7 @@ class FormulaAssetTests(unittest.TestCase):
             fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             fake_sleep.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -4229,7 +4249,7 @@ description = "Override sink that writes the base triage report contract."
             fake_gc.chmod(0o755)
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_DIR": str(show_dir),
                 "GC_BEAD_ID": bead_id,
@@ -4267,7 +4287,7 @@ description = "Override sink that writes the base triage report contract."
             write_check_gc_stub(bin_dir, parent_show=True)
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_path),
                 "BD_PARENT_SHOW_JSON": str(parent_show_path),
@@ -4921,7 +4941,7 @@ description = "Override sink that writes the base triage report contract."
             )
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_json),
                 "BD_LIST_JSON": str(list_json),
@@ -4986,7 +5006,7 @@ description = "Override sink that writes the base triage report contract."
             )
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_json),
                 "BD_LIST_JSON": str(list_json),
@@ -5068,7 +5088,7 @@ description = "Override sink that writes the base triage report contract."
             )
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_json),
                 "BD_LIST_JSON": str(list_json),
@@ -5130,7 +5150,7 @@ description = "Override sink that writes the base triage report contract."
             )
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_json),
                 "BD_LIST_JSON": str(list_json),
