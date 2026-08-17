@@ -22,12 +22,18 @@ if ! printf '%s' "$existing" | grep -qF "$mail_popup"; then
 fi
 
 # ── Mouse-wheel scrollback (root table) ───────────────────────────────
-# Make the wheel drive tmux copy-mode scrollback instead of leaking to the
-# focused app. Without this, "mouse on" (set in tmux-theme.sh) hands the wheel
-# to mouse-reporting TUIs — Claude Code scrolls its own history, a pager/shell
-# gets Up-arrows — and only a bare prompt reaches copy-mode. Force copy-mode
-# even over mouse-reporting apps (no mouse_any_flag check) so scrollback wins;
-# once in copy-mode the wheel passes through (-M) for normal scrolling, and -e
-# exits at the bottom. Shift+wheel still does native terminal selection.
-gcmux bind-key -T root WheelUpPane   if-shell -F -t= "#{pane_in_mode}" "send-keys -M" "copy-mode -e"
+# WheelUp drives tmux copy-mode scrollback when a plain shell (or any pane
+# not using the terminal alternate screen) is focused. When the focused pane
+# IS in alternate-screen mode — Claude Code's TUI, a pager, or any other
+# full-screen app — the wheel is passed through to the application so its own
+# history/scroll works as expected. Rationale: the tmux scrollback buffer
+# contains no content from alternate-screen apps (their output never lands
+# there), so entering copy-mode while Claude Code is focused gives an empty
+# scrollback, silently discarding the intended scroll.
+#   #{alternate_on}   — pane is currently in the terminal alternate screen
+#   #{pane_in_mode}   — already in tmux copy-mode (wheel continues scrolling)
+#   #{mouse_any_flag} — app has requested mouse tracking (belt-and-suspenders)
+# WheelDown always passes through; -e in copy-mode exits at the bottom.
+# Shift+wheel still does native terminal selection.
+gcmux bind-key -T root WheelUpPane   if-shell -F -t= "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"
 gcmux bind-key -T root WheelDownPane send-keys -M
