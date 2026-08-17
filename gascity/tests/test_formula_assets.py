@@ -821,6 +821,11 @@ class FormulaAssetTests(unittest.TestCase):
                 **os.environ,
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
+                # commands/claim/run.sh reads `${GC_TEMPLATE:-${GC_AGENT:-}}`, so
+                # a seat's exported GC_TEMPLATE outranks the GC_AGENT this test is
+                # exercising and the claim is rejected on a route mismatch. Empty
+                # falls through to GC_AGENT; the env dict cannot unset a name.
+                "GC_TEMPLATE": "",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
                 "PATH": f"{bin_dir}:/usr/bin:/bin",
@@ -924,6 +929,7 @@ class FormulaAssetTests(unittest.TestCase):
                 **os.environ,
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
+                "GC_TEMPLATE": "",  # see the GC_TEMPLATE note above
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
                 "GC_SESSION_ID": "session-1",
