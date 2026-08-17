@@ -1,0 +1,61 @@
+# `gc lint gastown` findings that are defects in gc's linter, not in this pack.
+#
+# One finding per line, as "<path relative to the pack dir>:<line>: <message>",
+# with line 0 for a pack-level diagnostic. Blank lines and `#` comments ignored.
+#
+# tests/test_gastown_lint_findings.py asserts the live `gc lint gastown` result
+# matches this file EXACTLY. A new finding fails. A finding that disappears also
+# fails, because that is the upstream fix landing and this waiver should go with
+# it. The point is that gastown, a supported pack, never again drifts from the
+# binary with nothing failing.
+#
+# ---------------------------------------------------------------------------
+# 1. named_session x5 — `gc lint` calls a bare cap a "pool control"
+#
+# All five templates set `max_active_sessions = 1` and nothing else: no
+# min_active_sessions, no scale_check, no namepool. That configuration spawns
+# nothing. internal/agentutil/pool.go ScaleParamsFor takes Min from
+# EffectiveMinActiveSessions(), and internal/config/session_capacity.go returns
+# 0 for it when MinActiveSessions is nil. The cap is what HOLDS the singleton.
+#
+# Three places in one binary disagree about this shape:
+#   - cmd/gc/cmd_lint.go agentHasPoolControls returns true on
+#     `MaxActiveSessions != nil`, so it fires here.
+#   - internal/doctor/checks_named_session.go (check "named-always-min-conflict")
+#     warns only when EffectiveMinActiveSessions() > 0, so it is silent here.
+#   - internal/config/session_capacity.go SupportsInstanceExpansion documents
+#     "Named-session agents (MaxActiveSessions=1 with a [[named_session]] entry,
+#     no Min/ScaleCheck)" as a shape it deliberately handles.
+#
+# Following the remediation text would delete the cap that enforces the
+# singleton. The documented escape hatch (min=0 AND max=0) is worse: at max=0
+# SupportsGenericEphemeralSessions returns false, which changes how the agent
+# can be spawned rather than annotating intent.
+#
+# Refute: grep -n 'agentHasPoolControls' <gascity checkout>/cmd/gc/cmd_lint.go
+#         grep -n 'EffectiveMinActiveSessions' <gascity checkout>/internal/doctor/checks_named_session.go
+# ---------------------------------------------------------------------------
+pack.toml:0: named_session "mayor" targets pool-controlled agent "mayor"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml:0: named_session "deacon" targets pool-controlled agent "deacon"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml:0: named_session "boot" targets pool-controlled agent "boot"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml:0: named_session "witness" targets pool-controlled agent "witness"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml:0: named_session "refinery" targets pool-controlled agent "refinery"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+
+# ---------------------------------------------------------------------------
+# 2. bd mol wisp x2 — the flag manifest stops one subcommand level short
+#
+# The template writes `gc bd mol wisp gc --age 24h`, which is correct: --age is
+# a flag on `bd mol wisp gc`, shown in that subcommand's own --help examples.
+# internal/bdflags/bdflags.go keys its manifest on at most two words ("mol
+# wisp"), so matchSubcommand stops there, treats the third word `gc` as a
+# positional, and validates --age against the parent's flag set.
+#
+# The scanner's own doc says a subcommand it has no manifest for is "silently
+# skipped — there is no ground truth to validate them against". That is the
+# right behavior here and it does not happen, because the PARENT matched.
+#
+# Refute: bd mol wisp gc --help | grep -- --age
+#         grep -n '"mol wisp"' <gascity checkout>/internal/bdflags/bdflags.go
+# ---------------------------------------------------------------------------
+agents/deacon/prompt.template.md:209: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
+agents/deacon/prompt.template.md:210: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
