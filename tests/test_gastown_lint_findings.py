@@ -116,6 +116,14 @@ def observed_findings(gc_bin: str) -> Counter[str]:
 
     Paths come back absolute, so they are made relative to the pack directory:
     a finding key must be identical on a contributor's machine and on a runner.
+
+    The line number is deliberately NOT part of the key. It was, for one day,
+    and #265 moved the mayor prompt's rig-routing table without changing a
+    single diagnostic -- same file, same message, same count of two of them
+    where the table had four -- and every open PR in the repo inherited a red
+    main. A guard keyed on position reports edits. What is left still fails on
+    a new path, a new message, or an extra occurrence, because these are
+    Counters: three identical waiver lines waive exactly three findings.
     """
     proc = subprocess.run(
         [gc_bin, "lint", PACK, "--json"],
@@ -160,7 +168,7 @@ def observed_findings(gc_bin: str) -> Counter[str]:
             rel = path.relative_to(PACK_DIR)
         except ValueError:
             rel = path
-        findings[f"{rel}:{diag.get('line', 0)}: {diag.get('message', '')}"] += 1
+        findings[f"{rel}: {diag.get('message', '')}"] += 1
     return findings
 
 
@@ -225,8 +233,8 @@ class GastownLintFindingsTest(unittest.TestCase):
         """Tolerating a set is not tolerating an arbitrary subset of it.
 
         Without this, a real regression that happens to reuse one of these
-        file:line pairs is absorbed by the waiver, and the section can rot a
-        line at a time as the pack moves under it.
+        path/message pairs is absorbed by the waiver, and the section can rot
+        an entry at a time as the pack moves under it.
         """
         observed = observed_findings(self.gc_bin)
         sections = waived_findings()

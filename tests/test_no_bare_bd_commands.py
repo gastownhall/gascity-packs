@@ -162,9 +162,14 @@ GC_BD_ARGV_TAIL_LINES = {
 # drifts fails as a bare-bd violation rather than as a stale waiver, which
 # points at the wrong problem. Nothing that matches this grammar is a command
 # anyone could run.
+#
+# The line number is optional because the waiver stopped carrying one: it is
+# keyed on path and message so that moving a diagnostic within a file is not a
+# CI failure. Both forms stay matchable, since gc lint's raw output still
+# carries the number and gets pasted here before it is trimmed.
 GC_LINT_DIAGNOSTIC_FILE = Path("tests/gastown_lint_upstream_defects.txt")
 GC_LINT_DIAGNOSTIC = re.compile(
-    r'[\w./-]+:\d+: bd-unknown-flag: bd [a-z][a-z ]* uses unrecognized flag "[-\w]+"'
+    r'[\w./-]+:(?:\d+:)? bd-unknown-flag: bd [a-z][a-z ]* uses unrecognized flag "[-\w]+"'
 )
 
 
@@ -296,10 +301,16 @@ def test_detector_covers_shell_multiline_and_serialized_argv_forms() -> None:
     # grammar alone does not exempt a line elsewhere, and the file alone does
     # not exempt a line that is not a diagnostic.
     diagnostic = 'a/b.md:12: bd-unknown-flag: bd create uses unrecognized flag "--rig"'
+    lineless = 'a/b.md: bd-unknown-flag: bd create uses unrecognized flag "--rig"'
     waiver = REPO_ROOT / "tests" / "gastown_lint_upstream_defects.txt"
     assert bare_bd_violations(fixture, diagnostic)
+    assert bare_bd_violations(fixture, lineless)
     assert bare_bd_violations(waiver, "bd create --labels=x")
     assert not bare_bd_violations(waiver, diagnostic)
+    # The form the waiver actually uses now. Without this the exemption could
+    # regress to line-numbers-only and every waiver entry would read as a bare
+    # bd command, which is a failure about the wrong file.
+    assert not bare_bd_violations(waiver, lineless)
 
     assert not bare_bd_violations(fixture, 'command = ["gc", "bd", "show"]')
     assert not bare_bd_violations(fixture, "gc --city /tmp/city bd list --json")

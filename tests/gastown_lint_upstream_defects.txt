@@ -1,7 +1,24 @@
 # `gc lint gastown` findings that are defects in gc's linter, not in this pack.
 #
-# One finding per line, as "<path relative to the pack dir>:<line>: <message>",
-# with line 0 for a pack-level diagnostic. Blank lines and `#` comments ignored.
+# One finding per OCCURRENCE, as "<path relative to the pack dir>: <message>".
+# Blank lines and `#` comments ignored.
+#
+# NO LINE NUMBERS. An entry is matched on path and message only, and a finding
+# that occurs twice is written twice -- tests/test_gastown_lint_findings.py
+# counts occurrences, so a duplicate arriving still fails. Line numbers were
+# here for one day and cost a red main the first time anyone edited a pinned
+# file: #265 collapsed the mayor prompt's four-row rig-routing table into one
+# generic row, moving the same diagnostic from lines 118-121 to lines 23 and
+# 114. Nothing about the pack or the linter changed, and CI went red on every
+# open PR in the repo. A guard whose green depends on where in a file a line
+# sits reports edits, not regressions.
+#
+# What that costs, stated so nobody re-adds them: this no longer tells you
+# WHERE to look, and a finding that moves within a file is invisible here. Both
+# are fine. The section comments below carry the gc-side cause and a refute
+# command, which is what a reader actually needs, and a moved finding is not an
+# event. What still fails: a new path, a new message, or one more occurrence of
+# an existing pair.
 #
 # `# @section: <name>` switches which set the lines below it belong to:
 #
@@ -48,11 +65,11 @@
 #         grep -n 'EffectiveMinActiveSessions' <gascity checkout>/internal/doctor/checks_named_session.go
 # ---------------------------------------------------------------------------
 # @section: universal
-pack.toml:0: named_session "mayor" targets pool-controlled agent "mayor"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-pack.toml:0: named_session "deacon" targets pool-controlled agent "deacon"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-pack.toml:0: named_session "boot" targets pool-controlled agent "boot"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-pack.toml:0: named_session "witness" targets pool-controlled agent "witness"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-pack.toml:0: named_session "refinery" targets pool-controlled agent "refinery"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml: named_session "mayor" targets pool-controlled agent "mayor"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml: named_session "deacon" targets pool-controlled agent "deacon"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml: named_session "boot" targets pool-controlled agent "boot"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml: named_session "witness" targets pool-controlled agent "witness"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
+pack.toml: named_session "refinery" targets pool-controlled agent "refinery"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
 
 # ---------------------------------------------------------------------------
 # 2. `mol wisp` x2: the flag manifest stops one subcommand level short
@@ -74,11 +91,11 @@ pack.toml:0: named_session "refinery" targets pool-controlled agent "refinery"; 
 # Refute: gc bd mol wisp gc --help | grep -- --age
 #         grep -n '"mol wisp"' <gascity checkout>/internal/bdflags/bdflags.go
 # ---------------------------------------------------------------------------
-agents/deacon/prompt.template.md:209: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
-agents/deacon/prompt.template.md:210: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
+agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
+agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
 
 # ---------------------------------------------------------------------------
-# 3. x22, gc <= v1.4.1 only: the scanner ran past the pipe, and did not know
+# 3. x20, gc <= v1.4.1 only: the scanner ran past the pipe, and did not know
 #    about `gc bd`'s own scope flags
 #
 # Two separate scanner defects, both fixed by gascity 7724983de ("fix(bdflags):
@@ -105,25 +122,23 @@ agents/deacon/prompt.template.md:210: bd-unknown-flag: bd mol wisp uses unrecogn
 #                                              bd is correctly rejected)
 # ---------------------------------------------------------------------------
 # @section: pre-5220
-agents/deacon/prompt.template.md:64: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-agents/deacon/prompt.template.md:96: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-agents/deacon/prompt.template.md:109: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-agents/mayor/prompt.template.md:118: bd-unknown-flag: bd create uses unrecognized flag "--rig"
-agents/mayor/prompt.template.md:119: bd-unknown-flag: bd create uses unrecognized flag "--rig"
-agents/mayor/prompt.template.md:120: bd-unknown-flag: bd create uses unrecognized flag "--rig"
-agents/mayor/prompt.template.md:121: bd-unknown-flag: bd create uses unrecognized flag "--rig"
-agents/polecat/prompt.template.md:316: bd-unknown-flag: bd show uses unrecognized flag "-r"
-agents/polecat/prompt.template.md:317: bd-unknown-flag: bd show uses unrecognized flag "-r"
-agents/refinery/prompt.template.md:74: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-agents/refinery/prompt.template.md:119: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-agents/refinery/prompt.template.md:180: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-agents/refinery/prompt.template.md:221: bd-unknown-flag: bd show uses unrecognized flag "-r"
-agents/refinery/prompt.template.md:222: bd-unknown-flag: bd show uses unrecognized flag "-r"
-agents/refinery/prompt.template.md:223: bd-unknown-flag: bd show uses unrecognized flag "-r"
-agents/refinery/prompt.template.md:224: bd-unknown-flag: bd show uses unrecognized flag "-r"
-agents/witness/prompt.template.md:182: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-agents/witness/prompt.template.md:219: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-agents/witness/prompt.template.md:232: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
-assets/prompts/crew.template.md:120: bd-unknown-flag: bd create uses unrecognized flag "--rig"
-assets/prompts/crew.template.md:121: bd-unknown-flag: bd create uses unrecognized flag "--rig"
-assets/prompts/crew.template.md:122: bd-unknown-flag: bd create uses unrecognized flag "--city"
+agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/mayor/prompt.template.md: bd-unknown-flag: bd create uses unrecognized flag "--rig"
+agents/mayor/prompt.template.md: bd-unknown-flag: bd create uses unrecognized flag "--rig"
+agents/polecat/prompt.template.md: bd-unknown-flag: bd show uses unrecognized flag "-r"
+agents/polecat/prompt.template.md: bd-unknown-flag: bd show uses unrecognized flag "-r"
+agents/refinery/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/refinery/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/refinery/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/refinery/prompt.template.md: bd-unknown-flag: bd show uses unrecognized flag "-r"
+agents/refinery/prompt.template.md: bd-unknown-flag: bd show uses unrecognized flag "-r"
+agents/refinery/prompt.template.md: bd-unknown-flag: bd show uses unrecognized flag "-r"
+agents/refinery/prompt.template.md: bd-unknown-flag: bd show uses unrecognized flag "-r"
+agents/witness/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/witness/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/witness/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+assets/prompts/crew.template.md: bd-unknown-flag: bd create uses unrecognized flag "--rig"
+assets/prompts/crew.template.md: bd-unknown-flag: bd create uses unrecognized flag "--rig"
+assets/prompts/crew.template.md: bd-unknown-flag: bd create uses unrecognized flag "--city"
