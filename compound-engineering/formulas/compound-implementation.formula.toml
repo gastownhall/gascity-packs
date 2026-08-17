@@ -1,17 +1,59 @@
 description = """
 Compound Engineering implementation of the public implement methodology contract.
+
+Self-contained coordinator: this formula carries the convoy-first coordinator
+steps directly (prepare, drain, wait, summarize, publish) instead of extending
+the base `implement` formula, so deployments that have retired `implement`
+from their catalogs can still run Compound Engineering lanes. The drain lanes
+delegate to compound-work / compound-work-item, which extend do-work /
+do-work-item.
+
+Launch inputs:
+- input_convoy: {{convoy_id}}
+- context_path: {{context_path}} (empty means no extra context bundle)
+- drain_policy: {{drain_policy}}
+- implementation_target: {{implementation_target}}
+- summary_path: {{summary_path}} (empty means use the default implementation summary)
+- push: {{push}}
+- open_pr: {{open_pr}}
 """
 formula = "compound-implementation"
-version = 1
+version = 2
 contract = "graph.v2"
-extends = ["implement"]
 target_required = true
 internal = true
+sling_container_mode = "source"
 
 [vars]
+[vars.context_path]
+description = "Optional context bundle path with name/path/description entries."
+default = ""
+
+[vars.drain_policy]
+description = "Implementation drain policy: separate or same-session."
+default = "separate"
+
 [vars.implementation_target]
 description = "Compound Engineering task implementation role."
 default = "compound-engineering.ce-work"
+
+[vars.summary_path]
+description = "Optional aggregate implementation summary path."
+default = ""
+
+[vars.push]
+description = "Set true to allow publish push after direct implementation succeeds."
+default = "false"
+
+[vars.open_pr]
+description = "Set true to allow publish PR creation after direct implementation succeeds."
+default = "false"
+
+[[steps]]
+id = "prepare"
+title = "Validate implementation convoy"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/compound-implementation/prepare.md"
 
 [[steps]]
 id = "drain-separate"
@@ -42,3 +84,32 @@ member_access = "exclusive"
 
 [steps.drain.item]
 single_lane = true
+
+[[steps]]
+id = "wait-for-drain"
+title = "Wait for drain completion"
+needs = ["drain-separate", "drain-same-session"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/compound-implementation/wait-for-drain.md"
+
+[[steps]]
+id = "summarize"
+title = "Write implementation summary"
+needs = ["wait-for-drain"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.var.summary_path" }
+description_file = "../assets/workflows/compound-implementation/summarize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "publish"
+title = "Optionally publish direct implementation"
+needs = ["summarize"]
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/compound-implementation/publish.md"
