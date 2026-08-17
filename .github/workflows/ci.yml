@@ -50,7 +50,7 @@ jobs:
           for pack in gascity gascity/roles bmad compound-engineering gstack superpowers profiler; do
             "$GC_BIN" lint "$pack"
           done
-          GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py -q
+          GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py tests/test_pack_composition_warnings.py -q
 
       # gastown is not in the lint loop above because seven of its findings are
       # defects in gc's linter rather than in the pack; see
