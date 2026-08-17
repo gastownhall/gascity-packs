@@ -64,15 +64,41 @@ def release_tags() -> list[str]:
 
 def registry_pack_paths() -> dict[str, str]:
     """Registered pack name -> its directory in this repository."""
-    data = tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
+    paths, _ = _registry_entries()
+    return paths
+
+
+def unresolvable_registry_entries() -> list[str]:
+    """Registered packs whose source this parser cannot turn into a directory.
+
+    Dropping them silently is the failure this returns instead: an entry the
+    regex does not match is simply absent from the map, so it is never checked
+    against a tag, and the discovery control's `>= 16` still holds from the
+    entries that did parse. A new pack spelled differently would be exactly the
+    unreleased pack this file exists to catch.
+    """
+    _, unresolvable = _registry_entries()
+    return unresolvable
+
+
+def _registry_entries(text: str | None = None) -> tuple[dict[str, str], list[str]]:
+    if text is None:
+        text = REGISTRY.read_text(encoding="utf-8")
+    data = tomllib.loads(text)
     paths: dict[str, str] = {}
-    for pack in data.get("pack", []):
+    unresolvable: list[str] = []
+    for index, pack in enumerate(data.get("pack", [])):
         name = pack.get("name")
         source = pack.get("source", "")
+        if not name:
+            unresolvable.append(f"[[pack]] #{index} has no name")
+            continue
         match = SOURCE_PATH.search(source)
-        if name and match:
-            paths[name] = match.group("path")
-    return paths
+        if not match:
+            unresolvable.append(f"{name}: source {source!r} has no /tree/<ref>/<path>")
+            continue
+        paths[name] = match.group("path")
+    return paths, unresolvable
 
 
 def packs_absent_from(tag: str) -> list[str]:
@@ -97,6 +123,13 @@ def test_the_registry_and_the_tags_are_both_readable() -> None:
     the check would report a clean repository precisely when it could see
     nothing at all.
     """
+    unresolvable = unresolvable_registry_entries()
+    assert not unresolvable, (
+        "these registry entries yielded no pack directory, so they are checked "
+        "against no tag at all and the count below still passes without "
+        "them:\n  " + "\n  ".join(unresolvable)
+    )
+
     packs = registry_pack_paths()
     assert len(packs) >= 16, (
         f"registry.toml yielded only {len(packs)} packs with a resolvable "
@@ -111,6 +144,24 @@ def test_the_registry_and_the_tags_are_both_readable() -> None:
         "`git fetch --tags`. This test fails rather than skips, because a "
         "tagless checkout cannot tell a released pack from an unreleased one."
     )
+
+
+def test_an_entry_the_parser_cannot_read_is_reported_not_dropped() -> None:
+    """Mutation control for the discovery guard above.
+
+    A source spelled any other way used to leave the entry out of the map
+    entirely: never checked against a tag, and invisible in the count. The
+    unreleased pack this file exists to catch is exactly the newly added one,
+    which is exactly the one most likely to be spelled differently.
+    """
+    paths, unresolvable = _registry_entries(
+        '[[pack]]\nname = "good"\n'
+        'source = "https://example.test/org/repo/tree/main/good"\n'
+        '[[pack]]\nname = "odd"\nsource = "https://example.test/org/repo/good"\n'
+    )
+    assert paths == {"good": "good"}
+    assert len(unresolvable) == 1, unresolvable
+    assert "odd" in unresolvable[0], unresolvable
 
 
 def test_every_registered_pack_exists_in_the_newest_release_tag() -> None:
