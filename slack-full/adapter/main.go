@@ -166,6 +166,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1268,6 +1269,14 @@ func main() {
 		}
 		log.Printf("registered with gc as provider=%s account=%s callback=%s/publish (%s)",
 			cfg.provider, cfg.accountID, cfg.internalCallbackURL, mode)
+
+		// Replay locally-recorded room bindings to gc. On a from-dead
+		// recovery (fresh pack cache clone / gc restart) the gc-side
+		// groups/participants/bindings are gone; this restores them from
+		// the pack's config.json so an operator no longer has to re-run
+		// `gc slack bind-room` after every such restart. Best-effort and
+		// loud — never fatal (see rehydrate.go).
+		rehydrateBindings(cfg)
 	}
 
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
@@ -1374,7 +1383,71 @@ func listenUDS(path string) (net.Listener, error) {
 	return lis, nil
 }
 
+// registerAdapter self-registers this adapter with gc's extmsg registry so
+// gc will route outbound to us and accept our inbound. It retries the
+// transient boot-ordering conditions until the city is up — see
+// registerAdapterWith. This production entry point uses a per-attempt
+// timeout client that does NOT follow redirects, plus the boot-register
+// retry budget and real sleep.
 func registerAdapter(cfg config) error {
+	// A per-attempt timeout keeps a single hung dial from stalling the whole
+	// retry-until-ready loop past one backoff cycle. gc is on loopback so a
+	// not-yet-listening port fails fast (connection refused) anyway; this is
+	// the belt-and-suspenders bound for a slow / half-open connect.
+	//
+	// Do NOT follow redirects: a misconfigured GC_API_BASE_URL that 302s to a
+	// login/proxy would otherwise be followed to a 200 and reported as a
+	// successful registration while nothing was registered — silent
+	// stranding. Surfacing the 3xx (ErrUseLastResponse) lets it be classified
+	// as a permanent misconfiguration and fail fast/loud instead.
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	return registerAdapterWith(cfg, client, bootRegisterRetryConfig(), time.Sleep)
+}
+
+// registerAdapterWith is the testable core of adapter self-registration: the
+// HTTP client, retry policy, and sleep are injected (mirrors
+// rehydrateBindingsWith).
+//
+// The supervisor spawns this adapter as it boots the city, BEFORE the city
+// is marked running/resolvable (gc's workspacesvc manager reload runs in the
+// CityRuntime constructor, ahead of reconciliation). Until the city
+// resolves, three transient boot-ordering conditions can occur, all retried
+// with bounded backoff:
+//   - the gc API is not listening yet — the POST fails in transport
+//     (connection refused);
+//   - gc's per-city bindCity gate 404s every city-scoped route (including
+//     this /extmsg/adapters POST) with the structured code "city-not-found"
+//     (see isCityNotReady);
+//   - the city has resolved but its extmsg registry is not wired yet — gc
+//     returns 503, handled by retryableStatus.
+//
+// This is the fix for the one-shot registration that stranded the adapter on
+// every supervisor restart: a single boot-race failure no longer kills it.
+//
+// A genuinely permanent rejection — any other non-2xx (a malformed request,
+// an auth failure, a redirect, a 404 that decodes to a different error code)
+// — is returned immediately so a real misconfiguration dies loud and fast
+// instead of being masked by minutes of futile retries. After the whole
+// budget is exhausted the last error is returned, naming the city and
+// attempt count so the caller's fatal log points at the likely cause; the
+// supervisor then respawns the adapter (see bootRegisterRetryConfig).
+//
+// A stable per-boot Idempotency-Key is sent on every attempt so that if a
+// POST commits on the gc side but its response is lost (transport error or
+// the client timeout firing after commit), the retry does not double-emit
+// gc's ExtMsgAdapterAdded event. The key is regenerated each boot, so a
+// legitimate re-register after gc wipes its in-memory registry is NOT
+// suppressed. Registration is otherwise idempotent already — gc upserts the
+// adapter by (provider, account).
+func registerAdapterWith(cfg config, client *http.Client, rc gcRetryConfig, sleep func(time.Duration)) error {
+	if rc.maxAttempts < 1 {
+		rc.maxAttempts = 1
+	}
 	body, _ := json.Marshal(adapterRegisterRequest{
 		Provider:    cfg.provider,
 		AccountID:   cfg.accountID,
@@ -1392,22 +1465,132 @@ func registerAdapter(cfg config) error {
 	// per-call escape keeps the wire format correct regardless and matches
 	// the dispatch paths that cby-set-c hardened. gc-cby.28.
 	target := fmt.Sprintf("%s/v0/city/%s/extmsg/adapters", cfg.gcAPIBase, url.PathEscape(cfg.cityName))
-	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
-	if err != nil {
-		return err
+	idempotencyKey := newIdempotencyKey()
+
+	var lastErr error
+	for attempt := 1; attempt <= rc.maxAttempts; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
+		if err != nil {
+			// A malformed request will not fix itself — terminal.
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-GC-Request", "gc-slack-adapter")
+		req.Header.Set("Idempotency-Key", idempotencyKey)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			// gc API not listening yet (connection refused) — transient boot race.
+			lastErr = err
+			if attempt < rc.maxAttempts {
+				d := rc.backoffFor(attempt)
+				log.Printf("WARN: register adapter: gc API at %s not reachable yet (attempt %d/%d), retrying in %s: %v", cfg.gcAPIBase, attempt, rc.maxAttempts, d, err)
+				sleep(d)
+				continue
+			}
+			break
+		}
+		respBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			// The body classifies transient-vs-permanent (isCityNotReady); a
+			// truncated read mid-boot must not be misread as a permanent
+			// rejection. Treat it like a transport failure and retry.
+			lastErr = fmt.Errorf("register: reading %s response body: %w", resp.Status, readErr)
+			if attempt < rc.maxAttempts {
+				d := rc.backoffFor(attempt)
+				log.Printf("WARN: register adapter: incomplete response from gc (attempt %d/%d), retrying in %s: %v", attempt, rc.maxAttempts, d, readErr)
+				sleep(d)
+				continue
+			}
+			break
+		}
+		// Accept only 2xx as success. A 3xx (redirect surfaced by the
+		// no-follow client) or any other status is a failure to classify.
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil
+		}
+		regErr := fmt.Errorf("register failed: %s — %s", resp.Status, string(respBody))
+		if !isCityNotReady(resp.StatusCode, respBody) && !retryableStatus(resp.StatusCode) {
+			// Permanent rejection (e.g. 400 malformed, 401/403 auth, a 3xx
+			// redirect, or a 404 that decodes to a different error code) — the
+			// same request will keep failing; fail fast and loud.
+			return regErr
+		}
+		// City not up yet (404 city-not-found) or a transient 5xx — retry.
+		lastErr = regErr
+		if attempt < rc.maxAttempts {
+			d := rc.backoffFor(attempt)
+			log.Printf("WARN: register adapter: city %q not ready yet (attempt %d/%d), retrying in %s: %s", cfg.cityName, attempt, rc.maxAttempts, d, resp.Status)
+			sleep(d)
+			continue
+		}
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GC-Request", "gc-slack-adapter")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
+	return fmt.Errorf("register adapter: city %q still unavailable after %d attempts — is GC_CITY_NAME correct and the city running? last error: %w", cfg.cityName, rc.maxAttempts, lastErr)
+}
+
+// newIdempotencyKey returns a random per-call key. gc's adapter-register
+// handler honors an Idempotency-Key header specifically to suppress a
+// duplicate ExtMsgAdapterAdded event when a POST is retried after a
+// committed-but-lost response. Generated once per registerAdapterWith call
+// (per boot) and reused across that call's retries, so a retry is
+// deduplicated while a fresh boot's re-register is not. Falls back to a
+// time-seeded value if the CSPRNG is unavailable — the key only needs
+// per-boot uniqueness, not cryptographic strength.
+func newIdempotencyKey() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("slack-adapter-%d", time.Now().UnixNano())
 	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("register failed: %s — %s", resp.Status, string(respBody))
+	return "slack-adapter-" + hex.EncodeToString(b[:])
+}
+
+// isCityNotReady reports whether a 404 register response is gc's per-city
+// bindCity gate rejecting the POST because the city is not yet
+// running/resolvable — the transient boot-ordering condition. gc's gate
+// returns HTTP 404 carrying the structured error code "city-not-found"
+// (urn:gascity:error:city-not-found).
+//
+// Only 404 is considered here; 5xx (including the registry-not-ready 503) is
+// handled by retryableStatus. On current gc the register route's ONLY 404
+// source is this gate, so classification leans toward "not ready": a 404
+// whose body is empty, unparseable (e.g. truncated mid-boot), or carries no
+// code is treated as the boot gate and retried. Only a 404 that explicitly
+// decodes to a DIFFERENT error code is a genuine permanent rejection (a wrong
+// route / gc version skew) worth failing fast on — which also rejects a false
+// positive from a body that merely mentions "city-not-found" in some other
+// field.
+func isCityNotReady(status int, body []byte) bool {
+	if status != http.StatusNotFound {
+		return false
 	}
-	return nil
+	var env struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		return true // unparseable / truncated 404 body — assume the boot gate
+	}
+	return env.Code == "" || env.Code == "city-not-found"
+}
+
+// bootRegisterRetryConfig is the retry budget for adapter self-registration
+// at startup. Unlike the inbound message path (a few attempts over a few
+// seconds — defaultGCRetryConfig), registration must outlast the city-boot
+// window during which gc is unreachable / 404s "city-not-found". base 1s
+// doubling to a 5s cap over 30 attempts is ~137s of backoff in the common
+// case (boot-race failures return in milliseconds); a pathological hung
+// attempt can add up to the client's per-attempt timeout on top, so the true
+// worst case is longer.
+//
+// The budget is deliberately bounded, not unbounded: if the city never comes
+// up the adapter exits loudly (the caller Fatalf's) and the supervisor's
+// proxy_process construction-retry respawns it with a fresh budget — the
+// backstop for boot windows longer than the in-process budget, and the reason
+// a bounded budget does not reintroduce permanent stranding. It is kept
+// moderate so it does not outlast gc's own service-start health grace (which
+// would otherwise preempt the retry mid-loop).
+func bootRegisterRetryConfig() gcRetryConfig {
+	return gcRetryConfig{maxAttempts: 30, baseBackoff: time.Second, maxBackoff: 5 * time.Second}
 }
 
 // publishDedupTTL bounds how long a delivered receipt is remembered for
@@ -2575,7 +2758,14 @@ func processSlackEvent(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 		ReceivedAt:       time.Now().UTC(),
 	}
 	if err := postInbound(cfg, inbound); err != nil {
-		log.Printf("inbound POST failed: %v", err)
+		// Loud, greppable, message-dropped log carrying the event id (ts)
+		// and channel — the old "inbound POST failed: %v" line had neither,
+		// so failures could not be correlated to a specific Slack message.
+		// Diagnose with an unfiltered time-window scan of the adapter log
+		// (this line has no "inbound:" token by design; the id-grep is for
+		// deliveries). Fields mirror the success line below.
+		log.Printf("inbound POST FAILED (message dropped): chan=%s user=%s ts=%s thread=%s target=%q files=%d text=%dch: %v",
+			msg.Channel, msg.User, msg.TS, msg.ThreadTS, target, len(attachments), len(text), err)
 		return
 	}
 	log.Printf("inbound: chan=%s user=%s ts=%s thread=%s target=%q files=%d text=%dch",
@@ -4037,26 +4227,114 @@ func handleIdentityDelete(reg *identityRegistry) http.HandlerFunc {
 	}
 }
 
+// gcRetryConfig bounds retry-with-backoff for idempotent gc API calls.
+//
+// Inbound POSTs to gc can transiently fail with a 5xx when gc's bindings
+// resolution path hits a dolt "begin read tx: invalid connection" hiccup
+// (Chris hit it live 2026-07-02 17:23:58 ET). The adapter used to treat
+// that 500 as terminal and silently drop the inbound — on the oversight
+// channel a dropped inbound can eat a page reply and hang the escalation
+// loop. Retries are safe because every inbound carries a stable DedupKey
+// ("slack-"+ts) that gc dedups on, so retrying a delivered-but-500'd POST
+// does not double-deliver. gc-side transient-retry on the same path is
+// filed separately (overseer sc-wisp-wul353); this adapter retry is
+// defense-in-depth. maxAttempts=5 with base 250ms → ~3.75s worst-case
+// backoff, a bounded hold on the dispatch slot.
+type gcRetryConfig struct {
+	maxAttempts int           // total attempts including the first (min 1)
+	baseBackoff time.Duration // backoff before the 2nd attempt; doubles each retry
+	maxBackoff  time.Duration // cap on any single backoff sleep
+}
+
+func defaultGCRetryConfig() gcRetryConfig {
+	return gcRetryConfig{
+		maxAttempts: 5,
+		baseBackoff: 250 * time.Millisecond,
+		maxBackoff:  3 * time.Second,
+	}
+}
+
+// backoffFor returns the sleep before the retry that follows attempt n
+// (1-indexed). Exponential from baseBackoff, capped at maxBackoff.
+func (rc gcRetryConfig) backoffFor(attempt int) time.Duration {
+	d := rc.baseBackoff
+	for i := 1; i < attempt; i++ {
+		if d >= rc.maxBackoff {
+			return rc.maxBackoff
+		}
+		d *= 2
+	}
+	if d > rc.maxBackoff {
+		return rc.maxBackoff
+	}
+	return d
+}
+
+// retryableStatus reports whether an HTTP status warrants a retry. 5xx is
+// server-side and typically transient; 4xx means the same request will
+// fail again, so it is terminal and returned immediately.
+func retryableStatus(code int) bool {
+	return code >= 500
+}
+
+// gcPostWithRetry POSTs jsonBody to target with the gc CSRF header,
+// retrying transport errors and 5xx responses with bounded backoff (rc).
+// label appears in log lines only. sleep is injected so tests run without
+// real delay (pass time.Sleep in production). On success (<400) it returns
+// the response body. A 4xx is returned immediately as a terminal error
+// (no retry). After the final attempt it returns an error naming the
+// attempt count and the last failure.
+func gcPostWithRetry(client *http.Client, rc gcRetryConfig, sleep func(time.Duration), target, label string, jsonBody []byte) ([]byte, error) {
+	if rc.maxAttempts < 1 {
+		rc.maxAttempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= rc.maxAttempts; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(jsonBody))
+		if err != nil {
+			// A malformed request will not fix itself — terminal.
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-GC-Request", "gc-slack-adapter")
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			if attempt < rc.maxAttempts {
+				d := rc.backoffFor(attempt)
+				log.Printf("WARN: %s POST transport error (attempt %d/%d), retrying in %s: %v", label, attempt, rc.maxAttempts, d, err)
+				sleep(d)
+				continue
+			}
+			break
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode < 400 {
+			return respBody, nil
+		}
+		if !retryableStatus(resp.StatusCode) {
+			return nil, fmt.Errorf("%s: %s: %s", label, resp.Status, string(respBody))
+		}
+		lastErr = fmt.Errorf("%s: %s: %s", label, resp.Status, string(respBody))
+		if attempt < rc.maxAttempts {
+			d := rc.backoffFor(attempt)
+			log.Printf("WARN: %s POST %s (attempt %d/%d), retrying in %s", label, resp.Status, attempt, rc.maxAttempts, d)
+			sleep(d)
+			continue
+		}
+	}
+	return nil, fmt.Errorf("%s failed after %d attempts: %w", label, rc.maxAttempts, lastErr)
+}
+
 func postInbound(cfg config, msg externalInboundMessage) error {
 	body, _ := json.Marshal(map[string]any{
 		"message": msg,
 	})
 	// PathEscape cityName for the same reason as registerAdapter (gc-cby.28).
 	target := fmt.Sprintf("%s/v0/city/%s/extmsg/inbound", cfg.gcAPIBase, url.PathEscape(cfg.cityName))
-	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GC-Request", "gc-slack-adapter")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s: %s", resp.Status, string(respBody))
-	}
-	return nil
+	// Bounded retry on transport errors + 5xx (idempotent via DedupKey);
+	// see gcRetryConfig. A 4xx returns immediately as terminal.
+	_, err := gcPostWithRetry(http.DefaultClient, defaultGCRetryConfig(), time.Sleep, target, "inbound", body)
+	return err
 }

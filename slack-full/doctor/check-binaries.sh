@@ -12,7 +12,7 @@ done
 
 if [ -n "$missing" ]; then
   echo "pack binaries not built:$missing"
-  echo "Build them in place: (cd adapter && go build -o gc-slack-adapter) and (cd cli && go build -o gc-slack-cli .) — see CONTRIBUTING.md."
+  echo "Build them: run scripts/build-binaries.sh (rebuilds both in place; needed after any 'gc import install' / repin). See CONTRIBUTING.md."
   exit 2
 fi
 
