@@ -75,6 +75,395 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 },
             )
 
+    def test_named_app_import_preserves_default_app_and_isolates_policy(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "123",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["default-guild"],
+            },
+        )
+
+        config = common.import_app_config(
+            config,
+            {
+                "application_id": "456",
+                "public_key": "cd" * 32,
+                "guild_allowlist": ["ollie-guild"],
+                "channel_allowlist": ["ollie-channel"],
+            },
+            app_name="ollie",
+        )
+
+        self.assertEqual(config["app"]["application_id"], "123")
+        self.assertEqual(config["policy"]["guild_allowlist"], ["default-guild"])
+        self.assertEqual(config["apps"]["ollie"]["application_id"], "456")
+        self.assertEqual(config["apps"]["ollie"]["policy"]["guild_allowlist"], ["ollie-guild"])
+        self.assertEqual(config["apps"]["ollie"]["policy"]["channel_allowlist"], ["ollie-channel"])
+
+    def test_import_app_config_rejects_named_id_change_even_with_a_new_token(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "456", "public_key": "cd" * 32},
+            app_name="ollie",
+        )
+        common.save_bot_token("existing-credential", app_name="ollie")
+
+        with self.assertRaisesRegex(ValueError, "cannot change.*application_id"):
+            common.import_app_config(
+                config,
+                {"application_id": "789", "public_key": "ef" * 32},
+                app_name="ollie",
+                bot_token="replacement-credential",
+            )
+
+        self.assertEqual(common.resolve_app_config(common.load_config(), "ollie")["application_id"], "456")
+        self.assertEqual(common.load_bot_token("ollie"), "existing-credential")
+
+    def test_import_app_config_rejects_empty_id_partial_app_with_an_existing_token(self) -> None:
+        common.save_config(
+            {
+                "apps": {
+                    "ollie": {
+                        "public_key": "cd" * 32,
+                    }
+                }
+            }
+        )
+        common.save_bot_token("orphan-credential", app_name="ollie")
+
+        with self.assertRaisesRegex(ValueError, "orphan bot token.*new app name"):
+            common.import_app_config(
+                common.load_config(),
+                {"application_id": "456", "public_key": "cd" * 32},
+                app_name="ollie",
+            )
+
+        self.assertEqual(common.resolve_app_config(common.load_config(), "ollie")["application_id"], "")
+        self.assertEqual(common.load_bot_token("ollie"), "orphan-credential")
+
+    def test_new_named_identity_rejects_orphan_token_even_when_a_token_is_supplied(self) -> None:
+        common.save_bot_token("orphan-credential", app_name="ollie")
+
+        with self.assertRaisesRegex(ValueError, "orphan bot token.*new app name"):
+            common.import_app_config(
+                common.load_config(),
+                {"application_id": "456", "public_key": "cd" * 32},
+                app_name="ollie",
+                bot_token="replacement-credential",
+            )
+
+        self.assertEqual(common.load_config()["apps"], {})
+        self.assertEqual(common.load_bot_token("ollie"), "orphan-credential")
+
+    def test_named_app_import_rejects_unsafe_app_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "app name"):
+            common.import_app_config(
+                common.load_config(),
+                {
+                    "application_id": "456",
+                    "public_key": "cd" * 32,
+                },
+                app_name="../ollie",
+            )
+
+    def test_named_app_import_rejects_reserved_default_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "reserved"):
+            common.import_app_config(
+                common.load_config(),
+                {
+                    "application_id": "456",
+                    "public_key": "cd" * 32,
+                },
+                app_name="default",
+            )
+
+    def test_config_normalization_drops_empty_named_app_key(self) -> None:
+        config = common.normalize_config(
+            {
+                "apps": {
+                    "": {
+                        "application_id": "456",
+                        "public_key": "cd" * 32,
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(config["apps"], {})
+
+    def test_named_app_import_rejects_duplicate_application_id(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "456",
+                "public_key": "ab" * 32,
+            },
+        )
+
+        with self.assertRaisesRegex(ValueError, "application_id.*already configured"):
+            common.import_app_config(
+                config,
+                {
+                    "application_id": "456",
+                    "public_key": "cd" * 32,
+                },
+                app_name="ollie",
+            )
+
+    def test_concurrent_named_app_imports_preserve_both_apps(self) -> None:
+        stale_config = common.load_config()
+        start = threading.Barrier(2)
+        errors: list[BaseException] = []
+
+        def import_named(app_name: str, application_id: str, public_key_byte: str) -> None:
+            try:
+                start.wait(timeout=2)
+                common.import_app_config(
+                    stale_config,
+                    {
+                        "application_id": application_id,
+                        "public_key": public_key_byte * 32,
+                    },
+                    app_name=app_name,
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=import_named, args=("ollie", "456", "ab")),
+            threading.Thread(target=import_named, args=("olivia", "789", "cd")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+
+        self.assertEqual(errors, [])
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(set(common.load_config()["apps"]), {"ollie", "olivia"})
+
+    def test_concurrent_metadata_import_cannot_split_a_rotated_named_identity(self) -> None:
+        stale_config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.save_bot_token("old-credential", app_name="ollie")
+        rotation_holds_lock = threading.Event()
+        release_rotation = threading.Event()
+        errors: list[BaseException] = []
+        original_save_bot_token = common.save_bot_token
+
+        def blocking_save_bot_token(token: str, app_name: str = "") -> None:
+            if token == "new-credential":
+                rotation_holds_lock.set()
+                if not release_rotation.wait(timeout=2):
+                    raise TimeoutError("timed out waiting to release credential rotation")
+            original_save_bot_token(token, app_name=app_name)
+
+        def rotate_identity() -> None:
+            try:
+                common.import_app_config(
+                    stale_config,
+                    {"application_id": "456", "public_key": "cd" * 32},
+                    app_name="ollie",
+                    bot_token="new-credential",
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        def write_stale_metadata() -> None:
+            try:
+                common.import_app_config(
+                    stale_config,
+                    {"application_id": "456", "public_key": "ef" * 32},
+                    app_name="ollie",
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        with mock.patch.object(common, "save_bot_token", side_effect=blocking_save_bot_token):
+            rotation_thread = threading.Thread(target=rotate_identity)
+            rotation_thread.start()
+            self.assertTrue(rotation_holds_lock.wait(timeout=2))
+            metadata_thread = threading.Thread(target=write_stale_metadata)
+            metadata_thread.start()
+            release_rotation.set()
+            rotation_thread.join(timeout=3)
+            metadata_thread.join(timeout=3)
+
+        self.assertFalse(rotation_thread.is_alive())
+        self.assertFalse(metadata_thread.is_alive())
+        self.assertEqual(errors, [])
+        app = common.resolve_app_config(common.load_config(), "ollie")
+        self.assertEqual(app["application_id"], "456")
+        self.assertEqual(app["public_key"], "ef" * 32)
+        self.assertEqual(common.load_bot_token("ollie"), "new-credential")
+
+    def test_concurrent_named_bindings_preserve_both_bindings(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.import_app_config(
+            config,
+            {"application_id": "789", "public_key": "cd" * 32},
+            app_name="olivia",
+        )
+        stale_config = common.load_config()
+        start = threading.Barrier(2)
+        errors: list[BaseException] = []
+
+        def bind_named(app_name: str, session_name: str) -> None:
+            try:
+                start.wait(timeout=2)
+                common.set_chat_binding(
+                    stale_config,
+                    "room",
+                    "22",
+                    [session_name],
+                    guild_id="1",
+                    app_name=app_name,
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=bind_named, args=("ollie", "teams.lead")),
+            threading.Thread(target=bind_named, args=("olivia", "teams.pm")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+
+        self.assertEqual(errors, [])
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        binding_ids = {item["id"] for item in common.list_chat_bindings(common.load_config())}
+        self.assertEqual(binding_ids, {"room:22@app:ollie", "room:22@app:olivia"})
+
+    def test_room_launcher_mutation_reloads_config_and_preserves_a_concurrent_app_import(self) -> None:
+        stale_config = common.load_config()
+        common.import_app_config(
+            stale_config,
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+
+        common.set_room_launcher(stale_config, "1", "22")
+
+        config = common.load_config()
+        self.assertIn("ollie", config["apps"])
+        self.assertIsNotNone(common.resolve_room_launcher(config, "22"))
+
+    def test_channel_mapping_mutation_reloads_config_and_preserves_a_concurrent_app_import(self) -> None:
+        stale_config = common.load_config()
+        common.import_app_config(
+            stale_config,
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+
+        common.set_channel_mapping(stale_config, "1", "22", "product/polecat", None)
+
+        config = common.load_config()
+        self.assertIn("ollie", config["apps"])
+        self.assertIn("1/22", config["channels"])
+
+    def test_rig_mapping_mutation_reloads_config_and_preserves_a_concurrent_app_import(self) -> None:
+        stale_config = common.load_config()
+        common.import_app_config(
+            stale_config,
+            {"application_id": "456", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+
+        common.set_rig_mapping(stale_config, "1", "product", "product/polecat", None)
+
+        config = common.load_config()
+        self.assertIn("ollie", config["apps"])
+        self.assertIn("1/product", config["rigs"])
+
+    def test_named_app_tokens_are_isolated_and_mode_0600(self) -> None:
+        common.save_bot_token("default-token")
+        common.save_bot_token("ollie-token", app_name="ollie")
+        common.save_bot_token("olivia-token", app_name="olivia")
+
+        self.assertEqual(common.load_bot_token(), "default-token")
+        self.assertEqual(common.load_bot_token("ollie"), "ollie-token")
+        self.assertEqual(common.load_bot_token("olivia"), "olivia-token")
+        self.assertEqual(
+            pathlib.Path(common.secret_path("bot-token-ollie.txt")).stat().st_mode & 0o777,
+            0o600,
+        )
+        self.assertEqual(
+            pathlib.Path(common.secret_path("bot-token-olivia.txt")).stat().st_mode & 0o777,
+            0o600,
+        )
+
+    def test_redacted_config_reports_named_token_presence_without_token_value(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "456",
+                "public_key": "cd" * 32,
+            },
+            app_name="ollie",
+        )
+        common.save_bot_token("ollie-token", app_name="ollie")
+
+        redacted = common.redact_config(config)
+
+        self.assertTrue(redacted["apps"]["ollie"]["bot_token_present"])
+        self.assertNotIn("bot_token", redacted["apps"]["ollie"])
+
+    def test_app_config_and_policy_resolution_fail_closed_for_unknown_name(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "456",
+                "public_key": "cd" * 32,
+                "guild_allowlist": ["1"],
+                "channel_allowlist": ["22"],
+            },
+            app_name="ollie",
+        )
+
+        self.assertEqual(common.resolve_app_config(config, "ollie")["application_id"], "456")
+        self.assertEqual(common.resolve_app_policy(config, "ollie")["channel_allowlist"], ["22"])
+        with self.assertRaisesRegex(ValueError, "unknown Discord app"):
+            common.resolve_app_config(config, "olivia")
+        with self.assertRaisesRegex(ValueError, "unknown Discord app"):
+            common.resolve_app_policy(config, "olivia")
+
+    def test_gateway_status_is_isolated_per_named_app_and_keeps_legacy_projection(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "123",
+                "public_key": "ab" * 32,
+            },
+        )
+        common.import_app_config(
+            config,
+            {
+                "application_id": "456",
+                "public_key": "cd" * 32,
+            },
+            app_name="ollie",
+        )
+        common.save_gateway_status({"state": "ready", "bot_user_id": "123"})
+        common.save_gateway_status({"state": "waiting_for_config"}, app_name="ollie")
+
+        snapshot = common.build_status_snapshot(limit=1)
+
+        self.assertEqual(snapshot["gateway_status"]["bot_user_id"], "123")
+        self.assertEqual(snapshot["gateway_statuses"]["default"]["bot_user_id"], "123")
+        self.assertEqual(snapshot["gateway_statuses"]["ollie"]["state"], "waiting_for_config")
+
     def test_shared_discord_prompt_requires_bold_speaker_prefix(self) -> None:
         fragment = (
             pathlib.Path(__file__).resolve().parents[1] / "template-fragments" / "discord-v0.template.md"
@@ -117,6 +506,69 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(binding["guild_id"], "1")
         self.assertEqual(binding["session_names"], ["sky", "lawrence"])
         self.assertEqual(binding["policy"], common.default_room_peer_policy())
+
+    def test_named_apps_can_bind_the_same_room_independently(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+        )
+        config = common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.pm"],
+            guild_id="1",
+            app_name="olivia",
+        )
+
+        lead = common.resolve_chat_binding(config, "room:22@app:ollie")
+        product = common.resolve_chat_binding(config, "room:22@app:olivia")
+
+        self.assertEqual(lead["app"], "ollie")
+        self.assertEqual(lead["session_names"], ["teams.lead"])
+        self.assertEqual(product["app"], "olivia")
+        self.assertEqual(product["session_names"], ["teams.pm"])
+        self.assertEqual(len(common.list_chat_bindings(config)), 2)
+
+    def test_legacy_and_named_binding_can_share_a_room(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["legacy"],
+            guild_id="1",
+        )
+        config = common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+        )
+
+        legacy = common.resolve_chat_binding(config, "room:22")
+        named = common.resolve_chat_binding(config, "room:22@app:ollie")
+
+        self.assertNotIn("app", legacy)
+        self.assertEqual(named["app"], "ollie")
+
+    def test_publish_route_rejects_binding_for_unknown_named_app(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ghost",
+        )
+
+        with self.assertRaisesRegex(ValueError, "unknown Discord app"):
+            common.resolve_publish_route(config, "room:22@app:ghost")
 
     def test_set_chat_binding_deduplicates_participants_case_insensitively(self) -> None:
         config = common.set_chat_binding(common.load_config(), "room", "22", ["sky", "Sky", "lawrence"], guild_id="1")
@@ -316,6 +768,15 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             metadata = common.describe_room_channel_metadata("22", bot_token="bot-token")
 
         self.assertEqual(metadata, {"channel_type": 0})
+
+    def test_describe_room_channel_scope_does_not_fall_back_from_an_explicit_empty_token(self) -> None:
+        common.save_bot_token("default-token")
+
+        with mock.patch.object(common, "discord_api_request") as discord_api_request:
+            scope = common.describe_room_channel_scope("22", bot_token="")
+
+        self.assertEqual(scope, {})
+        discord_api_request.assert_not_called()
 
     def test_save_channel_metadata_cache_round_trips_normalized_metadata(self) -> None:
         metadata = common.save_channel_metadata_cache("22", {"type": 11, "parent_id": "7"})
@@ -572,7 +1033,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(urlopen.call_args_list[-1].args[0].full_url, "http://127.0.0.1:8372/v0/city/gc/sessions")
 
     def test_deliver_session_message_uses_messages_endpoint_for_default_intent(self) -> None:
-        with mock.patch.object(common, "gc_api_request", return_value={"status": "accepted"}) as gc_api_request:
+        with mock.patch.object(common, "gc_api_request_with_status", return_value=(200, {"status": "accepted"})) as gc_api_request:
             payload = common.deliver_session_message("corp--sky", "hello", idempotency_key="ingress:1")
 
         self.assertEqual(payload, {"status": "accepted"})
@@ -585,7 +1046,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         )
 
     def test_deliver_session_message_uses_submit_endpoint_for_follow_up_intent(self) -> None:
-        with mock.patch.object(common, "gc_api_request", return_value={"status": "accepted"}) as gc_api_request:
+        with mock.patch.object(common, "gc_api_request_with_status", return_value=(200, {"status": "accepted"})) as gc_api_request:
             payload = common.deliver_session_message(
                 "corp--sky",
                 "hello again",
@@ -601,6 +1062,340 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             headers={"Idempotency-Key": "ingress:2"},
             timeout=common.GC_API_REQUEST_TIMEOUT_SECONDS,
         )
+
+    def test_deliver_session_message_preserves_accepted_payload_after_async_success(self) -> None:
+        accepted = {"status": "accepted", "request_id": "req-submit", "event_cursor": "42"}
+        accepted_response = mock.MagicMock()
+        accepted_response.status = 202
+        accepted_response.__enter__.return_value = mock.Mock(
+            read=mock.Mock(
+                return_value=b'{"status":"accepted","request_id":"req-submit","event_cursor":"42"}'
+            )
+        )
+        accepted_response.__enter__.return_value.status = 202
+        accepted_response.__exit__.return_value = False
+        succeeded_stream = mock.MagicMock()
+        succeeded_stream.__enter__.return_value = iter(
+            [
+                b"event: request.result.session.submit\n",
+                b'data: {"type":"request.result.session.submit","payload":{"request_id":"req-submit","session_id":"session-1","queued":true,"intent":"follow_up"}}\n',
+                b"\n",
+            ]
+        )
+        succeeded_stream.__exit__.return_value = False
+
+        with mock.patch.dict(
+            os.environ,
+            {"GC_API_BASE_URL": "http://gc.test/v0/city/test"},
+        ), mock.patch.object(
+            common.urllib.request,
+            "urlopen",
+            side_effect=[accepted_response, succeeded_stream],
+        ) as urlopen:
+            payload = common.deliver_session_message(
+                "corp--sky",
+                "hello again",
+                idempotency_key="ingress:3",
+                intent="follow_up",
+            )
+
+        self.assertEqual(payload, accepted)
+        self.assertEqual(common.GC_API_ASYNC_RESULT_TIMEOUT_SECONDS, 4 * 60)
+        self.assertEqual(len(urlopen.call_args_list), 2)
+        self.assertEqual(
+            urlopen.call_args_list[1].args[0].full_url,
+            "http://gc.test/v0/city/test/events/stream?after_seq=42",
+        )
+        self.assertEqual(
+            urlopen.call_args_list[0].kwargs["timeout"],
+            common.GC_API_REQUEST_TIMEOUT_SECONDS,
+        )
+        self.assertEqual(
+            urlopen.call_args_list[1].kwargs["timeout"],
+            common.GC_API_ASYNC_RESULT_TIMEOUT_SECONDS,
+        )
+
+    def test_deliver_session_message_rejects_malformed_async_accepted_response(self) -> None:
+        accepted_response = mock.MagicMock()
+        accepted_response.status = 202
+        accepted_response.__enter__.return_value = mock.Mock(
+            read=mock.Mock(return_value=b'{"status":"accepted"}')
+        )
+        accepted_response.__enter__.return_value.status = 202
+        accepted_response.__exit__.return_value = False
+
+        with mock.patch.dict(
+            os.environ,
+            {"GC_API_BASE_URL": "http://gc.test/v0/city/test"},
+        ), mock.patch.object(
+            common.urllib.request,
+            "urlopen",
+            return_value=accepted_response,
+        ):
+            on_async_accepted = mock.Mock()
+            with self.assertRaisesRegex(common.GCAPIError, "request_id.*event_cursor"):
+                common.deliver_session_message(
+                    "corp--sky",
+                    "hello again",
+                    idempotency_key="ingress:malformed",
+                    intent="follow_up",
+                    on_async_accepted=on_async_accepted,
+                )
+
+        on_async_accepted.assert_not_called()
+
+    def test_deliver_session_message_rejects_async_response_without_event_cursor(self) -> None:
+        on_async_accepted = mock.Mock()
+        with mock.patch.object(
+            common,
+            "gc_api_request_with_status",
+            return_value=(202, {"status": "accepted", "request_id": "req-no-cursor"}),
+        ), mock.patch.object(common, "resume_session_message_delivery") as resume_session_message_delivery:
+            with self.assertRaisesRegex(common.GCAPIError, "request_id.*event_cursor"):
+                common.deliver_session_message(
+                    "corp--sky",
+                    "hello again",
+                    intent="follow_up",
+                    on_async_accepted=on_async_accepted,
+                )
+
+        on_async_accepted.assert_not_called()
+        resume_session_message_delivery.assert_not_called()
+
+    def test_deliver_session_message_accepts_zero_event_cursor(self) -> None:
+        accepted = {"status": "accepted", "request_id": "req-zero", "event_cursor": "0"}
+        with mock.patch.object(
+            common,
+            "gc_api_request_with_status",
+            return_value=(202, accepted),
+        ), mock.patch.object(
+            common,
+            "resume_session_message_delivery",
+            return_value={"request_id": "req-zero", "session_id": "session-zero"},
+        ) as resume_session_message_delivery:
+            payload = common.deliver_session_message("corp--sky", "hello again", intent="follow_up")
+
+        self.assertEqual(payload, accepted)
+        resume_session_message_delivery.assert_called_once_with(
+            "req-zero",
+            event_cursor="0",
+            intent="follow_up",
+            timeout=common.GC_API_ASYNC_RESULT_TIMEOUT_SECONDS,
+            cancel_event=None,
+        )
+
+    def test_deliver_session_message_allows_legacy_synchronous_response_without_async_metadata(self) -> None:
+        accepted_response = mock.MagicMock()
+        accepted_response.status = 200
+        accepted_response.__enter__.return_value = mock.Mock(
+            read=mock.Mock(return_value=b'{"status":"accepted","request_id":"legacy-request"}')
+        )
+        accepted_response.__enter__.return_value.status = 200
+        accepted_response.__exit__.return_value = False
+
+        with mock.patch.dict(
+            os.environ,
+            {"GC_API_BASE_URL": "http://gc.test/v0/city/test"},
+        ), mock.patch.object(
+            common.urllib.request,
+            "urlopen",
+            return_value=accepted_response,
+        ) as urlopen, mock.patch.object(common, "resume_session_message_delivery") as resume_session_message_delivery:
+            payload = common.deliver_session_message(
+                "corp--sky",
+                "hello again",
+                idempotency_key="ingress:legacy",
+                intent="follow_up",
+            )
+
+        self.assertEqual(payload, {"status": "accepted", "request_id": "legacy-request"})
+        self.assertEqual(len(urlopen.call_args_list), 1)
+        resume_session_message_delivery.assert_not_called()
+
+    def test_deliver_session_message_persists_async_acceptance_before_waiting(self) -> None:
+        accepted_response = mock.MagicMock()
+        accepted_response.status = 202
+        accepted_response.__enter__.return_value = mock.Mock(
+            read=mock.Mock(
+                return_value=b'{"status":"accepted","request_id":"req-submit","event_cursor":"42"}'
+            )
+        )
+        accepted_response.__enter__.return_value.status = 202
+        accepted_response.__exit__.return_value = False
+        persisted: list[dict[str, object]] = []
+
+        def assert_persisted_before_wait(*args: object, **kwargs: object) -> dict[str, object]:
+            self.assertEqual(persisted[0]["request_id"], "req-submit")
+            self.assertEqual(persisted[0]["event_cursor"], "42")
+            return {"request_id": "req-submit", "session_id": "session-1"}
+
+        with mock.patch.dict(
+            os.environ,
+            {"GC_API_BASE_URL": "http://gc.test/v0/city/test"},
+        ), mock.patch.object(
+            common.urllib.request,
+            "urlopen",
+            return_value=accepted_response,
+        ), mock.patch.object(
+            common,
+            "wait_for_gc_request_result",
+            side_effect=assert_persisted_before_wait,
+        ):
+            common.deliver_session_message(
+                "corp--sky",
+                "hello again",
+                idempotency_key="ingress:persist-first",
+                intent="follow_up",
+                on_async_accepted=persisted.append,
+            )
+
+        self.assertEqual(len(persisted), 1)
+
+    def test_deliver_session_message_does_not_open_sse_when_acceptance_persistence_fails(self) -> None:
+        accepted = {"status": "accepted", "request_id": "req-submit", "event_cursor": "42"}
+
+        with mock.patch.object(
+            common,
+            "gc_api_request_with_status",
+            return_value=(202, accepted),
+        ), mock.patch.object(
+            common,
+            "resume_session_message_delivery",
+        ) as resume_session_message_delivery:
+            with self.assertRaisesRegex(OSError, "receipt write failed"):
+                common.deliver_session_message(
+                    "corp--sky",
+                    "hello again",
+                    intent="follow_up",
+                    on_async_accepted=mock.Mock(side_effect=OSError("receipt write failed")),
+                )
+
+        resume_session_message_delivery.assert_not_called()
+
+    def test_deliver_session_message_reports_terminal_success_evidence(self) -> None:
+        accepted = {"status": "accepted", "request_id": "req-submit", "event_cursor": "42"}
+        terminal = {"request_id": "req-submit", "session_id": "session-1", "queued": True}
+        evidence: list[dict[str, object]] = []
+
+        with mock.patch.object(
+            common,
+            "gc_api_request_with_status",
+            return_value=(202, accepted),
+        ), mock.patch.object(
+            common,
+            "resume_session_message_delivery",
+            return_value=terminal,
+        ):
+            payload = common.deliver_session_message(
+                "corp--sky",
+                "hello again",
+                idempotency_key="ingress:terminal",
+                intent="follow_up",
+                on_async_terminal=evidence.append,
+            )
+
+        self.assertEqual(payload, accepted)
+        self.assertEqual(evidence, [{"status": "succeeded", "payload": terminal}])
+
+    def test_resume_session_message_delivery_waits_without_resubmitting(self) -> None:
+        cancel_event = threading.Event()
+        terminal = {"request_id": "req-submit", "session_id": "session-1", "queued": True}
+
+        with mock.patch.object(
+            common,
+            "wait_for_gc_request_result",
+            return_value=terminal,
+        ) as wait_for_gc_request_result, mock.patch.object(
+            common,
+            "gc_api_request_with_status",
+        ) as gc_api_request_with_status:
+            result = common.resume_session_message_delivery(
+                "req-submit",
+                "42",
+                intent="follow_up",
+                timeout=12,
+                cancel_event=cancel_event,
+            )
+
+        self.assertEqual(result, terminal)
+        gc_api_request_with_status.assert_not_called()
+        wait_for_gc_request_result.assert_called_once_with(
+            "req-submit",
+            event_cursor="42",
+            success_type=common.GC_EVENT_SESSION_SUBMIT_SUCCEEDED,
+            failure_operation=common.GC_OPERATION_SESSION_SUBMIT,
+            timeout=12,
+            cancel_event=cancel_event,
+        )
+
+    def test_wait_for_gc_request_result_cancellation_closes_open_stream(self) -> None:
+        entered = threading.Event()
+        closed = threading.Event()
+        cancel_event = threading.Event()
+        errors: list[BaseException] = []
+
+        class BlockingStream:
+            def __enter__(self) -> "BlockingStream":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                self.close()
+
+            def __iter__(self) -> "BlockingStream":
+                return self
+
+            def __next__(self) -> bytes:
+                entered.set()
+                closed.wait(timeout=2)
+                raise StopIteration
+
+            def close(self) -> None:
+                closed.set()
+
+        def wait_for_result() -> None:
+            try:
+                common.wait_for_gc_request_result(
+                    "req-submit",
+                    event_cursor="42",
+                    success_type=common.GC_EVENT_SESSION_SUBMIT_SUCCEEDED,
+                    failure_operation=common.GC_OPERATION_SESSION_SUBMIT,
+                    timeout=60,
+                    cancel_event=cancel_event,
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        with mock.patch.dict(
+            os.environ,
+            {"GC_API_BASE_URL": "http://gc.test/v0/city/test"},
+        ), mock.patch.object(common.urllib.request, "urlopen", return_value=BlockingStream()):
+            waiter = threading.Thread(target=wait_for_result)
+            waiter.start()
+            self.assertTrue(entered.wait(timeout=1))
+            cancel_event.set()
+            waiter.join(timeout=1)
+
+        self.assertFalse(waiter.is_alive())
+        self.assertTrue(closed.is_set())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], common.GCAPIRequestCancelled)
+
+    def test_wait_for_gc_request_result_eof_is_recoverable_uncertainty(self) -> None:
+        closed_stream = mock.MagicMock()
+        closed_stream.__enter__.return_value = iter([])
+        closed_stream.__exit__.return_value = False
+
+        with mock.patch.dict(
+            os.environ,
+            {"GC_API_BASE_URL": "http://gc.test/v0/city/test"},
+        ), mock.patch.object(common.urllib.request, "urlopen", return_value=closed_stream):
+            with self.assertRaisesRegex(common.GCAPIResultUnknown, "closed before request"):
+                common.wait_for_gc_request_result(
+                    "req-submit",
+                    event_cursor="42",
+                    success_type=common.GC_EVENT_SESSION_SUBMIT_SUCCEEDED,
+                    failure_operation=common.GC_OPERATION_SESSION_SUBMIT,
+                )
 
     def test_gc_api_base_url_rejects_disabled_port(self) -> None:
         pathlib.Path(self.tempdir.name, "city.toml").write_text('[api]\nport = 0\n', encoding="utf-8")
@@ -752,6 +1547,43 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(fields["publish_conversation_id"], "22")
         self.assertEqual(fields["publish_trigger_id"], "new-msg")
         self.assertEqual(fields["publish_reply_to_discord_message_id"], "new-msg")
+
+    def test_find_latest_discord_reply_context_matches_async_terminal_session_id(self) -> None:
+        common.save_chat_ingress(
+            {
+                "ingress_id": "in-async",
+                "binding_id": "room:22@app:riley",
+                "conversation_id": "22",
+                "discord_message_id": "async-msg",
+                "created_at": "2026-07-15T02:24:01Z",
+                "status": "delivered",
+                "targets": [
+                    {
+                        "session_name": "employees.corp--riley",
+                        "status": "delivered",
+                        "response": {
+                            "status": "accepted",
+                            "request_id": "req-async",
+                        },
+                        "terminal_evidence": {
+                            "status": "succeeded",
+                            "payload": {
+                                "request_id": "req-async",
+                                "session_id": "mc-wisp-n2val",
+                                "queued": True,
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+
+        with mock.patch.object(common, "gc_api_request", return_value={"messages": []}):
+            fields = common.find_latest_discord_reply_context("mc-wisp-n2val", tail=5)
+
+        self.assertEqual(fields["ingress_receipt_id"], "in-async")
+        self.assertEqual(fields["publish_binding_id"], "room:22@app:riley")
+        self.assertEqual(fields["publish_reply_to_discord_message_id"], "async-msg")
 
     def test_extract_peer_session_mentions_ignores_urls_and_code(self) -> None:
         mentions = common.extract_peer_session_mentions(
@@ -922,6 +1754,42 @@ class DiscordIntakeCommonTests(unittest.TestCase):
 
         assert touched is not None
         self.assertTrue(str(touched.get("last_activity_at", "")).strip())
+
+    def test_set_room_launch_last_addressed_ignores_older_delivery_order(self) -> None:
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:ordered",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "ordered",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "thread_id": "222",
+                "participants": {
+                    "corp/priya": {
+                        "qualified_handle": "corp/priya",
+                        "session_alias": "dc-123-priya",
+                    }
+                },
+            }
+        )
+
+        common.set_room_launch_last_addressed(
+            "room-launch:ordered",
+            "corp/priya",
+            delivery_order="snowflake:00000000000000000200",
+        )
+        common.set_room_launch_last_addressed(
+            "room-launch:ordered",
+            "corp/sky",
+            delivery_order="snowflake:00000000000000000100",
+        )
+
+        launch = common.load_room_launch("room-launch:ordered")
+        assert launch is not None
+        self.assertEqual(launch["last_addressed_qualified_handle"], "corp/priya")
+        self.assertEqual(launch["last_addressed_delivery_order"], "snowflake:00000000000000000200")
 
     def test_prune_room_launches_keeps_recent_thread_routes(self) -> None:
         common.save_room_launch(
@@ -1673,6 +2541,41 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(common._count_root_peer_triggered_publishes("room:22", "in-1", "corp--sky"), 2)
         self.assertEqual(common._count_root_peer_deliveries_from_index("room:22", "in-1"), 3)
 
+    def _save_peer_retry_record(self, publish_id: str, target: dict[str, object]) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True},
+        )
+        common.save_chat_publish(
+            {
+                "publish_id": publish_id,
+                "binding_id": "room:22",
+                "binding_kind": "room",
+                "binding_conversation_id": "22",
+                "conversation_id": "22",
+                "guild_id": "1",
+                "source_session_name": "corp--sky",
+                "source_session_id": "gc-sky",
+                "source_event_kind": "discord_human_message",
+                "root_ingress_receipt_id": f"in-{publish_id}",
+                "body": "@corp--priya hello",
+                "remote_message_id": f"msg-{publish_id}",
+                "peer_delivery": {
+                    "phase": "peer_fanout_partial_failure",
+                    "status": "partial_failure",
+                    "delivery": "targeted",
+                    "mentioned_session_names": ["corp--priya"],
+                    "frozen_targets": ["corp--priya"],
+                    "targets": [target],
+                    "budget_snapshot": {},
+                },
+            }
+        )
+
     def test_retry_peer_fanout_redrives_failed_target_without_reposting(self) -> None:
         common.set_chat_binding(
             common.load_config(),
@@ -1726,6 +2629,219 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(record["peer_delivery"]["status"], "delivered")
         post_channel_message.assert_not_called()
         deliver_session_message.assert_called_once()
+        self.assertEqual(
+            deliver_session_message.call_args.kwargs["async_timeout"],
+            common.PEER_DELIVERY_TIMEOUT_SECONDS,
+        )
+
+    def test_retry_peer_fanout_preserves_async_correlation_when_result_is_unknown(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True},
+        )
+        common.save_chat_publish(
+            {
+                "publish_id": "discord-publish-unknown",
+                "binding_id": "room:22",
+                "binding_kind": "room",
+                "binding_conversation_id": "22",
+                "conversation_id": "22",
+                "guild_id": "1",
+                "source_session_name": "corp--sky",
+                "source_session_id": "gc-sky",
+                "source_event_kind": "discord_human_message",
+                "root_ingress_receipt_id": "in-unknown",
+                "body": "@corp--priya hello",
+                "remote_message_id": "msg-unknown",
+                "peer_delivery": {
+                    "phase": "peer_fanout_partial_failure",
+                    "status": "partial_failure",
+                    "delivery": "targeted",
+                    "mentioned_session_names": ["corp--priya"],
+                    "frozen_targets": ["corp--priya"],
+                    "targets": [
+                        {
+                            "session_name": "corp--priya",
+                            "status": "failed_retryable",
+                            "attempt_count": 1,
+                            "attempts": [],
+                        }
+                    ],
+                    "budget_snapshot": {},
+                },
+            }
+        )
+
+        def unknown_after_acceptance(*args: object, **kwargs: object) -> dict[str, object]:
+            kwargs["on_async_accepted"](
+                {
+                    "http_status": 202,
+                    "request_id": "req-peer-unknown",
+                    "event_cursor": "71",
+                    "intent": "default",
+                    "response": {
+                        "status": "accepted",
+                        "request_id": "req-peer-unknown",
+                        "event_cursor": "71",
+                    },
+                }
+            )
+            raise common.GCAPIResultUnknown("peer result stream closed")
+
+        with mock.patch.object(
+            common,
+            "deliver_session_message",
+            side_effect=unknown_after_acceptance,
+        ) as deliver_session_message:
+            record = common.retry_peer_fanout("discord-publish-unknown")
+
+        target = record["peer_delivery"]["targets"][0]
+        self.assertEqual(record["peer_delivery"]["phase"], "peer_fanout_in_progress")
+        self.assertEqual(target["status"], "awaiting_result")
+        self.assertEqual(target["request_id"], "req-peer-unknown")
+        self.assertEqual(target["event_cursor"], "71")
+        self.assertEqual(
+            deliver_session_message.call_args.kwargs["async_timeout"],
+            common.PEER_DELIVERY_TIMEOUT_SECONDS,
+        )
+
+    def test_retry_peer_fanout_explicitly_redrives_uncorrelated_unknown(self) -> None:
+        self._save_peer_retry_record(
+            "discord-publish-explicit-unknown",
+            {
+                "session_name": "corp--priya",
+                "delivery_selector": "corp--priya",
+                "status": "delivery_unknown",
+                "attempt_count": 1,
+                "attempts": [],
+            },
+        )
+
+        with mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted"},
+        ) as deliver_session_message:
+            record = common.retry_peer_fanout(
+                "discord-publish-explicit-unknown",
+                include_unknown=True,
+            )
+
+        deliver_session_message.assert_called_once()
+        self.assertEqual(record["peer_delivery"]["targets"][0]["status"], "delivered")
+
+    def test_retry_peer_fanout_clears_stale_async_ref_before_new_post(self) -> None:
+        self._save_peer_retry_record(
+            "discord-publish-stale-ref",
+            {
+                "session_name": "corp--priya",
+                "delivery_selector": "corp--priya",
+                "status": "failed_retryable",
+                "attempt_count": 1,
+                "request_id": "req-old",
+                "event_cursor": "81",
+                "response": {"status": "accepted", "request_id": "req-old", "event_cursor": "81"},
+                "terminal_evidence": {"status": "failed"},
+                "attempts": [],
+            },
+        )
+
+        with mock.patch.object(
+            common,
+            "deliver_session_message",
+            side_effect=common.GCAPIResultUnknown("new POST outcome unknown"),
+        ) as deliver_session_message, mock.patch.object(
+            common,
+            "resume_session_message_delivery",
+        ) as resume_session_message_delivery:
+            record = common.retry_peer_fanout("discord-publish-stale-ref")
+
+        deliver_session_message.assert_called_once()
+        resume_session_message_delivery.assert_not_called()
+        target = record["peer_delivery"]["targets"][0]
+        self.assertEqual(target["status"], "delivery_unknown")
+        self.assertEqual(target["request_id"], "")
+        self.assertEqual(target["event_cursor"], "")
+        self.assertEqual(target["terminal_evidence"], {})
+
+    def test_peer_in_progress_staleness_exceeds_post_and_result_waits(self) -> None:
+        self.assertGreater(
+            common.PEER_IN_PROGRESS_STALE_SECONDS,
+            common.PEER_DELIVERY_TIMEOUT_SECONDS * 2,
+        )
+
+    def test_retry_peer_fanout_resumes_awaiting_result_without_resubmitting(self) -> None:
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["corp--sky", "corp--priya"],
+            guild_id="1",
+            policy={"peer_fanout_enabled": True},
+        )
+        common.save_chat_publish(
+            {
+                "publish_id": "discord-publish-awaiting",
+                "binding_id": "room:22",
+                "binding_kind": "room",
+                "binding_conversation_id": "22",
+                "conversation_id": "22",
+                "guild_id": "1",
+                "source_session_name": "corp--sky",
+                "source_session_id": "gc-sky",
+                "source_event_kind": "discord_human_message",
+                "root_ingress_receipt_id": "in-awaiting",
+                "body": "@corp--priya hello",
+                "remote_message_id": "msg-awaiting",
+                "peer_delivery": {
+                    "phase": "peer_fanout_in_progress",
+                    "status": "",
+                    "delivery": "targeted",
+                    "mentioned_session_names": ["corp--priya"],
+                    "frozen_targets": ["corp--priya"],
+                    "targets": [
+                        {
+                            "session_name": "corp--priya",
+                            "delivery_selector": "corp--priya",
+                            "status": "awaiting_result",
+                            "attempt_count": 1,
+                            "request_id": "req-peer",
+                            "event_cursor": "61",
+                            "intent": "default",
+                            "response": {"status": "accepted", "request_id": "req-peer", "event_cursor": "61"},
+                            "attempts": [],
+                        }
+                    ],
+                    "budget_snapshot": {},
+                },
+            }
+        )
+        terminal = {"request_id": "req-peer", "session_id": "gc-priya"}
+
+        with mock.patch.object(
+            common,
+            "resume_session_message_delivery",
+            return_value=terminal,
+        ) as resume_session_message_delivery, mock.patch.object(
+            common,
+            "deliver_session_message",
+        ) as deliver_session_message:
+            record = common.retry_peer_fanout("discord-publish-awaiting")
+
+        deliver_session_message.assert_not_called()
+        resume_session_message_delivery.assert_called_once_with(
+            "req-peer",
+            "61",
+            intent="default",
+            timeout=common.PEER_DELIVERY_TIMEOUT_SECONDS,
+        )
+        target = record["peer_delivery"]["targets"][0]
+        self.assertEqual(target["status"], "delivered")
+        self.assertEqual(target["terminal_evidence"], {"status": "succeeded", "payload": terminal})
 
     def test_retry_peer_fanout_room_launch_preserves_launch_context(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
@@ -1930,6 +3046,18 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(payload, {"ok": True})
         self.assertEqual(urlopen.call_count, 2)
         sleep.assert_called_once_with(0.0)
+
+    def test_discord_api_request_explicit_empty_token_never_falls_back_to_default(self) -> None:
+        common.save_bot_token("default-test-token")
+        success = mock.Mock()
+        success.__enter__ = mock.Mock(return_value=mock.Mock(read=mock.Mock(return_value=b'{}')))
+        success.__exit__ = mock.Mock(return_value=False)
+
+        with mock.patch.object(common.urllib.request, "urlopen", return_value=success) as urlopen:
+            common.discord_api_request("GET", "/channels/1", bot_token="")
+
+        request = urlopen.call_args.args[0]
+        self.assertNotIn("Authorization", request.headers)
 
 
 if __name__ == "__main__":

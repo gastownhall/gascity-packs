@@ -52,6 +52,15 @@ jobs:
           done
           GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py -q
 
+      # gastown is not in the lint loop above because seven of its findings are
+      # defects in gc's linter rather than in the pack; see
+      # tests/gastown_lint_upstream_defects.txt. This pins the finding set
+      # instead, so a new one fails and a fixed one has to be un-waived.
+      - name: Check gastown lint findings against the pinned set
+        run: |
+          GC_TEST_BIN="$(go env GOPATH)/bin/gc" \
+            python3 -m pytest tests/test_gastown_lint_findings.py -q
+
       - name: Run Gastown shell tests
         run: |
           for test_script in gastown/tests/test_*.sh; do

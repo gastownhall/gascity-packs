@@ -669,6 +669,66 @@ def assert_pack_or_role_route_target(
     test_case.assertTrue((pack_root / "agents" / local_agent / "agent.toml").is_file())
 
 
+def write_check_gc_stub(bin_dir: pathlib.Path, *, parent_show: bool = False) -> pathlib.Path:
+    """Write a fake `gc` for the check-script tests, and return its path.
+
+    The check gates enumerate molecule members with `gc ready` (one leg per
+    --status) rather than a metadata-filtered `gc bd list`, because a collection
+    query carries no bead id and is refused on a city that relocates the graph
+    class. The stub answers every `ready` leg from BD_LIST_JSON, so the union
+    the gate builds is the same member set the old single list call returned.
+
+    `ready` without --metadata-field is rejected: unscoped, it would return the
+    whole city and the gate could read a *different* molecule's verdict. Any
+    other verb exits 2, so a gate that starts shelling out to something new
+    fails here instead of silently reading an empty set.
+
+    A member carrying an explicit "status" is served only by that status's leg;
+    a member without one is served by every leg (the gate dedupes by id). That
+    lets a test place a bead in exactly one leg and prove the gate unions all
+    four — without disturbing the fixtures that don't model status at all.
+    """
+    show = (
+        "    if [ \"${2:-}\" = \"root\" ]; then\n"
+        "      cat \"$BD_PARENT_SHOW_JSON\"\n"
+        "    else\n"
+        "      cat \"$BD_SHOW_JSON\"\n"
+        "    fi\n"
+        if parent_show
+        else "    cat \"$BD_SHOW_JSON\"\n"
+    )
+    fake_gc = bin_dir / "gc"
+    fake_gc.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [ \"${1:-}\" = \"ready\" ]; then\n"
+        "  case \" $* \" in\n"
+        "    *\" --metadata-field \"*) : ;;\n"
+        "    *) echo \"stub: gc ready without --metadata-field\" >&2; exit 2 ;;\n"
+        "  esac\n"
+        "  st=\"\"\n"
+        "  while [ \"$#\" -gt 0 ]; do\n"
+        "    if [ \"$1\" = \"--status\" ]; then st=\"${2:-}\"; break; fi\n"
+        "    shift\n"
+        "  done\n"
+        "  if [ -z \"$st\" ]; then echo \"stub: gc ready without --status\" >&2; exit 2; fi\n"
+        "  jq --arg st \"$st\" 'map(select((.status // $st) == $st))' \"$BD_LIST_JSON\"\n"
+        "  exit 0\n"
+        "fi\n"
+        "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
+        "shift\n"
+        "case \"$1\" in\n"
+        "  version) exit 0 ;;\n"
+        "  show)\n" + show + "    ;;\n"
+        "  list) cat \"$BD_LIST_JSON\" ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_gc.chmod(0o755)
+    return fake_gc
+
+
 class FormulaAssetTests(unittest.TestCase):
     def test_expected_formula_set_is_convoy_first(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -1848,6 +1908,7 @@ class FormulaAssetTests(unittest.TestCase):
             "Do not create an empty convoy",
             "Do not call `gc convoy add` for newly-created beads",
             "Do not call `gc bd show <implementation-convoy-id>`",
+            "Do not use `gc bd create --root-bead`",
         ):
             with self.subTest(step="decompose", fragment=fragment):
                 self.assertIn(fragment, decompose_description)
@@ -1910,6 +1971,9 @@ class FormulaAssetTests(unittest.TestCase):
             "not to the launcher rig root",
             "normalized `gc.build.review.v1` artifact with `status: approved`",
             "Do not invoke provider-native subagents",
+            "Implementation Worktrees",
+            "`gc.work_dir` is the launcher rig root, not the implementation worktree",
+            "Do not inspect or edit the launcher checkout",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, asset_text)
@@ -2065,6 +2129,68 @@ class FormulaAssetTests(unittest.TestCase):
                 with self.subTest(asset=relative_path, fragment=fragment):
                     self.assertIn(fragment, text)
 
+    def test_build_basic_review_context_is_worktree_anchored(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflow_dir = root / "assets" / "workflows" / "build-basic-review"
+        setup = (workflow_dir / "{target}.setup-build-basic-review.md").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (workflow_dir / "{target}.acceptance-review.md").read_text(
+            encoding="utf-8"
+        )
+        test_evidence = (workflow_dir / "{target}.test-evidence-review.md").read_text(
+            encoding="utf-8"
+        )
+        simplicity = (workflow_dir / "{target}.simplicity-review.md").read_text(
+            encoding="utf-8"
+        )
+        synthesize = (workflow_dir / "{target}.synthesize-review.md").read_text(
+            encoding="utf-8"
+        )
+        apply = (workflow_dir / "{target}.apply-review-findings.md").read_text(
+            encoding="utf-8"
+        )
+
+        for fragment in (
+            "gc.build.code_review_context_path",
+            "Implementation Worktrees",
+            "metadata.work_dir",
+            "Do not write\nliteral command substitutions",
+            r"rg -n '\$\((cat|date)'",
+        ):
+            with self.subTest(asset="setup", fragment=fragment):
+                self.assertIn(fragment, setup)
+
+        for asset_name, text in (
+            ("acceptance", acceptance),
+            ("test-evidence", test_evidence),
+            ("simplicity", simplicity),
+            ("synthesize", synthesize),
+            ("apply", apply),
+        ):
+            with self.subTest(asset=asset_name, fragment="context path"):
+                self.assertIn("gc.build.code_review_context_path", text)
+            with self.subTest(asset=asset_name, fragment="worktree section"):
+                self.assertIn("Implementation Worktrees", text)
+            with self.subTest(asset=asset_name, fragment="launcher root"):
+                self.assertIn(
+                    "`gc.work_dir` is the launcher rig root, not the implementation worktree",
+                    text,
+                )
+
+        for asset_name, text in (
+            ("acceptance", acceptance),
+            ("test-evidence", test_evidence),
+            ("simplicity", simplicity),
+            ("apply", apply),
+        ):
+            with self.subTest(asset=asset_name, fragment="cd worktree"):
+                self.assertIn('cd "$WORKTREE"', text)
+            with self.subTest(asset=asset_name, fragment="pwd verification"):
+                self.assertIn("pwd -P", text)
+
+        self.assertIn("do not patch the launcher root", apply)
+        self.assertIn("source anchor and implementation\nworktree", synthesize)
     def test_build_artifact_prompts_use_set_metadata_for_paths(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         path_contracts = {
@@ -2868,6 +2994,30 @@ class FormulaAssetTests(unittest.TestCase):
                     all(group == "superpowers-task-{{issue}}" for group in continuation_groups)
                 )
 
+    def test_superpowers_finalizer_materializes_canonical_build_summary(self) -> None:
+        packs_root = pathlib.Path(__file__).resolve().parents[2]
+        pack_root = packs_root / "superpowers"
+        build = load_formula(pack_root, "superpowers-build")
+        finalize_step = {step["id"]: step for step in build["steps"]}["finalize"]
+        finalize = (
+            pack_root / "assets" / "workflows" / "superpowers-build" / "finalize.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(finalize_step["metadata"]["gc.run_target"], "superpowers.finisher")
+        for fragment in (
+            "materialize the canonical",
+            "gc.build.implementation_summary_path",
+            "implementation-summary.md",
+            "{{artifact_root}}",
+            "gc.build.implementation-summary.v1",
+            "gc.implementation.summary_path",
+            "source anchors",
+            "gc bd update",
+            "Do not create the final report",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, finalize)
+
     def test_superpowers_development_converts_subagent_reviews_to_fanout(self) -> None:
         packs_root = pathlib.Path(__file__).resolve().parents[2]
         pack_root = packs_root / "superpowers"
@@ -3485,6 +3635,9 @@ class FormulaAssetTests(unittest.TestCase):
         for fragment in (
             "Read `work_dir` from the source anchor",
             "close only `<source-anchor-id>`",
+            "handle both an object and a",
+            "`gc.work_dir` is the launcher rig",
+            "points at a worktree without the",
             "gc bd show <source-anchor-id> --json",
             "status=closed",
             "gc.outcome=pass",
@@ -4035,9 +4188,22 @@ description = "Override sink that writes the base triage report contract."
         beads_by_id: dict[str, str],
         bead_id: str,
         extra_env: dict[str, str] | None = None,
+        script_root: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+
+        if script_root is not None:
+            installed_check_dir = script_root / ".gc" / "scripts" / "checks"
+            installed_check_dir.mkdir(parents=True)
+            installed_script = installed_check_dir / script.name
+            installed_script.write_text(script.read_text(encoding="utf-8"), encoding="utf-8")
+            installed_script.chmod(0o755)
+            validator = root / "assets" / "scripts" / "validate_build_artifact.py"
+            (installed_check_dir.parent / validator.name).write_text(
+                validator.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            script = installed_script
 
         with tempfile.TemporaryDirectory() as td:
             tmp = pathlib.Path(td)
@@ -4098,27 +4264,7 @@ description = "Override sink that writes the base triage report contract."
             show_path.write_text(show_json, encoding="utf-8")
             parent_show_path.write_text(parent_show_json or show_json, encoding="utf-8")
             list_path.write_text(list_json, encoding="utf-8")
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show)\n"
-                "    if [ \"${2:-}\" = \"root\" ]; then\n"
-                "      cat \"$BD_PARENT_SHOW_JSON\"\n"
-                "    else\n"
-                "      cat \"$BD_SHOW_JSON\"\n"
-                "    fi\n"
-                "    ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
+            write_check_gc_stub(bin_dir, parent_show=True)
 
             env = {
                 **os.environ,
@@ -4494,6 +4640,118 @@ description = "Override sink that writes the base triage report contract."
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("build artifact valid", result.stdout)
 
+    def test_build_artifact_check_resolves_relative_path_from_rig_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_uses_beads_scope_root_when_rig_root_is_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": "",
+                    "GC_BEADS_SCOPE_ROOT": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_derives_rig_root_from_installed_script_when_env_is_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+            source_root = pathlib.Path(__file__).resolve().parents[1]
+            validator = source_root / "assets" / "scripts" / "validate_build_artifact.py"
+            worktree_validator = per_bead_worktree / "gascity" / "assets" / "scripts" / validator.name
+            worktree_validator.parent.mkdir(parents=True)
+            worktree_validator.write_text(validator.read_text(encoding="utf-8"), encoding="utf-8")
+            for schema in (source_root / "schemas" / "build").glob("*.yaml"):
+                destination = per_bead_worktree / "gascity" / "schemas" / "build" / schema.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(schema.read_text(encoding="utf-8"), encoding="utf-8")
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": "",
+                    "GC_BEADS_SCOPE_ROOT": "",
+                    "GC_DIR": "",
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+                script_root=rig_root,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
     def test_build_artifact_check_blocks_invalid_artifact_with_repair_context(self) -> None:
         with tempfile.TemporaryDirectory() as artifact_dir:
             artifact = pathlib.Path(artifact_dir) / "requirements.md"
@@ -4536,6 +4794,21 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("no artifact path recorded", result.stderr)
         self.assertIn("gc.build.requirements_path,gc.var.requirements_path", result.stderr)
 
+    def test_review_report_prompt_writes_to_the_rig_root(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        prompt = (root / "assets" / "workflows" / "review" / "write-report.md").read_text(
+            encoding="utf-8"
+        )
+
+        for fragment in (
+            "GC_RIG_ROOT",
+            "per-bead worktree",
+            "gc.build.review_report_path={{report_path}}",
+            "or `$GC_WORK_DIR`",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, prompt)
+
     def test_bmad_story_development_emits_base_check_verdict(self) -> None:
         gascity_root = pathlib.Path(__file__).resolve().parents[1]
         bmad_root = gascity_root.parent / "bmad"
@@ -4564,6 +4837,103 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("code_review.verdict=iterate", apply_text)
         self.assertIn("code_review.report_path=<fix summary path>", apply_text)
 
+    def test_implementation_review_check_takes_newest_verdict_not_highest_id(self) -> None:
+        """`| last` in the verdict extractors has to mean newest, not highest id.
+
+        gmol dedupes the four status legs with `unique_by(.id)`, and jq's
+        unique_by sorts — so without a re-sort the union arrives in bead-id
+        order and this gate's `| last` picks a verdict by id hash. Here the
+        stale `iterate` sorts after the newer `done`, so an already-approved
+        review would loop until Ralph ran out of attempts: the exact symptom
+        the federating-reader fix was written to end, re-entering by ordering
+        rather than by starvation.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        def member(bead_id: str, updated: str, verdict: str) -> dict:
+            return {
+                "id": bead_id,
+                "updated_at": updated,
+                "metadata": {
+                    "gc.root_bead_id": "root",
+                    "gc.attempt": "1",
+                    "code_review.verdict": verdict,
+                    "code_review.report_path": f"/reports/{bead_id}.md",
+                },
+            }
+
+        # "gcg-zzz" sorts last by id but carries the OLDER verdict.
+        list_json = json.dumps(
+            [
+                member("gcg-aaa", "2026-08-13T03:00:00Z", "done"),
+                member("gcg-zzz", "2026-08-13T01:00:00Z", "iterate"),
+            ]
+        )
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_design_review_check_unions_every_status_leg(self) -> None:
+        """The verdict usually lands on a bead the review just closed.
+
+        `gc ready` takes exactly one --status, so the gate queries open,
+        in_progress, blocked and closed and unions the results. Drop any leg and
+        a verdict parked in that state disappears — which is the original bug:
+        the gate reports a member set it could not actually read, and Ralph
+        iterates until it runs out of attempts. Pin the closed leg specifically,
+        because that is where an approval comes to rest.
+        """
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            write_check_gc_stub(bin_dir)
+
+            show_json = tmp / "show.json"
+            list_json = tmp / "list.json"
+            show_json.write_text(
+                json.dumps(
+                    [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+                ),
+                encoding="utf-8",
+            )
+            list_json.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "approved-and-closed",
+                            "status": "closed",
+                            "metadata": {
+                                "gc.root_bead_id": "root",
+                                "gc.attempt": "1",
+                                "gc.continuation_group": "design-review-fixes",
+                                "design_review.verdict": "done",
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "BD_SHOW_JSON": str(show_json),
+                "BD_LIST_JSON": str(list_json),
+                "GC_BEAD_ID": "loop",
+            }
+            result = subprocess.run(
+                [str(script)], env=env, text=True, capture_output=True, check=False
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Design review approved", result.stdout)
+
     def test_design_review_check_scopes_verdict_to_current_loop(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
@@ -4572,21 +4942,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
@@ -4655,21 +5011,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
@@ -4751,21 +5093,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_gc.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
@@ -4921,6 +5249,9 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("gc.build.code_review_report_path", setup)
         self.assertIn("gc.build.gap_analysis_report_path", setup)
         self.assertIn("gc.build.review_fix_summary_path", setup)
+        self.assertIn("implementation_convoy_id: not provided", setup)
+        self.assertIn("Do not invent an external convoy", setup)
+        self.assertIn("per-bead worktree", setup)
 
         self.assertIn("code_review.review_verdict", request)
         self.assertIn("code_review.review_report_path", request)
@@ -4947,12 +5278,28 @@ description = "Override sink that writes the base triage report contract."
         self.assertNotIn("code_review.verdict=done", gap)
         self.assertNotIn("code_review.report_path=<", gap)
 
+        for reviewer_name, reviewer in (("request", request), ("gap", gap)):
+            with self.subTest(reviewer=reviewer_name):
+                self.assertIn("Initial-review baseline", reviewer)
+                self.assertIn("highest numeric `gc.attempt`", reviewer)
+                self.assertIn("gc.build.review_fix_summary_path", reviewer)
+                self.assertIn("fixed implementation worktree", reviewer)
+                self.assertIn("must not issue an `iterate` verdict merely", reviewer)
+
+        self.assertIn("may be intentionally absent", gap)
+        self.assertIn("must not by itself cause `iterate`", gap)
+        self.assertIn("implementation_convoy_id: not provided", gap)
+
         self.assertIn("code_review.verdict=done|iterate", process)
         self.assertIn("code_review.report_path=<review fix summary path>", process)
         self.assertIn("Use `covered` for resolved\nfindings", process)
         self.assertIn("Include `rationale: <why this id is not covered>`", process)
         self.assertIn("gc.build.code_review_status=approved", process)
         self.assertIn("gc.build.code_review_status=draft", process)
+        self.assertIn("non-blocking for this standalone review", process)
+        self.assertIn("implementation_convoy_id: not provided", process)
+        self.assertIn("must not self-approve its own remediation", process)
+        self.assertIn("next attempt must independently re-review", process)
 
         self.assertIn("gc.build.code_review_status=approved", finalize)
         self.assertIn("gc.build.code_review_approved_at", finalize)
