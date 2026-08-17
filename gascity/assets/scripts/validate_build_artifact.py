@@ -9,15 +9,156 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover
-    yaml = None
+def _site_packages_roots() -> list[str]:
+    import site
+
+    roots: list[str] = []
+    for candidate in [site.getusersitepackages(), *site.getsitepackages()]:
+        if candidate and candidate not in roots:
+            roots.append(candidate)
+    return roots
+
+
+def _import_yaml() -> tuple[Any, list[str]]:
+    """Import PyYAML, retrying with site-packages roots that launchers can
+    strip from sys.path (e.g. PYTHONNOUSERSITE=1 hiding a user-site install).
+    Returns the module (or None) and the roots appended before the retry."""
+    try:
+        import yaml as module
+    except ImportError:
+        pass
+    else:
+        return module, []
+    roots = _site_packages_roots()
+    for root in roots:
+        if root not in sys.path:
+            sys.path.append(root)
+    try:
+        import yaml as module
+    except ImportError:
+        return None, roots
+    return module, roots
+
+
+yaml, YAML_SITE_ROOTS_CHECKED = _import_yaml()
 
 
 FRONT_MATTER_RE = re.compile(r"\A---\n(?P<front>.*?)\n---(?:\n|\Z)(?P<body>.*)\Z", re.DOTALL)
-SCHEMA_ROOT = Path(__file__).resolve().parents[2] / "schemas" / "build"
 FORBIDDEN_REQUIRED_FIELD_NAMES = {"owner", "stage-owner", "stage_owner", "persona", "role"}
+
+# Embedded copies of gascity/schemas/build/*.yaml so this script stays
+# self-contained when consumers vendor only the scripts/ subtree (no sibling
+# schemas/ directory at any depth). Those YAML files remain the source of
+# truth; test_validators.py fails if the two drift apart.
+_BUILD_REQUIRED_FRONT_MATTER = [
+    "schema",
+    "workflow.id",
+    "workflow.formula",
+    "methodology.pack",
+    "methodology.name",
+    "producer.formula",
+    "producer.stage",
+    "producer.attempt",
+    "status",
+    "trace",
+]
+_BUILD_COVERAGE_STATUSES = [
+    "covered",
+    "not_applicable",
+    "deferred",
+    "blocked",
+    "out_of_scope",
+    "superseded",
+]
+_REVIEWED_STATUSES = ["draft", "questions", "approved", "changes_required", "blocked", "superseded"]
+_REPORT_STATUSES = ["draft", "approved", "blocked", "superseded"]
+
+EMBEDDED_SCHEMAS: dict[str, dict[str, Any]] = {
+    "gc.build.requirements.v1": {
+        "schema_id": "gc.build.requirements.v1",
+        "artifact": "requirements",
+        "allowed_statuses": _REVIEWED_STATUSES,
+        "required_front_matter": _BUILD_REQUIRED_FRONT_MATTER,
+        "coverage_statuses": _BUILD_COVERAGE_STATUSES,
+        "required_sections": [
+            "Problem Statement",
+            "W6H",
+            "User Stories",
+            "Technical Stories",
+            "Behavior Requirements",
+            "Example Mapping",
+            "Acceptance Criteria",
+            "Out Of Scope",
+            "Open Questions",
+        ],
+    },
+    "gc.build.plan.v1": {
+        "schema_id": "gc.build.plan.v1",
+        "artifact": "plan",
+        "allowed_statuses": _REVIEWED_STATUSES,
+        "required_front_matter": _BUILD_REQUIRED_FRONT_MATTER,
+        "coverage_statuses": _BUILD_COVERAGE_STATUSES,
+        "required_sections": [
+            "Summary",
+            "Current System",
+            "Proposed Implementation",
+            "Non-Goals",
+            "Verification",
+        ],
+    },
+    "gc.build.decomposition.v1": {
+        "schema_id": "gc.build.decomposition.v1",
+        "artifact": "decomposition",
+        "allowed_statuses": _REVIEWED_STATUSES,
+        "required_front_matter": _BUILD_REQUIRED_FRONT_MATTER,
+        "coverage_statuses": _BUILD_COVERAGE_STATUSES,
+        "required_sections": [
+            "Summary",
+            "Selected Downstream Formulas",
+            "Implementation Convoy",
+            "Work Items",
+        ],
+    },
+    "gc.build.implementation-summary.v1": {
+        "schema_id": "gc.build.implementation-summary.v1",
+        "artifact": "implementation-summary",
+        "allowed_statuses": _REPORT_STATUSES,
+        "required_front_matter": _BUILD_REQUIRED_FRONT_MATTER,
+        "coverage_statuses": _BUILD_COVERAGE_STATUSES,
+        "required_sections": [
+            "Summary",
+            "Intended Behavior",
+            "Changed Files",
+            "Verification",
+            "Remaining Risks",
+        ],
+    },
+    "gc.build.review.v1": {
+        "schema_id": "gc.build.review.v1",
+        "artifact": "review",
+        "allowed_statuses": _REVIEWED_STATUSES,
+        "required_front_matter": _BUILD_REQUIRED_FRONT_MATTER,
+        "coverage_statuses": _BUILD_COVERAGE_STATUSES,
+        "required_sections": [
+            "Verdict",
+            "Findings",
+            "Verification",
+        ],
+    },
+    "gc.build.final-report.v1": {
+        "schema_id": "gc.build.final-report.v1",
+        "artifact": "final-report",
+        "allowed_statuses": _REPORT_STATUSES,
+        "required_front_matter": _BUILD_REQUIRED_FRONT_MATTER,
+        "coverage_statuses": _BUILD_COVERAGE_STATUSES,
+        "required_sections": [
+            "Summary",
+            "Outcome",
+            "Artifacts",
+            "Remaining Risks",
+        ],
+    },
+}
 
 
 class ValidationError(Exception):
@@ -62,7 +203,11 @@ def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArti
 
 def parse_front_matter(text: str) -> tuple[str, dict[str, Any], str]:
     if yaml is None:
-        raise ValidationError("PyYAML is required to parse build artifacts")
+        raise ValidationError(
+            "PyYAML is required to parse build artifacts; import failed even after "
+            f"appending these site-packages roots to sys.path: {', '.join(YAML_SITE_ROOTS_CHECKED)}. "
+            "Install PyYAML for this interpreter or into one of those roots."
+        )
     match = FRONT_MATTER_RE.match(text)
     if not match:
         raise ValidationError("build artifact must start with YAML front matter")
@@ -74,14 +219,11 @@ def parse_front_matter(text: str) -> tuple[str, dict[str, Any], str]:
 
 
 def load_schema(schema_id: str) -> dict[str, Any]:
-    if yaml is None:
-        raise ValidationError("PyYAML is required to parse build schemas")
-    for path in sorted(SCHEMA_ROOT.glob("*.yaml")):
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        if isinstance(raw, dict) and raw.get("schema_id") == schema_id:
-            validate_schema_definition(raw)
-            return raw
-    raise ValidationError(f"unknown build artifact schema {schema_id!r}")
+    schema = EMBEDDED_SCHEMAS.get(schema_id)
+    if schema is None:
+        raise ValidationError(f"unknown build artifact schema {schema_id!r}")
+    validate_schema_definition(schema)
+    return schema
 
 
 def validate_schema_definition(schema: dict[str, Any]) -> None:
