@@ -325,11 +325,23 @@ def write_city(
     env = {
         key: value
         for key, value in os.environ.items()
-        if not key.startswith(("GC_", "BEADS_"))
+        if not key.startswith(("GC_", "BEADS_", "XDG_"))
     }
     env.update(
         {
             "HOME": str(home),
+            # Pinning HOME is not enough. Pack code that resolves config the
+            # portable way reads `${XDG_CONFIG_HOME:-$HOME/.config}`, and a set
+            # XDG_CONFIG_HOME beats the pinned HOME, so the scratch city reads
+            # the developer's real dotfiles. Caught by CI, not locally:
+            # `slack-full`'s doctor/check-env.sh found this operator's
+            # ~/.config/gc-slack-adapter/env and passed here, while a clean
+            # runner with no such file reported `slack-full:env`. Redirect the
+            # whole XDG set, since data/state/cache override HOME identically.
+            "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_DATA_HOME": str(home / ".local" / "share"),
+            "XDG_STATE_HOME": str(home / ".local" / "state"),
+            "XDG_CACHE_HOME": str(home / ".cache"),
             "GC_HOME": str(gc_home),
             "GC_CITY": str(city_dir),
             "GC_CITY_PATH": str(city_dir),

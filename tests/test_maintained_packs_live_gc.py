@@ -64,14 +64,33 @@ EXPECTED_DOCTOR_DELTA: dict[str, frozenset[str]] = {
     "oversight-rig": frozenset(),
     "pr-pipeline": frozenset(),
     "slack-channel": frozenset(),
-    # The pack ships its Slack adapter as source and its own doctor check
-    # reports the binary as not yet built. That is the correct message for a
-    # fresh install -- the user builds it during setup -- and it is the only
-    # finding any of these five adds today. `slack-channel` and `slack-mini`
-    # ship the same unbuilt adapter and no check that notices, which is why
-    # their entries are empty rather than matching.
-    "slack-full": frozenset({"slack-full:binaries"}),
+    # Both of these are the correct messages for a fresh install, and both come
+    # from checks only `slack-full` ships. `binaries`: the pack ships its Slack
+    # adapter as source, and the user builds it during setup. `env`: the
+    # adapter's credentials live in a config file the user writes during setup,
+    # and it does not exist yet. `slack-channel` and `slack-mini` ship the same
+    # unbuilt adapter and no check that notices, which is why their entries are
+    # empty rather than matching.
+    "slack-full": frozenset({"slack-full:binaries", "slack-full:env"}),
     "slack-mini": frozenset(),
+}
+
+# Findings whose presence is a property of the machine, not of the pack. These
+# are set aside before the equality above and PRINTED whenever they are, so a
+# run always shows what it stopped asserting on -- a silent subtraction and a
+# check that stopped reporting read identically.
+#
+# Keep this set as small as the evidence forces. It is not a waiver list: the
+# bar is that no import of the pack can decide the outcome, so the equality
+# assertion could not be green on every machine at once.
+HOST_DEPENDENT: dict[str, frozenset[str]] = {
+    # slack-full/doctor/check-funnel.sh inspects the host's Tailscale Funnel
+    # rules. With tailscale absent it prints a note and exits 0; with tailscale
+    # present and no rule forwarding to the adapter port it exits 2. Both are
+    # correct messages for the machine they ran on, and neither is caused by
+    # importing the pack -- a developer's laptop and a CI runner cannot both
+    # satisfy one recorded value.
+    "slack-full": frozenset({"slack-full:funnel"}),
 }
 
 
@@ -131,6 +150,14 @@ def test_pack_adds_only_the_doctor_findings_we_have_accepted(
     imports, rig_imports = wiring(pack)
     found = attributable(gc_test_bin, tmp_path, imports, rig_imports)
     expected = EXPECTED_DOCTOR_DELTA[pack]
+
+    host = HOST_DEPENDENT.get(pack, frozenset())
+    for check in sorted(found & host):
+        print(
+            f"[host-dependent] {check} reported on this machine and is not "
+            f"asserted on; see HOST_DEPENDENT in {Path(__file__).name}"
+        )
+    found -= host
 
     assert found == expected, (
         f"installing {pack} changes what gc doctor reports, against what this "
