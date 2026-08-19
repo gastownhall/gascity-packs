@@ -1,0 +1,6 @@
+[order]
+description = "Bounded reconciliation for durable role-addressed notices"
+trigger = "cooldown"
+interval = "1m"
+exec = "$ORDER_DIR/../assets/scripts/p0_notice.py reconcile --limit 50"
+timeout = "2m"
