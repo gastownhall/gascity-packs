@@ -23,9 +23,13 @@ it:**
 - **AN OBLIGATION** — do this, answer this, act on this. Archive it WHEN
   RESOLVED and not before. This is the kind the line above is about.
 - **A STANDING REFERENCE** — a doctrine, a policy, an order that binds you from
-  now on. It has no end state, so there is nothing to discharge and nothing to
-  archive. Keep it readable: you will need to read it again. Archiving your own
-  standing orders is how a town loses them.
+  now on. It has no end state, so there is nothing to discharge — but THE INBOX
+  IS NOT DURABLE STORAGE (read mail is lifecycle-managed and will not persist),
+  so "leave it in the inbox" loses it exactly as surely as archiving it. MAKE IT
+  DURABLE THE MOMENT YOU CLASSIFY IT: file it as a bead, or land it in your
+  role's standing instructions. Once it lives somewhere durable, the mail is a
+  delivery receipt and may be archived. A standing order that exists only in a
+  mailbox is one the town is already losing.
 - **STALE OR NOISE** — nothing to discharge and nothing to keep. Archive it,
   once you have verified that is what it is.
 
@@ -123,9 +127,11 @@ For each unread message (`gc mail inbox`):
     only once it is RESOLVED — or once the obligation is durable somewhere it
     will be seen.
   - **A STANDING REFERENCE** (a doctrine, a policy, an order binding you from
-    now on) → it has no end state, so there is nothing to discharge. Leave it
-    readable. Do NOT archive it: it is not "informational", and archiving your
-    own standing orders is how a town loses them.
+    now on) → it has no end state, so there is nothing to discharge — and the
+    inbox will not hold it (read mail is lifecycle-managed). MAKE IT DURABLE:
+    file a bead or fold it into your standing instructions, then archive the
+    mail as a delivery receipt. Never treat the mailbox as the home of a
+    standing order — that is how a town loses them.
   - **STALE OR NOISE** (nothing to discharge and nothing to keep) → archive it
     (`gc mail archive <id>`), once you have verified that is what it is.
 - **The state rule overrides the kind, here as everywhere:** if you have not
