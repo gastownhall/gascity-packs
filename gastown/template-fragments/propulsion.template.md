@@ -42,12 +42,14 @@ first, or make the obligation durable somewhere it will be seen.
 **MIXED ITEMS — a standing order that ALSO asks you to do something — are BOTH
 kinds, and you owe both halves.** An order that binds you from now on and also
 carries a one-time action (adopt it, relay it, file it, answer it) is the common
-case, not an edge case. SPLIT IT: discharge the obligation half — do the action,
-or file a bead so it is durable — and keep the reference half readable.
-Completing the task does NOT discharge the standing order, and therefore does
-NOT authorize archiving the message. If you are unsure whether the reference
-half still binds you, do not archive: a kept item costs one line in your inbox,
-an archived standing order is one the town no longer has.
+case, not an edge case. SPLIT IT: discharge the obligation half — do the action
+— and MAKE THE REFERENCE HALF DURABLE the same way a pure standing reference is
+made durable: file it as a bead or fold it into your standing instructions.
+Completing the task alone discharges NEITHER half: the message may be archived
+only once the action is done AND the reference half lives somewhere durable. If
+you are unsure whether the reference half still binds you, resolve that before
+archiving — by making it durable, not by leaving it in the mailbox, which will
+not hold it.
 
 **Archived is the RECEIPT, never the REMEDY — close or archive ONLY when fully
 resolved:** handled AND verified. "Seen", "known", "I'll get to it", "it's in
@@ -137,8 +139,9 @@ For each unread message (`gc mail inbox`):
 - **The state rule overrides the kind, here as everywhere:** if you have not
   handled it, it does not get archived. And a MIXED item — a standing order that
   also carries a one-time action — is BOTH kinds: dispatch or file the action so
-  it is durable, keep the order readable, and never let finishing the task be the
-  reason you archive the order.
+  it is durable, make the order itself durable the same way, and never let
+  finishing the task be the reason you archive the message before the order
+  lives somewhere that will hold it.
 - **Never leave mail unread, and never archive in order to become read.** Read
   + resolve + archive is right. Read + ignore is not — the obligation stays live
   even when the count is clean.
