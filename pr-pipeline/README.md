@@ -94,7 +94,13 @@ Scorecard against 11 categories (behavioral correctness, contract
 fidelity, blast radius, concurrency, error handling, security, resource
 lifecycle, release safety, test evidence, architectural consistency,
 debuggability). Pre-flags 7 recurring fixup themes. Verdict: `block`,
-`request_changes`, or `approve`.
+`request_changes`, `approve`, or `too_large`.
+
+A PR whose additions+deletions exceed `--max-diff-lines` (default 5000, `0`
+disables) is refused before any agent is started, exiting 3 and recording
+`verdict: too_large`. That refusal describes the request, not a failed run:
+retrying it unchanged cannot succeed and spends the same budget again, so
+supervising loops must not treat it as retryable.
 
 ### Run the pre-push gate
 
