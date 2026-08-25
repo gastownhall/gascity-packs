@@ -153,6 +153,14 @@ needs = ["plan"]
 metadata = { "gc.run_target" = "gc.review-synthesizer" }
 description_file = "../assets/workflows/build-base/plan-review.md"
 
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/plan-review-approved.sh"
+timeout = "5m"
+
 [[steps]]
 id = "decompose"
 title = "Decompose approved plan"

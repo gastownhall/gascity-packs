@@ -288,6 +288,24 @@ BUILD_ARTIFACT_VALIDATION_GATES = {
     ("build-from-review-base", "finalize"): FINAL_REPORT_GATE,
 }
 
+# plan-review produces no schema-validated artifact; its gate reads the verdict
+# the reviewer records on the workflow root. Rows are (formula, gated step, the
+# step the gate keeps blocked). The same wholesale-override rule applies:
+# build-basic re-declares plan-review, so it re-declares the gate.
+PLAN_REVIEW_APPROVAL_GATES = (
+    ("build-base", "plan-review", "decompose"),
+    ("build-basic", "plan-review", "decompose"),
+    ("build-from-plan-base", "plan-review", "prepare-decompose"),
+)
+PLAN_REVIEW_APPROVAL_CHECK = {
+    "max_attempts": 3,
+    "check": {
+        "mode": "exec",
+        "path": ".gc/scripts/checks/plan-review-approved.sh",
+        "timeout": "5m",
+    },
+}
+
 THIRD_PARTY_BUILD_PACKS = {
     "compound-engineering": {
         "formula": "compound-build",
@@ -4149,6 +4167,7 @@ description = "Override sink that writes the base triage report contract."
                 "design-review-approved.sh",
                 "gap-analysis-approved.sh",
                 "implementation-review-approved.sh",
+                "plan-review-approved.sh",
             ],
         )
         for script in scripts:
@@ -5152,6 +5171,129 @@ description = "Override sink that writes the base triage report contract."
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Design review approved", result.stdout)
+
+    def test_plan_review_stages_gate_decomposition_on_recorded_approval(self) -> None:
+        """A `needs` edge is satisfied by closure alone. Without a check, a
+        plan-review closed with `changes_required` released decompose and the
+        implementation drain exactly as an approved one did; only prose asked
+        the agent not to. The gate has to sit on plan-review itself: the
+        compiler rejects drain combined with gate, and check cannot be
+        combined with expand."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        for formula_name, step_id, guarded_step in PLAN_REVIEW_APPROVAL_GATES:
+            with self.subTest(formula=formula_name, step=step_id):
+                formula = load_formula(root, formula_name)
+                steps = {step["id"]: step for step in formula["steps"]}
+                self.assertEqual(steps[step_id].get("check"), PLAN_REVIEW_APPROVAL_CHECK)
+                self.assertNotIn("expand", steps[step_id])
+                self.assertEqual(steps[guarded_step]["needs"], [step_id])
+
+                description = node_description(root, steps[step_id])
+                for fragment in (
+                    "gc.build.plan_review_status=approved",
+                    ".gc/scripts/checks/plan-review-approved.sh",
+                    "gc.attempt_log",
+                ):
+                    with self.subTest(formula=formula_name, fragment=fragment):
+                        self.assertIn(fragment, description)
+                # The old prose licensed closing an unapproved review as done.
+                self.assertNotIn("or the blocking issues are recorded", description)
+                self.assertNotIn("or after a blocked/changes-required verdict", description)
+
+        # Every entrypoint that inherits these stages inherits the gate, including
+        # the continuation the production incident ran through.
+        for formula_name in (
+            "build-basic",
+            "build-from-plan",
+            "build-from-requirements",
+            "build-from-requirements-base",
+        ):
+            with self.subTest(resolved=formula_name):
+                resolved = resolve_formula(root, formula_name)
+                steps = {step["id"]: step for step in resolved["steps"]}
+                self.assertEqual(steps["plan-review"].get("check"), PLAN_REVIEW_APPROVAL_CHECK)
+
+    def _run_plan_review_check(
+        self,
+        *,
+        step_metadata: dict[str, str],
+        root_metadata: dict[str, str],
+        bead_id: str = "plan-review-iteration",
+    ) -> subprocess.CompletedProcess:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "plan-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            write_check_gc_stub(bin_dir, parent_show=True)
+
+            show_json = tmp / "show.json"
+            parent_show_json = tmp / "parent-show.json"
+            list_json = tmp / "list.json"
+            show_json.write_text(
+                json.dumps([{"id": bead_id, "metadata": step_metadata}]), encoding="utf-8"
+            )
+            parent_show_json.write_text(
+                json.dumps([{"id": "root", "metadata": root_metadata}]), encoding="utf-8"
+            )
+            list_json.write_text("[]", encoding="utf-8")
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "BD_SHOW_JSON": str(show_json),
+                "BD_PARENT_SHOW_JSON": str(parent_show_json),
+                "BD_LIST_JSON": str(list_json),
+                "GC_BEAD_ID": bead_id,
+            }
+            return subprocess.run(
+                [str(script)], env=env, text=True, capture_output=True, check=False
+            )
+
+    def test_plan_review_check_passes_only_on_recorded_approval(self) -> None:
+        approved = self._run_plan_review_check(
+            step_metadata={"gc.root_bead_id": "root", "gc.attempt": "1"},
+            root_metadata={"gc.build.plan_review_status": "approved"},
+        )
+        self.assertEqual(approved.returncode, 0, approved.stdout + approved.stderr)
+        self.assertIn("Plan review approved", approved.stdout)
+
+        for verdict in ("changes_required", "questions", "blocked", "draft", "ready", "failed"):
+            with self.subTest(verdict=verdict):
+                result = self._run_plan_review_check(
+                    step_metadata={"gc.root_bead_id": "root", "gc.attempt": "1"},
+                    root_metadata={"gc.build.plan_review_status": verdict},
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("plan-review-check: plan review not approved", result.stderr)
+                self.assertIn(f"gc.build.plan_review_status={verdict}", result.stderr)
+
+    def test_plan_review_check_fails_closed_without_a_verdict(self) -> None:
+        # The shape of the incident: blocking issues recorded in the step
+        # summary, nothing the graph could read, stage closed.
+        result = self._run_plan_review_check(
+            step_metadata={"gc.root_bead_id": "root", "gc.attempt": "1"},
+            root_metadata={"gc.build.plan_path": "plans/example/implementation-plan.md"},
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("gc.build.plan_review_status is missing", result.stderr)
+
+    def test_plan_review_check_reads_the_verdict_from_the_workflow_root(self) -> None:
+        # The ralph loop clones the step per attempt and decompose reads the
+        # root, so the root is the one place the gate and its consumers agree
+        # on. A verdict stamped on the iteration bead alone is not approval.
+        result = self._run_plan_review_check(
+            step_metadata={
+                "gc.root_bead_id": "root",
+                "gc.attempt": "1",
+                "gc.build.plan_review_status": "approved",
+            },
+            root_metadata={},
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("gc.build.plan_review_status is missing on workflow root root", result.stderr)
 
     def test_superpowers_plan_review_loop_has_single_verdict_owner(self) -> None:
         packs_root = pathlib.Path(__file__).resolve().parents[2]

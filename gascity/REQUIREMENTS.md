@@ -816,6 +816,7 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 | GC-METH-BR-051 | GC-METH-US-001 | WHEN prerequisite inputs already exist for a build stage, THE base pack SHALL provide reusable `build-from-*-base` continuation suffixes that validate those prerequisites, perform only their owned stage or handoff, and delegate to the next suffix without silently rerunning skipped upstream stages. |
 | GC-METH-BR-052 | GC-METH-US-002 | WHEN a methodology pack needs a continuation entrypoint, THE pack SHOULD extend the matching `build-from-*-base` suffix and override selectors, routes, drain formulas, or review expansions instead of copying the suffix graph. |
 | GC-METH-BR-053 | GC-METH-US-001 | WHEN a user wants the built-in Gas City continuation behavior, THE base pack SHALL provide cataloged `build-from-*` wrappers that extend the matching suffix bases. |
+| GC-METH-BR-054 | GC-METH-US-001 | WHEN `plan-review` closes without `gc.build.plan_review_status=approved` recorded on the workflow root, THE base graph SHALL fail the plan-review approval check and re-dispatch the stage within bounded attempts instead of releasing `decompose` and the implementation drain on the `needs` edge alone; exhausting the attempts SHALL close the stage `gc.outcome=fail`. |
 
 ## Scenario Ledger
 
