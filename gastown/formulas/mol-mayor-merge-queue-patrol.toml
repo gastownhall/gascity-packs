@@ -1,0 +1,53 @@
+description = """
+Mayor merge-queue patrol.  One patrol clears mechanical backpressure that
+otherwise leaves agent work stranded after PR publication or repeated
+recovery loops.
+
+The patrol applies five rules:
+
+1. MERGEABLE agent PRs without auto-merge enabled -> enable squash
+   auto-merge.  By default this covers `polecat/*` and `refinery/*`.
+2. Agent-shaped PRs with no live bead -> close the PR as an orphan.
+3. CONFLICTING agent PRs older than eight hours -> close the PR and reset the
+   bead to open/unassigned with `gc.routed_to` removed.
+4. Active-but-idle polecat sessions with no in-progress bead after thirty
+   minutes -> kill the session so the controller can respawn a fresh slot.
+5. Spawn-storm beads with `reset_count > 2` -> block the bead as pool poison.
+
+Each run emits `merge_queue.swept` with `cleared`, `closed`, `escalated`,
+and `age_seconds_p95`.
+"""
+formula = "mol-mayor-merge-queue-patrol"
+version = 1
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars]
+[vars.script_timeout]
+description = "Maximum seconds to allow the deterministic patrol script to run"
+default = "600"
+
+[[steps]]
+id = "run-patrol"
+title = "Run deterministic merge-queue patrol"
+description = """
+Run the installed pack script.  Prefer the installed runtime pack path; fall
+back to the tracked source path when testing from a repo worktree.
+
+```bash
+CITY_ROOT="${GC_CITY:-$(pwd)}"
+SCRIPT="$CITY_ROOT/.gc/system/packs/gastown/assets/scripts/merge-queue-patrol.sh"
+if [ ! -x "$SCRIPT" ]; then
+  SCRIPT="scripts/gascity/pack/gastown/assets/scripts/merge-queue-patrol.sh"
+fi
+timeout {{script_timeout}}s "$SCRIPT"
+```
+
+The script handles missing `gh` auth or empty queues as a no-op and still
+emits the sweep event.  If it reports `escalated > 0`, read the stderr summary
+and inspect the affected PR/bead directly before the next patrol tick.
+
+Exit criteria: the script completed, emitted `merge_queue.swept`, and any
+reported escalations have enough detail for the next mayor pass.
+"""

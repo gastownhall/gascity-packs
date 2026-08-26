@@ -1,0 +1,6 @@
+[order]
+description = "Mayor merge-queue patrol: clear stuck agent PR backpressure"
+trigger = "cooldown"
+interval = "30m"
+exec = "$PACK_DIR/assets/scripts/merge-queue-patrol.sh"
+timeout = "10m"
