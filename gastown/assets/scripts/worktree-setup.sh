@@ -130,13 +130,21 @@ if git -C "$RIG_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
     fi
 else
     if [ -n "$DEFAULT_REF" ]; then
-        WORKTREE_ADD="git -C $RIG_ROOT worktree add $WT -b $BRANCH $DEFAULT_REF"
+        WORKTREE_ADD_START="$DEFAULT_REF"
     else
         # Fallback: no origin/HEAD configured (detached, or no remote default
         # set). Create from current HEAD as before.
-        WORKTREE_ADD="git -C $RIG_ROOT worktree add $WT -b $BRANCH"
+        WORKTREE_ADD_START=""
     fi
-    if ! GIT_LFS_SKIP_SMUDGE=1 $WORKTREE_ADD; then
+    WORKTREE_ADD_FAILED=0
+    if [ -n "$WORKTREE_ADD_START" ]; then
+        GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" \
+            -b "$BRANCH" "$WORKTREE_ADD_START" || WORKTREE_ADD_FAILED=1
+    else
+        GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" \
+            -b "$BRANCH" || WORKTREE_ADD_FAILED=1
+    fi
+    if [ "${WORKTREE_ADD_FAILED:-0}" -ne 0 ]; then
         echo "worktree-setup: failed to create worktree at $WT from $RIG_ROOT (branch $BRANCH)" >&2
         restore_stage
         exit 1
