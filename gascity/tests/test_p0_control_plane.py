@@ -215,6 +215,45 @@ esac
         logged_calls = calls.read_text().splitlines() if calls.exists() else []
         self.assertFalse(any(call.startswith("mail send human") for call in logged_calls))
 
+    def test_reconcile_rotates_past_a_full_bounded_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            index = root / "index.json"
+            records = {
+                f"gone-{number}": {
+                    "recipient_role": f"retired-{number}.role",
+                    "queued_at": "2000-01-01T00:00:00Z",
+                    "disposition": "sending",
+                }
+                for number in range(51)
+            }
+            index.write_text(json.dumps({"schema_version": 1, "notices": records}))
+            fake_bin, calls = self.fake_gc(root, """
+case \"$1 $2 $3\" in
+  \"agent list --json\") printf '%s\\n' '{"agents":[]}' ;;
+  \"mail send human\") printf '%s\\n' '{"messages":[{"id":"human-1"}],"count":1}' ;;
+  *) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+""")
+            env = {"PATH": f"{fake_bin}:/usr/bin:/bin", "GC_P0_CALLS": str(calls)}
+            self.assertEqual(self.run_notice("reconcile", index=index, extra_env=env).returncode, 0)
+            self.assertEqual(self.run_notice("reconcile", index=index, extra_env=env).returncode, 0)
+            records = json.loads(index.read_text())["notices"]
+        self.assertTrue(all(record["disposition"] == "escalated" for record in records.values()))
+
+    def test_reconcile_recovers_from_a_malformed_rotation_offset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            index = pathlib.Path(directory) / "index.json"
+            index.write_text(json.dumps({
+                "schema_version": 1,
+                "reconcile_offset": "not-an-offset",
+                "notices": {},
+            }))
+            result = self.run_notice("reconcile", index=index)
+            data = json.loads(index.read_text())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(data["reconcile_offset"], 0)
+
     def test_failed_human_escalation_remains_retryable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)

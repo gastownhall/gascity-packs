@@ -231,7 +231,20 @@ def reconcile(args: argparse.Namespace) -> int:
     escalated = 0
     with locked_index() as data:
         notices = data.setdefault("notices", {})
-        for nid, record in list(notices.items())[:args.limit]:
+        notice_ids = list(notices)
+        offset = data.get("reconcile_offset", 0)
+        if not isinstance(offset, int):
+            offset = 0
+        if notice_ids:
+            offset %= len(notice_ids)
+            selected_ids = (notice_ids[offset:] + notice_ids[:offset])[:args.limit]
+        else:
+            offset = 0
+            selected_ids = []
+        for nid in selected_ids:
+            record = notices.get(nid)
+            if record is None:
+                continue
             if record.get("processed_at") or record.get("disposition") in TERMINAL:
                 terminal_at = record.get("processed_at") or record.get("last_seen_at", "")
                 parsed_terminal_at = _parse_time(terminal_at)
@@ -261,6 +274,10 @@ def reconcile(args: argparse.Namespace) -> int:
                             # Do not claim a human saw the escalation. Leaving the
                             # receipt in `sending` makes the bounded next run retry.
                             record["escalation_error"] = "human escalation was not durably accepted"
+        remaining = len(notices)
+        data["reconcile_offset"] = (
+            (offset + len(selected_ids)) % remaining if remaining else 0
+        )
     print(json.dumps({"processed": min(args.limit, len(notices)), "escalated": escalated}))
     return 0
 
