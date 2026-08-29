@@ -68,6 +68,36 @@ execution order:
   exact `gc bd dep add` / `gc bd dep remove` repair commands; repair the
   EDGES with those commands, not just the artifact text.
 
+Declare shared-namespace ownership whenever several work items touch one
+upstream namespace -- one provider family, one config block, one pinned
+counter. Exactly one work item creates the shared scaffold; every other
+participant adds leaves to it and edits nothing else there. Undeclared, the
+collision surfaces when four independently-green branches fail to merge:
+
+| Namespace | Participants | Owner | Leaf-Only |
+| --- | --- | --- | --- |
+| `fal.geminiOmniFlash` | WI-1, WI-2, WI-3 | WI-1 | WI-2, WI-3 |
+
+- Owner, Participants and Leaf-Only cells use the same values as the FIRST
+  column of the Work Items dependency table above; use commas for several and
+  `-` for none.
+- Exactly one owner per namespace. Every participant that is not the owner must
+  appear under Leaf-Only; a participant in neither column fails the gate.
+- If nothing is shared, say so explicitly with a single sentinel row --
+  `| (none) | - | - | - |` -- which is the whole declaration. Declare it even
+  when there is only one work item; it costs one line and makes the answer a
+  fact rather than an omission.
+- Do not add a Status column to this table either; the validator reads any
+  table with ID and Status columns as the coverage matrix.
+- The validation gate FAILS the artifact when the ID/Bead/Depends On work-item
+  table lists two or more rows and no ownership table is declared at all.
+  Failures name the namespace, the offending work items and the concrete
+  repair.
+- Placement: the schema's required sections are order-enforced among
+  themselves, so a `## Shared Namespaces` heading must sit AFTER `## Work
+  Items`, or the table must live inside the `## Work Items` section. The check
+  scans the whole body and does not care which.
+
 Create work-item beads first, then create a new implementation convoy for those
 work units. Do not reuse the source or launch convoy from `gc.var.convoy_id`.
 

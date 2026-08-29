@@ -181,5 +181,29 @@ if [ "$SCHEMA" = "gc.build.decomposition.v1" ]; then
   fi
 fi
 
+# A decomposition that splits one upstream namespace across several work items
+# must name exactly one owner for it; siblings add leaves only. Assert the
+# declaration at decomposition time rather than discovering the collision when
+# four independently-green branches fail to merge.
+if [ "$SCHEMA" = "gc.build.decomposition.v1" ]; then
+  NAMESPACE_CHECK=""
+  for candidate in \
+    ${GC_WORK_DIR:+"$GC_WORK_DIR/gascity/assets/scripts/validate_shared_namespaces.py"} \
+    "$(dirname "$VALIDATOR")/validate_shared_namespaces.py"; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+      NAMESPACE_CHECK="$candidate"
+      break
+    fi
+  done
+  [ -n "$NAMESPACE_CHECK" ] || fail "validate_shared_namespaces.py not found beside $VALIDATOR or under GC_WORK_DIR"
+  if NAMESPACE_OUTPUT="$(python3 "$NAMESPACE_CHECK" --path "$ARTIFACT_PATH" 2>&1)"; then
+    [ -n "$NAMESPACE_OUTPUT" ] && printf '%s\n' "$NAMESPACE_OUTPUT"
+  else
+    echo "build-artifact-check: schema=$SCHEMA path=$ARTIFACT_PATH failed shared-namespace ownership check" >&2
+    printf '%s\n' "$NAMESPACE_OUTPUT" >&2
+    exit 1
+  fi
+fi
+
 echo "build artifact valid: schema=$SCHEMA path=$ARTIFACT_PATH"
 exit 0

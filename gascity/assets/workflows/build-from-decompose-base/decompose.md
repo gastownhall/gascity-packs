@@ -8,6 +8,8 @@ Write the decomposition artifact to `{{decomposition_path}}` when supplied; othe
 
 Declare work-item dependencies in a machine-readable table with ID, Bead, and Depends On columns (rows in intended execution order; every Depends On entry references an earlier row; no Status column), and wire the live edges to match: `gc bd dep add <dependent> <prerequisite>` — the first argument WAITS, the second is what it waits for. Never wire a declared sequence temporally (`gc bd dep add <earlier> <later>` is inverted and drains back-to-front). The validation gate verifies live edge orientation against the declared table and fails with the exact `gc bd dep add`/`gc bd dep remove` repair commands; repair the edges, not just the artifact text.
 
+Declare shared-namespace ownership in a table with Namespace, Participants, Owner and Leaf-Only columns, using the same work-item IDs as the first column of the dependency table: exactly one owner per namespace, every other participant Leaf-Only, `| (none) | - | - | - |` when nothing is shared, and no Status column (the validator reads any ID/Status table as the coverage matrix). The gate fails the artifact when the canonical ID/Bead/Depends On table lists two or more rows and no ownership table is declared.
+
 Record the implementation convoy ID on the workflow root bead as both:
 
 - `gc.input_convoy_id=<implementation-convoy-id>` for the drain contract.
