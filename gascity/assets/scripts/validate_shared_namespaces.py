@@ -28,6 +28,11 @@ cleaning are a duplicate-row error rather than a silent merge.
 The table must not carry a Status column: the build-artifact validator reads
 any table with ID and Status columns as the coverage matrix, so a Status
 column here would silently corrupt coverage rather than declare ownership.
+That prohibition is enforced on any table carrying a Namespace column,
+whether or not it also carries an Owner column, because `ID | Namespace |
+Status` is the corrupting shape and it names no owner to be recognized by.
+A table with no Namespace column -- the artifact's real `ID | Status`
+coverage matrix -- is none of this check's business and is never read here.
 
 Absence is dispositive, never silent. A single `| (none) | - | - | - |` row is
 the cheap explicit discharge. With no ownership table at all, the check fails
@@ -102,14 +107,19 @@ def parse_ownership_tables(body: str) -> list[NamespaceRow]:
     while index < len(lines):
         cells = split_table_row(lines[index])
         header = [normalize_header_cell(cell) for cell in cells]
-        if not header or "namespace" not in header or "owner" not in header:
+        if not header or "namespace" not in header:
             index += 1
             continue
         if "status" in header:
             raise NamespaceCheckError(
                 "ownership table must not carry a Status column; "
-                "the build-artifact validator reads any ID/Status table as the coverage matrix"
+                "the build-artifact validator reads any ID/Status table as the coverage matrix; "
+                "fix: drop the Status column -- ownership is declared by Namespace, Owner "
+                "and Leaf-Only alone"
             )
+        if "owner" not in header:
+            index += 1
+            continue
         namespace_index = header.index("namespace")
         owner_index = header.index("owner")
         participants_index = header.index("participants") if "participants" in header else -1
@@ -149,11 +159,19 @@ def parse_ownership_tables(body: str) -> list[NamespaceRow]:
 def parse_work_items(body: str) -> tuple[tuple[str, ...], str, bool]:
     """Return (work-item ids, header label, canonical-shape flag).
 
-    The work-item table is the first body table whose normalized header carries
-    a Bead column; its first column is the ID column. That covers both real
-    shapes -- the canonical `ID | Bead | Depends On` and wider variants such as
+    The work-item table is a body table whose normalized header carries a Bead
+    column; its first column is the ID column. That covers both real shapes --
+    the canonical `ID | Bead | Depends On` and wider variants such as
     `Slice | Bead | Provider | Deliverable | Floor`.
+
+    Artifacts routinely carry more than one Bead-column table -- a per-slice
+    summary above the real Work Items table, say -- so every candidate is
+    collected and a canonical one anywhere in the body wins; only when none is
+    canonical does the first table win. Returning at the first table instead
+    would let a summary table sitting above the canonical one silently disarm
+    the missing-declaration failure, which is the check's headline guarantee.
     """
+    candidates: list[tuple[tuple[str, ...], str, bool]] = []
     lines = body.splitlines()
     index = 0
     while index < len(lines):
@@ -176,8 +194,10 @@ def parse_work_items(body: str) -> tuple[tuple[str, ...], str, bool]:
             if item_id:
                 ids.append(item_id)
             index += 1
-        return tuple(_dedupe(tuple(ids))), label, canonical
-    return (), "", False
+        candidates.append((tuple(_dedupe(tuple(ids))), label, canonical))
+    if not candidates:
+        return (), "", False
+    return next((candidate for candidate in candidates if candidate[2]), candidates[0])
 
 
 def validate_rows(

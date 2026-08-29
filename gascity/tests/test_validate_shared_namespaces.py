@@ -105,6 +105,47 @@ class SharedNamespaceCheckTestCase(unittest.TestCase):
         self.assertIn("is not the canonical ID/Bead/Depends On shape", stdout)
         self.assertIn("Slice | Bead | Provider", stdout)
 
+    def test_earlier_bead_table_does_not_suppress_the_gate(self) -> None:
+        # RQ-1: a per-slice summary table above the canonical Work Items table
+        # must not switch the missing-declaration failure off. 6 of 110 live
+        # artifacts carry two or more Bead-column tables, so returning at the
+        # first one disarmed the check's headline guarantee for that shape.
+        body = slice_table(
+            [("S1", "ac-111aaa", "fal"), ("S2", "ac-222bbb", "fal")]
+        ) + work_item_table(FOUR_ITEMS)
+        status, _, stderr = self.run_main(body)
+        self.assertEqual(status, 1)
+        self.assertIn("no shared-namespace ownership declaration", stderr)
+        self.assertIn("declares 4 work items", stderr)
+
+    def test_canonical_table_wins_over_an_earlier_bead_table(self) -> None:
+        # The canonical table also supplies the ID vocabulary once it is found,
+        # so a declaration naming its ids cross-references cleanly.
+        body = (
+            slice_table([("S1", "ac-111aaa", "fal"), ("S2", "ac-222bbb", "fal")])
+            + work_item_table(FOUR_ITEMS)
+            + ownership_table([("PRICING.kie", "WI-1, WI-2", "WI-1", "WI-2")])
+        )
+        status, stdout, stderr = self.run_main(body)
+        self.assertEqual(status, 0, stderr)
+        self.assertIn("shared namespaces valid: 1 namespace, 2 participants", stdout)
+
+    def test_first_bead_table_wins_when_none_is_canonical(self) -> None:
+        # Unchanged behaviour: with no canonical table anywhere, the first
+        # Bead-column table still supplies the ids and the skip message label.
+        body = slice_table(
+            [("S1", "ac-111aaa", "fal"), ("S2", "ac-222bbb", "fal")]
+        ) + (
+            "## Rollout\n\n"
+            "| Phase | Bead | Owner |\n"
+            "| --- | --- | --- |\n"
+            "| P1 | `ac-333ccc` | team |\n"
+        )
+        status, stdout, stderr = self.run_main(body)
+        self.assertEqual(status, 0, stderr)
+        self.assertIn("is not the canonical ID/Bead/Depends On shape", stdout)
+        self.assertIn("Slice | Bead | Provider", stdout)
+
     def test_sentinel_row_passes(self) -> None:
         body = work_item_table(FOUR_ITEMS) + ownership_table([("(none)", "-", "-", "-")])
         status, stdout, stderr = self.run_main(body)
@@ -202,6 +243,54 @@ class SharedNamespaceCheckTestCase(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("must not carry a Status column", stderr)
         self.assertIn("coverage matrix", stderr)
+
+    def test_id_status_ownership_table_is_a_dedicated_error(self) -> None:
+        # RQ-2 / AC-08 / BR-12: the shape the requirement actually names. It
+        # carries no Owner column, so gating the Status check on Namespace+Owner
+        # let it fall through to the generic missing-declaration message -- or,
+        # beside a valid ownership table, past the check entirely and into the
+        # coverage matrix.
+        table = (
+            "## Shared Namespaces\n\n"
+            "| ID | Namespace | Status |\n"
+            "| --- | --- | --- |\n"
+            "| WI-1 | PRICING.kie | covered |\n"
+        )
+        status, _, stderr = self.run_main(work_item_table(FOUR_ITEMS) + table)
+        self.assertEqual(status, 1)
+        self.assertIn("must not carry a Status column", stderr)
+        self.assertIn("coverage matrix", stderr)
+        self.assertIn("fix: drop the Status column", stderr)
+
+        # ...and it is still caught when a valid declaration sits above it.
+        beside_valid = (
+            work_item_table(FOUR_ITEMS)
+            + ownership_table([("PRICING.kie", "WI-1, WI-2", "WI-1", "WI-2")])
+            + "\n"
+            + table
+        )
+        # The shape corrupts coverage: the base validator reads it as one.
+        self.assertEqual(
+            build_artifact.parse_markdown_coverage(beside_valid), {"WI-1": "covered"}
+        )
+        status, _, stderr = self.run_main(beside_valid)
+        self.assertEqual(status, 1)
+        self.assertIn("must not carry a Status column", stderr)
+
+    def test_coverage_matrix_without_a_namespace_column_is_left_alone(self) -> None:
+        # The other half of AC-08: a real ID/Status coverage matrix carries no
+        # Namespace column and must stay this check's business to ignore.
+        body = (
+            "## Coverage\n\n"
+            "| ID | Status |\n"
+            "| --- | --- |\n"
+            "| REQ-001 | covered |\n\n"
+            + work_item_table(FOUR_ITEMS)
+            + ownership_table([("PRICING.kie", "WI-1, WI-2", "WI-1", "WI-2")])
+        )
+        status, stdout, stderr = self.run_main(body)
+        self.assertEqual(status, 0, stderr)
+        self.assertIn("shared namespaces valid", stdout)
 
     def test_ownership_table_does_not_pollute_coverage_matrix(self) -> None:
         body = (
