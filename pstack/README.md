@@ -4,10 +4,25 @@ PStack is a Gas City methodology pack for principle-driven software change. It k
 
 ## Use
 
+Add PStack at city scope:
+
 ```toml
 [imports.pstack]
 source = "../pstack"
 ```
+
+The target rig also needs Gas City's providerless runtime roles. In a local
+checkout, add this under the rig:
+
+```toml
+[rigs.imports.gc]
+source = "../gascity/roles"
+```
+
+Use the published `gascity/roles` pack URL instead of the local path when
+installing PStack remotely. This role import supplies `gc.run-operator`,
+`gc.publisher`, and the other shared lifecycle targets without importing a
+second methodology pack.
 
 Run `pstack-build` when the change follows the standard build lifecycle. Use `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-migration`, `pstack-perf`, or `pstack-prototype` for explicit change shapes. `pstack-how`, `pstack-why`, `pstack-swarm`, `pstack-arena`, `pstack-interrogate`, `pstack-autonomous-run`, and `pstack-orchestrate` are composable formulas.
 

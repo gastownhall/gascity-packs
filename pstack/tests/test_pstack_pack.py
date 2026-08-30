@@ -205,6 +205,12 @@ def test_pack_metadata_and_import() -> None:
     assert data["imports"]["gc"]["source"] == "../gascity"
 
 
+def test_readme_documents_required_gas_city_roles() -> None:
+    text = (ROOT / "README.md").read_text()
+    assert "[rigs.imports.gc]" in text
+    assert "../gascity/roles" in text
+
+
 def test_vendor_source_binding_is_immutable() -> None:
     source = tomllib.loads((ROOT / "vendor/pstack/upstream.toml").read_text())["upstream"]
     assert source["source"] == "https://github.com/tommy-ca/pstack"
