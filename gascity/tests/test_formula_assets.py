@@ -318,7 +318,6 @@ THIRD_PARTY_BUILD_PACKS = {
             "review": "compound-code-review",
             "finalize": "compound-resolution",
         },
-        "review_expansion": "compound-code-review",
         "gap_analysis_target": "compound-engineering.ce-coherence-reviewer",
         "review_fix_asset": "assets/workflows/compound-code-review/{target}.apply-review-findings.md",
         "persona_assets": {
@@ -372,7 +371,6 @@ THIRD_PARTY_BUILD_PACKS = {
             "plan-review": "superpowers-plan-review",
             "review": "superpowers-code-review",
         },
-        "review_expansion": "superpowers-code-review",
         "code_review_entry_expand_vars": {
             "artifact_path_keys": "gc.build.code_review_report_path,gc.build.review_report_path,gc.var.report_path",
         },
@@ -416,7 +414,6 @@ THIRD_PARTY_BUILD_PACKS = {
         "expansions": {
             "review": "bmad-code-review-flow",
         },
-        "review_expansion": "bmad-code-review-flow",
         "gap_analysis_target": "bmad.story-self-checker",
         "review_fix_asset": "assets/workflows/bmad-code-review-flow/{target}.apply-bmad-review-findings.md",
     },
@@ -450,7 +447,6 @@ THIRD_PARTY_BUILD_PACKS = {
             "qa": "gstack-qa-review",
             "release-readiness": "gstack-release-readiness",
         },
-        "review_expansion": "gstack-code-review",
         "review_expand_vars": {
             "review_mode": "{{review_mode}}",
         },
@@ -494,8 +490,6 @@ THIRD_PARTY_BUILD_PACKS = {
         "expansions": {
             "review": "pstack-build-review",
         },
-        "review_expansion": "pstack-build-review",
-        "code_review_entry_expansion": "pstack-build-review",
         "code_review_entry_expand_vars": {
             "artifact_path_keys": "gc.build.review_report_path,gc.var.report_path",
         },
@@ -2343,7 +2337,7 @@ class FormulaAssetTests(unittest.TestCase):
                 self.assertTrue(step_by_id["implement-same-session"]["drain"]["item"]["single_lane"])
                 review_step = step_by_id["review"]
                 self.assertEqual(review_step["needs"], ["summarize-implementation"])
-                self.assertEqual(review_step["expand"], expected["review_expansion"])
+                self.assertEqual(review_step["expand"], expected["expansions"]["review"])
                 expected_review_expand_vars = {
                     "implementation_target": "{{implementation_target}}",
                     "review_mode": "{{review_mode}}",
@@ -2586,8 +2580,8 @@ class FormulaAssetTests(unittest.TestCase):
                         )
                     )
 
-            review_expansion = load_formula(pack_root, expected["review_expansion"])
-            with self.subTest(pack=pack_name, expansion=expected["review_expansion"], route="review-fix"):
+            review_expansion = load_formula(pack_root, expected["expansions"]["review"])
+            with self.subTest(pack=pack_name, expansion=expected["expansions"]["review"], route="review-fix"):
                 self.assertEqual(
                     review_expansion["vars"]["implementation_target"]["default"],
                     expected["implementation_target"],
@@ -2662,10 +2656,7 @@ class FormulaAssetTests(unittest.TestCase):
                     expected["implementation_target"],
                 )
                 write_report = next(step for step in review["steps"] if step["id"] == "write-report")
-                self.assertEqual(
-                    write_report["expand"],
-                    expected.get("code_review_entry_expansion", expected["review_expansion"]),
-                )
+                self.assertEqual(write_report["expand"], expected["expansions"]["review"])
                 expected_review_expand_vars = {
                     "implementation_target": "{{implementation_target}}",
                     "review_mode": "{{review_mode}}",
