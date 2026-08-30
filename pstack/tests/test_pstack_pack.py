@@ -124,6 +124,37 @@ def test_variant_prompt_bindings_and_shipping_publish_route() -> None:
     assert shipping["finalize"]["metadata"]["gc.run_target"] == "gc.run-operator"
     assert shipping["publish"]["metadata"]["gc.run_target"] == "gc.publisher"
 
+def test_babysit_escalation_declares_artifact_contract() -> None:
+    step = next(step for step in resolve_formula("pstack-babysit")["steps"] if step["id"] == "escalate")
+    assert step["needs"] == ["reconcile"]
+    assert step["metadata"] == {
+        "gc.run_target": "pstack.architect",
+        "gc.build.artifact_schema": "pstack.program-status.v1",
+        "gc.build.artifact_path_keys": "pstack.artifact_path",
+        "pstack.artifact_schema": "pstack.program-status.v1",
+        "pstack.artifact_path": "{{artifact_root}}/pstack/escalate.md",
+    }
+    assert step["description_file"] == "../assets/workflows/pstack-variants/pstack-babysit/escalate.md"
+    assert "description_file" not in step["check"]["check"]
+    assert step["check"]["check"] == {
+        "mode": "exec",
+        "path": ".gc/scripts/checks/build-artifact-valid.sh",
+        "timeout": "5m",
+    }
+    asset = (ROOT / "assets/workflows/pstack-variants/pstack-babysit/escalate.md").read_text()
+    for fragment in (
+        "pstack.program-status.v1",
+        "pstack.artifact_path",
+        "goal",
+        "phase",
+        "predicate",
+        "blockers",
+        "restart_token",
+        "evidence",
+    ):
+        assert fragment in asset
+
+
 
 def test_variant_steps_wait_for_both_implementation_drains() -> None:
     gated_steps = {
