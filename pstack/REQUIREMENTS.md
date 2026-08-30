@@ -10,7 +10,7 @@
 2. The six standard selector variables and mode vocabulary remain available: `planning_formula`, `decomposition_formula`, `implementation_formula`, `implementation_item_formula`, `code_review_formula`, `review_fix_formula`; `interactive|autonomous|headless`; `report|agent|interactive`; `drain|convoy-step`; `separate|same-session`.
 3. All 21 PStack principles are first-class runtime skills, listed exactly once in `principles/manifest.toml`, and each declares triggers, applicability, enforcement, and required artifacts.
 4. Exact source is vendored at the immutable revision in `vendor/pstack/`; Gas City runtime adaptation is outside the vendor tree.
-5. Ordinary lifecycle artifacts use the shared `gc.build.*` schemas. PStack-specific schemas are limited to evidence not represented by those shared schemas.
+5. Ordinary lifecycle artifacts use the shared `gc.build.*` schemas. PStack-specific schemas are limited to evidence not represented by those shared schemas; every PStack schema declares the shared coverage-status vocabulary and `producer.attempt` front matter.
 6. `how`, `why`, `investigation`, `swarm`, `arena`, `interrogate`, `autonomous-run`, and `orchestrate` are composable Gas City formulas, not a scheduler or replacement runtime.
 7. Feature, bug-fix, refactor, migration, performance, prototype, shipping, babysit, and autopilot formulas compose the same Gas City graph contracts.
 8. Bug-fix ordering is reproduce → root cause → plan → implementation → same-surface verification. Migration ordering includes caller inventory and legacy absence before final verification.

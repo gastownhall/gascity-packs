@@ -6,6 +6,14 @@ allowed_statuses:
   - approved
   - blocked
   - superseded
+coverage_statuses:
+  - covered
+  - not_applicable
+  - deferred
+  - blocked
+  - out_of_scope
+  - superseded
+
 required_front_matter:
   - schema
   - workflow.id
@@ -13,6 +21,7 @@ required_front_matter:
   - producer.formula
   - producer.stage
   - status
+  - producer.attempt
   - trace
 required_fields:
   - active_frontier

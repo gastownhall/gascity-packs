@@ -1,13 +1,28 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+import os
 import pathlib
+import sys
 import tomllib
-
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACKS_ROOT = ROOT.parent
 GAS_CITY = PACKS_ROOT / "gascity"
+
+def load_build_artifact_validator():
+    path = GAS_CITY / "assets/scripts/validate_build_artifact.py"
+    spec = importlib.util.spec_from_file_location("pstack_build_artifact_validator", path)
+    if spec is None or spec.loader is None:
+        raise AssertionError("could not load build artifact validator")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 EXPECTED_PRINCIPLES = {
     "laziness-protocol",
     "foundational-thinking",
@@ -153,7 +168,65 @@ def test_babysit_escalation_declares_artifact_contract() -> None:
         "evidence",
     ):
         assert fragment in asset
+def test_babysit_escalation_artifact_validates_against_program_status() -> None:
+    validator = load_build_artifact_validator()
+    rendered = """---
+schema: pstack.program-status.v1
+workflow:
+  id: babysit-001
+  formula: pstack-babysit
+producer:
+  formula: pstack-babysit
+  stage: escalate
+  attempt: 1
+status: blocked
+trace:
+  upstream:
+    - path: pstack/reconcile.md
+      hash: git:reconcile-revision
+  coverage:
+    - id: BLOCKER-001
+      status: covered
+goal: Keep the merge frontier actionable
+phase: reconcile
+predicate: Every blocker has an owner or next action
+blockers:
+  - id: BLOCKER-001
+    summary: Owner rebase is required
+restart_token: Re-run after the owner updates the branch
+evidence:
+  source_revision: git:reconcile-revision
+  source_path: pstack/reconcile.md
+  claim_refs:
+    - bead:gc-6
+  verification_status: observed
+---
 
+## Escalation
+
+| ID | Status |
+| --- | --- |
+| BLOCKER-001 | covered |
+"""
+    with mock.patch.dict(os.environ, {"GC_BUILD_SCHEMA_ROOTS": str(ROOT / "schemas")}):
+        artifact = validator.validate_artifact_text(
+            rendered,
+            expected_schema="pstack.program-status.v1",
+        )
+        assert artifact.front_matter["evidence"]["source_path"] == "pstack/reconcile.md"
+        schema = validator.load_schema("pstack.program-status.v1")
+        assert set(schema["evidence_fields"]) <= set(artifact.front_matter["evidence"])
+
+        invalid = rendered.replace("      status: covered", "      status: waiting")
+        try:
+            validator.validate_artifact_text(
+                invalid,
+                expected_schema="pstack.program-status.v1",
+            )
+        except validator.ValidationError as exc:
+            assert "coverage" in str(exc)
+        else:
+            raise AssertionError("invalid PStack coverage status was accepted")
 
 
 def test_variant_steps_wait_for_both_implementation_drains() -> None:
@@ -318,6 +391,10 @@ def test_pstack_specific_schemas_are_declared_and_referenced() -> None:
         text = path.read_text()
         assert f"schema_id: pstack.{path.stem}" in text
         assert "required_front_matter:" in text
+        assert "  - producer.attempt" in text
+        assert "coverage_statuses:" in text
+        for status in ("covered", "not_applicable", "deferred", "blocked", "out_of_scope", "superseded"):
+            assert f"  - {status}" in text
         assert "evidence_fields:" in text
 
 

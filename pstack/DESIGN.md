@@ -69,7 +69,7 @@ PStack adds only method evidence not represented by `gc.build.*`:
 | `pstack.standing-orders.v1` | order, trigger, scope, expiry, evidence target |
 | `pstack.program-status.v1` | goal, phase, predicate, blockers, restart token, evidence |
 
-Every PStack artifact carries stable work/claim references and evidence status. Static or metadata evidence is never labeled runtime evidence.
+Every PStack artifact carries stable work/claim references and evidence status. Every PStack schema declares the shared coverage-status vocabulary and `producer.attempt` so the shared validator can validate nonempty trace coverage. Static or metadata evidence is never labeled runtime evidence.
 
 ## Formula graph
 
