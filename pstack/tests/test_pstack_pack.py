@@ -5,12 +5,14 @@ import importlib.util
 import os
 import pathlib
 import sys
-import tomllib
 from unittest import mock
+
+import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACKS_ROOT = ROOT.parent
 GAS_CITY = PACKS_ROOT / "gascity"
+
 
 def load_build_artifact_validator():
     path = GAS_CITY / "assets/scripts/validate_build_artifact.py"
