@@ -152,6 +152,30 @@ test_polecat_startup_uses_standard_hook_claim() {
         fail "polecat propulsion fragment must not regress to an unclaimed hook/work-query choice"
 }
 
+test_lifecycle_assets_require_dedicated_transitions_and_reasoned_closes() {
+    python3 - "$GASTOWN" "$ROOT/gascity/template-fragments" <<'PY' || fail "lifecycle asset scan found prohibited command"
+import pathlib
+import re
+import sys
+
+roots = [pathlib.Path(arg) for arg in sys.argv[1:]]
+status_update = re.compile(r"\bgc\s+bd\s+update\b[^\r\n]*--status(?:=|\s+)")
+close = re.compile(r"\bgc\s+bd\s+close\s+(?:[\"'$<]|[A-Za-z_])")
+errors = []
+for root in roots:
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix not in {".toml", ".md"}:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if status_update.search(line):
+                errors.append(f"{path}:{number}: use a dedicated lifecycle verb instead of gc bd update --status")
+            if close.search(line) and "--reason" not in line:
+                errors.append(f"{path}:{number}: gc bd close requires --reason")
+if errors:
+    raise SystemExit("\n".join(errors))
+PY
+}
+
 test_review_leg_contract_forbids_synthetic_mutation() {
     local formula prompt
     formula="$GASTOWN/formulas/mol-review-leg.toml"
@@ -251,6 +275,7 @@ test_shutdown_dance_contracts_are_executable
 test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
+test_lifecycle_assets_require_dedicated_transitions_and_reasoned_closes
 test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
