@@ -237,6 +237,55 @@ PY
         fail "idle refinery exit must not close through update --status=closed"
 }
 
+test_refinery_idle_exit_uses_the_session_bound_wisp() {
+    local formula idle_script tmp log
+    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+    idle_script=$(python3 - "$formula" <<'PY'
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index("If NO work found:")
+start = text.index("```bash", start) + len("```bash")
+end = text.index("gc runtime drain-ack", start) + len("gc runtime drain-ack")
+print(text[start:end])
+PY
+)
+
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    log="$tmp/gc.log"
+    mkdir "$tmp/bin"
+    cat >"$tmp/bin/gc" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$GC_TEST_LOG"
+case "$*" in
+    'hook current --id-only') echo 'sl-wisp-rt8' ;;
+    'bd update sl-wisp-rt8 --claim') ;;
+    'bd close sl-wisp-rt8 --reason Idle: no branch-backed work assigned.') ;;
+    'runtime drain-ack') ;;
+    'bd list'*) echo 'unrelated-molecule' ;;
+    *) echo "unexpected gc invocation: $*" >&2; exit 1 ;;
+esac
+EOF
+    chmod +x "$tmp/bin/gc"
+
+    # GC_BEAD_ID отсутствует, а в ledger могут быть другие назначенные wisps.
+    # Для закрытия допустим только claim текущей сессии, а не произвольная молекула.
+    env -u GC_BEAD_ID -u GC_TRIGGER_BEAD_ID \
+        GC_AGENT='slovo/gastown.refinery' GC_TEST_LOG="$log" PATH="$tmp/bin:$PATH" \
+        bash -c "$idle_script"
+
+    grep -Fx 'hook current --id-only' "$log" >/dev/null ||
+        fail "idle refinery exit must resolve the current session claim"
+    ! grep -F 'bd list' "$log" >/dev/null ||
+        fail "idle refinery exit must not select an arbitrary assigned molecule"
+    grep -Fx 'bd close sl-wisp-rt8 --reason Idle: no branch-backed work assigned.' "$log" >/dev/null ||
+        fail "idle refinery exit must close only the session-bound wisp"
+    ! grep -F 'unrelated-molecule' "$log" >/dev/null ||
+        fail "idle refinery exit must preserve unrelated wisp evidence"
+}
+
 test_prime_prompts_are_city_generic_and_compact() {
     local mayor propulsion awareness
     mayor="$GASTOWN/agents/mayor/prompt.template.md"
@@ -276,5 +325,6 @@ test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 test_refinery_idle_exit_closes_patrol_wisp
+test_refinery_idle_exit_uses_the_session_bound_wisp
 
 echo "gastown pack asset tests passed"
