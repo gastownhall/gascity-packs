@@ -42,9 +42,10 @@ def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArti
     schema_id, front_matter, body = parse_front_matter(text)
     if expected_schema and schema_id != expected_schema:
         raise ValidationError(f"schema must be {expected_schema!r}, got {schema_id!r}")
-
     schema = load_schema(schema_id)
+
     validate_required_front_matter(front_matter, schema)
+    validate_required_fields(front_matter, schema)
     validate_status(front_matter, schema)
     trace = validate_trace(front_matter)
     upstream = validate_upstream(trace)
@@ -131,6 +132,22 @@ def validate_required_front_matter(front_matter: dict[str, Any], schema: dict[st
     if not isinstance(attempt, int) or attempt < 1:
         raise ValidationError("producer.attempt must be a positive integer")
 
+
+
+def validate_required_fields(front_matter: dict[str, Any], schema: dict[str, Any]) -> None:
+    fields = schema.get("required_fields", [])
+    if not isinstance(fields, list) or not all(isinstance(item, str) and item.strip() for item in fields):
+        raise ValidationError(f"schema {schema.get('schema_id', '<unknown>')}: required_fields must be non-empty strings")
+    missing = [field for field in fields if get_path(front_matter, field) is None]
+    if missing:
+        raise ValidationError(f"required fields missing: {missing}")
+    blank = [
+        field
+        for field in fields
+        if isinstance(get_path(front_matter, field), str) and not get_path(front_matter, field).strip()
+    ]
+    if blank:
+        raise ValidationError(f"required fields must be non-empty: {blank}")
 
 def validate_status(front_matter: dict[str, Any], schema: dict[str, Any]) -> None:
     status = required_string(front_matter, "status")

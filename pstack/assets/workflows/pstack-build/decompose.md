@@ -1,4 +1,4 @@
-Use the built-in Gas City `create-beads` decomposition flow.
+Use the PStack decomposition flow on the Gas City graph.
 
 Create task beads or a decomposition artifact from the approved requirements
 and implementation plan. Preserve traceability from each work item back to the
@@ -21,12 +21,12 @@ The validator only recognizes a Markdown table with an `ID` column and a
 | REQ-001 | covered |
 
 Use mapping objects for front matter; do not use scalar shortcuts such as
-`workflow: build-basic`. The top-level YAML shape must be:
+`workflow: pstack-build`. The top-level YAML shape must be:
 
 - `schema: gc.build.decomposition.v1`
-- `workflow: {id: <workflow-root-id>, formula: build-basic}`
-- `methodology: {pack: gascity, name: build-basic}`
-- `producer: {formula: build-basic, stage: decompose, attempt: <positive integer>}`
+- `workflow: {id: <workflow-root-id>, formula: pstack-build}`
+- `methodology: {pack: pstack, name: pstack-build}`
+- `producer: {formula: pstack-build, stage: decompose, attempt: <positive integer>}
 - `status: approved` or another schema-allowed status
 - `trace: {upstream: [...], coverage: [...]}`
 

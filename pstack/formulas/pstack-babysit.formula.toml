@@ -13,21 +13,43 @@ description = "PStack reconcile durable work and escalate blockers."
 id = "status"
 title = "Read durable program status"
 needs = ["summarize-implementation"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.program-status.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.program-status.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/status.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-babysit/status.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "reconcile"
 title = "Reconcile claims and frontier"
 needs = ["status"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.frontier.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.frontier.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.frontier.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/reconcile.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-babysit/reconcile.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "escalate"
 title = "Escalate only actionable blockers"
 needs = ["reconcile"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.program-status.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.program-status.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/escalate.md" }
+description_file = "../assets/workflows/pstack-variants/pstack-babysit/escalate.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "finalize"
@@ -43,4 +65,3 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
-description_file = "../assets/workflows/pstack-variants/pstack-babysit/escalate.md"

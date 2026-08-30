@@ -18,19 +18,40 @@ description_file = "../assets/workflows/pstack-methods/arena-trigger.md"
 id = "candidates"
 title = "Develop distinct candidates"
 needs = ["trigger"]
-metadata = { "gc.run_target" = "pstack.architect", "gc.graph_operator" = "fanout", "pstack.artifact_schema" = "pstack.arena-candidate.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.graph_operator" = "fanout", "gc.build.artifact_schema" = "pstack.arena-candidate.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.arena-candidate.v1", "pstack.artifact_path" = ".gc/pstack/arena-candidate.md" }
 description_file = "../assets/workflows/pstack-methods/arena-candidates.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "judge"
 title = "Cross-judge and decide"
 needs = ["candidates"]
-metadata = { "gc.run_target" = "pstack.review-synthesizer", "pstack.artifact_schema" = "pstack.arena-synthesis.v1" }
+metadata = { "gc.run_target" = "pstack.review-synthesizer", "gc.build.artifact_schema" = "pstack.arena-synthesis.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.arena-synthesis.v1", "pstack.artifact_path" = ".gc/pstack/arena-synthesis.md" }
 description_file = "../assets/workflows/pstack-methods/arena-judge.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "verify"
 title = "Verify selected candidate"
 needs = ["judge"]
-metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+metadata = { "gc.run_target" = "pstack.verifier", "gc.build.artifact_schema" = "pstack.verification.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.verification.v1", "pstack.artifact_path" = ".gc/pstack/arena-verification.md" }
 description_file = "../assets/workflows/pstack-methods/verify.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

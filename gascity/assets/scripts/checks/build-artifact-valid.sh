@@ -5,15 +5,13 @@ set -euo pipefail
 #
 # The checked formula step names its artifact contract in step metadata:
 #   gc.build.artifact_schema    - expected schema id (e.g. gc.build.requirements.v1)
-#   gc.build.artifact_path_keys - comma-separated workflow-root metadata keys;
-#                                 the first non-empty value is the artifact path
+#   gc.build.artifact_path_keys - comma-separated metadata keys; the first
+#                                 non-empty value is the artifact path
 #
-# The step bead (and the ralph control bead cloned from it) carries that
-# metadata, so this script reads $GC_BEAD_ID, resolves the workflow root via
-# gc.root_bead_id, resolves the artifact path, and validates the artifact with
-# the shared base validator. All failures print machine-readable lines on
-# stderr; the dispatcher records them in gc.attempt_log as repair context for
-# the next bounded producer attempt. This gate never prompts.
+# Path keys are read from the step first and then the workflow root. Pack-local
+# schemas are loaded from $GC_PACK_DIR/schemas when that pack context exists.
+# All failures print machine-readable lines on stderr; the dispatcher records
+# them in gc.attempt_log as repair context. This gate never prompts.
 
 fail() {
   echo "build-artifact-check: $*" >&2
@@ -68,7 +66,10 @@ IFS=',' read -r -a KEYS <<<"$PATH_KEYS"
 for key in "${KEYS[@]}"; do
   key="$(printf '%s' "$key" | tr -d '[:space:]')"
   [ -n "$key" ] || continue
-  value="$(metadata_value "$ROOT_JSON" "$key")"
+  value="$(metadata_value "$SHOW_JSON" "$key")"
+  if [ -z "$value" ]; then
+    value="$(metadata_value "$ROOT_JSON" "$key")"
+  fi
   if [ -n "$value" ]; then
     ARTIFACT_PATH="$value"
     RESOLVED_KEY="$key"
@@ -114,6 +115,10 @@ for candidate in \
   fi
 done
 [ -n "$VALIDATOR" ] || fail "validate_build_artifact.py not found beside $SCRIPT_DIR or under GC_WORK_DIR"
+if [ -n "${GC_PACK_DIR:-}" ] && [ -d "$GC_PACK_DIR/schemas" ]; then
+  GC_BUILD_SCHEMA_ROOTS="$GC_PACK_DIR/schemas${GC_BUILD_SCHEMA_ROOTS:+:$GC_BUILD_SCHEMA_ROOTS}"
+  export GC_BUILD_SCHEMA_ROOTS
+fi
 
 if OUTPUT="$(python3 "$VALIDATOR" --schema "$SCHEMA" --path "$ARTIFACT_PATH" 2>&1)"; then
   echo "build artifact valid: schema=$SCHEMA path=$ARTIFACT_PATH"

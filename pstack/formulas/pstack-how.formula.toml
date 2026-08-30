@@ -28,5 +28,12 @@ description_file = "../assets/workflows/pstack-methods/collect.md"
 id = "write"
 title = "Write PStack evidence"
 needs = ["collect"]
-metadata = { "gc.run_target" = "pstack.investigator", "pstack.artifact_schema" = "pstack.decision.v1" }
+metadata = { "gc.run_target" = "pstack.investigator", "gc.build.artifact_schema" = "pstack.decision.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.decision.v1", "pstack.artifact_path" = "{{artifact_path}}" }
 description_file = "../assets/workflows/pstack-methods/write.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

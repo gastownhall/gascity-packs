@@ -12,8 +12,8 @@ Include a lightweight implementation readiness pass before decomposition:
 
 If you write a plan-readiness note, record it on the workflow root as
 `gc.build.plan_review_report_path=<path>`. Do not write or overwrite
-`gc.build.review_report_path`; that key is reserved for the later
-build-basic implementation review artifact.
+`gc.build.review_report_path`; that key is reserved for the later PStack
+implementation review artifact.
 
 Before closing this step, set the claimed step outcome with
 `gc bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close

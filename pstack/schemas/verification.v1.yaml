@@ -2,10 +2,10 @@
 schema_id: pstack.verification.v1
 artifact: verification
 allowed_statuses:
-  - draft
-  - approved
+  - verified
+  - failed
   - blocked
-  - superseded
+  - insufficient
 required_front_matter:
   - schema
   - workflow.id
@@ -15,12 +15,12 @@ required_front_matter:
   - status
   - trace
 required_fields:
+  - subject.kind
+  - subject.id
   - revision
-  - predicate
-  - command
-  - output
-  - scope
-  - status
+  - checks
+  - evidence
+  - verdict
 evidence_fields:
   - source_revision
   - source_path

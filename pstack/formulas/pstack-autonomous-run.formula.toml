@@ -13,15 +13,29 @@ description = "PStack run a bounded predicate-driven autonomous loop."
 id = "goal"
 title = "Record goal and completion predicate"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.program-status.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.program-status.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/goal.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/goal.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "baseline"
 title = "Record baseline"
 needs = ["goal"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.verification.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.verification.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.verification.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/baseline.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/baseline.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "loop"
@@ -33,9 +47,16 @@ description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/lo
 [[steps]]
 id = "check"
 title = "Check predicate and evidence"
-needs = ["loop", "implement"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.verification.v1" }
+needs = ["loop", "implement", "implement-same-session"]
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.verification.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.verification.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/check.md" }
+description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/check.md"
+[steps.check]
+max_attempts = 3
 
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 [[steps]]
 id = "finalize"
 title = "Finalize pstack autonomous run"
@@ -50,4 +71,3 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
-description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/check.md"

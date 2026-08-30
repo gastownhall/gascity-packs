@@ -1,7 +1,7 @@
 """Derived-pack compatibility evidence for GC-METH-012.
 
-Each test inspects all four concrete derived packs (compound-engineering,
-superpowers, bmad, gstack) and asserts one face of the external implementation
+Each test inspects all five concrete derived packs (compound-engineering,
+superpowers, bmad, gstack, pstack) and asserts one face of the external implementation
 compatibility contract: import-as-`gc`, anchored `build-base` extension,
 methodology metadata vocabulary, selector defaults, drain or convoy-step
 strategy, providerless route targets, the shared claim protocol, the absence

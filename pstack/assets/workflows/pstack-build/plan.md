@@ -1,4 +1,4 @@
-Use the built-in Gas City design authoring flow.
+Use the PStack planning flow on the Gas City graph.
 
 Create the implementation plan at the path recorded on the workflow root bead
 as `gc.build.plan_path` (fallback `gc.var.plan_path`). The artifact must be
@@ -15,12 +15,12 @@ The validator only recognizes a Markdown table with an `ID` column and a
 | REQ-001 | covered |
 
 Use mapping objects for front matter; do not use scalar shortcuts such as
-`workflow: build-basic`. The top-level YAML shape must be:
+`workflow: pstack-build`. The top-level YAML shape must be:
 
 - `schema: gc.build.plan.v1`
-- `workflow: {id: <workflow-root-id>, formula: build-basic}`
-- `methodology: {pack: gascity, name: build-basic}`
-- `producer: {formula: build-basic, stage: plan, attempt: <positive integer>}`
+- `workflow: {id: <workflow-root-id>, formula: pstack-build}`
+- `methodology: {pack: pstack, name: pstack-build}`
+- `producer: {formula: pstack-build, stage: plan, attempt: <positive integer>}`
 - `status: approved` or another schema-allowed status
 - `trace: {upstream: [...], coverage: [...]}`
 

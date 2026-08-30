@@ -13,35 +13,71 @@ description = "PStack operate a durable program through Gas City."
 id = "orders"
 title = "Record standing orders"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.standing-orders.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.standing-orders.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.standing-orders.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/orders.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/orders.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "brief"
 title = "Create program brief"
 needs = ["orders"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.program-status.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.program-status.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/brief.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/brief.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "pilot"
 title = "Run bounded pilot"
 needs = ["brief"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.lever-decision.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.lever-decision.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.lever-decision.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/pilot.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/pilot.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "frontier"
 title = "Advance rolling frontier"
 needs = ["pilot"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.frontier.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.frontier.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.frontier.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/frontier.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/frontier.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "reconcile"
 title = "Reconcile durable graph"
 needs = ["frontier"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.program-status.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.program-status.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/reconcile.md" }
+description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/reconcile.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "finalize"
@@ -57,4 +93,3 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
-description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/reconcile.md"

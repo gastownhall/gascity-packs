@@ -54,13 +54,13 @@ PStack adds only method evidence not represented by `gc.build.*`:
 
 | Schema | Required data |
 |---|---|
-| `pstack.source-binding.v1` | source, revision, path, digest, license |
+| `pstack.source-binding.v1` | id, source path/section/commit, target formula/node, realization type, status, rationale |
 | `pstack.principle-application.v1` | principle, trigger, decision, enforcement, evidence |
 | `pstack.foundation.v1` | domain, boundaries, invariants, ownership, rejected assumptions |
 | `pstack.lever-decision.v1` | repeated cost, lever, pilot, fanout threshold, decision |
 | `pstack.reproduction.v1` | symptom, input, environment, expected/actual, repeatability |
 | `pstack.root-cause.v1` | causal chain, evidence, rejected hypotheses, fix boundary |
-| `pstack.verification.v1` | revision, predicate, command, output, scope, status |
+| `pstack.verification.v1` | subject kind/id, revision, checks, evidence references, verdict |
 | `pstack.arena-candidate.v1` | candidate, shape, assumptions, evidence, tradeoffs |
 | `pstack.arena-synthesis.v1` | candidates, cross-judge, synthesis, decision, dissent |
 | `pstack.swarm-result.v1` | child work, claims, findings, aggregation, unresolved items |

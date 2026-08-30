@@ -20,13 +20,34 @@ description_file = "../assets/workflows/pstack-variants/pstack-migration/callers
 id = "lever"
 title = "Pilot migration lever"
 needs = ["callers"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.lever-decision.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.lever-decision.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.lever-decision.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/lever-decision.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-migration/lever.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "principle-selection"
+title = "Select principles after migration lever"
+needs = ["requirements", "lever"]
+metadata = { "gc.run_target" = "pstack.investigator", "gc.build.artifact_schema" = "pstack.principle-application.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.principle-application.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/principle-selection.md", "pstack.principle_manifest" = "{{principle_manifest}}" }
+description_file = "../assets/workflows/pstack-build/principles.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "migrate"
 title = "Migrate callers in waves"
-needs = ["lever", "implement"]
+needs = ["lever", "implement", "implement-same-session"]
 metadata = { "gc.run_target" = "pstack.architect" }
 description_file = "../assets/workflows/pstack-variants/pstack-migration/migrate.md"
 
@@ -41,8 +62,15 @@ description_file = "../assets/workflows/pstack-variants/pstack-migration/delete.
 id = "verify"
 title = "Verify absence and compatibility"
 needs = ["delete"]
-metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+metadata = { "gc.run_target" = "pstack.verifier", "gc.build.artifact_schema" = "pstack.verification.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.verification.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/verification.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-migration/verify.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "finalize"

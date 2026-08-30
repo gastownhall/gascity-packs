@@ -8,6 +8,9 @@ contract = "graph.v2"
 [vars.implementation_target]
 description = "Role target used to apply review findings."
 default = "pstack.implementation-worker"
+[vars.artifact_path_keys]
+description = "Comma-separated artifact metadata keys accepted by the review report validator."
+default = "gc.build.review_report_path"
 
 [[template]]
 id = "{target}.setup-pstack-review"
@@ -60,7 +63,7 @@ description_file = "../assets/workflows/pstack-build-review/{target}.apply-revie
 id = "{target}"
 title = "Finalize PStack review"
 needs = ["{target}.pstack-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
 description_file = "../assets/workflows/pstack-build-review/{target}.md"
 
 [template.check]

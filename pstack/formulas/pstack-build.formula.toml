@@ -73,22 +73,43 @@ timeout = "5m"
 id = "principle-selection"
 title = "Select applicable PStack principles"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "pstack.investigator", "pstack.artifact_schema" = "pstack.principle-application.v1", "pstack.principle_manifest" = "{{principle_manifest}}" }
+metadata = { "gc.run_target" = "pstack.investigator", "gc.build.artifact_schema" = "pstack.principle-application.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.principle-application.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/principle-selection.md", "pstack.principle_manifest" = "{{principle_manifest}}" }
 description_file = "../assets/workflows/pstack-build/principles.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "subtract-assessment"
 title = "Assess subtraction before addition"
 needs = ["principle-selection"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.decision.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.decision.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.decision.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/subtract-assessment.md" }
 description_file = "../assets/workflows/pstack-build/subtract.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "foundation"
 title = "Model foundation, domain, and boundaries"
 needs = ["subtract-assessment"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.foundation.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.foundation.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.foundation.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/foundation.md" }
 description_file = "../assets/workflows/pstack-build/foundation.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "plan"
@@ -116,8 +137,15 @@ description_file = "../assets/workflows/pstack-build/plan-review.md"
 id = "lever-decision"
 title = "Choose the lever before fanout"
 needs = ["plan-review"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.lever-decision.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.lever-decision.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.lever-decision.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/lever-decision.md" }
 description_file = "../assets/workflows/pstack-build/lever.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "decompose"

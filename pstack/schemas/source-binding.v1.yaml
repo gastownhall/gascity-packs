@@ -15,11 +15,14 @@ required_front_matter:
   - status
   - trace
 required_fields:
-  - source
-  - revision
-  - path
-  - digest
-  - license
+  - id
+  - source.path
+  - source.section
+  - source.commit
+  - target.formula
+  - target.node
+  - realization_type
+  - rationale
 evidence_fields:
   - source_revision
   - source_path

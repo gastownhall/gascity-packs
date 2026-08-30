@@ -18,6 +18,7 @@ required_fields:
   - principle
   - trigger
   - decision
+  - effect
   - enforcement
   - evidence
 evidence_fields:

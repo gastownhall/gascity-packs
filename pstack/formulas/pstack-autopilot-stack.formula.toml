@@ -13,8 +13,15 @@ description = "PStack compose stack-oriented bounded builds."
 id = "frontier"
 title = "Select rolling frontier"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.frontier.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.frontier.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.frontier.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/frontier.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-autopilot-stack/frontier.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "run"
@@ -26,9 +33,16 @@ description_file = "../assets/workflows/pstack-variants/pstack-autopilot-stack/r
 [[steps]]
 id = "verify"
 title = "Verify stack outcome"
-needs = ["run", "implement"]
-metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+needs = ["run", "implement", "implement-same-session"]
+metadata = { "gc.run_target" = "pstack.verifier", "gc.build.artifact_schema" = "pstack.verification.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.verification.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/verification.md" }
+description_file = "../assets/workflows/pstack-variants/pstack-autopilot-stack/verify.md"
+[steps.check]
+max_attempts = 3
 
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 [[steps]]
 id = "finalize"
 title = "Finalize pstack stack autopilot"
@@ -43,4 +57,3 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
-description_file = "../assets/workflows/pstack-variants/pstack-autopilot-stack/verify.md"

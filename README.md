@@ -83,7 +83,7 @@ this is the shortest path. Each step is copy-pasteable; swap names to taste.
    (requirements, plan, review reports, and a `factory-run.md` summary) land
    under `artifact_root` in your rig.
 
-6. **Pick a methodology when you want more opinion.** The five methodology
+6. **Pick a methodology when you want more opinion.** The six methodology
    packs below replace `build-basic`'s stages with vendored, battle-tested
    processes while keeping the same launch shape — import one at city scope
    and sling its build formula instead (for example `--on bmad-build`):

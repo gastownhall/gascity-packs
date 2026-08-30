@@ -11,8 +11,15 @@ description = "Gas City fanout/fanin for bounded PStack investigation."
 [[steps]]
 id = "frame"
 title = "Frame swarm"
-metadata = { "gc.run_target" = "pstack.coordinator", "pstack.artifact_schema" = "pstack.decision.v1" }
+metadata = { "gc.run_target" = "pstack.coordinator", "gc.build.artifact_schema" = "pstack.decision.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.decision.v1", "pstack.artifact_path" = ".gc/pstack/swarm-frame.md" }
 description_file = "../assets/workflows/pstack-methods/frame.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "fanout"
@@ -25,5 +32,12 @@ description_file = "../assets/workflows/pstack-methods/fanout.md"
 id = "fanin"
 title = "Aggregate child claims"
 needs = ["fanout"]
-metadata = { "gc.run_target" = "pstack.review-synthesizer", "gc.graph_operator" = "fanin", "pstack.artifact_schema" = "pstack.swarm-result.v1" }
+metadata = { "gc.run_target" = "pstack.review-synthesizer", "gc.graph_operator" = "fanin", "gc.build.artifact_schema" = "pstack.swarm-result.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.swarm-result.v1", "pstack.artifact_path" = ".gc/pstack/swarm-result.md" }
 description_file = "../assets/workflows/pstack-methods/fanin.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

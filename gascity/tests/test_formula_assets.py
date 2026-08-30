@@ -495,7 +495,10 @@ THIRD_PARTY_BUILD_PACKS = {
             "review": "pstack-build-review",
         },
         "review_expansion": "pstack-build-review",
-        "code_review_entry_expansion": "pstack-code-review-expansion",
+        "code_review_entry_expansion": "pstack-build-review",
+        "code_review_entry_expand_vars": {
+            "artifact_path_keys": "gc.build.review_report_path,gc.var.report_path",
+        },
         "gap_analysis_target": "pstack.reviewer",
         "review_fix_asset": "assets/workflows/pstack-build-review/{target}.apply-review-findings.md",
     },
@@ -4194,6 +4197,34 @@ description = "Override sink that writes the base triage report contract."
             self.assertNotIn("/data/projects", text)
             self.assertNotIn("gascity-packs-worktrees", text)
 
+    def test_pstack_schema_producers_have_shared_validator_gates(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        pstack_root = root.parent / "pstack"
+        for formula_path in sorted((pstack_root / "formulas").glob("*.formula.toml")):
+            formula_name = formula_path.name.removesuffix(".formula.toml")
+            formula = load_formula(pstack_root, formula_name)
+            nodes = formula.get("steps") or formula.get("template") or []
+            for step in nodes:
+                schema = step.get("metadata", {}).get("pstack.artifact_schema", "")
+                if not schema.startswith("pstack."):
+                    continue
+                with self.subTest(formula=formula_name, step=step["id"]):
+                    metadata = step["metadata"]
+                    self.assertEqual(metadata["gc.build.artifact_schema"], schema)
+                    path_keys = metadata["gc.build.artifact_path_keys"]
+                    self.assertIn("pstack.artifact_path", path_keys.split(","))
+                    self.assertTrue(metadata["pstack.artifact_path"])
+                    self.assertEqual(metadata["pstack.artifact_schema"], schema)
+                    self.assertEqual(step["check"]["max_attempts"], BUILD_ARTIFACT_GATE_MAX_ATTEMPTS)
+                    self.assertEqual(
+                        step["check"]["check"],
+                        {
+                            "mode": "exec",
+                            "path": BUILD_ARTIFACT_CHECK_SCRIPT,
+                            "timeout": "5m",
+                        },
+                    )
+
     def test_producer_stages_gate_artifacts_with_bounded_repair(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
 
@@ -4225,6 +4256,56 @@ description = "Override sink that writes the base triage report contract."
                 )
                 self.assertEqual(step["metadata"]["gc.build.artifact_schema"], schema)
                 self.assertEqual(step["metadata"]["gc.build.artifact_path_keys"], path_keys)
+
+    def test_build_artifact_check_loads_pack_schema_and_step_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            pack_root = tmp / "pstack"
+            schema_root = pack_root / "schemas"
+            schema_root.mkdir(parents=True)
+            (schema_root / "custom.v1.yaml").write_text(
+                "schema_id: pstack.custom.v1\n"
+                "required_front_matter: [schema, status, trace]\n"
+                "allowed_statuses: [approved]\n"
+                "coverage_statuses: [covered]\n"
+                "required_sections: []\n"
+                "required_fields: [subject.kind]\n",
+                encoding="utf-8",
+            )
+            artifact = tmp / "custom.md"
+            artifact.write_text(
+                "---\n"
+                "schema: pstack.custom.v1\n"
+                "producer:\n"
+                "  formula: pstack-test\n"
+                "  stage: custom\n"
+                "  attempt: 1\n"
+                "status: approved\n"
+                "trace:\n"
+                "  upstream: []\n"
+                "  coverage: []\n"
+                "subject:\n"
+                "  kind: commit\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            control = (
+                '[{"id": "step", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "pstack.custom.v1", '
+                '"gc.build.artifact_path_keys": "pstack.artifact_path", '
+                f'"pstack.artifact_path": "{artifact}"'
+                "}}]"
+            )
+            root_bead = '[{"id": "root", "metadata": {}}]'
+            result = self._run_build_artifact_check(
+                {"step": control, "root": root_bead},
+                "step",
+                extra_env={"GC_PACK_DIR": str(pack_root)},
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("schema=pstack.custom.v1", result.stdout)
 
     def _run_build_artifact_check(
         self,

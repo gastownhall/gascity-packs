@@ -583,6 +583,35 @@ class BuildArtifactSchemaRootsTests(unittest.TestCase):
             # shadow attempt in the extra root is never consulted.
             self.assertIn("workflow.id", schema.get("required_front_matter", []))
 
+    def test_custom_schema_required_fields_are_enforced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self._write_schema(root, "custom.v1.yaml", "acme.build.custom.v1")
+            (root / "custom.v1.yaml").write_text(
+                (root / "custom.v1.yaml").read_text(encoding="utf-8")
+                + "required_fields: [subject.kind]\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"GC_BUILD_SCHEMA_ROOTS": str(root)}):
+                with self.assertRaisesRegex(
+                    build_artifact_validator.ValidationError,
+                    "required fields",
+                ):
+                    build_artifact_validator.validate_artifact_text(
+                        "---\n"
+                        "schema: acme.build.custom.v1\n"
+                        "producer:\n"
+                        "  formula: test\n"
+                        "  stage: test\n"
+                        "  attempt: 1\n"
+                        "status: approved\n"
+                        "trace:\n"
+                        "  upstream: []\n"
+                        "  coverage: []\n"
+                        "---\n",
+                        expected_schema="acme.build.custom.v1",
+                    )
+
     def test_unset_env_is_byte_identical_base_behavior(self) -> None:
         env = {k: v for k, v in os.environ.items() if k != "GC_BUILD_SCHEMA_ROOTS"}
         with mock.patch.dict(os.environ, env, clear=True):

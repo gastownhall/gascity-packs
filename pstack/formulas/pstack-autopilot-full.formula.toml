@@ -13,8 +13,15 @@ description = "PStack compose autonomous run, review, and shipping."
 id = "goal"
 title = "Set bounded goal"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.program-status.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.program-status.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/goal.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-autopilot-full/goal.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "run"
@@ -26,9 +33,9 @@ description_file = "../assets/workflows/pstack-variants/pstack-autopilot-full/ru
 [[steps]]
 id = "ship"
 title = "Review and ship evidence"
-needs = ["run", "implement"]
+needs = ["run", "implement", "implement-same-session"]
 metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "gc.build.final-report.v1" }
-
+description_file = "../assets/workflows/pstack-variants/pstack-autopilot-full/ship.md"
 [[steps]]
 id = "finalize"
 title = "Finalize pstack autopilot"
@@ -43,4 +50,3 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
-description_file = "../assets/workflows/pstack-variants/pstack-autopilot-full/ship.md"

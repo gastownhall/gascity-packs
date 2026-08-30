@@ -35,10 +35,163 @@ EXPECTED_PRINCIPLES = {
 
 def load_formula(name: str) -> dict:
     return tomllib.loads((ROOT / "formulas" / f"{name}.formula.toml").read_text())
+def load_any_formula(name: str) -> dict:
+    for root in (ROOT, GAS_CITY):
+        path = root / "formulas" / f"{name}.formula.toml"
+        if path.is_file():
+            return tomllib.loads(path.read_text())
+    raise AssertionError(f"formula {name!r} not found")
+
+
+def resolve_formula(name: str, seen: tuple[str, ...] = ()) -> dict:
+    if name in seen:
+        raise AssertionError(f"circular formula extends: {' -> '.join((*seen, name))}")
+    data = load_any_formula(name)
+    parents = data.get("extends", [])
+    if not parents:
+        return data
+    resolved = dict(data)
+    steps: list[dict] = []
+    positions: dict[str, int] = {}
+    for parent in parents:
+        parent_data = resolve_formula(parent, (*seen, name))
+        for step in parent_data.get("steps", []):
+            positions[step["id"]] = len(steps)
+            steps.append(step)
+    for step in data.get("steps", []):
+        index = positions.get(step["id"])
+        if index is None:
+            positions[step["id"]] = len(steps)
+            steps.append(step)
+        else:
+            steps[index] = step
+    resolved["steps"] = steps
+    return resolved
+
+
+def depends_on(steps: list[dict], target: str, prerequisite: str) -> bool:
+    by_id = {step["id"]: step for step in steps}
+    pending = [target]
+    visited: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        for dependency in by_id[current].get("needs", []):
+            if dependency == prerequisite:
+                return True
+            pending.append(dependency)
+    return False
+
+
+def test_variant_evidence_gates_inherited_implementation() -> None:
+    gates = {
+        "pstack-feature": "experience",
+        "pstack-perf": "baseline",
+        "pstack-prototype": "experience",
+        "pstack-refactor": "lever",
+        "pstack-migration": "lever",
+        "pstack-bug-fix": "root-cause",
+    }
+    for formula, gate in gates.items():
+        steps = resolve_formula(formula)["steps"]
+        by_id = {step["id"]: step for step in steps}
+        assert gate in by_id["principle-selection"]["needs"], (
+            f"{formula} must gate principle selection on {gate}"
+        )
+        for implementation in ("implement", "implement-same-session"):
+            assert depends_on(steps, implementation, gate), (
+                f"{formula} must gate {implementation} on {gate}"
+            )
+
+
+def test_variant_prompt_bindings_and_shipping_publish_route() -> None:
+    expected_prompts = {
+        ("pstack-autonomous-run", "check"): "../assets/workflows/pstack-variants/pstack-autonomous-run/check.md",
+        ("pstack-autopilot-full", "ship"): "../assets/workflows/pstack-variants/pstack-autopilot-full/ship.md",
+        ("pstack-autopilot-stack", "verify"): "../assets/workflows/pstack-variants/pstack-autopilot-stack/verify.md",
+        ("pstack-babysit", "escalate"): "../assets/workflows/pstack-variants/pstack-babysit/escalate.md",
+        ("pstack-orchestrate", "reconcile"): "../assets/workflows/pstack-variants/pstack-orchestrate/reconcile.md",
+    }
+    for (formula, step_id), description_file in expected_prompts.items():
+        step = next(step for step in resolve_formula(formula)["steps"] if step["id"] == step_id)
+        assert step["description_file"] == description_file
+        assert "description_file" not in step.get("check", {}).get("check", {})
+
+    shipping = {step["id"]: step for step in resolve_formula("pstack-shipping")["steps"]}
+    assert shipping["review"]["expand"] == "pstack-build-review"
+    assert shipping["finalize"]["metadata"]["gc.run_target"] == "gc.run-operator"
+    assert shipping["publish"]["metadata"]["gc.run_target"] == "gc.publisher"
+
+
+def test_variant_steps_wait_for_both_implementation_drains() -> None:
+    gated_steps = {
+        "pstack-feature": "build",
+        "pstack-bug-fix": "build",
+        "pstack-migration": "migrate",
+        "pstack-refactor": "build",
+        "pstack-perf": "build",
+        "pstack-prototype": "slice",
+        "pstack-autonomous-run": "check",
+        "pstack-autopilot-full": "ship",
+        "pstack-autopilot-stack": "verify",
+    }
+    for formula, step_id in gated_steps.items():
+        step = next(step for step in resolve_formula(formula)["steps"] if step["id"] == step_id)
+        assert {"implement", "implement-same-session"} <= set(step["needs"])
 
 
 def file_digest(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+def test_pstack_build_assets_stamp_pstack_provenance() -> None:
+    for name in ("requirements", "plan", "decompose", "finalize", "review", "publish", "plan-review"):
+        text = (ROOT / "assets/workflows/pstack-build" / f"{name}.md").read_text()
+        assert "build-basic" not in text
+        assert "build-basic-review" not in text
+        assert "factory_run_path" not in text
+    assert "methodology: pstack-build" in (ROOT / "assets/workflows/pstack-build/finalize.md").read_text()
+
+
+def test_principle_mapping_matches_manifest_enforcement() -> None:
+    manifest = tomllib.loads((ROOT / "principles/manifest.toml").read_text())
+    mapping = tomllib.loads((ROOT / "mappings/principles.toml").read_text())["principles"]
+    expected = {item["id"]: item["enforcement"] for item in manifest["principle"]}
+    assert {name: data["enforcement"] for name, data in mapping.items()} == expected
+
+
+def test_principle_schema_captures_effect() -> None:
+    text = (ROOT / "schemas/principle-application.v1.yaml").read_text()
+    assert "  - effect" in text
+
+
+def test_verification_schema_matches_verdict_contract() -> None:
+    text = (ROOT / "schemas/verification.v1.yaml").read_text()
+    for status in ("verified", "failed", "blocked", "insufficient"):
+        assert f"  - {status}" in text
+    for field in ("subject.kind", "subject.id", "revision", "checks", "evidence", "verdict"):
+        assert f"  - {field}" in text
+def test_source_binding_schema_matches_translation_contract() -> None:
+    text = (ROOT / "schemas/source-binding.v1.yaml").read_text()
+    for field in (
+        "id",
+        "source.path",
+        "source.section",
+        "source.commit",
+        "target.formula",
+        "target.node",
+        "realization_type",
+        "rationale",
+    ):
+        assert f"  - {field}" in text
+def test_source_binding_formula_records_translation_metadata() -> None:
+    formula = load_formula("pstack-source-binding")
+    step = next(step for step in formula["steps"] if step["id"] == "record")
+    assert step["metadata"]["gc.run_target"] == "pstack.investigator"
+    assert step["metadata"]["pstack.artifact_schema"] == "pstack.source-binding.v1"
+    assert step["metadata"]["pstack.artifact_path"] == "{{artifact_path}}"
+    assert step["metadata"]["gc.build.artifact_schema"] == "pstack.source-binding.v1"
+    assert step["metadata"]["gc.build.artifact_path_keys"] == "pstack.artifact_path"
 
 
 def test_pack_metadata_and_import() -> None:
@@ -163,6 +316,12 @@ def test_review_expansion_and_role_routes() -> None:
     assert "pstack.review-synthesizer" in targets
     assert (ROOT / "agents/implementation-worker/agent.toml").is_file()
     assert (ROOT / "agents/review-synthesizer/prompt.template.md").is_file()
+    build_step = next(step for step in resolve_formula("pstack-build")["steps"] if step["id"] == "review")
+    review_step = next(step for step in load_formula("pstack-review")["steps"] if step["id"] == "write-report")
+    assert build_step["expand"] == review_step["expand"] == "pstack-build-review"
+    assert review_step["expand_vars"]["artifact_path_keys"] == "gc.build.review_report_path,gc.var.report_path"
+    terminal = next(node for node in nodes if node["id"] == "{target}")
+    assert terminal["metadata"]["gc.build.artifact_path_keys"] == "{artifact_path_keys}"
 
 
 def test_migration_bug_and_durable_program_ordering() -> None:
@@ -171,7 +330,7 @@ def test_migration_bug_and_durable_program_ordering() -> None:
     assert bug_ids[:4] == ["reproduce", "root-cause", "build", "verify"]
     migration = load_formula("pstack-migration")
     migration_ids = [step["id"] for step in migration["steps"]]
-    assert migration_ids == ["callers", "lever", "migrate", "delete", "verify", "finalize"]
+    assert migration_ids == ["callers", "lever", "principle-selection", "migrate", "delete", "verify", "finalize"]
     program = load_formula("pstack-orchestrate")
     assert [step["id"] for step in program["steps"]] == ["orders", "brief", "pilot", "frontier", "reconcile", "finalize"]
     assert "scheduler" not in program["description"].lower()

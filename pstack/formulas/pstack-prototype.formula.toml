@@ -17,9 +17,23 @@ metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "g
 description_file = "../assets/workflows/pstack-variants/pstack-prototype/experience.md"
 
 [[steps]]
+id = "principle-selection"
+title = "Select principles after prototype experience"
+needs = ["requirements", "experience"]
+metadata = { "gc.run_target" = "pstack.investigator", "gc.build.artifact_schema" = "pstack.principle-application.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.principle-application.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/principle-selection.md", "pstack.principle_manifest" = "{{principle_manifest}}" }
+description_file = "../assets/workflows/pstack-build/principles.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
 id = "slice"
 title = "Build smallest verifiable slice"
-needs = ["experience", "implement"]
+needs = ["experience", "implement", "implement-same-session"]
 metadata = { "gc.run_target" = "pstack.architect" }
 description_file = "../assets/workflows/pstack-variants/pstack-prototype/slice.md"
 
@@ -27,8 +41,15 @@ description_file = "../assets/workflows/pstack-variants/pstack-prototype/slice.m
 id = "verify"
 title = "Verify slice and expiry"
 needs = ["slice"]
-metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+metadata = { "gc.run_target" = "pstack.verifier", "gc.build.artifact_schema" = "pstack.verification.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.verification.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/verification.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-prototype/verify.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "finalize"

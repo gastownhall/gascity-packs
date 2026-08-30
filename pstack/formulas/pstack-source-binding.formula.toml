@@ -1,0 +1,56 @@
+description = "Record how a vendored source maps to a PStack formula node."
+formula = "pstack-source-binding"
+version = 1
+contract = "graph.v2"
+target_required = false
+mode = "report"
+
+[catalog]
+name = "pstack-source-binding"
+description = "Record an immutable source-to-formula translation."
+
+[vars]
+[vars.source_path]
+description = "Path in the vendored source corpus."
+required = true
+
+[vars.source_section]
+description = "Source section or heading containing the mapped behavior."
+required = true
+
+[vars.source_commit]
+description = "Immutable source revision."
+required = true
+
+[vars.target_formula]
+description = "Gas City formula receiving the mapping."
+required = true
+
+[vars.target_node]
+description = "Formula node receiving the mapping."
+required = true
+
+[vars.realization_type]
+description = "implemented, delegated, source-only, or unsupported."
+required = true
+
+[vars.rationale]
+description = "Why the translation has this realization."
+required = true
+
+[vars.artifact_path]
+description = "Output source-binding artifact path."
+required = true
+
+[[steps]]
+id = "record"
+title = "Record source translation"
+metadata = { "gc.run_target" = "pstack.investigator", "gc.build.artifact_schema" = "pstack.source-binding.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.source-binding.v1", "pstack.artifact_path" = "{{artifact_path}}" }
+description_file = "../assets/workflows/pstack-methods/source-binding.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

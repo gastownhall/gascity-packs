@@ -1,17 +1,17 @@
-Finalize the `build-basic` workflow.
+Finalize the PStack workflow.
 
 Summarize requirements, implementation-plan, design-review, create-beads,
 implementation, and review artifacts. Record the final outcome, artifact paths,
 and remaining follow-up beads on the workflow root bead.
 
-The build-basic implementation result may live in a source anchor/worktree. A
+The PStack implementation result may live in a source anchor/worktree. A
 launcher rig root that still contains the original fixture is not a partial build
 when the canonical implementation summary and review artifact show the source
 anchor/worktree passed. Use `status: approved` for the final report in that
 case, and record publish/no-op details separately.
 
-Write the final report, normally `factory-run.md`, at the path recorded on the
-workflow root bead as `gc.build.final_report_path`. The artifact must be Markdown with YAML front
+Write the final report at the path recorded on the workflow root bead as
+`gc.build.final_report_path`. The artifact must be Markdown with YAML front
 matter, not JSON. Its front matter must declare
 `schema: gc.build.final-report.v1`, the workflow id/formula, the methodology
 pack/name, the producer formula/stage/attempt, `status`, and `trace` with
@@ -48,12 +48,12 @@ Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JS
 object.
 
 Use mapping objects for front matter; do not use scalar shortcuts such as
-`workflow: build-basic`. The top-level YAML shape must be:
+`workflow: pstack-build`. The top-level YAML shape must be:
 
 - `schema: gc.build.final-report.v1`
-- `workflow: {id: <workflow-root-id>, formula: build-basic}`
-- `methodology: {pack: gascity, name: build-basic}`
-- `producer: {formula: build-basic, stage: finalize, attempt: <positive integer>}`
+- `workflow: {id: <workflow-root-id>, formula: pstack-build}`
+- `methodology: {pack: pstack, name: pstack-build}`
+- `producer: {formula: pstack-build, stage: finalize, attempt: <positive integer>}
 - `status: approved` or another schema-allowed status
 - `trace: {upstream: [...], coverage: [...]}`
 
@@ -85,7 +85,7 @@ schema sections:
 
 In those sections, include:
 
-- methodology: build-basic starter factory
+- methodology: pstack-build
 - requirements, plan, decomposition, implementation, and review artifact paths
 - implementation convoy id
 - review lanes that ran
@@ -93,9 +93,9 @@ In those sections, include:
 - publish outcome
 - next human action
 
-Record the final report path on the workflow root bead as both
-`gc.build.final_report_path=<path>` and `gc.build.factory_run_path=<path>`.
-Use `gc bd update "<workflow-root-id>" --set-metadata "gc.build.final_report_path=<absolute path>" --set-metadata "gc.build.factory_run_path=<absolute path>"`.
+Record the final report path on the workflow root bead as
+`gc.build.final_report_path=<path>`.
+Use `gc bd update "<workflow-root-id>" --set-metadata "gc.build.final_report_path=<absolute path>"`.
 Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
 object.
 Before closing this step, set the claimed step outcome with

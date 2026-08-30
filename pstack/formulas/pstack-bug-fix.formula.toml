@@ -13,20 +13,34 @@ description = "PStack reproduce and fix a defect at its root."
 id = "reproduce"
 title = "Reproduce the reported defect"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.reproduction.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.reproduction.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.reproduction.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/reproduction.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/reproduce.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "root-cause"
 title = "Establish root cause"
 needs = ["reproduce"]
-metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.root-cause.v1" }
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.root-cause.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.root-cause.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/root-cause.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/root-cause.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "build"
 title = "Run root-cause build"
-needs = ["root-cause", "implement"]
+needs = ["root-cause", "implement", "implement-same-session"]
 metadata = { "gc.run_target" = "pstack.architect" }
 description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/build.md"
 
@@ -34,8 +48,15 @@ description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/build.md"
 id = "verify"
 title = "Verify on the same surface"
 needs = ["build"]
-metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+metadata = { "gc.run_target" = "pstack.verifier", "gc.build.artifact_schema" = "pstack.verification.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.verification.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/verification.md" }
 description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/verify.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "finalize"
@@ -56,5 +77,12 @@ timeout = "5m"
 id = "principle-selection"
 title = "Select applicable PStack principles after root cause"
 needs = ["root-cause"]
-metadata = { "gc.run_target" = "pstack.investigator", "pstack.artifact_schema" = "pstack.principle-application.v1", "pstack.principle_manifest" = "{{principle_manifest}}" }
+metadata = { "gc.run_target" = "pstack.investigator", "gc.build.artifact_schema" = "pstack.principle-application.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.principle-application.v1", "pstack.artifact_path" = "{{artifact_root}}/pstack/principle-selection.md", "pstack.principle_manifest" = "{{principle_manifest}}" }
 description_file = "../assets/workflows/pstack-build/principles.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
