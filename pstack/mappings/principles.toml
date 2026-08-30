@@ -1,0 +1,22 @@
+[principles]
+laziness-protocol = { skill = "principle-laziness-protocol", enforcement = "review" }
+foundational-thinking = { skill = "principle-foundational-thinking", enforcement = "artifact" }
+redesign-from-first-principles = { skill = "principle-redesign-from-first-principles", enforcement = "artifact" }
+subtract-before-you-add = { skill = "principle-subtract-before-you-add", enforcement = "graph-invariant" }
+minimize-reader-load = { skill = "principle-minimize-reader-load", enforcement = "review" }
+outcome-oriented-execution = { skill = "principle-outcome-oriented-execution", enforcement = "artifact" }
+experience-first = { skill = "principle-experience-first", enforcement = "artifact" }
+exhaust-the-design-space = { skill = "principle-exhaust-the-design-space", enforcement = "expansion" }
+build-the-lever = { skill = "principle-build-the-lever", enforcement = "artifact" }
+model-the-domain = { skill = "principle-model-the-domain", enforcement = "artifact" }
+boundary-discipline = { skill = "principle-boundary-discipline", enforcement = "check" }
+type-system-discipline = { skill = "principle-type-system-discipline", enforcement = "review" }
+make-operations-idempotent = { skill = "principle-make-operations-idempotent", enforcement = "check" }
+migrate-callers-then-delete-legacy-apis = { skill = "principle-migrate-callers-then-delete-legacy-apis", enforcement = "graph-invariant" }
+separate-before-serializing-shared-state = { skill = "principle-separate-before-serializing-shared-state", enforcement = "graph-invariant" }
+prove-it-works = { skill = "principle-prove-it-works", enforcement = "artifact" }
+fix-root-causes = { skill = "principle-fix-root-causes", enforcement = "graph-invariant" }
+sequence-verifiable-units = { skill = "principle-sequence-verifiable-units", enforcement = "graph-invariant" }
+guard-the-context-window = { skill = "principle-guard-the-context-window", enforcement = "artifact" }
+never-block-on-the-human = { skill = "principle-never-block-on-the-human", enforcement = "check" }
+encode-lessons-in-structure = { skill = "principle-encode-lessons-in-structure", enforcement = "artifact" }

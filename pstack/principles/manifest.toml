@@ -1,0 +1,169 @@
+version = 1
+
+[[principle]]
+id = "laziness-protocol"
+skill = "skills/principle-laziness-protocol/SKILL.md"
+triggers = ["any change", "new abstraction", "new dependency"]
+applies_to = ["requirements", "plan", "review"]
+enforcement = ["review"]
+required_artifacts = ["gc.build.plan.v1", "gc.build.review.v1"]
+
+[[principle]]
+id = "foundational-thinking"
+skill = "skills/principle-foundational-thinking/SKILL.md"
+triggers = ["unclear system boundary", "large refactor"]
+applies_to = ["requirements", "plan"]
+enforcement = ["artifact"]
+required_artifacts = ["pstack.foundation.v1"]
+
+[[principle]]
+id = "redesign-from-first-principles"
+skill = "skills/principle-redesign-from-first-principles/SKILL.md"
+triggers = ["design alternatives", "legacy constraint"]
+applies_to = ["plan", "review"]
+enforcement = ["artifact", "review"]
+required_artifacts = ["pstack.foundation.v1", "gc.build.plan.v1"]
+
+[[principle]]
+id = "subtract-before-you-add"
+skill = "skills/principle-subtract-before-you-add/SKILL.md"
+triggers = ["feature request", "refactor", "new code path"]
+applies_to = ["plan"]
+enforcement = ["graph-invariant", "check"]
+required_artifacts = ["pstack.decision.v1", "gc.build.plan.v1"]
+
+[[principle]]
+id = "minimize-reader-load"
+skill = "skills/principle-minimize-reader-load/SKILL.md"
+triggers = ["review", "new public API", "large diff"]
+applies_to = ["review", "finalize"]
+enforcement = ["artifact", "review"]
+required_artifacts = ["gc.build.review.v1"]
+
+[[principle]]
+id = "outcome-oriented-execution"
+skill = "skills/principle-outcome-oriented-execution/SKILL.md"
+triggers = ["workflow start", "blocked work", "status report"]
+applies_to = ["requirements", "implementation", "finalize"]
+enforcement = ["artifact"]
+required_artifacts = ["gc.build.requirements.v1", "gc.build.final-report.v1"]
+
+[[principle]]
+id = "experience-first"
+skill = "skills/principle-experience-first/SKILL.md"
+triggers = ["user-facing change", "CLI change", "workflow change"]
+applies_to = ["requirements", "plan", "review"]
+enforcement = ["artifact", "review"]
+required_artifacts = ["gc.build.requirements.v1", "gc.build.plan.v1"]
+
+[[principle]]
+id = "exhaust-the-design-space"
+skill = "skills/principle-exhaust-the-design-space/SKILL.md"
+triggers = ["novel design", "irreversible choice", "competing architectures"]
+applies_to = ["plan"]
+enforcement = ["expansion"]
+required_artifacts = ["pstack.arena-candidate.v1", "pstack.arena-synthesis.v1"]
+
+[[principle]]
+id = "build-the-lever"
+skill = "skills/principle-build-the-lever/SKILL.md"
+triggers = ["large fanout", "repeated manual work", "migration"]
+applies_to = ["plan", "decompose"]
+enforcement = ["artifact", "graph-invariant"]
+required_artifacts = ["pstack.lever-decision.v1", "gc.build.decomposition.v1"]
+
+[[principle]]
+id = "model-the-domain"
+skill = "skills/principle-model-the-domain/SKILL.md"
+triggers = ["domain change", "schema change", "boundary change"]
+applies_to = ["requirements", "plan"]
+enforcement = ["artifact", "review"]
+required_artifacts = ["pstack.foundation.v1", "gc.build.plan.v1"]
+
+[[principle]]
+id = "boundary-discipline"
+skill = "skills/principle-boundary-discipline/SKILL.md"
+triggers = ["cross-service change", "public API", "ownership ambiguity"]
+applies_to = ["plan", "review"]
+enforcement = ["check", "review"]
+required_artifacts = ["pstack.foundation.v1", "gc.build.review.v1"]
+
+[[principle]]
+id = "type-system-discipline"
+skill = "skills/principle-type-system-discipline/SKILL.md"
+triggers = ["data contract", "serialization", "dynamic boundary"]
+applies_to = ["plan", "implementation", "review"]
+enforcement = ["review", "check"]
+required_artifacts = ["gc.build.plan.v1", "gc.build.review.v1"]
+
+[[principle]]
+id = "make-operations-idempotent"
+skill = "skills/principle-make-operations-idempotent/SKILL.md"
+triggers = ["retryable operation", "replay", "automation"]
+applies_to = ["plan", "implementation", "review"]
+enforcement = ["check"]
+required_artifacts = ["pstack.verification.v1", "gc.build.review.v1"]
+
+[[principle]]
+id = "migrate-callers-then-delete-legacy-apis"
+skill = "skills/principle-migrate-callers-then-delete-legacy-apis/SKILL.md"
+triggers = ["API migration", "rename", "deprecation"]
+applies_to = ["plan", "decompose", "review"]
+enforcement = ["graph-invariant", "check"]
+required_artifacts = ["gc.build.decomposition.v1", "pstack.verification.v1"]
+
+[[principle]]
+id = "separate-before-serializing-shared-state"
+skill = "skills/principle-separate-before-serializing-shared-state/SKILL.md"
+triggers = ["parallel work", "shared state", "fanout"]
+applies_to = ["decompose", "implementation"]
+enforcement = ["graph-invariant"]
+required_artifacts = ["gc.build.decomposition.v1"]
+
+[[principle]]
+id = "prove-it-works"
+skill = "skills/principle-prove-it-works/SKILL.md"
+triggers = ["implementation complete", "review", "publish"]
+applies_to = ["review", "finalize"]
+enforcement = ["check", "artifact"]
+required_artifacts = ["pstack.verification.v1", "gc.build.final-report.v1"]
+
+[[principle]]
+id = "fix-root-causes"
+skill = "skills/principle-fix-root-causes/SKILL.md"
+triggers = ["bug", "failed check", "regression"]
+applies_to = ["requirements", "plan", "review"]
+enforcement = ["graph-invariant", "artifact"]
+required_artifacts = ["pstack.reproduction.v1", "pstack.root-cause.v1"]
+
+[[principle]]
+id = "sequence-verifiable-units"
+skill = "skills/principle-sequence-verifiable-units/SKILL.md"
+triggers = ["multi-step change", "decomposition", "long workflow"]
+applies_to = ["plan", "decompose", "implementation"]
+enforcement = ["graph-invariant", "check"]
+required_artifacts = ["gc.build.plan.v1", "gc.build.decomposition.v1"]
+
+[[principle]]
+id = "guard-the-context-window"
+skill = "skills/principle-guard-the-context-window/SKILL.md"
+triggers = ["large task", "fanout", "long session"]
+applies_to = ["requirements", "decompose", "implementation"]
+enforcement = ["artifact", "review"]
+required_artifacts = ["pstack.program-status.v1", "gc.build.decomposition.v1"]
+
+[[principle]]
+id = "never-block-on-the-human"
+skill = "skills/principle-never-block-on-the-human/SKILL.md"
+triggers = ["missing preference", "ordinary ambiguity", "blocked worker"]
+applies_to = ["requirements", "implementation", "orchestration"]
+enforcement = ["review", "check"]
+required_artifacts = ["pstack.program-status.v1"]
+
+[[principle]]
+id = "encode-lessons-in-structure"
+skill = "skills/principle-encode-lessons-in-structure/SKILL.md"
+triggers = ["review finding", "repeated failure", "finalize"]
+applies_to = ["review", "finalize"]
+enforcement = ["artifact", "check"]
+required_artifacts = ["gc.build.final-report.v1", "pstack.verification.v1"]

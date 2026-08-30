@@ -467,6 +467,38 @@ THIRD_PARTY_BUILD_PACKS = {
             "skills/spec/SKILL.md",
         },
     },
+    "pstack": {
+        "formula": "pstack-build",
+        "base_import_binding": "gc",
+        "base_import_source": "../gascity",
+        "vendor": "pstack",
+        "upstream": "https://github.com/tommy-ca/pstack",
+        "commit": "74b1200c596102d051bd0fd3aa6dea68148be870",
+        "implementation_target": "pstack.implementation-worker",
+        "planning_formula": "pstack-planning",
+        "decomposition_formula": "pstack-decomposition",
+        "implementation_entry_formula": "pstack-implementation",
+        "implementation_formula": "pstack-work",
+        "implementation_item_formula": "pstack-work-item",
+        "code_review_entry_formula": "pstack-review",
+        "review_fix_formula": "pstack-fix-loop",
+        "skills": {
+            "requirements": "principle-experience-first",
+            "plan": "architect",
+            "decompose": "principle-build-the-lever",
+            "implement": "poteto-mode",
+            "review": "interrogate",
+            "finalize": "principle-encode-lessons-in-structure",
+        },
+        "extra_steps": ["principle-selection", "subtract-assessment", "foundation", "lever-decision"],
+        "expansions": {
+            "review": "pstack-build-review",
+        },
+        "review_expansion": "pstack-build-review",
+        "code_review_entry_expansion": "pstack-code-review-expansion",
+        "gap_analysis_target": "pstack.reviewer",
+        "review_fix_asset": "assets/workflows/pstack-build-review/{target}.apply-review-findings.md",
+    },
 }
 
 
@@ -2627,7 +2659,10 @@ class FormulaAssetTests(unittest.TestCase):
                     expected["implementation_target"],
                 )
                 write_report = next(step for step in review["steps"] if step["id"] == "write-report")
-                self.assertEqual(write_report["expand"], expected["review_expansion"])
+                self.assertEqual(
+                    write_report["expand"],
+                    expected.get("code_review_entry_expansion", expected["review_expansion"]),
+                )
                 expected_review_expand_vars = {
                     "implementation_target": "{{implementation_target}}",
                     "review_mode": "{{review_mode}}",

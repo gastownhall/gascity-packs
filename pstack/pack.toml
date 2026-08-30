@@ -1,0 +1,8 @@
+[pack]
+name = "pstack"
+version = "0.1.0"
+schema = 2
+requires_gc = ">=0.13.0"
+
+[imports.gc]
+source = "../gascity"

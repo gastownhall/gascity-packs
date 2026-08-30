@@ -1,0 +1,3 @@
+description = "Reviewer for principle and code findings"
+scope = "rig"
+fallback = true

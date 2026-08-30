@@ -1,0 +1,28 @@
+# PStack-specific evidence schema; immutable ID: pstack.reproduction.v1
+schema_id: pstack.reproduction.v1
+artifact: reproduction
+allowed_statuses:
+  - draft
+  - approved
+  - blocked
+  - superseded
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - producer.formula
+  - producer.stage
+  - status
+  - trace
+required_fields:
+  - symptom
+  - input
+  - environment
+  - expected
+  - actual
+  - repeatability
+evidence_fields:
+  - source_revision
+  - source_path
+  - claim_refs
+  - verification_status

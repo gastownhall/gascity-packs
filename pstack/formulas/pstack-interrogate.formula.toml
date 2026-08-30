@@ -1,0 +1,29 @@
+description = "Select relevant review dimensions, deduplicate findings, and issue a lead judgment."
+formula = "pstack-interrogate"
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[catalog]
+name = "pstack-interrogate"
+description = "Selector-driven review fanout and judgment."
+
+[[steps]]
+id = "select"
+title = "Select review dimensions"
+metadata = { "gc.run_target" = "pstack.coordinator", "pstack.graph_operator" = "selector" }
+description_file = "../assets/workflows/pstack-methods/interrogate-select.md"
+
+[[steps]]
+id = "review"
+title = "Run selected review lanes"
+needs = ["select"]
+metadata = { "gc.run_target" = "pstack.reviewer", "gc.graph_operator" = "fanout" }
+description_file = "../assets/workflows/pstack-methods/interrogate-review.md"
+
+[[steps]]
+id = "judgment"
+title = "Deduplicate and issue judgment"
+needs = ["review"]
+metadata = { "gc.run_target" = "pstack.review-synthesizer", "pstack.artifact_schema" = "gc.build.review.v1" }
+description_file = "../assets/workflows/pstack-methods/interrogate-judgment.md"

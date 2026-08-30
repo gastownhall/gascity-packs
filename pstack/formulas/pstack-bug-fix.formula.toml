@@ -1,0 +1,60 @@
+description = "PStack reproduce and fix a defect at its root."
+formula = "pstack-bug-fix"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-bug-fix"
+description = "PStack reproduce and fix a defect at its root."
+
+[[steps]]
+id = "reproduce"
+title = "Reproduce the reported defect"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.reproduction.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/reproduce.md"
+
+[[steps]]
+id = "root-cause"
+title = "Establish root cause"
+needs = ["reproduce"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.root-cause.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/root-cause.md"
+
+[[steps]]
+id = "build"
+title = "Run root-cause build"
+needs = ["root-cause", "implement"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/build.md"
+
+[[steps]]
+id = "verify"
+title = "Verify on the same surface"
+needs = ["build"]
+metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-bug-fix/verify.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack bug fix"
+needs = ["review", "verify"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "principle-selection"
+title = "Select applicable PStack principles after root cause"
+needs = ["root-cause"]
+metadata = { "gc.run_target" = "pstack.investigator", "pstack.artifact_schema" = "pstack.principle-application.v1", "pstack.principle_manifest" = "{{principle_manifest}}" }
+description_file = "../assets/workflows/pstack-build/principles.md"

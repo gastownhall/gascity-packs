@@ -1,0 +1,53 @@
+description = "PStack run a bounded predicate-driven autonomous loop."
+formula = "pstack-autonomous-run"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-autonomous-run"
+description = "PStack run a bounded predicate-driven autonomous loop."
+
+[[steps]]
+id = "goal"
+title = "Record goal and completion predicate"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/goal.md"
+
+[[steps]]
+id = "baseline"
+title = "Record baseline"
+needs = ["goal"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.verification.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/baseline.md"
+
+[[steps]]
+id = "loop"
+title = "Run bounded loop"
+needs = ["baseline"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/loop.md"
+
+[[steps]]
+id = "check"
+title = "Check predicate and evidence"
+needs = ["loop", "implement"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.verification.v1" }
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack autonomous run"
+needs = ["review", "check"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+description_file = "../assets/workflows/pstack-variants/pstack-autonomous-run/check.md"

@@ -1,0 +1,20 @@
+[upstream]
+source = "https://github.com/tommy-ca/pstack"
+commit = "74b1200c596102d051bd0fd3aa6dea68148be870"
+license = "MIT"
+provenance = "Grok-adapted pstack source; see vendor/pstack/README.md and source UPSTREAM record."
+
+[vendor]
+paths = [
+  "vendor/pstack/skills",
+  "vendor/pstack/agents",
+  "vendor/pstack/docs",
+  "vendor/pstack/automations",
+  "vendor/pstack/README.md",
+  "vendor/pstack/LICENSE",
+]
+
+[runtime_adaptation]
+owner = "Gas City pack"
+paths = ["skills", "agents", "formulas", "assets", "schemas", "principles", "mappings", "tests"]
+rule = "Never edit vendored source to adapt provider or runtime behavior."

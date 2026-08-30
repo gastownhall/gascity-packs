@@ -1,0 +1,31 @@
+description = "PStack review and publish only after evidence."
+formula = "pstack-shipping"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-shipping"
+description = "PStack review and publish only after evidence."
+
+[[steps]]
+id = "review"
+title = "Run implementation review"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "gc.build.review.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-shipping/review.md"
+
+[[steps]]
+id = "finalize"
+title = "Write final evidence"
+needs = ["review"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "gc.build.final-report.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-shipping/finalize.md"
+
+[[steps]]
+id = "publish"
+title = "Pass publish gate"
+needs = ["finalize"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-shipping/publish.md"

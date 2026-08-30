@@ -1,0 +1,32 @@
+description = "PStack capture bounded investigation evidence."
+formula = "pstack-investigation"
+version = 1
+contract = "graph.v2"
+target_required = false
+mode = "report"
+
+[catalog]
+name = "pstack-investigation"
+description = "PStack capture bounded investigation evidence."
+
+[vars]
+[vars.subject_path]
+description = "Input context or subject path."
+required = true
+
+[vars.artifact_path]
+description = "Output evidence artifact path."
+required = true
+
+[[steps]]
+id = "collect"
+title = "Collect bounded evidence"
+metadata = { "gc.run_target" = "pstack.investigator", "pstack.skill" = "investigation" }
+description_file = "../assets/workflows/pstack-methods/collect.md"
+
+[[steps]]
+id = "write"
+title = "Write PStack evidence"
+needs = ["collect"]
+metadata = { "gc.run_target" = "pstack.investigator", "pstack.artifact_schema" = "pstack.verification.v1" }
+description_file = "../assets/workflows/pstack-methods/write.md"

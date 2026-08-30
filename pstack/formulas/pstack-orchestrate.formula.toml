@@ -1,0 +1,60 @@
+description = "PStack operate a durable program through Gas City."
+formula = "pstack-orchestrate"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-orchestrate"
+description = "PStack operate a durable program through Gas City."
+
+[[steps]]
+id = "orders"
+title = "Record standing orders"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.standing-orders.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/orders.md"
+
+[[steps]]
+id = "brief"
+title = "Create program brief"
+needs = ["orders"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/brief.md"
+
+[[steps]]
+id = "pilot"
+title = "Run bounded pilot"
+needs = ["brief"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.lever-decision.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/pilot.md"
+
+[[steps]]
+id = "frontier"
+title = "Advance rolling frontier"
+needs = ["pilot"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.frontier.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/frontier.md"
+
+[[steps]]
+id = "reconcile"
+title = "Reconcile durable graph"
+needs = ["frontier"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack orchestration"
+needs = ["review", "reconcile"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+description_file = "../assets/workflows/pstack-variants/pstack-orchestrate/reconcile.md"

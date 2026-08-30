@@ -1,0 +1,27 @@
+# PStack-specific evidence schema; immutable ID: pstack.decision.v1
+schema_id: pstack.decision.v1
+artifact: decision
+allowed_statuses:
+  - draft
+  - approved
+  - blocked
+  - superseded
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - producer.formula
+  - producer.stage
+  - status
+  - trace
+required_fields:
+  - problem
+  - options
+  - chosen_path
+  - subtraction
+  - rationale
+evidence_fields:
+  - source_revision
+  - source_path
+  - claim_refs
+  - verification_status

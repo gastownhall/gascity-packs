@@ -1,0 +1,27 @@
+# PStack-specific evidence schema; immutable ID: pstack.frontier.v1
+schema_id: pstack.frontier.v1
+artifact: frontier
+allowed_statuses:
+  - draft
+  - approved
+  - blocked
+  - superseded
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - producer.formula
+  - producer.stage
+  - status
+  - trace
+required_fields:
+  - active_frontier
+  - dependencies
+  - owner
+  - predicate
+  - escalation
+evidence_fields:
+  - source_revision
+  - source_path
+  - claim_refs
+  - verification_status

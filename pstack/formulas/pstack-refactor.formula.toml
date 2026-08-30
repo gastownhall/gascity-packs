@@ -1,0 +1,60 @@
+description = "PStack subtract and migrate a refactor safely."
+formula = "pstack-refactor"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-refactor"
+description = "PStack subtract and migrate a refactor safely."
+
+[[steps]]
+id = "subtract"
+title = "Assess removable surface"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.decision.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-refactor/subtract.md"
+
+[[steps]]
+id = "callers"
+title = "Inventory callers"
+needs = ["subtract"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "gc.build.decomposition.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-refactor/callers.md"
+
+[[steps]]
+id = "lever"
+title = "Choose migration lever"
+needs = ["callers"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.lever-decision.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-refactor/lever.md"
+
+[[steps]]
+id = "build"
+title = "Run refactor build"
+needs = ["lever", "implement"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-refactor/build.md"
+
+[[steps]]
+id = "verify"
+title = "Verify legacy absence"
+needs = ["build"]
+metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-refactor/verify.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack refactor"
+needs = ["review", "verify"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

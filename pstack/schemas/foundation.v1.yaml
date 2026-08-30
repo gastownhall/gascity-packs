@@ -1,0 +1,27 @@
+# PStack-specific evidence schema; immutable ID: pstack.foundation.v1
+schema_id: pstack.foundation.v1
+artifact: foundation
+allowed_statuses:
+  - draft
+  - approved
+  - blocked
+  - superseded
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - producer.formula
+  - producer.stage
+  - status
+  - trace
+required_fields:
+  - domain
+  - boundaries
+  - invariants
+  - ownership
+  - rejected_assumptions
+evidence_fields:
+  - source_revision
+  - source_path
+  - claim_refs
+  - verification_status

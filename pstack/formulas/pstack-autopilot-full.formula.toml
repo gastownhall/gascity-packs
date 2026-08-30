@@ -1,0 +1,46 @@
+description = "PStack compose autonomous run, review, and shipping."
+formula = "pstack-autopilot-full"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-autopilot-full"
+description = "PStack compose autonomous run, review, and shipping."
+
+[[steps]]
+id = "goal"
+title = "Set bounded goal"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-autopilot-full/goal.md"
+
+[[steps]]
+id = "run"
+title = "Run autonomous build"
+needs = ["goal"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-autopilot-full/run.md"
+
+[[steps]]
+id = "ship"
+title = "Review and ship evidence"
+needs = ["run", "implement"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "gc.build.final-report.v1" }
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack autopilot"
+needs = ["review", "ship"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+description_file = "../assets/workflows/pstack-variants/pstack-autopilot-full/ship.md"

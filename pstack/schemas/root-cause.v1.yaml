@@ -1,0 +1,26 @@
+# PStack-specific evidence schema; immutable ID: pstack.root-cause.v1
+schema_id: pstack.root-cause.v1
+artifact: root-cause
+allowed_statuses:
+  - draft
+  - approved
+  - blocked
+  - superseded
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - producer.formula
+  - producer.stage
+  - status
+  - trace
+required_fields:
+  - causal_chain
+  - evidence
+  - rejected_hypotheses
+  - fix_boundary
+evidence_fields:
+  - source_revision
+  - source_path
+  - claim_refs
+  - verification_status

@@ -1,0 +1,46 @@
+description = "PStack compose stack-oriented bounded builds."
+formula = "pstack-autopilot-stack"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-autopilot-stack"
+description = "PStack compose stack-oriented bounded builds."
+
+[[steps]]
+id = "frontier"
+title = "Select rolling frontier"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.frontier.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-autopilot-stack/frontier.md"
+
+[[steps]]
+id = "run"
+title = "Run bounded stack build"
+needs = ["frontier"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-autopilot-stack/run.md"
+
+[[steps]]
+id = "verify"
+title = "Verify stack outcome"
+needs = ["run", "implement"]
+metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack stack autopilot"
+needs = ["review", "verify"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+description_file = "../assets/workflows/pstack-variants/pstack-autopilot-stack/verify.md"

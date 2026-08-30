@@ -83,7 +83,7 @@ this is the shortest path. Each step is copy-pasteable; swap names to taste.
    (requirements, plan, review reports, and a `factory-run.md` summary) land
    under `artifact_root` in your rig.
 
-6. **Pick a methodology when you want more opinion.** The four methodology
+6. **Pick a methodology when you want more opinion.** The five methodology
    packs below replace `build-basic`'s stages with vendored, battle-tested
    processes while keeping the same launch shape — import one at city scope
    and sling its build formula instead (for example `--on bmad-build`):
@@ -103,8 +103,9 @@ this is the shortest path. Each step is copy-pasteable; swap names to taste.
 | [compound-engineering](./compound-engineering) (`compound-build`) | Brainstorm/plan → plan review → implement → the widest reviewer-persona fanout → resolution | Review depth matters most: correctness, security, performance, migrations, and API contracts each get their own reviewer lane. |
 | [superpowers](./superpowers) (`superpowers-build`) | Brainstorm → written spec approval → per-task test-driven development → spec-compliance then code-quality review | You want hard approval gates before code and strict TDD per task. |
 | [gstack](./gstack) (`gstack-build`) | Office-hours intake → multi-perspective plan review → build → staff review → QA → security → release readiness | You want founder/PM-flavored gates and explicit QA + release-readiness stages before shipping. |
+| [pstack](./pstack) (`pstack-build`) | Experience-first requirements → principle selection → subtraction/foundation → lever decision → durable implementation → evidence-bound review | You want all 21 PStack principles enforced through Gas City-native build gates and composable methods. |
 
-All five expose the same launch variables (`interaction_mode`, `review_mode`,
+All six expose the same launch variables (`interaction_mode`, `review_mode`,
 `drain_policy`, `push`, `open_pr`, …), so switching methodology is a one-word
 change to the formula name.
 

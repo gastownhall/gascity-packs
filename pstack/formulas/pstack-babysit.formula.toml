@@ -1,0 +1,46 @@
+description = "PStack reconcile durable work and escalate blockers."
+formula = "pstack-babysit"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-babysit"
+description = "PStack reconcile durable work and escalate blockers."
+
+[[steps]]
+id = "status"
+title = "Read durable program status"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-babysit/status.md"
+
+[[steps]]
+id = "reconcile"
+title = "Reconcile claims and frontier"
+needs = ["status"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.frontier.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-babysit/reconcile.md"
+
+[[steps]]
+id = "escalate"
+title = "Escalate only actionable blockers"
+needs = ["reconcile"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.program-status.v1" }
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack babysit report"
+needs = ["review", "escalate"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+description_file = "../assets/workflows/pstack-variants/pstack-babysit/escalate.md"

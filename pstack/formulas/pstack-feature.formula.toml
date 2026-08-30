@@ -1,0 +1,46 @@
+description = "PStack run an experience-first feature build."
+formula = "pstack-feature"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-feature"
+description = "PStack run an experience-first feature build."
+
+[[steps]]
+id = "experience"
+title = "Define target experience"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "gc.build.requirements.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-feature/experience.md"
+
+[[steps]]
+id = "build"
+title = "Run pstack build"
+needs = ["experience", "implement"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-feature/build.md"
+
+[[steps]]
+id = "verify"
+title = "Verify user-visible outcome"
+needs = ["build"]
+metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-feature/verify.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack feature"
+needs = ["review", "verify"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

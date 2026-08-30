@@ -1,0 +1,29 @@
+description = "Fan out bounded durable investigation work and aggregate claims."
+formula = "pstack-swarm"
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[catalog]
+name = "pstack-swarm"
+description = "Gas City fanout/fanin for bounded PStack investigation."
+
+[[steps]]
+id = "frame"
+title = "Frame swarm"
+metadata = { "gc.run_target" = "pstack.coordinator", "pstack.artifact_schema" = "pstack.decision.v1" }
+description_file = "../assets/workflows/pstack-methods/frame.md"
+
+[[steps]]
+id = "fanout"
+title = "Fan out durable child work"
+needs = ["frame"]
+metadata = { "gc.run_target" = "pstack.investigator", "gc.graph_operator" = "fanout" }
+description_file = "../assets/workflows/pstack-methods/fanout.md"
+
+[[steps]]
+id = "fanin"
+title = "Aggregate child claims"
+needs = ["fanout"]
+metadata = { "gc.run_target" = "pstack.review-synthesizer", "gc.graph_operator" = "fanin", "pstack.artifact_schema" = "pstack.swarm-result.v1" }
+description_file = "../assets/workflows/pstack-methods/fanin.md"

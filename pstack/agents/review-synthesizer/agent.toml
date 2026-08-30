@@ -1,0 +1,3 @@
+description = "Synthesizer for independent review claims"
+scope = "rig"
+fallback = true

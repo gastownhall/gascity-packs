@@ -1,0 +1,20 @@
+description = "PStack implementation of the fix-loop-base methodology contract."
+formula = "pstack-fix-loop"
+version = 1
+contract = "graph.v2"
+extends = ["fix-loop-base"]
+target_required = false
+internal = true
+
+[vars]
+[vars.implementation_formula]
+description = "PStack implementation formula used for fixes."
+default = "pstack-implementation"
+
+[vars.code_review_formula]
+description = "PStack review formula used after fixes."
+default = "pstack-review"
+
+[vars.implementation_target]
+description = "PStack implementation role."
+default = "pstack.implementation-worker"

@@ -1,0 +1,60 @@
+description = "PStack migrate callers before deleting legacy APIs."
+formula = "pstack-migration"
+version = 1
+contract = "graph.v2"
+extends = ["pstack-build"]
+target_required = true
+
+[catalog]
+name = "pstack-migration"
+description = "PStack migrate callers before deleting legacy APIs."
+
+[[steps]]
+id = "callers"
+title = "Inventory and classify callers"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "gc.build.decomposition.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-migration/callers.md"
+
+[[steps]]
+id = "lever"
+title = "Pilot migration lever"
+needs = ["callers"]
+metadata = { "gc.run_target" = "pstack.architect", "pstack.artifact_schema" = "pstack.lever-decision.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-migration/lever.md"
+
+[[steps]]
+id = "migrate"
+title = "Migrate callers in waves"
+needs = ["lever", "implement"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-migration/migrate.md"
+
+[[steps]]
+id = "delete"
+title = "Delete legacy API after callers move"
+needs = ["migrate"]
+metadata = { "gc.run_target" = "pstack.architect" }
+description_file = "../assets/workflows/pstack-variants/pstack-migration/delete.md"
+
+[[steps]]
+id = "verify"
+title = "Verify absence and compatibility"
+needs = ["delete"]
+metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+description_file = "../assets/workflows/pstack-variants/pstack-migration/verify.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize pstack migration"
+needs = ["review", "verify"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/pstack-build/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

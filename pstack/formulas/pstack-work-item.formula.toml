@@ -1,0 +1,36 @@
+description = """
+Gas City PStack shared-drain implementation item methodology contract.
+
+This formula executes exactly one source item inside a shared single-lane
+drain while keeping the Gas City claim and evidence contract stable. Do not invoke provider-native subagents.
+"""
+formula = "pstack-work-item"
+version = 1
+contract = "graph.v2"
+extends = ["do-work-item"]
+target_required = true
+internal = true
+single_lane = true
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[vars.implementation_target]
+description = "Role target for shared-drain implementation work."
+default = "pstack.implementation-worker"
+
+[[steps]]
+id = "implement-item"
+title = "Implement shared-drain item"
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path" }
+description_file = "../assets/workflows/implementation-item-base/implement-item.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

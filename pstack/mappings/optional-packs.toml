@@ -1,0 +1,9 @@
+[optional_packs]
+compound-engineering = { required = false, use = "review expansion and claim-compatible roles", unavailable = "core pstack remains loadable" }
+superpowers = { required = false, use = "planning and implementation overlays", unavailable = "use pstack-build defaults" }
+bmad = { required = false, use = "planning/review composition", unavailable = "skip integration" }
+gstack = { required = false, use = "browser/CLI smoke review", unavailable = "report static evidence only" }
+
+[policy]
+missing_pack = "skip-with-reason"
+no_live_import = true

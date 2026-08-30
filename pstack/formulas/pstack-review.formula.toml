@@ -1,0 +1,22 @@
+description = "PStack implementation of the code-review-base methodology contract."
+formula = "pstack-review"
+version = 1
+contract = "graph.v2"
+extends = ["code-review-base"]
+target_required = false
+internal = true
+mode = "report"
+
+[vars]
+[vars.implementation_target]
+description = "PStack implementation role used for review fixes."
+default = "pstack.implementation-worker"
+
+[[steps]]
+id = "write-report"
+title = "Run PStack review"
+needs = ["validate-context"]
+metadata = { "gc.run_target" = "pstack.reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+expand = "pstack-code-review-expansion"
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}" }
+description_file = "../assets/workflows/pstack-review/write-report.md"

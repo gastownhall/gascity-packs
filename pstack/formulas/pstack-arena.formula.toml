@@ -1,0 +1,36 @@
+description = "Compare distinct candidate shapes only when the design trigger is true."
+formula = "pstack-arena"
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[catalog]
+name = "pstack-arena"
+description = "Candidate fanout, cross-judge, lead decision, and verification."
+
+[[steps]]
+id = "trigger"
+title = "Evaluate Arena trigger"
+metadata = { "gc.run_target" = "pstack.architect", "pstack.graph_operator" = "gate" }
+description_file = "../assets/workflows/pstack-methods/arena-trigger.md"
+
+[[steps]]
+id = "candidates"
+title = "Develop distinct candidates"
+needs = ["trigger"]
+metadata = { "gc.run_target" = "pstack.architect", "gc.graph_operator" = "fanout", "pstack.artifact_schema" = "pstack.arena-candidate.v1" }
+description_file = "../assets/workflows/pstack-methods/arena-candidates.md"
+
+[[steps]]
+id = "judge"
+title = "Cross-judge and decide"
+needs = ["candidates"]
+metadata = { "gc.run_target" = "pstack.review-synthesizer", "pstack.artifact_schema" = "pstack.arena-synthesis.v1" }
+description_file = "../assets/workflows/pstack-methods/arena-judge.md"
+
+[[steps]]
+id = "verify"
+title = "Verify selected candidate"
+needs = ["judge"]
+metadata = { "gc.run_target" = "pstack.verifier", "pstack.artifact_schema" = "pstack.verification.v1" }
+description_file = "../assets/workflows/pstack-methods/verify.md"
