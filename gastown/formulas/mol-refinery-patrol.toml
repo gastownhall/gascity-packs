@@ -189,15 +189,35 @@ The bead MUST have `metadata.branch`. If `metadata.target` is missing,
 use {{target_branch}} as default. Note the work bead ID and close this step.
 
 If NO work found:
+Resolve the patrol wisp for this iteration, claim it, and close it with an
+audit reason before leaving. An idle refinery has no branch-backed work to
+hold open, and leaving the root wisp open makes the next startup bypass it
+because the legacy lookup only checks `in_progress`:
+```bash
+CURRENT_WISP=${GC_BEAD_ID:-}
+if [ -z "$CURRENT_WISP" ]; then
+  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+fi
+if [ -z "$CURRENT_WISP" ]; then
+  echo "Could not resolve current refinery wisp; preserving evidence."
+  exit 1
+fi
+if ! gc bd update "$CURRENT_WISP" --claim; then
+  echo "Could not claim current refinery wisp; preserving evidence."
+  exit 1
+fi
+if ! gc bd close "$CURRENT_WISP" --reason "Idle: no branch-backed work assigned."; then
+  echo "Could not close current refinery wisp; preserving evidence."
+  exit 1
+fi
+gc runtime drain-ack
 Write exactly:
 ```
 IDLE: no work, exiting turn.
 ```
 Then stop immediately. Do NOT sleep, call ScheduleWakeup, or use Monitor.
-The session_sleep policy will restart this session after the configured idle interval.
-When restarted, re-read formula steps — this step stays open until a work bead is found.
-
-**Do not close this step until you have a work bead with branch metadata.**"""
+New branch-backed work will wake a fresh refinery patrol through the normal
+routing path. """
 
 [[steps]]
 id = "rebase"

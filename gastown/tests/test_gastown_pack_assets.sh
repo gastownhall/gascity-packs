@@ -216,6 +216,27 @@ if verify >= metadata:
 PY
 }
 
+test_refinery_idle_exit_closes_patrol_wisp() {
+    local formula idle_block
+    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+    idle_block=$(python3 - "$formula" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+start = text.index('If NO work found:')
+end = text.index('[[steps]]', start)
+print(text[start:end])
+PY
+)
+    [[ "$idle_block" == *'gc bd update "$CURRENT_WISP" --claim'* ]] ||
+        fail "idle refinery exit must claim its patrol wisp before closing"
+    [[ "$idle_block" == *'gc bd close "$CURRENT_WISP" --reason "Idle: no branch-backed work assigned."'* ]] ||
+        fail "idle refinery exit must close its patrol wisp with an audit reason"
+    [[ "$idle_block" == *'gc runtime drain-ack'* ]] ||
+        fail "idle refinery exit must drain after closing its patrol wisp"
+    [[ "$idle_block" != *'--status=closed'* ]] ||
+        fail "idle refinery exit must not close through update --status=closed"
+}
+
 test_prime_prompts_are_city_generic_and_compact() {
     local mayor propulsion awareness
     mayor="$GASTOWN/agents/mayor/prompt.template.md"
@@ -254,5 +275,6 @@ test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_refinery_idle_exit_closes_patrol_wisp
 
 echo "gastown pack asset tests passed"
