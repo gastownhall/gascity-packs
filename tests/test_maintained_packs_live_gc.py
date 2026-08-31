@@ -1,6 +1,6 @@
 """Every pack we maintain, stood up in a city and asked about by a real `gc`.
 
-These five are the packs users actually install, and the ones we have committed
+These six are the packs users actually install, and the ones we have committed
 to keeping working. Each is imported on its own here, because each is imported
 on its own by a user -- nobody installs "the maintained set". The whole point of
 running them separately is that a break in one is attributed to that one.
@@ -26,7 +26,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from gc_live_city import (
     CANARY_BINDING,
     CANARY_CHECK,
@@ -43,7 +42,6 @@ from gc_live_city import (
     write_city,
 )
 
-
 # The packs this city owns the maintenance of. Adding a pack here is the whole
 # cost of bringing it under live-gc coverage; everything below derives from the
 # pack's own contents.
@@ -53,6 +51,7 @@ MAINTAINED_PACKS = (
     "slack-channel",
     "slack-full",
     "slack-mini",
+    "pstack",
 )
 
 # Doctor findings each pack is currently expected to add to a city, with the
@@ -73,6 +72,7 @@ EXPECTED_DOCTOR_DELTA: dict[str, frozenset[str]] = {
     # empty rather than matching.
     "slack-full": frozenset({"slack-full:binaries", "slack-full:env"}),
     "slack-mini": frozenset(),
+    "pstack": frozenset({"formula-requirements"}),
 }
 
 # Findings whose presence is a property of the machine, not of the pack. These

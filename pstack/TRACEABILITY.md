@@ -7,7 +7,7 @@
 | PStack source | `74b1200c596102d051bd0fd3aa6dea68148be870` | Exact vendor corpus and 44 runtime skill directories |
 | Gist architecture | `23f21e688fc76b360d382e5cafb8d9c1` | Corrected build-base, selector, formula, and schema requirements |
 | Gas City packs | `9f98ea4e1974cb49d18cd0c453eb81b2370cca84` | Pack and derived-formula contracts |
-| Dev-env OpenSpec | `openspec/changes/pstack-gascity-pack/` | Requirements, scenarios, architecture, ADR, and tasks |
+| Dev-env OpenSpec | `dev-env/openspec/specs/pstack-gascity-pack/spec.md` | Durable requirements, scenarios, architecture, ADR, and tasks |
 
 ## Mapping
 

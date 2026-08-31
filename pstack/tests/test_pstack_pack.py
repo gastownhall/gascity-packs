@@ -483,6 +483,15 @@ def test_runtime_skills_match_vendored_source() -> None:
     assert runtime_files == vendor_files
     assert all(file_digest(runtime / relative) == file_digest(vendor / relative) for relative in runtime_files)
 
+def test_delivery_checks_cover_pstack() -> None:
+    ci = (PACKS_ROOT / ".github/workflows/ci.yml").read_text()
+    assert "pstack/tests/test_pstack_pack.py" in ci
+    assert "slack-full pstack slack-mini; do" in ci
+
+    traceability = (ROOT / "TRACEABILITY.md").read_text()
+    assert "dev-env/openspec/specs/pstack-gascity-pack/spec.md" in traceability
+    assert "openspec/changes/pstack-gascity-pack/" not in traceability
+
 
 def test_build_extends_base_and_preserves_anchors() -> None:
     base = tomllib.loads((GAS_CITY / "formulas/build-base.formula.toml").read_text())
