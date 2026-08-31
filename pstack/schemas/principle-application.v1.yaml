@@ -13,6 +13,13 @@ coverage_statuses:
   - blocked
   - out_of_scope
   - superseded
+allowed_enforcements:
+  - artifact
+  - check
+  - expansion
+  - graph-invariant
+  - review
+
 
 required_front_matter:
   - schema

@@ -51,6 +51,15 @@ EXPECTED_PRINCIPLES = {
     "encode-lessons-in-structure",
 }
 
+CANONICAL_ENFORCEMENTS = {
+    "artifact",
+    "check",
+    "expansion",
+    "graph-invariant",
+    "review",
+}
+
+
 
 def load_formula(name: str) -> dict:
     return tomllib.loads((ROOT / "formulas" / f"{name}.formula.toml").read_text())
@@ -375,6 +384,23 @@ def test_principle_mapping_matches_manifest_enforcement() -> None:
     mapping = tomllib.loads((ROOT / "mappings/principles.toml").read_text())["principles"]
     expected = {item["id"]: item["enforcement"] for item in manifest["principle"]}
     assert {name: data["enforcement"] for name, data in mapping.items()} == expected
+
+def test_principle_enforcement_contract_has_one_vocabulary() -> None:
+    manifest = tomllib.loads((ROOT / "principles/manifest.toml").read_text())
+    mapping = tomllib.loads((ROOT / "mappings/principles.toml").read_text())["principles"]
+    declared = {value for item in manifest["principle"] for value in item["enforcement"]}
+    mapped = {value for item in mapping.values() for value in item["enforcement"]}
+    assert declared == mapped == CANONICAL_ENFORCEMENTS
+
+    schema = (ROOT / "schemas/principle-application.v1.yaml").read_text()
+    expected = "allowed_enforcements:\n" + "".join(f"  - {value}\n" for value in sorted(CANONICAL_ENFORCEMENTS))
+    assert expected in schema
+
+    prompt = (ROOT / "assets/workflows/pstack-build/principles.md").read_text()
+    for field in ("effect", "enforcement", "required_artifacts", "evidence"):
+        assert field in prompt
+    assert "enforcement class" not in prompt
+
 
 
 def test_principle_schema_captures_effect() -> None:
