@@ -49,6 +49,7 @@ FORMULAS = {
 
 ROLE_AGENTS = {
     "design-author",
+    "feature-refiner",
     "design-implementation-reviewer",
     "design-test-risk-reviewer",
     "gap-analyst",
@@ -56,6 +57,7 @@ ROLE_AGENTS = {
     "implementation-worker",
     "issue-triager",
     "publisher",
+    "quality-judge",
     "requirements-planner",
     "review-synthesizer",
     "run-operator",
