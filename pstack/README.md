@@ -28,6 +28,16 @@ Run `pstack-build` when the change follows the standard build lifecycle. Use `ps
 
 The pack imports Gas City's `build-base` and uses the shared `gc.build.*` schemas for ordinary lifecycle artifacts. PStack-specific artifacts cover foundation, lever decisions, reproduction/root cause, principle applications, candidate comparison, orchestration state, and revision-bound verification.
 
+## Runtime schema context
+
+Producer gates receive the resolved pack root through `GC_PACK_DIR`. The
+shared `build-artifact-valid.sh` gate keeps the shared Gas City schema root
+first, then adds `$GC_PACK_DIR/schemas` to `GC_BUILD_SCHEMA_ROOTS`; PStack
+producers must not set `GC_BUILD_SCHEMA_ROOTS` directly. Relative artifact
+paths use the gate's durable-root precedence: `GC_RIG_ROOT`,
+`GC_BEADS_SCOPE_ROOT`, or `GC_DIR`, then an installed rig root, and finally
+`GC_WORK_DIR` for source-tree or disposable-test contexts.
+
 ## Source boundary
 
 The exact source corpus is under `vendor/pstack/` and is pinned in `vendor/pstack/upstream.toml`. Runtime-adapted roles, formulas, assets, mappings, schemas, and tests are outside the vendor tree. The pack includes all 21 principle skills; `principles/manifest.toml` is the machine-readable enforcement index.

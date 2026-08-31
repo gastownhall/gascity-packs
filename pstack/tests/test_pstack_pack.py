@@ -4,7 +4,9 @@ import hashlib
 import importlib.util
 import os
 import pathlib
+import subprocess
 import sys
+import tempfile
 from unittest import mock
 
 import tomllib
@@ -100,6 +102,115 @@ def depends_on(steps: list[dict], target: str, prerequisite: str) -> bool:
                 return True
             pending.append(dependency)
     return False
+
+def test_method_formulas_use_formula_identity() -> None:
+    for formula in (
+        "pstack-how",
+        "pstack-why",
+        "pstack-architect",
+        "pstack-investigation",
+    ):
+        collect = next(step for step in load_formula(formula)["steps"] if step["id"] == "collect")
+        assert collect["metadata"]["gc.run_target"] == "pstack.investigator"
+        assert "pstack.skill" not in collect["metadata"]
+
+
+def test_pack_runtime_schema_context_is_documented() -> None:
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    for fragment in (
+        "GC_PACK_DIR",
+        "GC_BUILD_SCHEMA_ROOTS",
+        "shared Gas City schema root",
+        "must not set",
+        "GC_RIG_ROOT",
+        "GC_BEADS_SCOPE_ROOT",
+        "GC_DIR",
+        "GC_WORK_DIR",
+    ):
+        assert fragment in text
+
+
+def test_producer_gate_resolves_pstack_schema_from_pack_context() -> None:
+    gate = GAS_CITY / "assets/scripts/checks/build-artifact-valid.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        fake_gc = bin_dir / "gc"
+        fake_gc.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "bd" ] && [ "$2" = "show" ] && [ "$4" = "--json" ]; then\n'
+            "  printf '%s\\n' "
+            "'{\"id\":\"step-1\",\"metadata\":{\"gc.build.artifact_schema\":"
+            "\"pstack.program-status.v1\",\"gc.build.artifact_path_keys\":"
+            "\"pstack.artifact_path\",\"pstack.artifact_path\":\"artifacts/status.md\"}}'\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 2\n",
+            encoding="utf-8",
+        )
+        fake_gc.chmod(0o755)
+        artifact = tmp_path / "artifacts/status.md"
+        artifact.parent.mkdir()
+        artifact.write_text(
+            """---
+schema: pstack.program-status.v1
+workflow:
+  id: babysit-001
+  formula: pstack-babysit
+producer:
+  formula: pstack-babysit
+  stage: escalate
+  attempt: 1
+status: blocked
+trace:
+  upstream:
+    - path: pstack/reconcile.md
+      hash: git:reconcile-revision
+  coverage:
+    - id: BLOCKER-001
+      status: covered
+goal: Keep the merge frontier actionable
+phase: reconcile
+predicate: Every blocker has an owner or next action
+blockers:
+  - id: BLOCKER-001
+    summary: Owner rebase is required
+restart_token: Re-run after the owner updates the branch
+evidence:
+  source_revision: git:reconcile-revision
+  source_path: pstack/reconcile.md
+  claim_refs:
+    - bead:gc-6
+  verification_status: observed
+---
+
+## Escalation
+
+| ID | Status |
+| --- | --- |
+| BLOCKER-001 | covered |
+""",
+            encoding="utf-8",
+        )
+        env = {**os.environ}
+        for key in ("GC_BUILD_SCHEMA_ROOTS", "GC_RIG_ROOT", "GC_BEADS_SCOPE_ROOT", "GC_DIR"):
+            env.pop(key, None)
+        env.update(
+            {
+                "GC_BEAD_ID": "step-1",
+                "GC_PACK_DIR": str(ROOT),
+                "GC_WORK_DIR": str(tmp_path),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+        )
+        result = subprocess.run(
+            [str(gate)], capture_output=True, text=True, env=env, check=False
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert "schema=pstack.program-status.v1" in result.stdout
+    assert "artifacts/status.md" in result.stdout
 
 
 def test_variant_evidence_gates_inherited_implementation() -> None:
