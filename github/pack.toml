@@ -3,6 +3,10 @@ name = "github"
 version = "0.1.0"
 schema = 2
 
+# The docs-impact reviewer is packaged as agents/docs-impact-reviewer. It is
+# deliberately opt-in: this pack declares no always-running reviewer service
+# or scheduling policy.
+
 [[service]]
 name = "github-webhook"
 kind = "proxy_process"

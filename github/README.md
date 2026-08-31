@@ -30,6 +30,23 @@ source bead and router scan succeed. Bugflow snapshots the issue and comments,
 then owns investigation, classification, implementation gates, PR review, CI,
 and final issue updates.
 
+## Pull-request documentation review
+
+The optional `Gas City / docs-impact` capability has a deployment-neutral
+[lifecycle contract](docs/docs-pr-review-lifecycle.md). Enable it only when
+the installation provides its webhook intake, City reviewer dispatch, validated
+candidate bridge, and independent reconciliation loop over shared durable run
+state. The pack does not prescribe a Compose profile, network overlay, or
+particular scheduler.
+
+The opt-in reviewer is `docs-impact-reviewer`. It reads the supplied immutable
+assignment and returns a documentation-impact decision only; it has no
+authority to change GitHub. The trusted integration validates that decision,
+derives any documentation proposal from its assigned checkout, and publishes
+the GitHub-native result. A valid same-repository proposal may become one
+App-owned follow-up pull request; every other result remains an
+action-required or successful check on the original pull request.
+
 If a dispatched workflow gets wedged and you need to retry the same issue
 before cancel/retry automation exists, release the intake lock manually:
 

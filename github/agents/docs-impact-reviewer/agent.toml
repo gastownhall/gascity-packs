@@ -1,0 +1,3 @@
+description = "GitHub pull-request documentation impact reviewer"
+scope = "rig"
+fallback = false

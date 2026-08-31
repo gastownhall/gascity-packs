@@ -84,6 +84,11 @@ def address_results_dir() -> str:
     return os.path.join(data_dir(), "address-results")
 
 
+def docs_review_runs_dir() -> str:
+    """Shared durable state location for the optional docs-impact runtime."""
+    return os.path.join(data_dir(), "docs-review-runs")
+
+
 def config_path() -> str:
     return os.path.join(data_dir(), "config.json")
 
@@ -1123,6 +1128,87 @@ def github_api_request(
     raise GitHubAPIError(f"{method.upper()} {url} returned non-object JSON")
 
 
+def github_api_list_request(
+    method: str,
+    path: str,
+    *,
+    bearer_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read a GitHub list endpoint without weakening object-only API callers."""
+    if path.startswith("http://") or path.startswith("https://"):
+        url = path
+    else:
+        url = urllib.parse.urljoin(GITHUB_API_BASE.rstrip("/") + "/", path.lstrip("/"))
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "gas-city-github/0.1",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    }
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+    request = urllib.request.Request(url, headers=headers, method=method.upper())
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise GitHubAPIError(f"{method.upper()} {url} failed with {exc.code}: {exc.read().decode('utf-8', errors='replace')}") from exc
+    except urllib.error.URLError as exc:
+        raise GitHubAPIError(f"{method.upper()} {url} failed: {exc}") from exc
+    if not isinstance(data, list) or not all(isinstance(item, dict) for item in data):
+        raise GitHubAPIError(f"{method.upper()} {url} returned non-list JSON")
+    return data
+
+
+def github_api_paginated_list_request(
+    method: str,
+    path: str,
+    *,
+    bearer_token: str | None = None,
+    per_page: int = 100,
+) -> list[dict[str, Any]]:
+    """Read every page of a bounded GitHub list endpoint before deciding."""
+    if per_page <= 0 or per_page > 100:
+        raise ValueError("per_page must be between 1 and 100")
+    result: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        separator = "&" if "?" in path else "?"
+        values = github_api_list_request(
+            method, f"{path}{separator}per_page={per_page}&page={page}", bearer_token=bearer_token,
+        )
+        result.extend(values)
+        if len(values) < per_page:
+            return result
+        page += 1
+
+
+def github_api_paginated_object_list_request(
+    method: str,
+    path: str,
+    field: str,
+    *,
+    bearer_token: str | None = None,
+    per_page: int = 100,
+) -> list[dict[str, Any]]:
+    """Read every page of an object-wrapped GitHub list (for Check Runs)."""
+    if per_page <= 0 or per_page > 100:
+        raise ValueError("per_page must be between 1 and 100")
+    result: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        separator = "&" if "?" in path else "?"
+        response = github_api_request(
+            method, f"{path}{separator}per_page={per_page}&page={page}", bearer_token=bearer_token,
+        )
+        values = response.get(field)
+        if not isinstance(values, list) or not all(isinstance(value, dict) for value in values):
+            raise GitHubAPIError(f"{method.upper()} {path} returned invalid {field}")
+        result.extend(values)
+        if len(values) < per_page:
+            return result
+        page += 1
+
+
 def exchange_manifest_code(code: str) -> dict[str, Any]:
     return github_api_request("POST", f"/app-manifests/{urllib.parse.quote(code)}/conversions")
 
@@ -1246,6 +1332,36 @@ def create_pull_request(
     )
 
 
+def get_pull_request(app_cfg: dict[str, Any], installation_id: str, owner: str, repo: str, number: int) -> dict[str, Any]:
+    """Read the current PR facts using an installation token."""
+    token = create_installation_token(app_cfg, installation_id)
+    return github_api_request("GET", f"/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(repo)}/pulls/{number}", bearer_token=token)
+
+
+def create_check_run(app_cfg: dict[str, Any], installation_id: str, owner: str, repo: str, head_sha: str, external_id: str, status: str, conclusion: str | None, output: dict[str, str]) -> dict[str, Any]:
+    token = create_installation_token(app_cfg, installation_id)
+    payload: dict[str, Any] = {"name": "Gas City / docs-impact", "head_sha": head_sha, "external_id": external_id, "status": status, "output": output}
+    if conclusion is not None:
+        payload["conclusion"] = conclusion
+    return github_api_request("POST", f"/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(repo)}/check-runs", payload=payload, bearer_token=token)
+
+
+def update_check_run(app_cfg: dict[str, Any], installation_id: str, owner: str, repo: str, check_id: str, conclusion: str, output: dict[str, str]) -> dict[str, Any]:
+    token = create_installation_token(app_cfg, installation_id)
+    return github_api_request("PATCH", f"/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(repo)}/check-runs/{urllib.parse.quote(check_id)}", payload={"status": "completed", "conclusion": conclusion, "output": output}, bearer_token=token)
+
+
+def find_check_run(app_cfg: dict[str, Any], installation_id: str, owner: str, repo: str, head_sha: str, external_id: str) -> dict[str, Any] | None:
+    token = create_installation_token(app_cfg, installation_id)
+    checks = github_api_paginated_object_list_request(
+        "GET", f"/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(repo)}/commits/{urllib.parse.quote(head_sha)}/check-runs", "check_runs", bearer_token=token,
+    )
+    for check in checks:
+        if isinstance(check, dict) and str(check.get("external_id", "")) == external_id:
+            return check
+    return None
+
+
 def repository_git_url(repository_full_name: str) -> str:
     return f"{github_web_base().rstrip('/')}/{repository_full_name}.git"
 
@@ -1256,6 +1372,7 @@ def git_push_branch(
     repository_full_name: str,
     branch: str,
     ref: str = "HEAD",
+    cwd: str | None = None,
 ) -> dict[str, Any]:
     token = create_installation_token(app_cfg, installation_id)
     basic_auth = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
@@ -1271,6 +1388,7 @@ def git_push_branch(
         text=True,
         check=False,
         env=env,
+        cwd=cwd,
     )
     if result.returncode != 0:
         stderr = result.stderr.strip()

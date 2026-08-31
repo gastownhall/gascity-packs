@@ -7,6 +7,7 @@ import os
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 import sys
 
@@ -705,6 +706,18 @@ class GitHubIntakePublishIdentityTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "error")
         self.assertIn("must match", result["detail"])
+
+    def test_find_check_run_follows_next_page_to_reuse_external_id(self) -> None:
+        first = {"check_runs": [{"id": str(number), "external_id": "other"} for number in range(100)]}
+        second = {"check_runs": [{"id": "99", "external_id": "docs-impact:target"}]}
+        with mock.patch.object(common, "create_installation_token", return_value="token"), mock.patch.object(
+            common, "github_api_request", side_effect=[first, second],
+        ) as requested:
+            found = common.find_check_run({}, "1", "allenday", "demo", "a" * 40, "docs-impact:target")
+
+        self.assertEqual(found, second["check_runs"][0])
+        self.assertEqual(requested.call_count, 2)
+        self.assertIn("page=2", requested.call_args_list[1].args[1])
 
 
 
