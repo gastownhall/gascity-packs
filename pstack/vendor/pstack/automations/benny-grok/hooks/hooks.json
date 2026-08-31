@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "run_terminal_command|run_terminal_cmd|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bin/fail-closed.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

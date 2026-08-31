@@ -17,7 +17,7 @@ grok plugin install tommy-ca/pstack --trust
 grok plugin enable pstack
 ```
 
-xAI Official also lists a plugin named `pstack` that points at `cursor/plugins`. Use owner/repo. Do not treat bare `grok plugin install pstack` as this port.
+xAI Official also lists a plugin named `pstack` that points at `cursor/plugins`. Use owner/repo. Do not treat bare `grok plugin install pstack` as this port. This repo is a single-plugin tree. Do not nest it as `plugins/pstack`. Optional catalog: [tommy-ca/grok-build-plugins](https://github.com/tommy-ca/grok-build-plugins).
 
 A local checkout also works:
 
@@ -124,7 +124,7 @@ When invoked it:
 
 The full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/poteto-mode/SKILL.md).
 
-[`/poteto-mode`](./skills/poteto-mode/SKILL.md) is also a sticky mode. Once entered it stays on across turns, applying itself when a playbook matches or the task needs rigor, and staying out of the way otherwise. Opt out any time by saying so.
+Type [`/poteto-mode`](./skills/poteto-mode/SKILL.md) when a playbook matches or the task needs rigor. It does not auto-enter. Follow-ups in the same chat stay in this style until you opt out.
 
 [`/poteto-mode`](./skills/poteto-mode/SKILL.md) works with grok-build `/loop`, which expands to `scheduler_create`. You can leave a checkable predicate running for hours without sacrificing rigor.
 
@@ -261,9 +261,9 @@ Twenty-one short skills, one principle each. `poteto-mode` indexes them inline a
 A few things `poteto-mode` referenced in Cursor pstack and does not bundle here:
 
 - `/deslop`, `control-cli`, and `control-ui` lived in `cursor-team-kit`. Use `/unslop`, `/no-comments`, and drive the real app yourself.
-- Independent verify is `spawn_subagent` + `independent-verifier`. Send a different `model` when the toml names a detected slug; otherwise omit `model`. Not a Cursor Cloud Agent. See [HARNESS.md](./HARNESS.md).
+- Independent verify is `spawn_subagent` with `subagent_type` `pstack:independent-verifier`. Send a different `model` when the toml names a detected slug; otherwise omit `model`. Not a Cursor Cloud Agent. See [HARNESS.md](./HARNESS.md).
 - Graphite `gt` is optional. If it is missing, use `gh` and git.
-- Benny remains under `automations/benny/` as source. Grok Build automations are plugin hooks/workflows, not this pack.
+- Benny Cursor pack under `automations/benny/skills/` is the **upstream reference**. Live grok contract is [`automations/benny-grok/`](./automations/benny-grok/) (`/benny-triage`, `/benny-repro` after enable). Not pstack plugin hooks.
 
 ## Why are there no planning skills?
 
@@ -279,7 +279,7 @@ The Grok Build default is `grok-4.6` plus per-role effort. Type [`/setup-pstack`
 
 ## Automations
 
-This repo also ships a dormant [benny automation pack](./automations/benny/). It is Cursor automation source, not a Grok Build hook pack. Its files are not registered as slash skills. The Grok equivalent is plugin `hooks/` plus workflows. Not wired in this port.
+This repo also ships a dormant [benny automation pack](./automations/benny/). Cursor `skills/` is the **upstream reference**. The live grok contract is [`automations/benny-grok/`](./automations/benny-grok/). Enable pstack and type `/benny-triage`. Do not add a `hooks` key to `plugin.json`.
 
 Fork it. Improve it. PRs are welcome.
 

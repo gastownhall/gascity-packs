@@ -1,8 +1,11 @@
 description = "Select relevant review dimensions, deduplicate findings, and issue a lead judgment."
 formula = "pstack-interrogate"
 version = 1
-contract = "graph.v2"
+
 target_required = false
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "pstack-interrogate"

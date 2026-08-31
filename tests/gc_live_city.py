@@ -410,6 +410,11 @@ def attributable(
 ) -> set[str]:
     """Doctor findings these imports add to a city that would not have them."""
     shape = {BASELINE_BINDING: write_baseline_pack(tmp_path / "shape")}
+    for pack_dir in imports.values():
+        for name, binding in read_pack_manifest(pack_dir).get("imports", {}).items():
+            source = binding.get("source")
+            if isinstance(source, str) and source:
+                shape[name] = (pack_dir / source).resolve()
     baseline = doctor_findings(
         gc_test_bin, write_city(tmp_path / "baseline", shape, shape)
     )

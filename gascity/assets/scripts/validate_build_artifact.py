@@ -7,7 +7,6 @@ import os
 import re
 import sys
 from dataclasses import dataclass
-from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -337,7 +336,7 @@ def validate_required_sections(body: str, schema: dict[str, Any]) -> None:
         if not match:
             raise ValidationError(f"missing required body section {section!r}")
         positions.append((section, match.start()))
-    for (left_name, left_pos), (right_name, right_pos) in pairwise(positions):
+    for (left_name, left_pos), (right_name, right_pos) in zip(positions, positions[1:]):
         if left_pos >= right_pos:
             raise ValidationError(f"body section {left_name!r} must appear before {right_name!r}")
 

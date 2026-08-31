@@ -72,7 +72,7 @@ EXPECTED_DOCTOR_DELTA: dict[str, frozenset[str]] = {
     # empty rather than matching.
     "slack-full": frozenset({"slack-full:binaries", "slack-full:env"}),
     "slack-mini": frozenset(),
-    "pstack": frozenset({"formula-requirements"}),
+    "pstack": frozenset(),
 }
 
 # Findings whose presence is a property of the machine, not of the pack. These

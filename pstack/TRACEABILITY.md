@@ -4,7 +4,7 @@
 
 | Source | Revision or locator | Use |
 |---|---|---|
-| PStack source | `74b1200c596102d051bd0fd3aa6dea68148be870` | Exact vendor corpus and 44 runtime skill directories |
+| PStack source | `49d6ae81f17125ac198efa322403490b366856b6` | Exact reviewed vendor corpus and 44 runtime skill directories, including the Grok host-boundary correction |
 | Gist architecture | `23f21e688fc76b360d382e5cafb8d9c1` | Corrected build-base, selector, formula, and schema requirements |
 | Gas City packs | `9f98ea4e1974cb49d18cd0c453eb81b2370cca84` | Pack and derived-formula contracts |
 | Dev-env OpenSpec | `dev-env/openspec/specs/pstack-gascity-pack/spec.md` | Durable requirements, scenarios, architecture, ADR, and tasks |
@@ -31,3 +31,12 @@
 ## Delivery boundary
 
 This checkout is prepared for review. Commit, push, pack publication, live import, canonical city mutation, Formula sling, and live Beads mutation remain independent operations.
+
+## Known design gap
+
+`pstack-swarm`, `pstack-arena`, and `pstack-interrogate` retain
+`gc.graph_operator`/`pstack.graph_operator` metadata, but this checkout has no
+Gas City consumer that gives those fields executable fanout semantics. The
+current pack deliberately does not invent a second scheduler or provider
+dispatch path; dynamic graph-operator behavior remains a separate Gas City
+design change.

@@ -1,9 +1,12 @@
 description = "Record how a vendored source maps to a PStack formula node."
 formula = "pstack-source-binding"
 version = 1
-contract = "graph.v2"
+
 target_required = false
 mode = "report"
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "pstack-source-binding"

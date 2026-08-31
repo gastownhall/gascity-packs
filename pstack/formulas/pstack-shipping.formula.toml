@@ -1,9 +1,12 @@
 description = "PStack review and publish only after evidence."
 formula = "pstack-shipping"
 version = 1
-contract = "graph.v2"
+
 extends = ["pstack-build"]
 target_required = true
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "pstack-shipping"

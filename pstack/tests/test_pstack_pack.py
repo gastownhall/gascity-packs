@@ -457,9 +457,73 @@ def test_readme_documents_required_gas_city_roles() -> None:
 def test_vendor_source_binding_is_immutable() -> None:
     source = tomllib.loads((ROOT / "vendor/pstack/upstream.toml").read_text())["upstream"]
     assert source["source"] == "https://github.com/tommy-ca/pstack"
-    assert len(source["commit"]) == 40
+    assert source["commit"] == "49d6ae81f17125ac198efa322403490b366856b6"
     assert source["license"] == "MIT"
     assert (ROOT / "vendor/pstack/LICENSE").is_file()
+
+
+def test_vendored_host_boundary_matches_runtime_contract() -> None:
+    for relative in (
+        "skills/poteto-mode/playbooks/babysit.md",
+        "skills/poteto-mode/playbooks/orchestrate.md",
+    ):
+        text = (ROOT / "vendor/pstack" / relative).read_text(encoding="utf-8")
+        assert "scripts/watch-pr" not in text
+        assert "scripts/orch/orch.ts" not in text
+        assert "orchestrate/<project-slug>/" not in text
+
+
+def test_every_pstack_formula_declares_formula_compiler_requirement() -> None:
+    for path in sorted((ROOT / "formulas").glob("*.formula.toml")):
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        assert data.get("requires", {}).get("formula_compiler") == ">=2.0.0", path
+
+
+def test_decision_schema_accepts_no_removal_status_and_rejects_empty_fields() -> None:
+    validator = load_build_artifact_validator()
+    rendered = """---
+schema: pstack.decision.v1
+workflow:
+  id: build-001
+  formula: pstack-build
+producer:
+  formula: pstack-build
+  stage: subtract
+  attempt: 1
+status: no_removal_opportunity
+trace:
+  upstream:
+    - path: requirements.md
+      hash: git:decision-revision
+  coverage: []
+problem: No removable complexity was found.
+options:
+  - Keep the existing structure.
+chosen_path: Keep the existing structure.
+subtraction: Reviewed existing paths; none can be removed safely.
+rationale: The requested behavior already has the smallest viable surface.
+---
+
+## Decision
+"""
+    with mock.patch.dict(os.environ, {"GC_BUILD_SCHEMA_ROOTS": str(ROOT / "schemas")}):
+        artifact = validator.validate_artifact_text(rendered, expected_schema="pstack.decision.v1")
+        assert artifact.front_matter["status"] == "no_removal_opportunity"
+
+        for field in ("subtraction", "rationale"):
+            invalid = rendered.replace(
+                f"{field}: " + ("Reviewed existing paths; none can be removed safely." if field == "subtraction" else "The requested behavior already has the smallest viable surface."),
+                f"{field}: \"\"",
+                1,
+            )
+            with mock.patch.dict(os.environ, {"GC_BUILD_SCHEMA_ROOTS": str(ROOT / "schemas")}):
+                try:
+                    validator.validate_artifact_text(invalid, expected_schema="pstack.decision.v1")
+                except validator.ValidationError as exc:
+                    assert "required fields must be non-empty" in str(exc)
+                else:
+                    raise AssertionError(f"blank {field} was accepted")
+
 
 
 def test_all_21_principles_have_runtime_skills_and_enforcement() -> None:
@@ -552,7 +616,8 @@ def test_methods_programs_and_variants_are_providerless_and_asset_complete() -> 
     forbidden = ("Task tool (general-purpose):", "Dispatch implementer subagent", "claude -p")
     for path in formulas:
         data = tomllib.loads(path.read_text())
-        assert data["contract"] == "graph.v2"
+        assert "contract" not in data
+        assert data["requires"]["formula_compiler"] == ">=2.0.0"
         for node in data.get("steps", []):
             description = node.get("description_file")
             if description:

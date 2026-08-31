@@ -7,10 +7,13 @@ native output uses stories, cards, or another task shape.
 """
 formula = "pstack-decomposition"
 version = 1
-contract = "graph.v2"
+
 extends = ["decomposition-base"]
 target_required = false
 internal = true
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [vars]
 [vars.context_path]

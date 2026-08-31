@@ -66,7 +66,7 @@ Read every output yourself before accepting the verdict. If you disagree with th
 
 ## Keep Cursor pstack in sync
 
-Playbooks and principles come from [official Cursor `pstack/`](https://github.com/cursor/plugins/tree/main/pstack). This tree recomposes those **atomic building blocks** on Grok Build natives in [`HARNESS.md`](../../HARNESS.md) (`spawn_subagent`, `get_command_or_subagent_output`, `scheduler_create`, `monitor`). The pin is [`UPSTREAM`](../../UPSTREAM).
+Playbooks and principles come from [official Cursor `pstack/`](https://github.com/cursor/plugins/tree/main/pstack). This tree recomposes those **atomic building blocks** on Grok Build natives in [`HARNESS.md`](../../HARNESS.md) (`spawn_subagent`, `get_command_or_subagent_output`, `scheduler_create`, `monitor`). The pin is [`UPSTREAM`](../../UPSTREAM). This repo stays a single plugin. The Grok catalog is [tommy-ca/grok-build-plugins](https://github.com/tommy-ca/grok-build-plugins), an index, not a `cursor/plugins` sibling tree. Porting the core to another host is [Port pstack](./12-porting.md).
 
 When Cursor moves:
 

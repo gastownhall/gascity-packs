@@ -1,6 +1,6 @@
 # Run work while you sleep
 
-This is the payoff for everything before it. An agent you can trust to verify its own work is an agent you can leave alone with a hard task. What makes that safe isn't hope. It's a checkable finish condition, an isolated worktree, and a decision log you audit in the morning.
+This is the payoff for everything before it. An agent you can trust to verify its own work is an agent you can leave alone with a hard task. What makes that safe isn't hope. It's a checkable finish condition, an isolated worktree, and a decision log you audit in the morning. Grok `MAX_SUBAGENT_DEPTH` is 1. Queue overnight (autopilot-full / autopilot-stack) is parent-fanout: writers do not spawn; this chat spawns `pstack:comment-sicko`. Single-task overnight is Autonomous run.
 
 ![She waves goodnight from the door while robots keep the factory running, one updating a DECISION LOG wall board under a BUILD LOOP ACTIVE sign.](./images/overnight.jpg)
 
@@ -19,7 +19,7 @@ Walk through what each line buys you:
 
 - "im going to bed" is a session override. The agent stops asking and keeps going.
 - "done means..." turns the goal into checks every iteration can run.
-- "fresh worktree off `<base>`" keeps the run from colliding with anything else you have open.
+- "fresh worktree off `<base>`" keeps the run from colliding with anything else you have open. You can also start the session with `grok --worktree`. Spawn isolation is still `isolation: worktree` on the child.
 - "don't ask me before committing" pre-answers the permission the agent would otherwise block on.
 - `/loop` is Grok Build's slash command, not a pstack skill. It expands to `scheduler_create` with `fire_immediately: true`. The [Autonomous run playbook](../../skills/poteto-mode/playbooks/autonomous-run.md) uses `monitor` for event wakes and `/loop` for a recurring heartbeat.
 - The escape hatch lets it stop at a genuine dead end and write up why, which beats eight hours of creative goal reinterpretation.

@@ -469,7 +469,7 @@ THIRD_PARTY_BUILD_PACKS = {
         "base_import_source": "../gascity",
         "vendor": "pstack",
         "upstream": "https://github.com/tommy-ca/pstack",
-        "commit": "74b1200c596102d051bd0fd3aa6dea68148be870",
+        "commit": "49d6ae81f17125ac198efa322403490b366856b6",
         "implementation_target": "pstack.implementation-worker",
         "planning_formula": "pstack-planning",
         "decomposition_formula": "pstack-decomposition",
@@ -2407,7 +2407,11 @@ class FormulaAssetTests(unittest.TestCase):
                     expansion = load_formula(pack_root, expansion_name)
                     self.assertEqual(expansion["formula"], expansion_name)
                     self.assertEqual(expansion["type"], "expansion")
-                    self.assertEqual(expansion["contract"], "graph.v2")
+                    if pack_name == "pstack":
+                        self.assertNotIn("contract", expansion)
+                        self.assertEqual(expansion["requires"]["formula_compiler"], ">=2.0.0")
+                    else:
+                        self.assertEqual(expansion["contract"], "graph.v2")
 
                     nodes = formula_nodes(expansion)
                     self.assertGreaterEqual(len(nodes), 4)
@@ -2434,7 +2438,11 @@ class FormulaAssetTests(unittest.TestCase):
             item_formula = load_formula(pack_root, expected["implementation_formula"])
             with self.subTest(pack=pack_name, item_formula=expected["implementation_formula"]):
                 self.assertEqual(item_formula["formula"], expected["implementation_formula"])
-                self.assertEqual(item_formula["contract"], "graph.v2")
+                if pack_name == "pstack":
+                    self.assertNotIn("contract", item_formula)
+                    self.assertEqual(item_formula["requires"]["formula_compiler"], ">=2.0.0")
+                else:
+                    self.assertEqual(item_formula["contract"], "graph.v2")
                 self.assertEqual(item_formula["extends"], ["do-work"])
                 self.assertNotEqual(item_formula.get("type"), "expansion")
                 self.assertTrue(item_formula["target_required"])
@@ -2510,7 +2518,11 @@ class FormulaAssetTests(unittest.TestCase):
             shared_item_formula = load_formula(pack_root, expected["implementation_item_formula"])
             with self.subTest(pack=pack_name, item_formula=expected["implementation_item_formula"]):
                 self.assertEqual(shared_item_formula["formula"], expected["implementation_item_formula"])
-                self.assertEqual(shared_item_formula["contract"], "graph.v2")
+                if pack_name == "pstack":
+                    self.assertNotIn("contract", shared_item_formula)
+                    self.assertEqual(shared_item_formula["requires"]["formula_compiler"], ">=2.0.0")
+                else:
+                    self.assertEqual(shared_item_formula["contract"], "graph.v2")
                 self.assertEqual(shared_item_formula["extends"], ["do-work-item"])
                 self.assertNotEqual(shared_item_formula.get("type"), "expansion")
                 self.assertTrue(shared_item_formula["target_required"])

@@ -2,7 +2,9 @@ description = "Gas City review fanout and bounded PStack fix loop."
 formula = "pstack-build-review"
 type = "expansion"
 version = 1
-contract = "graph.v2"
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [vars]
 [vars.implementation_target]

@@ -1,6 +1,6 @@
 [upstream]
 source = "https://github.com/tommy-ca/pstack"
-commit = "74b1200c596102d051bd0fd3aa6dea68148be870"
+commit = "49d6ae81f17125ac198efa322403490b366856b6"
 license = "MIT"
 provenance = "Grok-adapted pstack source; see vendor/pstack/README.md and source UPSTREAM record."
 

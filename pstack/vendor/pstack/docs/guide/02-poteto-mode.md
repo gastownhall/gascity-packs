@@ -1,6 +1,6 @@
 # Route work through `/poteto-mode`
 
-`/poteto-mode` is the front door. You give it a goal, it matches one of twenty-two playbooks, copies that playbook's steps into the todo list, and calls the other skills as the steps need them. In this page you learn what a good prompt looks like, and how little of one you actually need.
+Type `/poteto-mode`. It does not auto-enter. You give it a goal, it matches one of twenty-two playbooks, copies that playbook's steps into the todo list, and calls the other skills as the steps need them. In this page you learn what a good prompt looks like, and how little of one you actually need.
 
 ![A dispatcher pulls a switch lever to route robots on rail handcars toward lit gates, under a /poteto-mode departure board listing BUG FIX, FEATURE, and INVESTIGATION.](./images/router.jpg)
 
@@ -51,7 +51,7 @@ continue
 keep going until done
 ```
 
-Short works because the mode is sticky and the playbook holds the structure. Your words carry the intent, and the skill carries the rigor.
+Short works because you invoke `/poteto-mode` and the playbook holds the structure. Your words carry the intent, and the skill carries the rigor.
 
 ## Switch tasks with "new task"
 
@@ -61,7 +61,7 @@ A long chat accumulates context from the last task. When you change subjects, sa
 /poteto-mode new task. figure out why the cache entry survives logout. don't change any code yet.
 ```
 
-"new task" tells `/poteto-mode` to re-match rather than continue the prior playbook. "don't change any code yet" pins this one to Investigation. Without those two phrases, a mode mid-Feature tends to treat your question as the next feature step.
+"new task" tells `/poteto-mode` to re-match rather than continue the prior playbook. "don't change any code yet" pins this one to Investigation. Without those two phrases, a chat already in Feature tends to treat your question as the next feature step.
 
 ## Give parallel work its own worktree
 

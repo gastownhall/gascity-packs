@@ -324,6 +324,22 @@ trace:
                 self.assertEqual(artifact.schema_id, schema)
                 self.assertEqual([entry["id"] for entry in artifact.coverage], ["GC-METH-001", "GC-METH-012"])
 
+    def test_build_artifact_required_sections_preserve_order_without_pairwise(self) -> None:
+        source = self.VALIDATOR_SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn("from itertools import pairwise", source)
+        self.assertIn("zip(positions, positions[1:])", source)
+
+        ordered = self.valid_artifact()
+        build_artifact_validator.validate_artifact_text(ordered, expected_schema="gc.build.requirements.v1")
+
+        reordered = ordered.replace(
+            "## Problem Statement\n\nProblem Statement content.\n\n## W6H\n\nW6H content.",
+            "## W6H\n\nW6H content.\n\n## Problem Statement\n\nProblem Statement content.",
+            1,
+        )
+        with self.assertRaisesRegex(build_artifact_validator.ValidationError, "must appear before"):
+            build_artifact_validator.validate_artifact_text(reordered, expected_schema="gc.build.requirements.v1")
+
     def test_build_artifact_rejects_missing_front_matter_and_wrong_schema(self) -> None:
         with self.assertRaisesRegex(build_artifact_validator.ValidationError, "front matter"):
             build_artifact_validator.validate_artifact_text("# Missing front matter\n", expected_schema="gc.build.requirements.v1")
