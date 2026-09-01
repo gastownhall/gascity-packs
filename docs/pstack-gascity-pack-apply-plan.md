@@ -1,5 +1,7 @@
 # PStack dest-env apply plan
 
+Superseded for production sequencing by `docs/pstack-production-readiness-plan.md`. This file remains the dest-env archive how-to. It does not list the live file set of PR 385.
+
 This program lands pack honesty on gascity-packs. Dest-env OpenSpec archive is a later host-only step and is unproven. The pack does not ship OpenSpec change payloads. The program is for the pack importer and the dest-env spec owner. The rule is live Gherkin must match the pack. PR ids in order are pack-honesty then dest-env-archive.
 
 ## How to read this

@@ -151,6 +151,8 @@ Nightly smokes on `main` are already red for sibling packs. A pstack smoke row w
 
 This harness has no `pstack-models.toml`. Multi-provider verify cannot run here.
 
+The pack copy of `check-plan.mjs` (Cursor pin `6fecddba`) still wants `/goal` and `grok-4.6-fast-xhigh`. Lint this plan with the plugin checker at `~/.grok/installed-plugins/pstack-6ff43f58/skills/poteto-mode/scripts/check-plan.mjs`.
+
 ## Appendix D. Links and reading list
 
 `docs/pstack-poteto-mode-router-plan.md`. `docs/pstack-gascity-pack-apply-plan.md`. `pstack/ARCHITECTURE.md`. `pstack/TRACEABILITY.md`. `.work/openspec-changes/audit-pstack-gascity-pack-contracts/`. `pstack/scripts/apply_intent_change.py`. Trail `.audit/pstack-gascity-audit.tsv`. Use `skills/how/SKILL.md` and `skills/interrogate/SKILL.md` on `pr-pstack-restamp`.
