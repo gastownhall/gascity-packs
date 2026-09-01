@@ -1,6 +1,6 @@
 # PStack dest-env apply plan
 
-This program lands pack honesty on gascity-packs then archives the intent change on dest-env. It is for the pack importer and the dest-env spec owner. The rule is live Gherkin must match the pack. PR ids in order are pack-honesty then dest-env-archive.
+This program lands pack honesty on gascity-packs. Dest-env OpenSpec archive is a later host-only step and is unproven. The pack does not ship OpenSpec change payloads. The program is for the pack importer and the dest-env spec owner. The rule is live Gherkin must match the pack. PR ids in order are pack-honesty then dest-env-archive.
 
 ## How to read this
 
@@ -31,7 +31,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] From this parent session, spawn one owner per PR with `spawn_subagent` (`isolation: "worktree"`). Depth is 1. Owners do not spawn.
 - [ ] Follow this dependency graph. Start dependent work only after its parent merges, or base it on the parent branch when the execution playbook stacks.
   - [ ] pack-honesty is first. It branches from `main` in gascity-packs.
-  - [ ] dest-env-archive after pack-honesty. It copies `pstack/intent/changes/audit-pstack-gascity-pack-contracts/` into dest-env.
+  - [ ] dest-env-archive after pack-honesty. It is host-only. It does not copy an OpenSpec payload from this pack. Host write stays unproven.
 - [ ] Hold the file boundaries. pack-honesty touches only `pstack/**`, `gascity/tests/test_formula_assets.py`, `tests/test_gc_role_prompt_integration.py`, and `.gitignore`. dest-env-archive touches only `openspec/**` in dest-env.
 - [ ] Hold the review gate. Neither PR changes an interaction.
 
@@ -67,12 +67,11 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 - [ ] Edit `pstack/formulas/pstack-planning.formula.toml`.
 - [ ] Edit `pstack/formulas/pstack-decomposition.formula.toml`.
 - [ ] Edit `pstack/tests/test_pstack_pack.py`.
-- [ ] Create `pstack/intent/changes/audit-pstack-gascity-pack-contracts/`.
-- [ ] Create `pstack/scripts/apply_intent_change.py`.
+- [ ] Edit `pstack/scripts/apply_intent_change.py` so copy and validate require an external `--source`.
 
 **Build.**
 
-- [ ] Keep selector overrides and the intent payload in the working tree. Commit them on a branch off gascity-packs `main`.
+- [ ] Keep selector overrides in the working tree. Commit them on a branch off gascity-packs `main`. Do not commit OpenSpec payloads under `pstack/`.
 
 **You see.**
 
@@ -80,20 +79,20 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `pstack/tests/test_pstack_pack.py` selector and intent cases. Run `uv run --with pytest --with pyyaml pytest -q pstack/tests/test_pstack_pack.py gascity/tests/test_derived_pack_compatibility.py`.
+- [ ] `pstack/tests/test_pstack_pack.py` selector and pack-boundary cases. Run `uv run --with pytest --with pyyaml pytest -q pstack/tests/test_pstack_pack.py gascity/tests/test_derived_pack_compatibility.py`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.6` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Pack suite. Save `pack-suite.png`. Pass when pytest exits 0.
 - [ ] Lane 2. Derived pack suite. Save `derived-pack.png`. Pass when pytest exits 0.
-- [ ] Lane 3. Intent validate-only. Save `validate-only.png`. Pass when stdout contains `is valid`.
+- [ ] Lane 3. No pack OpenSpec payload. Save `no-intent.png`. Pass when `pstack/intent/` is absent.
 - [ ] Lane 4. Planning run target. Save `planning-target.png`. Pass when `pstack-planning` requirements target is `pstack.investigator`.
 - [ ] Lane 5. Decomposition lever. Save `decomp-lever.png`. Pass when `decompose` needs `lever-decision`.
 - [ ] Lane 6. Implementer heading. Save `heading.png`. Pass when the prompt contains `# PStack Implementation Worker`.
 - [ ] Lane 7. Formula compiler. Save `compiler.png`. Pass when every formula has `formula_compiler`.
 - [ ] Lane 8. No graph.v2. Save `no-contract.png`. Pass when no pstack formula sets `contract`.
 - [ ] Lane 9. Dest-env still old. Save `dest-old.png`. Pass when dest-env swarm THEN still has `fans out through Gas City graph steps`.
-- [ ] Lane 10. Apply dest fail. Save `dest-eacces.png`. Pass when `--dest` prints Permission denied in this sandbox.
+- [ ] Lane 10. Apply refuses pack-local source. Save `refuse-pack-src.png`. Pass when `--source pstack` prints that payloads do not live inside the pack.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -117,14 +116,14 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 **Files.**
 
-- [ ] Create `openspec/changes/audit-pstack-gascity-pack-contracts/` in dest-env from `pstack/intent/changes/audit-pstack-gascity-pack-contracts/`.
+- [ ] Create `openspec/changes/audit-pstack-gascity-pack-contracts/` in dest-env on the host. Do not copy it from this pack.
 - [ ] Edit `openspec/specs/pstack-gascity-pack/spec.md` by archive merge.
 - [ ] Edit `openspec/specs/pstack-pack-fidelity/spec.md` by archive merge.
 - [ ] Edit `openspec/specs/pstack-delivery-evidence/spec.md` by archive merge.
 
 **Build.**
 
-- [ ] From a host shell outside bubblewrap, run `python pstack/scripts/apply_intent_change.py --dest /home/tommyk/projects/dev-env --archive`.
+- [ ] From a host shell outside bubblewrap, run `python pstack/scripts/apply_intent_change.py --source <host-change-dir> --dest /home/tommyk/projects/dev-env --archive`. This sandbox cannot prove that command.
 
 **You see.**
 
@@ -170,7 +169,7 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 ## Appendix A. Prototype evidence
 
-Dest-env write from this sandbox failed with Permission denied on `openspec/changes/audit-pstack-gascity-pack-contracts`. A writable clone at `.work/dev-env` archived an older payload. The live payload is `pstack/intent/changes/audit-pstack-gascity-pack-contracts/`. Host write stays unproven.
+Dest-env write from this sandbox failed with Permission denied on `openspec/changes/audit-pstack-gascity-pack-contracts`. A writable clone at `.work/dev-env` archived an older payload. This pack does not ship the change payload. Host write stays unproven.
 
 ## Appendix B. Alternatives rejected
 
@@ -188,4 +187,4 @@ dest-env-archive. Bubblewrap cannot write dest-env. The owner must run the apply
 
 ## Appendix D. Links and reading list
 
-`pstack/intent/changes/audit-pstack-gascity-pack-contracts/`. `pstack/scripts/apply_intent_change.py`. `dev-env/docs/openspec-intent-driven.md`. How skill for pack layout. Interrogate skill is not required. Trail is `.audit/pstack-gascity-audit.tsv`.
+`pstack/scripts/apply_intent_change.py`. `dev-env/docs/openspec-intent-driven.md`. How skill for pack layout. Interrogate skill is not required. Trail is `.audit/pstack-gascity-audit.tsv`. Dest-env archive remains host-only and unproven.

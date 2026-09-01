@@ -613,6 +613,9 @@ def test_delivery_checks_cover_pstack() -> None:
     traceability = (ROOT / "TRACEABILITY.md").read_text()
     assert "dev-env/openspec/specs/pstack-gascity-pack/spec.md" in traceability
     assert "openspec/changes/pstack-gascity-pack/" not in traceability
+    assert "intent/changes/audit-pstack-gascity-pack-contracts" not in traceability
+    assert "unproven" in traceability
+    assert "archive proven" not in traceability
     assert "not silently imported" in traceability
     assert "README.md" in traceability
     assert "https://github.com/cursor/plugins" in traceability
@@ -715,23 +718,32 @@ def test_migration_formula_declares_ungated_callers_and_delete() -> None:
     assert "remaining_callers" not in text
 
 
-def test_intent_change_validates_against_dev_env_specs() -> None:
-    spec_root = pathlib.Path("/home/tommyk/projects/dev-env/openspec")
-    if not (spec_root / "config.yaml").is_file():
-        return
+def test_pack_does_not_ship_openspec_change_payloads() -> None:
+    assert not (ROOT / "intent").exists()
+    requirements = (ROOT / "REQUIREMENTS.md").read_text()
+    assert "intent/changes/audit-pstack-gascity-pack-contracts" not in requirements
+    assert "unproven" in requirements
+    plan = (PACKS_ROOT / "docs/pstack-gascity-pack-apply-plan.md").read_text()
+    assert "pstack/intent/changes/audit-pstack-gascity-pack-contracts" not in plan
+    script = (ROOT / "scripts/apply_intent_change.py").read_text()
+    assert 'PACK_ROOT / "intent"' not in script
+
+
+def test_apply_intent_change_rejects_pack_local_source() -> None:
     proc = subprocess.run(
         [
             sys.executable,
             str(ROOT / "scripts/apply_intent_change.py"),
             "--validate-only",
-            "--spec-root",
-            str(spec_root),
+            "--source",
+            str(ROOT),
         ],
         check=False,
         capture_output=True,
         text=True,
     )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.returncode != 0
+    assert "do not live inside the pack" in proc.stdout + proc.stderr
 
 
 def test_build_extends_base_and_preserves_anchors() -> None:

@@ -13,11 +13,14 @@ DEFAULT_CHANGE = "audit-pstack-gascity-pack-contracts"
 DEFAULT_SPEC_ROOT = Path("/home/tommyk/projects/dev-env/openspec")
 
 
-def change_dir(name: str) -> Path:
-    path = PACK_ROOT / "intent" / "changes" / name
-    if not path.is_dir():
+def source_dir(path: Path) -> Path:
+    resolved = path.expanduser().resolve()
+    pack = PACK_ROOT.resolve()
+    if resolved == pack or pack in resolved.parents:
+        raise SystemExit("OpenSpec payloads do not live inside the pack")
+    if not resolved.is_dir():
         raise SystemExit(f"missing change payload {path}")
-    return path
+    return resolved
 
 
 def copy_change(src: Path, dest_changes: Path) -> None:
@@ -50,11 +53,17 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--change", default=DEFAULT_CHANGE)
     parser.add_argument("--spec-root", type=Path, default=DEFAULT_SPEC_ROOT)
+    parser.add_argument(
+        "--source",
+        type=Path,
+        required=True,
+        help="OpenSpec change directory outside this pack",
+    )
     parser.add_argument("--dest", type=Path, help="dev-env root that contains openspec/")
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--archive", action="store_true", help="openspec archive after a successful dest copy")
     args = parser.parse_args()
-    src = change_dir(args.change)
+    src = source_dir(args.source)
     if args.validate_only:
         return validate(args.spec_root, src, args.change)
     if args.dest is None:

@@ -14,9 +14,12 @@ The vendor remains intentionally pinned to this reviewed Cursor plugins
 commit. Later Cursor `main` changes, including `README.md`,
 `docs/guide/`, and `skills/poteto-mode/playbooks/`, are not silently imported.
 `vendor/pstack/README.md` names the listed subset and the GitHub guide URL.
-A future source refresh must use a separate intent change and repeat the
+A future source refresh must use a dest-env OpenSpec change and repeat the
 path/parity review. Do not treat a moving maintained SHA as the pack pin.
 Do not pin `tommy-ca/pstack`.
+
+OpenSpec change payloads do not live in this pack. Dest-env owns durable
+Gherkin. Host dest-env archive remains unproven.
 
 ## Mapping
 
@@ -30,7 +33,7 @@ Do not pin `tommy-ca/pstack`.
 | Durable orchestration boundary | `formulas/pstack-orchestrate.formula.toml` | No scheduler/database/session-manager test |
 | Source/runtime separation | `vendor/pstack/` versus runtime assets | Source-binding/parity test |
 | Dual source of truth | `ARCHITECTURE.md` | Cursor pstack for vendor corpus, gascity-packs workflow packs for packing |
-| Intent-driven spec payload | `intent/changes/audit-pstack-gascity-pack-contracts/` | `scripts/apply_intent_change.py --validate-only`; dest copy plus archive proven on a writable dest-env clone with no dropped requirements |
+| OpenSpec change payloads | not shipped in this pack | Dest-env owns `openspec/`. `scripts/apply_intent_change.py` requires an external `--source`. Dest-env archive is host-only and unproven |
 
 ## Evidence classes
 
@@ -41,7 +44,7 @@ Do not pin `tommy-ca/pstack`.
 
 ## Delivery boundary
 
-This checkout is prepared for review. Commit, push, pack publication, live import, canonical city mutation, Formula sling, and live Beads mutation remain independent operations.
+This checkout is prepared for review. Commit, push, pack publication, live import, canonical city mutation, Formula sling, and live Beads mutation remain independent operations. OpenSpec change payloads are dest-env host work, not pack contents.
 
 ## Known design gap
 

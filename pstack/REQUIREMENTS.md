@@ -24,6 +24,7 @@
 - No provider-native dispatch instructions in runtime assets.
 - No mutation of canonical `packs.lock`, `city.toml`, live Beads, or live Formula state as part of pack tests.
 - No separate `gascity-packs-pstack` repository: this pack lives under the existing Gas City packs repository.
+- No OpenSpec change payloads under this pack. Dest-env owns durable Gherkin.
 
 ## Compatibility Claims
 
@@ -37,4 +38,4 @@ and keeps provider/runtime dispatch outside the pack.
 - `uv run --with pytest --with pyyaml pytest -q gascity/tests/test_formula_assets.py gascity/tests/test_derived_pack_compatibility.py pstack/tests/test_pstack_pack.py`
 - `python -c 'import pathlib,tomllib; [tomllib.loads(p.read_text()) for p in pathlib.Path("pstack/formulas").glob("*.toml")]'`
 - Disposable live-city formula and agent listing when `GC_TEST_BIN` is set; no canonical city mutation.
-- `python pstack/scripts/apply_intent_change.py --validate-only` against a readable `dev-env/openspec` tree. `--dest` copies the change. `--archive` merges it. This sandbox cannot write the canonical dest-env tree. A host shell can.
+- Dest-env owns OpenSpec. This pack does not ship `intent/changes/` payloads. `python pstack/scripts/apply_intent_change.py --source <change-dir> --validate-only` validates an external payload against a readable dest-env `openspec` tree. `--dest` copies that payload. `--archive` merges it. Host write stays unproven.
