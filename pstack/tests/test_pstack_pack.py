@@ -155,6 +155,101 @@ def test_cursor_playbooks_have_formulas_or_are_named_unsupported() -> None:
     assert "not `pstack-<playbook>`" in architecture
 
 
+def load_playbook_map() -> tuple[dict[str, str], set[str], dict[str, str]]:
+    data = tomllib.loads((ROOT / "mappings/playbooks.toml").read_text(encoding="utf-8"))
+    formulas = {
+        stem: str(entry["formula"])
+        for stem, entry in data["playbooks"].items()
+    }
+    classes = {
+        stem: str(entry["class"])
+        for stem, entry in data["playbooks"].items()
+    }
+    unsupported = set(data["unsupported"]["stems"])
+    return formulas, unsupported, classes
+
+
+def test_poteto_mode_router_table_matches_playbook_map() -> None:
+    formulas, unsupported, classes = load_playbook_map()
+    assert formulas == CURSOR_PLAYBOOK_FORMULAS
+    assert unsupported == CURSOR_PLAYBOOKS_UNSUPPORTED
+    assert set(classes) == set(formulas)
+    assert set(classes.values()) <= {"method-report", "build-factory"}
+    formula = load_formula("pstack-poteto-mode")
+    classify = next(step for step in formula["steps"] if step["id"] == "classify")
+    write = next(step for step in formula["steps"] if step["id"] == "write")
+    assert classify["metadata"]["gc.run_target"] == "pstack.coordinator"
+    assert "gc.graph_operator" not in classify.get("metadata", {})
+    assert "gc.graph_operator" not in write.get("metadata", {})
+    assert write["metadata"]["pstack.artifact_schema"] == "pstack.route.v1"
+    assert (ROOT / "assets/workflows/pstack-methods/classify.md").is_file()
+
+
+def test_route_schema_rejects_unknown_formula() -> None:
+    validator = load_build_artifact_validator()
+    routed = """---
+schema: pstack.route.v1
+workflow:
+  id: route-1
+  formula: pstack-poteto-mode
+producer:
+  formula: pstack-poteto-mode
+  stage: write
+  attempt: 1
+status: routed
+trace:
+  upstream:
+    - path: pstack/mappings/playbooks.toml
+      hash: git:playbooks
+  coverage:
+    - id: ROUTE-001
+      status: covered
+playbook: bug-fix
+formula: pstack-bug-fix
+class: build-factory
+reason: Mapped Cursor bug-fix playbook
+evidence:
+  source_revision: git:playbooks
+  source_path: pstack/mappings/playbooks.toml
+  claim_refs:
+    - bead:gc-1
+  verification_status: observed
+---
+
+## Route
+
+| ID | Status |
+| --- | --- |
+| ROUTE-001 | covered |
+"""
+    unsupported = routed.replace("status: routed", "status: unsupported").replace(
+        "playbook: bug-fix",
+        "playbook: opening-a-pr",
+    ).replace(
+        "formula: pstack-bug-fix",
+        "formula: none",
+    ).replace("class: build-factory", "class: unsupported")
+    with mock.patch.dict(os.environ, {"GC_BUILD_SCHEMA_ROOTS": str(ROOT / "schemas")}):
+        artifact = validator.validate_artifact_text(
+            routed,
+            expected_schema="pstack.route.v1",
+        )
+        assert artifact.front_matter["formula"] == "pstack-bug-fix"
+        validator.validate_artifact_text(
+            unsupported,
+            expected_schema="pstack.route.v1",
+        )
+        try:
+            validator.validate_artifact_text(
+                routed.replace("status: routed", "status: waiting"),
+                expected_schema="pstack.route.v1",
+            )
+        except validator.ValidationError as exc:
+            assert "status" in str(exc)
+        else:
+            raise AssertionError("invalid route status was accepted")
+
+
 def test_method_formulas_use_formula_identity() -> None:
     for formula in (
         "pstack-how",
@@ -834,6 +929,7 @@ def test_pstack_specific_schemas_are_declared_and_referenced() -> None:
         "frontier",
         "standing-orders",
         "program-status",
+        "route",
     }
     paths = sorted((ROOT / "schemas").glob("*.yaml"))
     assert {path.stem for path in paths} == {f"{name}.v1" for name in expected}

@@ -1,0 +1,34 @@
+# PStack-specific evidence schema; immutable ID: pstack.route.v1
+schema_id: pstack.route.v1
+artifact: route
+allowed_statuses:
+  - routed
+  - unsupported
+coverage_statuses:
+  - covered
+  - not_applicable
+  - deferred
+  - blocked
+  - out_of_scope
+  - superseded
+
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - producer.formula
+  - producer.stage
+  - status
+  - producer.attempt
+  - trace
+required_fields:
+  - playbook
+  - formula
+  - class
+  - reason
+  - evidence
+evidence_fields:
+  - source_revision
+  - source_path
+  - claim_refs
+  - verification_status

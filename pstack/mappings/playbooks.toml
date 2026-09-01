@@ -1,0 +1,84 @@
+# Cursor playbook stem -> Gas City formula. Source of the router table.
+
+[playbooks.investigation]
+formula = "pstack-investigation"
+class = "method-report"
+
+[playbooks.bug-fix]
+formula = "pstack-bug-fix"
+class = "build-factory"
+
+[playbooks.perf-issue]
+formula = "pstack-perf"
+class = "build-factory"
+
+[playbooks.hillclimb]
+formula = "pstack-hillclimb"
+class = "method-report"
+
+[playbooks.runtime-forensics]
+formula = "pstack-runtime-forensics"
+class = "method-report"
+
+[playbooks.trace-forensics]
+formula = "pstack-trace-forensics"
+class = "method-report"
+
+[playbooks.feature]
+formula = "pstack-feature"
+class = "build-factory"
+
+[playbooks.refactoring]
+formula = "pstack-refactor"
+class = "build-factory"
+
+[playbooks.prototype]
+formula = "pstack-prototype"
+class = "build-factory"
+
+[playbooks.visual-parity]
+formula = "pstack-visual-parity"
+class = "method-report"
+
+[playbooks.authoring-a-skill]
+formula = "pstack-authoring-a-skill"
+class = "method-report"
+
+[playbooks.eval]
+formula = "pstack-eval"
+class = "method-report"
+
+[playbooks.babysit]
+formula = "pstack-babysit"
+class = "build-factory"
+
+[playbooks.shipping]
+formula = "pstack-shipping"
+class = "build-factory"
+
+[playbooks.autonomous-run]
+formula = "pstack-autonomous-run"
+class = "build-factory"
+
+[playbooks.orchestrate]
+formula = "pstack-orchestrate"
+class = "build-factory"
+
+[playbooks.autopilot-full]
+formula = "pstack-autopilot-full"
+class = "build-factory"
+
+[playbooks.autopilot-stack]
+formula = "pstack-autopilot-stack"
+class = "build-factory"
+
+[playbooks.session-pickup]
+formula = "pstack-session-pickup"
+class = "method-report"
+
+[playbooks.multi-phase-plan]
+formula = "pstack-multi-phase-plan"
+class = "method-report"
+
+[unsupported]
+stems = ["opening-a-pr", "pause-safely", "worktree-cleanup"]

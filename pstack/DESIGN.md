@@ -37,6 +37,9 @@ flowchart TD
 
 ## Data schemas
 
+`pstack.route.v1` records a poteto-mode classification. Status is `routed` or
+`unsupported`. The table is `pstack/mappings/playbooks.toml`.
+
 ### Shared lifecycle artifacts
 
 Use the imported schemas without wrappers:

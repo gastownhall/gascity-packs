@@ -1,0 +1,42 @@
+description = "PStack classify a request onto a mapped formula. Do not auto-sling."
+formula = "pstack-poteto-mode"
+version = 1
+
+target_required = false
+mode = "report"
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[catalog]
+name = "pstack-poteto-mode"
+description = "PStack classify a request onto a mapped formula. Do not auto-sling."
+
+[vars]
+[vars.subject_path]
+description = "Request or subject path to classify."
+required = true
+
+[vars.artifact_path]
+description = "Output pstack.route.v1 path."
+required = true
+
+[[steps]]
+id = "classify"
+title = "Classify the request onto a playbook stem"
+metadata = { "gc.run_target" = "pstack.coordinator", "pstack.playbook" = "poteto-mode" }
+description_file = "../assets/workflows/pstack-methods/classify.md"
+
+[[steps]]
+id = "write"
+title = "Write the route artifact"
+needs = ["classify"]
+metadata = { "gc.run_target" = "pstack.coordinator", "gc.build.artifact_schema" = "pstack.route.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.route.v1", "pstack.artifact_path" = "{{artifact_path}}" }
+description_file = "../assets/workflows/pstack-methods/write.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

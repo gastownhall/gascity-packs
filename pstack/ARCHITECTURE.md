@@ -27,6 +27,7 @@ Map each official block to one Gas City surface.
 | `hillclimb`, `runtime-forensics`, `trace-forensics`, `eval`, `authoring-a-skill`, `session-pickup`, `multi-phase-plan`, `visual-parity` | Matching `pstack-*` method formulas. Sequential evidence producers. They carry `pstack.playbook` identity. They do not run the full Cursor playbook graph |
 | Babysit, shipping, orchestrate, autonomous-run, autopilot | `pstack-babysit`, `pstack-shipping`, `pstack-orchestrate`, `pstack-autonomous-run`, `pstack-autopilot-*` extending `pstack-build` |
 | `opening-a-pr`, `pause-safely`, `worktree-cleanup` | Unsupported as sling formulas. Invoked from other programs or host disk cleanup |
+| `/poteto-mode` router | `pstack-poteto-mode` writes `pstack.route.v1`. Operator slings the `formula` field. No auto-sling |
 | `spawn_subagent` / Cursor `Task` | Gas City `gc.run_target` plus Beads claims. No provider task engine |
 | `scripts/watch-pr`, `scripts/orch/orch.ts` | Cursor upstream text. Unsupported as Gas City runtime. Tests grep pack-owned formulas, assets, and agents |
 | `agents/comment-sicko.md`, `agents/poteto-agent.md` | Host-plugin provenance under `vendor/pstack/agents/`. Not Gas City formulas. Pack-owned `pstack/agents/` stays `gc-role-worker` wrappers |
