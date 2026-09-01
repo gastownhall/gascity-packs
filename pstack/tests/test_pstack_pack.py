@@ -977,17 +977,39 @@ def test_pstack_specific_schemas_are_declared_and_referenced() -> None:
         "program-status",
         "route",
     }
-    paths = sorted((ROOT / "schemas").glob("*.yaml"))
+    spec = importlib.util.spec_from_file_location(
+        "pstack_validate_schemas",
+        ROOT / "scripts/validate_pstack_schemas.py",
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError("could not load validate_pstack_schemas")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    paths = module.validate_all(ROOT / "schemas", formulas_dir=ROOT / "formulas")
     assert {path.stem for path in paths} == {f"{name}.v1" for name in expected}
-    for path in paths:
-        text = path.read_text()
-        assert f"schema_id: pstack.{path.stem}" in text
-        assert "required_front_matter:" in text
-        assert "  - producer.attempt" in text
-        assert "coverage_statuses:" in text
-        for status in ("covered", "not_applicable", "deferred", "blocked", "out_of_scope", "superseded"):
-            assert f"  - {status}" in text
-        assert "evidence_fields:" in text
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/validate_pstack_schemas.py")],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "ok route.v1.yaml" in proc.stdout
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = pathlib.Path(tmp)
+        for path in (ROOT / "schemas").glob("*.yaml"):
+            (dest / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        broken = dest / "route.v1.yaml"
+        broken.write_text(
+            broken.read_text(encoding="utf-8").replace("  - producer.attempt\n", ""),
+            encoding="utf-8",
+        )
+        try:
+            module.validate_all(dest)
+        except ValueError as exc:
+            assert "producer.attempt" in str(exc)
+        else:
+            raise AssertionError("schema missing producer.attempt was accepted")
 
 
 def test_methods_programs_and_variants_are_providerless_and_asset_complete() -> None:
