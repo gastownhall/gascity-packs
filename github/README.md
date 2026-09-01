@@ -56,6 +56,13 @@ This pack expects helper-backed published services. After the workspace starts,
 Open the tenant-visible `github-admin` URL to register the GitHub App from the
 hosted manifest helper.
 
+The generated intake manifest follows the least-privilege work-sync contour:
+repository metadata read, Issues write, Pull requests read (required for the
+subscribed webhook), organization Projects write, and organization Issue Types
+and Issue Fields read. It does not request Contents, Actions, Administration,
+or Workflows. Branch push and PR creation therefore require a separately
+scoped delivery identity instead of broadening the organization intake App.
+
 ## Bugflow Routing
 
 `/gc fix` now uses the workflows-pack bugflow router. Configure repository
@@ -99,6 +106,28 @@ name = "pr-review-request"
 github_app_token_env = "GH_TOKEN"
 ```
 
+For organization ingress that owns repositories in more than one registered
+City, declare the exact owning City and Rig once in the repo topology and opt
+the action into topology routing:
+
+```toml
+[[repo]]
+full_name = "owner/repo"
+city = "product-city"
+rig = "product"
+
+[[rule.action]]
+type = "order"
+name = "work-sync"
+route_from_repo = true
+```
+
+That action runs as
+`gc --city product-city order run work-sync --rig product`. Unknown repositories
+and incomplete City/Rig mappings fail closed before a subprocess starts; there
+is no fallback queue or repository-local work store. Rules without
+`route_from_repo = true` retain their existing local-City behavior.
+
 Rules ignore events sent by the configured GitHub App bot by default. Set
 `allow_self = true` on a rule when bot-authored label changes are intentional
 triggers, such as a GitHub Action adding `status/needs-triage`.
@@ -123,6 +152,7 @@ version = 1
 
 [[repo]]
 full_name = "owner/repo"
+city = "product-city"
 rig = "product"
 authorized_users = ["alice", "bob"]
 installation_id = "123456"

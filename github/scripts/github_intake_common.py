@@ -259,6 +259,26 @@ def validate_github_app_identity(value: str, field: str = "github_app_identity")
     return identity
 
 
+def github_app_config_for_identity(identity: str = "") -> dict[str, Any]:
+    """Resolve a named App identity, or fall back to the intake App config.
+
+    Delivery commands use this boundary so their broader repository write
+    permissions can live on a separate App without widening the intake App.
+    """
+    identity = validate_github_app_identity(identity)
+    if identity:
+        # Imported lazily to keep the common module usable by the service that
+        # implements the resolver protocol.
+        import github_intake_service as service
+
+        return service.load_profile_github_app(identity)
+    config = load_effective_config()
+    app_cfg = config.get("app", {})
+    if isinstance(app_cfg, dict):
+        return app_cfg
+    return {}
+
+
 def publish_identity(
     app_fields: dict[str, Any],
     identity: str = "",
@@ -336,6 +356,32 @@ def github_repo_dispatch_rig(repository_full_name: str, rules_config: dict[str, 
         if rig:
             return rig
     return fallback
+
+
+def github_repo_dispatch_route(
+    repository_full_name: str,
+    rules_config: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Return the exact owning City/Rig pair for a configured repository.
+
+    Cross-City webhook dispatch must never fall back to a derived local Rig:
+    an unknown or incomplete topology record fails closed instead.
+    """
+    repo_key = normalize_repo_key(repository_full_name)
+    if not repo_key:
+        return {}
+    repos = (rules_config if rules_config is not None else load_rules()).get("repos") or []
+    for repo in repos:
+        if not isinstance(repo, dict):
+            continue
+        if normalize_repo_key(str(repo.get("full_name", ""))) != repo_key:
+            continue
+        city = str(repo.get("city", "")).strip()
+        rig = str(repo.get("rig", "")).strip()
+        if city and rig:
+            return {"city": city, "rig": rig}
+        return {}
+    return {}
 
 
 def _set_command_formula(commands: dict[str, Any], name: str, formula: str | None) -> dict[str, Any]:
@@ -461,9 +507,12 @@ def build_manifest() -> dict[str, Any]:
         "description": "Workspace-hosted GitHub comment and event intake for Gas City",
         "public": False,
         "default_permissions": {
-            "contents": "write",
             "issues": "write",
-            "pull_requests": "write",
+            "metadata": "read",
+            "pull_requests": "read",
+            "organization_projects": "write",
+            "issue_types": "read",
+            "issue_fields": "read",
         },
         "default_events": [
             "issue_comment",
@@ -568,12 +617,16 @@ def normalize_repo_addresses(raw_repo: dict[str, Any], index: int) -> dict[str, 
     configured_rig = str(raw_repo.get("rig", "")).strip()
     if configured_rig and "/" in configured_rig:
         raise ValueError(f"repo {full_name!r}: rig must be a local rig name, not a target")
+    city = str(raw_repo.get("city", "")).strip()
+    if city and not configured_rig:
+        raise ValueError(f"repo {full_name!r}: city requires an explicit rig")
     rig = configured_rig or github_rig
     raw_addresses = raw_repo.get("address") or []
     if not isinstance(raw_addresses, list):
         raise ValueError(f"repo {full_name!r}: address must be an array of tables")
     return {
         "full_name": full_name,
+        "city": city,
         "github_rig": github_rig,
         "rig": rig,
         "authorized_users": _normalized_unique_strings(raw_repo.get("authorized_users")),
