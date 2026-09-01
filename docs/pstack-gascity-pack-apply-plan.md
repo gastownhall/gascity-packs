@@ -8,12 +8,12 @@ From a host shell outside bubblewrap, with dest-env writable.
 
 ```sh
 python pstack/scripts/apply_intent_change.py \
-  --source .work/openspec-changes/audit-pstack-gascity-pack-contracts \
-  --dest <openspec-tree-root> \
+  --source <dest-env>/openspec/changes/audit-pstack-gascity-pack-contracts \
+  --dest <dest-env> \
   --archive
 ```
 
-`--source` is required and must sit outside `pstack/`. The change payload lives at `.work/openspec-changes/`. This pack does not ship a dest-env checkout.
+`--source` is required and must sit outside `pstack/`. Dest-env owns the change payload. This pack does not ship dest-env or `.work/`.
 
 ## You see
 

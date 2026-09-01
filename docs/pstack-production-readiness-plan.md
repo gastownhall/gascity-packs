@@ -162,4 +162,4 @@ The pack copy of `check-plan.mjs` (Cursor pin `6fecddba`) still wants `/goal` an
 
 ## Appendix D. Links and reading list
 
-`docs/pstack-poteto-mode-router-plan.md` is a finished-router note. `docs/pstack-gascity-pack-apply-plan.md` is dest-env host how-to. `pstack/ARCHITECTURE.md`. `pstack/TRACEABILITY.md`. `.work/openspec-changes/audit-pstack-gascity-pack-contracts/`. `pstack/scripts/apply_intent_change.py`. Trail `.audit/pstack-gascity-audit.tsv`. Use `skills/how/SKILL.md` and `skills/interrogate/SKILL.md` on `pr-pstack-restamp`.
+`docs/pstack-poteto-mode-router-plan.md` is a finished-router note. `docs/pstack-gascity-pack-apply-plan.md` is dest-env host how-to. `pstack/ARCHITECTURE.md`. `pstack/TRACEABILITY.md`. Dest-env `openspec/changes/audit-pstack-gascity-pack-contracts/`. `pstack/scripts/apply_intent_change.py`. Trail `.audit/pstack-gascity-audit.tsv`. Use `skills/how/SKILL.md` and `skills/interrogate/SKILL.md` on `pr-pstack-restamp`.

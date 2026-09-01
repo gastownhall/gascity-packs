@@ -19,7 +19,5 @@
 __pycache__/
 *.py[cod]
 
-.work/*
-!.work/openspec-changes/
-!.work/openspec-changes/**
+.work/
 .audit/
