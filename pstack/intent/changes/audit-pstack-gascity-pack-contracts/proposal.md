@@ -36,6 +36,8 @@ hand-synced live files and drop the 14-schema list.
 - Omit `skills/poteto-mode/scripts/watch-pr/` and `scripts/orch/` from the
   vendored skills tree so host-boundary is file absence, not only playbook
   text. Do not retarget `upstream.toml` to Cursor.
+- Vendor only skills, README, and LICENSE. Drop plugin agent markdown, guide
+  docs, and Benny automations so the listed corpus matches sibling packing.
 
 ## Capabilities
 

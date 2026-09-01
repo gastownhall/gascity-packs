@@ -63,8 +63,10 @@ The pack is a registry of formulas, schemas, and source bindings.
 - Formula TOML is the executable graph.
 - `gc.build.*` schemas cover ordinary lifecycle artifacts.
 - `pstack.*` schemas cover pack-only evidence.
-- `vendor/pstack/` is immutable at the recorded pin.
-- Runtime `skills/` is a byte copy of vendored skills.
+- `vendor/pstack/` lists skills, README, and LICENSE at the recorded pin.
+- Runtime `skills/` is a byte copy of vendored skills. It is methodology
+  corpus, not formula `description_file`.
+- Plugin agent markdown, guide docs, and Benny automations are not vendored.
 
 ## Non-goals
 
@@ -72,3 +74,5 @@ The pack is a registry of formulas, schemas, and source bindings.
 - No Cursor `Task` field names in formulas.
 - No vendor refresh to Cursor `main` in this change.
 - No archive of `refresh-pstack-pack-source-and-formula-requirements` as written.
+- No babysit or orchestrate detach from `pstack-build` in this change.
+- No `graph_operator` interpreter.

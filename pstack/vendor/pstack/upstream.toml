@@ -7,9 +7,6 @@ provenance = "Grok-adapted pstack source; see vendor/pstack/README.md and source
 [vendor]
 paths = [
   "vendor/pstack/skills",
-  "vendor/pstack/agents",
-  "vendor/pstack/docs",
-  "vendor/pstack/automations",
   "vendor/pstack/README.md",
   "vendor/pstack/LICENSE",
 ]

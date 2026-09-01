@@ -455,11 +455,19 @@ def test_readme_documents_required_gas_city_roles() -> None:
 
 
 def test_vendor_source_binding_is_immutable() -> None:
-    source = tomllib.loads((ROOT / "vendor/pstack/upstream.toml").read_text())["upstream"]
+    data = tomllib.loads((ROOT / "vendor/pstack/upstream.toml").read_text())
+    source = data["upstream"]
     assert source["source"] == "https://github.com/tommy-ca/pstack"
     assert source["commit"] == "49d6ae81f17125ac198efa322403490b366856b6"
     assert source["license"] == "MIT"
+    assert data["vendor"]["paths"] == [
+        "vendor/pstack/skills",
+        "vendor/pstack/README.md",
+        "vendor/pstack/LICENSE",
+    ]
     assert (ROOT / "vendor/pstack/LICENSE").is_file()
+    for extra in ("agents", "docs", "automations"):
+        assert not (ROOT / "vendor/pstack" / extra).exists()
 
 
 def test_vendored_host_boundary_matches_runtime_contract() -> None:

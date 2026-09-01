@@ -194,14 +194,20 @@ extending Gas City virtual contracts. The pack MUST vendor a reviewed runtime
 corpus under `vendor/pstack/` at the immutable pin in
 `vendor/pstack/upstream.toml`. That pin MAY be a host-adapted tree such as
 `tommy-ca/pstack` so babysit and orchestrate do not prescribe
-`scripts/watch-pr/watch-pr` or `scripts/orch/orch.ts`. The vendored
+`scripts/watch-pr/watch-pr` or `scripts/orch/orch.ts`. The listed vendor
+paths MUST be `vendor/pstack/skills`, `vendor/pstack/README.md`, and
+`vendor/pstack/LICENSE` only. Plugin agent markdown, guide docs, and Benny
+automations MUST NOT be vendored. The vendored
 `skills/poteto-mode/scripts/` tree MUST omit `watch-pr/` and `orch/` even
 when the recorded pin snapshot still contains those directories. The recorded
-SHA still names the reviewed tommy-ca commit. Runtime-specific Gas City
-prompts MUST live outside the vendored corpus. Focused tests MUST pin that
-revision, prove runtime `skills/` matches `vendor/pstack/skills/`, grep
-host-boundary playbooks, and assert those CLI directories are absent. Tests
-MUST NOT require a `git archive` of Cursor `main`.
+SHA still names the reviewed tommy-ca commit. Runtime `skills/` is a
+methodology corpus workers may read. Formulas MUST NOT use `SKILL.md` as
+`description_file`. Runtime-specific Gas City prompts MUST live outside the
+vendored corpus. Focused tests MUST pin that revision, prove runtime
+`skills/` matches `vendor/pstack/skills/`, grep host-boundary playbooks,
+assert those CLI directories are absent, and assert the listed vendor paths.
+Tests MUST NOT require a `git archive` of Cursor `main`. The Cursor tree SHA
+is cited provenance, not a byte-compared vendor corpus.
 
 `pstack/ARCHITECTURE.md` MUST record the building-block map from Cursor
 playbooks and principles onto Gas City formulas and primitives.
@@ -215,6 +221,8 @@ playbooks and principles onto Gas City formulas and primitives.
 - **AND** runtime `skills/` matches `vendor/pstack/skills/` byte-for-byte
 - **AND** the vendored host-boundary playbooks contain no prohibited local watcher or store path
 - **AND** `vendor/pstack/skills/poteto-mode/scripts/watch-pr/` and `scripts/orch/` do not exist
+- **AND** `vendor/pstack/upstream.toml` `[vendor].paths` lists only skills, README, and LICENSE
+- **AND** `vendor/pstack/agents`, `vendor/pstack/docs`, and `vendor/pstack/automations` do not exist
 
 #### Scenario: Runtime prompts do not mutate source material
 
