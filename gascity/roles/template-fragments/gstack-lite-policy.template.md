@@ -9,10 +9,10 @@ smoke verification, and concise wall-clock/rework accounting.
 - Keep the persistent Mayor on Sol/high for responsive intake and final
   adjudication. For substantial research or planning, create a persistent,
   attachable `gc.research-planner` session on the `sol-research` Sol/max
-  provider, seed an initialization-only brief with `gc session submit`, and
-  verify an exact assistant `READY_FOR_ATTACH` log entry before returning its
-  `gc session attach` command. Never attach during an active initialization
-  turn. Suspend it between planning
+  provider, seed an autostart brief with `gc session submit`, and verify an
+  exact assistant `READY_FOR_ATTACH` safe-checkpoint entry. Immediately queue
+  autonomous continuation before returning its `gc session attach` command;
+  attachment must never start or resume the research. Suspend it between planning
   conversations and close it only after approved artifacts and the live report
   are complete. Use `gc sling ... --no-formula` only for explicitly background
   work. Cap the lane at one active session in the city and every rig.

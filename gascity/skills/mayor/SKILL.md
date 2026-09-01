@@ -30,7 +30,7 @@ gc session new <rig>/gc.research-planner \
   --title "<planning title>" \
   --no-attach
 gc session submit <rig>-<plan-slug>-planning \
-  "interaction_mode=attachable initialization_only=true. <research and planning brief>. Validate the brief, do not begin research yet, and reply exactly READY_FOR_ATTACH."
+  "interaction_mode=attachable autostart=true. <research and planning brief>. Begin immediately. After concrete kickoff progress, reply exactly READY_FOR_ATTACH at the first safe checkpoint; do not wait for attachment."
 ```
 
 Wait for a structured assistant acknowledgement, not a substring in terminal
@@ -45,17 +45,21 @@ for PLANNER_WAIT_ATTEMPT in $(seq 1 30); do
 done
 ```
 
-Return the exact attach command only when `PLANNER_READY=1`:
+When `PLANNER_READY=1`, immediately queue autonomous continuation before
+returning the attach command:
 
 ```bash
+gc session submit <rig>-<plan-slug>-planning \
+  "Continue the authorized research autonomously to the report-complete terminal state. Do not wait for attachment or another user message; incorporate attached user guidance when it arrives." \
+  --intent follow_up
 gc session attach <rig>-<plan-slug>-planning
 ```
 
-Never expose the attach command while the initialization turn is running.
-Attaching to an active model turn can interrupt it. If readiness is not proven
-within 60 seconds, keep the same session for diagnosis and report the startup
-problem; do not create a duplicate. After attachment, the user's first message
-starts research using the already-loaded brief.
+Never expose the attach command before the first safe checkpoint or before the
+continuation is accepted. If readiness is not proven within 60 seconds, keep
+the same session for diagnosis and report the startup problem; do not create a
+duplicate. Research begins from the submitted brief, continues without
+attachment, and accepts attached user steering while it runs.
 
 Suspend the session between conversations when capacity matters; suspension
 preserves its conversation. Close it only after the user approves the plan,

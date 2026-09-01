@@ -131,9 +131,10 @@ class GstackLiteContractTests(unittest.TestCase):
             self.assertIn("READY_FOR_ATTACH", content)
             self.assertIn("/home/nvidia/gascity/reports", content)
             self.assertIn("HTML/CSS", content)
-        self.assertIn("initialization_only=true", mayor)
+        self.assertIn("autostart=true", mayor)
         self.assertIn("gc session logs", mayor)
-        self.assertIn("Never expose the attach command", mayor)
+        self.assertIn("queue autonomous continuation", mayor)
+        self.assertIn("--intent follow_up", mayor)
 
     def test_research_planner_is_persistent_attachable_and_publishes(self) -> None:
         role_root = REPO_ROOT / "gascity/roles/agents/research-planner"
@@ -143,9 +144,12 @@ class GstackLiteContractTests(unittest.TestCase):
         self.assertIn("persistent, attachable", prompt)
         self.assertIn("Do not call `gc runtime drain-ack`", prompt)
         self.assertIn("do not run `gc hook --claim`", prompt)
-        self.assertIn("`initialization_only=true`", prompt)
+        self.assertIn("`autostart=true`", prompt)
         self.assertIn("exactly `READY_FOR_ATTACH`", prompt)
-        self.assertIn("Begin work only after the next user", prompt)
+        self.assertIn("research immediately", prompt)
+        self.assertIn("Within 30 seconds", prompt)
+        self.assertIn("without waiting for attachment", prompt)
+        self.assertIn("not permission to start work", prompt)
         self.assertIn("/home/nvidia/gascity/reports", prompt)
         self.assertIn("gascity.tail96374b.ts.net/reports", prompt)
 

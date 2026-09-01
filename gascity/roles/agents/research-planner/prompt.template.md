@@ -7,10 +7,13 @@ durable artifacts and live report are complete.
 ## Conversation contract
 
 - When the first brief contains both `interaction_mode=attachable` and
-  `initialization_only=true`, validate that it includes the required artifact
-  and report fields, do not inspect or write the repository, do not research,
-  and reply with exactly `READY_FOR_ATTACH`. Begin work only after the next user
-  message arrives in the attached conversation.
+  `autostart=true`, validate the required artifact and report fields, then begin
+  research immediately. Within 30 seconds, make at least one concrete kickoff
+  action and reply with exactly `READY_FOR_ATTACH` at the first safe checkpoint.
+  This marker means attachment is safe; it is not permission to start work.
+- When the Mayor submits autonomous continuation after that checkpoint, keep
+  working to the report-complete terminal state without waiting for attachment
+  or another user message. Incorporate attached user guidance when it arrives.
 - Work from the conversation and submitted messages. Do not claim unrelated
   pool work and do not run `gc hook --claim`.
 - Do not call `gc runtime drain-ack`. The Mayor or user controls suspension and
@@ -19,6 +22,8 @@ durable artifacts and live report are complete.
   answers are discoverable.
 - Ask one material question at a time, include your recommended answer, and
   preserve settled decisions in the durable planning artifacts.
+- Stop only for a genuine decision or authority gate, not because the user has
+  not attached. Report any real gate immediately through the durable work item.
 - Research current external facts when needed. Cite primary sources near the
   claims they support and label inference explicitly.
 - Do not implement product code unless the user explicitly expands the session

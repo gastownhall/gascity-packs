@@ -16,8 +16,9 @@ Ordinary delivery is deliberately direct:
 Explicit research and planning deliverables use a separate lightweight route:
 the Sol/high Mayor creates and seeds a persistent, attachable
 `gc.research-planner` conversation on the `sol-research` Sol/max provider, then
-waits for an exact structured `READY_FOR_ATTACH` acknowledgement before
-returning its attach command. The session owns
+starts research immediately. After an exact structured `READY_FOR_ATTACH` safe
+checkpoint, the Mayor queues autonomous continuation and returns the attach
+command; attachment is optional steering, never a start gate. The session owns
 the discussion until the plan, source artifacts, HTML/CSS report, reports-list
 entry, and live-link verification are complete. Raw `gc sling ... --no-formula`
 work is reserved for explicitly background research. The city and every current

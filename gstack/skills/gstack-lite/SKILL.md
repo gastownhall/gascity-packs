@@ -53,20 +53,22 @@ prefer a persistent, attachable Sol/max conversation:
 gc session new <scope>/gc.research-planner --alias <scope>-<slug>-planning \
   --title "<planning title>" --no-attach
 gc session submit <scope>-<slug>-planning \
-  "interaction_mode=attachable initialization_only=true. <research and planning brief>. Reply exactly READY_FOR_ATTACH without starting research."
+  "interaction_mode=attachable autostart=true. <research and planning brief>. Begin immediately; after concrete kickoff progress, reply exactly READY_FOR_ATTACH at the first safe checkpoint."
 # Verify READY_FOR_ATTACH as an exact assistant text block with:
 gc session logs <scope>-<slug>-planning --tail 10 --json
+gc session submit <scope>-<slug>-planning \
+  "Continue autonomously to the report-complete terminal state; do not wait for attachment." \
+  --intent follow_up
 gc session attach <scope>-<slug>-planning
 ```
 
 The Mayor creates and seeds it, waits until the structured log contains an
-assistant text block exactly equal to `READY_FOR_ATTACH`, then gives the user
-the attach command. Never expose or use the attach command while initialization
-is still running; attachment can interrupt the active turn. If readiness is not
-proven within 60 seconds, diagnose the same session instead of creating another.
-The user's first attached message starts the research from the loaded brief.
-Suspend rather than close it between planning conversations. Close it only
-after approved artifacts and the live report are complete. Use
+assistant text block exactly equal to `READY_FOR_ATTACH`, immediately queues
+autonomous continuation, then gives the user the attach command. The initial turn
+must make concrete progress; attachment never starts or resumes work. If readiness is not proven within 60 seconds,
+diagnose the same session instead of creating another. Attached user messages
+steer ongoing work. Suspend rather than close the session between conversations;
+close it only after approved artifacts and the live report are complete. Use
 `gc sling <scope>/gc.research-planner <bead-id> --no-formula` only for explicitly
 background or report-only work.
 

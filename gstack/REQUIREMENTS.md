@@ -7,9 +7,10 @@
   deliverables route to a persistent, attachable `gc.research-planner`
   conversation on the Sol/max `sol-research` provider by default; raw
   `--no-formula` beads are background-only.
-- Interactive planning uses a two-phase handoff: an initialization-only brief
-  must produce an exact structured `READY_FOR_ATTACH` acknowledgement before
-  the attach command is exposed. Attachment never overlaps a model turn.
+- Interactive planning autostarts from the submitted brief, makes concrete
+  kickoff progress, and emits an exact structured `READY_FOR_ATTACH` safe
+  checkpoint. The Mayor queues autonomous continuation before exposing the
+  attach command; attachment steers work but never starts or resumes it.
 - The research-planner role is a singleton in every current rig; the audit
   rejects a new rig until it receives the same provider binding and cap.
 - Every user-facing research engagement publishes an HTML/CSS bundle under the
