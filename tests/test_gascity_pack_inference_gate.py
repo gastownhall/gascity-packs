@@ -405,7 +405,7 @@ def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -
     assert "if: steps.subset.outputs.run_gate == 'true'" in workflow
     assert "if: always() && steps.subset.outputs.run_gate == 'true'" in workflow
     assert "model-smoke)" in workflow
-    assert "superpowers|compound-engineering|gstack|bmad)" in workflow
+    assert "superpowers|compound-engineering|gstack|bmad|pstack)" in workflow
     assert "max-parallel: 2" in workflow
     assert "runs-on: blacksmith-2vcpu-ubuntu-2404" in workflow
     assert "runs-on: blacksmith-32vcpu-ubuntu-2404" in workflow
@@ -438,7 +438,7 @@ def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -
     assert re.search(r"(?m)^\s*gate: build$", gascity)
     assert re.search(r"(?m)^\s*timeout_minutes: 30$", gascity)
     assert re.search(r"(?m)^\s*gate_timeout: 30m$", gascity)
-    for pack in ("superpowers", "compound-engineering", "gstack", "bmad", "gastown"):
+    for pack in ("superpowers", "compound-engineering", "gstack", "bmad", "pstack", "gastown"):
         entry = matrix_entry(pack)
         assert re.search(r"(?m)^\s*gate: smoke$", entry)
         assert re.search(r"(?m)^\s*timeout_minutes: 25$", entry)
@@ -868,6 +868,7 @@ def test_model_smoke_selection_covers_the_five_non_canary_packs() -> None:
         "compound-engineering",
         "gstack",
         "bmad",
+        "pstack",
         "gastown",
     ]
 

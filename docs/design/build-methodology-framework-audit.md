@@ -1,8 +1,8 @@
 # Build Methodology Framework Audit
 
 This audit compares the vendored Superpowers, Compound Engineering, BMAD
-Method, and garrytan/gstack workflows against the Gas City build methodology
-implementation.
+Method, garrytan/gstack, and Cursor pstack workflows against the Gas City
+build methodology implementation.
 
 ## Core Rule
 
@@ -19,12 +19,13 @@ convoys, drains, and expansion children.
 | Compound Engineering | Wide persona review roster, cheap selector gates, structured review synthesis, and different human/agent review modes. | `compound-code-review` maps always-on, conditional, stack-specific, gap-analysis, synthesis, and apply-fix lanes into one review expansion. `compound-plan-review` provides a multi-lane plan review loop. | Planning parity is still thin: output format, resume behavior, and interactive/headless prompt behavior should become first-class planning vars/assets. Review authority should converge on `review_mode`. |
 | BMAD Method | Disciplined PRD -> architecture -> epics/stories -> readiness -> story implementation lifecycle with step-file execution and adversarial review. | `bmad-build` maps the full lifecycle onto `build-base`. `bmad-story-development` converts quick-dev handoffs into implementation, self-check, acceptance-audit, and fix lanes. `bmad-code-review-flow` preserves adversarial review fanout. | BMAD activation/config/customization, language settings, frontmatter progress, and menu/checkpoint behavior are still mostly prompt guidance rather than explicit bootstrap/step formulas. |
 | garrytan/gstack | A founder-friendly sprint: office-hours intake, CEO/design/eng/DX plan review, staff review, QA, CSO security, document-release, ship, and deploy readiness. | `gstack-build` maps Think -> Plan -> Build -> Review -> Test -> Ship -> Reflect onto `build-base`, with explicit `gstack-plan-review`, `gstack-code-review`, `gstack-qa-review`, and `gstack-release-readiness` fanouts. | Browser/runtime-specific tools such as GStack Browser, taste memory, and cross-agent browser pairing remain reference behavior for now. The beginner pack should stay focused on one approachable factory path before adding those advanced surfaces. |
+| Cursor pstack | 21 principles, method skills, and playbooks as a principle-gated factory. | `pstack-build` maps principle selection, subtraction, foundation, and lever decision onto `build-base`. Method formulas (`pstack-how`, `pstack-swarm`, `pstack-arena`, `pstack-interrogate`) stay sequential Gas City graphs. | Cursor `watch-pr` / `orch.ts` remain vendor corpus. Dest-env OpenSpec archive is host-only. |
 
 ## GC-METH-012 Disposition
 
 `GC-METH-012` (external implementation compatibility) was deferred while no
 concrete derived-pack implementations existed in the scanned evidence set. That
-deferral is now resolved: all four derived packs carry pack-local compatibility
+deferral is now resolved: all five derived packs carry pack-local compatibility
 ledgers, and a dedicated test module proves the compatibility contract for
 every pack.
 
@@ -34,9 +35,10 @@ every pack.
 | Superpowers ledger | `superpowers/REQUIREMENTS.md` |
 | BMAD ledger | `bmad/REQUIREMENTS.md` |
 | gstack ledger | `gstack/REQUIREMENTS.md` |
+| pstack ledger | `pstack/REQUIREMENTS.md` |
 | Compatibility tests | `gascity/tests/test_derived_pack_compatibility.py` |
 
-The test module inspects all four packs for: `imports.gc.source = "../gascity"`
+The test module inspects all five packs for: `imports.gc.source = "../gascity"`
 in `pack.toml`; a top-level formula that extends `build-base` with the base
 anchors in order; `[metadata.gc.methodology]` restricted to the allowed
 vocabulary; selector defaults for planning, decomposition, implementation,
@@ -46,7 +48,7 @@ providerless agents; the shared claim protocol in every agent prompt; no
 provider-native subagent/task-tool dispatch in prompt assets; and pack-local
 ledgers anchoring `GC-METH-012`.
 
-All four packs pass, so the `GC-METH-012` rows in `gascity/REQUIREMENTS.md`
+All five packs pass, so the `GC-METH-012` rows in `gascity/REQUIREMENTS.md`
 (Scenario Ledger and Deferred Follow-Up Requirements) record the requirement as
 covered. Reproduce with:
 

@@ -1,9 +1,9 @@
 description = """
 PStack implementation of build-base.
 
-This concrete workflow uses the built-in Gas City requirement, design review,
-decomposition, implementation, review, and publish helpers while preserving the
-same full-lifecycle stage contract exposed by build-base.
+This concrete workflow gates requirements, subtraction, foundation, and lever
+decisions with PStack principles, then runs implementation, evidence-bound
+review, and publish on the same full-lifecycle stage contract as build-base.
 """
 formula = "pstack-build"
 version = 1
@@ -197,9 +197,9 @@ single_lane = true
 
 [[steps]]
 id = "review"
-title = "Run starter implementation review"
+title = "Run PStack implementation review"
 needs = ["summarize-implementation"]
-metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "pstack.review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
 expand = "pstack-build-review"
 expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
 description_file = "../assets/workflows/pstack-build/review.md"

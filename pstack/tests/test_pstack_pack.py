@@ -452,6 +452,8 @@ def test_readme_documents_required_gas_city_roles() -> None:
     text = (ROOT / "README.md").read_text()
     assert "[rigs.imports.gc]" in text
     assert "../gascity/roles" in text
+    assert "gc import install" in text
+    assert "gc import add https://github.com/gastownhall/gascity-packs.git//pstack" in text
 
 
 def test_vendor_source_binding_is_immutable() -> None:

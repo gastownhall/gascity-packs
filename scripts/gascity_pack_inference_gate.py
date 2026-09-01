@@ -38,7 +38,7 @@ SMOKE_GATE = "smoke"
 ALL_GATE = "all"
 GASCITY_PACK = "gascity"
 GASTOWN_PACK = "gastown"
-MODEL_SMOKE_PACKS = ("superpowers", "compound-engineering", "gstack", "bmad", GASTOWN_PACK)
+MODEL_SMOKE_PACKS = ("superpowers", "compound-engineering", "gstack", "bmad", "pstack", GASTOWN_PACK)
 GASCITY_REMOTE_SOURCE = "https://github.com/gastownhall/gascity.git"
 BEADS_MODULE = "github.com/steveyegge/beads"
 REVIEW_SUBJECT_PATH = Path(".gc/inference-gate/review-subject.diff")
@@ -676,6 +676,8 @@ def make_pack_specs() -> dict[str, PackSpec]:
                 "pstack.review-synthesizer",
             ),
             required_build_routes=(
+                "pstack.architect",
+                "pstack.coordinator",
                 "pstack.investigator",
                 "pstack.implementation-worker",
                 "pstack.reviewer",

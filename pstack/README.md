@@ -17,16 +17,28 @@ PStack is a Gas City methodology pack for principle-driven software change. It k
 Prerequisites: Gas City installed and a city running, plus a git repository
 registered as a rig.
 
-1. **Import the pack.** From the city directory:
+```sh
+brew install gascity
+gc init ~/my-city
+cd ~/my-city
+gc start
+mkdir proj && cd proj && git init
+gc rig add .
+```
+
+1. **Import the pack.** From the city directory. This writes the import,
+   fetches the latest release, and pins it in `packs.lock`:
 
    ```sh
    gc import add https://github.com/gastownhall/gascity-packs.git//pstack
    ```
 
-   Contributors working in this checkout can point `source` at `../pstack`
-   instead, and the rig role import at `../gascity/roles`.
+   Contributors working on the packs themselves can clone
+   `https://github.com/gastownhall/gascity-packs` and point `source` at
+   `../gascity-packs/pstack` instead, and the rig role import at
+   `../gascity/roles` or `../gascity-packs/gascity/roles`.
 
-2. **Import the rig roles in `city.toml`.**
+2. **Import the rig roles in `city.toml`.** Then run `gc import install`:
 
    ```toml
    [[rigs]]
@@ -34,7 +46,10 @@ registered as a rig.
 
    [rigs.imports.gc]
    source = "https://github.com/gastownhall/gascity-packs.git//gascity/roles"
-   # local checkout: source = "../gascity/roles"
+   ```
+
+   ```sh
+   gc import install
    ```
 
 3. **Launch a build.** `pstack-build` is targeted. Create a bead, then sling:
