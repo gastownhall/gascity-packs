@@ -42,6 +42,7 @@ on:
           - compound-engineering
           - gstack
           - bmad
+          - pstack
           - gastown
         default: all-supported
   repository_dispatch:

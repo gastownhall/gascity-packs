@@ -13,7 +13,7 @@ publish. It ships three things:
   the right formula for you.
 - **The `build-base` contract** — the virtual stage sequence that the
   methodology packs in this repository (bmad, compound-engineering,
-  superpowers, gstack) extend and override.
+  superpowers, gstack, pstack) extend and override.
 
 ## Quick Start: your first build
 

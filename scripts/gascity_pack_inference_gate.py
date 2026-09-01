@@ -661,6 +661,28 @@ def make_pack_specs() -> dict[str, PackSpec]:
             ),
             smoke_agent="bmad.prd-writer",
         ),
+        "pstack": PackSpec(
+            name="pstack",
+            binding="pstack",
+            source=REPO_ROOT / "pstack",
+            roles_source=roles_source,
+            validator_source=validator_source,
+            review_formula="pstack-review",
+            build_formula="pstack-build",
+            default_gates=(REVIEW_GATE, BUILD_GATE),
+            setup_formulas=("pstack-review", "pstack-build"),
+            required_review_routes=(
+                "pstack.reviewer",
+                "pstack.review-synthesizer",
+            ),
+            required_build_routes=(
+                "pstack.investigator",
+                "pstack.implementation-worker",
+                "pstack.reviewer",
+                "pstack.review-synthesizer",
+            ),
+            smoke_agent="pstack.investigator",
+        ),
         GASTOWN_PACK: PackSpec(
             name=GASTOWN_PACK,
             binding=GASTOWN_PACK,
@@ -686,7 +708,7 @@ def make_pack_specs() -> dict[str, PackSpec]:
 
 
 PACK_SPECS = make_pack_specs()
-METHODOLOGY_PACKS = ("superpowers", "compound-engineering", "gstack", "bmad")
+METHODOLOGY_PACKS = ("superpowers", "compound-engineering", "gstack", "bmad", "pstack")
 SUPPORTED_PACK_CHOICES = (*PACK_SPECS.keys(), "methodology", "model-smoke", "all-supported")
 
 

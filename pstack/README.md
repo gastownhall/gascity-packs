@@ -2,29 +2,54 @@
 
 PStack is a Gas City methodology pack for principle-driven software change. It keeps durable execution in Gas City and Beads while adding a complete 21-principle policy layer, evidence schemas, providerless roles, and composable methods/programs.
 
-## Use
+## When to choose pstack
 
-Add PStack at city scope:
+- You want all 21 PStack principles enforced as Gas City gates, not as a
+  Cursor plugin runtime.
+- You want composable methods (`pstack-how`, `pstack-swarm`, `pstack-arena`,
+  `pstack-interrogate`) on the same `build-base` contract as BMAD and Superpowers.
+- Prefer `build-basic` when you want the default starter factory.
+- Prefer `superpowers` when you want hard spec-approval gates and TDD.
+- Prefer `bmad` when you want PRD and story readiness before code.
 
-```toml
-[imports.pstack]
-source = "../pstack"
-```
+## Quick start
 
-The target rig also needs Gas City's providerless runtime roles. In a local
-checkout, add this under the rig:
+Prerequisites: Gas City installed and a city running, plus a git repository
+registered as a rig.
 
-```toml
-[rigs.imports.gc]
-source = "../gascity/roles"
-```
+1. **Import the pack.** From the city directory:
 
-Use the published `gascity/roles` pack URL instead of the local path when
-installing PStack remotely. This role import supplies `gc.run-operator`,
-`gc.publisher`, and the other shared lifecycle targets without importing a
-second methodology pack.
+   ```sh
+   gc import add https://github.com/gastownhall/gascity-packs.git//pstack
+   ```
 
-Run `pstack-build` when the change follows the standard build lifecycle. Use `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-migration`, `pstack-perf`, or `pstack-prototype` for explicit change shapes. `pstack-how`, `pstack-why`, `pstack-swarm`, `pstack-arena`, `pstack-interrogate`, `pstack-autonomous-run`, and `pstack-orchestrate` are composable formulas.
+   Contributors working in this checkout can point `source` at `../pstack`
+   instead, and the rig role import at `../gascity/roles`.
+
+2. **Import the rig roles in `city.toml`.**
+
+   ```toml
+   [[rigs]]
+   name = "proj"
+
+   [rigs.imports.gc]
+   source = "https://github.com/gastownhall/gascity-packs.git//gascity/roles"
+   # local checkout: source = "../gascity/roles"
+   ```
+
+3. **Launch a build.** `pstack-build` is targeted. Create a bead, then sling:
+
+   ```sh
+   gc bd create "Add a --json flag to the export command"
+   gc sling gc.run-operator <bead-id> --on pstack-build \
+     --var artifact_root=plans/json-flag/build \
+     --var drain_policy=separate
+   ```
+
+Run `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-migration`,
+`pstack-perf`, or `pstack-prototype` for explicit change shapes. `pstack-how`,
+`pstack-why`, `pstack-swarm`, `pstack-arena`, `pstack-interrogate`,
+`pstack-autonomous-run`, and `pstack-orchestrate` are composable formulas.
 
 The pack imports Gas City's `build-base` and uses the shared `gc.build.*` schemas for ordinary lifecycle artifacts. PStack-specific artifacts cover foundation, lever decisions, reproduction/root cause, principle applications, candidate comparison, orchestration state, and revision-bound verification.
 

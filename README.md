@@ -187,6 +187,8 @@ Use two mode concepts when comparing methodology packs:
 - [gstack](./gstack) imports `gascity` as `gc` and implements `build-base`
   with vendored garrytan/gstack office-hours, autoplan, review, QA, security,
   documentation, and release-readiness skills mapped to Gas City fanouts.
+- [pstack](./pstack) imports `gascity` as `gc` and implements `build-base`
+  with vendored Cursor pstack principles and Gas City-native method formulas.
 
 See the [build methodology framework audit](./docs/design/build-methodology-framework-audit.md)
 for the current parity assessment and proposed beginner-friendly updates.
