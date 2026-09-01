@@ -19,6 +19,5 @@
 __pycache__/
 *.py[cod]
 
-# Local OpenSpec apply clones and session trails
 .work/
 .audit/
