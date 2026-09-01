@@ -1,0 +1,42 @@
+description = "PStack diagnose a captured profile or trace artifact."
+formula = "pstack-trace-forensics"
+version = 1
+
+target_required = false
+mode = "report"
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[catalog]
+name = "pstack-trace-forensics"
+description = "PStack diagnose a captured profile or trace artifact."
+
+[vars]
+[vars.subject_path]
+description = "Input context or subject path."
+required = true
+
+[vars.artifact_path]
+description = "Output evidence artifact path."
+required = true
+
+[[steps]]
+id = "collect"
+title = "Collect bounded evidence"
+metadata = { "gc.run_target" = "pstack.investigator" }
+description_file = "../assets/workflows/pstack-methods/collect.md"
+
+[[steps]]
+id = "write"
+title = "Write PStack evidence"
+needs = ["collect"]
+metadata = { "gc.run_target" = "pstack.investigator", "gc.build.artifact_schema" = "pstack.verification.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.verification.v1", "pstack.artifact_path" = "{{artifact_path}}" }
+description_file = "../assets/workflows/pstack-methods/write.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

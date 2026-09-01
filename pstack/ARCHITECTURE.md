@@ -19,10 +19,12 @@ Map each official block to one Gas City surface.
 | Cursor block | Gas City surface |
 |---|---|
 | `skills/principle-*` (21) | `pstack/skills/principle-*` plus `principles/manifest.toml` |
-| `skills/poteto-mode/playbooks/*.md` | Runtime skill copy. Formulas select playbooks by formula identity, not `pstack.skill` metadata |
+| `skills/poteto-mode/playbooks/*.md` | Runtime skill copy. Gas City entry points are formula names (`gc sling ... --on pstack-<playbook>`), not `/poteto-mode` |
 | `how`, `why`, `architect`, `swarm`, `arena`, `interrogate` | `pstack-how`, `pstack-why`, `pstack-architect`, `pstack-swarm`, `pstack-arena`, `pstack-interrogate` |
-| Feature, bug-fix, refactor, perf, prototype | `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-perf`, `pstack-prototype` extending `pstack-build` |
+| Feature, bug-fix, refactor, perf, prototype, investigation | `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-perf`, `pstack-prototype`, `pstack-investigation` |
+| Hillclimb, runtime-forensics, trace-forensics, eval, authoring-a-skill, session-pickup, multi-phase-plan, visual-parity | Matching `pstack-*` method formulas. Sequential evidence producers, not Cursor Task fanout |
 | Babysit, shipping, orchestrate, autonomous-run, autopilot | `pstack-babysit`, `pstack-shipping`, `pstack-orchestrate`, `pstack-autonomous-run`, `pstack-autopilot-*` extending `pstack-build` |
+| `opening-a-pr`, `pause-safely`, `worktree-cleanup` | Unsupported as sling formulas. Invoked from other programs or host disk cleanup |
 | `spawn_subagent` / Cursor `Task` | Gas City `gc.run_target` plus Beads claims. No provider task engine |
 | `scripts/watch-pr`, `scripts/orch/orch.ts` | Cursor upstream text. Unsupported as Gas City runtime. Tests grep pack-owned formulas, assets, and agents |
 | `agents/comment-sicko.md`, `agents/poteto-agent.md` | Host-plugin provenance under `vendor/pstack/agents/`. Not Gas City formulas. Pack-owned `pstack/agents/` stays `gc-role-worker` wrappers |

@@ -62,9 +62,12 @@ gc rig add .
    ```
 
 Run `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-migration`,
-`pstack-perf`, or `pstack-prototype` for explicit change shapes. `pstack-how`,
-`pstack-why`, `pstack-swarm`, `pstack-arena`, `pstack-interrogate`,
-`pstack-autonomous-run`, and `pstack-orchestrate` are composable formulas.
+`pstack-perf`, or `pstack-prototype` for explicit change shapes. Cursor
+playbooks sling as `pstack-<playbook>` formula names, not `/poteto-mode`.
+`opening-a-pr`, `pause-safely`, and `worktree-cleanup` stay unsupported as
+sling formulas. `pstack-how`, `pstack-why`, `pstack-swarm`, `pstack-arena`,
+`pstack-interrogate`, `pstack-autonomous-run`, and `pstack-orchestrate` are
+composable formulas.
 
 The pack imports Gas City's `build-base` and uses the shared `gc.build.*` schemas for ordinary lifecycle artifacts. PStack-specific artifacts cover foundation, lever decisions, reproduction/root cause, principle applications, candidate comparison, orchestration state, and revision-bound verification.
 

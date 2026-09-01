@@ -112,12 +112,55 @@ def depends_on(steps: list[dict], target: str, prerequisite: str) -> bool:
             pending.append(dependency)
     return False
 
+CURSOR_PLAYBOOK_FORMULAS = {
+    "investigation": "pstack-investigation",
+    "bug-fix": "pstack-bug-fix",
+    "perf-issue": "pstack-perf",
+    "hillclimb": "pstack-hillclimb",
+    "runtime-forensics": "pstack-runtime-forensics",
+    "trace-forensics": "pstack-trace-forensics",
+    "feature": "pstack-feature",
+    "refactoring": "pstack-refactor",
+    "prototype": "pstack-prototype",
+    "visual-parity": "pstack-visual-parity",
+    "authoring-a-skill": "pstack-authoring-a-skill",
+    "eval": "pstack-eval",
+    "babysit": "pstack-babysit",
+    "shipping": "pstack-shipping",
+    "autonomous-run": "pstack-autonomous-run",
+    "orchestrate": "pstack-orchestrate",
+    "autopilot-full": "pstack-autopilot-full",
+    "autopilot-stack": "pstack-autopilot-stack",
+    "session-pickup": "pstack-session-pickup",
+    "multi-phase-plan": "pstack-multi-phase-plan",
+}
+CURSOR_PLAYBOOKS_UNSUPPORTED = frozenset(
+    {"opening-a-pr", "pause-safely", "worktree-cleanup"}
+)
+
+
+def test_cursor_playbooks_have_formulas_or_are_named_unsupported() -> None:
+    playbooks = {
+        path.stem
+        for path in (ROOT / "vendor/pstack/skills/poteto-mode/playbooks").glob("*.md")
+    }
+    assert playbooks == set(CURSOR_PLAYBOOK_FORMULAS) | CURSOR_PLAYBOOKS_UNSUPPORTED
+    for formula in CURSOR_PLAYBOOK_FORMULAS.values():
+        assert (ROOT / "formulas" / f"{formula}.formula.toml").is_file()
+    architecture = (ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    for name in CURSOR_PLAYBOOKS_UNSUPPORTED:
+        assert f"`{name}`" in architecture
+
+
 def test_method_formulas_use_formula_identity() -> None:
     for formula in (
         "pstack-how",
         "pstack-why",
         "pstack-architect",
         "pstack-investigation",
+        "pstack-hillclimb",
+        "pstack-eval",
+        "pstack-session-pickup",
     ):
         collect = next(step for step in load_formula(formula)["steps"] if step["id"] == "collect")
         assert collect["metadata"]["gc.run_target"] == "pstack.investigator"
