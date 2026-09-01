@@ -185,7 +185,7 @@ def test_poteto_mode_router_table_matches_playbook_map() -> None:
     assert (ROOT / "assets/workflows/pstack-methods/classify.md").is_file()
 
 
-def test_route_schema_rejects_unknown_formula() -> None:
+def test_route_schema_rejects_unknown_status() -> None:
     validator = load_build_artifact_validator()
     routed = """---
 schema: pstack.route.v1
@@ -250,20 +250,24 @@ evidence:
             raise AssertionError("invalid route status was accepted")
 
 
+def load_route_checker():
+    path = ROOT / "scripts/check_route_artifact.py"
+    spec = importlib.util.spec_from_file_location("pstack_check_route_artifact", path)
+    if spec is None or spec.loader is None:
+        raise AssertionError("could not load check_route_artifact")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def assert_route_matches_map(front: dict) -> None:
-    formulas, unsupported, classes = load_playbook_map()
-    if front["status"] == "unsupported":
-        if front["playbook"] not in unsupported:
-            raise AssertionError(f"unsupported playbook not listed: {front['playbook']}")
-        if front["formula"] != "none":
-            raise AssertionError("unsupported route must use formula none")
-        return
-    if front["playbook"] not in formulas:
-        raise AssertionError(f"unknown playbook: {front['playbook']}")
-    if front["formula"] != formulas[front["playbook"]]:
-        raise AssertionError("formula does not match playbooks.toml")
-    if front["class"] != classes[front["playbook"]]:
-        raise AssertionError("class does not match playbooks.toml")
+    try:
+        load_route_checker().check_route_front_matter(
+            front,
+            map_path=ROOT / "mappings/playbooks.toml",
+        )
+    except ValueError as exc:
+        raise AssertionError(str(exc)) from exc
 
 
 def test_routed_formula_must_exist_in_playbook_map() -> None:

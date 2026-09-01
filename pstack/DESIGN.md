@@ -71,11 +71,13 @@ PStack adds only method evidence not represented by `gc.build.*`:
 | `pstack.frontier.v1` | active frontier, dependencies, owner, predicate, escalation |
 | `pstack.standing-orders.v1` | order, trigger, scope, expiry, evidence target |
 | `pstack.program-status.v1` | goal, phase, predicate, blockers, restart token, evidence |
+| `pstack.route.v1` | playbook, formula, class, reason, evidence |
 
 Every PStack artifact carries stable work/claim references and evidence status. Every PStack schema declares the shared coverage-status vocabulary and `producer.attempt` so the shared validator can validate nonempty trace coverage. Static or metadata evidence is never labeled runtime evidence.
 
 ## Formula graph
 
+- `pstack-poteto-mode`: classify then write `pstack.route.v1`. No auto-sling.
 - `pstack-how`, `pstack-why`, and `pstack-investigation`: read-mostly sequence → evidence artifact.
 - `pstack-swarm`: sequential frame, fanout, and fanin steps writing `pstack.swarm-result.v1`. `gc.graph_operator` is annotation until Gas City interprets it.
 - `pstack-arena`: sequential trigger, candidates, judge, and verify steps. Candidates write one `pstack.arena-candidate.v1` path. `gc.graph_operator` is annotation until Gas City interprets it.
