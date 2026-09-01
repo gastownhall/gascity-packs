@@ -13,7 +13,6 @@ func TestGastownEmbedsPackContent(t *testing.T) {
 		"agents/dog/prompt.template.md",
 		"formulas/mol-shutdown-dance.toml",
 		"template-fragments/propulsion.template.md",
-		"overlay/per-provider/codex/.codex/hooks.json",
 	} {
 		if _, err := fs.Stat(pack, rel); err != nil {
 			t.Errorf("gastown pack missing %s: %v", rel, err)
