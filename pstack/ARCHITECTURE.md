@@ -19,10 +19,12 @@ Map each official block to one Gas City surface.
 | Cursor block | Gas City surface |
 |---|---|
 | `skills/principle-*` (21) | `pstack/skills/principle-*` plus `principles/manifest.toml` |
-| `skills/poteto-mode/playbooks/*.md` | Runtime skill copy. Gas City entry points are formula names (`gc sling ... --on pstack-<playbook>`), not `/poteto-mode` |
+| `skills/poteto-mode/playbooks/*.md` | Runtime skill copy. Gas City entry points are formula names, not `/poteto-mode`. Names are not `pstack-<playbook>` for every stem |
 | `how`, `why`, `architect`, `swarm`, `arena`, `interrogate` | `pstack-how`, `pstack-why`, `pstack-architect`, `pstack-swarm`, `pstack-arena`, `pstack-interrogate` |
-| Feature, bug-fix, refactor, perf, prototype, investigation | `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-perf`, `pstack-prototype`, `pstack-investigation` |
-| Hillclimb, runtime-forensics, trace-forensics, eval, authoring-a-skill, session-pickup, multi-phase-plan, visual-parity | Matching `pstack-*` method formulas. Sequential evidence producers, not Cursor Task fanout |
+| `feature`, `bug-fix`, `prototype` | `pstack-feature`, `pstack-bug-fix`, `pstack-prototype` extending `pstack-build` |
+| `perf-issue`, `refactoring` | `pstack-perf` and `pstack-refactor`, with aliases `pstack-perf-issue` and `pstack-refactoring` |
+| `investigation` | `pstack-investigation` sequential collect/write |
+| `hillclimb`, `runtime-forensics`, `trace-forensics`, `eval`, `authoring-a-skill`, `session-pickup`, `multi-phase-plan`, `visual-parity` | Matching `pstack-*` method formulas. Sequential evidence producers. They carry `pstack.playbook` identity. They do not run the full Cursor playbook graph |
 | Babysit, shipping, orchestrate, autonomous-run, autopilot | `pstack-babysit`, `pstack-shipping`, `pstack-orchestrate`, `pstack-autonomous-run`, `pstack-autopilot-*` extending `pstack-build` |
 | `opening-a-pr`, `pause-safely`, `worktree-cleanup` | Unsupported as sling formulas. Invoked from other programs or host disk cleanup |
 | `spawn_subagent` / Cursor `Task` | Gas City `gc.run_target` plus Beads claims. No provider task engine |

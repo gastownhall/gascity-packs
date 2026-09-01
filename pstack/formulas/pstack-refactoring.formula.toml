@@ -1,0 +1,13 @@
+description = "Alias of pstack-refactor for the Cursor refactoring playbook stem."
+formula = "pstack-refactoring"
+version = 1
+
+extends = ["pstack-refactor"]
+target_required = true
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[catalog]
+name = "pstack-refactoring"
+description = "Alias of pstack-refactor for the Cursor refactoring playbook stem."

@@ -61,13 +61,18 @@ gc rig add .
      --var drain_policy=separate
    ```
 
-Run `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-migration`,
-`pstack-perf`, or `pstack-prototype` for explicit change shapes. Cursor
-playbooks sling as `pstack-<playbook>` formula names, not `/poteto-mode`.
+Run `pstack-feature`, `pstack-bug-fix`, `pstack-refactor` (alias
+`pstack-refactoring`), `pstack-migration`, `pstack-perf` (alias
+`pstack-perf-issue`), or `pstack-prototype` for explicit change shapes.
+Method formulas `pstack-investigation`, `pstack-hillclimb`,
+`pstack-runtime-forensics`, `pstack-trace-forensics`, `pstack-eval`,
+`pstack-authoring-a-skill`, `pstack-session-pickup`,
+`pstack-multi-phase-plan`, and `pstack-visual-parity` are sequential
+evidence producers. They are not the full Cursor playbook graphs.
 `opening-a-pr`, `pause-safely`, and `worktree-cleanup` stay unsupported as
 sling formulas. `pstack-how`, `pstack-why`, `pstack-swarm`, `pstack-arena`,
 `pstack-interrogate`, `pstack-autonomous-run`, and `pstack-orchestrate` are
-composable formulas.
+composable formulas. Do not sling `/poteto-mode`.
 
 The pack imports Gas City's `build-base` and uses the shared `gc.build.*` schemas for ordinary lifecycle artifacts. PStack-specific artifacts cover foundation, lever decisions, reproduction/root cause, principle applications, candidate comparison, orchestration state, and revision-bound verification.
 

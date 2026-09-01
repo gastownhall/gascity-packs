@@ -147,9 +147,12 @@ def test_cursor_playbooks_have_formulas_or_are_named_unsupported() -> None:
     assert playbooks == set(CURSOR_PLAYBOOK_FORMULAS) | CURSOR_PLAYBOOKS_UNSUPPORTED
     for formula in CURSOR_PLAYBOOK_FORMULAS.values():
         assert (ROOT / "formulas" / f"{formula}.formula.toml").is_file()
+    assert (ROOT / "formulas/pstack-perf-issue.formula.toml").is_file()
+    assert (ROOT / "formulas/pstack-refactoring.formula.toml").is_file()
     architecture = (ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")
     for name in CURSOR_PLAYBOOKS_UNSUPPORTED:
         assert f"`{name}`" in architecture
+    assert "not `pstack-<playbook>`" in architecture
 
 
 def test_method_formulas_use_formula_identity() -> None:
@@ -165,6 +168,7 @@ def test_method_formulas_use_formula_identity() -> None:
         collect = next(step for step in load_formula(formula)["steps"] if step["id"] == "collect")
         assert collect["metadata"]["gc.run_target"] == "pstack.investigator"
         assert "pstack.skill" not in collect["metadata"]
+        assert collect["metadata"]["pstack.playbook"]
 
 
 def test_pack_runtime_schema_context_is_documented() -> None:

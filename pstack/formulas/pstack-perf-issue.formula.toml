@@ -1,0 +1,13 @@
+description = "Alias of pstack-perf for the Cursor perf-issue playbook stem."
+formula = "pstack-perf-issue"
+version = 1
+
+extends = ["pstack-perf"]
+target_required = true
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[catalog]
+name = "pstack-perf-issue"
+description = "Alias of pstack-perf for the Cursor perf-issue playbook stem."

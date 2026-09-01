@@ -24,7 +24,7 @@ required = true
 [[steps]]
 id = "collect"
 title = "Collect bounded evidence"
-metadata = { "gc.run_target" = "pstack.investigator" }
+metadata = { "gc.run_target" = "pstack.investigator", "pstack.playbook" = "architect" }
 description_file = "../assets/workflows/pstack-methods/collect.md"
 
 [[steps]]
