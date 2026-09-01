@@ -195,7 +195,9 @@ gascity-packs methodology packs (`bmad`, `superpowers`, `gstack`,
 `compound-engineering`) extending Gas City virtual contracts. The listed
 vendor paths MUST be `vendor/pstack/skills`, `vendor/pstack/agents`,
 `vendor/pstack/README.md`, and `vendor/pstack/LICENSE`. Guide docs and Benny
-automations MUST NOT be vendored. Cursor plugin agent markdown MUST live
+automations MUST NOT be vendored. `vendor/pstack/README.md` MUST name the
+Gas City listed subset and the GitHub URL of the uncopied Cursor guide.
+Cursor plugin agent markdown MUST live
 under `vendor/pstack/agents/` and MUST NOT replace pack-owned
 `pstack/agents/` Gas City role wrappers. Runtime `skills/` MUST match
 `vendor/pstack/skills/` byte-for-byte. Formulas MUST NOT use `SKILL.md` as
@@ -221,6 +223,7 @@ playbooks and principles onto Gas City formulas and primitives.
 - **AND** `vendor/pstack/agents/comment-sicko.md` and `vendor/pstack/agents/poteto-agent.md` exist
 - **AND** pack-owned `pstack/agents/` still contains Gas City role directories
 - **AND** `vendor/pstack/docs` and `vendor/pstack/automations` do not exist
+- **AND** `vendor/pstack/README.md` names the Gas City listed subset and the GitHub Cursor guide URL
 
 #### Scenario: Runtime prompts do not mutate source material
 

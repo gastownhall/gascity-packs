@@ -481,6 +481,21 @@ def test_vendor_source_binding_is_immutable() -> None:
     assert "agents" not in data["runtime_adaptation"]["skills_copy"]
     for extra in ("docs", "automations"):
         assert not (ROOT / "vendor/pstack" / extra).exists()
+    readme = (ROOT / "vendor/pstack/README.md").read_text(encoding="utf-8")
+    assert readme.startswith("# pstack (Gas City vendor)")
+    assert "listed subset" in readme
+    assert "https://github.com/cursor/plugins/blob/" in readme
+    assert "6fecddba65801f9b9c08b8b328d998ee5b09d290" in readme
+    assert "(./docs/guide/README.md)" not in readme
+    assert "(./automations/benny/" not in readme
+    vendor_names = {path.name for path in (ROOT / "vendor/pstack").iterdir()}
+    assert vendor_names == {
+        "skills",
+        "agents",
+        "LICENSE",
+        "README.md",
+        "upstream.toml",
+    }
 
 
 def test_vendor_script_refuses_pack_owned_dest() -> None:
@@ -490,6 +505,7 @@ def test_vendor_script_refuses_pack_owned_dest() -> None:
         raise AssertionError("could not load vendor_canonical_pstack")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    assert module.LISTED == ("skills", "agents", "LICENSE", "README.md")
     try:
         module.assert_safe_paths(ROOT, ROOT / "skills")
     except SystemExit:

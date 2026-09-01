@@ -67,8 +67,9 @@ The pack is a registry of formulas, schemas, and source bindings.
 - Runtime `skills/` is a byte copy of vendored skills. It is methodology
   corpus, not formula `description_file`.
 - Cursor plugin agents live under `vendor/pstack/agents/`. Pack-owned
-  `pstack/agents/` are Gas City role wrappers. Guide docs and Benny
-  automations are not vendored.
+  `pstack/agents/` are Gas City role wrappers. Cursor `docs/guide` and Benny
+  automations are not vendored. `vendor/pstack/README.md` names that subset
+  and the GitHub guide URL.
 
 ## Non-goals
 

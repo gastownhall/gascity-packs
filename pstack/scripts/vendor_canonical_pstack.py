@@ -11,8 +11,21 @@ from pathlib import Path
 PACK_ROOT = Path(__file__).resolve().parents[1]
 COMMIT = "6fecddba65801f9b9c08b8b328d998ee5b09d290"
 TARBALL = f"https://codeload.github.com/cursor/plugins/tar.gz/{COMMIT}"
+GUIDE_URL = f"https://github.com/cursor/plugins/blob/{COMMIT}/pstack/docs/guide/README.md"
 PREFIX_PARTS = ("pstack",)
 LISTED = ("skills", "agents", "LICENSE", "README.md")
+README_NOTICE = f"""# pstack (Gas City vendor)
+
+This directory is the listed subset of official Cursor pstack at
+`cursor/plugins` path `pstack` commit `{COMMIT}`. Copied paths are
+`skills/`, `agents/`, `README.md`, and `LICENSE`. The Cursor product
+guide is not copied. Read it at {GUIDE_URL}.
+
+Gas City mapping lives outside this directory.
+
+---
+
+"""
 
 
 def assert_safe_paths(dest: Path, runtime: Path) -> None:
@@ -70,6 +83,39 @@ rule = "Never edit vendored source to adapt provider or runtime behavior. Do not
     )
 
 
+UNCOPIED_LINKS = {
+    "(./docs/guide/README.md)": f"({GUIDE_URL})",
+    "(./automations/benny/FOR_AGENTS.md)": (
+        f"(https://github.com/cursor/plugins/blob/{COMMIT}/pstack/automations/benny/FOR_AGENTS.md)"
+    ),
+    "(./automations/benny/)": (
+        f"(https://github.com/cursor/plugins/blob/{COMMIT}/pstack/automations/benny/)"
+    ),
+}
+
+
+def annotate_readme(dest: Path) -> None:
+    path = dest / "README.md"
+    body = path.read_text(encoding="utf-8")
+    if body.startswith("# pstack (Gas City vendor)"):
+        _, _, rest = body.partition("\n---\n\n")
+        body = rest
+    for old, new in UNCOPIED_LINKS.items():
+        body = body.replace(old, new)
+    path.write_text(README_NOTICE + body, encoding="utf-8")
+
+
+def prune_unlisted(dest: Path) -> None:
+    allowed = set(LISTED) | {"upstream.toml"}
+    for child in dest.iterdir():
+        if child.name in allowed:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def sync_runtime(vendor: Path, runtime: Path) -> None:
     if runtime.exists():
         shutil.rmtree(runtime)
@@ -93,7 +139,9 @@ def vendor(dest: Path, runtime: Path) -> None:
         if not src.is_dir():
             raise SystemExit(f"missing {src}")
         copy_listed(src, dest)
+        annotate_readme(dest)
         write_pin(dest)
+        prune_unlisted(dest)
         sync_runtime(dest, runtime)
 
 

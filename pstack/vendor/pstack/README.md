@@ -1,3 +1,14 @@
+# pstack (Gas City vendor)
+
+This directory is the listed subset of official Cursor pstack at
+`cursor/plugins` path `pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290`. Copied paths are
+`skills/`, `agents/`, `README.md`, and `LICENSE`. The Cursor product
+guide is not copied. Read it at https://github.com/cursor/plugins/blob/6fecddba65801f9b9c08b8b328d998ee5b09d290/pstack/docs/guide/README.md.
+
+Gas City mapping lives outside this directory.
+
+---
+
 # pstack
 
 i'm [poteto](https://x.com/poteto). i'm not a president or ceo, but i've worked with millions of lines of code at Meta, Netflix, and Cursor. i'm also on the react core team where i help build and maintain react compiler.
@@ -25,7 +36,7 @@ two steps:
 1. run [`/setup-pstack`](./skills/setup-pstack/SKILL.md) and choose which models you want.
 2. use [`/poteto-mode`](./skills/poteto-mode/SKILL.md) whenever you're doing anything that requires rigor.
 
-new here? the [pstack guide](./docs/guide/README.md) walks you through a first real task, from setup and prompting through verification and overnight runs.
+new here? the [pstack guide](https://github.com/cursor/plugins/blob/6fecddba65801f9b9c08b8b328d998ee5b09d290/pstack/docs/guide/README.md) walks you through a first real task, from setup and prompting through verification and overnight runs.
 
 that's it. the other skills are situational; the mode skill uses them for you as needed. out of the box the mode splits work by model strength: precisely-specified code goes to sol, fast mechanical code goes to grok, and prose and judgment go to fable. the default panel is fable / sol / grok / opus 5. [`/setup-pstack`](./skills/setup-pstack/SKILL.md) changes any of it.
 
@@ -248,9 +259,9 @@ models are configurable too. type [`/setup-pstack`](./skills/setup-pstack/SKILL.
 
 ## automations
 
-pstack also ships a dormant [benny automation pack](./automations/benny/). benny triages slack issue reports, then reproduces and fixes confirmed bugs with real ui evidence. its files are not registered as slash skills.
+pstack also ships a dormant [benny automation pack](https://github.com/cursor/plugins/blob/6fecddba65801f9b9c08b8b328d998ee5b09d290/pstack/automations/benny/). benny triages slack issue reports, then reproduces and fixes confirmed bugs with real ui evidence. its files are not registered as slash skills.
 
-to set it up, point cursor at [`FOR_AGENTS.md`](./automations/benny/FOR_AGENTS.md). setup copies the pack into the target repository at `.cursor/automations/benny/`, enables pstack there for shared skills, and keeps user configuration outside the copied pack.
+to set it up, point cursor at [`FOR_AGENTS.md`](https://github.com/cursor/plugins/blob/6fecddba65801f9b9c08b8b328d998ee5b09d290/pstack/automations/benny/FOR_AGENTS.md). setup copies the pack into the target repository at `.cursor/automations/benny/`, enables pstack there for shared skills, and keeps user configuration outside the copied pack.
 
 ## license
 

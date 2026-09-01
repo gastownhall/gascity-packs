@@ -1,10 +1,7 @@
 ## Why
 
-The PStack Gas City pack already matches the implemented refresh contract
-(compiler requirement, empty doctor delta, `no_removal_opportunity`, vendor pin
-`49d6ae8`, host-boundary playbooks). A 2026-08-31 audit found the live OpenSpec
-still claims behavior the pack does not execute, while two refresh scenarios
-never landed in durable specs. Naive archive of
+The pack maps official Cursor pstack onto Gas City. Live dest-env Gherkin
+still claims executed fanout and a host-port pin. Naive archive of
 `refresh-pstack-pack-source-and-formula-requirements` would collide with
 hand-synced live files and drop the 14-schema list.
 
@@ -36,6 +33,8 @@ hand-synced live files and drop the 14-schema list.
   Cursor playbooks may name `watch-pr` and `orch.ts` as upstream text.
 - Vendor skills, Cursor plugin agents, README, and LICENSE from that
   Cursor subtree. Keep pack-owned `pstack/agents/` as Gas City role wrappers.
+- Do not vendor Cursor `docs/guide`. Annotate `vendor/pstack/README.md` with
+  the listed-subset notice and the GitHub guide URL.
 
 ## Capabilities
 
@@ -53,5 +52,6 @@ None.
 
 Affected surfaces are `dev-env/openspec/specs/pstack-*`,
 `gascity-packs/pstack/TRACEABILITY.md`, `gascity-packs/pstack/DESIGN.md`, and
-focused pack tests. No scheduler, graph-operator interpreter, vendor refresh,
-registry entry, or archive of the earlier refresh change is included.
+focused pack tests. No scheduler, graph-operator interpreter, moving Cursor
+`main` pin, registry entry, or archive of the earlier refresh change is
+included. Cursor product guide docs are not vendored.

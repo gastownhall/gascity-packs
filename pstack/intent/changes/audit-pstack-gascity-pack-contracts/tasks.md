@@ -49,3 +49,4 @@ Needs 3.
 - [x] 5.3 Pin vendor `source` to `https://github.com/cursor/plugins` path `pstack` commit `6fecddba`. Do not pin `tommy-ca/pstack`.
 - [x] 5.4 Keep host-boundary greps on pack-owned formulas, assets, and agents. Vendored Cursor playbooks may name `watch-pr` and `orch.ts`.
 - [x] 5.5 Vendor skills, Cursor plugin agents, README, and LICENSE. Keep pack-owned `pstack/agents/` as Gas City wrappers.
+- [x] 5.6 Do not vendor `docs/guide`. Annotate vendor README with the listed-subset notice and the GitHub guide URL.

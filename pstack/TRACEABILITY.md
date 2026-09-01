@@ -4,15 +4,16 @@
 
 | Source | Revision or locator | Use |
 |---|---|---|
-| Cursor pstack | `https://github.com/cursor/plugins/tree/main/pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290` | Canonical vendor corpus. Listed paths are skills, agents, README, and LICENSE |
+| Cursor pstack | `https://github.com/cursor/plugins/tree/main/pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290` | Canonical vendor corpus. Listed paths are skills, agents, README, and LICENSE. `docs/guide` is not copied |
 | Workflow pack shape | gascity-packs `bmad`, `superpowers`, `gstack`, `compound-engineering` | Reference implementation for mapping a methodology onto `build-base` |
 | Gas City primitives | `gascity/formulas` virtual contracts | `build-base` and selector bases the pack extends |
 | Gist architecture | `23f21e688fc76b360d382e5cafb8d9c1` | Historical build-base, selector, formula, and schema notes |
 | Dev-env OpenSpec | `dev-env/openspec/specs/pstack-gascity-pack/spec.md` | Durable requirements, scenarios, architecture, ADR, and tasks |
 
 The vendor remains intentionally pinned to this reviewed Cursor plugins
-commit. Later Cursor `main` changes, including `README.md` and
-`skills/poteto-mode/playbooks/`, are not silently imported.
+commit. Later Cursor `main` changes, including `README.md`,
+`docs/guide/`, and `skills/poteto-mode/playbooks/`, are not silently imported.
+`vendor/pstack/README.md` names the listed subset and the GitHub guide URL.
 A future source refresh must use a separate intent change and repeat the
 path/parity review. Do not treat a moving maintained SHA as the pack pin.
 Do not pin `tommy-ca/pstack`.
