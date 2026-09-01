@@ -48,4 +48,4 @@ Needs 3.
 - [x] 5.2 Record gascity-packs workflow packs and `build-base` primitives as packing reference.
 - [x] 5.3 Pin vendor `source` to `https://github.com/cursor/plugins` path `pstack` commit `6fecddba`. Do not pin `tommy-ca/pstack`.
 - [x] 5.4 Keep host-boundary greps on pack-owned formulas, assets, and agents. Vendored Cursor playbooks may name `watch-pr` and `orch.ts`.
-- [x] 5.5 Vendor only skills, README, and LICENSE from that Cursor subtree.
+- [x] 5.5 Vendor skills, Cursor plugin agents, README, and LICENSE. Keep pack-owned `pstack/agents/` as Gas City wrappers.

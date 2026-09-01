@@ -34,7 +34,8 @@ hand-synced live files and drop the 14-schema list.
   path `pstack` commit `6fecddba`. Do not pin `tommy-ca/pstack`.
 - Keep host-boundary on pack-owned formulas, assets, and agents. Vendored
   Cursor playbooks may name `watch-pr` and `orch.ts` as upstream text.
-- Vendor only skills, README, and LICENSE from that Cursor subtree.
+- Vendor skills, Cursor plugin agents, README, and LICENSE from that
+  Cursor subtree. Keep pack-owned `pstack/agents/` as Gas City role wrappers.
 
 ## Capabilities
 

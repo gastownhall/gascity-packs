@@ -4,7 +4,7 @@
 
 | Source | Revision or locator | Use |
 |---|---|---|
-| Cursor pstack | `https://github.com/cursor/plugins/tree/main/pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290` | Canonical vendor corpus. Listed paths are skills, README, and LICENSE |
+| Cursor pstack | `https://github.com/cursor/plugins/tree/main/pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290` | Canonical vendor corpus. Listed paths are skills, agents, README, and LICENSE |
 | Workflow pack shape | gascity-packs `bmad`, `superpowers`, `gstack`, `compound-engineering` | Reference implementation for mapping a methodology onto `build-base` |
 | Gas City primitives | `gascity/formulas` virtual contracts | `build-base` and selector bases the pack extends |
 | Gist architecture | `23f21e688fc76b360d382e5cafb8d9c1` | Historical build-base, selector, formula, and schema notes |

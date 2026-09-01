@@ -193,9 +193,11 @@ corpus. `vendor/pstack/upstream.toml` MUST set `source` to
 `tommy-ca/pstack` or any other host port as upstream. Pack shape follows
 gascity-packs methodology packs (`bmad`, `superpowers`, `gstack`,
 `compound-engineering`) extending Gas City virtual contracts. The listed
-vendor paths MUST be `vendor/pstack/skills`, `vendor/pstack/README.md`, and
-`vendor/pstack/LICENSE` only. Plugin agent markdown, guide docs, and Benny
-automations MUST NOT be vendored. Runtime `skills/` MUST match
+vendor paths MUST be `vendor/pstack/skills`, `vendor/pstack/agents`,
+`vendor/pstack/README.md`, and `vendor/pstack/LICENSE`. Guide docs and Benny
+automations MUST NOT be vendored. Cursor plugin agent markdown MUST live
+under `vendor/pstack/agents/` and MUST NOT replace pack-owned
+`pstack/agents/` Gas City role wrappers. Runtime `skills/` MUST match
 `vendor/pstack/skills/` byte-for-byte. Formulas MUST NOT use `SKILL.md` as
 `description_file`. Gas City mapping MUST live in pack-owned formulas,
 assets, and agents. Pack-owned files MUST NOT prescribe
@@ -215,8 +217,10 @@ playbooks and principles onto Gas City formulas and primitives.
 - **AND** runtime `skills/` matches `vendor/pstack/skills/` byte-for-byte
 - **AND** `vendor/pstack/upstream.toml` `source` is `https://github.com/cursor/plugins` and `path` is `pstack`
 - **AND** pack-owned formulas, assets, and agents contain no `scripts/watch-pr` or `scripts/orch/orch.ts` live path
-- **AND** `vendor/pstack/upstream.toml` `[vendor].paths` lists only skills, README, and LICENSE
-- **AND** `vendor/pstack/agents`, `vendor/pstack/docs`, and `vendor/pstack/automations` do not exist
+- **AND** `vendor/pstack/upstream.toml` `[vendor].paths` lists skills, agents, README, and LICENSE
+- **AND** `vendor/pstack/agents/comment-sicko.md` and `vendor/pstack/agents/poteto-agent.md` exist
+- **AND** pack-owned `pstack/agents/` still contains Gas City role directories
+- **AND** `vendor/pstack/docs` and `vendor/pstack/automations` do not exist
 
 #### Scenario: Runtime prompts do not mutate source material
 

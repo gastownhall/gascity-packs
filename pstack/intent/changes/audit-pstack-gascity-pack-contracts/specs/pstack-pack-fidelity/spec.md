@@ -8,8 +8,8 @@ Rule: The pack pin is a reviewed snapshot, not latest main
 
 The PStack pack MUST record the reviewed Cursor plugins commit in
 `vendor/pstack/upstream.toml`, keep the vendored `pstack/` listed paths exact
-at that revision, omit plugin `agents/`, `docs/`, and `automations/`, and keep
-Gas City mapping outside the vendor tree. Pack-owned formulas, assets, and
+at that revision, include Cursor plugin `agents/`, omit `docs/` and
+`automations/`, and keep Gas City mapping outside the vendor tree. Pack-owned formulas, assets, and
 agents MUST NOT prescribe `scripts/watch-pr/watch-pr` or
 `scripts/orch/orch.ts`. Vendored Cursor playbooks MAY contain those paths as
 upstream text. TRACEABILITY MUST record later Cursor `main` differences as
@@ -22,7 +22,8 @@ the durable pin. The pack MUST NOT pin a host port such as `tommy-ca/pstack`.
 - **WHEN** the source and runtime fidelity checks run
 - **THEN** the recorded revision and vendored paths agree
 - **AND** pack-owned formulas, assets, and agents contain no `scripts/watch-pr` or `scripts/orch/orch.ts` live path
-- **AND** `vendor/pstack/agents`, `vendor/pstack/docs`, and `vendor/pstack/automations` do not exist
+- **AND** `vendor/pstack/agents/` contains the Cursor plugin agent files
+- **AND** `vendor/pstack/docs` and `vendor/pstack/automations` do not exist
 - **AND** Gas City mapping remains outside `vendor/pstack/`
 
 #### Scenario: Post-pin source changes remain reviewable

@@ -16,7 +16,7 @@ PREFIX_PARTS = ("pstack",)
 
 def copy_listed(src_pstack: Path, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
-    for name in ("skills", "LICENSE", "README.md"):
+    for name in ("skills", "agents", "LICENSE", "README.md"):
         item = src_pstack / name
         target = dest / name
         if target.exists():
@@ -42,6 +42,7 @@ provenance = "Official Cursor pstack plugin subtree. Gas City mapping lives outs
 [vendor]
 paths = [
   "vendor/pstack/skills",
+  "vendor/pstack/agents",
   "vendor/pstack/README.md",
   "vendor/pstack/LICENSE",
 ]

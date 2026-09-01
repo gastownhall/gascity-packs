@@ -464,11 +464,17 @@ def test_vendor_source_binding_is_immutable() -> None:
     assert "tommy-ca" not in source["source"]
     assert data["vendor"]["paths"] == [
         "vendor/pstack/skills",
+        "vendor/pstack/agents",
         "vendor/pstack/README.md",
         "vendor/pstack/LICENSE",
     ]
     assert (ROOT / "vendor/pstack/LICENSE").is_file()
-    for extra in ("agents", "docs", "automations"):
+    assert (ROOT / "vendor/pstack/agents/comment-sicko.md").is_file()
+    assert (ROOT / "vendor/pstack/agents/poteto-agent.md").is_file()
+    assert (ROOT / "agents/architect/agent.toml").is_file()
+    assert not (ROOT / "agents/comment-sicko.md").is_file()
+    assert not (ROOT / "agents/poteto-agent.md").is_file()
+    for extra in ("docs", "automations"):
         assert not (ROOT / "vendor/pstack" / extra).exists()
 
 

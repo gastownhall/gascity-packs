@@ -8,6 +8,7 @@ provenance = "Official Cursor pstack plugin subtree. Gas City mapping lives outs
 [vendor]
 paths = [
   "vendor/pstack/skills",
+  "vendor/pstack/agents",
   "vendor/pstack/README.md",
   "vendor/pstack/LICENSE",
 ]

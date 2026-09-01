@@ -6,7 +6,7 @@ This pack is a mapping, not a second pstack. Two sources of truth stay distinct.
 
 | Layer | Source | What it owns |
 |---|---|---|
-| Discipline and vendor | Official Cursor pstack at `https://github.com/cursor/plugins` path `pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290` | 21 principles, playbooks, method skills. Listed vendor paths are skills, README, LICENSE |
+| Discipline and vendor | Official Cursor pstack at `https://github.com/cursor/plugins` path `pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290` | 21 principles, playbooks, method skills, plugin agent markdown. Listed vendor paths are skills, agents, README, LICENSE |
 | Pack shape | gascity-packs methodology packs (`bmad`, `superpowers`, `gstack`, `compound-engineering`) | `pack.toml` imports `../gascity`, `*-build` extends `build-base`, selector formulas override pack-local assets |
 | Primitives | `gascity/formulas` virtual contracts | `build-base`, `planning-base`, `decomposition-base`, `implementation-base`, `implementation-item-base`, `code-review-base`, `fix-loop-base`, `implement` |
 
@@ -25,6 +25,7 @@ Map each official block to one Gas City surface.
 | Babysit, shipping, orchestrate, autonomous-run, autopilot | `pstack-babysit`, `pstack-shipping`, `pstack-orchestrate`, `pstack-autonomous-run`, `pstack-autopilot-*` extending `pstack-build` |
 | `spawn_subagent` / Cursor `Task` | Gas City `gc.run_target` plus Beads claims. No provider task engine |
 | `scripts/watch-pr`, `scripts/orch/orch.ts` | Cursor upstream text. Unsupported as Gas City runtime. Tests grep pack-owned formulas, assets, and agents |
+| `agents/comment-sicko.md`, `agents/poteto-agent.md` | Host-plugin provenance under `vendor/pstack/agents/`. Not Gas City formulas. Pack-owned `pstack/agents/` stays `gc-role-worker` wrappers |
 
 `make-bot-ui` exists in Cursor pstack 0.14.5 and is not a Gas City formula.
 
@@ -62,10 +63,12 @@ The pack is a registry of formulas, schemas, and source bindings.
 - Formula TOML is the executable graph.
 - `gc.build.*` schemas cover ordinary lifecycle artifacts.
 - `pstack.*` schemas cover pack-only evidence.
-- `vendor/pstack/` lists skills, README, and LICENSE from Cursor `pstack/` at the recorded commit.
+- `vendor/pstack/` lists skills, agents, README, and LICENSE from Cursor `pstack/` at the recorded commit.
 - Runtime `skills/` is a byte copy of vendored skills. It is methodology
   corpus, not formula `description_file`.
-- Plugin agent markdown, guide docs, and Benny automations are not vendored.
+- Cursor plugin agents live under `vendor/pstack/agents/`. Pack-owned
+  `pstack/agents/` are Gas City role wrappers. Guide docs and Benny
+  automations are not vendored.
 
 ## Non-goals
 
