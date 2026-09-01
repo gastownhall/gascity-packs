@@ -250,6 +250,48 @@ evidence:
             raise AssertionError("invalid route status was accepted")
 
 
+def assert_route_matches_map(front: dict) -> None:
+    formulas, unsupported, classes = load_playbook_map()
+    if front["status"] == "unsupported":
+        if front["playbook"] not in unsupported:
+            raise AssertionError(f"unsupported playbook not listed: {front['playbook']}")
+        if front["formula"] != "none":
+            raise AssertionError("unsupported route must use formula none")
+        return
+    if front["playbook"] not in formulas:
+        raise AssertionError(f"unknown playbook: {front['playbook']}")
+    if front["formula"] != formulas[front["playbook"]]:
+        raise AssertionError("formula does not match playbooks.toml")
+    if front["class"] != classes[front["playbook"]]:
+        raise AssertionError("class does not match playbooks.toml")
+
+
+def test_routed_formula_must_exist_in_playbook_map() -> None:
+    formulas, _unsupported, _classes = load_playbook_map()
+    assert_route_matches_map(
+        {
+            "status": "routed",
+            "playbook": "bug-fix",
+            "formula": "pstack-bug-fix",
+            "class": "build-factory",
+        }
+    )
+    try:
+        assert_route_matches_map(
+            {
+                "status": "routed",
+                "playbook": "bug-fix",
+                "formula": "pstack-missing",
+                "class": "build-factory",
+            }
+        )
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("unknown formula was accepted")
+    assert "pstack-missing" not in set(formulas.values())
+
+
 def test_method_formulas_use_formula_identity() -> None:
     for formula in (
         "pstack-how",
