@@ -9,7 +9,7 @@ formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "pstack-arena"
-description = "Candidate fanout, cross-judge, lead decision, and verification."
+description = "Sequential candidate, judge, and verify steps. Gas City does not expand gc.graph_operator."
 
 [[steps]]
 id = "trigger"

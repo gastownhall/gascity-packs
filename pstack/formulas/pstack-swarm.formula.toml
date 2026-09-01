@@ -9,7 +9,7 @@ formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "pstack-swarm"
-description = "Gas City fanout/fanin for bounded PStack investigation."
+description = "Sequential fanout and fanin frame. Gas City does not expand gc.graph_operator."
 
 [[steps]]
 id = "frame"

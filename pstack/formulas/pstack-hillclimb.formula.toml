@@ -1,4 +1,4 @@
-description = "PStack improve one metric with measured before and after."
+description = "Sequential evidence capture for a metric loop. Not a measured hillclimb runtime."
 formula = "pstack-hillclimb"
 version = 1
 
@@ -10,7 +10,7 @@ formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "pstack-hillclimb"
-description = "PStack improve one metric with measured before and after."
+description = "Sequential evidence capture for a metric loop. Not a measured hillclimb runtime."
 
 [vars]
 [vars.subject_path]
