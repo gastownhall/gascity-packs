@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+PACK_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CHANGE = "audit-pstack-gascity-pack-contracts"
+DEFAULT_SPEC_ROOT = Path("/home/tommyk/projects/dev-env/openspec")
+
+
+def change_dir(name: str) -> Path:
+    path = PACK_ROOT / "intent" / "changes" / name
+    if not path.is_dir():
+        raise SystemExit(f"missing change payload {path}")
+    return path
+
+
+def copy_change(src: Path, dest_changes: Path) -> None:
+    dest_changes.parent.mkdir(parents=True, exist_ok=True)
+    if dest_changes.exists():
+        shutil.rmtree(dest_changes)
+    shutil.copytree(src, dest_changes)
+
+
+def validate(spec_root: Path, src: Path, name: str) -> int:
+    if not (spec_root / "config.yaml").is_file():
+        raise SystemExit(f"missing OpenSpec config at {spec_root}")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        root = tmp_path / "openspec"
+        root.mkdir()
+        shutil.copy2(spec_root / "config.yaml", root / "config.yaml")
+        shutil.copytree(spec_root / "schemas", root / "schemas")
+        shutil.copytree(spec_root / "specs", root / "specs")
+        (root / "changes").mkdir()
+        copy_change(src, root / "changes" / name)
+        return subprocess.run(
+            ["openspec", "validate", name, "--type", "change", "--strict"],
+            cwd=tmp_path,
+            check=False,
+        ).returncode
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--change", default=DEFAULT_CHANGE)
+    parser.add_argument("--spec-root", type=Path, default=DEFAULT_SPEC_ROOT)
+    parser.add_argument("--dest", type=Path, help="dev-env root that contains openspec/")
+    parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--archive", action="store_true", help="openspec archive after a successful dest copy")
+    args = parser.parse_args()
+    src = change_dir(args.change)
+    if args.validate_only:
+        return validate(args.spec_root, src, args.change)
+    if args.dest is None:
+        raise SystemExit("pass --dest <dev-env-root> or --validate-only")
+    dest_changes = args.dest / "openspec" / "changes" / args.change
+    try:
+        copy_change(src, dest_changes)
+    except OSError as exc:
+        raise SystemExit(f"cannot write {dest_changes}: {exc}") from exc
+    rc = validate(args.dest / "openspec", src, args.change)
+    if rc != 0 or not args.archive:
+        return rc
+    return subprocess.run(
+        ["openspec", "archive", args.change, "-y"],
+        cwd=args.dest,
+        check=False,
+    ).returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())

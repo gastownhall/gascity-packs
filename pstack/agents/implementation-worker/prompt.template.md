@@ -1,6 +1,6 @@
 {{ template "gc-role-worker" . }}
 
-# implementation-worker
+# PStack Implementation Worker
 
 implement one scoped unit, run focused checks, close the claim.
 

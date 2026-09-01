@@ -1,10 +1,5 @@
 description = """
-Virtual planning methodology contract.
-
-This methodology contract turns request/context input into approved
-requirements and implementation-plan artifacts. Concrete methodology packs
-override these steps to use their own planning process while preserving the
-artifact paths consumed by entrypoint adapters.
+PStack implementation of the planning-base methodology contract.
 """
 formula = "pstack-planning"
 version = 1
@@ -17,42 +12,16 @@ internal = true
 formula_compiler = ">=2.0.0"
 
 [vars]
-[vars.artifact_root]
-description = "Build or adapter artifact root."
-required = true
-
-[vars.context_path]
-description = "Optional source context bundle path."
-default = ""
-
-[vars.requirements_path]
-description = "Requirements artifact path to create or reuse."
-default = ""
-
-[vars.plan_path]
-description = "Implementation plan artifact path to create or reuse."
-default = ""
-
-[vars.interaction_mode]
-description = "Planning interaction posture: interactive, autonomous, or headless."
-default = "interactive"
-
-[vars.review_mode]
-description = "Plan-review authority: report, agent, or interactive."
-default = "report"
-
-[[steps]]
-id = "prepare-planning"
-title = "Prepare planning context"
-metadata = { "gc.run_target" = "gc.run-operator" }
-description_file = "../assets/workflows/planning-base/prepare-planning.md"
+[vars.principle_manifest]
+description = "Path to the complete PStack principle manifest."
+default = "principles/manifest.toml"
 
 [[steps]]
 id = "requirements"
 title = "Produce approved requirements"
 needs = ["prepare-planning"]
-metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
-description_file = "../assets/workflows/planning-base/requirements.md"
+metadata = { "gc.run_target" = "pstack.investigator", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+description_file = "../assets/workflows/pstack-build/requirements.md"
 
 [steps.check]
 max_attempts = 3
@@ -66,8 +35,8 @@ timeout = "5m"
 id = "plan"
 title = "Produce implementation plan"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
-description_file = "../assets/workflows/planning-base/plan.md"
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+description_file = "../assets/workflows/pstack-build/plan.md"
 
 [steps.check]
 max_attempts = 3
@@ -81,5 +50,5 @@ timeout = "5m"
 id = "plan-review"
 title = "Approve implementation plan"
 needs = ["plan"]
-metadata = { "gc.run_target" = "gc.review-synthesizer" }
-description_file = "../assets/workflows/planning-base/plan-review.md"
+metadata = { "gc.run_target" = "pstack.review-synthesizer" }
+description_file = "../assets/workflows/pstack-build/plan-review.md"

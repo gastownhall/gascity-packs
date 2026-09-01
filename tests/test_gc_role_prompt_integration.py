@@ -156,6 +156,7 @@ def test_city_scoped_gascity_registers_claim_command_from_rig(
     (
         ("gc", "gascity", "gc.implementation-worker", "# GC Role Worker"),
         ("bmad", "bmad", "bmad.story-implementer", "# BMAD Story Implementer"),
+        ("pstack", "pstack", "pstack.implementation-worker", "# PStack Implementation Worker"),
         (
             "superpowers",
             "superpowers",

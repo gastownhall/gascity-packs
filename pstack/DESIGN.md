@@ -74,11 +74,11 @@ Every PStack artifact carries stable work/claim references and evidence status. 
 ## Formula graph
 
 - `pstack-how`, `pstack-why`, and `pstack-investigation`: read-mostly sequence → evidence artifact.
-- `pstack-swarm`: frame → durable child fanout → fanin → `pstack.swarm-result.v1`.
-- `pstack-arena`: trigger gate → candidate fanout → cross-judge → lead decision → verification.
-- `pstack-interrogate`: selector → relevant review lanes → deduplication → agreement map → lead judgment.
+- `pstack-swarm`: sequential frame, fanout, and fanin steps writing `pstack.swarm-result.v1`. `gc.graph_operator` is annotation until Gas City interprets it.
+- `pstack-arena`: sequential trigger, candidates, judge, and verify steps. Candidates write one `pstack.arena-candidate.v1` path. `gc.graph_operator` is annotation until Gas City interprets it.
+- `pstack-interrogate`: sequential select, review, and judgment steps. Review lanes are not expanded as separate graph children in this checkout.
 - `pstack-autonomous-run`: goal → predicate → baseline → bounded loop → evidence → predicate check.
-- `pstack-orchestrate`: durable goal graph → standing orders/briefs → pilot → rolling frontier → reconciliation → escalation. It does not schedule outside Gas City.
+- `pstack-orchestrate`: extends `pstack-build`. Standing-order and frontier steps run after the inherited implementation drain. It does not schedule outside Gas City.
 
 Build variants compose these formulas:
 
@@ -87,7 +87,8 @@ Build variants compose these formulas:
 - refactor/migration: subtraction, foundation, callers, lever/pilot, migration waves, legacy absence;
 - perf: baseline, bounded experiment, and revision-bound verification;
 - prototype: experience target, smallest verifiable slice, explicit expiry;
-- shipping/babysit/autopilot: existing review/publish and optional integration formulas.
+- shipping: catalog alias of `pstack-build`;
+- babysit/autopilot: extend `pstack-build`, so they inherit implement and publish until a later formula-design change detaches them.
 
 ## Role and code flow
 

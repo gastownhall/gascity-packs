@@ -555,6 +555,127 @@ def test_delivery_checks_cover_pstack() -> None:
     traceability = (ROOT / "TRACEABILITY.md").read_text()
     assert "dev-env/openspec/specs/pstack-gascity-pack/spec.md" in traceability
     assert "openspec/changes/pstack-gascity-pack/" not in traceability
+    assert "not silently imported" in traceability
+    assert "README.md" in traceability
+    assert "docs/guide/06-verify-and-ship.md" in traceability
+    assert "docs/guide/13-grok-natives.md" in traceability
+    assert "skills/poteto-mode/references/codex-tools.md" in traceability
+    assert "skills/poteto-mode/references/github-pr-fallback.md" in traceability
+    assert "moving maintained SHA" in traceability
+    assert "no separate graph-cook script" in traceability
+    assert "https://github.com/cursor/plugins/tree/main/pstack" in traceability
+    assert "6fecddba65801f9b9c08b8b328d998ee5b09d290" in traceability
+    architecture = (ROOT / "ARCHITECTURE.md").read_text()
+    assert "build-base" in architecture
+    assert "bmad" in architecture
+    assert "6fecddba65801f9b9c08b8b328d998ee5b09d290" in architecture
+
+
+def test_method_formulas_keep_unconsumed_graph_operator_metadata() -> None:
+    expected = {
+        "pstack-swarm": (("fanout", "gc.graph_operator", "fanout"), ("fanin", "gc.graph_operator", "fanin")),
+        "pstack-arena": (("trigger", "pstack.graph_operator", "gate"), ("candidates", "gc.graph_operator", "fanout")),
+        "pstack-interrogate": (("select", "pstack.graph_operator", "selector"), ("review", "gc.graph_operator", "fanout")),
+    }
+    for formula_name, steps in expected.items():
+        by_id = {step["id"]: step for step in load_formula(formula_name)["steps"]}
+        for step_id, key, value in steps:
+            assert by_id[step_id]["metadata"][key] == value, (formula_name, step_id, key)
+
+    text = (ROOT / "TRACEABILITY.md").read_text()
+    assert "gc.graph_operator" in text
+    assert "no Gas City consumer" in text
+    for path in (ROOT / "formulas").glob("*.formula.toml"):
+        body = path.read_text(encoding="utf-8")
+        assert "spawn_subagent" not in body
+        assert "cursor/agents" not in body
+
+
+def test_optional_pack_catalog_matches_declared_names() -> None:
+    names = {
+        "compound-engineering",
+        "superpowers",
+        "bmad",
+        "gstack",
+    }
+    data = tomllib.loads((ROOT / "mappings/optional-packs.toml").read_text())
+    assert set(data["optional_packs"]) == names
+    assert data["policy"]["missing_pack"] == "skip-with-reason"
+    for item in data["optional_packs"].values():
+        assert item["required"] is False
+    for path in sorted((ROOT / "formulas").glob("*.formula.toml")):
+        text = path.read_text(encoding="utf-8")
+        for name in names:
+            assert name not in text, path.name
+
+
+def test_gascity_has_no_graph_operator_consumer() -> None:
+    hits: list[str] = []
+    for path in GAS_CITY.rglob("*"):
+        if not path.is_file() or path.suffix == ".pyc" or "__pycache__" in path.parts:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "graph_operator" in text:
+            hits.append(str(path.relative_to(GAS_CITY)))
+    assert hits == []
+
+
+def test_method_prompts_state_single_node_graph_operator() -> None:
+    for relative in (
+        "assets/workflows/pstack-methods/fanout.md",
+        "assets/workflows/pstack-methods/arena-candidates.md",
+        "assets/workflows/pstack-methods/interrogate-review.md",
+    ):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert "does not expand" in text
+        assert "gc.graph_operator" in text
+
+
+def test_selector_formulas_override_pack_local_assets() -> None:
+    planning = {step["id"]: step for step in load_formula("pstack-planning")["steps"]}
+    assert planning["requirements"]["metadata"]["gc.run_target"] == "pstack.investigator"
+    assert planning["requirements"]["description_file"].endswith("pstack-build/requirements.md")
+    assert planning["plan"]["metadata"]["gc.run_target"] == "pstack.architect"
+    assert planning["plan"]["description_file"].endswith("pstack-build/plan.md")
+    assert planning["plan-review"]["metadata"]["gc.run_target"] == "pstack.review-synthesizer"
+    build = {step["id"]: step for step in load_formula("pstack-build")["steps"]}
+    assert build["requirements"]["metadata"]["gc.run_target"] == planning["requirements"]["metadata"]["gc.run_target"]
+    assert build["plan-review"]["metadata"]["gc.run_target"] == planning["plan-review"]["metadata"]["gc.run_target"]
+    decomposition = {step["id"]: step for step in load_formula("pstack-decomposition")["steps"]}
+    assert "lever-decision" in decomposition
+    assert decomposition["decompose"]["needs"] == ["lever-decision"]
+    assert decomposition["decompose"]["description_file"].endswith("pstack-build/decompose.md")
+
+
+def test_migration_formula_declares_ungated_callers_and_delete() -> None:
+    by_id = {step["id"]: step for step in load_formula("pstack-migration")["steps"]}
+    assert "callers" in by_id and "delete" in by_id and "verify" in by_id
+    assert "check" not in by_id["callers"]
+    assert "check" not in by_id["delete"]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "schemas").glob("*.yaml"))
+    assert "remaining_callers" not in text
+
+
+def test_intent_change_validates_against_dev_env_specs() -> None:
+    spec_root = pathlib.Path("/home/tommyk/projects/dev-env/openspec")
+    if not (spec_root / "config.yaml").is_file():
+        return
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/apply_intent_change.py"),
+            "--validate-only",
+            "--spec-root",
+            str(spec_root),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
 def test_build_extends_base_and_preserves_anchors() -> None:

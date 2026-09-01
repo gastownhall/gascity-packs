@@ -4,10 +4,21 @@
 
 | Source | Revision or locator | Use |
 |---|---|---|
-| PStack source | `49d6ae81f17125ac198efa322403490b366856b6` | Exact reviewed vendor corpus and 44 runtime skill directories, including the Grok host-boundary correction |
-| Gist architecture | `23f21e688fc76b360d382e5cafb8d9c1` | Corrected build-base, selector, formula, and schema requirements |
-| Gas City packs | `9f98ea4e1974cb49d18cd0c453eb81b2370cca84` | Pack and derived-formula contracts |
+| Cursor pstack (discipline) | `https://github.com/cursor/plugins/tree/main/pstack` tree `6fecddba65801f9b9c08b8b328d998ee5b09d290` | 21 principles, playbooks, and method skills. Source of truth for upstream pstack |
+| Runtime vendor | `tommy-ca/pstack` `49d6ae81f17125ac198efa322403490b366856b6` | Exact reviewed vendor corpus and runtime skill copy, including the Grok host-boundary correction |
+| Workflow pack shape | gascity-packs `bmad`, `superpowers`, `gstack`, `compound-engineering` | Reference implementation for mapping a methodology onto `build-base` |
+| Gas City primitives | `gascity/formulas` virtual contracts | `build-base` and selector bases the pack extends |
+| Gist architecture | `23f21e688fc76b360d382e5cafb8d9c1` | Historical build-base, selector, formula, and schema notes |
 | Dev-env OpenSpec | `dev-env/openspec/specs/pstack-gascity-pack/spec.md` | Durable requirements, scenarios, architecture, ADR, and tasks |
+
+The vendor remains intentionally pinned to this reviewed snapshot. Maintained
+PStack has later documentation and adapter-reference changes after that pin,
+including `README.md`, `docs/guide/06-verify-and-ship.md`,
+`docs/guide/13-grok-natives.md`,
+`skills/poteto-mode/references/codex-tools.md`, and
+`skills/poteto-mode/references/github-pr-fallback.md`. Those changes are not silently imported.
+A future source refresh must use a separate intent change and repeat the
+path/parity review. Do not treat a moving maintained SHA as the pack pin.
 
 ## Mapping
 
@@ -20,11 +31,13 @@
 | Providerless runtime | `agents/`, `assets/workflows/`, formula `gc.run_target` | Text and metadata tests |
 | Durable orchestration boundary | `formulas/pstack-orchestrate.formula.toml` | No scheduler/database/session-manager test |
 | Source/runtime separation | `vendor/pstack/` versus runtime assets | Source-binding/parity test |
+| Dual source of truth | `ARCHITECTURE.md` | Cursor pstack for discipline, gascity-packs workflow packs for packing |
+| Intent-driven spec payload | `intent/changes/audit-pstack-gascity-pack-contracts/` | `scripts/apply_intent_change.py --validate-only`; dest copy plus archive proven on a writable dest-env clone with no dropped requirements |
 
 ## Evidence classes
 
 - **Static:** TOML/YAML parse, source parity, formula metadata, schema references, provider-name absence.
-- **Metadata:** disposable graph cooking with a temporary Beads/file backend; validates node order and metadata only.
+- **Metadata:** inspectable formula TOML plus disposable live-city formula and agent listing. Validates declared node metadata only. There is no separate graph-cook script.
 - **Runtime:** provider and live Gas City execution; not performed by pack-local verification.
 - **Unavailable:** optional pack, provider, or live city not present; reported with a reason.
 
@@ -35,8 +48,8 @@ This checkout is prepared for review. Commit, push, pack publication, live impor
 ## Known design gap
 
 `pstack-swarm`, `pstack-arena`, and `pstack-interrogate` retain
-`gc.graph_operator`/`pstack.graph_operator` metadata, but this checkout has no
-Gas City consumer that gives those fields executable fanout semantics. The
+`gc.graph_operator`/`pstack.graph_operator` metadata, but this checkout has no Gas City consumer
+that gives those fields executable fanout semantics. The
 current pack deliberately does not invent a second scheduler or provider
 dispatch path; dynamic graph-operator behavior remains a separate Gas City
 design change.

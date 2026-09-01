@@ -2640,6 +2640,8 @@ class FormulaAssetTests(unittest.TestCase):
                 self.assertIn("decompose", [step["id"] for step in resolved["steps"]])
                 if pack_name == "bmad":
                     self.assertIn("implementation-readiness", [step["id"] for step in resolved["steps"]])
+                if pack_name == "pstack":
+                    self.assertIn("lever-decision", [step["id"] for step in resolved["steps"]])
 
             implementation = load_formula(pack_root, expected["implementation_entry_formula"])
             with self.subTest(pack=pack_name, formula=expected["implementation_entry_formula"]):

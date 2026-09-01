@@ -1,9 +1,5 @@
 description = """
-Virtual decomposition methodology contract.
-
-This methodology contract converts an approved plan into an implementation
-convoy. Concrete methodology packs override the decomposition step when their
-native output uses stories, cards, or another task shape.
+PStack implementation of the decomposition-base methodology contract.
 """
 formula = "pstack-decomposition"
 version = 1
@@ -15,24 +11,26 @@ internal = true
 [requires]
 formula_compiler = ">=2.0.0"
 
-[vars]
-[vars.context_path]
-description = "Optional source context bundle path."
-default = ""
+[[steps]]
+id = "lever-decision"
+title = "Choose the lever before fanout"
+metadata = { "gc.run_target" = "pstack.architect", "gc.build.artifact_schema" = "pstack.lever-decision.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_schema" = "pstack.lever-decision.v1", "pstack.artifact_path" = ".gc/pstack/lever-decision.md" }
+description_file = "../assets/workflows/pstack-build/lever.md"
 
-[vars.plan_path]
-description = "Approved implementation plan artifact path."
-required = true
+[steps.check]
+max_attempts = 3
 
-[vars.decomposition_path]
-description = "Task decomposition artifact path to create or reuse."
-default = ""
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
 
 [[steps]]
 id = "decompose"
 title = "Create implementation convoy"
+needs = ["lever-decision"]
 metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
-description_file = "../assets/workflows/decomposition-base/decompose.md"
+description_file = "../assets/workflows/pstack-build/decompose.md"
 
 [steps.check]
 max_attempts = 3
