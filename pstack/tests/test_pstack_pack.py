@@ -471,6 +471,9 @@ def test_vendored_host_boundary_matches_runtime_contract() -> None:
         assert "scripts/watch-pr" not in text
         assert "scripts/orch/orch.ts" not in text
         assert "orchestrate/<project-slug>/" not in text
+    scripts = ROOT / "vendor/pstack/skills/poteto-mode/scripts"
+    assert not (scripts / "watch-pr").exists()
+    assert not (scripts / "orch").exists()
 
 
 def test_every_pstack_formula_declares_formula_compiler_requirement() -> None:

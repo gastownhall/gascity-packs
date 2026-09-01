@@ -7,7 +7,7 @@ This pack is a mapping, not a second pstack. Two sources of truth stay distinct.
 | Layer | Source | What it owns |
 |---|---|---|
 | Discipline | Official Cursor pstack at `https://github.com/cursor/plugins/tree/main/pstack` tree `6fecddba65801f9b9c08b8b328d998ee5b09d290` | 21 principles, playbooks under `skills/poteto-mode/playbooks`, method skills (how, why, architect, swarm, arena, interrogate, figure-it-out) |
-| Host runtime vendor | `tommy-ca/pstack` pin in `vendor/pstack/upstream.toml` | Byte-identical skills copy with Grok host-boundary (no `scripts/watch-pr/watch-pr`, no `scripts/orch/orch.ts`) |
+| Host runtime vendor | `tommy-ca/pstack` pin in `vendor/pstack/upstream.toml` | Byte-identical skills copy. Playbooks and the skills tree omit `scripts/watch-pr/` and `scripts/orch/` |
 | Pack shape | gascity-packs methodology packs (`bmad`, `superpowers`, `gstack`, `compound-engineering`) | `pack.toml` imports `../gascity`, `*-build` extends `build-base`, selector formulas override pack-local assets |
 | Primitives | `gascity/formulas` virtual contracts | `build-base`, `planning-base`, `decomposition-base`, `implementation-base`, `implementation-item-base`, `code-review-base`, `fix-loop-base`, `implement` |
 
@@ -25,7 +25,7 @@ Map each official block to one Gas City surface.
 | Feature, bug-fix, refactor, perf, prototype | `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-perf`, `pstack-prototype` extending `pstack-build` |
 | Babysit, shipping, orchestrate, autonomous-run, autopilot | `pstack-babysit`, `pstack-shipping`, `pstack-orchestrate`, `pstack-autonomous-run`, `pstack-autopilot-*` extending `pstack-build` |
 | `spawn_subagent` / Cursor `Task` | Gas City `gc.run_target` plus Beads claims. No provider task engine |
-| `scripts/watch-pr`, `scripts/orch/orch.ts` | Unsupported. Host-boundary grep in pack tests |
+| `scripts/watch-pr`, `scripts/orch/orch.ts` | Unsupported. Those directories are absent from vendor skills. Tests grep playbooks and assert the paths do not exist |
 
 `make-bot-ui` exists in Cursor pstack 0.14.5 and is not a Gas City formula.
 

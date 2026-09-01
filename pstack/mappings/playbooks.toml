@@ -1,9 +1,0 @@
-[playbooks]
-feature = { formula = "pstack-feature", gates = ["experience-first", "subtract-before-you-add", "prove-it-works"] }
-refactor = { formula = "pstack-refactor", gates = ["subtract-before-you-add", "build-the-lever", "migrate-callers-then-delete-legacy-apis"] }
-bug-fix = { formula = "pstack-bug-fix", gates = ["fix-root-causes", "prove-it-works"] }
-perf = { formula = "pstack-perf", gates = ["foundational-thinking", "prove-it-works"]
-}
-prototype = { formula = "pstack-prototype", gates = ["experience-first", "sequence-verifiable-units"] }
-investigation = { formula = "pstack-investigation", gates = ["guard-the-context-window", "encode-lessons-in-structure"] }
-shipping = { formula = "pstack-shipping", gates = ["prove-it-works", "encode-lessons-in-structure"] }

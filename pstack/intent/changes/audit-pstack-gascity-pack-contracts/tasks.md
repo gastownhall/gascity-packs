@@ -47,3 +47,4 @@ Needs 3.
 - [x] 5.1 Record Cursor pstack tree `6fecddba` as discipline source in TRACEABILITY and ARCHITECTURE.
 - [x] 5.2 Record gascity-packs workflow packs and `build-base` primitives as packing reference.
 - [x] 5.3 Keep runtime vendor on the reviewed tommy-ca pin so host-boundary greps stay fail-closed.
+- [x] 5.4 Omit `watch-pr/` and `orch/` from vendored and runtime `skills/poteto-mode/scripts/`. Do not retarget the pin to Cursor.

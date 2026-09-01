@@ -5,7 +5,7 @@
 | Source | Revision or locator | Use |
 |---|---|---|
 | Cursor pstack (discipline) | `https://github.com/cursor/plugins/tree/main/pstack` tree `6fecddba65801f9b9c08b8b328d998ee5b09d290` | 21 principles, playbooks, and method skills. Source of truth for upstream pstack |
-| Runtime vendor | `tommy-ca/pstack` `49d6ae81f17125ac198efa322403490b366856b6` | Exact reviewed vendor corpus and runtime skill copy, including the Grok host-boundary correction |
+| Runtime vendor | `tommy-ca/pstack` `49d6ae81f17125ac198efa322403490b366856b6` | Reviewed vendor corpus and runtime skill copy. Host-boundary omits `watch-pr/` and `orch/` from skills even though that pin snapshot still has those trees |
 | Workflow pack shape | gascity-packs `bmad`, `superpowers`, `gstack`, `compound-engineering` | Reference implementation for mapping a methodology onto `build-base` |
 | Gas City primitives | `gascity/formulas` virtual contracts | `build-base` and selector bases the pack extends |
 | Gist architecture | `23f21e688fc76b360d382e5cafb8d9c1` | Historical build-base, selector, formula, and schema notes |

@@ -7,13 +7,15 @@ Feature: pstack-pack-fidelity
 Rule: The pack pin is a reviewed snapshot, not latest main
 
 The PStack pack MUST record the reviewed source revision in
-`vendor/pstack/upstream.toml`, keep the vendored source exact at that revision,
-and keep runtime adaptations outside the vendor tree. Vendored host-boundary
-playbooks MUST NOT reintroduce the repository-local watcher or durable
-orchestration store prohibited by the maintained host contract. TRACEABILITY
-MUST record later maintained-source documentation or adapter-reference
-differences as reviewed-but-not-vendored drift and MUST NOT name a moving
-maintained SHA as the durable pin.
+`vendor/pstack/upstream.toml`, keep the vendored source exact at that revision
+except that `skills/poteto-mode/scripts/watch-pr/` and
+`skills/poteto-mode/scripts/orch/` MUST be omitted, and keep runtime
+adaptations outside the vendor tree. Vendored host-boundary playbooks MUST NOT
+reintroduce the repository-local watcher or durable orchestration store
+prohibited by the maintained host contract. TRACEABILITY MUST record later
+maintained-source documentation or adapter-reference differences as
+reviewed-but-not-vendored drift and MUST NOT name a moving maintained SHA as
+the durable pin.
 
 #### Scenario: Vendor refresh preserves host-boundary behavior
 
@@ -21,6 +23,7 @@ maintained SHA as the durable pin.
 - **WHEN** the source and runtime fidelity checks run
 - **THEN** the recorded revision and vendored paths agree
 - **AND** the vendored babysit and orchestrate playbooks contain no `scripts/watch-pr/watch-pr` or `scripts/orch/orch.ts` live path
+- **AND** `vendor/pstack/skills/poteto-mode/scripts/watch-pr/` and `scripts/orch/` do not exist
 - **AND** runtime-adapted assets remain outside `vendor/pstack/`
 
 #### Scenario: Post-pin source changes remain reviewable

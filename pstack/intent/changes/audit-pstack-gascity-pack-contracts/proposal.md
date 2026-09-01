@@ -33,6 +33,9 @@ hand-synced live files and drop the 14-schema list.
 - Name Cursor pstack tree `6fecddba` as discipline source and gascity-packs
   workflow packs as packing reference. Keep the tommy-ca runtime pin for
   host-boundary.
+- Omit `skills/poteto-mode/scripts/watch-pr/` and `scripts/orch/` from the
+  vendored skills tree so host-boundary is file absence, not only playbook
+  text. Do not retarget `upstream.toml` to Cursor.
 
 ## Capabilities
 

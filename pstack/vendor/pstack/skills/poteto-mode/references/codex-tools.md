@@ -50,7 +50,7 @@ Cursor same-run `/loop` is **not** live.
 
 ## Vendored scripts
 
-`skills/poteto-mode/scripts/` (`watch-pr`, `orch`, `worktree-audit.sh`) are bun/bash. Invoke through `shell`. Transcript paths: Grok `~/.grok/sessions/`; Claude `~/.claude/projects/`; Codex session storage. Not `~/.cursor/projects/`.
+`skills/poteto-mode/scripts/worktree-audit.sh` is bash. Invoke through `shell`. Transcript paths: Grok `~/.grok/sessions/`; Claude `~/.claude/projects/`; Codex session storage. Not `~/.cursor/projects/`. This pack omits `watch-pr` and `orch`.
 
 ## Instructions file
 

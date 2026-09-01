@@ -194,11 +194,14 @@ extending Gas City virtual contracts. The pack MUST vendor a reviewed runtime
 corpus under `vendor/pstack/` at the immutable pin in
 `vendor/pstack/upstream.toml`. That pin MAY be a host-adapted tree such as
 `tommy-ca/pstack` so babysit and orchestrate do not prescribe
-`scripts/watch-pr/watch-pr` or `scripts/orch/orch.ts`. Runtime-specific Gas City
+`scripts/watch-pr/watch-pr` or `scripts/orch/orch.ts`. The vendored
+`skills/poteto-mode/scripts/` tree MUST omit `watch-pr/` and `orch/` even
+when the recorded pin snapshot still contains those directories. The recorded
+SHA still names the reviewed tommy-ca commit. Runtime-specific Gas City
 prompts MUST live outside the vendored corpus. Focused tests MUST pin that
-revision, prove runtime `skills/` matches `vendor/pstack/skills/`, and grep
-host-boundary playbooks. Tests MUST NOT require a `git archive` of Cursor
-`main`.
+revision, prove runtime `skills/` matches `vendor/pstack/skills/`, grep
+host-boundary playbooks, and assert those CLI directories are absent. Tests
+MUST NOT require a `git archive` of Cursor `main`.
 
 `pstack/ARCHITECTURE.md` MUST record the building-block map from Cursor
 playbooks and principles onto Gas City formulas and primitives.
@@ -211,6 +214,7 @@ playbooks and principles onto Gas City formulas and primitives.
 - **AND** all 21 canonical principle skill directories are present under runtime `skills/`
 - **AND** runtime `skills/` matches `vendor/pstack/skills/` byte-for-byte
 - **AND** the vendored host-boundary playbooks contain no prohibited local watcher or store path
+- **AND** `vendor/pstack/skills/poteto-mode/scripts/watch-pr/` and `scripts/orch/` do not exist
 
 #### Scenario: Runtime prompts do not mutate source material
 
