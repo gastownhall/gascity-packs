@@ -16,7 +16,7 @@ formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "pstack-build"
-description = "Run the default Gas City full-lifecycle build workflow from requirements through clean review and optional publish."
+description = "Run the PStack principle-gated build lifecycle from requirements through evidence-bound review and optional publish."
 
 [metadata.gc.methodology]
 allowed_drain_policies = ["separate", "same-session"]

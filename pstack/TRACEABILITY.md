@@ -44,7 +44,7 @@ Gherkin. Host dest-env archive remains unproven.
 
 ## Delivery boundary
 
-This checkout is prepared for review. Commit, push, pack publication, live import, canonical city mutation, Formula sling, and live Beads mutation remain independent operations. OpenSpec change payloads are dest-env host work, not pack contents.
+Registry `0.1.0` pins this pack at `ec2a6ef`. Live city import, Formula sling, and dest-env OpenSpec archive remain independent host operations. OpenSpec change payloads are dest-env host work, not pack contents.
 
 ## Known design gap
 
