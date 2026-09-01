@@ -4,11 +4,11 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 try:
     import yaml
-except ImportError:  # pragma: no cover
+except ImportError:
     yaml = None
 
 PACK_ROOT = Path(__file__).resolve().parents[1]
@@ -30,15 +30,26 @@ FRONT = (
     "producer.attempt",
     "trace",
 )
+FORBIDDEN_FRONT_LEAVES = {"owner", "stage-owner", "stage_owner", "persona", "role"}
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
     if yaml is None:
-        raise SystemExit("PyYAML is required")
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raise ValueError("PyYAML is required. Run: uv run --with pyyaml python pstack/scripts/validate_pstack_schemas.py")
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path}: invalid YAML ({exc})") from exc
     if not isinstance(data, dict):
         raise ValueError(f"{path}: schema must be a mapping")
     return data
+
+
+def require_string_list(path: Path, data: dict[str, Any], key: str) -> list[str]:
+    value = data.get(key)
+    if not isinstance(value, list) or not value or not all(isinstance(item, str) and item.strip() for item in value):
+        raise ValueError(f"{path}: {key} must be a non-empty list of non-empty strings")
+    return value
 
 
 def validate_schema_file(path: Path) -> None:
@@ -47,42 +58,62 @@ def validate_schema_file(path: Path) -> None:
     if data.get("schema_id") != expected_id:
         raise ValueError(f"{path}: schema_id must be {expected_id!r}")
     front = data.get("required_front_matter")
-    if not isinstance(front, list) or "producer.attempt" not in front:
-        raise ValueError(f"{path}: required_front_matter must include producer.attempt")
+    if not isinstance(front, list):
+        raise ValueError(f"{path}: required_front_matter must be a list")
     for item in FRONT:
         if item not in front:
             raise ValueError(f"{path}: required_front_matter missing {item}")
-    coverage = data.get("coverage_statuses")
-    if not isinstance(coverage, list):
-        raise ValueError(f"{path}: coverage_statuses must be a list")
+    for field in front:
+        leaf = str(field).split(".")[-1].lower()
+        if leaf in FORBIDDEN_FRONT_LEAVES:
+            raise ValueError(f"{path}: required_front_matter must not include {field!r}")
+    coverage = require_string_list(path, data, "coverage_statuses")
     for status in COVERAGE:
         if status not in coverage:
             raise ValueError(f"{path}: coverage_statuses missing {status}")
-    fields = data.get("required_fields")
-    if not isinstance(fields, list) or not fields:
-        raise ValueError(f"{path}: required_fields must be a non-empty list")
-    evidence = data.get("evidence_fields")
-    if not isinstance(evidence, list) or not evidence:
-        raise ValueError(f"{path}: evidence_fields must be a non-empty list")
-    statuses = data.get("allowed_statuses")
-    if not isinstance(statuses, list) or not statuses:
-        raise ValueError(f"{path}: allowed_statuses must be a non-empty list")
+    require_string_list(path, data, "required_fields")
+    require_string_list(path, data, "evidence_fields")
+    require_string_list(path, data, "allowed_statuses")
+    enforcements = data.get("allowed_enforcements")
+    if enforcements is not None:
+        if (
+            not isinstance(enforcements, list)
+            or not enforcements
+            or not all(isinstance(item, str) and item.strip() for item in enforcements)
+            or len(set(enforcements)) != len(enforcements)
+        ):
+            raise ValueError(f"{path}: allowed_enforcements must be unique non-empty strings")
+
+
+def iter_formula_nodes(node: Any) -> Iterator[dict[str, Any]]:
+    if isinstance(node, dict):
+        yield node
+        for child in node.get("children") or []:
+            yield from iter_formula_nodes(child)
+    elif isinstance(node, list):
+        for item in node:
+            yield from iter_formula_nodes(item)
+
+
+def formula_schema_ids(step: dict[str, Any]) -> Iterator[str]:
+    metadata = step.get("metadata") or {}
+    for key in ("pstack.artifact_schema", "gc.build.artifact_schema"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.startswith("pstack."):
+            yield value.strip()
 
 
 def validate_formula_schema_refs(formulas_dir: Path, schema_ids: set[str]) -> None:
-    try:
-        import tomllib
-    except ImportError:  # pragma: no cover
-        import tomli as tomllib  # type: ignore
+    import tomllib
+
     for path in sorted(formulas_dir.glob("*.formula.toml")):
-        text = path.read_text(encoding="utf-8")
-        data = tomllib.loads(text)
-        for step in data.get("steps", []):
-            schema = (step.get("metadata") or {}).get("pstack.artifact_schema")
-            if not schema or not str(schema).startswith("pstack."):
-                continue
-            if schema not in schema_ids:
-                raise ValueError(f"{path}: unknown pstack.artifact_schema {schema!r}")
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        nodes = list(iter_formula_nodes(data.get("steps") or []))
+        nodes.extend(iter_formula_nodes(data.get("template") or []))
+        for step in nodes:
+            for schema in formula_schema_ids(step):
+                if schema not in schema_ids:
+                    raise ValueError(f"{path}: unknown pstack schema {schema!r}")
 
 
 def validate_all(schema_dir: Path, *, formulas_dir: Path | None = None) -> list[Path]:

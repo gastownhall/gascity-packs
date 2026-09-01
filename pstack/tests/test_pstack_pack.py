@@ -995,21 +995,81 @@ def test_pstack_specific_schemas_are_declared_and_referenced() -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert "ok route.v1.yaml" in proc.stdout
+    valid = """schema_id: pstack.fixture.v1
+artifact: fixture
+allowed_statuses:
+  - routed
+coverage_statuses:
+  - covered
+  - not_applicable
+  - deferred
+  - blocked
+  - out_of_scope
+  - superseded
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - producer.formula
+  - producer.stage
+  - status
+  - producer.attempt
+  - trace
+required_fields:
+  - playbook
+evidence_fields:
+  - source_path
+"""
     with tempfile.TemporaryDirectory() as tmp:
         dest = pathlib.Path(tmp)
-        for path in (ROOT / "schemas").glob("*.yaml"):
-            (dest / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
-        broken = dest / "route.v1.yaml"
-        broken.write_text(
-            broken.read_text(encoding="utf-8").replace("  - producer.attempt\n", ""),
+        schemas = dest / "schemas"
+        formulas = dest / "formulas"
+        schemas.mkdir()
+        formulas.mkdir()
+        (schemas / "fixture.v1.yaml").write_text(valid, encoding="utf-8")
+        module.validate_all(schemas, formulas_dir=formulas)
+        broken = valid.replace("  - producer.attempt\n", "")
+        (schemas / "fixture.v1.yaml").write_text(broken, encoding="utf-8")
+        missing = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/validate_pstack_schemas.py"),
+                "--schemas",
+                str(schemas),
+                "--formulas",
+                str(formulas),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert missing.returncode != 0
+        assert "producer.attempt" in missing.stderr
+        (schemas / "fixture.v1.yaml").write_text(valid, encoding="utf-8")
+        (formulas / "bad.formula.toml").write_text(
+            """formula = "bad"
+version = 1
+[[steps]]
+id = "write"
+metadata = { "pstack.artifact_schema" = "pstack.nope.v1" }
+""",
             encoding="utf-8",
         )
-        try:
-            module.validate_all(dest)
-        except ValueError as exc:
-            assert "producer.attempt" in str(exc)
-        else:
-            raise AssertionError("schema missing producer.attempt was accepted")
+        unknown = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/validate_pstack_schemas.py"),
+                "--schemas",
+                str(schemas),
+                "--formulas",
+                str(formulas),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert unknown.returncode != 0
+        assert "pstack.nope.v1" in unknown.stderr
 
 
 def test_methods_programs_and_variants_are_providerless_and_asset_complete() -> None:
