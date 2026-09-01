@@ -1,6 +1,6 @@
 # PStack production readiness plan
 
-A city operator must import and sling before gastownhall `main` carries pstack. Arena and interrogate both said dogfood this checkout first. This plan is the task graph. `pr-pstack-restamp` is the only new GitHub unit. Host dest-env and host sling are operator items. They gate that restamp.
+A city operator must import and sling before gastownhall `main` carries pstack. Arena and interrogate both said dogfood this checkout first. This plan is the task graph. Catalog honesty-docs commit on PR 385 first. Host dest-env and host sling next. `pr-pstack-restamp` is the only new GitHub unit.
 
 ## How to read this
 
@@ -15,7 +15,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 ### Arm the program
 
 - [ ] State the protocol and this plan to the operator, then stop. Start execution only on her explicit go.
-- [ ] On her go, persist the plan path on disk with this exact text. "docs/pstack-production-readiness-plan.md. PR ids pr-pstack-restamp. Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. The operator lands 385 after restamp. Done when a host city slings pstack-poteto-mode and pstack-build, dest-env is archived, and 0.1.0 is restamped on that SHA."
+- [ ] On her go, persist the plan path on disk with this exact text. "docs/pstack-production-readiness-plan.md. PR ids pr-pstack-restamp. Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. The operator lands 385 after restamp. Done when honesty-docs is committed on 385, a host city slings pstack-poteto-mode and pstack-build, dest-env is archived, and 0.1.0 is restamped on that SHA."
 - [ ] Read these from trunk at program start. Re-read them at every tick.
   - [ ] `git show origin/main:.github/workflows/ci.yml`
   - [ ] `git show origin/main:registry.toml`
@@ -32,8 +32,9 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] From this parent session, spawn one owner per PR with `spawn_subagent` (`isolation: "worktree"`). Depth is 1. Owners do not spawn.
 - [ ] Follow this dependency graph. Start dependent work only after its parent merges, or base it on the parent branch when the execution playbook stacks.
-  - [ ] Host dest-env apply and archive first. Not a GitHub PR.
-  - [ ] Host dogfood city import and sling second. Not a GitHub PR.
+  - [ ] Catalog honesty-docs commit on `feat/pstack-pack-honesty` first. Not a GitHub PR id.
+  - [ ] Host dest-env apply and archive second. Not a GitHub PR. This TUI cannot write dest-env `openspec/`.
+  - [ ] Host dogfood city import and sling third. Not a GitHub PR.
   - [ ] `pr-pstack-restamp` after both host receipts. Branch from `feat/pstack-pack-honesty`.
 - [ ] Hold the file boundaries. `pr-pstack-restamp` touches only `registry.toml`.
 - [ ] Hold the review gate. `pr-pstack-restamp` changes no interaction. It is not review-gated.
@@ -63,7 +64,7 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 ## Restamp 0.1.0 after dogfood (pr-pstack-restamp)
 
-**Depends on.** Host dest-env archive receipt. Host sling receipt for `pstack-poteto-mode` and `pstack-build`.
+**Depends on.** Honesty-docs commit on PR 385. Host dest-env archive receipt. Host sling receipt for `pstack-poteto-mode` and `pstack-build`.
 
 **Files.**
 
@@ -71,7 +72,7 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 **Build.**
 
-- [ ] Set `[[pack]] name = "pstack"` release `0.1.0` `commit` to the SHA that contains the dogfood receipts and catalog honesty.
+- [ ] Set `[[pack]] name = "pstack"` release `0.1.0` `commit` to the SHA that contains the dogfood receipts and the honesty-docs commit.
 - [ ] Set `hash` to `python3 -c` `validate_registry.git_pack_content_hash` for `pstack` at that SHA.
 - [ ] Run `python3 validate_registry.py`.
 
@@ -92,7 +93,7 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 - [ ] Lane 3. Confirm `pstack/intent/` is absent. Save `no-intent.png`. Pass when the directory does not exist.
 - [ ] Lane 4. Run schema inventory. Save `schemas.png`. Pass when the CLI prints `ok route.v1.yaml`.
 - [ ] Lane 5. Load `pstack-poteto-mode`. Save `router.png`. Pass when classify has no `gc.graph_operator`.
-- [ ] Lane 6. Parse `playbooks.toml`. Save `map.png`. Pass when `feature` maps to `pstack-feature`.
+- [ ] Lane 6. Parse `playbooks.toml`. Save `map.png`. Pass when `feature` maps to `pstack-feature` and `arena` is absent.
 - [ ] Lane 7. Confirm catalog strings for swarm. Save `catalog-swarm.png`. Pass when the text does not claim Gas City expands `gc.graph_operator`.
 - [ ] Lane 8. Run the pack suite. Save `pack-suite.png`. Pass when pytest exit is 0.
 - [ ] Lane 9. Run derived-pack compatibility. Save `derived.png`. Pass when pytest exit is 0.
@@ -121,13 +122,19 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 ## Appendix A. Prototype evidence
 
-Dest-env copy from this sandbox is unproven. `Permission denied` on `/home/tommyk/projects/dev-env/openspec/changes/audit-pstack-gascity-pack-contracts`.
+Dest-env copy from this sandbox is unproven. This TUI cannot write dest-env `openspec/`.
+
+`apply_intent_change.py --validate-only --spec-root` against a readable OpenSpec tree printed that the change is valid.
+
+This pack does not keep a dest-env checkout.
 
 `gc import add` against gastownhall `main` is unproven. `pstack/` is absent on `origin/main`.
 
 Host sling of `pstack-poteto-mode` and `pstack-build` is unproven. Pack tests do not sling.
 
 Auto-sling remains unproven. No Gas City `graph_operator` consumer.
+
+Honesty-docs README local clone is in the working tree until committed on 385.
 
 ## Appendix B. Alternatives rejected
 
@@ -155,4 +162,4 @@ The pack copy of `check-plan.mjs` (Cursor pin `6fecddba`) still wants `/goal` an
 
 ## Appendix D. Links and reading list
 
-`docs/pstack-poteto-mode-router-plan.md`. `docs/pstack-gascity-pack-apply-plan.md`. `pstack/ARCHITECTURE.md`. `pstack/TRACEABILITY.md`. `.work/openspec-changes/audit-pstack-gascity-pack-contracts/`. `pstack/scripts/apply_intent_change.py`. Trail `.audit/pstack-gascity-audit.tsv`. Use `skills/how/SKILL.md` and `skills/interrogate/SKILL.md` on `pr-pstack-restamp`.
+`docs/pstack-poteto-mode-router-plan.md` is a finished-router note. `docs/pstack-gascity-pack-apply-plan.md` is dest-env host how-to. `pstack/ARCHITECTURE.md`. `pstack/TRACEABILITY.md`. `.work/openspec-changes/audit-pstack-gascity-pack-contracts/`. `pstack/scripts/apply_intent_change.py`. Trail `.audit/pstack-gascity-audit.tsv`. Use `skills/how/SKILL.md` and `skills/interrogate/SKILL.md` on `pr-pstack-restamp`.

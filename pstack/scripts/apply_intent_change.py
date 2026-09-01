@@ -10,7 +10,6 @@ from pathlib import Path
 
 PACK_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CHANGE = "audit-pstack-gascity-pack-contracts"
-DEFAULT_SPEC_ROOT = Path("/home/tommyk/projects/dev-env/openspec")
 
 
 def source_dir(path: Path) -> Path:
@@ -52,22 +51,27 @@ def validate(spec_root: Path, src: Path, name: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--change", default=DEFAULT_CHANGE)
-    parser.add_argument("--spec-root", type=Path, default=DEFAULT_SPEC_ROOT)
+    parser.add_argument("--spec-root", type=Path, help="OpenSpec root with config.yaml, schemas, and specs")
     parser.add_argument(
         "--source",
         type=Path,
         required=True,
         help="OpenSpec change directory outside this pack",
     )
-    parser.add_argument("--dest", type=Path, help="dev-env root that contains openspec/")
+    parser.add_argument("--dest", type=Path, help="tree root that contains openspec/")
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--archive", action="store_true", help="openspec archive after a successful dest copy")
     args = parser.parse_args()
     src = source_dir(args.source)
     if args.validate_only:
-        return validate(args.spec_root, src, args.change)
+        spec_root = args.spec_root
+        if spec_root is None and args.dest is not None:
+            spec_root = args.dest / "openspec"
+        if spec_root is None:
+            raise SystemExit("pass --spec-root <openspec-dir> or --dest")
+        return validate(spec_root, src, args.change)
     if args.dest is None:
-        raise SystemExit("pass --dest <dev-env-root> or --validate-only")
+        raise SystemExit("pass --dest <openspec-tree-root> or --validate-only")
     dest_changes = args.dest / "openspec" / "changes" / args.change
     try:
         copy_change(src, dest_changes)

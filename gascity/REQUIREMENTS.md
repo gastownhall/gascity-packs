@@ -8,7 +8,7 @@ Schema: `gc.build-methodology-base.requirements.v1`
 | Scope | Normative base formula contract and default Gas City implementation for build methodology packs |
 | Formula ledger | `formulas/REQUIREMENTS.md` |
 | Reference implementation | `build-basic` |
-| Implementations to validate later | `compound-engineering`, `superpowers`, `bmad`, `gstack` |
+| Implementations to validate later | `compound-engineering`, `superpowers`, `bmad`, `gstack`, `pstack` |
 
 This ledger is the compatibility contract for the Gas City build methodology
 family. It is not just documentation for the current base formulas. Every
@@ -70,7 +70,7 @@ For every base-pack formula, prompt asset, adapter, or public override change:
 - **Interaction mode** - `interaction_mode`; controls whether the workflow may
   ask humans questions or request approval.
 - **Methodology implementation** - A pack such as Compound Engineering,
-  Superpowers, BMAD, or gstack that imports this pack as `gc` and implements
+  Superpowers, BMAD, gstack, or pstack that imports this pack as `gc` and implements
   the base contract with its own formulas and prompt assets.
 - **Path-shadow override** - A stable file path that `build-basic` users can
   shadow in a city/local pack to customize prompts without learning formula

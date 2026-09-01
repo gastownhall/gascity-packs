@@ -135,6 +135,16 @@ def pack_methodology_metadata(pack_name: str, expected: dict) -> dict:
 class DerivedPackCompatibilityTests(unittest.TestCase):
     maxDiff = None
 
+    def test_base_requirements_header_lists_every_derived_pack(self) -> None:
+        header = ""
+        for line in (GASCITY_ROOT / "REQUIREMENTS.md").read_text(encoding="utf-8").splitlines():
+            if line.startswith("| Implementations to validate later"):
+                header = line
+                break
+        self.assertTrue(header, "missing Implementations to validate later row")
+        for pack_name in DERIVED_PACKS:
+            self.assertIn(f"`{pack_name}`", header)
+
     def test_packs_import_gascity_base_as_gc(self) -> None:
         for pack_name, expected in DERIVED_PACKS.items():
             with self.subTest(pack=pack_name):

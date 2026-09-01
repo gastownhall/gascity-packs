@@ -185,6 +185,15 @@ def test_poteto_mode_router_table_matches_playbook_map() -> None:
     assert (ROOT / "assets/workflows/pstack-methods/classify.md").is_file()
 
 
+def test_playbook_map_excludes_method_skill_stems() -> None:
+    formulas, unsupported, _classes = load_playbook_map()
+    method_stems = {"how", "why", "swarm", "arena", "interrogate"}
+    assert method_stems.isdisjoint(formulas)
+    assert method_stems.isdisjoint(unsupported)
+    data = tomllib.loads((ROOT / "mappings/playbooks.toml").read_text())
+    assert "methods" not in data
+
+
 def test_route_schema_rejects_unknown_status() -> None:
     validator = load_build_artifact_validator()
     routed = """---
@@ -642,6 +651,11 @@ def test_readme_documents_required_gas_city_roles() -> None:
     assert "../gascity/roles" in text
     assert "gc import install" in text
     assert "gc import add https://github.com/gastownhall/gascity-packs.git//pstack" in text
+    assert 'source = "../gascity-packs/pstack"' in text
+    assert "not a slung production release" in text
+    assert "does not expand `gc.graph_operator`" in text
+    assert "sequential Gas City graphs" in text or "sequential annotated steps" in text
+    assert "not multi-provider fanout" in text
 
 
 def test_vendor_source_binding_is_immutable() -> None:
@@ -818,6 +832,11 @@ def test_delivery_checks_cover_pstack() -> None:
     assert "build-base" in architecture
     assert "bmad" in architecture
     assert "6fecddba65801f9b9c08b8b328d998ee5b09d290" in architecture
+    assert "not a slung production release" in traceability
+    assert "without a host sling" in traceability
+    packs_readme = (PACKS_ROOT / "README.md").read_text()
+    assert "[pstack](./pstack)" in packs_readme
+    assert "Not a slung production import" in packs_readme
 
 
 def test_method_formulas_keep_unconsumed_graph_operator_metadata() -> None:
@@ -917,6 +936,7 @@ def test_pack_does_not_ship_openspec_change_payloads() -> None:
     assert "pstack/intent/changes/audit-pstack-gascity-pack-contracts" not in plan
     script = (ROOT / "scripts/apply_intent_change.py").read_text()
     assert 'PACK_ROOT / "intent"' not in script
+    assert "/home/tommyk/projects/dev-env" not in script
 
 
 def test_apply_intent_change_rejects_pack_local_source() -> None:

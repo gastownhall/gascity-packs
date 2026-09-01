@@ -7,7 +7,8 @@ PStack is a Gas City methodology pack for principle-driven software change. It k
 - You want all 21 PStack principles enforced as Gas City gates, not as a
   Cursor plugin runtime.
 - You want composable methods (`pstack-how`, `pstack-swarm`, `pstack-arena`,
-  `pstack-interrogate`) on the same `build-base` contract as BMAD and Superpowers.
+  `pstack-interrogate`) as sequential Gas City graphs on the same `build-base`
+  contract as BMAD and Superpowers. Gas City does not expand `gc.graph_operator`.
 - Prefer `build-basic` when you want the default starter factory.
 - Prefer `superpowers` when you want hard spec-approval gates and TDD.
 - Prefer `bmad` when you want PRD and story readiness before code.
@@ -26,17 +27,22 @@ mkdir proj && cd proj && git init
 gc rig add .
 ```
 
-1. **Import the pack.** From the city directory. This writes the import,
-   fetches the latest release, and pins it in `packs.lock`:
+1. **Import the pack.** From a local clone of this repository, in the city
+   directory:
 
-   ```sh
-   gc import add https://github.com/gastownhall/gascity-packs.git//pstack
+   ```toml
+   [imports.pstack]
+   source = "../gascity-packs/pstack"
    ```
 
-   Contributors working on the packs themselves can clone
-   `https://github.com/gastownhall/gascity-packs` and point `source` at
-   `../gascity-packs/pstack` instead, and the rig role import at
-   `../gascity/roles` or `../gascity-packs/gascity/roles`.
+   Point the rig role import at `../gascity/roles` or
+   `../gascity-packs/gascity/roles`.
+
+   The intended GitHub form is
+   `gc import add https://github.com/gastownhall/gascity-packs.git//pstack`.
+   That URL works only when the imported git ref contains `pstack/`. Registry
+   `0.1.0` is a catalog pin, not a slung production release. Do not restamp it
+   without a host sling.
 
 2. **Import the rig roles in `city.toml`.** Then run `gc import install`:
 
@@ -72,7 +78,9 @@ evidence producers. They are not the full Cursor playbook graphs.
 `opening-a-pr`, `pause-safely`, and `worktree-cleanup` stay unsupported as
 sling formulas. `pstack-how`, `pstack-why`, `pstack-swarm`, `pstack-arena`,
 `pstack-interrogate`, `pstack-autonomous-run`, and `pstack-orchestrate` are
-composable formulas. Do not sling `/poteto-mode`. Sling `pstack-poteto-mode` to classify a request
+composable formulas. Those method formulas are sequential annotated steps.
+They are not Cursor child fanout. They are not multi-provider fanout.
+Model diversity is host plugin work. Do not sling `/poteto-mode`. Sling `pstack-poteto-mode` to classify a request
 into `pstack.route.v1`, then sling the `formula` field. The classifier does
 not auto-sling.
 

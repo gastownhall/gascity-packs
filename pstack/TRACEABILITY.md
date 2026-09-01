@@ -44,7 +44,7 @@ Gherkin. Host dest-env archive remains unproven.
 
 ## Delivery boundary
 
-Registry `0.1.0` is the first catalog pin. `pstack-poteto-mode` classifies onto `pstack.route.v1` from `pstack/mappings/playbooks.toml`.
+Registry `0.1.0` is the first catalog pin. It is not a slung production release. Do not restamp `commit` or `hash` without a host sling of `pstack-poteto-mode` and `pstack-build`. `pstack-poteto-mode` classifies onto `pstack.route.v1` from `pstack/mappings/playbooks.toml`.
 `pstack/scripts/validate_pstack_schemas.py` is the rerunnable schema inventory check. Run it with `uv run --with pyyaml python pstack/scripts/validate_pstack_schemas.py`.
 It reuses Gas City `validate_schema_definition`. It does not require pydantic. Live city import, Formula sling, and dest-env OpenSpec archive remain independent host operations. OpenSpec change payloads are dest-env host work, not pack contents.
 
