@@ -323,8 +323,8 @@ schema = 1
   [[pack.release]]
     version = "0.1.0"
     ref = "main"
-    commit = "46b584a0690634b6ea3eece766a0e6ab59fa0dcf"
-    hash = "sha256:26970bb5c43942635a4c650b19c562fd6e97d792c08c76903e43ebe0f51d4445"
+    commit = "c964561e4d810a97a4a90762e54086e91d83d17d"
+    hash = "sha256:3bcb533a7a7bdba7aa6055798d9fda44d430bb489a6c84f9a938cda38c14a225"
     description = "First registry release of the pstack build factory."
 
 [[pack]]
