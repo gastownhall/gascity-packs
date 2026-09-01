@@ -44,7 +44,7 @@ Gherkin. Host dest-env archive remains unproven.
 
 ## Delivery boundary
 
-Registry `0.1.0` pins this pack at `ec2a6ef`. Live city import, Formula sling, and dest-env OpenSpec archive remain independent host operations. OpenSpec change payloads are dest-env host work, not pack contents.
+Registry `0.1.0` is the first catalog pin. Live city import, Formula sling, and dest-env OpenSpec archive remain independent host operations. OpenSpec change payloads are dest-env host work, not pack contents.
 
 ## Known design gap
 
