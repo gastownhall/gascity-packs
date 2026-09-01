@@ -315,6 +315,19 @@ schema = 1
     description = "First registry release of the superpowers build factory."
 
 [[pack]]
+  name = "pstack"
+  description = "Cursor pstack principles and methods as a Gas City build factory."
+  source = "https://github.com/gastownhall/gascity-packs/tree/main/pstack"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.1.0"
+    ref = "main"
+    commit = "ec2a6efe60992a8ac7673f2d05630a7bb470d537"
+    hash = "sha256:e8edbafd826230c46ccd5e6504fc0dc568767d9a4fa2190c6c7322d525ae31f8"
+    description = "First registry release of the pstack build factory."
+
+[[pack]]
   name = "runtime-cloudflare"
   description = "The Cloudflare session runtime, shipped as a pack so it versions independently of the gc binary. Declares [runtimes.cloudflare] backed by the gc-runtime-cloudflare RPP v0 provider, replacing the deleted gascity builtin."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/runtime-cloudflare"
