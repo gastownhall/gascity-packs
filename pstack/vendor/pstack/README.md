@@ -1,79 +1,41 @@
 # pstack
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+i'm [poteto](https://x.com/poteto). i'm not a president or ceo, but i've worked with millions of lines of code at Meta, Netflix, and Cursor. i'm also on the react core team where i help build and maintain react compiler.
 
-This is a Grok Build port of official pstack. Playbooks and principles are poteto's; only the harness call layer is swapped.
+there's a growing sense that ai writes too much slop code. i agree. i don't want to ship like a team of twenty slop artists. throughput without quality is not a goal i aspire to. if you want to go fast, go deep first. 
 
-## Credits
+**pstack is my answer.** these are the same skills i use everyday to ship high quality code at Cursor. this turns cursor into a real engineering team. the goal is not to maximize loc, in fact it's the opposite. pstack helps you write less, but higher quality code.
 
-The 22 playbooks and 21 principles are [poteto](https://x.com/poteto)'s, from [official pstack](https://github.com/cursor/plugins/tree/main/pstack). This repository is **`tommy-ca/pstack`**, adapted from [aa2246740/pstack-grokbuild](https://github.com/aa2246740/pstack-grokbuild). Harness calls use Grok Build tools named in [HARNESS.md](./HARNESS.md). This port did not author those playbooks or principles.
+**pstack gives you fearless parallelism.** when you can go deep on one agent and trust it to write good, verifiable code, you can truly parallelize with confidence. start multiple agents up with `poteto-mode` and trust that they'll apply rigorous engineering principles to their work.
 
-poteto's idea is less slop, go deep first, and parallelize only after one agent can be trusted to write verifiable code. That philosophy is theirs. This README does not speak as poteto.
+**cursor gives you the best of all worlds.** every frontier model has its strengths and weaknesses. use any model with pstack. in fact, many of my skills use multi-model workflows to take advantage of each model's unique strengths.
 
-## Install
+fork it. improve it. make it yours. PRs are welcome! 
 
-```bash
-grok plugin install tommy-ca/pstack --trust
-grok plugin enable pstack
-```
-
-xAI Official also lists a plugin named `pstack` that points at `cursor/plugins`. Use owner/repo. Do not treat bare `grok plugin install pstack` as this port. This repo is a single-plugin tree. Do not nest it as `plugins/pstack`. Optional catalog: [tommy-ca/grok-build-plugins](https://github.com/tommy-ca/grok-build-plugins).
-
-A local checkout also works:
+## install
 
 ```bash
-grok plugin install /path/to/pstack --trust
-grok plugin enable pstack
+/add-plugin pstack
 ```
 
-## First session
+## get started
 
-1. Enable from a **host shell** if `grok plugin enable pstack` hits EROFS on `config.toml`:
+two steps:
 
-   `grok --sandbox off plugin enable pstack`
+1. run [`/setup-pstack`](./skills/setup-pstack/SKILL.md) and choose which models you want.
+2. use [`/poteto-mode`](./skills/poteto-mode/SKILL.md) whenever you're doing anything that requires rigor.
 
-   Or press Space in the Plugins tab. `inspect` "enabled" is trust. Skills and `pstack:<role>` agents load only when `pstack` is in `[plugins].enabled`.
+new here? the [pstack guide](./docs/guide/README.md) walks you through a first real task, from setup and prompting through verification and overnight runs.
 
-2. Reload: Plugins tab `r`, or start a **new session**. This session will not grow `pstack:how-explorer` after enable.
+that's it. the other skills are situational; the mode skill uses them for you as needed. out of the box the mode splits work by model strength: precisely-specified code goes to sol, fast mechanical code goes to grok, and prose and judgment go to fable. the default panel is fable / sol / grok / opus 5. [`/setup-pstack`](./skills/setup-pstack/SKILL.md) changes any of it.
 
-3. Spawn `pstack:how-explorer`, not `how-explorer`. Type `/poteto-mode …`. It does not auto-enter. `/setup-pstack` is optional.
+## usage
 
-4. Do not run `grok plugin marketplace add` from a sandboxed agent. That also rewrites `config.toml` and hits EROFS. Owner/repo install still works in-session.
+use [`/poteto-mode`](./skills/poteto-mode/SKILL.md) at the start of a task. it reads your request, picks from a set of playbooks, and runs the other skills as the steps need them.
 
-Tool mapping is in [HARNESS.md](./HARNESS.md).
+### just use [`/poteto-mode`](./skills/poteto-mode/SKILL.md)
 
-## Get started
-
-Two steps.
-
-1. Use [`/poteto-mode`](./skills/poteto-mode/SKILL.md) for work that needs rigor. No setup required.
-2. Optionally run [`/setup-pstack`](./skills/setup-pstack/SKILL.md) to change models or effort. It is optional and global. It writes `~/.grok/pstack-models.toml` plus `~/.grok/roles/pstack:<role>.toml`.
-
-New here? The [pstack guide](./docs/guide/README.md) walks through a first real task, from setup and prompting through verification and overnight runs.
-
-The other skills are situational. The mode skill uses them when a step needs them.
-
-## Defaults
-
-A fresh install is usable without `/setup-pstack`.
-
-**Model.** Every role defaults to `grok-4.6`. If `spawn_subagent` rejects that slug, omit `model`. Do not invent Cursor panel slugs (`grok-4.6-fast-xhigh`, `gpt-5.6-sol-max`, `claude-fable-5-thinking-max`, `claude-opus-5-thinking-xhigh`). Spawn and join names are in [HARNESS.md](./HARNESS.md). The wire alias for `spawn_subagent` is `task`.
-
-**effort.** Effort follows the live grok 1.0.13 CLI. `use one of: xhigh, high, medium, low`. Shipped split is judgment / explainer / verifier / panels `xhigh`, instruction-following `high`, mechanical `medium`. Do not ship `max`. This CLI rejects `max`. Skills never send `reasoning_effort` on `spawn_subagent`.
-
-A missing override file uses the shipped default. A missing key, `inherit-parent`, or `auto` omits `model`. [`/setup-pstack`](./skills/setup-pstack/SKILL.md) re-detects from live `use one of:` and rewrites the split if it changed. Spawn skills cannot see a later enum. Run setup again if the binary grew a new level.
-
-## Not the Cursor plugin
-
-[`/setup-pstack`](./skills/setup-pstack/SKILL.md) in this repo configures model and effort for grok-build. Official Cursor `/setup-pstack` (inside Cursor, or the copy inside Grok Bot) is a different plugin. That copy writes `~/.cursor/rules` and uses Cursor slugs. Do not run it on Grok Build. It will not work here.
-
-## Usage
-
-Start a task with [`/poteto-mode`](./skills/poteto-mode/SKILL.md). It reads the request, picks a playbook, and runs the other skills as the steps need them.
-
-### Use `/poteto-mode` directly
-
-This is the main shortcut for rigorous engineering work. It ships twenty-two playbooks:
+this skill is the main shortcut. i use it whenever i need the agent to do rigorous engineering work. it comes with twenty-two playbooks:
 
 ```
 /poteto-mode this pr has a subtle bug where the scroll drifts every 750ms even when idle. repro
@@ -115,22 +77,24 @@ morning.
 
 </details>
 
-When invoked it:
+
+
+when invoked it:
 
 1. opens a todo list. the first item is reading the inline principles index in the skill.
 2. matches your task to a [playbook](./skills/poteto-mode/playbooks/) and copies the steps in verbatim.
 3. routes to the other skills as the steps fire.
 4. writes unslopped replies framed for the consumer and the maintainer.
 
-The full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/poteto-mode/SKILL.md).
+the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/poteto-mode/SKILL.md).
 
-Type [`/poteto-mode`](./skills/poteto-mode/SKILL.md) when a playbook matches or the task needs rigor. It does not auto-enter. Follow-ups in the same chat stay in this style until you opt out.
+[`/poteto-mode`](./skills/poteto-mode/SKILL.md) is also a sticky mode: once entered it stays on across turns, applying itself when a playbook matches or the task needs rigor and staying out of the way otherwise. opt out any time by saying so.
 
-[`/poteto-mode`](./skills/poteto-mode/SKILL.md) works with grok-build `/loop`, which expands to `scheduler_create`. You can leave a checkable predicate running for hours without sacrificing rigor.
+[`/poteto-mode`](./skills/poteto-mode/SKILL.md) works extremely well with cursor's `/loop` command. you can make cursor work for many hours without sacrificing rigor.
 
-## Skills
+## skills
 
-[`/poteto-mode`](./skills/poteto-mode/SKILL.md) runs most of these for you when a step needs them (`how`, `why`, `architect`, `arena`, `swarm`, `interrogate`, `unslop`, `no-comments`, `technical-writing`, `tdd`, and the principles). The table below is for when you want one directly:
+[`/poteto-mode`](./skills/poteto-mode/SKILL.md) runs most of these for you when a step needs them (`how`, `why`, `architect`, `arena`, `swarm`, `interrogate`, `unslop`, `no-comments`, `technical-writing`, `tdd`, and the principles). the table below is for when you want one directly:
 
 ```
 /how do we cancel runs? do we have an n+1 when we look up every run to cancel?
@@ -155,7 +119,8 @@ Type [`/poteto-mode`](./skills/poteto-mode/SKILL.md) when a playbook matches or 
 | [`/swarm`](./skills/swarm/SKILL.md) | you want N parallel workers across different slices or races, then one aggregated report. |
 | [`/interrogate`](./skills/interrogate/SKILL.md) | you have a diff and want several different models to try to break it, including a strict code-quality lens. |
 | [`/automate-me`](./skills/automate-me/SKILL.md) | you want your own `-mode` skill, drafted from how you've actually worked. |
-| [`/setup-pstack`](./skills/setup-pstack/SKILL.md) | override the shipped `grok-4.6` + per-role effort default. detects your models and writes `~/.grok/pstack-models.toml` plus `~/.grok/roles/pstack:<role>.toml`. |
+| [`/make-bot-ui`](./skills/make-bot-ui/SKILL.md) | you want a page or dashboard whose buttons wake a Grok Bot over a webhook, including the sender-key handoff and Tailscale. |
+| [`/setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. detects your models and writes a config rule. |
 | [`/reflect`](./skills/reflect/SKILL.md) | a long task landed and you want the recipe captured as a skill edit. |
 | [`/teach`](./skills/teach/SKILL.md) | you want to actually understand a change or subsystem, not just have it summarized. runs how + why and weaves one plain explanation, built up diagram by diagram. |
 | [`/tdd`](./skills/tdd/SKILL.md) | you're fixing a bug and there's a cheap local test path. write the failing test first, then the fix. |
@@ -171,9 +136,12 @@ Type [`/poteto-mode`](./skills/poteto-mode/SKILL.md) when a playbook matches or 
 
 </details>
 
-### Examples
 
-Most tasks start with [`/poteto-mode`](./skills/poteto-mode/SKILL.md) and let it route to a playbook. The other skills fire as the steps need them. A few are worth invoking directly.
+
+### examples
+
+mostly i type [`/poteto-mode`](./skills/poteto-mode/SKILL.md) at the start of a task and let it route to a playbook. the other skills fire as the steps need them. a few i reach for directly.
+
 
 <details>
 <summary>all the examples</summary>
@@ -215,17 +183,17 @@ automate-me:       /automate-me
 
 </details>
 
-## poteto-agent and Comment Sicko
+## the `poteto-agent` and Comment Sicko subagents
 
-This plugin also ships a subagent that runs the style end to end. Spawn it from the parent via `spawn_subagent` with `subagent_type: "pstack:poteto-agent"` when there is no role key. The wire alias for `spawn_subagent` is `task`. Playbook roles spawn `pstack:<role-key>` (`pstack:feature`, `pstack:how-explainer`, …) so shipped frontmatter `effort` applies, and so `/setup-pstack` overlays in `~/.grok/roles/pstack:<key>.toml` can override it. Substituting `general-purpose` skips the poteto-mode read and drifts. The child cannot spawn further children (`MAX_SUBAGENT_DEPTH` is 1). Do not send `reasoning_effort` on `spawn_subagent`.
+pstack also ships a subagent that runs my style end to end. spawn it from a parent agent via [`subagent_type: "poteto-agent"`](./agents/poteto-agent.md). it reads `poteto-mode` in full, including its inline principles index, before doing any work. substituting `generalPurpose` skips that read and drifts.
 
-[`/poteto-mode`](./skills/poteto-mode/SKILL.md) and [`subagent_type: "pstack:poteto-agent"`](./agents/poteto-agent.md) route through the same wrapper.
+[`/poteto-mode`](./skills/poteto-mode/SKILL.md) and [`subagent_type: "poteto-agent"`](./agents/poteto-agent.md) route through the same wrapper.
 
-This plugin also ships [Comment Sicko](./agents/comment-sicko.md), a read-only comment reviewer available as `subagent_type: "pstack:comment-sicko"`. Usually invoke it through [`/no-comments`](./skills/no-comments/SKILL.md), not directly.
+pstack also ships [Comment Sicko](./agents/comment-sicko.md), a read-only comment reviewer available as `subagent_type: "Comment Sicko"`. usually invoke it through [`/no-comments`](./skills/no-comments/SKILL.md), not directly.
 
-## Principles
+## principles
 
-Twenty-one short skills, one principle each. `poteto-mode` indexes them inline and reads that index at task start. The standalone files are there so other skills can reference a principle by name, and so the index can point at the full rule for each.
+twenty-one short skills, one principle each. `poteto-mode` indexes them inline and reads that index at task start. the standalone files are there so other skills can reference a principle by name, and so the index can point at the full rule for each.
 
 <details>
 <summary>all twenty-one principles</summary>
@@ -256,35 +224,34 @@ Twenty-one short skills, one principle each. `poteto-mode` indexes them inline a
 
 </details>
 
-## Not shipped here
+## not shipped here
 
-A few things `poteto-mode` referenced in Cursor pstack and does not bundle here:
+a few things `poteto-mode` references but doesn't bundle:
 
-- `/deslop`, `control-cli`, and `control-ui` lived in `cursor-team-kit`. Use `/unslop`, `/no-comments`, and drive the real app yourself.
-- Independent verify is `spawn_subagent` with `subagent_type` `pstack:independent-verifier`. Send a different `model` when the toml names a detected slug; otherwise omit `model`. Not a Cursor Cloud Agent. See [HARNESS.md](./HARNESS.md).
-- Graphite `gt` is optional. If it is missing, use `gh` and git.
-- Benny Cursor pack under `automations/benny/skills/` is the **upstream reference**. Live grok contract is [`automations/benny-grok/`](./automations/benny-grok/) (`/benny-triage`, `/benny-repro` after enable). Not pstack plugin hooks.
+- `/deslop` and the `deslop` skill ship in the `cursor-team-kit` plugin.
+- `control-cli` (for CLIs and TUIs) and `control-ui` (for browser, Electron, web) ship in `cursor-team-kit` too.
+- `/create-skill` is a cursor built-in. cursor also ships a built-in `/babysit`; inside `poteto-mode`, the [babysit playbook](./skills/poteto-mode/playbooks/babysit.md) supersedes it for pr-status requests.
 
-## Why are there no planning skills?
+install `cursor-team-kit` alongside pstack if you want the full set.
 
-grok-build has a built-in `plan` agent type. pstack still does not default to planning. The best spec is code. If you do want a plan, [`/poteto-mode`](./skills/poteto-mode/SKILL.md) covers it.
+## why are there no planning skills?
 
-## Make it yours
+cursor already has a great plan mode which works great with pstack. but personally, i don't believe in planning. the best spec is code. if you do want to make a plan, [`/poteto-mode`](./skills/poteto-mode/SKILL.md) covers it, but it's not a default. 
 
-`poteto-mode` is poteto's style. You may not want exactly that.
+## make it yours
 
-Type [`/automate-me`](./skills/automate-me/SKILL.md). It mines recent transcripts, drafts a `<your-name>-mode` skill from how you have actually worked, and routes through pstack underneath. You keep pstack as the base and end up with your own routing skill alongside `poteto-mode`.
+`poteto-mode` is my style. you may not want exactly that.
 
-The Grok Build default is `grok-4.6` plus per-role effort. Type [`/setup-pstack`](./skills/setup-pstack/SKILL.md) only if you want to change that. It detects slugs `spawn_subagent` accepts, asks for reasoning effort per role, and writes `~/.grok/pstack-models.toml` plus pstack-managed `~/.grok/roles/pstack:<role>.toml`. It will not write `~/.cursor/rules`. This is not the Cursor plugin.
+type [`/automate-me`](./skills/automate-me/SKILL.md). it mines your recent transcripts, drafts a `<your-name>-mode` skill from how you've actually worked, and routes through pstack underneath. you keep pstack as the base and end up with your own routing skill alongside `poteto-mode`.
 
-## Automations
+models are configurable too. type [`/setup-pstack`](./skills/setup-pstack/SKILL.md). it detects the models you have access to and writes a small always-applied rule mapping each role (code, judgment, the review panels) to a model. every skill reads it and falls back to sensible defaults when the rule is absent, so you override only what you want.
 
-This repo also ships a dormant [benny automation pack](./automations/benny/). Cursor `skills/` is the **upstream reference**. The live grok contract is [`automations/benny-grok/`](./automations/benny-grok/). Enable pstack and type `/benny-triage`. Do not add a `hooks` key to `plugin.json`.
+## automations
 
-Fork it. Improve it. PRs are welcome.
+pstack also ships a dormant [benny automation pack](./automations/benny/). benny triages slack issue reports, then reproduces and fixes confirmed bugs with real ui evidence. its files are not registered as slash skills.
 
-## License
+to set it up, point cursor at [`FOR_AGENTS.md`](./automations/benny/FOR_AGENTS.md). setup copies the pack into the target repository at `.cursor/automations/benny/`, enables pstack there for shared skills, and keeps user configuration outside the copied pack.
 
-MIT.
+## license
 
-Upstream is official pstack / poteto (Lauren Tan). This repository is **`tommy-ca/pstack`**, adapted from [aa2246740/pstack-grokbuild](https://github.com/aa2246740/pstack-grokbuild).
+MIT

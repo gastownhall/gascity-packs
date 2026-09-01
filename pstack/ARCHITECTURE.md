@@ -6,12 +6,11 @@ This pack is a mapping, not a second pstack. Two sources of truth stay distinct.
 
 | Layer | Source | What it owns |
 |---|---|---|
-| Discipline | Official Cursor pstack at `https://github.com/cursor/plugins/tree/main/pstack` tree `6fecddba65801f9b9c08b8b328d998ee5b09d290` | 21 principles, playbooks under `skills/poteto-mode/playbooks`, method skills (how, why, architect, swarm, arena, interrogate, figure-it-out) |
-| Host runtime vendor | `tommy-ca/pstack` pin in `vendor/pstack/upstream.toml` | Byte-identical skills copy. Playbooks and the skills tree omit `scripts/watch-pr/` and `scripts/orch/` |
+| Discipline and vendor | Official Cursor pstack at `https://github.com/cursor/plugins` path `pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290` | 21 principles, playbooks, method skills. Listed vendor paths are skills, README, LICENSE |
 | Pack shape | gascity-packs methodology packs (`bmad`, `superpowers`, `gstack`, `compound-engineering`) | `pack.toml` imports `../gascity`, `*-build` extends `build-base`, selector formulas override pack-local assets |
 | Primitives | `gascity/formulas` virtual contracts | `build-base`, `planning-base`, `decomposition-base`, `implementation-base`, `implementation-item-base`, `code-review-base`, `fix-loop-base`, `implement` |
 
-Do not treat `tommy-ca/pstack` as the discipline author. Do not treat Cursor `Task` fields or `watch-pr` as Gas City runtime.
+Do not pin `tommy-ca/pstack`. That tree is a Grok Build port, not this pack's upstream. Do not treat Cursor `Task` fields or `watch-pr` as Gas City runtime. Those strings may exist in vendored Cursor playbooks. Pack-owned formulas and assets must not prescribe them.
 
 ## Building blocks from Cursor pstack
 
@@ -25,7 +24,7 @@ Map each official block to one Gas City surface.
 | Feature, bug-fix, refactor, perf, prototype | `pstack-feature`, `pstack-bug-fix`, `pstack-refactor`, `pstack-perf`, `pstack-prototype` extending `pstack-build` |
 | Babysit, shipping, orchestrate, autonomous-run, autopilot | `pstack-babysit`, `pstack-shipping`, `pstack-orchestrate`, `pstack-autonomous-run`, `pstack-autopilot-*` extending `pstack-build` |
 | `spawn_subagent` / Cursor `Task` | Gas City `gc.run_target` plus Beads claims. No provider task engine |
-| `scripts/watch-pr`, `scripts/orch/orch.ts` | Unsupported. Those directories are absent from vendor skills. Tests grep playbooks and assert the paths do not exist |
+| `scripts/watch-pr`, `scripts/orch/orch.ts` | Cursor upstream text. Unsupported as Gas City runtime. Tests grep pack-owned formulas, assets, and agents |
 
 `make-bot-ui` exists in Cursor pstack 0.14.5 and is not a Gas City formula.
 
@@ -63,7 +62,7 @@ The pack is a registry of formulas, schemas, and source bindings.
 - Formula TOML is the executable graph.
 - `gc.build.*` schemas cover ordinary lifecycle artifacts.
 - `pstack.*` schemas cover pack-only evidence.
-- `vendor/pstack/` lists skills, README, and LICENSE at the recorded pin.
+- `vendor/pstack/` lists skills, README, and LICENSE from Cursor `pstack/` at the recorded commit.
 - Runtime `skills/` is a byte copy of vendored skills. It is methodology
   corpus, not formula `description_file`.
 - Plugin agent markdown, guide docs, and Benny automations are not vendored.
@@ -72,7 +71,7 @@ The pack is a registry of formulas, schemas, and source bindings.
 
 - No second scheduler.
 - No Cursor `Task` field names in formulas.
-- No vendor refresh to Cursor `main` in this change.
+- No vendor refresh to a moving Cursor `main` SHA. The pin is commit `6fecddba`.
 - No archive of `refresh-pstack-pack-source-and-formula-requirements` as written.
 - No babysit or orchestrate detach from `pstack-build` in this change.
 - No `graph_operator` interpreter.

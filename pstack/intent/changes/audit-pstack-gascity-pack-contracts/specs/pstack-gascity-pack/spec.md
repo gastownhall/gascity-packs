@@ -186,28 +186,22 @@ NOT require a separate graph-cook script. A `restart_token` field on
 
 ### Requirement: Upstream pstack corpus is exact and traceable
 
-Discipline source is official Cursor pstack at
-`https://github.com/cursor/plugins/tree/main/pstack` tree
-`6fecddba65801f9b9c08b8b328d998ee5b09d290`. Pack shape follows gascity-packs
-methodology packs (`bmad`, `superpowers`, `gstack`, `compound-engineering`)
-extending Gas City virtual contracts. The pack MUST vendor a reviewed runtime
-corpus under `vendor/pstack/` at the immutable pin in
-`vendor/pstack/upstream.toml`. That pin MAY be a host-adapted tree such as
-`tommy-ca/pstack` so babysit and orchestrate do not prescribe
-`scripts/watch-pr/watch-pr` or `scripts/orch/orch.ts`. The listed vendor
-paths MUST be `vendor/pstack/skills`, `vendor/pstack/README.md`, and
+The pack MUST vendor official Cursor pstack as the canonical methodology
+corpus. `vendor/pstack/upstream.toml` MUST set `source` to
+`https://github.com/cursor/plugins`, `path` to `pstack`, and `commit` to
+`6fecddba65801f9b9c08b8b328d998ee5b09d290`. The pack MUST NOT pin
+`tommy-ca/pstack` or any other host port as upstream. Pack shape follows
+gascity-packs methodology packs (`bmad`, `superpowers`, `gstack`,
+`compound-engineering`) extending Gas City virtual contracts. The listed
+vendor paths MUST be `vendor/pstack/skills`, `vendor/pstack/README.md`, and
 `vendor/pstack/LICENSE` only. Plugin agent markdown, guide docs, and Benny
-automations MUST NOT be vendored. The vendored
-`skills/poteto-mode/scripts/` tree MUST omit `watch-pr/` and `orch/` even
-when the recorded pin snapshot still contains those directories. The recorded
-SHA still names the reviewed tommy-ca commit. Runtime `skills/` is a
-methodology corpus workers may read. Formulas MUST NOT use `SKILL.md` as
-`description_file`. Runtime-specific Gas City prompts MUST live outside the
-vendored corpus. Focused tests MUST pin that revision, prove runtime
-`skills/` matches `vendor/pstack/skills/`, grep host-boundary playbooks,
-assert those CLI directories are absent, and assert the listed vendor paths.
-Tests MUST NOT require a `git archive` of Cursor `main`. The Cursor tree SHA
-is cited provenance, not a byte-compared vendor corpus.
+automations MUST NOT be vendored. Runtime `skills/` MUST match
+`vendor/pstack/skills/` byte-for-byte. Formulas MUST NOT use `SKILL.md` as
+`description_file`. Gas City mapping MUST live in pack-owned formulas,
+assets, and agents. Pack-owned files MUST NOT prescribe
+`scripts/watch-pr/watch-pr` or `scripts/orch/orch.ts`. Vendored Cursor
+playbooks MAY contain those paths as upstream text. Tests MUST NOT require a
+`git archive` of Cursor `main`. Tests MUST NOT require a tommy-ca URL.
 
 `pstack/ARCHITECTURE.md` MUST record the building-block map from Cursor
 playbooks and principles onto Gas City formulas and primitives.
@@ -219,8 +213,8 @@ playbooks and principles onto Gas City formulas and primitives.
 - **THEN** `vendor/pstack/upstream.toml` records that revision
 - **AND** all 21 canonical principle skill directories are present under runtime `skills/`
 - **AND** runtime `skills/` matches `vendor/pstack/skills/` byte-for-byte
-- **AND** the vendored host-boundary playbooks contain no prohibited local watcher or store path
-- **AND** `vendor/pstack/skills/poteto-mode/scripts/watch-pr/` and `scripts/orch/` do not exist
+- **AND** `vendor/pstack/upstream.toml` `source` is `https://github.com/cursor/plugins` and `path` is `pstack`
+- **AND** pack-owned formulas, assets, and agents contain no `scripts/watch-pr` or `scripts/orch/orch.ts` live path
 - **AND** `vendor/pstack/upstream.toml` `[vendor].paths` lists only skills, README, and LICENSE
 - **AND** `vendor/pstack/agents`, `vendor/pstack/docs`, and `vendor/pstack/automations` do not exist
 
@@ -235,8 +229,8 @@ playbooks and principles onto Gas City formulas and primitives.
 
 - **GIVEN** `pstack/TRACEABILITY.md` and `pstack/ARCHITECTURE.md`
 - **WHEN** a reader follows the discipline source
-- **THEN** TRACEABILITY names `https://github.com/cursor/plugins/tree/main/pstack` and tree `6fecddba65801f9b9c08b8b328d998ee5b09d290`
-- **AND** `vendor/pstack/upstream.toml` still records the reviewed runtime pin
+- **THEN** TRACEABILITY names `https://github.com/cursor/plugins/tree/main/pstack` and commit `6fecddba65801f9b9c08b8b328d998ee5b09d290`
+- **AND** `vendor/pstack/upstream.toml` records that same Cursor plugins commit as the vendor pin
 - **AND** ARCHITECTURE names `build-base` and sibling methodology packs as the packing reference
 
 ### Requirement: All 21 principles have first-class enforcement

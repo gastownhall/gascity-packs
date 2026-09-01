@@ -1,8 +1,9 @@
 [upstream]
-source = "https://github.com/tommy-ca/pstack"
-commit = "49d6ae81f17125ac198efa322403490b366856b6"
+source = "https://github.com/cursor/plugins"
+path = "pstack"
+commit = "6fecddba65801f9b9c08b8b328d998ee5b09d290"
 license = "MIT"
-provenance = "Grok-adapted pstack source; see vendor/pstack/README.md and source UPSTREAM record."
+provenance = "Official Cursor pstack plugin subtree. Gas City mapping lives outside vendor."
 
 [vendor]
 paths = [

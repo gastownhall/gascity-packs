@@ -457,9 +457,11 @@ def test_readme_documents_required_gas_city_roles() -> None:
 def test_vendor_source_binding_is_immutable() -> None:
     data = tomllib.loads((ROOT / "vendor/pstack/upstream.toml").read_text())
     source = data["upstream"]
-    assert source["source"] == "https://github.com/tommy-ca/pstack"
-    assert source["commit"] == "49d6ae81f17125ac198efa322403490b366856b6"
+    assert source["source"] == "https://github.com/cursor/plugins"
+    assert source["path"] == "pstack"
+    assert source["commit"] == "6fecddba65801f9b9c08b8b328d998ee5b09d290"
     assert source["license"] == "MIT"
+    assert "tommy-ca" not in source["source"]
     assert data["vendor"]["paths"] == [
         "vendor/pstack/skills",
         "vendor/pstack/README.md",
@@ -470,18 +472,16 @@ def test_vendor_source_binding_is_immutable() -> None:
         assert not (ROOT / "vendor/pstack" / extra).exists()
 
 
-def test_vendored_host_boundary_matches_runtime_contract() -> None:
-    for relative in (
-        "skills/poteto-mode/playbooks/babysit.md",
-        "skills/poteto-mode/playbooks/orchestrate.md",
-    ):
-        text = (ROOT / "vendor/pstack" / relative).read_text(encoding="utf-8")
-        assert "scripts/watch-pr" not in text
-        assert "scripts/orch/orch.ts" not in text
-        assert "orchestrate/<project-slug>/" not in text
-    scripts = ROOT / "vendor/pstack/skills/poteto-mode/scripts"
-    assert not (scripts / "watch-pr").exists()
-    assert not (scripts / "orch").exists()
+def test_pack_owned_surface_does_not_prescribe_cursor_host_clis() -> None:
+    forbidden = ("scripts/watch-pr", "scripts/orch/orch.ts", "orchestrate/<project-slug>/")
+    roots = (ROOT / "formulas", ROOT / "assets", ROOT / "agents")
+    for root in roots:
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for needle in forbidden:
+                assert needle not in text, (path, needle)
 
 
 def test_every_pstack_formula_declares_formula_compiler_requirement() -> None:
@@ -568,10 +568,8 @@ def test_delivery_checks_cover_pstack() -> None:
     assert "openspec/changes/pstack-gascity-pack/" not in traceability
     assert "not silently imported" in traceability
     assert "README.md" in traceability
-    assert "docs/guide/06-verify-and-ship.md" in traceability
-    assert "docs/guide/13-grok-natives.md" in traceability
-    assert "skills/poteto-mode/references/codex-tools.md" in traceability
-    assert "skills/poteto-mode/references/github-pr-fallback.md" in traceability
+    assert "https://github.com/cursor/plugins" in traceability
+    assert "tommy-ca/pstack" not in (ROOT / "vendor/pstack/upstream.toml").read_text()
     assert "moving maintained SHA" in traceability
     assert "no separate graph-cook script" in traceability
     assert "https://github.com/cursor/plugins/tree/main/pstack" in traceability

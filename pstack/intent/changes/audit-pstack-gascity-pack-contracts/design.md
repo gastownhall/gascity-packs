@@ -1,14 +1,15 @@
 ## Context
 
 The PStack pack is a schema-2 Gas City methodology layer. Durable specs live in
-dev-env. The pack vendors tommy-ca/pstack at
-`49d6ae81f17125ac198efa322403490b366856b6` and byte-copies `skills/` into the
-runtime tree. Refresh work already landed in the pack and was mostly copied into
-live specs by hand (`fb366ba3`) without `openspec archive`.
+dev-env. The pack vendors official Cursor pstack from `cursor/plugins` path `pstack`
+at `6fecddba65801f9b9c08b8b328d998ee5b09d290` and byte-copies `skills/` into
+the runtime tree. Gas City mapping lives in pack-owned formulas and assets.
+Refresh work already landed in the pack and was mostly copied into live specs
+by hand (`fb366ba3`) without `openspec archive`.
 
 ```mermaid
 flowchart LR
-  Pin[vendor pin 49d6ae8] --> Skills[runtime skills copy]
+  Pin[vendor pin Cursor 6fecddba] --> Skills[runtime skills copy]
   Formulas[29 formulas] --> GC[Gas City graph]
   GC --> Artifacts[gc.build and pstack evidence]
   Specs[dev-env OpenSpec] --> Formulas

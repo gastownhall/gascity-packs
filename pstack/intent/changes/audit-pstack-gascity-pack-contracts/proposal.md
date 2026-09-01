@@ -30,14 +30,11 @@ hand-synced live files and drop the 14-schema list.
 - Drop durable continuation/restart from the focused-test MUST list.
 - Adopt sibling selector overrides: pack-local planning assets and
   `lever-decision` on decomposition. Do not copy `contract = "graph.v2"`.
-- Name Cursor pstack tree `6fecddba` as discipline source and gascity-packs
-  workflow packs as packing reference. Keep the tommy-ca runtime pin for
-  host-boundary.
-- Omit `skills/poteto-mode/scripts/watch-pr/` and `scripts/orch/` from the
-  vendored skills tree so host-boundary is file absence, not only playbook
-  text. Do not retarget `upstream.toml` to Cursor.
-- Vendor only skills, README, and LICENSE. Drop plugin agent markdown, guide
-  docs, and Benny automations so the listed corpus matches sibling packing.
+- Pin `vendor/pstack/upstream.toml` to `https://github.com/cursor/plugins`
+  path `pstack` commit `6fecddba`. Do not pin `tommy-ca/pstack`.
+- Keep host-boundary on pack-owned formulas, assets, and agents. Vendored
+  Cursor playbooks may name `watch-pr` and `orch.ts` as upstream text.
+- Vendor only skills, README, and LICENSE from that Cursor subtree.
 
 ## Capabilities
 

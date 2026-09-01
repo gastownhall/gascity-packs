@@ -4,21 +4,18 @@
 
 | Source | Revision or locator | Use |
 |---|---|---|
-| Cursor pstack (discipline) | `https://github.com/cursor/plugins/tree/main/pstack` tree `6fecddba65801f9b9c08b8b328d998ee5b09d290` | 21 principles, playbooks, and method skills. Source of truth for upstream pstack |
-| Runtime vendor | `tommy-ca/pstack` `49d6ae81f17125ac198efa322403490b366856b6` | Listed paths are skills, README, and LICENSE. Host-boundary omits `watch-pr/` and `orch/`. Plugin agents, guide docs, and Benny automations stay on the pin snapshot and are not vendored |
+| Cursor pstack | `https://github.com/cursor/plugins/tree/main/pstack` commit `6fecddba65801f9b9c08b8b328d998ee5b09d290` | Canonical vendor corpus. Listed paths are skills, README, and LICENSE |
 | Workflow pack shape | gascity-packs `bmad`, `superpowers`, `gstack`, `compound-engineering` | Reference implementation for mapping a methodology onto `build-base` |
 | Gas City primitives | `gascity/formulas` virtual contracts | `build-base` and selector bases the pack extends |
 | Gist architecture | `23f21e688fc76b360d382e5cafb8d9c1` | Historical build-base, selector, formula, and schema notes |
 | Dev-env OpenSpec | `dev-env/openspec/specs/pstack-gascity-pack/spec.md` | Durable requirements, scenarios, architecture, ADR, and tasks |
 
-The vendor remains intentionally pinned to this reviewed snapshot. Maintained
-PStack has later documentation and adapter-reference changes after that pin,
-including `README.md`, `docs/guide/06-verify-and-ship.md`,
-`docs/guide/13-grok-natives.md`,
-`skills/poteto-mode/references/codex-tools.md`, and
-`skills/poteto-mode/references/github-pr-fallback.md`. Those changes are not silently imported.
+The vendor remains intentionally pinned to this reviewed Cursor plugins
+commit. Later Cursor `main` changes, including `README.md` and
+`skills/poteto-mode/playbooks/`, are not silently imported.
 A future source refresh must use a separate intent change and repeat the
 path/parity review. Do not treat a moving maintained SHA as the pack pin.
+Do not pin `tommy-ca/pstack`.
 
 ## Mapping
 
@@ -31,7 +28,7 @@ path/parity review. Do not treat a moving maintained SHA as the pack pin.
 | Providerless runtime | `agents/`, `assets/workflows/`, formula `gc.run_target` | Text and metadata tests |
 | Durable orchestration boundary | `formulas/pstack-orchestrate.formula.toml` | No scheduler/database/session-manager test |
 | Source/runtime separation | `vendor/pstack/` versus runtime assets | Source-binding/parity test |
-| Dual source of truth | `ARCHITECTURE.md` | Cursor pstack for discipline, gascity-packs workflow packs for packing |
+| Dual source of truth | `ARCHITECTURE.md` | Cursor pstack for vendor corpus, gascity-packs workflow packs for packing |
 | Intent-driven spec payload | `intent/changes/audit-pstack-gascity-pack-contracts/` | `scripts/apply_intent_change.py --validate-only`; dest copy plus archive proven on a writable dest-env clone with no dropped requirements |
 
 ## Evidence classes

@@ -6,8 +6,6 @@ disable-model-invocation: true
 
 # TDD Bug Fix
 
-This is `/tdd`. Use it first when the bug has a cheap local test path. If `/tdd` is not loaded and `/test-driven-development` is live, use that. Skip both when the test path is expensive, integration-heavy, or unclear.
-
 When fixing a bug with a clear, cheap test path, make the broken behavior executable before changing production code. The goal is a focused regression test that fails before the fix and passes after it.
 
 Do not force a test when it would be impractical. If the available test would require broad harness setup, brittle mocks, slow end-to-end infrastructure, production-only state, vague reproduction steps, or large unrelated fixture churn, skip adding a new test and use the closest useful verification instead.

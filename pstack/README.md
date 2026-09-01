@@ -40,7 +40,7 @@ paths use the gate's durable-root precedence: `GC_RIG_ROOT`,
 
 ## Source boundary
 
-The exact source corpus is under `vendor/pstack/` and is pinned in `vendor/pstack/upstream.toml`. Runtime-adapted roles, formulas, assets, mappings, schemas, and tests are outside the vendor tree. The pack includes all 21 principle skills; `principles/manifest.toml` is the machine-readable enforcement index.
+The exact source corpus is official Cursor pstack under `vendor/pstack/`, pinned in `vendor/pstack/upstream.toml` to `cursor/plugins` path `pstack`. Runtime-adapted roles, formulas, assets, mappings, schemas, and tests are outside the vendor tree. The pack includes all 21 principle skills; `principles/manifest.toml` is the machine-readable enforcement index.
 
 ## Safety
 
