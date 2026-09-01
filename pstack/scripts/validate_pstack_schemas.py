@@ -12,6 +12,7 @@ except ImportError:
     yaml = None
 
 PACK_ROOT = Path(__file__).resolve().parents[1]
+GAS_CITY_VALIDATOR = PACK_ROOT.parent / "gascity/assets/scripts/validate_build_artifact.py"
 COVERAGE = (
     "covered",
     "not_applicable",
@@ -31,6 +32,18 @@ FRONT = (
     "trace",
 )
 FORBIDDEN_FRONT_LEAVES = {"owner", "stage-owner", "stage_owner", "persona", "role"}
+
+
+def load_gascity_validator():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("gc_validate_build_artifact", GAS_CITY_VALIDATOR)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"could not load {GAS_CITY_VALIDATOR}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -83,6 +96,11 @@ def validate_schema_file(path: Path) -> None:
             or len(set(enforcements)) != len(enforcements)
         ):
             raise ValueError(f"{path}: allowed_enforcements must be unique non-empty strings")
+    gascity = load_gascity_validator()
+    try:
+        gascity.validate_schema_definition(data)
+    except gascity.ValidationError as exc:
+        raise ValueError(f"{path}: {exc}") from exc
 
 
 def iter_formula_nodes(node: Any) -> Iterator[dict[str, Any]]:
