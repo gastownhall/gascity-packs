@@ -15,5 +15,6 @@ paths = [
 
 [runtime_adaptation]
 owner = "Gas City pack"
-paths = ["skills", "agents", "formulas", "assets", "schemas", "principles", "mappings", "tests"]
-rule = "Never edit vendored source to adapt provider or runtime behavior."
+skills_copy = ["skills"]
+pack_owned = ["agents", "formulas", "assets", "schemas", "principles", "mappings", "tests"]
+rule = "Never edit vendored source to adapt provider or runtime behavior. Do not copy vendor agents onto pack-owned agents."

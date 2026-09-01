@@ -469,13 +469,38 @@ def test_vendor_source_binding_is_immutable() -> None:
         "vendor/pstack/LICENSE",
     ]
     assert (ROOT / "vendor/pstack/LICENSE").is_file()
-    assert (ROOT / "vendor/pstack/agents/comment-sicko.md").is_file()
-    assert (ROOT / "vendor/pstack/agents/poteto-agent.md").is_file()
-    assert (ROOT / "agents/architect/agent.toml").is_file()
+    vendor_agents = {path.name for path in (ROOT / "vendor/pstack/agents").iterdir()}
+    assert vendor_agents == {"comment-sicko.md", "poteto-agent.md"}
+    pack_agents = {path.name for path in (ROOT / "agents").iterdir() if path.is_dir()}
+    assert "architect" in pack_agents
+    assert vendor_agents.isdisjoint(pack_agents)
     assert not (ROOT / "agents/comment-sicko.md").is_file()
     assert not (ROOT / "agents/poteto-agent.md").is_file()
+    assert data["runtime_adaptation"]["skills_copy"] == ["skills"]
+    assert "agents" in data["runtime_adaptation"]["pack_owned"]
+    assert "agents" not in data["runtime_adaptation"]["skills_copy"]
     for extra in ("docs", "automations"):
         assert not (ROOT / "vendor/pstack" / extra).exists()
+
+
+def test_vendor_script_refuses_pack_owned_dest() -> None:
+    path = ROOT / "scripts/vendor_canonical_pstack.py"
+    spec = importlib.util.spec_from_file_location("pstack_vendor_canonical", path)
+    if spec is None or spec.loader is None:
+        raise AssertionError("could not load vendor_canonical_pstack")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        module.assert_safe_paths(ROOT, ROOT / "skills")
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("pack root dest must be refused")
+    try:
+        module.assert_safe_paths(ROOT / "vendor" / "pstack", ROOT / "agents")
+    except SystemExit:
+        return
+    raise AssertionError("pack agents runtime dest must be refused")
 
 
 def test_pack_owned_surface_does_not_prescribe_cursor_host_clis() -> None:

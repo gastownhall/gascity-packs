@@ -12,12 +12,25 @@ PACK_ROOT = Path(__file__).resolve().parents[1]
 COMMIT = "6fecddba65801f9b9c08b8b328d998ee5b09d290"
 TARBALL = f"https://codeload.github.com/cursor/plugins/tar.gz/{COMMIT}"
 PREFIX_PARTS = ("pstack",)
+LISTED = ("skills", "agents", "LICENSE", "README.md")
+
+
+def assert_safe_paths(dest: Path, runtime: Path) -> None:
+    dest = dest.resolve()
+    runtime = runtime.resolve()
+    pack = PACK_ROOT.resolve()
+    if dest in {pack, pack / "agents"}:
+        raise SystemExit(f"refusing dest {dest}; that is pack-owned")
+    if runtime == pack / "agents":
+        raise SystemExit(f"refusing runtime {runtime}; that is pack-owned")
 
 
 def copy_listed(src_pstack: Path, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
-    for name in ("skills", "agents", "LICENSE", "README.md"):
+    for name in LISTED:
         item = src_pstack / name
+        if not item.exists():
+            raise SystemExit(f"missing listed source {item}")
         target = dest / name
         if target.exists():
             if target.is_dir():
@@ -49,8 +62,9 @@ paths = [
 
 [runtime_adaptation]
 owner = "Gas City pack"
-paths = ["skills", "agents", "formulas", "assets", "schemas", "principles", "mappings", "tests"]
-rule = "Never edit vendored source to adapt provider or runtime behavior."
+skills_copy = ["skills"]
+pack_owned = ["agents", "formulas", "assets", "schemas", "principles", "mappings", "tests"]
+rule = "Never edit vendored source to adapt provider or runtime behavior. Do not copy vendor agents onto pack-owned agents."
 """,
         encoding="utf-8",
     )
@@ -63,6 +77,7 @@ def sync_runtime(vendor: Path, runtime: Path) -> None:
 
 
 def vendor(dest: Path, runtime: Path) -> None:
+    assert_safe_paths(dest, runtime)
     with tempfile.TemporaryDirectory() as tmp:
         tarball = Path(tmp) / "plugins.tar.gz"
         with urllib.request.urlopen(TARBALL) as response, tarball.open("wb") as handle:
