@@ -28,7 +28,7 @@ Map each official block to one Gas City surface.
 | Babysit, shipping, orchestrate, autonomous-run, autopilot | `pstack-babysit`, `pstack-shipping`, `pstack-orchestrate`, `pstack-autonomous-run`, `pstack-autopilot-*` extending `pstack-build` |
 | `opening-a-pr`, `pause-safely`, `worktree-cleanup` | Unsupported as sling formulas. Invoked from other programs or host disk cleanup |
 | `/poteto-mode` router | `pstack-poteto-mode` writes `pstack.route.v1`. Operator slings the `formula` field. No auto-sling |
-| `spawn_subagent` / Cursor `Task` | Gas City `gc.run_target` plus Beads claims. No provider task engine |
+| `spawn_subagent` / Cursor `Task` | Gas City `gc.run_target` plus Beads claims. N-model fanout is a city provider panel, not pack Task fields |
 | `scripts/watch-pr`, `scripts/orch/orch.ts` | Cursor upstream text. Unsupported as Gas City runtime. Tests grep pack-owned formulas, assets, and agents |
 | `agents/comment-sicko.md`, `agents/poteto-agent.md` | Host-plugin provenance under `vendor/pstack/agents/`. Not Gas City formulas. Pack-owned `pstack/agents/` stays `gc-role-worker` wrappers |
 
@@ -76,6 +76,14 @@ The pack is a registry of formulas, schemas, and source bindings.
   automations are not vendored. `vendor/pstack/README.md` names that subset
   and the GitHub guide URL.
 
+## Provider routing
+
+Pack agents have no `provider` key. City `[[rigs.patches]]` is 1:1 agent to provider. `[session].provider` is the city session backend, not a model roster. Formula-managed daemon work does not pass `--model`. The model is frozen on `[providers.<id>] args`. A city gets Cursor native, grok, composer, and frontier by cloning `builtin:cursor` into separate catalog ids.
+
+N-model arena and interrogate must not invent a pack scheduler. They must not stamp `gc.provider_panel` until Gas City consumes that key. Until then formulas stay sequential. `pstack-build-review` expansion is two persona lanes on one `pstack.reviewer`. It is not N-model. BMAD, Superpowers, gstack, and compound-engineering review expansions are the same persona primitive.
+
+Target cook path. City `[[provider_panels]]` members are `[providers.<id>]` catalog ids, not model slugs. After Gas City consumes the key, it will create N child beads with isolated paths. Each child will bind one catalog id and inherit that id's frozen `--model`. Workers claim one bead. Synthesizer reads paths, not provider names or model slugs.
+
 ## Non-goals
 
 - No second scheduler.
@@ -84,3 +92,4 @@ The pack is a registry of formulas, schemas, and source bindings.
 - No archive of `refresh-pstack-pack-source-and-formula-requirements` as written.
 - No babysit or orchestrate detach from `pstack-build` in this change.
 - No `graph_operator` interpreter.
+- No pack-local provider panel compiler.

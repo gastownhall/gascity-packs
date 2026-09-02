@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -9,7 +10,17 @@ import tempfile
 from pathlib import Path
 
 PACK_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CHANGE = "audit-pstack-gascity-pack-contracts"
+REPO_ROOT = PACK_ROOT.parent
+DEFAULT_SPEC_ROOT = REPO_ROOT / "openspec"
+_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+
+
+def change_name(source: Path, explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    name = source.name
+    stripped = _DATE_PREFIX.sub("", name, count=1)
+    return stripped or name
 
 
 def source_dir(path: Path) -> Path:
@@ -24,6 +35,12 @@ def source_dir(path: Path) -> Path:
 
 def copy_change(src: Path, dest_changes: Path) -> None:
     dest_changes.parent.mkdir(parents=True, exist_ok=True)
+    src_res = src.resolve()
+    dest_res = dest_changes.expanduser().resolve()
+    if src_res == dest_res:
+        return
+    if dest_res.exists() and dest_res in src_res.parents:
+        raise SystemExit("OpenSpec --source sits inside the dest change path")
     if dest_changes.exists():
         shutil.rmtree(dest_changes)
     shutil.copytree(src, dest_changes)
@@ -50,39 +67,49 @@ def validate(spec_root: Path, src: Path, name: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--change", default=DEFAULT_CHANGE)
-    parser.add_argument("--spec-root", type=Path, help="OpenSpec root with config.yaml, schemas, and specs")
+    parser.add_argument(
+        "--change",
+        default=None,
+        help="OpenSpec change name. Default: --source directory name with a leading YYYY-MM-DD- prefix stripped",
+    )
+    parser.add_argument(
+        "--spec-root",
+        type=Path,
+        default=DEFAULT_SPEC_ROOT,
+        help="OpenSpec root with config.yaml, schemas, and specs",
+    )
     parser.add_argument(
         "--source",
         type=Path,
         required=True,
-        help="OpenSpec change directory outside this pack",
+        help="OpenSpec change directory outside pstack/",
     )
-    parser.add_argument("--dest", type=Path, help="tree root that contains openspec/")
+    parser.add_argument(
+        "--dest",
+        type=Path,
+        default=REPO_ROOT,
+        help="tree root that contains openspec/",
+    )
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--archive", action="store_true", help="openspec archive after a successful dest copy")
     args = parser.parse_args()
     src = source_dir(args.source)
+    name = change_name(src, args.change)
+    spec_root = args.spec_root.expanduser().resolve()
     if args.validate_only:
-        spec_root = args.spec_root
-        if spec_root is None and args.dest is not None:
-            spec_root = args.dest / "openspec"
-        if spec_root is None:
-            raise SystemExit("pass --spec-root <openspec-dir> or --dest")
-        return validate(spec_root, src, args.change)
-    if args.dest is None:
-        raise SystemExit("pass --dest <openspec-tree-root> or --validate-only")
-    dest_changes = args.dest / "openspec" / "changes" / args.change
+        return validate(spec_root, src, name)
+    dest = args.dest.expanduser().resolve()
+    dest_changes = dest / "openspec" / "changes" / name
     try:
         copy_change(src, dest_changes)
     except OSError as exc:
         raise SystemExit(f"cannot write {dest_changes}: {exc}") from exc
-    rc = validate(args.dest / "openspec", src, args.change)
+    rc = validate(dest / "openspec", src, name)
     if rc != 0 or not args.archive:
         return rc
     return subprocess.run(
-        ["openspec", "archive", args.change, "-y"],
-        cwd=args.dest,
+        ["openspec", "archive", name, "-y"],
+        cwd=dest,
         check=False,
     ).returncode
 

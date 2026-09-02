@@ -80,9 +80,41 @@ sling formulas. `pstack-how`, `pstack-why`, `pstack-swarm`, `pstack-arena`,
 `pstack-interrogate`, `pstack-autonomous-run`, and `pstack-orchestrate` are
 composable formulas. Those method formulas are sequential annotated steps.
 They are not Cursor child fanout. They are not multi-provider fanout.
-Model diversity is host plugin work. Do not sling `/poteto-mode`. Sling `pstack-poteto-mode` to classify a request
+This checkout still runs those methods as sequential graphs. N-model
+routing belongs in city provider configuration, not in pack formula text
+and not in a host Task spawn. Do not sling `/poteto-mode`. Sling `pstack-poteto-mode` to classify a request
 into `pstack.route.v1`, then sling the `formula` field. The classifier does
 not auto-sling.
+
+## How N-model fanout will work
+
+A city already maps one role to one provider with `[[rigs.patches]]`.
+That table cannot give one role N backends. Duplicate patch rows are a
+defect.
+
+Target. The city declares `[providers.*]` catalog ids. Each id freezes
+`--model` in `args`. Then a panel lists those ids, not model slugs.
+
+```toml
+[providers.cursor-grok]
+base = "builtin:cursor"
+args = ["--model", "cursor-grok-4.5-high", "--force"]
+
+[[provider_panels]]
+id = "pstack-arena"
+members = ["cursor-grok", "cursor-composer", "antigravity"]
+```
+
+One catalog id cannot serve two models on Formula daemon work. A second
+model needs a second `[providers.<id>]`. After Gas City consumes the key,
+it will cook one child bead per member, isolate workspaces, and bind each
+bead at dispatch. The pack will stamp `gc.provider_panel` and a
+`{child_id}` artifact path only after that compiler exists.
+`[session].provider` is the city session backend. It is not a panel member.
+Sibling packs fan review personas, not models.
+
+Until that consumer exists, sling `pstack-arena` and `pstack-interrogate`
+as sequential evidence. Do not expect N isolated candidate files.
 
 The pack imports Gas City's `build-base` and uses the shared `gc.build.*` schemas for ordinary lifecycle artifacts. PStack-specific artifacts cover foundation, lever decisions, reproduction/root cause, principle applications, candidate comparison, orchestration state, and revision-bound verification.
 
