@@ -21,6 +21,7 @@ Map each official block to one Gas City surface.
 | `skills/principle-*` (21) | `pstack/skills/principle-*` plus `principles/manifest.toml` |
 | `skills/poteto-mode/playbooks/*.md` | Runtime skill copy. Gas City entry points are formula names, not `/poteto-mode`. Names are not `pstack-<playbook>` for every stem |
 | `how`, `why`, `architect`, `swarm`, `arena`, `interrogate` | `pstack-how`, `pstack-why`, `pstack-architect`, `pstack-swarm`, `pstack-arena`, `pstack-interrogate` |
+| Corpus-only skills (`figure-it-out`, `tdd`, `unslop`, `no-comments`, `make-bot-ui`, and the rest of `[corpus].skills`) | Named in `mappings/playbooks.toml`. No sling formula |
 | `feature`, `bug-fix`, `prototype` | `pstack-feature`, `pstack-bug-fix`, `pstack-prototype` extending `pstack-build` |
 | `perf-issue`, `refactoring` | `pstack-perf` and `pstack-refactor`, with aliases `pstack-perf-issue` and `pstack-refactoring` |
 | `investigation` | `pstack-investigation` sequential collect/write |
@@ -42,8 +43,8 @@ Map each official block to one Gas City surface.
 | `planning-base` | `pstack-planning` | Pack-local requirements, plan, plan-review assets and `pstack.*` run targets |
 | `decomposition-base` | `pstack-decomposition` | Extra step `lever-decision` before `decompose` |
 | `implement` | `pstack-implementation` | Drain into `pstack-work` / `pstack-work-item` |
-| `implementation-base` | `pstack-work` | Pack implementation convoy |
-| `implementation-item-base` | `pstack-work-item` | Single work item |
+| `implementation-base` | `pstack-work` via concrete `do-work` | Pack implementation convoy. Inherits `do-work` worktree assets |
+| `implementation-item-base` | `pstack-work-item` via concrete `do-work-item` | Single work item |
 | `code-review-base` | `pstack-review` | Expansion `pstack-build-review` |
 | `fix-loop-base` | `pstack-fix-loop` | Pack review-fix loop |
 

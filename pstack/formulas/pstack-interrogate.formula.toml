@@ -28,5 +28,12 @@ description_file = "../assets/workflows/pstack-methods/interrogate-review.md"
 id = "judgment"
 title = "Deduplicate and issue judgment"
 needs = ["review"]
-metadata = { "gc.run_target" = "pstack.review-synthesizer", "pstack.artifact_schema" = "gc.build.review.v1" }
+metadata = { "gc.run_target" = "pstack.review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "pstack.artifact_path", "pstack.artifact_path" = ".gc/pstack/interrogate-judgment.md" }
 description_file = "../assets/workflows/pstack-methods/interrogate-judgment.md"
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

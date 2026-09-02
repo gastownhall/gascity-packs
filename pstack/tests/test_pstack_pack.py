@@ -196,6 +196,46 @@ def test_playbook_map_excludes_method_skill_stems() -> None:
     assert "methods" not in data
 
 
+def test_corpus_only_skills_are_named() -> None:
+    data = tomllib.loads((ROOT / "mappings/playbooks.toml").read_text())
+    corpus = set(data["corpus"]["skills"])
+    formula_names = {path.stem.replace(".formula", "") for path in (ROOT / "formulas").glob("*.formula.toml")}
+    expected: set[str] = set()
+    for path in (ROOT / "vendor/pstack/skills").iterdir():
+        if not path.is_dir():
+            continue
+        name = path.name
+        if name.startswith("principle-") or name == "poteto-mode":
+            continue
+        if f"pstack-{name}" in formula_names:
+            continue
+        expected.add(name)
+    assert corpus == expected
+    assert corpus.isdisjoint({f"pstack-{name}" for name in corpus} & formula_names)
+    for name in corpus:
+        assert f"pstack-{name}" not in formula_names
+
+
+def test_interrogate_judgment_is_gated() -> None:
+    by_id = {step["id"]: step for step in load_formula("pstack-interrogate")["steps"]}
+    judgment = by_id["judgment"]
+    assert judgment["metadata"]["gc.build.artifact_schema"] == "gc.build.review.v1"
+    assert judgment["metadata"]["gc.build.artifact_path_keys"]
+    assert judgment["metadata"]["pstack.artifact_path"] == ".gc/pstack/interrogate-judgment.md"
+    assert judgment["check"]["check"]["path"] == ".gc/scripts/checks/build-artifact-valid.sh"
+
+
+def test_pstack_work_inherits_do_work_worktree() -> None:
+    data = load_formula("pstack-work")
+    assert data["extends"] == ["do-work"]
+    assert data["vars"]["implementation_target"]["default"] == "pstack.implementation-worker"
+    by_id = {step["id"]: step for step in data.get("steps", [])}
+    assert "prepare-worktree" not in by_id
+    assert "close-source-anchor" not in by_id
+    assert "implement" in by_id
+    assert by_id["implement"]["description_file"].endswith("pstack-work/implement.md")
+
+
 def test_route_schema_rejects_unknown_status() -> None:
     validator = load_build_artifact_validator()
     routed = """---

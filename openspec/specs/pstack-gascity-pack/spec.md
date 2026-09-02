@@ -250,7 +250,10 @@ names a runtime skill path. `pstack-poteto-mode` MUST classify a request into
 a mapped formula or an unsupported playbook and MUST write `pstack.route.v1`.
 It MUST NOT expand into the selected formula and MUST NOT set
 `gc.graph_operator`. Pack-owned formulas, assets, and agents MUST NOT name
-provider ids.
+provider ids. `pstack-interrogate` judgment MUST set
+`gc.build.artifact_schema` to `gc.build.review.v1`, MUST set
+`gc.build.artifact_path_keys`, and MUST run the shared build-artifact
+validator.
 
 #### Scenario: Poteto-mode router classifies without auto-sling
 
@@ -298,6 +301,9 @@ provider ids.
 - **AND** `select` records applicable review dimensions
 - **AND** review may set `gc.graph_operator` as annotation
 - **AND** judgment produces a review artifact
+- **AND** judgment sets `gc.build.artifact_schema` to `gc.build.review.v1`
+- **AND** judgment sets `gc.build.artifact_path_keys`
+- **AND** judgment runs the shared build-artifact validator
 - **AND** independent reviewer lanes are not expanded as separate graph children in this checkout
 - **AND** the formula does not stamp `gc.provider_panel`
 - **AND** after a panel consumer exists, the panel fans the `review` node only and MUST NOT replace `select` with provider ids
@@ -480,3 +486,21 @@ When `--change` is passed, that value MUST win.
 - **AND** `--change` is `pstack-gherkin-restamp`
 - **WHEN** validate-only runs
 - **THEN** the change name is `pstack-gherkin-restamp`
+
+### Requirement: Implementation convoy inherits do-work worktree assets
+
+Feature: pstack-gascity-pack
+
+Rule: pstack-work must not blank the inherited source-anchor contract
+
+`pstack-work` MUST extend `do-work`. It MUST default `implementation_target`
+to `pstack.implementation-worker`. It MUST NOT replace `prepare-worktree` or
+`close-source-anchor` with pack-local stub `description_file` paths.
+
+#### Scenario: pstack-work keeps do-work worktree steps
+
+- **GIVEN** `pstack/formulas/pstack-work.formula.toml`
+- **WHEN** the focused pack tests run
+- **THEN** the formula extends `do-work`
+- **AND** it has no pack-local `prepare-worktree` or `close-source-anchor` step override
+- **AND** `implementation_target` defaults to `pstack.implementation-worker`

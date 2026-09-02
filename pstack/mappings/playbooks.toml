@@ -82,3 +82,24 @@ class = "method-report"
 
 [unsupported]
 stems = ["opening-a-pr", "pause-safely", "worktree-cleanup"]
+
+[corpus]
+skills = [
+    "automate-me",
+    "blast-radius",
+    "bro",
+    "create-verification-skill",
+    "figure-it-out",
+    "maintain-verification-skill",
+    "make-bot-ui",
+    "no-comments",
+    "recall",
+    "reflect",
+    "setup-pstack",
+    "show-me-your-work",
+    "tdd",
+    "teach",
+    "technical-writing",
+    "typescript-best-practices",
+    "unslop",
+]

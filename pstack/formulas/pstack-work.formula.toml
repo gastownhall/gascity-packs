@@ -31,12 +31,6 @@ description = "Optional per-item summary path."
 default = ""
 
 [[steps]]
-id = "prepare-worktree"
-title = "Prepare item worktree"
-metadata = { "gc.run_target" = "gc.run-operator" }
-description_file = "../assets/workflows/pstack-work/prepare-worktree.md"
-
-[[steps]]
 id = "implement"
 title = "Implement owned work"
 needs = ["prepare-worktree"]
@@ -50,10 +44,3 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
-
-[[steps]]
-id = "close-source-anchor"
-title = "Close owned source anchor"
-needs = ["implement"]
-metadata = { "gc.run_target" = "gc.run-operator" }
-description_file = "../assets/workflows/pstack-work/close-source-anchor.md"
