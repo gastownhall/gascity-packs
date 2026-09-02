@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -815,7 +816,9 @@ def test_delivery_checks_cover_pstack() -> None:
     assert "slack-full pstack slack-mini; do" in ci
 
     traceability = (ROOT / "TRACEABILITY.md").read_text()
-    assert "dev-env/openspec/specs/pstack-gascity-pack/spec.md" in traceability
+    assert "openspec/specs/pstack-gascity-pack/spec.md" in traceability
+    assert "dest-env" not in traceability
+    assert "dev-env/openspec" not in traceability
     assert "openspec/changes/pstack-gascity-pack/" not in traceability
     assert "intent/changes/audit-pstack-gascity-pack-contracts" not in traceability
     assert "unproven" in traceability
@@ -837,6 +840,41 @@ def test_delivery_checks_cover_pstack() -> None:
     packs_readme = (PACKS_ROOT / "README.md").read_text()
     assert "[pstack](./pstack)" in packs_readme
     assert "Not a slung production import" in packs_readme
+    design = (ROOT / "DESIGN.md").read_text().lower()
+    assert "dest-env" not in design
+    specs = PACKS_ROOT / "openspec" / "specs"
+    for relative in (
+        "pstack-gascity-pack/spec.md",
+        "gascity-provider-panel/spec.md",
+        "pstack-delivery-evidence/spec.md",
+    ):
+        path = specs / relative
+        assert path.is_file(), relative
+        body = path.read_text().lower()
+        assert "tbd" not in body
+        assert "dest-env" not in body
+    program = (PACKS_ROOT / "docs/pstack-program-plan.md").read_text()
+    assert "pr-pstack-land-honesty" in program
+    assert "pr-pstack-panel-stamp" in program
+    assert "dest-env" not in program
+    assert ".audit/" not in program
+    assert "docs/pstack-program-plan.md" in traceability
+    assert "origin/main:gascity/pack.toml" in program
+    assert "origin/main:gascity/REQUIREMENTS.md" in program
+    assert "origin/main:skills/" not in program
+    repo = PACKS_ROOT
+    for line in program.splitlines():
+        marker = "git show origin/main:"
+        if marker not in line:
+            continue
+        rel = line.split(marker, 1)[1].strip().strip("`")
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "-e", f"origin/main:{rel}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, rel
 
 
 def test_method_formulas_keep_unconsumed_graph_operator_metadata() -> None:
@@ -857,6 +895,8 @@ def test_method_formulas_keep_unconsumed_graph_operator_metadata() -> None:
         body = path.read_text(encoding="utf-8")
         assert "spawn_subagent" not in body
         assert "cursor/agents" not in body
+        assert "gc.provider_panel" not in body
+        assert "gc.child_artifact_path_template" not in body
 
 
 def test_optional_pack_catalog_matches_declared_names() -> None:
@@ -929,14 +969,18 @@ def test_migration_formula_declares_ungated_callers_and_delete() -> None:
 
 def test_pack_does_not_ship_openspec_change_payloads() -> None:
     assert not (ROOT / "intent").exists()
+    assert not (PACKS_ROOT / "docs/openspec-changes").exists()
     requirements = (ROOT / "REQUIREMENTS.md").read_text()
     assert "intent/changes/audit-pstack-gascity-pack-contracts" not in requirements
     assert "unproven" in requirements
+    assert "dest-env" not in requirements
     plan = (PACKS_ROOT / "docs/pstack-gascity-pack-apply-plan.md").read_text()
     assert "pstack/intent/changes/audit-pstack-gascity-pack-contracts" not in plan
     script = (ROOT / "scripts/apply_intent_change.py").read_text()
     assert 'PACK_ROOT / "intent"' not in script
     assert "/home/tommyk/projects/dev-env" not in script
+    assert "dest-env" not in script
+    assert "DEFAULT_SPEC_ROOT" in script
 
 
 def test_apply_intent_change_rejects_pack_local_source() -> None:
@@ -954,6 +998,80 @@ def test_apply_intent_change_rejects_pack_local_source() -> None:
     )
     assert proc.returncode != 0
     assert "do not live inside the pack" in proc.stdout + proc.stderr
+
+
+def load_apply_intent_change():
+    path = ROOT / "scripts/apply_intent_change.py"
+    spec = importlib.util.spec_from_file_location("pstack_apply_intent_change", path)
+    if spec is None or spec.loader is None:
+        raise AssertionError("could not load apply_intent_change")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_apply_intent_change_derives_change_name_from_source() -> None:
+    script = (ROOT / "scripts/apply_intent_change.py").read_text()
+    assert "DEFAULT_CHANGE" not in script
+    apply_mod = load_apply_intent_change()
+    dated = pathlib.Path("2026-09-02-pstack-program-arm-list")
+    assert apply_mod.change_name(dated, None) == "pstack-program-arm-list"
+    assert apply_mod.change_name(dated, "pstack-gherkin-restamp") == "pstack-gherkin-restamp"
+    assert apply_mod.change_name(pathlib.Path("pstack-gherkin-restamp"), None) == "pstack-gherkin-restamp"
+    with tempfile.TemporaryDirectory() as tmp:
+        payload = pathlib.Path(tmp) / "pstack-gherkin-restamp"
+        payload.mkdir()
+        marker = payload / "proposal.md"
+        marker.write_text("x\n")
+        apply_mod.copy_change(payload, payload)
+        assert marker.is_file()
+        dest = pathlib.Path(tmp) / "outer"
+        nested = dest / "inner"
+        nested.mkdir(parents=True)
+        (nested / "proposal.md").write_text("x\n")
+        try:
+            apply_mod.copy_change(nested, dest)
+        except SystemExit as exc:
+            assert "sits inside" in str(exc)
+        else:
+            raise AssertionError("overlap was accepted")
+    if shutil.which("openspec") is None:
+        return
+    archive = PACKS_ROOT / "openspec/changes/archive/2026-09-02-pstack-program-arm-list"
+    derived = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/apply_intent_change.py"),
+            "--source",
+            str(archive),
+            "--validate-only",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    derived_out = derived.stdout + derived.stderr
+    assert derived.returncode == 0, derived_out
+    assert "Change 'pstack-program-arm-list' is valid" in derived_out
+    assert "pstack-delegate-provider-panel" not in derived_out
+    override = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/apply_intent_change.py"),
+            "--change",
+            "pstack-gherkin-restamp",
+            "--source",
+            str(archive),
+            "--validate-only",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    override_out = override.stdout + override.stderr
+    assert override.returncode == 0, override_out
+    assert "Change 'pstack-gherkin-restamp' is valid" in override_out
 
 
 def test_build_extends_base_and_preserves_anchors() -> None:
