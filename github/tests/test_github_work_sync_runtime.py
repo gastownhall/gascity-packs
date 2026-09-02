@@ -286,6 +286,7 @@ def canonical_runtime_contract() -> dict[str, object]:
     return {
         "schema_version": "1",
         "organization": "opsime-space",
+        "token_permissions": {"metadata": "read", "issues": "write", "organization_projects": "write"},
         "route": {
             "repository": "product",
             "rig": "product",
@@ -521,6 +522,9 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
                 stack.enter_context(mock.patch.object(
                     work_sync.ContractRunner, "read", return_value=contract,
                 ))
+                auth = stack.enter_context(mock.patch.object(
+                    work_sync, "installation_token_context", return_value=contextlib.nullcontext(),
+                ))
                 stack.enter_context(mock.patch.object(
                     work_sync, "runtime_event",
                     return_value=({"delivery_id": "delivery-1", "origin": "github-human"}, "BOT_1"),
@@ -538,6 +542,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
 
                 work_sync.execute_runtime_from_environment(dry_run=requested_dry_run)
 
+                self.assertEqual(auth.call_args.kwargs["permissions"], contract["token_permissions"])
                 run.assert_called_once_with(dry_run=expected_dry_run)
                 receipts.assert_called_once_with(
                     repository="product", store_ref="rig:product",
@@ -653,7 +658,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
                 "GC_GITHUB_REPO": "opsime-space/other",
             }, canonical_runtime_contract())
 
-    def test_installation_token_context_uses_injected_token_or_mints_without_retaining(self) -> None:
+    def test_installation_token_context_remints_and_restores_the_caller_environment(self) -> None:
         token_env = "WORK_SYNC_TEST_TOKEN"
         old = os.environ.pop(token_env, None)
         self.addCleanup(
@@ -668,16 +673,19 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
         }]}
         common.github_app_config_for_identity.return_value = {"app_id": "1"}
         common.create_installation_token.return_value = "minted-token"
+        permissions = {"metadata": "read", "issues": "write"}
 
         with work_sync.installation_token_context(
             repository_full_name="opsime-space/product",
             token_env=token_env,
             common=common,
+            permissions=permissions,
         ):
             self.assertEqual(os.environ[token_env], "minted-token")
         self.assertNotIn(token_env, os.environ)
         common.create_installation_token.assert_called_once_with(
-            {"app_id": "1"}, "123"
+            {"app_id": "1"}, "123",
+            repository_full_name="opsime-space/product", permissions=permissions,
         )
 
         os.environ[token_env] = "injected-token"
@@ -686,10 +694,14 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             repository_full_name="opsime-space/product",
             token_env=token_env,
             common=common,
+            permissions=permissions,
         ):
-            self.assertEqual(os.environ[token_env], "injected-token")
+            self.assertEqual(os.environ[token_env], "minted-token")
         self.assertEqual(os.environ[token_env], "injected-token")
-        common.create_installation_token.assert_not_called()
+        common.create_installation_token.assert_called_once_with(
+            {"app_id": "1"}, "123",
+            repository_full_name="opsime-space/product", permissions=permissions,
+        )
 
     def test_work_sync_uses_existing_rig_scoped_order_engine(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]

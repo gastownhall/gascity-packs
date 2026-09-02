@@ -85,10 +85,10 @@ def installation_token_context(
     repository_full_name: str,
     token_env: str,
     common: object,
+    permissions: dict[str, str] | None = None,
 ) -> object:
-    if os.environ.get(token_env):
-        yield
-        return
+    # An ambient token is not evidence of its repository/permission scope.
+    previous_token = os.environ.get(token_env)
     rules = common.load_rules()
     repos = rules.get("repos") if isinstance(rules, dict) else None
     matches = [
@@ -103,14 +103,22 @@ def installation_token_context(
     if not installation_id.isdigit() or int(installation_id) <= 0:
         raise RuntimeError("work-sync installation identity is unavailable")
     app_config = common.github_app_config_for_identity()
-    token = common.create_installation_token(app_config, installation_id)
+    token = common.create_installation_token(
+        app_config,
+        installation_id,
+        repository_full_name=repository_full_name,
+        permissions=permissions,
+    )
     if not isinstance(token, str) or not token:
         raise RuntimeError("work-sync installation token could not be minted")
     os.environ[token_env] = token
     try:
         yield
     finally:
-        os.environ.pop(token_env, None)
+        if previous_token is None:
+            os.environ.pop(token_env, None)
+        else:
+            os.environ[token_env] = previous_token
 
 
 _VIEWER_QUERY = """
@@ -182,19 +190,19 @@ class GitHubHTTPTransport:
         token_env: str,
         api_url: str = "https://api.github.com",
         timeout: float = 30.0,
-        urlopen: Callable[..., object] = urllib.request.urlopen,
+        urlopen: Callable[..., object] | None = None,
     ) -> None:
+        import github_intake_common as common
+
         if not token_env or not isinstance(token_env, str):
             raise ValueError("GitHub installation token environment is required")
-        parsed = urllib.parse.urlparse(api_url)
-        if parsed.scheme != "https" or not parsed.netloc or parsed.path not in {"", "/"}:
-            raise ValueError("GitHub API URL must be an HTTPS origin")
+        api_url = common.github_https_origin(api_url)
         if timeout <= 0:
             raise ValueError("GitHub transport timeout must be positive")
         self.token_env = token_env
         self.api_url = api_url.rstrip("/")
         self.timeout = timeout
-        self.urlopen = urlopen
+        self.urlopen = urlopen if urlopen is not None else common.github_no_redirect_urlopen
 
     @staticmethod
     def _is_write(method: str) -> bool:
@@ -1587,6 +1595,7 @@ class GitHubProjectSchemaReader:
             "project_schema",
             "managed_blocks",
             "projection_writer",
+            "token_permissions",
             "live_mutations",
             "cross_city_project",
             "cross_city_bead_types",
@@ -3683,6 +3692,7 @@ def execute_runtime_from_environment(*, dry_run: bool = False) -> dict[str, obje
         repository_full_name=environment["repository_full_name"],
         token_env=_WORK_SYNC_TOKEN_ENV,
         common=common,
+        permissions=contract.get("token_permissions"),
     ):
         transport = GitHubHTTPTransport(
             token_env=_WORK_SYNC_TOKEN_ENV,

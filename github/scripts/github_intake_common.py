@@ -16,6 +16,7 @@ import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from typing import Any
 
 WEBHOOK_SERVICE_NAME = "github-webhook"
@@ -1134,12 +1135,49 @@ def github_web_base() -> str:
     return urllib.parse.urlunparse((parsed.scheme or "https", host, path.rstrip("/"), "", "", "")).rstrip("/")
 
 
+def github_https_origin(value: str) -> str:
+    """Validate the work-sync API boundary before signing or sending credentials."""
+    message = "GitHub API URL must be an HTTPS origin"
+    if (
+        not isinstance(value, str)
+        or "?" in value or "#" in value
+        or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
+        raise ValueError(message)
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        port = parsed.port
+        valid = (
+            parsed.scheme == "https" and bool(parsed.hostname)
+            and parsed.username is None and parsed.password is None
+            and parsed.path in {"", "/"} and not parsed.query and not parsed.fragment
+            and (port is None or port > 0) and not parsed.netloc.endswith(":")
+        )
+    except ValueError:
+        raise ValueError(message) from None
+    if not valid:
+        raise ValueError(message)
+    return value.rstrip("/")
+
+
+class _NoGitHubRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Even same-origin redirects are not an accepted auth/write destination.
+        raise urllib.error.HTTPError(req.full_url, code, "GitHub redirect rejected", headers, fp)
+
+
+def github_no_redirect_urlopen(request: urllib.request.Request, *, timeout: float):
+    return urllib.request.build_opener(_NoGitHubRedirect()).open(request, timeout=timeout)
+
+
 def github_api_request(
     method: str,
     path: str,
     payload: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     bearer_token: str | None = None,
+    *,
+    allow_redirects: bool = True,
 ) -> dict[str, Any]:
     if path.startswith("http://") or path.startswith("https://"):
         url = path
@@ -1160,13 +1198,19 @@ def github_api_request(
         request_headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=body, headers=request_headers, method=method.upper())
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        open_request = urllib.request.urlopen if allow_redirects else github_no_redirect_urlopen
+        with open_request(request, timeout=20) as response:
             raw = response.read()
     except urllib.error.HTTPError as exc:
+        if not allow_redirects:
+            exc.close()
+            raise GitHubAPIError("GitHub scoped request failed") from None
         raw = exc.read()
         message = raw.decode("utf-8", errors="replace")
         raise GitHubAPIError(f"{method.upper()} {url} failed with {exc.code}: {message}") from exc
     except urllib.error.URLError as exc:
+        if not allow_redirects:
+            raise GitHubAPIError("GitHub scoped request failed") from None
         raise GitHubAPIError(f"{method.upper()} {url} failed: {exc}") from exc
     if not raw:
         return {}
@@ -1224,17 +1268,81 @@ def build_app_jwt(app_cfg: dict[str, Any]) -> str:
     return f"{signing_input.decode('ascii')}.{_base64url(signature)}"
 
 
-def create_installation_token(app_cfg: dict[str, Any], installation_id: str) -> str:
+def create_installation_token(
+    app_cfg: dict[str, Any],
+    installation_id: str,
+    *,
+    repository_full_name: str | None = None,
+    permissions: dict[str, str] | None = None,
+) -> str:
+    """Mint an installation token, proving exact scope when a consumer requests it."""
+    scoped = repository_full_name is not None or permissions is not None
+    request: dict[str, Any] = {}
+    requested_permissions: dict[str, str] = {}
+    if scoped:
+        github_https_origin(GITHUB_API_BASE)
+        if (
+            not isinstance(repository_full_name, str)
+            or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository_full_name)
+            or not isinstance(permissions, dict)
+            or not permissions
+            or any(
+                not isinstance(key, str)
+                or not re.fullmatch(r"[a-z][a-z0-9_]*", key)
+                or value not in ("read", "write", "none")
+                for key, value in permissions.items()
+            )
+        ):
+            raise GitHubAPIError("GitHub installation token scope is invalid")
+        requested_permissions = {key: value for key, value in permissions.items() if value != "none"}
+        if not requested_permissions:
+            raise GitHubAPIError("GitHub installation token permissions are empty")
+        request["payload"] = {
+            "repositories": [repository_full_name.split("/", 1)[1]],
+            "permissions": requested_permissions,
+        }
+        request["allow_redirects"] = False
     jwt_token = build_app_jwt(app_cfg)
     response = github_api_request(
         "POST",
         f"/app/installations/{installation_id}/access_tokens",
         bearer_token=jwt_token,
+        **request,
     )
-    token = response.get("token")
-    if not token:
+    token = response.get("token") if isinstance(response, dict) else None
+    if not isinstance(token, str) or not token:
         raise GitHubAPIError("GitHub installation token response did not include a token")
-    return str(token)
+    if scoped:
+        effective_permissions = response.get("permissions")
+        expected_permissions = {"metadata": "read", **requested_permissions}
+        if not isinstance(effective_permissions, dict) or {
+            key: value for key, value in effective_permissions.items() if value != "none"
+        } != expected_permissions:
+            raise GitHubAPIError("GitHub installation token permission readback mismatch")
+        try:
+            expires = datetime.fromisoformat(response["expires_at"].replace("Z", "+00:00"))
+            remaining = expires.timestamp() - time.time() if expires.tzinfo is not None else -1
+        except (KeyError, AttributeError, TypeError, ValueError, OverflowError):
+            remaining = -1
+        if not 0 < remaining <= 3600:
+            raise GitHubAPIError("GitHub installation token expiry readback is invalid")
+        readback = github_api_request(
+            "GET", "/installation/repositories?per_page=100", bearer_token=token,
+            allow_redirects=False,
+        )
+        repositories = readback.get("repositories") if isinstance(readback, dict) else None
+        total = readback.get("total_count") if isinstance(readback, dict) else None
+        if (
+            type(total) is not int
+            or total != 1
+            or not isinstance(repositories, list)
+            or len(repositories) != 1
+            or not isinstance(repositories[0], dict)
+            or not isinstance(repositories[0].get("full_name"), str)
+            or repositories[0]["full_name"].lower() != repository_full_name.lower()
+        ):
+            raise GitHubAPIError("GitHub installation token repository readback mismatch")
+    return token
 
 
 def repository_permission(
