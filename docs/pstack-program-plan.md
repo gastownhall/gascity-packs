@@ -1,6 +1,6 @@
 # PStack program plan
 
-A city operator needs pstack as a sequential Gas City factory today and N-model arena later without pack Task spawn. This program lands isolation and OpenSpec on PR 385, dogfoods a host city, restamps 0.1.0 after sling receipts, then stamps formulas only after Gas City consumes `gc.provider_panel`. The live graph is this file. Isolation files exist in the working tree. They are not on HEAD `0baecbb`. They are not on the PR 385 tip.
+A city operator needs pstack as a sequential Gas City factory today and N-model arena later without pack Task spawn. This program lands isolation and OpenSpec on PR 385, dogfoods a host city, restamps 0.1.0 after sling receipts, then stamps formulas only after Gas City consumes `gc.provider_panel`. The live graph is this file. Isolation and OpenSpec are on PR 385 tip `2f65f7b`. Host sling and registry restamp remain.
 
 ## How to read this
 
@@ -33,7 +33,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] From this parent session, spawn one owner per PR with `spawn_subagent` (`isolation: "worktree"`). Depth is 1. Owners do not spawn.
 - [ ] Follow this dependency graph. Start dependent work only after its parent merges, or base it on the parent branch when the execution playbook stacks.
   - [ ] `pr-pstack-land-honesty` first. Existing PR 385. Branch `feat/pstack-pack-honesty`.
-  - [ ] Host sling of `pstack-poteto-mode` and `pstack-build` after 1.1 is on 385. Not a GitHub PR.
+  - [ ] Host sling of `pstack-poteto-mode` and `pstack-build` after `pr-pstack-land-honesty` is on 385. Not a GitHub PR.
   - [ ] Restamp `registry.toml` 0.1.0 on the same PR after sling receipts.
   - [ ] Gas City compiler consumer for `gc.provider_panel`. Outside this packs formula tree.
   - [ ] `pr-pstack-panel-stamp` after that consumer exists.
@@ -85,7 +85,7 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 **Build.**
 
-- [ ] Commit isolation, filled panel Purpose, `openspec/` including archived `pstack-gherkin-restamp`, and this plan onto PR 385. HEAD `0baecbb` still names an out-of-repo Gherkin owner. Do not stamp `gc.provider_panel`. Do not restamp `registry.toml` in this box.
+- [x] Commit isolation, filled panel Purpose, `openspec/` including archived `pstack-gherkin-restamp`, and this plan onto PR 385 at `2f65f7b`. Do not stamp `gc.provider_panel`. Do not restamp `registry.toml` in this box.
 
 **You see.**
 
@@ -187,7 +187,7 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 ## Appendix A. Prototype evidence
 
-Explorer 01 proved production and panel plans still sequenced a foreign OpenSpec checkout while isolation already lives in the working tree. Arena candidate 1 is one master plan. Candidate 2 is an index plus three files. Live sling of a panel remains unproven. `GC_TEST_BIN` unset.
+Explorer 01 proved production and panel plans still sequenced a foreign OpenSpec checkout while isolation already lived in the working tree. Isolation is now on PR 385 tip `2f65f7b`. Arena candidate 1 is one master plan. Candidate 2 is an index plus three files. Live sling of a panel remains unproven. `GC_TEST_BIN` unset.
 
 ## Appendix B. Alternatives rejected
 
