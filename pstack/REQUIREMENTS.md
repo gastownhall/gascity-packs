@@ -38,5 +38,5 @@ and keeps provider/runtime dispatch outside the pack.
 
 - `uv run --with pytest --with pyyaml pytest -q gascity/tests/test_formula_assets.py gascity/tests/test_derived_pack_compatibility.py pstack/tests/test_pstack_pack.py`
 - `python -c 'import pathlib,tomllib; [tomllib.loads(p.read_text()) for p in pathlib.Path("pstack/formulas").glob("*.toml")]'`
-- Disposable live-city formula and agent listing when `GC_TEST_BIN` is set; no canonical city mutation. Live city sling remains unproven.
+- Disposable live-city formula and agent listing when `GC_TEST_BIN` is set; no canonical city mutation. Formula sling of `pstack-poteto-mode` and `pstack-build` remains unproven.
 - `python pstack/scripts/apply_intent_change.py --source openspec/changes/archive/2026-09-02-pstack-program-arm-list --validate-only` validates against this repository `openspec/`. The change name is the `--source` directory with a leading date prefix stripped. `--dest` defaults to the repository root. `--archive` merges into `openspec/specs/`. New payloads live under `openspec/changes/`. They do not live under `pstack/` or `docs/openspec-changes/`.

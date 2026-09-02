@@ -867,7 +867,9 @@ def test_delivery_checks_cover_pstack() -> None:
     assert "dev-env/openspec" not in traceability
     assert "openspec/changes/pstack-gascity-pack/" not in traceability
     assert "intent/changes/audit-pstack-gascity-pack-contracts" not in traceability
-    assert "unproven" in traceability
+    assert "Disposable live-city import is exercised when `GC_TEST_BIN` is set." in traceability
+    assert "Formula sling of `pstack-poteto-mode` and `pstack-build` remains unproven." in traceability
+    assert "Live city sling remains unproven." not in traceability
     assert "archive proven" not in traceability
     assert "not silently imported" in traceability
     assert "README.md" in traceability
@@ -1042,7 +1044,8 @@ def test_pack_does_not_ship_openspec_change_payloads() -> None:
     assert not (PACKS_ROOT / "docs/openspec-changes").exists()
     requirements = (ROOT / "REQUIREMENTS.md").read_text()
     assert "intent/changes/audit-pstack-gascity-pack-contracts" not in requirements
-    assert "unproven" in requirements
+    assert "Formula sling of `pstack-poteto-mode` and `pstack-build` remains unproven." in requirements
+    assert "Live city sling remains unproven." not in requirements
     assert "dest-env" not in requirements
     plan = (PACKS_ROOT / "docs/pstack-gascity-pack-apply-plan.md").read_text()
     assert "pstack/intent/changes/audit-pstack-gascity-pack-contracts" not in plan

@@ -19,7 +19,8 @@ repeat the path/parity review. Do not treat a moving maintained SHA as the pack 
 Do not pin `tommy-ca/pstack`.
 
 OpenSpec change payloads do not live under `pstack/`. Durable Gherkin lives
-at repository `openspec/`. Live city sling remains unproven.
+at repository `openspec/`. Disposable live-city import is exercised when `GC_TEST_BIN` is set.
+Formula sling of `pstack-poteto-mode` and `pstack-build` remains unproven.
 
 ## Mapping
 
