@@ -472,17 +472,17 @@ When `--change` is omitted, the change name MUST be the `--source`
 directory name with a leading `YYYY-MM-DD-` prefix removed when present.
 When `--change` is passed, that value MUST win.
 
-#### Scenario: Arm list archive validates without --change
+#### Scenario: Dated archive validates without --change
 
-- **GIVEN** `--source` is `openspec/changes/archive/2026-09-02-pstack-program-arm-list`
+- **GIVEN** `--source` is `openspec/changes/archive/2026-09-02-pstack-mapping-gaps`
 - **AND** `--change` is omitted
 - **WHEN** validate-only runs
-- **THEN** the change name is `pstack-program-arm-list`
+- **THEN** the change name is `pstack-mapping-gaps`
 - **AND** OpenSpec strict validate uses that name
 
 #### Scenario: Explicit --change wins
 
-- **GIVEN** `--source` is `openspec/changes/archive/2026-09-02-pstack-program-arm-list`
+- **GIVEN** `--source` is `openspec/changes/archive/2026-09-02-pstack-mapping-gaps`
 - **AND** `--change` is `pstack-gherkin-restamp`
 - **WHEN** validate-only runs
 - **THEN** the change name is `pstack-gherkin-restamp`

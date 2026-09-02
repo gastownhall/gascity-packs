@@ -858,6 +858,11 @@ def test_delivery_checks_cover_pstack() -> None:
 
     traceability = (ROOT / "TRACEABILITY.md").read_text()
     assert "openspec/specs/pstack-gascity-pack/spec.md" in traceability
+    assert "Durable Gherkin lives" in traceability
+    assert "repository `openspec/`" in traceability
+    vendor_and = "it does not name another project as the Gherkin owner"
+    assert vendor_and in (PACKS_ROOT / "openspec/specs/pstack-gascity-pack/spec.md").read_text()
+    assert "gherkin owner" not in traceability.lower()
     assert "dest-env" not in traceability
     assert "dev-env/openspec" not in traceability
     assert "openspec/changes/pstack-gascity-pack/" not in traceability
@@ -1089,7 +1094,7 @@ def test_apply_intent_change_derives_change_name_from_source() -> None:
             raise AssertionError("dest inside source was accepted")
     if shutil.which("openspec") is None:
         pytest.skip("openspec CLI not installed")
-    archive = PACKS_ROOT / "openspec/changes/archive/2026-09-02-pstack-program-arm-list"
+    archive = PACKS_ROOT / "openspec/changes/archive/2026-09-02-pstack-mapping-gaps"
     derived = subprocess.run(
         [
             sys.executable,
@@ -1104,7 +1109,7 @@ def test_apply_intent_change_derives_change_name_from_source() -> None:
     )
     derived_out = derived.stdout + derived.stderr
     assert derived.returncode == 0, derived_out
-    assert "Change 'pstack-program-arm-list' is valid" in derived_out
+    assert "Change 'pstack-mapping-gaps' is valid" in derived_out
     assert "pstack-delegate-provider-panel" not in derived_out
     override = subprocess.run(
         [
