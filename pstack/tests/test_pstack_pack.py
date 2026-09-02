@@ -882,7 +882,8 @@ def test_delivery_checks_cover_pstack() -> None:
     assert "bmad" in architecture
     assert "6fecddba65801f9b9c08b8b328d998ee5b09d290" in architecture
     assert "not a slung production release" in traceability
-    assert "without a host sling" in traceability
+    assert "without a host sling of `pstack-poteto-mode` and `pstack-build`" in traceability
+    assert "no compiler consumer for `gc.provider_panel`" in traceability
     packs_readme = (PACKS_ROOT / "README.md").read_text()
     assert "[pstack](./pstack)" in packs_readme
     assert "Not a slung production import" in packs_readme
@@ -902,6 +903,10 @@ def test_delivery_checks_cover_pstack() -> None:
     program = (PACKS_ROOT / "docs/pstack-program-plan.md").read_text()
     assert "pr-pstack-land-honesty" in program
     assert "pr-pstack-panel-stamp" in program
+    assert "Host sling of `pstack-poteto-mode` and `pstack-build` after `pr-pstack-land-honesty` is on 385" in program
+    assert "Restamp `registry.toml` 0.1.0 on the same PR after sling receipts" in program
+    assert "Gas City compiler is outside this packs tree" in program
+    assert "must not start on Gherkin alone" in program
     assert "dest-env" not in program
     assert ".audit/" not in program
     assert "docs/pstack-program-plan.md" in traceability
@@ -941,8 +946,13 @@ def test_method_formulas_keep_unconsumed_graph_operator_metadata() -> None:
         body = path.read_text(encoding="utf-8")
         assert "spawn_subagent" not in body
         assert "cursor/agents" not in body
-        assert "gc.provider_panel" not in body
-        assert "gc.child_artifact_path_template" not in body
+
+
+def test_formulas_omit_provider_panel_keys() -> None:
+    for path in (ROOT / "formulas").glob("*.formula.toml"):
+        body = path.read_text(encoding="utf-8")
+        assert "gc.provider_panel" not in body, path.name
+        assert "gc.child_artifact_path_template" not in body, path.name
 
 
 def test_optional_pack_catalog_matches_declared_names() -> None:
@@ -961,6 +971,20 @@ def test_optional_pack_catalog_matches_declared_names() -> None:
         text = path.read_text(encoding="utf-8")
         for name in names:
             assert name not in text, path.name
+
+
+def test_gascity_has_no_provider_panel_consumer() -> None:
+    hits: list[str] = []
+    for path in GAS_CITY.rglob("*"):
+        if not path.is_file() or path.suffix == ".pyc" or "__pycache__" in path.parts:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "provider_panel" in text:
+            hits.append(str(path.relative_to(GAS_CITY)))
+    assert hits == []
 
 
 def test_gascity_has_no_graph_operator_consumer() -> None:

@@ -89,7 +89,7 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 **You see.**
 
-- [ ] `rg gc.provider_panel pstack/formulas` prints nothing. `pytest -q pstack/tests/test_pstack_pack.py` prints `48 passed`. `openspec/specs/gascity-provider-panel/spec.md` has no TBD.
+- [ ] `rg gc.provider_panel pstack/formulas` prints nothing. `pytest -q pstack/tests/test_pstack_pack.py` prints `50 passed`. `openspec/specs/gascity-provider-panel/spec.md` has no TBD.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -99,7 +99,7 @@ Each live lane runs in its own `isolation: "worktree"` child at the PR head. Dri
 
 - [ ] Lane 1. Read DESIGN Provider panel fanout. Save `design-panel.png`. Pass when the section names `[[provider_panels]]` and forbids stamping before a consumer.
 - [ ] Lane 2. Grep formulas for `gc.provider_panel`. Save `no-stamp.png`. Pass when the grep is empty.
-- [ ] Lane 3. Run pack tests. Save `pytest.png`. Pass when the log shows 48 passed.
+- [ ] Lane 3. Run pack tests. Save `pytest.png`. Pass when the log shows 50 passed.
 - [ ] Lane 4. Read `openspec/specs/gascity-provider-panel/spec.md`. Save `panel-purpose.png`. Pass when Purpose is not TBD.
 - [ ] Lane 5. Grep TRACEABILITY for another project checkout. Save `no-foreign-openspec.png`. Pass when the grep is empty.
 - [ ] Lane 6. Confirm this plan has no gitignored payload path. Save `plan-clean.png`. Pass when no gitignored OpenSpec payload path appears.
