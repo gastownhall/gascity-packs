@@ -39,8 +39,8 @@ def copy_change(src: Path, dest_changes: Path) -> None:
     dest_res = dest_changes.expanduser().resolve()
     if src_res == dest_res:
         return
-    if dest_res.exists() and dest_res in src_res.parents:
-        raise SystemExit("OpenSpec --source sits inside the dest change path")
+    if dest_res in src_res.parents or src_res in dest_res.parents:
+        raise SystemExit("OpenSpec --source and dest change path overlap")
     if dest_changes.exists():
         shutil.rmtree(dest_changes)
     shutil.copytree(src, dest_changes)

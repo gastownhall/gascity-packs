@@ -10,6 +10,7 @@ import sys
 import tempfile
 from unittest import mock
 
+import pytest
 import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -1033,11 +1034,21 @@ def test_apply_intent_change_derives_change_name_from_source() -> None:
         try:
             apply_mod.copy_change(nested, dest)
         except SystemExit as exc:
-            assert "sits inside" in str(exc)
+            assert "overlap" in str(exc)
         else:
             raise AssertionError("overlap was accepted")
+        tree = pathlib.Path(tmp) / "tree"
+        tree.mkdir()
+        (tree / "proposal.md").write_text("x\n")
+        inner_dest = tree / "changes" / "openspec"
+        try:
+            apply_mod.copy_change(tree, inner_dest)
+        except SystemExit as exc:
+            assert "overlap" in str(exc)
+        else:
+            raise AssertionError("dest inside source was accepted")
     if shutil.which("openspec") is None:
-        return
+        pytest.skip("openspec CLI not installed")
     archive = PACKS_ROOT / "openspec/changes/archive/2026-09-02-pstack-program-arm-list"
     derived = subprocess.run(
         [
