@@ -1,6 +1,6 @@
 # PStack program plan
 
-A city operator needs pstack as a sequential Gas City factory today and N-model arena later without pack Task spawn. This program lands isolation and OpenSpec on PR 385, dogfoods a host city, restamps 0.1.0 after sling receipts, then stamps formulas only after Gas City consumes `gc.provider_panel`. The live graph is this file. Isolation and OpenSpec are on PR 385 tip `2f65f7b`. Host sling and registry restamp remain.
+A city operator needs pstack as a sequential Gas City factory today and N-model arena later without pack Task spawn. This program lands isolation and OpenSpec on PR 385, dogfoods a host city, restamps 0.1.0 after sling receipts, then stamps formulas only after Gas City consumes `gc.provider_panel`. The live graph is this file. Isolation and OpenSpec are on PR 385. Host sling and registry restamp remain.
 
 ## How to read this
 
