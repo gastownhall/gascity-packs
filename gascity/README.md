@@ -113,6 +113,7 @@ The SDLC phases are:
 | Assess a GitHub issue | `github-issue-triage` | Triage report and a sticky issue comment, created or updated; no implementation |
 | Fix a GitHub issue | `github-issue-fix` | Implemented and reviewed issue fix; sticky issue-fix status comment created or updated; optional draft or ready PR |
 | Review a GitHub PR | `github-pr-review` | Review report and a sticky PR comment for the current head, created or updated; no code changes, formal GitHub review, or merge |
+| Smoke-test a deployed app after a change ships | `smoke-test` | Browser-driven verdict in root-bead notes and mail, with screenshots; with a `design_frame`, one check per approved-frame element plus a scope-shrinkage check; no code changes, no GitHub comments |
 
 The normal build continuations use one implementation-plan review gate; a required-changes or blocked verdict stops the continuation. `design-review` and `github-issue-fix` provide review loops that harden an implementation plan. Testing evidence is required; TDD is not. `gc.mayor` can gather the upstream artifact paths needed by the continuation formulas.
 

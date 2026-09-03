@@ -45,6 +45,7 @@ FORMULAS = {
     "publish",
     "review",
     "same-session-implement",
+    "smoke-test",
 }
 
 ROLE_AGENTS = {
@@ -78,6 +79,7 @@ CATALOG_FORMULAS = {
     "github-pr-review",
     "implement",
     "review",
+    "smoke-test",
 }
 
 BUILD_BASE_STEPS = [
@@ -3713,6 +3715,66 @@ class FormulaAssetTests(unittest.TestCase):
             self.assertEqual(data["mode"], "report")
             self.assertFalse(data["target_required"])
             self.assertEqual([step["id"] for step in data["steps"]], ["validate-context", "write-report"])
+
+    def test_smoke_test_derives_design_checks_from_the_frame(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        data = load_formula(root, "smoke-test")
+
+        self.assertFalse(data["target_required"])
+        self.assertEqual(data["catalog"]["name"], "smoke-test")
+        self.assertEqual(
+            [step["id"] for step in data["steps"]],
+            ["preflight", "checklist", "drive", "report"],
+        )
+        for step in data["steps"]:
+            with self.subTest(step=step["id"]):
+                self.assertEqual(step["metadata"]["gc.run_target"], "gc.run-operator")
+
+        # The frame is opt-in by launch var and otherwise detected from the
+        # change context; a plain smoke needs nothing.
+        design_frame = data["vars"]["design_frame"]
+        self.assertEqual(design_frame["default"], "")
+        self.assertNotIn("required", design_frame)
+
+        workflows = root / "assets" / "workflows" / "smoke-test"
+        checklist = (workflows / "checklist.md").read_text(encoding="utf-8")
+        drive = (workflows / "drive.md").read_text(encoding="utf-8")
+        report = (workflows / "report.md").read_text(encoding="utf-8")
+
+        # Checklist: the frame decision is written down, design checks come
+        # from the rendered frame container and are uncapped, and only an
+        # operator decision recorded on the tracker authorises an omission.
+        self.assertIn("`Frame: none`", checklist)
+        self.assertIn("never `curl` the artifact URL", checklist)
+        self.assertIn("Enumerate only what sits INSIDE the frame", checklist)
+        self.assertIn("does NOT apply here: one check per frame element", checklist)
+        for criterion in ("**present**", "**placed**", "**shape**"):
+            self.assertIn(criterion, checklist)
+        self.assertIn("`scope-1`", checklist)
+        self.assertIn("silence never authorises, a PR body never does, a bead never does", checklist)
+
+        # Drive: absence fails even when the PR body declares it, the cause
+        # precedence is fixed, a tracker-recorded operator decision is the
+        # only passing cause, every design check has a frame/live pair, and
+        # nothing is carried over from an earlier run.
+        self.assertIn("is a FAIL — even if the PR body declares it out of scope", drive)
+        precedence = [
+            drive.index('`declared divergence (PR body: "<quoted phrase>")`'),
+            drive.index("`missing`"),
+            drive.index("`misplaced:"),
+            drive.index("`shape:"),
+        ]
+        self.assertEqual(precedence, sorted(precedence))
+        self.assertIn('`operator-authorised divergence (tracker: "<quoted line>")`', drive)
+        self.assertIn("`design-N-frame.png` + `design-N-live.png`", drive)
+        self.assertIn("Never carry a previous run's checklist.md, verdict.json or", drive)
+        self.assertIn('"authorised_by"', drive)
+
+        # Report: every design fail is listed with its cause and pair; a
+        # declared divergence is never folded into a count.
+        self.assertIn("Frame: <artifact URL> #/<page>", report)
+        self.assertIn("List EVERY design fail with its cause and its screenshot pair", report)
+        self.assertIn("never summarise the", report)
 
     def test_github_adapter_formulas_are_targetless_url_adapters(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]

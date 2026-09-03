@@ -1,0 +1,97 @@
+description = """
+Targetless post-deploy smoke-test adapter.
+
+Opens a real browser against a deployed application right after a change
+ships (PR merge or direct commit to the default branch), walks the app
+against a checklist derived from the change context, and reports a verdict
+by root-bead notes and mail.
+
+When the change was built to an approved design artifact frame, the design
+checklist is derived from the FRAME, not from the PR: one check per element
+inside the frame container, one scope-shrinkage check, and a frame/live
+screenshot pair per design check. A frame element the PR body declares out
+of scope still fails — the verdict shows the scope decision as a red line,
+never a green tick; only an operator decision recorded on the campaign
+tracker passes.
+
+Authority: this workflow reports. It never edits code, pushes, merges,
+closes PRs, comments on GitHub, or retries a deploy. A broken app is a
+`fail` check with evidence; the operator decides what happens next.
+
+Launch inputs:
+- app_url: {{app_url}}
+- change_context: {{change_context}} (what shipped: PR URL, commit, issue link, or prose)
+- focus: {{focus}} (optional flows to concentrate on; empty = general smoke)
+- design_frame: {{design_frame}} (design-campaign runs: the approved artifact
+  frame the change was built to — artifact URL + page anchor + the record it
+  is mocked on; empty = no frame unless the change context names one)
+- report_to: {{report_to}}
+- run_root: {{run_root}} (optional override; empty resolves to the rig
+  artifact root with the pack artifact helper)
+- cloud_profile_id: {{cloud_profile_id}} (remote signed-in browser profile
+  when the city's browser tooling offers one; empty forces the local browser)
+"""
+formula = "smoke-test"
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[catalog]
+name = "smoke-test"
+description = "Browser-drive a freshly deployed app against the change context — or the approved design frame — and report a smoke-test verdict."
+
+[vars]
+[vars.app_url]
+description = "Base URL of the deployed app under test, e.g. https://app.example.com."
+required = true
+
+[vars.change_context]
+description = "What just shipped: PR URL, merge commit, issue link, or a prose summary. Drives the non-design checklist. Empty means a general health pass."
+default = ""
+
+[vars.focus]
+description = "Optional focus areas or flows to exercise. Empty means a general smoke across the app's main surfaces."
+default = ""
+
+[vars.design_frame]
+description = "Design-campaign runs only: the approved artifact frame the change was built to — artifact URL + page anchor + the record the frame is mocked on, free text, e.g. 'https://claude.ai/code/artifact/<id> #/<page> — mocked on /app/records/<id>'. Empty means no frame, unless the change context, the PR body, the work bead, or its campaign tracker names a design artifact URL — the checklist step detects that and says so."
+default = ""
+
+[vars.report_to]
+description = "Mail recipient for the verdict: an agent name such as mayor, or human."
+default = "human"
+
+[vars.run_root]
+description = "Optional run-artifact root override (screenshots, checklist, verdict). Empty resolves to the rig artifact root through assets/scripts/artifacts.py."
+default = ""
+
+[vars.cloud_profile_id]
+description = "Profile id for a remote signed-in browser session carrying the operator's app sign-ins, when the city's browser tooling offers one. Empty disables remote mode and forces the local unauthenticated browser."
+default = ""
+
+[[steps]]
+id = "preflight"
+title = "Preflight: browser up, app reachable, run directory ready"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/smoke-test/preflight.md"
+
+[[steps]]
+id = "checklist"
+title = "Derive the smoke checklist from the change context and the design frame"
+needs = ["preflight"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/smoke-test/checklist.md"
+
+[[steps]]
+id = "drive"
+title = "Drive the live app in the browser"
+needs = ["checklist"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/smoke-test/drive.md"
+
+[[steps]]
+id = "report"
+title = "Report the verdict"
+needs = ["drive"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/smoke-test/report.md"

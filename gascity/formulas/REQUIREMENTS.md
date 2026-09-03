@@ -10,7 +10,8 @@ Schema: `gc.base-formulas.requirements.v1`
 
 This ledger covers every formula in the base pack. The rows are grouped by
 methodology contract, default implementation, implementation utilities, review
-and fix utilities, GitHub adapters, and publication helpers.
+and fix utilities, design and publish utilities, verification utilities, GitHub
+adapters, and publication helpers.
 
 ## Purpose
 
@@ -183,6 +184,12 @@ this ledger against the `FORMULAS` constant and formula directory.
 | GC-BF-017 | `design-review` | Cataloged targeted design review | Reviews and finalizes a design document through a body scope and cleanup finalizer while preserving notification semantics. | `design-review.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-018 | `publish` | Targetless internal publication helper | Runs publish preflight, no-ops when push/PR authorization is absent, pushes only with positive authorization, and opens a PR only with positive authorization after push behavior is resolved. | `publish.formula.toml`; `../tests/test_formula_assets.py` |
 
+### Verification Utilities
+
+| ID | Formula | Type | Required behavior | Evidence |
+| --- | --- | --- | --- | --- |
+| GC-BF-035 | `smoke-test` | Cataloged targetless verification adapter | Browser-drives a deployed app after a change ships and reports a verdict by root-bead notes and mail; never edits code, pushes, merges, closes PRs, comments on GitHub, or retries a deploy. Derives 3–8 non-design checks from `change_context`. When `design_frame` names an approved design artifact frame, or the change context, PR body, work bead, or campaign tracker cites one, the design checklist is derived from the FRAME, not the PR: the frame is opened through the session's artifact reader (never fetched with curl) and rendered locally; one uncapped `design-N` check (present / placed / shape) is emitted per element inside the frame container, driven on the record the frame is mocked on at the frame's viewport; the artifact's own controls and prose outside the container are never checks. One `scope-1` check fails when the work bead or the PR scopes less than the campaign tracker or the frame without an operator decision recorded on the tracker. An absent frame element fails even when the PR body declares it out of scope, with exactly one cause in the precedence `declared divergence (PR body: "…")`, `missing`, `misplaced:`, `shape:`; `operator-authorised divergence (tracker: "…")` is the only passing cause. Every design check carries a frame-crop / live-crop screenshot pair named in its evidence; results and causes are derived fresh per run and never carried from an earlier verdict; the report carries a Frame section listing every design fail with its cause and pair, then the scope check, then the authorised divergences, never a count. | `smoke-test.formula.toml`; `../assets/workflows/smoke-test/`; `../tests/test_formula_assets.py::FormulaAssetTests::test_smoke_test_derives_design_checks_from_the_frame` |
+
 ### GitHub Adapters
 
 | ID | Formula | Type | Required behavior | Evidence |
@@ -204,6 +211,7 @@ this ledger against the `FORMULAS` constant and formula directory.
 - `gascity/tests/test_formula_assets.py::FormulaAssetTests::test_build_from_decompose_is_suffix_continuation_entrypoint`
 - `gascity/tests/test_formula_assets.py::FormulaAssetTests::test_build_from_decompose_base_is_reusable_suffix_contract`
 - `gascity/tests/test_formula_assets.py::FormulaAssetTests::test_build_basic_v2_uses_approachable_factory_techniques`
+- `gascity/tests/test_formula_assets.py::FormulaAssetTests::test_smoke_test_derives_design_checks_from_the_frame`
 
 ## Maintenance Rules
 
