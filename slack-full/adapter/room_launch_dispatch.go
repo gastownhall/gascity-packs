@@ -78,15 +78,15 @@ func dispatchRoomLaunch(
 	roomLaunchReg *roomLaunchMappingRegistry,
 	msg slackMessageEvent,
 	teamID, handle, remainder string,
-) {
+) (concluded bool) {
 	if roomLaunchReg == nil {
 		emitRoomLaunchNotEnabledEphemeral(cfg, msg, handle)
-		return
+		return true
 	}
 	pool, ok := roomLaunchReg.LookupPoolTemplate(teamID, msg.Channel)
 	if !ok {
 		emitRoomLaunchNotEnabledEphemeral(cfg, msg, handle)
-		return
+		return true
 	}
 
 	// Thread-root resolution: a top-level `@@new-handle ...` post has
@@ -99,7 +99,7 @@ func dispatchRoomLaunch(
 		threadTS = msg.TS
 	}
 
-	sessionID, created, err := threadReg.AcquireOrCreate(msg.Channel, threadTS, func() (string, error) {
+	sessionID, boundHandle, created, err := threadReg.AcquireOrCreate(msg.Channel, threadTS, handle, func() (string, error) {
 		return roomLaunchSpawnSession(cfg, pool, handle, msg)
 	})
 	if err != nil {
@@ -113,19 +113,48 @@ func dispatchRoomLaunch(
 		if err := postSlackEphemeral(cfg.slackBotToken, msg.Channel, msg.User, msg.ThreadTS, body); err != nil {
 			log.Printf("launcher dispatch: ephemeral after spawn failure: %v", err)
 		}
-		return
+		// Transient: the session never spawned — a Slack redelivery
+		// should retry the launcher forward (codex r6).
+		return false
 	}
 
-	// Bootstrap alias on first spawn so the next `@<handle> ...` post
-	// in the thread (or any other channel) routes via the existing
-	// single-`@` alias dispatch path. Idempotent on Set if the handle
-	// is already registered to this same session.
-	if created && aliasReg != nil {
-		if err := aliasReg.Set(handle, sessionID); err != nil {
-			log.Printf("launcher dispatch: aliasReg.Set handle=%q session=%s: %v",
-				handle, sessionID, err)
-			// Continue — the spawn succeeded; alias bootstrap is best-effort.
-			// The user can re-register manually via /handle-alias if needed.
+	// Reserve the alias BEFORE the first-message round trip (codex
+	// r13): postSessionMessage can take seconds, and a user's
+	// `@<handle>` follow-up processed in that window used to miss the
+	// alias lookup and fall through to the channel-bound path — which
+	// the launcher session is not on — losing the follow-up. The
+	// reservation is rolled back below if the first post fails,
+	// BEFORE this function returns false and the caller releases the
+	// event's dedup claim, so a woken redelivery sees no alias and
+	// correctly re-enters the launcher path (the codex r7 concern
+	// about the pre-claimed branch swallowing the un-posted remainder).
+	//
+	// Gated on the handle being unclaimed rather than on `created`
+	// alone (codex r8): a retry after a failed first message
+	// re-acquires the existing thread session (created=false) and
+	// must still bind the handle it advertises in the acknowledgement
+	// below. But ONLY when the stored binding was created for this
+	// same handle (codex r9): a DIFFERENT `@@handle` converging on an
+	// existing thread session must not register its unclaimed handle
+	// globally onto that old session — that would route every later
+	// `@handle` post anywhere to the wrong session and permanently
+	// block the handle from launching its own.
+	aliasReserved := false
+	if aliasReg != nil && (created || boundHandle == handle) {
+		if _, claimed := aliasReg.Get(handle); !claimed {
+			// Reserved even when Set returns an error (codex r15): Set
+			// inserts into the in-memory map BEFORE persisting, so a
+			// persistence failure still leaves a live reservation that
+			// the rollback below must be able to undo — otherwise a
+			// parked redelivery would see the handle pre-claimed and
+			// commit without ever re-posting the remainder.
+			aliasReserved = true
+			if err := aliasReg.Set(handle, sessionID); err != nil {
+				log.Printf("launcher dispatch: aliasReg.Set handle=%q session=%s: %v",
+					handle, sessionID, err)
+				// Continue — alias bootstrap is best-effort. The user
+				// can re-register manually via /handle-alias if needed.
+			}
 		}
 	}
 
@@ -139,6 +168,21 @@ func dispatchRoomLaunch(
 	if err := postSessionMessage(cfg, sessionID, remainder, "gc-slack-adapter-launcher"); err != nil {
 		log.Printf("launcher dispatch: post session message handle=%q session=%s: %v",
 			handle, sessionID, err)
+		// Roll the reservation back before the caller releases the
+		// dedup claim (codex r13): a woken redelivery must re-enter
+		// the launcher path (which re-posts the remainder), not the
+		// pre-claimed alias branch (which would commit without ever
+		// posting it — codex r7). Deleted only while it still points
+		// at OUR session, so a racing re-registration is never
+		// clobbered.
+		if aliasReserved {
+			// Compare-and-delete under one registry lock (codex r15):
+			// a racing re-registration installed between a separate
+			// Get and Delete would otherwise be removed too.
+			if _, err := aliasReg.DeleteIf(handle, sessionID); err != nil {
+				log.Printf("launcher dispatch: rollback aliasReg.DeleteIf handle=%q: %v", handle, err)
+			}
+		}
 		body := fmt.Sprintf(
 			"launcher started session %s for @@%s but the first message could not be delivered: %s",
 			neutralizeMarkupBoundaries(sessionID),
@@ -148,7 +192,9 @@ func dispatchRoomLaunch(
 		if err := postSlackEphemeral(cfg.slackBotToken, msg.Channel, msg.User, msg.ThreadTS, body); err != nil {
 			log.Printf("launcher dispatch: ephemeral after message failure: %v", err)
 		}
-		return
+		// Transient: the session exists but never got the message — a
+		// redelivery re-acquires the same thread session and re-posts.
+		return false
 	}
 
 	// Acknowledge to the user. Different wording for spawn vs. reuse so
@@ -174,6 +220,7 @@ func dispatchRoomLaunch(
 	}
 	log.Printf("launcher dispatch: handle=%q session=%s created=%v team=%s channel=%s thread=%s pool=%q",
 		handle, sessionID, created, teamID, msg.Channel, threadTS, pool)
+	return true
 }
 
 // emitRoomLaunchNotEnabledEphemeral surfaces the actionable fix-it for

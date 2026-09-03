@@ -48,10 +48,22 @@ import (
 //     rig_mappings.json.
 type threadSessionRegistry struct {
 	mu        sync.Mutex
-	byKey     map[threadKey]string // (channel, thread) → sessionID
-	bySession map[string]threadKey // sessionID → (channel, thread)
+	byKey     map[threadKey]threadSessionBinding // (channel, thread) → binding
+	bySession map[string]threadKey               // sessionID → (channel, thread)
 	gates     map[threadKey]*sync.Mutex
 	diskPath  string
+}
+
+// threadSessionBinding is one thread's session plus the launcher
+// handle it was created for. Handle lets the room-launch alias
+// bootstrap distinguish "retry of the same @@handle after a failed
+// first message" (re-bind is correct) from "a DIFFERENT @@handle
+// reusing the thread's session" (binding would hijack the new handle
+// globally onto the old session — codex r9). "" on records persisted
+// before the field existed; those never re-bootstrap on reuse.
+type threadSessionBinding struct {
+	SessionID string
+	Handle    string
 }
 
 // threadKey is the composite (channelID, threadTS) lookup key. Both
@@ -69,6 +81,7 @@ type threadSessionDiskRecord struct {
 	ChannelID string `json:"channel_id"`
 	ThreadTS  string `json:"thread_ts"`
 	SessionID string `json:"session_id"`
+	Handle    string `json:"handle,omitempty"`
 }
 
 // maxThreadSessionRegistryBytes caps the on-disk file size accepted at
@@ -83,7 +96,7 @@ const maxThreadSessionRegistryBytes = 10 << 20 // 10 MiB
 // returned.
 func newThreadSessionRegistry(diskPath string) (*threadSessionRegistry, error) {
 	r := &threadSessionRegistry{
-		byKey:     make(map[threadKey]string),
+		byKey:     make(map[threadKey]threadSessionBinding),
 		bySession: make(map[string]threadKey),
 		gates:     make(map[threadKey]*sync.Mutex),
 		diskPath:  diskPath,
@@ -97,25 +110,28 @@ func newThreadSessionRegistry(diskPath string) (*threadSessionRegistry, error) {
 // AcquireOrCreate returns the session id bound to (channelID,
 // threadTS). If no binding exists, the create callback is invoked
 // under a per-key mutex; the returned sessionID is cached and
-// persisted. created reports whether this call was the one that ran
-// the callback (true) versus served a cached value (false).
+// persisted along with the launcher handle the create ran for.
+// created reports whether this call was the one that ran the callback
+// (true) versus served a cached value (false); boundHandle is the
+// handle recorded when the binding was CREATED — on a cache hit it
+// may differ from this call's handle ("" for pre-handle records).
 //
 // channelID and threadTS must both be non-empty. An error from create
 // is returned to the caller and NOT cached.
-func (r *threadSessionRegistry) AcquireOrCreate(channelID, threadTS string, create func() (string, error)) (sessionID string, created bool, err error) {
+func (r *threadSessionRegistry) AcquireOrCreate(channelID, threadTS, handle string, create func() (string, error)) (sessionID string, boundHandle string, created bool, err error) {
 	if channelID == "" || threadTS == "" {
-		return "", false, fmt.Errorf("thread session registry: channelID and threadTS required")
+		return "", "", false, fmt.Errorf("thread session registry: channelID and threadTS required")
 	}
 	if create == nil {
-		return "", false, fmt.Errorf("thread session registry: create callback required")
+		return "", "", false, fmt.Errorf("thread session registry: create callback required")
 	}
 	key := threadKey{ChannelID: channelID, ThreadTS: threadTS}
 
 	// Fast path: already cached.
 	r.mu.Lock()
-	if sid, ok := r.byKey[key]; ok {
+	if b, ok := r.byKey[key]; ok {
 		r.mu.Unlock()
-		return sid, false, nil
+		return b.SessionID, b.Handle, false, nil
 	}
 	// Acquire (or install) the per-key gate while holding the
 	// registry lock so we publish a single gate to all racers on the
@@ -135,9 +151,9 @@ func (r *threadSessionRegistry) AcquireOrCreate(channelID, threadTS string, crea
 	// Re-check under the gate: an earlier racer may have already run
 	// the callback and populated the cache.
 	r.mu.Lock()
-	if sid, ok := r.byKey[key]; ok {
+	if b, ok := r.byKey[key]; ok {
 		r.mu.Unlock()
-		return sid, false, nil
+		return b.SessionID, b.Handle, false, nil
 	}
 	r.mu.Unlock()
 
@@ -150,22 +166,22 @@ func (r *threadSessionRegistry) AcquireOrCreate(channelID, threadTS string, crea
 		// miss, and either reuse this gate (if still in r.gates) or
 		// install a fresh one.
 		r.removeGateIfUnused(key, gate)
-		return "", false, fmt.Errorf("thread session registry: create callback failed for channel=%q thread=%q: %w", channelID, threadTS, createErr)
+		return "", "", false, fmt.Errorf("thread session registry: create callback failed for channel=%q thread=%q: %w", channelID, threadTS, createErr)
 	}
 	if sid == "" {
 		r.removeGateIfUnused(key, gate)
-		return "", false, fmt.Errorf("thread session registry: create callback returned empty sessionID for channel=%q thread=%q", channelID, threadTS)
+		return "", "", false, fmt.Errorf("thread session registry: create callback returned empty sessionID for channel=%q thread=%q", channelID, threadTS)
 	}
 
 	r.mu.Lock()
-	r.byKey[key] = sid
+	r.byKey[key] = threadSessionBinding{SessionID: sid, Handle: handle}
 	r.bySession[sid] = key
 	saveErr := r.saveLocked()
 	r.mu.Unlock()
 	if saveErr != nil {
-		return sid, true, fmt.Errorf("thread session registry: persist binding for channel=%q thread=%q: %w", channelID, threadTS, saveErr)
+		return sid, handle, true, fmt.Errorf("thread session registry: persist binding for channel=%q thread=%q: %w", channelID, threadTS, saveErr)
 	}
-	return sid, true, nil
+	return sid, handle, true, nil
 }
 
 // Lookup returns the session id for (channelID, threadTS) and a
@@ -177,8 +193,8 @@ func (r *threadSessionRegistry) Lookup(channelID, threadTS string) (sessionID st
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	sid, ok := r.byKey[threadKey{ChannelID: channelID, ThreadTS: threadTS}]
-	return sid, ok
+	b, ok := r.byKey[threadKey{ChannelID: channelID, ThreadTS: threadTS}]
+	return b.SessionID, ok
 }
 
 // Remove drops the binding for (channelID, threadTS) and persists.
@@ -190,9 +206,9 @@ func (r *threadSessionRegistry) Remove(channelID, threadTS string) error {
 	}
 	key := threadKey{ChannelID: channelID, ThreadTS: threadTS}
 	r.mu.Lock()
-	if sid, ok := r.byKey[key]; ok {
+	if b, ok := r.byKey[key]; ok {
 		delete(r.byKey, key)
-		delete(r.bySession, sid)
+		delete(r.bySession, b.SessionID)
 	}
 	delete(r.gates, key)
 	err := r.saveLocked()
@@ -289,7 +305,7 @@ func (r *threadSessionRegistry) load() error {
 		if _, dup := r.byKey[k]; dup {
 			log.Printf("WARN: thread session registry: duplicate key %q in store; last write wins", storedKey)
 		}
-		r.byKey[k] = rec.SessionID
+		r.byKey[k] = threadSessionBinding{SessionID: rec.SessionID, Handle: rec.Handle}
 		r.bySession[rec.SessionID] = k
 	}
 	return nil
@@ -300,11 +316,12 @@ func (r *threadSessionRegistry) saveLocked() error {
 		return nil
 	}
 	out := make(map[string]threadSessionDiskRecord, len(r.byKey))
-	for k, sid := range r.byKey {
+	for k, b := range r.byKey {
 		out[diskKeyFor(k)] = threadSessionDiskRecord{
 			ChannelID: k.ChannelID,
 			ThreadTS:  k.ThreadTS,
-			SessionID: sid,
+			SessionID: b.SessionID,
+			Handle:    b.Handle,
 		}
 	}
 	data, err := json.MarshalIndent(out, "", "  ")

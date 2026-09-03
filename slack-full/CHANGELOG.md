@@ -8,6 +8,142 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A retaken Slack redelivery whose channel leg already reached gc
+  skips `postInbound` and retries only the failed alias leg (codex
+  r12): core does not consume `dedup_key`, so the old
+  forget-the-whole-event recovery duplicated the bound session's
+  turn. The completed leg is remembered next to the event-dedup entry
+  (TTL-bounded, cleared on commit) before `forget` wakes the parked
+  retry.
+- The launcher alias is reserved BEFORE the first-message POST and
+  rolled back if that POST fails (codex r13): a user's `@handle`
+  follow-up processed during the multi-second first post used to miss
+  the alias lookup and fall to the channel-bound path — which the
+  launcher session is not on — losing the follow-up. The rollback
+  runs before the event's dedup claim is released, so a woken
+  redelivery re-enters the launcher path (re-posting the remainder)
+  instead of the pre-claimed alias branch.
+- Busy-reaction clears are now attributed to the publishing agent
+  (codex r11): each mark records the parsed target handle, and a
+  delivered reply consumes only marks whose handle resolves (via the
+  handle-alias registry) to the publishing session — so when M1
+  targets agent A and M2 re-targets agent B in the same thread, A's
+  late reply can no longer strip B's pending hourglass. Marks with no
+  recorded handle, an unregistered handle, or an unattributable
+  publisher clear unconditionally, preserving the prior behavior.
+- Launcher alias bootstrap no longer hijacks a handle onto another
+  handle's thread session (codex r9): the thread-session registry
+  records which `@@handle` created each binding (persisted; absent on
+  pre-existing records), and the unclaimed-handle alias bootstrap on
+  thread reuse fires only for the same handle (the codex r8 retry
+  case) — a different `@@handle` converging on an existing thread
+  still posts into that session but is not globally alias-bound to
+  it.
+- Busy-reaction lifecycle (hq-xizo, ported from
+  `feat/hq-xizo-slack-full-hardening`): a targeted inbound gets a busy
+  reaction (`BUSY_REACTION`, default `hourglass`; set-but-empty
+  disables) added on dispatch and removed when the agent's reply
+  publishes back into the same conversation/thread, tracked in a
+  bounded in-memory registry keyed by (conversation, thread key) with
+  a 30-minute TTL. Replaces the prior unconditional `eyes` reaction on
+  targeted inbounds; the ⚠️ dispatch-failure reaction stays. `/react`
+  gains an optional `remove:true` issuing `reactions.remove`
+  (`no_reaction` treated as benign delivery, mirroring
+  `already_reacted`), surfaced on the CLI as `gc slack react
+  --remove`. Beyond the original hq-xizo commit, the removal is
+  ordered after the corresponding `reactions.add` completes (a fast
+  reply otherwise races the in-flight add and the busy emoji sticks
+  forever) and a threaded `/publish-file` reply clears the mark
+  exactly like a text publish. A thread-reply inbound is marked under
+  both its thread root AND its own ts — reply-current and the
+  alias-dispatch instructions thread replies under the inbound's own
+  ts, which the root-only key missed. A channel-root reply (the
+  documented default `gc slack reply-current` shape, no thread ts)
+  clears every pending mark in the conversation, and re-targeting a
+  thread before the first reply lands removes the displaced message's
+  reaction instead of stranding it. The mark registers before the
+  forward to gc (a reply can arrive before postInbound even returns;
+  a failed forward cancels the mark before releasing the event's
+  dedup claim and restores any marks the failed inbound displaced),
+  displaced-mark reactions are removed only after the displacing
+  forward succeeds, and a re-mark of the same message merges
+  add-completion channels so a remove waits for every in-flight add
+  (the wait bound exceeds the Slack client timeout, so ordering
+  provably holds). Registry entries carry displaced-ancestor
+  reactions across overlapping failed re-targets (deduplicated,
+  bounded per entry) so every added emoji stays clearable; displaced
+  marks are retired only once the event's FINAL delivery succeeds
+  (the alias POST when one fires, postInbound otherwise) and restored
+  if it fails — unless a reply consumed the thread while the dispatch
+  was in flight (consumed keys are tombstoned; blocked marks get
+  their reactions removed instead of being re-parked unclearably);
+  and a failed cross-channel alias delivery removes its own busy
+  emoji next to the ⚠️ — synchronously, before any parked retry
+  wakes — instead of stranding it. Note the lifecycle fires only when an agent target
+  is
+  parsed from the message (`@handle:` prefix, User Group mention, or
+  sticky thread handle) — plain messages that reach a session solely
+  through a channel binding carry no parsed target and get no busy
+  reaction, by design. (hw-94w5k finding #3)
+
+### Fixed
+
+- Slack Events API redeliveries are now deduplicated on `event_id`
+  with a 10-minute seen-set: Slack retries any delivery it considers
+  unacknowledged and each retry re-forwarded the same message into the
+  bound session as a duplicate notification (observed as
+  byte-identical inbound log pairs). Entries are two-state
+  (in-flight → committed): a redelivery racing the first delivery's
+  still-running forward parks (slot released, no dispatch-semaphore
+  starvation) until the owner's verdict — commit drops it, forget
+  hands it the event — and never gives up: it already returned a 200,
+  so Slack will not resend it. The wait runs in a goroutine after the
+  handler has returned, so Slack's ack is never delayed behind it.
+  Adapter→gc forwards run on a 20-second-timeout client and Slack Web
+  API calls on 30s/120s-timeout clients so claims always conclude,
+  and a take-over blocks for dispatch capacity instead of dropping
+  the event's last copy on a full queue. For targeted inbounds the alias dispatch
+  owns the verdict (success commits, failure forgets). Deliveries
+  dropped at the queue-full boundary are never recorded, and a failed
+  forward releases its id, so a Slack retry can always recover the
+  message. Redeliveries of known events are routed past the
+  queue-full load-shed (a parked wait needs no dispatch slot), so a
+  saturated queue can never discard the only remaining copy of an
+  in-flight event. Transient `@@handle` launcher failures (spawn or
+  first-message forward) forget the claim like every other forward
+  failure — the launcher alias registers only after a first message
+  lands (on any attempt, including a retry that re-acquired the
+  thread session), so a retry re-enters the launcher instead of
+  dead-ending in the pre-claimed branch; terminal launcher outcomes
+  (delivered, user-error ephemerals) commit. (hw-94w5k finding #4)
+- `openBeneath` (the confined open backing `/publish-file`) restores
+  the old per-component no-follow guarantee on top of `os.Root`
+  (which follows a symlink at the root argument and resolves in-root
+  symlinks at every component, ignoring `O_NOFOLLOW` for them): the
+  root is pre-opened with `O_NOFOLLOW|O_DIRECTORY` and
+  identity-matched against the `os.Root` handle, every intermediate
+  component is Lstat'd (symlink → hard failure) and descended into
+  via a pinned sub-root whose identity must match, and the leaf is
+  Lstat'd + inode-pinned — so a raced-in link anywhere on the path
+  fails instead of substituting a different (even in-root) file.
+- Human file posts delivered with subtype `file_share` are no longer
+  discarded by the system-noise subtype gate, and file-only posts (no
+  caption) are no longer discarded by the empty-text gate — both now
+  reach the attachment download pipeline. Other subtypes
+  (`message_changed`, `bot_message`, …) and bot-authored file posts
+  stay filtered. (hw-94w5k finding #1)
+- `gc slack react` / `reply-current` latest-inbound lookup now matches
+  `target_session` against every identifier the session is known by
+  (id, `GC_SESSION_NAME`, gc-reported alias/session_name), not just
+  `GC_SESSION_ID`. Name-bound sessions produce inbound events carrying
+  the NAME, so the id-only match made the default `--current` mode
+  bail with "no recent inbound transcript entry" right after an
+  inbound landed. The ambient `GC_SESSION_NAME` only joins the match
+  set when the requested session IS the current one — an explicit
+  `--session <other>` never inherits it. (hw-94w5k finding #2)
+
 ### Changed
 
 - Renamed the pack directory from `slack-pack/` to `slack-full/` and the

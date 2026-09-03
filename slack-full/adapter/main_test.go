@@ -323,6 +323,34 @@ func TestHandleReact(t *testing.T) {
 			wantSlackPath: "/reactions.add",
 		},
 		{
+			name:          "remove:true issues reactions.remove",
+			method:        http.MethodPost,
+			body:          `{"conversation":{"conversation_id":"C123"},"message_id":"1.2","emoji":"hourglass","remove":true}`,
+			slackResponse: `{"ok":true}`,
+			wantStatus:    http.StatusOK,
+			wantDelivered: true,
+			wantSlackPath: "/reactions.remove",
+		},
+		{
+			name:          "no_reaction on remove is benign success",
+			method:        http.MethodPost,
+			body:          `{"conversation":{"conversation_id":"C123"},"message_id":"1.2","emoji":"hourglass","remove":true}`,
+			slackResponse: `{"ok":false,"error":"no_reaction"}`,
+			wantStatus:    http.StatusOK,
+			wantDelivered: true,
+			wantSlackPath: "/reactions.remove",
+		},
+		{
+			name:          "channel_not_found on remove maps to not_found",
+			method:        http.MethodPost,
+			body:          `{"conversation":{"conversation_id":"C123"},"message_id":"1.2","emoji":"hourglass","remove":true}`,
+			slackResponse: `{"ok":false,"error":"channel_not_found"}`,
+			wantStatus:    http.StatusOK,
+			wantDelivered: false,
+			wantFailKind:  "not_found",
+			wantSlackPath: "/reactions.remove",
+		},
+		{
 			name:       "GET rejected",
 			method:     http.MethodGet,
 			body:       "",
@@ -627,7 +655,7 @@ func TestHandlePublishInjectsIdentity(t *testing.T) {
 			cfg := config{slackBotToken: "xoxb-test"}
 			req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(tc.publishBody))
 			rec := httptest.NewRecorder()
-			handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
+			handlePublish(cfg, reg, nil, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
@@ -695,7 +723,7 @@ func TestHandlePublishIdentityFallsBackToMetadataSourceSessionID(t *testing.T) {
 			cfg := config{slackBotToken: "xoxb-test"}
 			req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
-			handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
+			handlePublish(cfg, reg, nil, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
@@ -751,7 +779,7 @@ func TestHandlePublishRejectsEmptySession(t *testing.T) {
 			cfg := config{slackBotToken: "xoxb-test"}
 			req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
-			handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
+			handlePublish(cfg, reg, nil, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
 
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400 (body=%q)", rec.Code, rec.Body.String())
@@ -794,7 +822,7 @@ func TestHandlePublishDedupesOnIdempotencyKey(t *testing.T) {
 
 	cfg := config{slackBotToken: "xoxb-test"}
 	dedup := newPublishDedupCache(publishDedupTTL)
-	handler := handlePublish(cfg, reg, nil, dedup)
+	handler := handlePublish(cfg, reg, nil, nil, dedup)
 	body := `{"session_id":"gc-1","conversation":{"conversation_id":"C1","kind":"room"},"text":"hello","idempotency_key":"k-1"}`
 
 	publish := func() *httptest.ResponseRecorder {
@@ -847,7 +875,7 @@ func TestHandlePublishNoDedupWithoutKey(t *testing.T) {
 	slackAPIBase = fakeSlack.URL
 
 	cfg := config{slackBotToken: "xoxb-test"}
-	handler := handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))
+	handler := handlePublish(cfg, reg, nil, nil, newPublishDedupCache(publishDedupTTL))
 	body := `{"session_id":"gc-1","conversation":{"conversation_id":"C1","kind":"room"},"text":"hi"}`
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body))
@@ -2187,7 +2215,7 @@ func TestHandlePublishFile(t *testing.T) {
 			}
 			req := httptest.NewRequest(tc.method, "/publish-file", strings.NewReader(body))
 			rec := httptest.NewRecorder()
-			handlePublishFile(cfg, reg)(rec, req)
+			handlePublishFile(cfg, reg, nil)(rec, req)
 
 			if rec.Code != tc.wantStatus {
 				t.Fatalf("status = %d, want %d (body=%q)", rec.Code, tc.wantStatus, rec.Body.String())
@@ -2236,7 +2264,13 @@ func TestHandlePublishFile(t *testing.T) {
 // reading a regular file inside the upload root must succeed and return
 // the file's bytes verbatim.
 func TestReadConfinedFileReadsRealFile(t *testing.T) {
-	dir := t.TempDir()
+	// Canonicalize: readConfinedFile's contract is an EvalSymlinks-resolved
+	// path, and on darwin t.TempDir() sits under the /var -> /private/var
+	// symlink.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
 	path := filepath.Join(dir, "real.txt")
 	want := []byte("hello world")
 	if err := os.WriteFile(path, want, 0o600); err != nil {
@@ -2256,12 +2290,18 @@ func TestReadConfinedFileReadsRealFile(t *testing.T) {
 // In production the call site has already EvalSymlinks-resolved the path
 // to a canonical target with no symlinks; if a symlink appears at the leaf
 // between the confinement re-check and the read, an attacker would have
-// swapped the inode in the race window. O_NOFOLLOW makes that swap visible
-// as ELOOP rather than silent arbitrary-read. Both Linux and macOS return
-// ELOOP from open(2) with O_NOFOLLOW on a symlink — errors.Is unwraps
-// through *os.PathError to the underlying syscall.Errno.
+// swapped the inode in the race window. The open must fail rather than
+// silently read through the link. The exact error depends on which layer
+// trips first: O_NOFOLLOW on the leaf yields ELOOP, while os.Root's
+// resolution reports an absolute-target symlink as escaping the root
+// before the leaf open happens. Either way the swap is detected.
 func TestReadConfinedFileRejectsSymlink(t *testing.T) {
-	dir := t.TempDir()
+	// Canonical dir, non-canonical leaf: the symlink at the leaf is the
+	// simulated race-window inode swap and must stay unresolved.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
 	target := filepath.Join(dir, "target.txt")
 	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
@@ -2271,12 +2311,13 @@ func TestReadConfinedFileRejectsSymlink(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	_, err := readConfinedFile(dir, link)
+	_, err = readConfinedFile(dir, link)
 	if err == nil {
 		t.Fatal("readConfinedFile(symlink): want error, got nil — TOCTOU window unclosed")
 	}
-	if !errors.Is(err, syscall.ELOOP) {
-		t.Errorf("readConfinedFile(symlink) error = %v, want ELOOP", err)
+	if !errors.Is(err, syscall.ELOOP) && !strings.Contains(err.Error(), "escapes") &&
+		!strings.Contains(err.Error(), "is a symlink") {
+		t.Errorf("readConfinedFile(symlink) error = %v, want ELOOP / root-escape / leaf-symlink rejection", err)
 	}
 }
 
@@ -4120,21 +4161,41 @@ func TestLoadConfigDispatchConcurrencyRejectsNonNumeric(t *testing.T) {
 }
 
 // captureLog redirects log.Printf output to an in-memory buffer for
-// the duration of the returned cleanup. Caller must not call t.Parallel.
+// the duration of the returned cleanup. Caller must not call
+// t.Parallel. The buffer is mutex-guarded so read() is safe while
+// async goroutines under test are still logging.
 func captureLog(t *testing.T) (read func() string, cleanup func()) {
 	t.Helper()
 	prevOut := log.Writer()
 	prevFlags := log.Flags()
 	prevPrefix := log.Prefix()
-	var buf strings.Builder
-	log.SetOutput(&buf)
+	w := &lockedLogBuffer{}
+	log.SetOutput(w)
 	log.SetFlags(0)
 	log.SetPrefix("")
-	return func() string { return buf.String() }, func() {
+	return w.String, func() {
 		log.SetOutput(prevOut)
 		log.SetFlags(prevFlags)
 		log.SetPrefix(prevPrefix)
 	}
+}
+
+// lockedLogBuffer is a mutex-guarded strings.Builder for captureLog.
+type lockedLogBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *lockedLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // TestProcessSlackEventReleasesSlotOnNoAliasPath verifies the

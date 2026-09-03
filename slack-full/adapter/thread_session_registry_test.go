@@ -20,7 +20,7 @@ func TestThreadSessionRegistryRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newThreadSessionRegistry: %v", err)
 	}
-	sid, created, err := reg.AcquireOrCreate("C1", "1700000000.000100", func() (string, error) {
+	sid, _, created, err := reg.AcquireOrCreate("C1", "1700000000.000100", "h", func() (string, error) {
 		return "gc-sess-1", nil
 	})
 	if err != nil {
@@ -70,7 +70,7 @@ func TestThreadSessionRegistryConcurrentAcquireOrCreateOnSameKey(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			<-start
-			sid, created, err := reg.AcquireOrCreate("C1", "1700000000.000100", func() (string, error) {
+			sid, _, created, err := reg.AcquireOrCreate("C1", "1700000000.000100", "h", func() (string, error) {
 				atomic.AddInt32(&createCount, 1)
 				return "gc-sess-1", nil
 			})
@@ -111,7 +111,7 @@ func TestThreadSessionRegistryRemoveThenReacquire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newThreadSessionRegistry: %v", err)
 	}
-	if _, _, err := reg.AcquireOrCreate("C1", "T1", func() (string, error) { return "gc-sess-1", nil }); err != nil {
+	if _, _, _, err := reg.AcquireOrCreate("C1", "T1", "h", func() (string, error) { return "gc-sess-1", nil }); err != nil {
 		t.Fatalf("first acquire: %v", err)
 	}
 	if err := reg.Remove("C1", "T1"); err != nil {
@@ -120,7 +120,7 @@ func TestThreadSessionRegistryRemoveThenReacquire(t *testing.T) {
 	if _, ok := reg.Lookup("C1", "T1"); ok {
 		t.Errorf("Lookup ok=true after Remove; want false")
 	}
-	sid, created, err := reg.AcquireOrCreate("C1", "T1", func() (string, error) { return "gc-sess-2", nil })
+	sid, _, created, err := reg.AcquireOrCreate("C1", "T1", "h", func() (string, error) { return "gc-sess-2", nil })
 	if err != nil {
 		t.Fatalf("second acquire: %v", err)
 	}
@@ -142,10 +142,10 @@ func TestThreadSessionRegistryRemoveBySessionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newThreadSessionRegistry: %v", err)
 	}
-	if _, _, err := reg.AcquireOrCreate("C1", "T1", func() (string, error) { return "gc-sess-1", nil }); err != nil {
+	if _, _, _, err := reg.AcquireOrCreate("C1", "T1", "h", func() (string, error) { return "gc-sess-1", nil }); err != nil {
 		t.Fatalf("acquire C1/T1: %v", err)
 	}
-	if _, _, err := reg.AcquireOrCreate("C2", "T2", func() (string, error) { return "gc-sess-2", nil }); err != nil {
+	if _, _, _, err := reg.AcquireOrCreate("C2", "T2", "h", func() (string, error) { return "gc-sess-2", nil }); err != nil {
 		t.Fatalf("acquire C2/T2: %v", err)
 	}
 
@@ -218,7 +218,7 @@ func TestThreadSessionRegistryTolerantLoadMalformedFile(t *testing.T) {
 	// After a tolerant load, a fresh AcquireOrCreate must still
 	// persist correctly — the registry should overwrite the corrupt
 	// file on next save.
-	if _, _, err := reg.AcquireOrCreate("C1", "T1", func() (string, error) { return "gc-sess-1", nil }); err != nil {
+	if _, _, _, err := reg.AcquireOrCreate("C1", "T1", "h", func() (string, error) { return "gc-sess-1", nil }); err != nil {
 		t.Fatalf("AcquireOrCreate after malformed load: %v", err)
 	}
 	reg2, err := newThreadSessionRegistry(path)
@@ -240,7 +240,7 @@ func TestThreadSessionRegistryCreateErrorDoesNotCacheFailure(t *testing.T) {
 		t.Fatalf("newThreadSessionRegistry: %v", err)
 	}
 	wantErr := errors.New("spawn rejected")
-	_, _, err = reg.AcquireOrCreate("C1", "T1", func() (string, error) {
+	_, _, _, err = reg.AcquireOrCreate("C1", "T1", "h", func() (string, error) {
 		return "", wantErr
 	})
 	if !errors.Is(err, wantErr) {
@@ -250,7 +250,7 @@ func TestThreadSessionRegistryCreateErrorDoesNotCacheFailure(t *testing.T) {
 		t.Errorf("failed create cached; Lookup ok=true after error")
 	}
 	// Retry succeeds and is treated as a fresh create.
-	sid, created, err := reg.AcquireOrCreate("C1", "T1", func() (string, error) {
+	sid, _, created, err := reg.AcquireOrCreate("C1", "T1", "h", func() (string, error) {
 		return "gc-sess-retry", nil
 	})
 	if err != nil {
@@ -287,7 +287,7 @@ func TestThreadSessionRegistryConcurrentDistinctKeysDoNotSerialize(t *testing.T)
 			defer wg.Done()
 			ch := fmt.Sprintf("C%d", idx)
 			ts := fmt.Sprintf("T%d", idx)
-			sid, _, err := reg.AcquireOrCreate(ch, ts, func() (string, error) {
+			sid, _, _, err := reg.AcquireOrCreate(ch, ts, "h", func() (string, error) {
 				cur := atomic.AddInt32(&inFlight, 1)
 				for {
 					m := atomic.LoadInt32(&maxInFlight)
@@ -318,5 +318,23 @@ func TestThreadSessionRegistryConcurrentDistinctKeysDoNotSerialize(t *testing.T)
 	wg.Wait()
 	if got := atomic.LoadInt32(&maxInFlight); got < 2 {
 		t.Errorf("max in-flight creates = %d; want >= 2 (per-key mutex must not serialize distinct keys)", got)
+	}
+}
+
+// codex r9: the binding remembers which handle created it, and a
+// cache hit reports THAT handle — not the caller's — so the launcher
+// can tell a same-handle retry from a different handle converging on
+// the thread.
+func TestThreadSessionRegistryReportsCreatingHandle(t *testing.T) {
+	reg := newTestThreadSessionRegistry(t)
+	if _, _, _, err := reg.AcquireOrCreate("C1", "T1", "alpha", func() (string, error) { return "s1", nil }); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	sid, boundHandle, created, err := reg.AcquireOrCreate("C1", "T1", "beta", func() (string, error) { return "s2", nil })
+	if err != nil {
+		t.Fatalf("hit: %v", err)
+	}
+	if created || sid != "s1" || boundHandle != "alpha" {
+		t.Fatalf("hit = (sid=%q handle=%q created=%v), want (s1, alpha, false)", sid, boundHandle, created)
 	}
 }

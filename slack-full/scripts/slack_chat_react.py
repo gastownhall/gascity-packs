@@ -55,6 +55,14 @@ def main(argv: list[str]) -> int:
         default="eyes",
         help="Emoji name without colons (default: eyes).",
     )
+    parser.add_argument(
+        "--remove",
+        action="store_true",
+        help=(
+            "Remove the reaction instead of adding it "
+            "(adapter maps this to Slack reactions.remove)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     explicit = bool(args.conversation_id) or bool(args.message_id)
@@ -86,6 +94,7 @@ def main(argv: list[str]) -> int:
             conversation_id=conv_id,
             message_id=msg_id,
             emoji=args.emoji,
+            remove=args.remove,
         )
     except common.AdapterError as exc:
         raise SystemExit(str(exc)) from exc
@@ -94,6 +103,7 @@ def main(argv: list[str]) -> int:
         "conversation_id": conv_id,
         "message_id": msg_id,
         "emoji": args.emoji,
+        "remove": args.remove,
         "result": result,
     }, indent=2))
     return 0

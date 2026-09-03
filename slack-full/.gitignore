@@ -9,3 +9,8 @@ adapter/gc-slack-adapter
 # Built operator CLI binary — produced by `go build` in cli/ and exec'd
 # by the commands/<cmd>.sh wrappers via $GC_PACK_DIR/cli/gc-slack-cli.
 cli/gc-slack-cli
+
+# Wrapper-script deployments rename the built binary to gc-slack-adapter.real
+# (the checked-in path above becomes an env-loading wrapper). Ignore it too so
+# pack-cache worktrees stay clean after local builds.
+adapter/gc-slack-adapter.real

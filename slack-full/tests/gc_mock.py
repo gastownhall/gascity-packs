@@ -94,6 +94,9 @@ class GcMock:
         # without a direct binding can still authorize through an
         # extmsg-group it participates in.
         self._group_memberships: dict[str, set[str]] = {}
+        # sessions listed by GET /sessions — the shape
+        # session_identity_candidates resolves names/aliases from.
+        self._sessions: list[dict[str, Any]] = []
         self._adapter_callback_url: str | None = None
         self._msg_counter = 0
         self._server = self._build_server()
@@ -187,6 +190,23 @@ class GcMock:
         }
         with self._lock:
             self._inbound_events.append(event)
+
+    def register_session(
+        self,
+        *,
+        session_id: str,
+        alias: str = "",
+        session_name: str = "",
+    ) -> None:
+        """Seed a GET /sessions entry so identity-candidate resolution
+        can map the session's id to its alias / session_name."""
+        entry: dict[str, Any] = {"id": session_id}
+        if alias:
+            entry["alias"] = alias
+        if session_name:
+            entry["session_name"] = session_name
+        with self._lock:
+            self._sessions.append(entry)
 
     def register_transcript_entry(
         self,
@@ -293,6 +313,17 @@ class GcMock:
 
         if method == "GET" and suffix == "/events":
             self._handle_events_query(req, query)
+            return
+
+        if method == "GET" and suffix == "/sessions":
+            with self._lock:
+                items = list(self._sessions)
+            resp = json.dumps({"items": items}).encode()
+            req.send_response(200)
+            req.send_header("Content-Type", "application/json")
+            req.send_header("Content-Length", str(len(resp)))
+            req.end_headers()
+            req.wfile.write(resp)
             return
 
         if method == "GET" and suffix == "/extmsg/transcript":

@@ -43,6 +43,9 @@ def _isolate_env(
     monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
     monkeypatch.setenv("SLACK_WORKSPACE_ID", "T0TESTWS")
     monkeypatch.setenv("GC_SESSION_ID", "gc-test-session")
+    # Ambient GC_SESSION_NAME (tests may run inside a gc session) must
+    # not leak into the identity-candidate set.
+    monkeypatch.delenv("GC_SESSION_NAME", raising=False)
     monkeypatch.delenv("GC_SLACK_ADAPTER_ENV", raising=False)
 
 
@@ -117,6 +120,93 @@ def test_latest_match_wins_within_a_window(gc_mock: "GcMock") -> None:
 
     assert event is not None
     assert event["payload"]["conversation_id"] == "D0NEWEST"
+
+
+def test_name_bound_session_matched_via_gc_alias(gc_mock: "GcMock") -> None:
+    # Name-bound sessions (gc slack bind <name>) produce inbound events
+    # whose target_session is the NAME, while the calling environment
+    # knows the session by GC_SESSION_ID. The lookup must resolve the
+    # id's alias/session_name via GET /sessions and match on any of
+    # them (hw-94w5k finding #2).
+    common = _import_common()
+    gc_mock.register_session(session_id="gc-test-session", alias="mayor")
+    gc_mock.register_inbound_event(
+        target_session="mayor", conversation_id="C0NAMED",
+    )
+
+    event = common.find_latest_inbound_for_session("gc-test-session")
+
+    assert event is not None
+    assert event["payload"]["conversation_id"] == "C0NAMED"
+
+
+def test_name_bound_session_matched_via_env_name(
+    gc_mock: "GcMock",
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Even when gc's /sessions doesn't know the session (restart races,
+    # restricted listing), GC_SESSION_NAME from the calling environment
+    # still matches the name-carrying event.
+    common = _import_common()
+    monkeypatch.setenv("GC_SESSION_NAME", "mayor")
+    gc_mock.register_inbound_event(
+        target_session="mayor", conversation_id="C0ENVNAME",
+    )
+
+    event = common.find_latest_inbound_for_session("gc-test-session")
+
+    assert event is not None
+    assert event["payload"]["conversation_id"] == "C0ENVNAME"
+
+
+def test_explicit_other_session_ignores_ambient_env_name(
+    gc_mock: "GcMock",
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `--session <other>` must not inherit the CURRENT process's
+    # GC_SESSION_NAME: a newer inbound targeting the ambient name would
+    # otherwise win the scan and misroute the reply/reaction.
+    common = _import_common()
+    monkeypatch.setenv("GC_SESSION_NAME", "mayor")  # current session's name
+    gc_mock.register_inbound_event(
+        target_session="mayor", conversation_id="C0AMBIENT", age_seconds=5,
+    )
+    gc_mock.register_inbound_event(
+        target_session="other-session", conversation_id="C0THEIRS", age_seconds=60,
+    )
+
+    event = common.find_latest_inbound_for_session("other-session")
+
+    assert event is not None
+    assert event["payload"]["conversation_id"] == "C0THEIRS", (
+        "ambient GC_SESSION_NAME leaked into an explicit --session lookup"
+    )
+
+
+def test_identity_candidates_degrade_without_sessions_endpoint(
+    gc_mock: "GcMock",
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A gc build without GET /sessions (or a failing call) must degrade
+    # to env-derived candidates, not raise out of the lookup.
+    common = _import_common()
+
+    real_gc_get = common.gc_get
+
+    def failing_gc_get(path: str) -> dict[str, Any]:
+        if path == "/sessions":
+            raise common.GCAPIError("GET /sessions -> 404")
+        return real_gc_get(path)
+
+    monkeypatch.setattr(common, "gc_get", failing_gc_get)
+    gc_mock.register_inbound_event(
+        target_session="gc-test-session", conversation_id="D0FALLBACK",
+    )
+
+    event = common.find_latest_inbound_for_session("gc-test-session")
+
+    assert event is not None
+    assert event["payload"]["conversation_id"] == "D0FALLBACK"
 
 
 def test_truncated_scan_warns_on_stderr(

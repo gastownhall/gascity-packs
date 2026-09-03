@@ -134,7 +134,13 @@ func parseDoubleHandlePrefix(text, prefix string) (handle, remainder string, ok 
 // threadReg is non-nil at the call site (the caller checks for nil
 // before parsing). It is captured here so 5.3 can wire the
 // AcquireOrCreate call without touching this function's signature.
-func handleDoubleHandleDispatch(cfg config, aliasReg *handleAliasRegistry, threadReg *threadSessionRegistry, roomLaunchReg *roomLaunchMappingRegistry, msg slackMessageEvent, teamID, handle, remainder string) {
+// The returned verdict feeds the event-dedup claim (codex r6):
+// concluded=true means the event was handled terminally (delivered,
+// or a user-error/not-enabled ephemeral a redelivery would repeat
+// identically) and the claim should commit; false means a TRANSIENT
+// launcher failure (spawn or first-message forward) and the claim
+// should be forgotten so a Slack redelivery can retry it.
+func handleDoubleHandleDispatch(cfg config, aliasReg *handleAliasRegistry, threadReg *threadSessionRegistry, roomLaunchReg *roomLaunchMappingRegistry, msg slackMessageEvent, teamID, handle, remainder string) (concluded bool) {
 	if aliasReg != nil {
 		if existingSessionID, ok := aliasReg.Get(handle); ok {
 			body := fmt.Sprintf(
@@ -147,11 +153,11 @@ func handleDoubleHandleDispatch(cfg config, aliasReg *handleAliasRegistry, threa
 			}
 			log.Printf("launcher dispatch: pre-claimed handle=%q session=%s team=%s channel=%s user=%s",
 				handle, existingSessionID, teamID, msg.Channel, msg.User)
-			return
+			return true
 		}
 	}
 
-	dispatchRoomLaunch(cfg, aliasReg, threadReg, roomLaunchReg, msg, teamID, handle, remainder)
+	return dispatchRoomLaunch(cfg, aliasReg, threadReg, roomLaunchReg, msg, teamID, handle, remainder)
 }
 
 // slackPostEphemeralReq is the chat.postEphemeral request shape we
@@ -206,7 +212,10 @@ func postSlackEphemeral(token, channel, user, threadTS, text string) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	resp, err := http.DefaultClient.Do(req)
+	// slackAPIClient, not http.DefaultClient: this runs synchronously
+	// on the event path while a dedup claim is open — an unbounded
+	// hang would park acked redeliveries forever (codex r5).
+	resp, err := slackAPIClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("postEphemeral transport: %w", err)
 	}
