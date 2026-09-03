@@ -350,6 +350,50 @@ def current_session_id() -> str:
     raise GCAPIError(f"could not resolve session id for name {name!r}")
 
 
+def session_identity_candidates(session_id: str) -> set[str]:
+    """Every identifier an extmsg.inbound event may carry for this session.
+
+    Bindings are registered with whatever identifier the operator passed
+    to ``gc slack bind`` — for named sessions that is usually the session
+    NAME, and gc stamps the bound identifier into the inbound event's
+    ``target_session`` verbatim. The calling environment, meanwhile,
+    knows the session by its ID (GC_SESSION_ID). Matching on the id
+    alone therefore misses every extmsg-routed inbound for a
+    name-bound session (hw-94w5k finding #2: `gc slack react` bailing
+    with "no recent inbound transcript entry" right after an inbound
+    landed). The candidate set is the id plus GC_SESSION_NAME plus the
+    alias/session_name gc reports for the id.
+
+    Best-effort: the /sessions resolve failing (gc down, restricted
+    token) degrades to the env-derived candidates rather than raising —
+    the caller's lookup then behaves exactly as before this fix.
+
+    GC_SESSION_NAME names the CURRENT process's session, so it only
+    joins the set when session_id is that session (id or name match) —
+    an explicit ``--session <other>`` must never inherit the ambient
+    name, or a newer inbound for the current session would win the
+    scan and misroute the reply/reaction to the wrong conversation.
+    """
+    candidates = {session_id}
+    env_name = os.environ.get("GC_SESSION_NAME", "").strip()
+    env_id = os.environ.get("GC_SESSION_ID", "").strip()
+    if env_name and session_id in (env_id, env_name):
+        candidates.add(env_name)
+    try:
+        res = gc_get("/sessions")
+    except GCAPIError:
+        return candidates
+    for entry in res.get("items", []):
+        if entry.get("id") != session_id:
+            continue
+        for key in ("alias", "session_name"):
+            value = (entry.get(key) or "").strip()
+            if value:
+                candidates.add(value)
+        break
+    return candidates
+
+
 # --- inbound-event lookup -------------------------------------------------
 
 # Windows tried in order when scanning for a session's latest inbound.
@@ -367,6 +411,11 @@ _INBOUND_SCAN_WINDOWS = ("10m", "2h", "48h")
 def find_latest_inbound_for_session(session_id: str) -> dict[str, Any] | None:
     """Find the most recent extmsg.inbound event targeting session_id.
 
+    ``target_session`` is matched against every identifier the session
+    is known by (id, GC_SESSION_NAME, gc-reported alias/session_name —
+    see session_identity_candidates): name-bound sessions produce
+    events carrying the NAME, not the id (hw-94w5k finding #2).
+
     Queries the gc events stream (HTTP, not SSE — single shot snapshot)
     over escalating `since` windows (see _INBOUND_SCAN_WINDOWS).
     Returns the parsed event dict, or None if no window matched.
@@ -379,6 +428,7 @@ def find_latest_inbound_for_session(session_id: str) -> dict[str, Any] | None:
     (total > items), the scan was incomplete and a warning is emitted
     so truncation is never silent.
     """
+    identities = session_identity_candidates(session_id)
     for window in _INBOUND_SCAN_WINDOWS:
         url = (
             f"{gc_api_base()}/v0/city/{gc_city_name()}/events"
@@ -393,7 +443,7 @@ def find_latest_inbound_for_session(session_id: str) -> dict[str, Any] | None:
                 f"{len(raw)}/{total} oldest events; the latest inbound may be missed",
                 file=sys.stderr,
             )
-        matches = [e for e in raw if (e.get("payload") or {}).get("target_session") == session_id]
+        matches = [e for e in raw if (e.get("payload") or {}).get("target_session") in identities]
         if matches:
             return matches[-1]  # events are in chronological order
     return None
@@ -471,12 +521,14 @@ def react_via_adapter(
     conversation_id: str,
     message_id: str,
     emoji: str,
+    remove: bool = False,
 ) -> dict[str, Any]:
     """POST a reaction directly to the local adapter /react endpoint.
 
     Reactions are not part of the gc extmsg API — they go straight to
-    the adapter, which calls Slack reactions.add. The adapter listens
-    on the legacy internal TCP listener.
+    the adapter, which calls Slack reactions.add (or reactions.remove
+    when ``remove`` is set). The adapter listens on the legacy
+    internal TCP listener.
     """
     base = adapter_publish_url()
     # /publish -> /react: same host:port, different path.
@@ -486,6 +538,8 @@ def react_via_adapter(
         "message_id": message_id,
         "emoji": emoji,
     }
+    if remove:
+        body["remove"] = True
     headers = _adapter_csrf_headers()
     req = urllib.request.Request(
         react_url,
