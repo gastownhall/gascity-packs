@@ -37,6 +37,7 @@ def write_prompt_workspace(
     *,
     city_binding: str,
     city_pack: Path,
+    append_fragments: tuple[str, ...] = (),
 ) -> PromptWorkspace:
     city_dir = root / "city"
     rig_dir = root / "fixture"
@@ -62,6 +63,9 @@ def write_prompt_workspace(
         ),
         encoding="utf-8",
     )
+    fragment_defaults = ""
+    if append_fragments:
+        fragment_defaults = "\n[agent_defaults]\nappend_fragments = " + json.dumps(list(append_fragments)) + "\n"
     city_dir.joinpath("city.toml").write_text(
         textwrap.dedent(
             f"""\
@@ -76,7 +80,7 @@ def write_prompt_workspace(
 
             [rigs.imports.gc]
             source = {json.dumps(str(roles_source))}
-            """
+            """ + fragment_defaults
         ),
         encoding="utf-8",
     )
@@ -199,6 +203,98 @@ def test_role_prompts_render_public_worker_fragment(
 
     assert result.returncode == 0, result.stderr
     assert_clean_worker_render(result.stdout, persona_heading)
+
+
+def test_roles_policy_fragments_render_when_bound_by_city_configuration(
+    tmp_path: Path, gc_test_bin: Path
+) -> None:
+    workspace = write_prompt_workspace(
+        tmp_path,
+        city_binding="gc",
+        city_pack=REPO_ROOT / "gascity",
+        append_fragments=("durable-notice-policy", "mayor-intake"),
+    )
+
+    result = run_gc(
+        gc_test_bin,
+        workspace,
+        "--city",
+        str(workspace.city_dir),
+        "prime",
+        "--strict",
+        "fixture/gc.implementation-worker",
+        cwd=workspace.city_dir,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "# Durable notice policy" in result.stdout
+    assert "# Mayor intake" in result.stdout
+    assert "gc gc notice send" in result.stdout
+    assert "Do not create a second AI Mayor." in result.stdout
+
+
+def test_roles_notice_command_dispatches_send_ack_and_reconcile(
+    tmp_path: Path, gc_test_bin: Path
+) -> None:
+    workspace = write_prompt_workspace(
+        tmp_path,
+        city_binding="gc",
+        city_pack=REPO_ROOT / "gascity",
+    )
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    nested_gc = fake_bin / "gc"
+    nested_gc.write_text(
+        textwrap.dedent(
+            """\
+            #!/bin/sh
+            case "$1 $2" in
+              b?*) printf '%s\\n' '[]' ;;
+              "mail send") printf '%s\\n' '{"messages":[{"id":"mail-123"}],"count":1}' ;;
+              "mail read"|"mail archive"|"session wake") : ;;
+              *) echo "unexpected nested gc invocation: $*" >&2; exit 2 ;;
+            esac
+            """
+        ),
+        encoding="utf-8",
+    )
+    nested_gc.chmod(0o755)
+    index = tmp_path / "notice-index.json"
+    env = {
+        **workspace.env,
+        "GC_P0_NOTICE_INDEX": str(index),
+        "GC_CANONICAL_ROLE": "gastown.mayor",
+        "PATH": f"{fake_bin}:/usr/bin:/bin",
+    }
+
+    help_result = run_gc(gc_test_bin, workspace, "gc", "notice", "--help", env=env)
+    send_result = run_gc(
+        gc_test_bin,
+        workspace,
+        "gc", "notice", "send",
+        "--to-role", "gastown.mayor",
+        "--work-ref", "gp-1",
+        "--state-fingerprint", "head",
+        "--subject", "test",
+        "--message", "test",
+        env=env,
+    )
+    assert send_result.returncode == 0, send_result.stderr
+    notice = json.loads(send_result.stdout)
+    ack_result = run_gc(
+        gc_test_bin,
+        workspace,
+        "gc", "notice", "ack", notice["notice_id"],
+        "--disposition", "accepted",
+        env=env,
+    )
+    reconcile_result = run_gc(gc_test_bin, workspace, "gc", "notice", "reconcile", env=env)
+
+    assert help_result.returncode == 0, help_result.stderr
+    assert "Send, acknowledge, and reconcile" in help_result.stdout
+    assert "inspect" not in help_result.stdout.lower()
+    assert ack_result.returncode == 0, ack_result.stderr
+    assert reconcile_result.returncode == 0, reconcile_result.stderr
 
 
 def test_registered_claim_command_dispatches_store_aware_show_and_normalizes_json(
