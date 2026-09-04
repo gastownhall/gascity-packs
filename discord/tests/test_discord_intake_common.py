@@ -909,6 +909,11 @@ class DiscordIntakeCommonTests(unittest.TestCase):
 
         self.assertEqual(handles, ["sky", "corp/priya"])
 
+    def test_extract_agent_handles_allows_dotted_segments(self) -> None:
+        handles = common.extract_agent_handles("hi @@gasburger.mayor and @@gc-packs/gasburger.crew")
+
+        self.assertEqual(handles, ["gasburger.mayor", "gc-packs/gasburger.crew"])
+
     def test_build_command_payload_includes_rig_option(self) -> None:
         payload = common.build_command_payload("gc")
 
@@ -1660,7 +1665,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 source_context={"kind": "discord_human_message", "publish_launch_id": "room-launch:orig-9"},
             )
 
-        create_thread_from_message.assert_called_once_with("22", "orig-9", "sky")
+        create_thread_from_message.assert_called_once_with("22", "orig-9", "corp/sky")
         post_channel_message.assert_called_once_with("333", "hello humans", reply_to_message_id="")
         self.assertEqual(payload["record"]["conversation_id"], "333")
         self.assertEqual(payload["record"]["launch_id"], "room-launch:orig-9")
@@ -1705,6 +1710,58 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         launch = common.load_room_launch("room-launch:orig-11")
         assert launch is not None
         self.assertEqual(launch["message_targets"]["msg-launch-11"], "corp/sky")
+
+    def test_publish_binding_message_repins_participant_from_new_session(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+        route = common.resolve_publish_route(config, "launch-room:22")
+        assert route is not None
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:orig-13",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "orig-13",
+                "qualified_handle": "corp/sky",
+                "session_alias": "corp/pack.sky",
+                "session_name": "s-gc-old",
+                "session_id": "gc-old",
+                "thread_id": "333",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "corp/pack.sky",
+                        "session_name": "s-gc-old",
+                        "session_id": "gc-old",
+                        "delivery_selector": "s-gc-old",
+                    }
+                },
+            }
+        )
+
+        with mock.patch.object(
+            common, "post_channel_message", return_value={"id": "msg-launch-13"}
+        ), mock.patch.object(
+            common,
+            "resolve_session_identity",
+            return_value={"session_name": "corp--sky", "session_id": "gc-new", "alias": "corp/sky"},
+        ):
+            payload = common.publish_binding_message(
+                route,
+                "hello from my new body",
+                source_context={"kind": "discord_human_message", "publish_launch_id": "room-launch:orig-13"},
+                source_session_name="corp--sky",
+                source_session_id="gc-new",
+            )
+
+        self.assertEqual(payload["record"]["source_qualified_handle"], "corp/sky")
+        launch = common.load_room_launch("room-launch:orig-13")
+        assert launch is not None
+        participant = launch["participants"]["corp/sky"]
+        self.assertEqual(participant["session_id"], "gc-new")
+        self.assertEqual(participant["session_name"], "corp--sky")
+        self.assertEqual(participant["delivery_selector"], "corp--sky")
+        self.assertEqual(launch["message_targets"]["msg-launch-13"], "corp/sky")
 
     def test_publish_binding_message_does_not_record_non_thread_launch_publish_target(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["corp--sky"], guild_id="1")
@@ -1912,6 +1969,356 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         create_agent_session.assert_called_once()
         self.assertEqual(current["session_id"], "gc-new")
         self.assertEqual(current["session_name"], "dc-new-sky")
+
+    def test_ensure_room_launch_session_repins_to_live_handle_session(self) -> None:
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:repin",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "repin",
+                "qualified_handle": "corp/sky",
+                "session_alias": "corp/pack.sky",
+                "session_name": "s-gc-old",
+                "session_id": "gc-old",
+                "thread_id": "333",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "corp/pack.sky",
+                        "session_name": "s-gc-old",
+                        "session_id": "gc-old",
+                        "delivery_selector": "s-gc-old",
+                    }
+                },
+            }
+        )
+        launch = common.load_room_launch("room-launch:repin")
+        assert launch is not None
+        sessions = [
+            {
+                "id": "gc-old",
+                "alias": "corp/pack.sky",
+                "session_name": "s-gc-old",
+                "state": "closed",
+                "running": False,
+                "created_at": "2026-03-20T00:00:00Z",
+            },
+            {
+                "id": "gc-new",
+                "alias": "corp/sky",
+                "session_name": "corp--sky",
+                "state": "active",
+                "running": True,
+                "created_at": "2026-03-22T00:00:00Z",
+            },
+        ]
+
+        with mock.patch.object(
+            common, "list_city_sessions", return_value=sessions
+        ), mock.patch.object(
+            common, "create_agent_session"
+        ) as create_agent_session, mock.patch.object(
+            common,
+            "prime_room_launch_participant",
+            side_effect=lambda current, participant, extra_message="": dict(participant),
+        ):
+            current, participant = common.ensure_room_launch_session_for_handle(launch, "corp/sky")
+
+        create_agent_session.assert_not_called()
+        self.assertEqual(participant["session_id"], "gc-new")
+        self.assertEqual(participant["session_name"], "corp--sky")
+        self.assertEqual(participant["delivery_selector"], "corp--sky")
+        self.assertEqual(current["session_id"], "gc-new")
+
+    def test_repin_room_launch_participant_for_session_rebinds_stale_entry(self) -> None:
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:repin-helper",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "repin-helper",
+                "qualified_handle": "corp/sky",
+                "session_alias": "corp/pack.sky",
+                "session_name": "s-gc-old",
+                "session_id": "gc-old",
+                "thread_id": "333",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "corp/pack.sky",
+                        "session_name": "s-gc-old",
+                        "session_id": "gc-old",
+                        "delivery_selector": "s-gc-old",
+                    }
+                },
+            }
+        )
+
+        updated = common.repin_room_launch_participant_for_session(
+            "room-launch:repin-helper",
+            "corp/sky",
+            session_name="corp--sky",
+            session_id="gc-new",
+            session_alias="corp/sky",
+        )
+
+        assert updated is not None
+        participant = updated["participants"]["corp/sky"]
+        self.assertEqual(participant["session_id"], "gc-new")
+        self.assertEqual(participant["session_name"], "corp--sky")
+        self.assertEqual(participant["session_alias"], "corp/sky")
+        self.assertEqual(participant["delivery_selector"], "corp--sky")
+        self.assertEqual(updated["session_id"], "gc-new")
+        self.assertIsNone(
+            common.repin_room_launch_participant_for_session(
+                "room-launch:repin-helper",
+                "corp/sky",
+                session_name="corp--sky",
+                session_id="gc-new",
+            )
+        )
+        self.assertIsNone(
+            common.repin_room_launch_participant_for_session(
+                "room-launch:repin-helper",
+                "corp/other",
+                session_name="other-name",
+                session_id="other-id",
+            )
+        )
+
+    def test_resolve_existing_session_for_handle_matches_alias_case_insensitively(self) -> None:
+        sessions = [
+            {"id": "bo-1", "alias": "gasburger.mayor", "session_name": "gasburger__mayor",
+             "state": "active", "running": True},
+        ]
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions):
+            identity = common.resolve_existing_session_for_handle("Gasburger.Mayor")
+        self.assertEqual(identity["session_name"], "gasburger__mayor")
+        self.assertEqual(identity["alias"], "gasburger.mayor")
+
+    def test_resolve_existing_session_for_handle_matches_session_name(self) -> None:
+        sessions = [
+            {"id": "bo-1", "alias": "some-alias", "session_name": "s-bo-1",
+             "state": "active", "running": True},
+        ]
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions):
+            identity = common.resolve_existing_session_for_handle("s-bo-1")
+        self.assertEqual(identity["session_name"], "s-bo-1")
+
+    def test_resolve_existing_session_for_handle_matches_id(self) -> None:
+        sessions = [
+            {"id": "bo-1", "alias": "some-alias", "session_name": "s-bo-1",
+             "state": "active", "running": True},
+        ]
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions):
+            identity = common.resolve_existing_session_for_handle("bo-1")
+        self.assertEqual(identity["session_id"], "bo-1")
+
+    def test_resolve_existing_session_for_handle_skips_non_routable(self) -> None:
+        sessions = [
+            {"id": "bo-1", "alias": "gasburger.mayor", "session_name": "s-bo-1",
+             "state": "closed", "running": False},
+        ]
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions):
+            identity = common.resolve_existing_session_for_handle("gasburger.mayor")
+        self.assertEqual(identity, {})
+
+    def test_resolve_existing_session_for_handle_returns_empty_when_no_match(self) -> None:
+        with mock.patch.object(common, "list_city_sessions", return_value=[]):
+            identity = common.resolve_existing_session_for_handle("nope")
+        self.assertEqual(identity, {})
+
+    def test_resolve_existing_session_for_handle_matches_rig_prefixed_alias(self) -> None:
+        # A rig-scoped named session ("fattony" on rig "daytripper" from pack
+        # "gasburger") lands with alias "daytripper/gasburger.fattony". User
+        # types @@daytripper/fattony; suffix match should route to it.
+        sessions = [
+            {"id": "bo-9", "alias": "daytripper/gasburger.fattony",
+             "session_name": "s-bo-9", "state": "active", "running": True},
+        ]
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions):
+            identity = common.resolve_existing_session_for_handle("daytripper/fattony")
+        self.assertEqual(identity["alias"], "daytripper/gasburger.fattony")
+
+    def test_resolve_existing_session_for_handle_rig_alias_stays_scoped_to_rig(self) -> None:
+        # Same-name session under a different rig must NOT match — cross-rig
+        # collision would be a routing bug.
+        sessions = [
+            {"id": "bo-1", "alias": "docbook/gasburger.fattony",
+             "session_name": "s-bo-1", "state": "active", "running": True},
+        ]
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions):
+            identity = common.resolve_existing_session_for_handle("daytripper/fattony")
+        self.assertEqual(identity, {})
+
+    def test_resolve_named_session_for_handle_matches_rig_scoped_named_session(self) -> None:
+        with mock.patch.object(common, "load_city_toml", return_value={
+            "named_session": [
+                {"template": "gasburger.crew", "scope": "rig",
+                 "dir": "daytripper", "name": "fattony", "mode": "on_demand"},
+            ],
+        }):
+            ref = common.resolve_named_session_for_handle("daytripper/fattony")
+        self.assertEqual(ref["template"], "gasburger.crew")
+        self.assertEqual(ref["alias"], "fattony")
+        self.assertEqual(ref["spawn_template"], "daytripper/gasburger.crew")
+        self.assertEqual(ref["scope"], "rig")
+        self.assertEqual(ref["dir"], "daytripper")
+
+    def test_resolve_named_session_for_handle_case_insensitive(self) -> None:
+        with mock.patch.object(common, "load_city_toml", return_value={
+            "named_session": [
+                {"template": "gasburger.crew", "scope": "rig",
+                 "dir": "docbook", "name": "meltron"},
+            ],
+        }):
+            ref = common.resolve_named_session_for_handle("Docbook/Meltron")
+        self.assertEqual(ref["alias"], "meltron")
+
+    def test_resolve_named_session_for_handle_returns_empty_when_no_match(self) -> None:
+        with mock.patch.object(common, "load_city_toml", return_value={
+            "named_session": [
+                {"template": "gasburger.crew", "scope": "rig",
+                 "dir": "daytripper", "name": "fattony"},
+            ],
+        }):
+            ref = common.resolve_named_session_for_handle("daytripper/nobody")
+        self.assertEqual(ref, {})
+
+    def test_resolve_named_session_for_handle_swallows_toml_errors(self) -> None:
+        with mock.patch.object(common, "load_city_toml",
+                               side_effect=common.GCAPIError("boom")):
+            ref = common.resolve_named_session_for_handle("anything")
+        self.assertEqual(ref, {})
+
+    def test_ensure_room_launch_session_spawns_named_session_with_alias(self) -> None:
+        # For a named-session launch, we spawn via the qualified template
+        # (e.g. daytripper/gasburger.crew) but with the declared alias
+        # (fattony) so the session is discoverable next turn.
+        launch = {
+            "launch_id": "room-launch:named",
+            "qualified_handle": "daytripper/fattony",
+            "session_alias": "fattony",
+            "guild_id": "g1",
+            "conversation_id": "c1",
+            "root_message_id": "m1",
+            "from_display": "thunderchief",
+        }
+        sessions_after = [
+            {"id": "bo-9", "alias": "daytripper/gasburger.fattony",
+             "session_name": "s-bo-9", "template": "daytripper/gasburger.crew",
+             "state": "active", "running": True},
+        ]
+        # The named session must not be listed until after the spawn: if a
+        # live session already matches the handle, ensure attaches to it
+        # instead of creating (see the repin fallback).
+        calls = {"count": 0}
+
+        def list_sessions(*, state: str = "all") -> list[dict[str, object]]:
+            self.assertEqual(state, "all")
+            calls["count"] += 1
+            if calls["count"] < 3:
+                return []
+            return sessions_after
+
+        with mock.patch.object(
+            common, "list_city_sessions", side_effect=list_sessions,
+        ), mock.patch.object(
+            common, "create_agent_session", return_value={},
+        ) as create_agent_session, mock.patch.object(
+            common, "deliver_session_message", return_value={"status": "accepted"},
+        ), mock.patch.object(common.time, "sleep"):
+            current = common.ensure_room_launch_session(
+                launch,
+                spawn_template_override="daytripper/gasburger.crew",
+                session_alias_override="fattony",
+            )
+
+        create_agent_session.assert_called_once()
+        call_args = create_agent_session.call_args
+        self.assertEqual(call_args.args[0], "daytripper/gasburger.crew")
+        self.assertEqual(call_args.kwargs["alias"], "fattony")
+        self.assertEqual(current["session_id"], "bo-9")
+        self.assertEqual(current["session_name"], "s-bo-9")
+        self.assertEqual(current["session_alias"], "daytripper/gasburger.fattony")
+
+    def test_ensure_room_launch_session_attaches_without_creating(self) -> None:
+        launch = {
+            "launch_id": "room-launch:attach",
+            "qualified_handle": "gasburger.mayor",
+            "session_alias": "",
+            "guild_id": "g1",
+            "conversation_id": "c1",
+            "root_message_id": "m1",
+            "from_display": "thunderchief",
+        }
+        attached = {"session_name": "gasburger__mayor", "session_id": "bo-1",
+                    "alias": "gasburger.mayor"}
+        with mock.patch.object(
+            common, "list_city_sessions", return_value=[],
+        ), mock.patch.object(
+            common, "create_agent_session",
+        ) as create_agent_session, mock.patch.object(
+            common, "prime_room_launch_participant",
+        ) as prime, mock.patch.object(common.time, "sleep"):
+            current = common.ensure_room_launch_session(launch, attached_identity=attached)
+
+        create_agent_session.assert_not_called()
+        prime.assert_not_called()
+        self.assertEqual(current["session_name"], "gasburger__mayor")
+        self.assertEqual(current["session_id"], "bo-1")
+        self.assertEqual(current["session_alias"], "gasburger.mayor")
+        participant = current["participants"]["gasburger.mayor"]
+        self.assertTrue(participant["attached"])
+        self.assertEqual(participant["delivery_selector"], "gasburger__mayor")
+
+    def test_ensure_room_launch_session_hydrates_when_platform_prefixes_alias_and_returns_no_identity(self) -> None:
+        # Simulates the real /v0/sessions async accept: create_agent_session
+        # returns {} (no id/alias/session_name) and the platform stores the
+        # session under a pack-namespace-prefixed alias.
+        launch = {
+            "launch_id": "room-launch:prefixed",
+            "qualified_handle": "gasburger.mayor",
+            "session_alias": "dc-abc123-gasburgermayor",
+            "from_display": "thunderchief",
+        }
+        sessions_after_create = [
+            {
+                "id": "bo-9cm",
+                "alias": "gasburger.dc-abc123-gasburgermayor",
+                "session_name": "s-bo-9cm",
+                "template": "gasburger.mayor",
+                "state": "active",
+                "running": True,
+                "created_at": "2026-08-02T16:58:14Z",
+            }
+        ]
+
+        def list_sessions(*, state: str = "all") -> list[dict[str, object]]:
+            return sessions_after_create
+
+        with mock.patch.object(
+            common,
+            "list_city_sessions",
+            side_effect=list_sessions,
+        ), mock.patch.object(
+            common,
+            "create_agent_session",
+            return_value={},
+        ) as create_agent_session, mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "bo-9cm"},
+        ), mock.patch.object(common.time, "sleep"):
+            current = common.ensure_room_launch_session(launch)
+
+        create_agent_session.assert_called_once()
+        self.assertEqual(current["session_id"], "bo-9cm")
+        self.assertEqual(current["session_name"], "s-bo-9cm")
+        self.assertEqual(current["session_alias"], "gasburger.dc-abc123-gasburgermayor")
 
     def test_ensure_room_launch_session_hydrates_routable_identity_after_longer_async_delay(self) -> None:
         launch = {
