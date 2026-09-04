@@ -130,16 +130,39 @@ test_composition_is_documented() {
         fail "pack.toml should not reference the retired maintenance pack import"
 }
 
-test_polecat_startup_uses_standard_hook_claim() {
-    local agent prompt propulsion
+test_polecat_startup_uses_scripted_hook_claim() {
+    local agent prompt propulsion following restart
     agent="$GASTOWN/agents/polecat/agent.toml"
     prompt="$GASTOWN/agents/polecat/prompt.template.md"
     propulsion="$GASTOWN/template-fragments/propulsion.template.md"
+    following="$GASTOWN/template-fragments/following-mol.template.md"
+    restart=$(sed -n '/^\*\*Restart \/ resume:\*\*/,/^\*\*Claim ->/p' "$prompt")
 
-    grep -F 'gc hook --claim --json' "$agent" >/dev/null ||
-        fail "polecat nudge should call the standard hook claim path"
-    grep -F 'gc hook --claim --json' "$prompt" >/dev/null ||
-        fail "polecat prompt should call the standard hook claim path"
+    grep -F 'POLECAT_CLAIM_CONTRACT' "$agent" >/dev/null ||
+        fail "polecat nudge should enter the complete scripted claim contract"
+    grep -F 'first operational action' "$agent" >/dev/null ||
+        fail "polecat nudge should make the complete contract the first operational action"
+    grep -F 'CLAIMED_BEAD_ID' "$agent" >/dev/null ||
+        fail "polecat nudge should gate continuation on a claim receipt"
+    ! grep -F 'gc hook --claim' "$agent" >/dev/null ||
+        fail "polecat nudge must not bypass the scripted startup contract"
+    grep -F 'gc hook --claim --drain-ack --json' "$prompt" >/dev/null ||
+        fail "polecat prompt should use the transactional startup claim path"
+    grep -F '`{{ cmd }} prime` may reload this prompt only' "$prompt" >/dev/null ||
+        fail "prime recovery should be context restoration only"
+    grep -F 'Only after `CLAIMED_BEAD_ID` may you re-read formula steps' "$prompt" >/dev/null ||
+        fail "polecat restart should gate formula/workspace access on the claim receipt"
+    ! grep -F 'FIRST action on restart' "$prompt" >/dev/null ||
+        fail "polecat prompt should not retain a competing manual first action"
+    [[ "$restart" != *'CONVOY_STATUS=$(gc convoy status'* ]] ||
+        fail "polecat prompt should not retain a manual resume bypass"
+    grep -F 'complete `POLECAT_CLAIM_CONTRACT` as its first operational action' \
+        "$following" >/dev/null ||
+        fail "shared restart guidance should preserve the polecat claim-first gate"
+    grep -F '`CLAIMED_BEAD_ID`' "$following" >/dev/null ||
+        fail "shared restart guidance should wait for the polecat claim receipt"
+    ! grep -F 'On crash or restart, re-read your formula steps' "$following" >/dev/null ||
+        fail "shared restart guidance should not read formulas before polecat claim"
     grep -F 'gc hook --claim --json' "$propulsion" >/dev/null ||
         fail "polecat propulsion fragment should call the standard hook claim path"
     grep -F 'After closing any formula step bead, immediately run' "$prompt" >/dev/null ||
@@ -256,7 +279,7 @@ test_retired_dog_formulas_are_not_reintroduced
 test_shutdown_dance_contracts_are_executable
 test_shutdown_dance_lifecycle_and_audit_contracts
 test_composition_is_documented
-test_polecat_startup_uses_standard_hook_claim
+test_polecat_startup_uses_scripted_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
