@@ -23,9 +23,12 @@ Merge strategy is per-work-bead metadata:
 - `direct` (default): fast-forward merge to target and push
 - `mr` / `pr`: publish a GitHub pull request instead of landing directly
 
-In `mr` mode, refinery treats PR publication as the terminal handoff for
-the direct-bead workflow: it records the PR URL on the work bead and
-closes the bead once the PR is verified.
+In `mr` mode, PR publication is not completion. Refinery records the
+verified PR identity and head on the work bead, then leaves the bead
+blocked until the PR is merged. Each patrol reconciles one pending PR
+and closes its bead only after the merge commit is verified on the
+recorded target branch. This preserves dependency ordering: downstream
+beads cannot become ready against code that has not landed.
 
 Read each step's description before acting — Config values override defaults."""
 formula = "mol-refinery-patrol"
@@ -67,7 +70,7 @@ description = "Default target branch for merges"
 default = "main"
 
 [vars.delete_merged_branches]
-description = "Whether to delete source branches after merge"
+description = "Deprecated compatibility setting; successful artifact handoffs retain source branches for recovery"
 default = "true"
 
 [vars.integration_branch_auto_land]
@@ -169,6 +172,48 @@ needs = ["check-inbox"]
 description = """
 **Config: event_timeout = {{event_timeout}}**
 
+Every time this open step is entered or re-entered after an idle wake, first
+reconcile the least-recently-checked `merge_strategy=mr` handoff in this rig:
+
+```bash
+if ! gc gastown pr-merge-reconcile; then
+  echo "Pending PR reconciliation failed safely; its work bead remains blocked."
+fi
+```
+
+The command handles at most one reconciliation marker per work scan:
+
+- an unchanged open PR stays blocked;
+- any handoff owned by an earlier refinery session is adopted to `$GC_AGENT`;
+- an interrupted open record with complete `pull_request_pending` metadata
+  finishes its blocked dependency gate before lookup;
+- an incomplete open record clears stale partial PR evidence and its retry
+  marker, retains the validated `existing_pr` reuse hint, then returns to this
+  refinery for full validation without removing work or artifacts;
+- an open PR whose head changed is reopened and assigned to this refinery so
+  its quality gates run again, with the marker cleared in the same transition;
+- before lookup, blocked records must be exact `pull_request_pending`, or
+  complete `mr_merged` evidence retained after a verified close failure;
+  unknown, incomplete, obsolete, or contradictory lifecycle states are
+  quarantined and escalated;
+- a merged PR closes its work bead only after the recorded head matches and
+  the merge commit is reachable from the recorded `origin/<target>`;
+- a closed-unmerged PR, contradictory metadata, or a merged unvalidated head
+  stays blocked and is escalated to mayor.
+
+A lookup or fetch failure is retryable and never closes the work bead. Do not
+manually close a pending PR bead because reconciliation was unavailable.
+
+Next, before looking for new work, retry at most one closed artifact whose
+durable cleanup marker is still pending. This closes the crash window after the
+merge or bead close but before the immediate cleanup command:
+
+```bash
+if ! gc gastown task-artifact-cleanup; then
+  echo "Pending task-artifact cleanup failed safely; the worktree was preserved for retry or inspection."
+fi
+```
+
 Search for work beads assigned to you with branch metadata:
 ```bash
 WORK=$(gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee=$GC_AGENT --status=open \
@@ -215,9 +260,56 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
 Fetch and attempt mechanical rebase:
 ```bash
 git fetch --prune origin
+REFINERY_WORK_JSON=$(gc bd show "$WORK" --json) || {
+  echo "Cannot read work metadata before capturing artifact cleanup proof. STOP."
+  gc runtime drain-ack
+  exit 1
+}
+REFINERY_WORK_META=$(printf '%s' "$REFINERY_WORK_JSON" | jq -ce '
+  if type == "array" and length == 1 and (.[0] | type) == "object" and
+     ((.[0].metadata // {}) | type) == "object"
+  then .[0].metadata // {}
+  else error("expected exactly one work bead object")
+  end
+') || {
+  echo "Invalid work metadata response; refusing to overwrite artifact cleanup proof. STOP."
+  gc runtime drain-ack
+  exit 1
+}
+ARTIFACT_SOURCE_SHA=$(printf '%s' "$REFINERY_WORK_META" |
+  jq -r '.artifact_source_sha // empty')
+ARTIFACT_CLEANUP_STATE=$(printf '%s' "$REFINERY_WORK_META" |
+  jq -r '.artifact_cleanup_state // empty')
+if [ -z "$ARTIFACT_SOURCE_SHA" ]; then
+  ARTIFACT_SOURCE_SHA=$(git rev-parse "origin/$BRANCH") || {
+    echo "Cannot capture the published source SHA for artifact cleanup. STOP."
+    gc runtime drain-ack
+    exit 1
+  }
+  gc bd update "$WORK" \
+    --set-metadata artifact_source_sha="$ARTIFACT_SOURCE_SHA" \
+    --set-metadata artifact_cleanup_state=pending || {
+      echo "Cannot durably record the pre-rebase source SHA. STOP."
+      gc runtime drain-ack
+      exit 1
+    }
+elif [ "$ARTIFACT_CLEANUP_STATE" != pending ]; then
+  gc bd update "$WORK" \
+    --set-metadata artifact_cleanup_state=pending || {
+      echo "Cannot arm the artifact cleanup retry marker. STOP."
+      gc runtime drain-ack
+      exit 1
+    }
+fi
 git checkout -b temp origin/$BRANCH
 git rebase origin/$TARGET
 ```
+
+Do not overwrite an existing `artifact_source_sha` on a retry: MR mode may
+already have rewritten the remote branch before a refinery restart, while the
+original artifact still correctly points at the first captured SHA. A polecat
+returning from a rejected attempt clears this proof during its next successful
+submission, so the next refinery handoff captures a fresh value.
 
 If rebase SUCCEEDED (exit 0): close this step, proceed to run-tests.
 
@@ -387,7 +479,8 @@ title = "Merge and push"
 needs = ["handle-failures"]
 description = """
 **Config: target_branch = {{target_branch}}**
-**Config: delete_merged_branches = {{delete_merged_branches}}**
+**Config (deprecated; no effect on successful handoffs):
+delete_merged_branches = {{delete_merged_branches}}**
 
 Read the merge target and merge strategy from the work bead metadata:
 ```bash
@@ -584,7 +677,7 @@ lookup_pr_info() {
   ref="$1"
   err_file="$2"
   if command -v gh >/dev/null 2>&1; then
-    gh pr view --json url,number,state,headRefName,baseRefName,headRepositoryOwner,headRepository -- "$ref" 2>"$err_file"
+    gh pr view --json url,number,state,headRefName,headRefOid,baseRefName,headRepositoryOwner,headRepository -- "$ref" 2>"$err_file"
     return $?
   fi
   if ! init_github_rest 2>"$err_file"; then
@@ -610,7 +703,7 @@ lookup_pr_info() {
   fi
   PR_RAW=$(curl_gh_api "$err_file" "$API/pulls/$PR_NUMBER") || return 1
   printf '%s\n' "$PR_RAW" \
-    | jq '{url:.html_url, number, state:(.state | ascii_upcase), headRefName:.head.ref, baseRefName:.base.ref, headRepositoryOwner:{login:.head.repo.owner.login}, headRepository:{name:.head.repo.name}}'
+    | jq '{url:.html_url, number, state:(.state | ascii_upcase), headRefName:.head.ref, headRefOid:.head.sha, baseRefName:.base.ref, headRepositoryOwner:{login:.head.repo.owner.login}, headRepository:{name:.head.repo.name}}'
 }
 
 if [ "$MERGE_STRATEGY" = "mr" ] && [ -n "$EXISTING_PR" ]; then
@@ -760,7 +853,8 @@ If this block closed the bead as already-merged, the merge is already done:
 SKIP the merge script (step 1 below) and go straight to **2. Cleanup**, then
 let this step complete so **patrol-summary** and **next-iteration** run (they
 pour the next wisp and burn this one) — the same tail a normal merge takes. Do
-NOT drain-ack here; that would strand the loop and leak the merged branch.
+NOT drain-ack here; that would strand the loop and leak the current patrol
+wisp. The merged source branch is deliberately retained as recovery evidence.
 Otherwise the branch has a verified real change and you continue to the merge.
 
 **1. Merge, push, verify, and close work bead:**
@@ -820,20 +914,25 @@ rejected/reworked attempt before the successful close.
 git checkout --detach "origin/$TARGET" >/dev/null 2>&1 || true
 git branch -d temp || git branch -D temp || true
 ```
-If delete_merged_branches = "true": `git push origin --delete $BRANCH`
+Run **Successful task-artifact cleanup** below, then leave
+`origin/$BRANCH` intact. The exact remote source ref is the durable
+recovery copy after local artifact cleanup. `delete_merged_branches` is retained
+only for formula compatibility and MUST NOT delete a successfully handed-off
+artifact source branch.
 
 **If MERGE_STRATEGY = "mr":**
 
 Refinery does NOT land the branch directly. Instead it publishes a pull
-request and treats PR creation as the terminal handoff for this work bead.
+request and records a pending-merge handoff. The work bead remains blocked,
+so its dependents remain blocked, until a later patrol verifies the PR merge.
 
 **0. Refuse a 0-diff branch (false-completion guard):**
 
 The same predicate covers the empty-PR / 0-commit concern: do not publish a
-pull request for a branch that introduces no change vs its merge-base. The
-PR handoff closes the bead, so an empty PR is the same false completion as
-an empty direct merge. A tool error (status 2) is not an empty branch — stop
-without mutating bead state rather than halt-escalating a healthy branch.
+pull request for a branch that introduces no change vs its merge-base. An
+empty PR cannot satisfy the work bead and must not enter the pending-merge
+gate. A tool error (status 2) is not an empty branch — stop without mutating
+bead state rather than halt-escalating a healthy branch.
 ```bash
 branch_has_real_change "origin/$TARGET" temp
 BHRC_STATUS=$?
@@ -999,6 +1098,7 @@ PR_URL=$(printf '%s\n' "$PR_INFO" | jq -r '.url')
 PR_NUMBER=$(printf '%s\n' "$PR_INFO" | jq -r '.number')
 PR_STATE=$(printf '%s\n' "$PR_INFO" | jq -r '.state')
 PR_HEAD=$(printf '%s\n' "$PR_INFO" | jq -r '.headRefName')
+PR_HEAD_SHA=$(printf '%s\n' "$PR_INFO" | jq -r '.headRefOid')
 PR_BASE=$(printf '%s\n' "$PR_INFO" | jq -r '.baseRefName')
 PR_REPO=$(printf '%s\n' "$PR_URL" | sed -E 's#^https://github.com/([^/]+/[^/]+)/pull/[0-9]+$#\\1#')
 PR_HEAD_REPO=$(printf '%s\n' "$PR_INFO" | jq -r '.headRepositoryOwner.login + "/" + .headRepository.name')
@@ -1016,6 +1116,12 @@ if [ "$PR_HEAD" != "$BRANCH" ]; then
     block_existing_pr "Existing PR $EXISTING_PR targets branch $PR_HEAD, want $BRANCH."
   fi
   echo "Pull request $PR_REF targets branch $PR_HEAD, want $BRANCH."
+  gc runtime drain-ack
+  exit 1
+fi
+EXPECTED_PR_HEAD=$(git rev-parse temp)
+if [ "$PR_HEAD_SHA" != "$EXPECTED_PR_HEAD" ]; then
+  echo "Pull request $PR_REF head is $PR_HEAD_SHA, want validated branch head $EXPECTED_PR_HEAD."
   gc runtime drain-ack
   exit 1
 fi
@@ -1046,32 +1152,110 @@ fi
 ```
 If this command fails or prints empty output: STOP. Debug and retry. Do NOT continue.
 
-**4. Record PR metadata and close the work bead:**
+**4. Record the pending PR without closing the work bead:**
 
-Run as a single chained command so the metadata write cannot be skipped
-when the close-reason already names the PR. Both the `--set-metadata`
-write and the `gc bd close` are required — `pr_url` and `pr_number`
-are the only forensic breadcrumbs tying a closed bead to its pull
-request. `--unset-metadata rejection_reason` clears any stale rejection
-field from an earlier rejected/reworked attempt before the successful
-close.
+The command stores the canonical URL, number, validated head SHA, and target;
+sets `merge_result=pull_request_pending`; and moves the bead to `blocked`
+while retaining refinery ownership. That status is the dependency gate.
+It also clears stale rejection/routing metadata so the blocked handoff cannot
+be mistaken for pool demand.
 
 ```bash
-gc bd update $WORK \
-  --set-metadata merge_result=pull_request \
-  --set-metadata pr_url="$PR_URL" \
-  --set-metadata pr_number="$PR_NUMBER" \
-  --set-metadata merged_target="$TARGET" \
-  --unset-metadata rejection_reason && \
-gc bd close $WORK --reason "Pull request ready: $PR_URL"
+if ! gc gastown pr-merge-reconcile record \
+    "$WORK" "$PR_URL" "$PR_NUMBER" "$TARGET" "$PR_HEAD_SHA"; then
+  echo "Failed to record pending PR state. STOP. Do not close $WORK."
+  gc runtime drain-ack
+  exit 1
+fi
+if ! gc mail send mayor/ \
+    -s "PR ready for review: $WORK" \
+    -m "Work bead: $WORK
+Pull request: $PR_URL
+ The bead and its dependents remain blocked until a refinery patrol verifies the merge."; then
+  echo "Pending PR state is safe, but mayor notification failed; report the delivery failure."
+fi
 ```
+
+If the metadata transition fails: STOP. Do not close the bead or describe the
+work as complete. The retry marker is armed before the multi-step transition;
+a validated `existing_pr` hint is armed with it so a resumed validation does
+not create a duplicate PR. A later patrol adopts an interrupted open record
+and either completes a fully recorded block or returns an incomplete record to
+full validation after clearing stale partial PR evidence. A mail failure does
+not undo the safe blocked state; report the delivery failure and let a later
+patrol retry/escalate.
 
 **5. Cleanup:**
 ```bash
 git checkout "$TARGET"
 git branch -d temp
 ```
+Do not invoke task-artifact cleanup on this publication path. The artifact and
+its durable `pending` marker remain intact until reconciliation verifies and
+closes the MR handoff, then performs cleanup.
 Do NOT delete `$BRANCH` in mr mode — GitHub pull requests need the source branch.
+
+**Successful task-artifact cleanup (direct only on this path):**
+
+Use the pack command below after the verified direct-mode close. It is
+idempotent and is the only supported destructive cleanup path for a refinery
+terminal handoff. MR mode reaches the same command only from reconciliation
+after a fresh read proves the verified handoff is closed:
+
+```bash
+# BEGIN SUCCESSFUL_ARTIFACT_CLEANUP_COMMAND
+if [ "$MERGE_STRATEGY" = "direct" ]; then
+  if ! gc gastown task-artifact-cleanup "$WORK"; then
+    echo "Task artifact cleanup did not converge. STOP; its durable pending/blocked state remains retryable."
+    gc runtime drain-ack
+    exit 1
+  fi
+fi
+# END SUCCESSFUL_ARTIFACT_CLEANUP_COMMAND
+```
+
+The command accepts only this city's exact canonical artifact path or its exact
+historical `$GC_CITY_PATH/.gc/worktrees/$GC_RIG/polecats/<provider>/worktrees/<bead>`
+layout. Same-repository paths in another city, rig, or namespace are rejected.
+It never force-removes a worktree, and removal additionally requires a clean
+HEAD equal to the durable pre-rebase `artifact_source_sha`. Mutable metadata
+is not deletion proof by itself: direct/verified merges refresh the recorded
+origin target and prove `merged_sha` ancestry as corroboration of terminal
+state, but do not mechanically prove a relation from the pre-rebase artifact
+source to that merge. Direct mode therefore requires the exact artifact source
+SHA at `origin/polecat/<bead>` and retains that source ref after local cleanup
+as the durable recovery copy.
+The current PR-publication path records GitHub's validated `pr_head_sha`, and
+cleanup independently requires that exact source ref to remain at that SHA.
+
+For direct merges and MR records with explicit merged evidence, the bead must
+already be closed before the command can clean. The ambiguous historical
+`merge_result=pull_request` value proves only publication, so cleanup preserves
+that artifact even when the legacy bead is closed; operators must migrate it
+through verified-merge reconciliation first. The merge-gated MR workflow does
+not invoke cleanup at publication:
+
+- before terminal closure the already-recorded `artifact_cleanup_state=pending`
+  marker and artifact paths remain untouched;
+- after verified closure it removes a proven-safe artifact and records
+  `artifact_cleanup_state=complete`;
+- a retry after removal but before the metadata write observes the missing
+  path, clears stale path metadata, and records `complete`;
+- invalid, dirty, or SHA-mismatched artifacts are preserved and marked
+  `artifact_cleanup_state=blocked`.
+
+MR reconciliation MUST record `merge_result=mr_merged`, preserve the exact
+`pr_head_sha` and `polecat/<work>` source branch, plus `merged_sha`,
+`pr_state=merged`, and the merge timestamp before attempting closure. Only
+that complete blocked state is a valid verified-close retry. Reconciliation
+confirms the bead is closed and only then runs
+`gc gastown task-artifact-cleanup "$WORK"`. It retains
+`pr_reconcile_pending` until a fresh bead read proves cleanup complete and both
+artifact path fields cleared. A cleanup failure, command crash, or final
+metadata-write failure therefore remains discoverable on the closed bead and a
+later patrol retries it. Rejections never reach terminal cleanup; a polecat's
+next successful submission clears the stale source-SHA proof so refinery
+captures a fresh one.
 
 **If MERGE_STRATEGY = "local":**
 
@@ -1085,7 +1269,9 @@ The Gastown example refinery supports direct and mr/pr merge strategies only."
 ```
 Do NOT close the bead, delete the branch, or burn the wisp until a human decides how to proceed.
 
-**GATE**: direct mode requires verified target push. mr mode requires verified PR URL. Bead closure only happens after the selected handoff is confirmed."""
+**GATE**: direct mode requires verified target push. mr mode records a verified
+PR handoff but does not close the bead; closure happens only in
+`gc gastown pr-merge-reconcile` after a verified merge."""
 
 [[steps]]
 id = "patrol-summary"
