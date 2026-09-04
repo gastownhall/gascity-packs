@@ -1576,8 +1576,21 @@ func handlePublish(cfg config, reg *identityRegistry, userAliases *userAliasMap,
 				receipt.FailureKind = "permanent"
 			}
 		default:
-			receipt.Delivered = true
 			receipt.MessageID = slackResp.TS
+			if err := readBackPublishedMessage(
+				slackReadbackHTTPClient,
+				cfg.slackBotToken,
+				req.Conversation.ConversationID,
+				slackResp.TS,
+				req.ReplyToMessageID,
+				post.Text,
+			); err != nil {
+				log.Printf("slack readback failed: %v", err)
+				receipt.Delivered = false
+				receipt.FailureKind = slackReadbackFailureKind(err)
+			} else {
+				receipt.Delivered = true
+			}
 		}
 		// Remember delivered receipts so a subsequent retry with the same
 		// idempotency key replays this receipt instead of re-posting. Put
