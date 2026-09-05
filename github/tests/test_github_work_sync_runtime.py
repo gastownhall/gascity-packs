@@ -515,8 +515,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
                     "GC_RIG": "product",
                     "GC_CITY_PATH": "/city/product-city",
                     "GC_SERVICE_STATE_ROOT": "/city/ingress/.gc/services/github",
-                    "GC_AGENT_PLATFORM_BIN": "/opt/bin/agent-platform",
-                    "GC_AGENT_PLATFORM_ROOT": "/opt/agent-platform",
+                    "GC_WORK_SYNC_POLICY_BIN": "/opt/bin/agent-platform",
+                    "GC_WORK_SYNC_POLICY_ROOT": "/opt/agent-platform",
                     "GC_GITHUB_WORK_SYNC_TOKEN": "synthetic-test-token",
                 }, clear=True))
                 stack.enter_context(mock.patch.object(
@@ -613,8 +613,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
                 beads_cas=FakeCAS(),
                 github_writer=writer,
                 receipt_store=FakeReceiptStore(),
-                agent_platform_bin="/opt/bin/agent-platform",
-                platform_root="/opt/agent-platform",
+                policy_bin="/opt/bin/agent-platform",
+                policy_root="/opt/agent-platform",
             ).run()
 
     def test_main_emits_only_content_free_runtime_result(self) -> None:
@@ -638,8 +638,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
         environment = work_sync.runtime_environment({
             "GC_RIG": "product",
             "GC_CITY_PATH": "/city/product-city",
-            "GC_AGENT_PLATFORM_BIN": "/opt/bin/agent-platform",
-            "GC_AGENT_PLATFORM_ROOT": "/opt/agent-platform",
+            "GC_WORK_SYNC_POLICY_BIN": "/opt/bin/agent-platform",
+            "GC_WORK_SYNC_POLICY_ROOT": "/opt/agent-platform",
             "GC_GITHUB_REPO": "opsime-space/product",
             "GC_GITHUB_DELIVERY_ID": "delivery-1",
         }, canonical_runtime_contract())
@@ -653,8 +653,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             work_sync.runtime_environment({
                 "GC_RIG": "other",
                 "GC_CITY_PATH": "/city/product-city",
-                "GC_AGENT_PLATFORM_BIN": "/opt/bin/agent-platform",
-                "GC_AGENT_PLATFORM_ROOT": "/opt/agent-platform",
+                "GC_WORK_SYNC_POLICY_BIN": "/opt/bin/agent-platform",
+                "GC_WORK_SYNC_POLICY_ROOT": "/opt/agent-platform",
                 "GC_GITHUB_REPO": "opsime-space/other",
             }, canonical_runtime_contract())
 
@@ -741,8 +741,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             beads_cas=FakeCAS(),
             github_writer=FakeGitHub(),
             receipt_store=FakeReceiptStore(),
-            agent_platform_bin="/opt/bin/agent-platform",
-            platform_root="/opt/agent-platform",
+            policy_bin="/opt/bin/agent-platform",
+            policy_root="/opt/agent-platform",
             apply_plan=lambda plan, *_args, **_kwargs: (
                 apply_calls.append(plan) or {"status": "green", "applied_operations": 1}
             ),
@@ -786,8 +786,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             beads_cas=FakeCAS(),
             github_writer=FakeGitHub(),
             receipt_store=FakeReceiptStore(),
-            agent_platform_bin="/opt/bin/agent-platform",
-            platform_root="/opt/agent-platform",
+            policy_bin="/opt/bin/agent-platform",
+            policy_root="/opt/agent-platform",
             apply_plan=lambda *_args, **_kwargs: outcomes.pop(0),
         ).run()
 
@@ -807,8 +807,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
                 beads_cas=FakeCAS(),
                 github_writer=FakeGitHub(),
                 receipt_store=FakeReceiptStore(),
-                agent_platform_bin="/opt/bin/agent-platform",
-                platform_root="/opt/agent-platform",
+                policy_bin="/opt/bin/agent-platform",
+                policy_root="/opt/agent-platform",
             ).run()
 
     def test_reconciler_allows_canonical_false_only_for_dry_run(self) -> None:
@@ -827,8 +827,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             beads_cas=FakeCAS(),
             github_writer=FakeGitHub(),
             receipt_store=FakeReceiptStore(),
-            agent_platform_bin="/opt/bin/agent-platform",
-            platform_root="/opt/agent-platform",
+            policy_bin="/opt/bin/agent-platform",
+            policy_root="/opt/agent-platform",
             apply_plan=lambda _plan, *_args, **kwargs: (
                 calls.append(bool(kwargs.get("dry_run"))) or {"status": "dry_run"}
             ),
@@ -852,8 +852,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
 
         result = work_sync.ContractRunner(run=run).read(
             repository="product",
-            agent_platform_bin="/opt/bin/agent-platform",
-            platform_root="/opt/agent-platform",
+            policy_bin="/opt/bin/agent-platform",
+            policy_root="/opt/agent-platform",
         )
 
         self.assertEqual(result["route"]["repository"], "product")
@@ -1661,8 +1661,8 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
         snapshots = {"beads": [{"title": "private title"}], "issues": []}
         result = work_sync.PlannerRunner(run=run).plan(
             snapshots,
-            agent_platform_bin="/opt/bin/agent-platform",
-            platform_root="/opt/agent-platform",
+            policy_bin="/opt/bin/agent-platform",
+            policy_root="/opt/agent-platform",
         )
 
         self.assertEqual(result["status"], "green")

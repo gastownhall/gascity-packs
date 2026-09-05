@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Fail-closed runtime adapter for Agent Platform GitHub work-sync plans.
+"""Fail-closed runtime adapter for external GitHub work-sync policy plans.
 
-The Agent Platform binary owns pure planning. This module owns only the Gas City
+The configured policy provider owns pure planning. This module owns only the Gas City
 runtime boundary: private snapshot/plan files, exact-store Beads CAS calls, and
 GitHub writes with bounded retry plus mandatory readback.
 """
@@ -44,8 +44,8 @@ def runtime_environment(
         environ.get("GC_CITY_PATH", "").strip()
         or environ.get("GC_CITY_ROOT", "").strip()
     )
-    platform_bin = environ.get("GC_AGENT_PLATFORM_BIN", "").strip()
-    platform_root = environ.get("GC_AGENT_PLATFORM_ROOT", "").strip()
+    policy_bin = environ.get("GC_WORK_SYNC_POLICY_BIN", "").strip()
+    policy_root = environ.get("GC_WORK_SYNC_POLICY_ROOT", "").strip()
     full_name = environ.get("GC_GITHUB_REPO", "").strip().lower()
     dispatch_city = environ.get("GC_GITHUB_DISPATCH_CITY", "").strip()
     dispatch_rig = environ.get("GC_GITHUB_DISPATCH_RIG", "").strip()
@@ -57,8 +57,8 @@ def runtime_environment(
         or rig != route.get("rig")
         or not city
         or not os.path.isabs(city)
-        or not os.path.isabs(platform_bin)
-        or not os.path.isabs(platform_root)
+        or not os.path.isabs(policy_bin)
+        or not os.path.isabs(policy_root)
         or (full_name and full_name != expected_full_name)
         or (dispatch_city and dispatch_city != route.get("city"))
         or (dispatch_rig and dispatch_rig != route.get("rig"))
@@ -72,8 +72,8 @@ def runtime_environment(
         "repository_full_name": expected_full_name,
         "rig": rig,
         "city": city,
-        "agent_platform_bin": platform_bin,
-        "platform_root": platform_root,
+        "policy_bin": policy_bin,
+        "policy_root": policy_root,
         "delivery_id": delivery_id,
         "payload_file": environ.get("GC_GITHUB_EVENT_PAYLOAD_FILE", "").strip(),
     }
@@ -802,7 +802,7 @@ class BeadsSnapshotReader:
 
 
 class ContractRunner:
-    """Read one canonical repository contract through the Agent Platform CLI."""
+    """Read one canonical repository contract through the work-sync policy provider."""
 
     def __init__(
         self,
@@ -814,22 +814,22 @@ class ContractRunner:
         self,
         *,
         repository: str,
-        agent_platform_bin: str,
-        platform_root: str,
+        policy_bin: str,
+        policy_root: str,
     ) -> dict[str, object]:
         if (
             not isinstance(repository, str)
             or not repository
             or "/" in repository
-            or not os.path.isabs(agent_platform_bin)
-            or not os.path.isabs(platform_root)
+            or not os.path.isabs(policy_bin)
+            or not os.path.isabs(policy_root)
         ):
-            raise ValueError("exact repository, planner binary, and platform root are required")
+            raise ValueError("exact repository, planner binary, and policy root are required")
         with tempfile.TemporaryDirectory(prefix="github-work-sync-contract-") as tempdir:
             os.chmod(tempdir, 0o700)
             output_path = os.path.join(tempdir, "runtime-contract.json")
             command = [
-                agent_platform_bin,
+                policy_bin,
                 "--json",
                 "work-sync",
                 "runtime-contract",
@@ -838,7 +838,7 @@ class ContractRunner:
                 "--output",
                 output_path,
                 "--platform-root",
-                platform_root,
+                policy_root,
             ]
             result = self.run(
                 command,
@@ -2554,12 +2554,12 @@ class PlannerRunner:
         self,
         snapshots: dict[str, object],
         *,
-        agent_platform_bin: str,
-        platform_root: str,
+        policy_bin: str,
+        policy_root: str,
     ) -> dict[str, object]:
         if set(snapshots) != {"beads", "issues"}:
             raise ValueError("snapshots must contain exactly beads and issues")
-        if not os.path.isabs(agent_platform_bin) or not os.path.isabs(platform_root):
+        if not os.path.isabs(policy_bin) or not os.path.isabs(policy_root):
             raise ValueError("planner binary and platform root must be absolute")
         with tempfile.TemporaryDirectory(prefix="github-work-sync-") as tempdir:
             os.chmod(tempdir, 0o700)
@@ -2567,7 +2567,7 @@ class PlannerRunner:
             output_path = os.path.join(tempdir, "execution-plan.json")
             _private_json(input_path, snapshots)
             command = [
-                agent_platform_bin,
+                policy_bin,
                 "--json",
                 "work-sync",
                 "plan",
@@ -2576,7 +2576,7 @@ class PlannerRunner:
                 "--output",
                 output_path,
                 "--platform-root",
-                platform_root,
+                policy_root,
             ]
             result = self.run(
                 command,
@@ -2613,8 +2613,8 @@ class WorkSyncReconciler:
         beads_cas: object,
         github_writer: object,
         receipt_store: object,
-        agent_platform_bin: str,
-        platform_root: str,
+        policy_bin: str,
+        policy_root: str,
         apply_plan: Callable[..., dict[str, object]] | None = None,
     ) -> None:
         route = contract.get("route") if isinstance(contract, dict) else None
@@ -2640,8 +2640,8 @@ class WorkSyncReconciler:
             or not event["delivery_id"]
             or event.get("origin")
             not in {"github-human", contract.get("projection_writer")}
-            or not os.path.isabs(agent_platform_bin)
-            or not os.path.isabs(platform_root)
+            or not os.path.isabs(policy_bin)
+            or not os.path.isabs(policy_root)
         ):
             raise ValueError("work-sync reconciler contract is malformed")
         self.contract = contract
@@ -2653,8 +2653,8 @@ class WorkSyncReconciler:
         self.beads_cas = beads_cas
         self.github_writer = github_writer
         self.receipt_store = receipt_store
-        self.agent_platform_bin = agent_platform_bin
-        self.platform_root = platform_root
+        self.policy_bin = policy_bin
+        self.policy_root = policy_root
         self.apply_plan = apply_plan or apply_execution_plan
 
     def _plan(self) -> dict[str, object]:
@@ -2672,8 +2672,8 @@ class WorkSyncReconciler:
         self._prepare_issues(beads, issues)
         plan = self.planner.plan(
             {"beads": beads, "issues": issues},
-            agent_platform_bin=self.agent_platform_bin,
-            platform_root=self.platform_root,
+            policy_bin=self.policy_bin,
+            policy_root=self.policy_root,
         )
         if not isinstance(plan, dict):
             raise RuntimeError("work-sync planner returned malformed data")
@@ -3670,19 +3670,19 @@ class BeadsCAS:
 
 def execute_runtime_from_environment(*, dry_run: bool = False) -> dict[str, object]:
     rig = os.environ.get("GC_RIG", "").strip()
-    platform_bin = os.environ.get("GC_AGENT_PLATFORM_BIN", "").strip()
-    platform_root = os.environ.get("GC_AGENT_PLATFORM_ROOT", "").strip()
+    policy_bin = os.environ.get("GC_WORK_SYNC_POLICY_BIN", "").strip()
+    policy_root = os.environ.get("GC_WORK_SYNC_POLICY_ROOT", "").strip()
     if (
         not rig
         or "/" in rig
-        or not os.path.isabs(platform_bin)
-        or not os.path.isabs(platform_root)
+        or not os.path.isabs(policy_bin)
+        or not os.path.isabs(policy_root)
     ):
         raise RuntimeError("work-sync canonical runtime inputs are unavailable")
     contract = ContractRunner().read(
         repository=rig,
-        agent_platform_bin=platform_bin,
-        platform_root=platform_root,
+        policy_bin=policy_bin,
+        policy_root=policy_root,
     )
     environment = runtime_environment(os.environ, contract)
 
@@ -3755,8 +3755,8 @@ def execute_runtime_from_environment(*, dry_run: bool = False) -> dict[str, obje
             ),
             github_writer=github_writer,
             receipt_store=receipt_store,
-            agent_platform_bin=environment["agent_platform_bin"],
-            platform_root=environment["platform_root"],
+            policy_bin=environment["policy_bin"],
+            policy_root=environment["policy_root"],
         ).run(dry_run=dry_run or contract["live_mutations"] is not True)
 
 

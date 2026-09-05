@@ -83,11 +83,11 @@ gc order history work-sync --rig product
 
 Provide these non-secret runtime settings to the controller/order environment:
 
-- `GC_AGENT_PLATFORM_BIN`: absolute path to the Agent Platform CLI.
-- `GC_AGENT_PLATFORM_ROOT`: absolute path to the canonical fleet-contract root.
+- `GC_WORK_SYNC_POLICY_BIN`: absolute path to the work-sync policy provider executable.
+- `GC_WORK_SYNC_POLICY_ROOT`: absolute path to the policy contract root.
 - `GC_GITHUB_WORK_SYNC_DRY_RUN=1`: optional additional read-only guard.
 
-The runner reads `agent-platform --json work-sync runtime-contract` and uses
+The runner reads the configured provider’s `--json work-sync runtime-contract` and uses
 the pure `work-sync plan` command. The canonical contract's
 `live_mutations = false` always forces dry-run, even if the environment flag
 is absent. Dry-run performs authenticated reads and reports planned operation
@@ -96,8 +96,7 @@ GitHub App identity resolver/routing configuration as ingress; periodic runs
 mint short-lived installation tokens through the existing intake helpers.
 Do not configure a PAT or widen the intake App to delivery permissions.
 
-The runtime owns Issues/Projects v2 projection, reconciliation and receipts;
-Agent Platform supplies policy and a pure plan, not another worker or store.
+The runtime owns Issues/Projects v2 projection, reconciliation and receipts; the configured provider supplies policy and a pure plan, not another worker or store.
 It reads the exact Rig via native `gc beads snapshot` and applies incoming
 changes through whole-row `gc beads update-cas`. A native snapshot/CAS-capable
 Gas City build is required; comment imports additionally require transactional
