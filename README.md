@@ -145,6 +145,12 @@ Each top-level directory is either a pack or a group of related packs:
 
 Browse the tree for the current set; each pack has its own README.
 
+### IDE integration packs
+
+- [bb](./bb) connects BB's provider bridge to named Gas City agents and
+  project/rig mappings. Its experimental first stage targets Gas City 1.4.0
+  and current BB; see the pack README for picker limitations and setup.
+
 ### Agent context packs
 
 - [cass](./cass) adds a shared `cass-search` prompt fragment and Claude skill

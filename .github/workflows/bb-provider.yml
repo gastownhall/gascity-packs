@@ -1,0 +1,45 @@
+name: BB provider (Gas City 1.4)
+
+on:
+  pull_request:
+    paths: ["bb/**", ".github/workflows/bb-provider.yml"]
+  push:
+    paths: ["bb/**", ".github/workflows/bb-provider.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: bb/assets/plugin/package-lock.json
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Check provider and public BB bridge conformance
+        working-directory: bb/assets/plugin
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm run build
+          npm test
+      - name: Fetch and verify released Gas City 1.4.0
+        run: |
+          mkdir -p "$RUNNER_TEMP/gc14"
+          curl --fail --location --retry 3 \
+            https://github.com/gastownhall/gascity/releases/download/v1.4.0/gascity_1.4.0_linux_amd64.tar.gz \
+            --output "$RUNNER_TEMP/gc14/gascity.tar.gz"
+          cd "$RUNNER_TEMP/gc14"
+          echo "f6bd0bfaf2acc141642227629394dd3279761df4e1800235551af24d98b9cae0  gascity.tar.gz" | sha256sum --check
+          tar --extract --gzip --no-same-owner --file gascity.tar.gz gc
+      - name: Load and lint the pack in the released CLI
+        env:
+          GC_TEST_BIN: ${{ runner.temp }}/gc14/gc
+        run: python3 -m unittest discover -s bb/tests -v
