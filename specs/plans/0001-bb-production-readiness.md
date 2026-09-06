@@ -13,7 +13,8 @@ Finish the remaining work identified in [the assessment](../research/bb-producti
 - [x] Stage and validate upgrades before activation, retain previous installations, and exercise rollback failures while preserving config and journals.
 - [x] Improve diagnostics and update user setup/recovery docs and compatibility declarations.
 - [ ] Verify actual BB/GC installation and UI with isolated state: global/rig agents, two turns, tools, approval/denial/repetition, busy follow-up, interrupt/release, restart/resume, failures/recovery, and mismatched workspaces.
-- [x] Extend CI to the release matrix, review all changes, and run relevant final checks.
+- [x] Extend build, fixture and CLI CI to the release matrix.
+- [ ] Pass actual Claude and Codex two-turn/tool acceptance in CI on GC 1.4.0 and 1.4.1; build/fixture success alone is insufficient.
 - [ ] Commit/push the completed change and publish a versioned pack through the repository's release workflow only after release gates pass.
 
 ## Preservation and evidence
@@ -47,3 +48,24 @@ Initial working tree: only the untracked assessment under `specs/research/`.
   text was missing. Busy follow-up rejection was verified in actual BB events.
   The global case also reproduced truncated delivery. Live approvals,
   interrupt/release and restart/resume remain uncertified.
+
+- Added a real conversation harness and a four-entry GC/runtime CI matrix.
+  The aggregate check requires every live job; credentials and inference are
+  mandatory. Long-prompt first-turn markers, second-turn memory, successful
+  BB tool events, file contents and correlated completions are assertions,
+  not fixture assumptions. Sixteen guard tests reject false acceptance,
+  including truncated BB context when user markers survive. The harness also
+  reads GC transcripts independently of the bridge's completion claim.
+  Claude uses existing Manifold inference configuration; Codex CI needs the
+  `BB_CODEX_API_KEY` secret, which was absent during implementation. Broader
+  lifecycle acceptance above remains outstanding.
+
+- Fresh automated GC 1.4.1 / BB 0.42.1 smoke runs failed for both runtimes,
+  for both global and rig scopes. Claude's global terminal received only
+  `n.` from the long submitted prompt; BB failed both scopes instead of
+  reporting completion. Codex global failed on unknown activity; its rig
+  failed the busy-session startup preflight. These are failed acceptance runs,
+  not successful verification. Reports were preserved under temporary
+  `bb-acceptance-reports-*` directories. A BB child-reaping cleanup defect in
+  the harness was corrected and independently retested with a fresh BB app;
+  all task-owned panes were captured before stopping the disposable cities.

@@ -276,6 +276,12 @@ The dedicated workflow pins GC 1.4.0 and 1.4.1 with verified download checksums,
 and builds the server, host and frontend with released BB 0.42.1. Installer
 tests exercise failed builds, registration rollback and retained data.
 
+`BB end-to-end acceptance` additionally requires actual Claude and Codex
+conversations through released BB and both GC versions, for global and rig
+agents: two verified completions, retained context, a tool event and its file
+output. Missing inference credentials fail the check. See
+[live CI setup and reproduction](./docs/verification.md#ci-acceptance).
+
 The layout follows this repository's pack pattern: schema-2 `pack.toml`,
 documented `commands/*/run.sh`, a `doctor` check, and adapter code under
 `assets/`. No agent definitions or runtime configuration are changed by this

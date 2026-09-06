@@ -56,6 +56,59 @@ See [the evidence report](../../specs/research/bb-live-verification-2026-09-06.m
 for concrete observations and the [plan](../../specs/plans/0001-bb-production-readiness.md)
 for outstanding gates.
 
+## CI acceptance
+
+The `BB end-to-end acceptance` check requires both the build/fixture/CLI matrix
+and real Claude and Codex conversations on GC 1.4.0 and 1.4.1. Each live job
+starts a new BB 0.42.1 server and host, imports the matching released GC core,
+installs this checkout, and exercises both a global and a rig agent. It requires:
+
+- A completed first turn that returns markers from both ends of a multiline
+  prompt longer than 1 KiB.
+- A completed second turn in the same GC session, with a successful BB tool
+  event and a new file containing a word remembered from the first turn.
+- Exact provider, agent, project, host and workspace selection, and correlated
+  BB request, acceptance and completion events. An answer alone cannot pass.
+- Independent GC transcript and receipt checks proving the full forwarded
+  prompt, including BB's context, arrived as a new user message and the
+  session is reliably idle. Preserved user markers cannot hide lost context.
+
+Claude CI uses the repository's Manifold credentials and configured models with
+Claude Code 2.1.263. Codex CLI 0.153.4 requires the `BB_CODEX_API_KEY` repository
+secret. Missing credentials (including on fork PRs), timeouts, failed or
+interrupted turns and skipped jobs cannot make the aggregate check pass.
+No `pull_request_target` job exposes credentials to fork code.
+
+This is the basic conversation gate. Live approval/denial/repetition,
+interrupt/release and restart/recovery certification remain separate outstanding
+release requirements; passing this smoke gate does not waive them. Configure
+branch protection to require `BB end-to-end acceptance` if merges must be
+enforced by GitHub; defining a workflow alone does not change branch protection.
+
+To run the same live gate locally, provide inference credentials explicitly
+and the released binaries on `PATH` (Node 22, tmux and the selected runtime):
+
+```sh
+python3 -u bb/tests/live_acceptance.py \
+  --runtime claude --gc-bin /absolute/path/to/gc \
+  --bb-bin /absolute/path/to/bb --bb-app-bin /absolute/path/to/bb-app \
+  --report-dir /absolute/path/to/new-report-directory
+```
+
+Claude accepts `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or
+`CLAUDE_CODE_OAUTH_TOKEN`; custom endpoints/models use the runtime's standard
+environment variables. For `--runtime codex`, provide `OPENAI_API_KEY` or set
+`BB_ACCEPTANCE_CODEX_AUTH_FILE` to an existing authorized auth JSON file. The
+harness copies it into its private, disposable Codex configuration; it never
+tests against the original runtime store. All workspaces, cities, BB stores,
+ports and tmux sockets are separate from normal work. State remains available
+after the harness stops its own services.
+
+Only `summary.json`, `global/report.json` and `rig/report.json` are CI artifacts.
+Raw command captures under `private/` and the separate temporary state directory
+can contain credentials and must not be uploaded. The workflow uploads only
+those three explicitly named reports.
+
 ## Reproduce the browser check
 
 Use an isolated BB/GC installation and model credentials that you control.
