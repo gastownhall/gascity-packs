@@ -105,6 +105,10 @@ unknown/mismatched routes, schema drift, identity collisions and concurrent
 edits fail closed. There is no direct database fallback. The experimental
 Beads proxied-server mode is not required.
 
+The runtime accepts exactly one current managed-block contract from the policy
+provider. A legacy or unknown marker fails before planning or writing; the Pack
+does not contain a compatibility migration writer.
+
 Stable node IDs bind Issues and Projects items to Beads; replay receipts stay
 under the target City's existing `.gc/services/github/data` root. Cross-City
 webhook dispatch must not inherit the ingress City's receipt location.

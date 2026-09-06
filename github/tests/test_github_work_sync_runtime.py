@@ -322,7 +322,7 @@ def canonical_runtime_contract() -> dict[str, object]:
             ],
             "single_select_options": options,
         },
-        "managed_blocks": [{
+        "managed_block": {
             "schema_version": 2,
             "start_marker": "<!-- opsime-space:managed:v2:start -->",
             "end_marker": "<!-- opsime-space:managed:v2:end -->",
@@ -331,7 +331,7 @@ def canonical_runtime_contract() -> dict[str, object]:
                 "bead_type", "issue_type", "dependencies",
                 "lifecycle_phase", "evidence", "projection_hash",
             ],
-        }],
+        },
         "projection_writer": "gascity-github-intake",
         "live_mutations": False,
         "cross_city_project": "opsime-space",
@@ -1021,16 +1021,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             snapshot_reader=snapshot,
             event={"delivery_id": "delivery-1", "origin": "github-human"},
             projects={"Product": resolved_project_routes()["Product"]},
-            managed_blocks=[{
-                "schema_version": 2,
-                "start_marker": "<!-- opsime-space:managed:v2:start -->",
-                "end_marker": "<!-- opsime-space:managed:v2:end -->",
-                "fields": [
-                    "bead_id", "acceptance", "status", "priority",
-                    "bead_type", "issue_type", "dependencies",
-                    "lifecycle_phase", "evidence", "projection_hash",
-                ],
-            }],
+            managed_block=canonical_runtime_contract()["managed_block"],
         )
         identity = {"bead_id": "ga-1", "repository": "product"}
         item = operation(
@@ -1108,16 +1099,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             snapshot_reader=FakeEffectiveSnapshotReader(body),
             event={"delivery_id": "delivery-1", "origin": "github-human"},
             projects={"Product": resolved_project_routes()["Product"]},
-            managed_blocks=[{
-                "schema_version": 2,
-                "start_marker": "<!-- opsime-space:managed:v2:start -->",
-                "end_marker": "<!-- opsime-space:managed:v2:end -->",
-                "fields": [
-                    "bead_id", "acceptance", "status", "priority",
-                    "bead_type", "issue_type", "dependencies",
-                    "lifecycle_phase", "evidence", "projection_hash",
-                ],
-            }],
+            managed_block=canonical_runtime_contract()["managed_block"],
         )
         identity = execution_plan()["plans"][0]["identity"]
         operations = [
@@ -1196,16 +1178,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             snapshot_reader=snapshot,
             event={"delivery_id": "delivery-1", "origin": "github-human"},
             projects={"Product": resolved_project_routes()["Product"]},
-            managed_blocks=[{
-                "schema_version": 2,
-                "start_marker": "<!-- opsime-space:managed:v2:start -->",
-                "end_marker": "<!-- opsime-space:managed:v2:end -->",
-                "fields": [
-                    "bead_id", "acceptance", "status", "priority",
-                    "bead_type", "issue_type", "dependencies",
-                    "lifecycle_phase", "evidence", "projection_hash",
-                ],
-            }],
+            managed_block=canonical_runtime_contract()["managed_block"],
         )
         identity = execution_plan()["plans"][0]["identity"]
         binding = writer.binding(identity)
@@ -1535,7 +1508,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
 
         records = reader.reconciliation_records(
             projects=resolved_project_routes(),
-            managed_blocks=canonical_runtime_contract()["managed_blocks"],
+            managed_block=canonical_runtime_contract()["managed_block"],
             owning_project="Product",
             cross_city_project="opsime-space",
             cross_city_bead_types=["epic"],
@@ -1549,6 +1522,28 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
             [variables["project"] for query, variables in transport.graphql_calls if "WorkSyncProjectItems" in query],
             ["P_1", "P_CROSS"],
         )
+
+    def test_reconciliation_rejects_non_current_managed_block_without_write(self) -> None:
+        transport = FakeGitHubReadTransport()
+        transport.issue_body = (
+            "private body\n<!-- opsime-space:managed:v1:start -->\n{}\n"
+            "<!-- opsime-space:managed:v1:end -->"
+        )
+
+        with self.assertRaisesRegex(ValueError, "non-current"):
+            work_sync.GitHubSnapshotReader(
+                organization="opsime-space",
+                repository="product",
+                transport=transport,
+                projection_actor_node_id="BOT_1",
+            ).reconciliation_records(
+                projects=resolved_project_routes(),
+                managed_block=canonical_runtime_contract()["managed_block"],
+                owning_project="Product",
+                cross_city_project="opsime-space",
+                cross_city_bead_types=["epic"],
+                event={"delivery_id": "delivery-1", "origin": "github-human"},
+            )
 
     def test_reconciliation_records_fail_closed_for_managed_issue_without_project_item(self) -> None:
         body, _projection_hash = managed_projection_body()
@@ -1564,7 +1559,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
                 projection_actor_node_id="BOT_1",
             ).reconciliation_records(
                 projects=resolved_project_routes(),
-                managed_blocks=canonical_runtime_contract()["managed_blocks"],
+                managed_block=canonical_runtime_contract()["managed_block"],
                 owning_project="Product",
                 cross_city_project="opsime-space",
                 cross_city_bead_types=["epic"],
@@ -1588,7 +1583,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
                 projection_actor_node_id="BOT_1",
             ).reconciliation_records(
                 projects=resolved_project_routes(),
-                managed_blocks=canonical_runtime_contract()["managed_blocks"],
+                managed_block=canonical_runtime_contract()["managed_block"],
                 owning_project="Product",
                 cross_city_project="opsime-space",
                 cross_city_bead_types=["epic"],
@@ -1619,7 +1614,7 @@ class GitHubWorkSyncRuntimeTests(unittest.TestCase):
                         projection_actor_node_id="BOT_1",
                     ).reconciliation_records(
                         projects=resolved_project_routes(),
-                        managed_blocks=canonical_runtime_contract()["managed_blocks"],
+                        managed_block=canonical_runtime_contract()["managed_block"],
                         owning_project="Product",
                         cross_city_project="opsime-space",
                         cross_city_bead_types=["epic"],

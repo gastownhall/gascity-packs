@@ -1060,7 +1060,7 @@ class GitHubSnapshotReader:
         self,
         *,
         projects: dict[str, object],
-        managed_blocks: list[dict[str, object]],
+        managed_block: dict[str, object],
         owning_project: str,
         cross_city_project: str,
         cross_city_bead_types: list[str],
@@ -1071,8 +1071,7 @@ class GitHubSnapshotReader:
         if (
             not isinstance(projects, dict)
             or set(projects) != expected_titles
-            or not isinstance(managed_blocks, list)
-            or not managed_blocks
+            or not isinstance(managed_block, dict)
             or not isinstance(cross_city_bead_types, list)
             or not cross_city_bead_types
             or len(cross_city_bead_types) != len(set(cross_city_bead_types))
@@ -1105,18 +1104,13 @@ class GitHubSnapshotReader:
                 or number in numbers
             ):
                 raise RuntimeError("GitHub Issue inventory identity is ambiguous")
-            has_marker = any(
-                str(block.get(marker, "")) in body
-                for block in managed_blocks
-                for marker in ("start_marker", "end_marker")
-                if isinstance(block, dict) and block.get(marker)
-            )
+            has_marker = "<!-- opsime-space:managed:" in body
             if not has_marker:
                 continue
             managed, _projection_hash = _parse_managed_projection(
                 body,
                 None,
-                managed_blocks,
+                managed_block,
             )
             managed_by_node[node_id] = (candidate, managed)
             numbers.add(number)
@@ -1593,7 +1587,7 @@ class GitHubProjectSchemaReader:
             "route",
             "projects",
             "project_schema",
-            "managed_blocks",
+            "managed_block",
             "projection_writer",
             "token_permissions",
             "live_mutations",
@@ -1791,7 +1785,7 @@ class GitHubProjectionWriter:
         transport: object,
         snapshot_reader: object,
         projects: dict[str, object],
-        managed_blocks: list[dict[str, object]],
+        managed_block: dict[str, object],
         event: dict[str, object],
     ) -> None:
         if (
@@ -1812,7 +1806,7 @@ class GitHubProjectionWriter:
         self.snapshot_reader = snapshot_reader
         self.event = dict(event)
         self.projects = self._validate_projects(projects)
-        self.managed_blocks = self._validate_managed_blocks(managed_blocks)
+        self.managed_block = self._validate_managed_block(managed_block)
         self._pending: dict[str, dict[str, object]] = {}
         self._imported_comment_ids: dict[str, list[str]] = {}
         self._verified: dict[str, dict[str, object]] = {}
@@ -1886,51 +1880,36 @@ class GitHubProjectionWriter:
         return normalized
 
     @staticmethod
-    def _validate_managed_blocks(
-        managed_blocks: object,
-    ) -> list[dict[str, object]]:
-        if not isinstance(managed_blocks, list) or not managed_blocks:
-            raise ValueError("managed block contracts are required")
-        normalized: list[dict[str, object]] = []
-        versions: set[int] = set()
-        markers: set[str] = set()
-        for raw in managed_blocks:
-            if (
-                not isinstance(raw, dict)
-                or set(raw) != {
-                    "schema_version",
-                    "start_marker",
-                    "end_marker",
-                    "fields",
-                }
-                or not isinstance(raw.get("schema_version"), int)
-                or isinstance(raw["schema_version"], bool)
-                or raw["schema_version"] <= 0
-                or raw["schema_version"] in versions
-                or not isinstance(raw.get("start_marker"), str)
-                or not raw["start_marker"]
-                or not isinstance(raw.get("end_marker"), str)
-                or not raw["end_marker"]
-                or raw["start_marker"] == raw["end_marker"]
-                or raw["start_marker"] in markers
-                or raw["end_marker"] in markers
-                or not isinstance(raw.get("fields"), list)
-                or len(raw["fields"]) != len(set(raw["fields"]))
-                or set(raw["fields"])
-                < {"bead_id", "projection_hash"}
-            ):
-                raise ValueError("managed block contract is malformed")
-            normalized.append(
-                {
-                    "schema_version": raw["schema_version"],
-                    "start_marker": raw["start_marker"],
-                    "end_marker": raw["end_marker"],
-                    "fields": list(raw["fields"]),
-                }
-            )
-            versions.add(raw["schema_version"])
-            markers.update({raw["start_marker"], raw["end_marker"]})
-        return normalized
+    def _validate_managed_block(
+        raw: object,
+    ) -> dict[str, object]:
+        if (
+            not isinstance(raw, dict)
+            or set(raw) != {
+                "schema_version",
+                "start_marker",
+                "end_marker",
+                "fields",
+            }
+            or not isinstance(raw.get("schema_version"), int)
+            or isinstance(raw["schema_version"], bool)
+            or raw["schema_version"] <= 0
+            or not isinstance(raw.get("start_marker"), str)
+            or not raw["start_marker"]
+            or not isinstance(raw.get("end_marker"), str)
+            or not raw["end_marker"]
+            or raw["start_marker"] == raw["end_marker"]
+            or not isinstance(raw.get("fields"), list)
+            or len(raw["fields"]) != len(set(raw["fields"]))
+            or set(raw["fields"]) < {"bead_id", "projection_hash"}
+        ):
+            raise ValueError("managed block contract is malformed")
+        return {
+            "schema_version": raw["schema_version"],
+            "start_marker": raw["start_marker"],
+            "end_marker": raw["end_marker"],
+            "fields": list(raw["fields"]),
+        }
 
     def _base_path(self) -> str:
         return "/repos/{0}/{1}".format(
@@ -2154,20 +2133,9 @@ class GitHubProjectionWriter:
             self._expected_readback[bead_id] = self._next_state(verified, item)
         issue_path = self._base_path() + "/issues/" + str(effective["issue_number"])
         project = self._project_by_id(effective["project_node_id"])
-        if kind in {"replace-managed-block", "migrate-managed-block"} and field == "projection":
+        if kind == "replace-managed-block" and field == "projection":
             if not isinstance(value, dict) or not isinstance(value.get("body"), str):
                 raise ValueError("GitHub body operation is malformed")
-            if kind == "migrate-managed-block":
-                snapshot = self._snapshot(identity)
-                issue = snapshot.get("issue")
-                if not isinstance(issue, dict):
-                    raise ValueError("GitHub migration precondition is incomplete")
-                _managed, current_hash = self._managed_projection(
-                    issue.get("body"),
-                    str(identity["bead_id"]),
-                )
-                if current_hash != value.get("expected_legacy_projection_hash"):
-                    raise ValueError("GitHub migration precondition changed")
             self.transport.rest("PATCH", issue_path, {"body": value["body"]})
             return
         if kind == "update-project-field" and field in _PROJECT_FIELDS:
@@ -2258,7 +2226,7 @@ class GitHubProjectionWriter:
                 and project.get("archived") is False
                 and actual_hash == desired.get("projection_hash")
             )
-        if kind in {"replace-managed-block", "migrate-managed-block"}:
+        if kind == "replace-managed-block":
             if not isinstance(value, dict) or issue.get("body") != value.get("body"):
                 return False
             try:
@@ -2319,9 +2287,9 @@ class GitHubProjectionWriter:
         expected = copy.deepcopy(state)
         kind, field, value = item.get("kind"), item.get("field"), item.get("value")
         issue_write = kind in {
-            "replace-managed-block", "migrate-managed-block", "update-issue-type", "update-issue-state",
+            "replace-managed-block", "update-issue-type", "update-issue-state",
         }
-        if kind in {"replace-managed-block", "migrate-managed-block"} and isinstance(value, dict):
+        if kind == "replace-managed-block" and isinstance(value, dict):
             expected["issue"]["body"] = value.get("body")
         elif kind == "update-issue-state":
             expected["issue"]["state"] = value
@@ -2356,7 +2324,7 @@ class GitHubProjectionWriter:
         body: object,
         bead_id: str | None,
     ) -> tuple[dict[str, object], str]:
-        return _parse_managed_projection(body, bead_id, self.managed_blocks)
+        return _parse_managed_projection(body, bead_id, self.managed_block)
 
     def _snapshot_fingerprint(
         self,
@@ -2427,11 +2395,7 @@ class GitHubProjectionWriter:
                     body = candidate.get("body")
                     if not isinstance(body, str):
                         return None
-                    if not any(
-                        str(contract["start_marker"]) in body
-                        or str(contract["end_marker"]) in body
-                        for contract in self.managed_blocks
-                    ):
+                    if "<!-- opsime-space:managed:" not in body:
                         continue
                     managed, _projection_hash = self._managed_projection(
                         body,
@@ -2624,7 +2588,7 @@ class WorkSyncReconciler:
             or not route["repository"]
             or not isinstance(route.get("owning_project"), str)
             or not route["owning_project"]
-            or not isinstance(contract.get("managed_blocks"), list)
+            or not isinstance(contract.get("managed_block"), dict)
             or not isinstance(contract.get("cross_city_project"), str)
             or not contract["cross_city_project"]
             or not isinstance(contract.get("cross_city_bead_types"), list)
@@ -2661,7 +2625,7 @@ class WorkSyncReconciler:
         beads = self.beads_reader.read()
         issues = self.github_reader.reconciliation_records(
             projects=self.projects,
-            managed_blocks=self.contract["managed_blocks"],
+            managed_block=self.contract["managed_block"],
             owning_project=self.contract["route"]["owning_project"],
             cross_city_project=self.contract["cross_city_project"],
             cross_city_bead_types=self.contract["cross_city_bead_types"],
@@ -2701,7 +2665,7 @@ class WorkSyncReconciler:
             managed, projection_hash = _parse_managed_projection(
                 body,
                 None,
-                self.contract["managed_blocks"],
+                self.contract["managed_block"],
             )
             bead_id = str(managed["bead_id"])
             bead_record = bead_by_id.get(bead_id)
@@ -2984,63 +2948,56 @@ def _sha256(value: object) -> bool:
 def _parse_managed_projection(
     body: object,
     bead_id: str | None,
-    managed_blocks: list[dict[str, object]],
+    managed_block: dict[str, object],
 ) -> tuple[dict[str, object], str]:
     if not isinstance(body, str):
         raise ValueError("GitHub Issue managed body is not text")
-    matches: list[dict[str, object]] = []
-    for contract in managed_blocks:
-        if not isinstance(contract, dict):
-            raise ValueError("GitHub Issue managed block contract is malformed")
-        start = str(contract.get("start_marker", ""))
-        end = str(contract.get("end_marker", ""))
-        fields = contract.get("fields")
-        if (
-            not start
-            or not end
-            or start == end
-            or not isinstance(fields, list)
-            or len(fields) != len(set(fields))
-        ):
-            raise ValueError("GitHub Issue managed block contract is malformed")
-        start_count = body.count(start)
-        end_count = body.count(end)
-        if start_count == 0 and end_count == 0:
-            continue
-        if start_count != 1 or end_count != 1:
-            raise ValueError("GitHub Issue managed block markers are ambiguous")
-        start_index = body.index(start) + len(start)
-        end_index = body.index(end, start_index)
-        try:
-            managed = json.loads(body[start_index:end_index].strip())
-        except (TypeError, ValueError) as exc:
-            raise ValueError("GitHub Issue managed block JSON is malformed") from exc
-        if (
-            not isinstance(managed, dict)
-            or set(managed) != set(fields)
-            or (bead_id is not None and managed.get("bead_id") != bead_id)
-            or not isinstance(managed.get("bead_id"), str)
-            or not managed["bead_id"]
-            or not _sha256(managed.get("projection_hash"))
-        ):
-            raise ValueError("GitHub Issue managed block identity is invalid")
-        payload = {
-            field: managed[field]
-            for field in managed
-            if field not in {"bead_id", "projection_hash"}
-        }
-        encoded = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        if hashlib.sha256(encoded).hexdigest() != managed["projection_hash"]:
-            raise ValueError("GitHub Issue managed projection hash mismatches")
-        matches.append(managed)
-    if len(matches) != 1:
+    if not isinstance(managed_block, dict):
+        raise ValueError("GitHub Issue managed block contract is malformed")
+    start = str(managed_block.get("start_marker", ""))
+    end = str(managed_block.get("end_marker", ""))
+    fields = managed_block.get("fields")
+    if (
+        not start
+        or not end
+        or start == end
+        or not isinstance(fields, list)
+        or len(fields) != len(set(fields))
+    ):
+        raise ValueError("GitHub Issue managed block contract is malformed")
+    if "<!-- opsime-space:managed:" in body and start not in body and end not in body:
+        raise ValueError("GitHub Issue non-current managed block is forbidden")
+    if body.count(start) != 1 or body.count(end) != 1:
         raise ValueError("GitHub Issue requires exactly one managed block")
-    return matches[0], str(matches[0]["projection_hash"])
+    start_index = body.index(start) + len(start)
+    end_index = body.index(end, start_index)
+    try:
+        managed = json.loads(body[start_index:end_index].strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError("GitHub Issue managed block JSON is malformed") from exc
+    if (
+        not isinstance(managed, dict)
+        or set(managed) != set(fields)
+        or (bead_id is not None and managed.get("bead_id") != bead_id)
+        or not isinstance(managed.get("bead_id"), str)
+        or not managed["bead_id"]
+        or not _sha256(managed.get("projection_hash"))
+    ):
+        raise ValueError("GitHub Issue managed block identity is invalid")
+    payload = {
+        field: managed[field]
+        for field in managed
+        if field not in {"bead_id", "projection_hash"}
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if hashlib.sha256(encoded).hexdigest() != managed["projection_hash"]:
+        raise ValueError("GitHub Issue managed projection hash mismatches")
+    return managed, str(managed["projection_hash"])
 
 
 def _normalized_binding(
@@ -3175,14 +3132,6 @@ def _valid_push_operation(item: dict[str, object]) -> bool:
             and set(value) == {"body", "projection_hash"}
             and isinstance(value.get("body"), str)
             and _sha256(value.get("projection_hash"))
-        )
-    if kind == "migrate-managed-block" and field == "projection":
-        return (
-            isinstance(value, dict)
-            and isinstance(value.get("body"), str)
-            and _sha256(value.get("projection_hash"))
-            and _sha256(value.get("expected_legacy_projection_hash"))
-            and value.get("readback_after_write") is True
         )
     if kind == "update-project-field":
         return field in {"status", "priority", "bead_type", "lifecycle_phase"} and isinstance(value, str) and bool(value)
@@ -3739,7 +3688,7 @@ def execute_runtime_from_environment(*, dry_run: bool = False) -> dict[str, obje
             transport=transport,
             snapshot_reader=github_reader,
             projects=projects,
-            managed_blocks=contract["managed_blocks"],
+            managed_block=contract["managed_block"],
             event=event,
         )
         return WorkSyncReconciler(
