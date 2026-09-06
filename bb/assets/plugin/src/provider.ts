@@ -24,7 +24,7 @@ function decodeRemote(value: string) {
 interface LiveSession {
   threadId: string; providerThreadId: string; target: Target; sessionId: string;
   cwd: string; client: GasCityClient; projectId: string | null; warning?: string;
-  controller?: AbortController; busy: boolean; turnOpen: boolean; pending: Set<string>;
+  controller?: AbortController; completion?: Promise<void>; busy: boolean; turnOpen: boolean; pending: Set<string>;
 }
 interface Dependencies {
   send(message: any): void;
@@ -156,6 +156,7 @@ export class GasCityProvider {
       const args = threadStopParamsSchema.parse(input);
       const session = this.live(args.threadId, args.providerThreadId);
       session.controller?.abort();
+      await session.completion;
       if (args.intent === "interrupt" && session.busy) {
         await session.client.post(session.client.session(session.target.city, session.sessionId, "/stop"));
         const receipt = await this.journal.get(session.threadId);
@@ -173,7 +174,9 @@ export class GasCityProvider {
     if (method === "thread/discard") {
       const args = threadDiscardParamsSchema.parse(input);
       const session = this.sessions.get(args.threadId);
-      session?.controller?.abort(); this.sessions.delete(args.threadId);
+      session?.controller?.abort();
+      await session?.completion;
+      this.sessions.delete(args.threadId);
       return {};
     }
     throw Object.assign(new Error(`Unsupported bridge method: ${method}`), { code: BRIDGE_JSON_RPC_ERRORS.METHOD_NOT_FOUND });
@@ -206,6 +209,7 @@ export class GasCityProvider {
     if (session.busy) throw new Error("Wait for the active Gas City turn to finish");
     session.busy = true;
     session.turnOpen = false;
+    session.completion = undefined;
     const controller = new AbortController();
     session.controller = controller;
     try {
@@ -259,10 +263,11 @@ export class GasCityProvider {
         if (event.event === "structured") {
           this.emit(session, transcript.apply(JSON.parse(event.data)));
           if (transcript.complete()) {
-            const receipt = (await this.journal.get(session.threadId))!;
-            receipt.turn!.state = "completed"; await this.journal.put(session.threadId, receipt);
-            this.emit(session, [{ kind: "turn.boundary", status: "completed" }]);
-            session.busy = false; session.turnOpen = false; controller.abort(); return;
+            const completion = this.completeTurn(session, controller);
+            session.completion = completion;
+            try { await completion; }
+            finally { if (session.completion === completion) session.completion = undefined; }
+            return;
           }
         } else if (event.event === "pending") {
           const pending = JSON.parse(event.data);
@@ -273,6 +278,22 @@ export class GasCityProvider {
         }
       }
     } finally { clearTimeout(startup); }
+  }
+  private async completeTurn(session: LiveSession, controller: AbortController) {
+    const receipt = (await this.journal.get(session.threadId))!;
+    if (controller.signal.aborted) return;
+    const previous = receipt.turn!.state;
+    receipt.turn!.state = "completed";
+    await this.journal.put(session.threadId, receipt);
+    if (controller.signal.aborted) {
+      // An atomic write cannot be cancelled once started. Restore uncertainty
+      // before stop/discard can finish and a later turn can own the receipt.
+      receipt.turn!.state = previous;
+      await this.journal.put(session.threadId, receipt);
+      return;
+    }
+    this.emit(session, [{ kind: "turn.boundary", status: "completed" }]);
+    session.busy = false; session.turnOpen = false; controller.abort();
   }
   private async respond(session: LiveSession, pending: any, signal: AbortSignal) {
     if (pending.kind !== "approval" || pending.metadata?.source !== "tmux") throw new Error("This GC interaction type is not mapped in v1; respond in Gas City, then recover the BB thread.");

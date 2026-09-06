@@ -99,6 +99,23 @@ Then commit the tested pack content and use this repository's normal
 `gc pack release`/registry publishing process to stamp a content-addressed
 release. This branch intentionally adds no speculative registry entry.
 
+### Receiving-environment verification (2026-09-06)
+
+The handoff patch applied at its exact base with the expected tree
+`a3e0a5dc538285147eb20100ea0d9e3b1430f2b4`. TypeScript checking, the helper
+build, and all 15 provider tests passed with Node.js 26.7.0, npm 11.19.0, and
+the locked SDK 0.4.47. All four actual GC CLI checks passed with Python
+3.12 and GC 1.4.0. A follow-up fixes cancellation during a completion journal
+write; its interrupt and release regressions both fail against the original
+patch and pass with the fix.
+
+Using a scratch configuration, the built helper also connected to a running
+GC 1.4.0 supervisor (build `a7297c511d637a3609947386f3389d76ddb2f23b`),
+reported healthy status, and discovered five global agents without warnings.
+The running city had no rigs. BB desktop 0.41.0 was present, but live BB UI
+and model-backed conversation checks remain unverified; discovery alone
+does not satisfy those release gates.
+
 ## Primary contract references
 
 - [GC 1.4 expanded configuration](https://github.com/gastownhall/gascity/blob/v1.4.0/internal/api/huma_handlers_config.go)

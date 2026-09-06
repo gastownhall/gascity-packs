@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { experimental_assembleCapturedThreadEvents, experimental_runBridgeConformance, experimental_formatConformanceReport } from "@get-bb/plugin-sdk/provider-bridge/testing";
 import { GasCityProvider } from "../src/provider.js";
-import { Journal } from "../src/journal.js";
+import { Journal, type Receipt } from "../src/journal.js";
 import { GasCityClient } from "../src/client.js";
 import { targetId } from "../src/catalog.js";
 import { fixture, options, until } from "./fixture.js";
@@ -85,6 +85,42 @@ test("release during preflight prevents a later prompt submission", async () => 
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit") || c.path.endsWith("/stop")).length, 0);
   } finally { release(); provider.close(); await f.close(); }
 });
+
+for (const intent of ["interrupt", "release"] as const) {
+  test(`${intent} during completion preserves one terminal outcome`, async () => {
+    const f = await fixture(); const messages: any[] = [];
+    let writingCompletion = false; let finishWrite!: () => void; let didWrite!: () => void;
+    const paused = new Promise<void>(resolve => { finishWrite = resolve; });
+    const written = new Promise<void>(resolve => { didWrite = resolve; });
+    class PausingJournal extends Journal {
+      override async put(threadId: string, receipt: Receipt) {
+        if (receipt.turn?.state === "completed") { writingCompletion = true; await paused; }
+        await super.put(threadId, receipt);
+        if (receipt.turn?.state === "completed") didWrite();
+      }
+    }
+    const journal = new PausingJournal(join(f.cwd, "journal"));
+    const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal });
+    try {
+      const execution = { ...options, model: targetId(target) };
+      const start: any = await provider.dispatch("thread/start", { threadId: "completion-race", cwd: f.cwd, instructionMode: "append", options: execution });
+      await provider.dispatch("turn/start", { threadId: "completion-race", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ai", input: [{ type: "text", text: "Hello" }], options: execution });
+      await until(() => writingCompletion);
+      const stopping = provider.dispatch("thread/stop", { threadId: "completion-race", providerThreadId: start.providerThreadId, intent, activeTurnId: null });
+      finishWrite(); await written; await stopping;
+      const boundaries = messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.boundary");
+      assert.deepEqual(boundaries.map(d => d.status), intent === "interrupt" ? ["interrupted"] : []);
+      assert.equal((await journal.get("completion-race"))?.turn?.state, intent === "interrupt" ? "failed" : "accepted");
+      if (intent === "release") {
+        await assert.rejects(provider.dispatch("thread/resume", { threadId: "completion-race", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution }), /interrupted or its delivery is uncertain/);
+      } else {
+        await provider.dispatch("turn/start", { threadId: "completion-race", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789aj", input: [{ type: "text", text: "Next" }], options: execution });
+        await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary" && d.status === "completed"));
+        assert.equal((await journal.get("completion-race"))?.turn?.clientRequestId, "creq_23456789aj");
+      }
+    } finally { finishWrite(); provider.close(); await f.close(); }
+  });
+}
 
 test("published BB bridge conformance against the GC 1.4 fixture", async () => {
   const f = await fixture(); let messages: any[] = [];
