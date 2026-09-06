@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gas City BB status",
+  "type": "object",
+  "required": [
+    "config",
+    "workspacePolicy",
+    "connections",
+    "bindings",
+    "bindingChecks",
+    "registration",
+    "journal",
+    "receipts"
+  ],
+  "properties": {
+    "config": {
+      "type": "string"
+    },
+    "workspacePolicy": {
+      "enum": [
+        "conversation",
+        "require-match"
+      ]
+    },
+    "connections": {
+      "type": "array"
+    },
+    "bindings": {
+      "type": "array"
+    },
+    "bindingChecks": {
+      "type": "array"
+    },
+    "registration": {
+      "type": "object",
+      "required": [
+        "ok",
+        "status"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "journal": {
+      "type": "string"
+    },
+    "receipts": {
+      "type": "array"
+    }
+  }
+}

@@ -18,8 +18,8 @@ export function inScope(target: Target, binding?: Binding): boolean {
   return binding ? target.connection === binding.connection && target.city === binding.city && (!rig || rig === binding.rig) : !rig;
 }
 export async function discover(config: Config, context: { projectId?: string | null; cwd?: string } = {}, makeClient = (id: Config["connections"][number]) => new GasCityClient(id)) {
-  const binding = await bindingFor(config, context);
   const agents: Agent[] = [], warnings: string[] = [];
+  const binding = await bindingFor(config, context, warning => warnings.push(warning));
   for (const connection of config.connections.filter(c => !binding || c.id === binding.connection)) {
     try {
       const client = makeClient(connection);

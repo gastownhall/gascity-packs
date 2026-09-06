@@ -1,10 +1,13 @@
 import { parseArgs } from "node:util";
-import { realpath } from "node:fs/promises";
+import { realpath, readdir, readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { configPath, readConfig, saveConfig, statePath, type Config } from "./config.js";
 import { discover, targetId } from "./catalog.js";
 import { GasCityClient } from "./client.js";
 import { Journal } from "./journal.js";
+import { recoverThread } from "./recovery.js";
 
 async function main() {
   const command = process.argv[2];
@@ -13,15 +16,16 @@ async function main() {
     city: { type: "string" }, rig: { type: "string" }, path: { type: "string", multiple: true },
     cwd: { type: "string" }, json: { type: "boolean" }, thread: { type: "string" },
     "workspace-policy": { type: "string" }, "confirm-reviewed": { type: "boolean" },
+    "request-id": { type: "string" }, "event-cursor": { type: "string" },
   } });
   if (command === "connect") {
-    if (!values.url) throw new Error("Usage: gc bb connect --id local --url http://localhost:7375");
+    if (!values.url) throw new Error("Usage: gc bb connect --id local --url http://127.0.0.1:8372");
     const connection = { id: values.id ?? "local", url: values.url };
     let config: Config;
     try { config = await readConfig(); }
     catch (error) {
       if (!(error as Error).message.includes("is not configured")) throw error;
-      config = { version: 1, workspacePolicy: "conversation", connections: [], bindings: [] };
+      config = { version: 1, workspacePolicy: "require-match", connections: [], bindings: [] };
     }
     config.connections = [...config.connections.filter(c => c.id !== connection.id), connection];
     if (values["workspace-policy"]) config.workspacePolicy = values["workspace-policy"] as Config["workspacePolicy"];
@@ -64,31 +68,46 @@ async function main() {
       try { const health = await new GasCityClient(c).health(); return { id: c.id, ok: true, version: health.version }; }
       catch (error) { return { id: c.id, ok: false, error: (error as Error).message }; }
     }));
-    if (values.json) console.log(JSON.stringify({ config: configPath(), workspacePolicy: config.workspacePolicy, connections: checks, bindings: config.bindings, journal: join(statePath(), "sessions") }, null, 2));
+    const bindingChecks = await Promise.all(config.bindings.map(async binding => {
+      try {
+        await discover(config, { projectId: binding.projectId });
+        await Promise.all(binding.paths.map(p => realpath(p)));
+        return { projectId: binding.projectId, ok: true };
+      } catch (error) { return { projectId: binding.projectId, ok: false, error: (error as Error).message }; }
+    }));
+    const directory = join(statePath(), "sessions");
+    const names = await readdir(directory).catch(error => { if (error.code === "ENOENT") return []; throw error; });
+    const receipts = await Promise.all(names.filter(n => /^[a-f0-9]{64}\.json$/.test(n)).map(async name => {
+      const path = join(directory, name);
+      try {
+        const receipt = JSON.parse(await readFile(path, "utf8"));
+        return { path, threadId: receipt.threadId ?? null, sessionId: receipt.sessionId ?? null, state: receipt.turn?.state ?? "created", needsRecovery: !receipt.sessionId || !!receipt.turn && !["completed", "failed"].includes(receipt.turn.state) };
+      } catch (error) { return { path, needsRecovery: true, error: (error as Error).message }; }
+    }));
+    let registration;
+    try {
+      const { stdout } = await promisify(execFile)("bb", ["plugin", "list", "--json"], { timeout: 15_000 });
+      const plugin = JSON.parse(stdout).plugins?.find((p: any) => p.id === "gas-city");
+      registration = { ok: plugin?.status === "running", status: plugin?.status ?? "missing", detail: plugin?.statusDetail };
+    } catch (error) { registration = { ok: false, status: "unavailable", detail: (error as Error).message }; }
+    const healthy = checks.every(c => c.ok) && bindingChecks.every(c => c.ok) && registration.ok;
+    if (values.json) console.log(JSON.stringify({ config: configPath(), workspacePolicy: config.workspacePolicy, connections: checks, bindings: config.bindings, bindingChecks, registration, journal: directory, receipts }, null, 2));
     else {
-      console.log(checks.every(c => c.ok) ? "BB provider connections are healthy" : "One or more BB provider connections need attention");
+      console.log(healthy ? "BB provider is ready" : "BB provider needs attention");
       for (const check of checks) console.log(`${check.id}: ${check.ok ? `Gas City ${check.version}` : check.error}`);
       console.log(`Workspace policy: ${config.workspacePolicy}; ${config.bindings.length} project binding(s)`);
+      console.log(`BB registration: ${registration.status}${registration.detail ? ` — ${registration.detail}` : ""}`);
+      for (const check of bindingChecks) if (!check.ok) console.log(`Project ${check.projectId}: ${check.error}`);
+      for (const receipt of receipts) if (receipt.needsRecovery) console.log(`Unsettled receipt (may still be active): ${receipt.path}. Release the BB thread and inspect it before recovery.`);
     }
-    if (checks.some(c => !c.ok)) process.exitCode = 1;
+    if (!healthy) process.exitCode = 1;
     return;
   }
   if (command === "recover") {
     if (!values.thread || !values["confirm-reviewed"]) throw new Error("Inspect the complete remote transcript first, then run gc bb recover --thread <BB-thread-ID> --confirm-reviewed. This acknowledges unseen output; it never resends a prompt.");
     const journal = new Journal(join(statePath(), "sessions"));
-    await journal.locked(values.thread, async () => {
-      const receipt = await journal.get(values.thread!);
-      if (!receipt?.sessionId || !receipt.turn) throw new Error("No existing remote turn is recorded for this thread");
-      const connection = config.connections.find(c => c.id === receipt.target.connection);
-      if (!connection) throw new Error("Restore this thread's original connection first");
-      const client = new GasCityClient(connection);
-      const snapshot = await client.get(client.session(receipt.target.city, receipt.sessionId, "/transcript?format=structured"));
-      const pending = await client.get(client.session(receipt.target.city, receipt.sessionId, "/pending"));
-      if (snapshot.history?.tail_state?.activity !== "idle" || snapshot.history.tail_state.degraded || snapshot.history.tail_state.open_tool_call_ids?.length || snapshot.history.tail_state.pending_interaction_ids?.length || pending.pending) throw new Error("The remote session is still active, degraded, or awaiting a response");
-      receipt.turn.state = "completed";
-      await journal.put(values.thread!, receipt);
-      console.log(`Acknowledged reviewed remote output for ${values.thread}. Resume the BB thread; no prompt was resent.`);
-    });
+    const receipt = await recoverThread(config, journal, values.thread, { requestId: values["request-id"], eventCursor: values["event-cursor"] });
+    console.log(`Recovered ${values.thread} → ${receipt.sessionId}. Resume the BB thread; no prompt was resent.`);
     return;
   }
   throw new Error("Commands: connect, bind, agents, status, recover");

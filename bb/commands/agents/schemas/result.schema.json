@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gas City BB agents",
+  "type": "object",
+  "required": [
+    "agents",
+    "warnings"
+  ],
+  "properties": {
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "connection",
+          "city",
+          "agent",
+          "rig"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "connection": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "rig": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -23,3 +23,23 @@ test("SSE handles fragmented UTF-8, CRLF, comments and multiline data", async ()
   const result = []; for await (const event of parseSSE(body)) result.push(event);
   assert.equal(result.length, 1); assert.equal(result[0]!.event, "structured"); assert.equal(result[0]!.id, "token"); assert.deepEqual(JSON.parse(result[0]!.data), { text: "café" });
 });
+
+
+test("unknown runtime activity never reports successful completion", () => {
+  const transcript = new Transcript(frame("s1"));
+  assert.throws(() => transcript.apply(frame("s1", [{ id: "answer", role: "assistant", status: "final", blocks: [{ type: "text", text: "Done" }] }], "unknown")), /cannot report reliable turn activity/);
+  assert.equal(transcript.complete(), false);
+});
+
+
+test("later turns require the complete new prompt before presenting an answer", () => {
+  const user = { id: "old-user", role: "user", status: "final", blocks: [{ type: "text", text: "full prompt" }] };
+  const transcript = new Transcript(frame("s1", [user]), "full prompt");
+  const answer = { id: "answer", role: "assistant", status: "final", blocks: [{ type: "text", text: "Done" }] };
+  assert.deepEqual(transcript.apply(frame("s1", [user, { ...user, id: "truncated", blocks: [{ type: "text", text: "prompt" }] }, answer])), []);
+  assert.equal(transcript.complete(), false);
+  assert.equal(transcript.waitingForPrompt, true);
+  const valid = new Transcript(frame("s1", [user]), "full prompt");
+  assert.ok(valid.apply(frame("s1", [user, { ...user, id: "new-user" }, answer])).length);
+  assert.equal(valid.complete(), true);
+});

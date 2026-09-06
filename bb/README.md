@@ -2,15 +2,22 @@
 
 Experimental **0.1.0**, staged on `feat/bb-provider-gascity-1.4`. This pack
 connects unmodified [BB](https://github.com/get-bb/bb) to configured agents in
-**Gas City 1.4.0** through BB's public provider bridge and GC's HTTP session API.
+**Gas City 1.4.0–1.4.1** through BB's public provider bridge and GC's HTTP session API.
 It is not yet a registry release.
 
-In BB, select **Gas City** as the provider. The existing **Model** picker shows
-agent choices such as `alpha · Global · gc.mayor [local]` and
-`alpha · web · review.reviewer [local]`. Gas City retains the agent's model,
-prompt, tools, permissions, and runtime configuration.
+Open **Gas City** in BB’s sidebar. Select a connected host, a standard BB
+project, an exact global or rig agent, and its existing workspace. Gas City
+retains the agent’s model, prompt, tools, permissions, and runtime configuration.
+The launcher requires matching BB/GC directories and never substitutes a
+default agent for an unavailable selection.
 
-## What this first stage provides
+**Release status:** the pack is still a release candidate. Live testing found
+that GC 1.4.1 reports Codex transcript activity as `unknown`, so the bridge cannot
+verify completion for that runtime. It fails visibly rather than treating an
+assistant message as proof of completion. See [verification](./docs/verification.md)
+for the tested versions, results, and remaining gates.
+
+## Capabilities
 
 | BB concept | Gas City mapping |
 | --- | --- |
@@ -30,19 +37,17 @@ templates remain discoverable. Suspended cities, rigs, and agents are excluded.
 Qualified identities distinguish identically named agents across cities, rigs,
 and connections.
 
-**Current BB limitation:** its `model/list` request has a working directory but
-no selected project ID. The pack can filter an existing workspace whose path
-has been bound. Selecting a project in a fresh New Thread dialog cannot yet
-refresh the picker with that project's rigs. The CLI can show that exact list
-today, and execution revalidates the selected target against the actual BB
-project before creating the session. This branch does not promise the finished
-project-first picker UX; see [staging](./docs/staging.md).
+The dedicated launcher refreshes discovery directly on the selected host,
+using the explicit project ID. BB’s native **Model** picker remains available,
+but receives only a working directory and may cache selections. Use the Gas City
+launcher for project selection. Personal projects cannot adopt unmanaged
+workspaces in BB 0.42.1; choose a standard project even for a global agent.
 
 ## Prerequisites and topology
 
-- Gas City **1.4.0**, with a running supervisor and configured agents that can
+- Gas City **1.4.0 or 1.4.1**, with a running supervisor and configured agents that can
   create sessions and produce a reliable structured transcript.
-- BB with the public provider bridge used by `@get-bb/plugin-sdk` **0.4.47**.
+- BB **0.42.1**, using `@get-bb/plugin-sdk` **0.4.47**.
   The plugin declares SDK compatibility `>=0.4.47 <0.5`.
 - Node.js **22+**, npm, and the BB CLI.
 - For the initial setup below, the BB server, BB execution host, Gas City, and
@@ -64,7 +69,7 @@ git clone --branch feat/bb-provider-gascity-1.4 \
 cd /absolute/path/to/your-city
 gc import add --name bb /absolute/path/to/gascity-packs/bb
 gc bb install
-gc bb connect --id local --url http://localhost:7375
+gc bb connect --id local --url http://127.0.0.1:8372
 gc bb status
 gc bb agents
 ```
@@ -75,14 +80,23 @@ CLI, and invokes `bb plugin install path:<installed-directory>`. It forwards
 `--yes` only when you explicitly pass it. Importing the pack alone performs
 none of these installation steps.
 
-Use the **Gas City** provider in BB and choose a qualified global agent.
+Open the **Gas City** sidebar launcher after binding a standard project below.
+For explicit conversation-only use, select the **Gas City** provider in BB’s
+native picker and choose a qualified global agent.
 Select **Full access**: this is the bridge's supported BB permission mode;
 the agent's existing Gas City permission policy still applies. GC tmux
 approval requests are shown as explicit BB questions offering **Approve once**
 and **Deny**. Selecting Full access does not automatically answer them.
 
-To update, pull this branch and run `gc bb install` again. Configuration and
-session receipts live outside the installed adapter directory.
+To update, pull this branch and run `gc bb install` again from the city directory.
+Each installation is staged under `versions/`, built, and registered with BB
+before the `current` symlink changes. Old and failed installations are retained.
+A failed registration restores the prior path source without uninstalling its
+settings. Existing npm/git registrations are preserved; use BB’s update flow for
+those. Configuration and receipts live outside the installation directory.
+If an installer was killed, inspect `.install-lock` before retrying; it is never
+blindly removed. `gc bb status --json` checks registration, connections, bindings,
+and unsettled receipts. It reports configuration readiness, not runtime certification.
 
 ## Bind projects and existing workspaces
 
@@ -102,34 +116,34 @@ only that project's mapping on this host. Ambiguous workspace matches and
 unmapped standard BB projects produce an error. BB's personal project
 (`proj_personal`) remains projectless.
 
-For a first rig-specific conversation without BB changes, use a BB unmanaged
-environment pointing at a bound existing checkout. The picker can then obtain
-its catalog from that workspace. `gc bb agents --project ... --json` also
-returns the exact opaque IDs for BB clients that accept an explicit model ID;
-this pack does not install a separate session launcher.
+The launcher lists the mapped city’s globals and rig agents together. Select
+an agent and verify **Existing workspace**: GC 1.4’s expanded config omits the
+effective `work_dir`, so the suggested city/rig path may need correction.
+The provider compares the actual created session directory before sending input.
+Use a canonical absolute `work_dir` in GC configuration. GC 1.4’s Claude
+project-directory encoding also differs from current Claude for underscores;
+see the live verification notes before choosing a runtime workspace.
 
-BB currently memoizes provider catalogs for up to ten minutes on the server,
-with a separate browser cache. After changing mappings or GC configuration,
-wait for that cache to expire or restart the BB server and reload the UI.
-Reopening the browser alone does not clear the server cache. The CLI's
-`agents` command always discovers afresh. BB's own default-model selection
-behavior is unchanged; inspect the selected agent before starting a thread.
+**Refresh** bypasses BB’s model catalog cache. Missing hosts, projects and agents
+remain unavailable until explicitly selected again. Validation errors can be
+corrected and retried. If thread creation has an uncertain outcome, inspect BB’s
+thread list before using the explicit retry acknowledgement.
 
 ## Checkouts and configuration
 
 Gas City owns the session checkout. The bridge does not silently move a rig
 agent into BB's newly created worktree.
 
-- `conversation` (default) allows different directories and posts a visible
+- `conversation` (explicit opt-in) allows different directories and posts a visible
   notice in the conversation. BB file and diff views do not automatically
   describe changes made in GC's different checkout.
-- `require-match` blocks prompt submission unless the real BB and GC working
+- `require-match` (default) blocks prompt submission unless the real BB and GC working
   directories match. Use a matching unmanaged BB environment for coding.
 
 Set the policy while configuring a connection:
 
 ```sh
-gc bb connect --id local --url http://localhost:7375 \
+gc bb connect --id local --url http://127.0.0.1:8372 \
   --workspace-policy require-match
 ```
 
@@ -139,8 +153,8 @@ The host-local JSON file defaults to
 ```json
 {
   "version": 1,
-  "workspacePolicy": "conversation",
-  "connections": [{ "id": "local", "url": "http://localhost:7375" }],
+  "workspacePolicy": "require-match",
+  "connections": [{ "id": "local", "url": "http://127.0.0.1:8372" }],
   "bindings": [{
     "projectId": "proj_example",
     "connection": "local",
@@ -183,7 +197,9 @@ types instead of presenting a successful turn.
 A fresh session can temporarily have only GC's terminal fallback. For its
 first prompt, the bridge checks for pending interactions, submits once, and
 waits up to 150 seconds for normalized history containing that exact prompt.
-Terminal fallback text and startup output are not rendered as its answer.
+Every later turn also requires its complete new prompt to appear in history
+before output is attributed to it. Terminal fallback text and startup output
+are not rendered as its answer.
 If structured history never becomes available, the turn fails visibly and
 keeps its receipt for inspection. Existing conversations require a reliable
 idle transcript before accepting another prompt.
@@ -197,12 +213,26 @@ The bridge then blocks resubmission/resume until the operator inspects it:
 gc bb recover --thread <BB-thread-ID> --confirm-reviewed
 ```
 
-Recovery verifies an idle, non-degraded transcript with no pending tools or
-interactions. It acknowledges output you reviewed; it does not import that
-missing history into BB or resend the prompt. Preserve the journal when
-reinstalling. Ambiguous session creation and crash-left lock directories need
-manual inspection of the receipt and deterministic alias; this helper does
-not guess a replacement session or break a lock automatically.
+Recovery resolves a lost creation reply through its deterministic alias. For
+an unsettled turn it verifies the exact asynchronous submit result, the new
+submitted prompt and subsequent answer, and reliable idle history without
+pending tools/interactions. Idle history alone does not prove delivery.
+It acknowledges reviewed output; it does not import missing history into BB
+or resend the prompt. If the submit reply was lost, supply the original GC
+request evidence from inspected events:
+
+```sh
+gc bb recover --thread <BB-thread-ID> --confirm-reviewed \
+  --request-id <original-GC-request-ID> --event-cursor <original-cursor>
+```
+
+Both evidence flags are required together. Older receipts lacking prompt
+history evidence remain blocked; retain them and use GC to finish that work.
+Each live bridge holds a host-local ownership lease, including between turns.
+Release it in BB before recovery. A provably dead process on the same host
+allows lock retirement, preserving the original lock. Corrupt, foreign-host,
+and otherwise unverifiable locks require inspection. Preserve all receipts
+when reinstalling; they prevent duplicate submission.
 
 ## Deliberate limits
 
@@ -210,7 +240,9 @@ not guess a replacement session or break a lock automatically.
   does not enumerate every dormant named conversation. Generic rig templates
   without a resolved `dir` are skipped with a warning; import roles at rig
   scope so GC expands their identities.
-- One active BB turn per session; text input only. Inline attachments, BB
+- One active BB turn per session; busy follow-ups fail without clearing the
+  active turn or submitting twice. Queue through BB or wait for completion.
+  Text input only. Inline attachments, BB
   dynamic tools/skills injection, agent switching, fork, rename, archive,
   manual compaction, and model/reasoning/tier overrides are not implemented.
 - Only the verified GC tmux approval interaction is translated. Other
@@ -230,7 +262,7 @@ npm run typecheck
 npm run build
 npm test
 cd ../../..
-GC_TEST_BIN=/absolute/path/to/gc-1.4.0 \
+GC_TEST_BIN=/absolute/path/to/gc-1.4.1 \
   python3 -m unittest discover -s bb/tests -v
 ```
 
@@ -240,7 +272,9 @@ async creation, prompt delivery, replay, tool deltas, resume, interrupt,
 release, checkout mismatch, lost responses, and explicit approvals.
 The Python checks use the **actual released GC binary** for pack lint,
 resolved configuration, command discovery, and executable entrypoints.
-The dedicated workflow pins GC 1.4.0 and verifies its download checksum.
+The dedicated workflow pins GC 1.4.0 and 1.4.1 with verified download checksums,
+and builds the server, host and frontend with released BB 0.42.1. Installer
+tests exercise failed builds, registration rollback and retained data.
 
 The layout follows this repository's pack pattern: schema-2 `pack.toml`,
 documented `commands/*/run.sh`, a `doctor` check, and adapter code under

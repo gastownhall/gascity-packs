@@ -19,9 +19,9 @@ export class Transcript {
   hasAssistant = false;
   pending = false;
   idle = false;
-  constructor(snapshot: Frame, private bootstrapPrompt?: string) {
-    this.assertFrame(snapshot, !!bootstrapPrompt);
-    if (bootstrapPrompt) return;
+  constructor(snapshot: Frame, private bootstrapPrompt?: string, allowMissingHistory = false) {
+    this.assertFrame(snapshot, allowMissingHistory);
+    if (allowMissingHistory) return;
     this.stream = snapshot.history.transcript_stream_id;
     for (const m of snapshot.structured_messages) this.base.add(m.id);
   }
@@ -33,10 +33,10 @@ export class Transcript {
   apply(frame: Frame): ThreadDelta[] {
     this.assertFrame(frame, this.waitingForPrompt);
     if (this.bootstrapPrompt) {
-      // Fresh GC sessions may expose only terminal fallback until first input.
-      // Render nothing until normalized history contains our submitted prompt.
+      // GC delivery acceptance does not prove the runtime consumed the complete
+      // prompt. Render nothing until a new user entry contains that exact text.
       if (frame.history.tail_state.degraded) return [];
-      const first = frame.structured_messages.findIndex(message => message.role === "user" &&
+      const first = frame.structured_messages.findIndex(message => message.role === "user" && !this.base.has(message.id) &&
         (message.user_prompt?.text ?? message.blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n")).includes(this.bootstrapPrompt!));
       if (first === -1) {
         for (const message of frame.structured_messages) this.base.add(message.id);
@@ -45,6 +45,7 @@ export class Transcript {
       for (const message of frame.structured_messages.slice(0, first + 1)) this.base.add(message.id);
       this.bootstrapPrompt = undefined;
     }
+    if (frame.history.tail_state.activity === "unknown") throw new Error("Gas City cannot report reliable turn activity for this runtime. Completion cannot be verified; inspect the session in Gas City. GC 1.4 Codex transcripts have this limitation.");
     if (this.stream && frame.history.transcript_stream_id !== this.stream) throw new Error("Gas City changed transcript streams during this turn; inspect the session before continuing.");
     this.stream = frame.history.transcript_stream_id;
     if (frame.operation === "reset" && this.messages.size) throw new Error("Gas City rewrote the transcript during this turn. The bridge stopped replay to avoid duplicate or misleading history.");

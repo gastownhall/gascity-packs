@@ -7,7 +7,7 @@ import { z } from "zod";
 const name = z.string().trim().min(1).max(200);
 export const configSchema = z.object({
   version: z.literal(1),
-  workspacePolicy: z.enum(["conversation", "require-match"]).default("conversation"),
+  workspacePolicy: z.enum(["conversation", "require-match"]).default("require-match"),
   connections: z.array(z.object({ id: name, url: z.string().url() }).strict()).min(1),
   bindings: z.array(z.object({
     projectId: name, connection: name, city: name, rig: name,
@@ -51,7 +51,7 @@ export async function atomicJson(path: string, value: unknown): Promise<void> {
 export async function saveConfig(value: unknown, path = configPath()): Promise<void> {
   await atomicJson(path, configSchema.parse(value));
 }
-export async function bindingFor(config: Config, context: { projectId?: string | null; cwd?: string }): Promise<Binding | undefined> {
+export async function bindingFor(config: Config, context: { projectId?: string | null; cwd?: string }, warn: (message: string) => void = console.warn): Promise<Binding | undefined> {
   if (context.projectId !== undefined) {
     if (context.projectId === null || context.projectId === "proj_personal") return undefined;
     const binding = config.bindings.find(b => b.projectId === context.projectId);
@@ -62,7 +62,13 @@ export async function bindingFor(config: Config, context: { projectId?: string |
   const cwd = await realpath(context.cwd);
   const matches: { binding: Binding; length: number }[] = [];
   for (const binding of config.bindings) for (const path of binding.paths) {
-    const root = await realpath(path);
+    let root: string;
+    try { root = await realpath(path); }
+    catch (error) {
+      if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      warn(`Binding ${binding.projectId}: checkout ${path} is missing. Restore it or update gc bb bind; the saved binding is preserved.`);
+      continue;
+    }
     const suffix = relative(root, cwd);
     if (suffix === "" || (suffix !== ".." && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix))) matches.push({ binding, length: root.length });
   }

@@ -5,7 +5,7 @@
   "type": "module",
   "engines": {
     "node": ">=22",
-    "bb": ">=0.0",
+    "bb": ">=0.42.1 <0.43",
     "bbPluginSdk": ">=0.4.47 <0.5"
   },
   "bb": {
@@ -15,7 +15,8 @@
       "icon": "Building2"
     },
     "server": "./server.ts",
-    "host": "./host.ts"
+    "host": "./host.ts",
+    "app": "./app.tsx"
   },
   "keywords": [
     "bb-plugin"
@@ -32,6 +33,10 @@
   "devDependencies": {
     "@types/node": "22.19.7",
     "esbuild": "0.25.12",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@types/react": "19.2.14"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
   }
 }

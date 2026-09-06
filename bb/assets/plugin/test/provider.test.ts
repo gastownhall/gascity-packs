@@ -15,7 +15,7 @@ test("async create, first prompt once, transcript replay, completed resume, and 
   const messages: any[] = [];
   const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal: new Journal(join(f.cwd, "journal")) });
   try {
-    const execution = { ...options, model: targetId(target), providerOptions: { projectId: "proj_personal" } };
+    const execution = { ...options, serviceTier: "default" as const, model: targetId(target), providerOptions: { projectId: "proj_personal" } };
     const start = await provider.dispatch("thread/start", { threadId: "bb-thread", cwd: f.cwd, instructionMode: "append", options: execution }) as { providerThreadId: string };
     assert.match(start.providerThreadId, /^gcs1_/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/sessions") && c.method === "POST").length, 1);
@@ -36,7 +36,7 @@ test("async create, first prompt once, transcript replay, completed resume, and 
     assert.equal(f.calls.filter(c => c.path.endsWith("/sessions") && c.method === "POST").length, 1);
     await assert.rejects(provider.dispatch("turn/start", { threadId: "bb-thread", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "Hello" }], clientRequestId: "creq_23456789ab", options: execution }), /already journaled/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
-  } finally { provider.close(); await f.close(); }
+  } finally { await provider.close(); await f.close(); }
 });
 
 test("wrong rig is rejected before GC creation; existing thread cannot switch agents", async () => {
@@ -48,7 +48,7 @@ test("wrong rig is rejected before GC creation; existing thread cannot switch ag
     const start: any = await provider.dispatch("thread/start", { threadId: "fixed", cwd: f.cwd, instructionMode: "append", options: execution });
     await assert.rejects(provider.dispatch("turn/start", { threadId: "fixed", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789af", input: [{ type: "text", text: "Hello" }], options: { ...execution, model: targetId({ ...target, city: "beta" }) } }), /cannot switch agents/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
-  } finally { provider.close(); await f.close(); }
+  } finally { await provider.close(); await f.close(); }
 });
 
 test("release preserves the remote turn and uncertain resume blocks", async () => {
@@ -62,7 +62,7 @@ test("release preserves the remote turn and uncertain resume blocks", async () =
     assert.equal(f.calls.filter(c => c.path.endsWith("/stop")).length, 0);
     await assert.rejects(provider.dispatch("thread/resume", { threadId: "held", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution }), /interrupted or its delivery is uncertain/);
     assert.equal((await journal.get("held"))?.turn?.state, "accepted");
-  } finally { provider.close(); await f.close(); }
+  } finally { await provider.close(); await f.close(); }
 });
 
 test("release during preflight prevents a later prompt submission", async () => {
@@ -83,7 +83,7 @@ test("release during preflight prevents a later prompt submission", async () => 
     await provider.dispatch("thread/stop", { threadId: "preflight", providerThreadId: start.providerThreadId, intent: "release", activeTurnId: null });
     release(); await pending;
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit") || c.path.endsWith("/stop")).length, 0);
-  } finally { release(); provider.close(); await f.close(); }
+  } finally { release(); await provider.close(); await f.close(); }
 });
 
 for (const intent of ["interrupt", "release"] as const) {
@@ -118,7 +118,7 @@ for (const intent of ["interrupt", "release"] as const) {
         await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary" && d.status === "completed"));
         assert.equal((await journal.get("completion-race"))?.turn?.clientRequestId, "creq_23456789aj");
       }
-    } finally { finishWrite(); provider.close(); await f.close(); }
+    } finally { finishWrite(); await provider.close(); await f.close(); }
   });
 }
 
@@ -132,7 +132,7 @@ test("published BB bridge conformance against the GC 1.4 fixture", async () => {
       session: { cwd: f.cwd, promptInput: [{ type: "text", text: "Hello", mentions: [] }], interruptiblePromptInput: [{ type: "text", text: "hold", mentions: [] }], options: { ...options, model: targetId(target) } },
     });
     assert.equal(report.passed, true, experimental_formatConformanceReport(report));
-  } finally { provider.close(); await f.close(); }
+  } finally { await provider.close(); await f.close(); }
 });
 
 test("lost submit response is journaled and never automatically resent", async () => {
@@ -147,7 +147,7 @@ test("lost submit response is journaled and never automatically resent", async (
     assert.equal((await journal.get("uncertain"))?.turn?.state, "submitting");
     await assert.rejects(provider.dispatch("turn/start", turn), /already journaled/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
-  } finally { provider.close(); await f.close(); }
+  } finally { await provider.close(); await f.close(); }
 });
 
 test("checkout mismatch blocks before any prompt and initial-input start submits once", async () => {
@@ -163,7 +163,7 @@ test("checkout mismatch blocks before any prompt and initial-input start submits
     await until(() => output.some(m => m.params?.deltas?.some((d: any) => d.kind === "turn.boundary")));
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
     experimental_assembleCapturedThreadEvents(output, "gas-city");
-  } finally { provider.close(); await f.close(); }
+  } finally { await provider.close(); await f.close(); }
 });
 
 test("GC tmux approval remains an explicit user decision in BB full mode", async () => {
@@ -180,7 +180,7 @@ test("GC tmux approval remains an explicit user decision in BB full mode", async
     provider.handleLine(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { kind: "user_answer", answers: { "gc-approval-1": { selected: ["approve"] } } } }));
     await until(() => messages.some(m => m.params?.deltas?.some((d: any) => d.kind === "turn.boundary" && d.status === "completed")));
     assert.deepEqual(f.calls.find(c => c.path.endsWith("/respond"))?.body, { request_id: "gc-approval-1", action: "approve" });
-  } finally { provider.close(); await f.close(); }
+  } finally { await provider.close(); await f.close(); }
 });
 
 test("a fresh session can bootstrap from GC terminal fallback into structured history", async () => {
@@ -196,5 +196,108 @@ test("a fresh session can bootstrap from GC terminal fallback into structured hi
     assert.equal(text, "Hello from Gas City");
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
     assert.equal(f.calls.filter(c => c.path.endsWith("/pending")).length, 1);
-  } finally { provider.close(); await f.close(); }
+  } finally { await provider.close(); await f.close(); }
+});
+
+test("the same GC approval ID prompts again on later turns and forwards deny", async () => {
+  const f = await fixture(); const messages: any[] = [];
+  const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal: new Journal(join(f.cwd, "journal")) });
+  try {
+    const execution = { ...options, model: targetId(target) };
+    const start: any = await provider.dispatch("thread/start", { threadId: "repeat", cwd: f.cwd, instructionMode: "append", options: execution });
+    for (const [index, action] of ["approve", "deny"].entries()) {
+      await provider.dispatch("turn/start", { threadId: "repeat", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "approval" }], clientRequestId: `creq_23456789a${index ? "f" : "e"}`, options: execution });
+      await until(() => messages.filter(m => m.method === "interaction/request").length === index + 1);
+      const request = messages.filter(m => m.method === "interaction/request").at(-1);
+      provider.handleLine(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { kind: "user_answer", answers: { "gc-approval-1": { selected: [action] } } } }));
+      await until(() => messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.boundary" && d.status === "completed").length === index + 1);
+    }
+    assert.deepEqual(f.calls.filter(c => c.path.endsWith("/respond")).map(c => c.body.action), ["approve", "deny"]);
+  } finally { await provider.close(); await f.close(); }
+});
+
+test("unsupported steering preserves a live turn and never submits the follow-up", async () => {
+  const f = await fixture(); const provider = new GasCityProvider({ send: () => {}, config: async () => f.config, journal: new Journal(join(f.cwd, "journal")) });
+  try {
+    const execution = { ...options, model: targetId(target) };
+    const start: any = await provider.dispatch("thread/start", { threadId: "steer", cwd: f.cwd, instructionMode: "append", options: execution });
+    const turn = { threadId: "steer", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "hold" }], clientRequestId: "creq_23456789ae", options: execution };
+    await provider.dispatch("turn/start", turn);
+    await assert.rejects(provider.dispatch("turn/steer", { ...turn, expectedTurnId: "turn-active" }), (error: any) => error.code === -32601);
+    assert.equal(provider.sessions.get("steer")?.busy, true);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
+  } finally { await provider.close(); await f.close(); }
+});
+
+test("a second bridge cannot resume or recover an owned thread even while idle", async () => {
+  const f = await fixture(); const journal = new Journal(join(f.cwd, "journal"));
+  const first = new GasCityProvider({ send: () => {}, config: async () => f.config, journal });
+  const second = new GasCityProvider({ send: () => {}, config: async () => f.config, journal: new Journal(journal.directory) });
+  try {
+    const execution = { ...options, model: targetId(target) };
+    const start: any = await first.dispatch("thread/start", { threadId: "owned", cwd: f.cwd, instructionMode: "append", options: execution });
+    const resume = { threadId: "owned", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution };
+    await assert.rejects(second.dispatch("thread/resume", resume), /owned by/);
+    await assert.rejects(journal.locked("owned", async () => {}), /owned by/);
+    await first.dispatch("thread/stop", { threadId: "owned", providerThreadId: start.providerThreadId, intent: "release", activeTurnId: null });
+    await second.dispatch("thread/resume", resume);
+  } finally { await first.close(); await second.close(); await f.close(); }
+});
+
+
+test("a lost create response recovers the deterministic alias without creating twice", async () => {
+  const f = await fixture(); const journal = new Journal(join(f.cwd, "journal"));
+  const provider = new GasCityProvider({ send: () => {}, config: async () => f.config, journal });
+  try {
+    f.faults.dropCreateReply = true;
+    const execution = { ...options, model: targetId(target) };
+    const args = { threadId: "lost-create", cwd: f.cwd, instructionMode: "append", options: execution };
+    await assert.rejects(provider.dispatch("thread/start", args), /fetch failed/);
+    const start: any = await provider.dispatch("thread/start", args);
+    assert.match(start.providerThreadId, /^gcs1_/);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/sessions") && c.method === "POST").length, 1);
+    assert.equal((await journal.get("lost-create"))?.sessionId, "s1");
+  } finally { await provider.close(); await f.close(); }
+});
+
+
+test("failed initial preflight relinquishes ownership so the same BB thread can retry", async () => {
+  const f = await fixture(); let fail = true;
+  class PreflightClient extends GasCityClient {
+    override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
+      if (path.includes("/transcript?") && fail) { fail = false; throw new Error("transient preflight failure"); }
+      return super.get<T>(path, signal);
+    }
+  }
+  const provider = new GasCityProvider({ send: () => {}, config: async () => f.config, client: c => new PreflightClient(c), journal: new Journal(join(f.cwd, "journal")) });
+  try {
+    const args = { threadId: "retry-preflight", cwd: f.cwd, instructionMode: "append", options: { ...options, model: targetId(target) }, input: [{ type: "text", text: "Hello" }] };
+    await assert.rejects(provider.dispatch("thread/start", args), /transient preflight/);
+    assert.equal(provider.sessions.size, 0);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
+    await provider.dispatch("thread/start", args);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/sessions") && c.method === "POST").length, 1);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
+  } finally { await provider.close(); await f.close(); }
+});
+
+
+test("unsupported tier and unverifiable working directory fail before prompt submission", async () => {
+  const f = await fixture();
+  class MissingDirectoryClient extends GasCityClient {
+    override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
+      const result = await super.get<any>(path, signal);
+      if (result.template) delete result.work_dir;
+      return result;
+    }
+  }
+  const provider = new GasCityProvider({ send: () => {}, config: async () => f.config, client: c => new MissingDirectoryClient(c), journal: new Journal(join(f.cwd, "journal")) });
+  try {
+    f.config.workspacePolicy = "require-match";
+    const args = { threadId: "no-directory", cwd: f.cwd, instructionMode: "append", options: { ...options, model: targetId(target) }, input: [{ type: "text", text: "Hello" }] };
+    await assert.rejects(provider.dispatch("thread/start", { ...args, options: { ...args.options, serviceTier: "fast" } }), /does not override/);
+    assert.equal(f.sessions.size, 0);
+    await assert.rejects(provider.dispatch("thread/start", args), /cannot verify workspace ownership/);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
+  } finally { await provider.close(); await f.close(); }
 });

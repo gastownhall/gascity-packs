@@ -5,4 +5,8 @@ if ! command -v node >/dev/null 2>&1; then
     echo "Node.js 22+ is required for the BB provider"
     exit 1
 fi
+if ! node -e 'if (Number(process.versions.node.split(".")[0]) < 22) process.exit(1)'; then
+    echo "Node.js 22+ is required for the BB provider"
+    exit 1
+fi
 exec "${GC_PACK_DIR:?}/assets/run-cli.sh" doctor

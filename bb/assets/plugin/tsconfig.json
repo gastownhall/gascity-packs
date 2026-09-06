@@ -1,8 +1,22 @@
 {
   "compilerOptions": {
-    "target": "ES2023", "module": "NodeNext", "moduleResolution": "NodeNext",
-    "strict": true, "noEmit": true, "skipLibCheck": true, "types": ["node"],
-    "noUncheckedIndexedAccess": true
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [
+      "node",
+      "react"
+    ],
+    "noUncheckedIndexedAccess": true,
+    "jsx": "react-jsx"
   },
-  "include": ["*.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "*.ts",
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "*.tsx"
+  ]
 }

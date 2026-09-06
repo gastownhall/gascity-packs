@@ -147,9 +147,9 @@ Browse the tree for the current set; each pack has its own README.
 
 ### IDE integration packs
 
-- [bb](./bb) connects BB's provider bridge to named Gas City agents and
-  project/rig mappings. Its experimental first stage targets Gas City 1.4.0
-  and current BB; see the pack README for picker limitations and setup.
+- [bb](./bb) adds a host/project/agent launcher and provider bridge for
+  Gas City 1.4.0–1.4.1 and BB 0.42.1, with durable recovery and staged upgrades.
+  It remains a release candidate; see its verified runtime limits before use.
 
 ### Agent context packs
 

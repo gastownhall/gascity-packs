@@ -27,7 +27,7 @@ class PackIntegration(unittest.TestCase):
     def tearDownClass(cls):
         cls.scratch.cleanup()
     def run_gc(self, *args):
-        return subprocess.run([self.gc, '--city', str(self.city), *args], env=self.env, text=True, capture_output=True, timeout=30)
+        return subprocess.run([self.gc, *args], cwd=self.city, env=self.env, text=True, capture_output=True, timeout=30)
     def test_exact_release_and_lint(self):
         version=self.run_gc('version')
         self.assertRegex(version.stdout, r'^1\.4\.')
@@ -44,6 +44,11 @@ class PackIntegration(unittest.TestCase):
         result=self.run_gc('bb','bind','--help')
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         self.assertIn('--project',result.stdout)
+    def test_json_contracts_are_discoverable_in_released_gc(self):
+        for command, field in [('agents', 'agents'), ('status', 'registration')]:
+            result = self.run_gc('bb', command, '--json-schema=result')
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(field, json.loads(result.stdout)['properties'])
     def test_uninstalled_adapter_is_an_actionable_failure(self):
         result=self.run_gc('bb','status')
         self.assertNotEqual(result.returncode,0)

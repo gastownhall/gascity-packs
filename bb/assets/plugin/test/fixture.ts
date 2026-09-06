@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { Config } from "../src/config.js";
 import type { Frame } from "../src/transcript.js";
 
-export const options = { permissionMode: "full", permissionScope: "full", approvalReviewer: null, permissionEscalation: null, reasoningLevel: "none" } as const;
+export const options = { permissionMode: "full", permissionScope: "full", approvalReviewer: null, permissionEscalation: null, reasoningLevel: "none", serviceTier: "default" } as const;
 export function frame(id: string, messages: any[] = [], activity = "idle", operation = "snapshot"): Frame {
   return { schema_version: "session.structured.v1", operation, structured_messages: messages,
     history: { transcript_stream_id: `stream-${id}`, generation: { id: "g1" }, cursor: { resume_token: `cursor-${id}-${messages.length}` }, tail_state: { activity } } };
@@ -17,7 +17,7 @@ export async function fixture() {
   const sessions = new Map<string, any>();
   const events: any[] = [];
   const held = new Set<ServerResponse>();
-  const faults = { dropSubmitReply: false, workDir: "", freshHistoryFallback: false };
+  const faults = { dropSubmitReply: false, dropCreateReply: false, workDir: "", freshHistoryFallback: false };
   let seq = 0;
   const server = createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -37,10 +37,11 @@ export async function fixture() {
     ] });
     if (path.endsWith("/sessions") && req.method === "POST") {
       const id = `s${sessions.size + 1}`;
-      const session = { id, template: body.name, state: "running", work_dir: faults.workDir || cwd, messages: [] as any[], title: body.title, provider: "claude", session_name: body.alias, created_at: "2026-09-05T00:00:00Z", attached: false, running: true, streams: new Set<ServerResponse>() };
+      const session = { id, template: body.name, state: "running", work_dir: faults.workDir || cwd, messages: [] as any[], title: body.title, provider: "claude", session_name: body.alias, alias: body.alias, created_at: "2026-09-05T00:00:00Z", attached: false, running: true, streams: new Set<ServerResponse>() };
       sessions.set(id, session);
       const request_id = `req-${++seq}`;
       events.push({ seq, type: "request.result.session.create", payload: { request_id, session } });
+      if (faults.dropCreateReply) { res.destroy(); return; }
       return json({ status: "accepted", request_id, event_cursor: String(seq - 1) }, 202);
     }
     if (path.endsWith("/events/stream")) {
@@ -50,7 +51,7 @@ export async function fixture() {
       held.add(res); res.on("close", () => held.delete(res)); return;
     }
     const match = /\/session\/([^/]+)(.*)$/.exec(path);
-    const session = match ? sessions.get(match[1]!) : undefined;
+    const session = match ? sessions.get(match[1]!) ?? [...sessions.values()].find(s => s.alias === match[1]) : undefined;
     if (!session) return json({ message: "not found" }, 404);
     const suffix = match![2];
     if (!suffix) return json(session);
@@ -68,7 +69,7 @@ export async function fixture() {
       const request_id = `req-${++seq}`;
       session.hold = body.message.includes("hold");
       session.approval = body.message.includes("approval");
-      if (faults.freshHistoryFallback) session.messages.push({ id: `user-${seq}`, role: "user", status: "final", user_prompt: { text: body.message }, blocks: [{ type: "text", text: body.message }] });
+      session.messages.push({ id: `user-${seq}`, role: "user", status: "final", user_prompt: { text: body.message }, blocks: [{ type: "text", text: body.message }] });
       session.messages.push({ id: `m-${seq}`, role: "assistant", status: session.hold || session.approval ? "partial" : "final", blocks: [{ type: "text", text: "Hello from Gas City" }] });
       events.push({ seq, type: "request.result.session.submit", payload: { request_id, session_id: session.id, queued: false, intent: "default" } });
       if (faults.dropSubmitReply) { res.destroy(); return; }

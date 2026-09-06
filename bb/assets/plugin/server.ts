@@ -1,6 +1,8 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { registerLauncher } from "./src/launcher-server.js";
 
 export default function plugin(bb: BbPluginApi) {
+  registerLauncher(bb);
   bb.providers.register({
     id: "gas-city", displayName: "Gas City", icon: "Building2",
     strings: {

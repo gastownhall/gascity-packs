@@ -13,6 +13,14 @@ jobs:
   compatibility:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gc: "1.4.0"
+            sha256: f6bd0bfaf2acc141642227629394dd3279761df4e1800235551af24d98b9cae0
+          - gc: "1.4.1"
+            sha256: 8d8c8b511db3fc44931445aab5cb9f212509c0867105c880d6c3d0e6e5d33e42
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -30,14 +38,21 @@ jobs:
           npm run typecheck
           npm run build
           npm test
-      - name: Fetch and verify released Gas City 1.4.0
+      - name: Build every plugin entry with released BB 0.42.1
+        run: |
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.42.1
+          "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" plugin build bb/assets/plugin
+      - name: Fetch and verify released Gas City
+        env:
+          GC_VERSION: ${{ matrix.gc }}
+          GC_SHA256: ${{ matrix.sha256 }}
         run: |
           mkdir -p "$RUNNER_TEMP/gc14"
           curl --fail --location --retry 3 \
-            https://github.com/gastownhall/gascity/releases/download/v1.4.0/gascity_1.4.0_linux_amd64.tar.gz \
+            "https://github.com/gastownhall/gascity/releases/download/v${GC_VERSION}/gascity_${GC_VERSION}_linux_amd64.tar.gz" \
             --output "$RUNNER_TEMP/gc14/gascity.tar.gz"
           cd "$RUNNER_TEMP/gc14"
-          echo "f6bd0bfaf2acc141642227629394dd3279761df4e1800235551af24d98b9cae0  gascity.tar.gz" | sha256sum --check
+          echo "$GC_SHA256  gascity.tar.gz" | sha256sum --check
           tar --extract --gzip --no-same-owner --file gascity.tar.gz gc
       - name: Load and lint the pack in the released CLI
         env:

@@ -29,3 +29,18 @@ test("binding ambiguity and insecure/config-embedded credential URLs are rejecte
     for (const url of ["http://example.org", "https://secret@example.org", "https://example.org?token=secret"]) assert.equal(configSchema.safeParse({ ...f.config, connections: [{ id: "local", url }] }).success, false);
   } finally { await f.close(); }
 });
+
+test("stale bindings warn without hiding valid projects or losing recreated paths", async () => {
+  const f = await fixture();
+  try {
+    const { mkdir } = await import("node:fs/promises");
+    const stale = { ...f.config.bindings[0]!, projectId: "old", paths: [`${f.cwd}/old-worktree`] };
+    const config = { ...f.config, bindings: [stale, ...f.config.bindings] };
+    const catalog = await discover(config, { cwd: f.cwd });
+    assert.equal(catalog.binding?.projectId, "project-web");
+    assert.ok(catalog.warnings.some(w => w.includes("old-worktree") && w.includes("gc bb bind")));
+    assert.equal(config.bindings[0], stale);
+    await mkdir(stale.paths[0]!);
+    assert.equal((await bindingFor(config, { cwd: stale.paths[0]! }))?.projectId, "old");
+  } finally { await f.close(); }
+});

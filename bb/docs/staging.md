@@ -1,5 +1,13 @@
 # Staging the BB integration
 
+The historical stages below describe the original handoff. The current branch
+now includes a dedicated sidebar launcher using BB 0.42.1 app, host RPC, and
+thread-spawn APIs. See [current setup](../README.md),
+[implementation plan](../../specs/plans/0001-bb-production-readiness.md), and
+[live verification](./verification.md) for the current status. The native BB
+picker proposal remains optional upstream work; it no longer blocks the
+pack's project-aware launcher. Runtime release gates still apply.
+
 ## Stage 1: this branch, released GC 1.4 and current BB
 
 Keep the provider in `gascity-packs/bb`, independently installable. Use BB's
