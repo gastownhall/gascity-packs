@@ -53,3 +53,51 @@ test("a confirmed delivery cannot recover an old idle snapshot before the prompt
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
   } finally { await f.close(); }
 });
+
+test("reviewed recovery settles a correlated native failure without mistaking planning for success", async () => {
+  const f = await fixture(); const journal = new Journal(join(f.cwd, "journal")); const client = new GasCityClient(f.config.connections[0]!);
+  try {
+    const create = await client.post(client.city("alpha", "/sessions"), { kind: "agent", name: target.agent, alias: "bb-native-error" });
+    const created = await client.result("alpha", create, "create");
+    const accepted = await client.post(client.session("alpha", created.session.id, "/submit"), { message: "Hello" });
+    const remote = f.sessions.get(created.session.id);
+    remote.messages.push({ id: "error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", message: "Provider failed" }, blocks: [{ type: "text", text: "Provider failed" }] });
+    await journal.put("native-error", { target, sessionId: created.session.id, turn: { clientRequestId: "creq_23456789ab", digest: "digest", state: "accepted", baselineMessageIds: [], messageDigest: createHash("sha256").update("Hello").digest("hex"), ...accepted } });
+    const recovered = await recoverThread(f.config, journal, "native-error");
+    assert.equal(recovered.turn?.state, "failed");
+    assert.equal((await journal.get("native-error"))?.turn?.state, "failed");
+    assert.equal(recovered.turn?.request_id, accepted.request_id);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
+  } finally { await f.close(); }
+});
+
+test("recovery leaves unfinished native outcomes uncertain and ignores baseline errors", async () => {
+  const f = await fixture(); const journal = new Journal(join(f.cwd, "journal")); const client = new GasCityClient(f.config.connections[0]!);
+  try {
+    const create = await client.post(client.city("alpha", "/sessions"), { kind: "agent", name: target.agent, alias: "bb-recovery-guards" });
+    const created = await client.result("alpha", create, "create");
+    const accepted = await client.post(client.session("alpha", created.session.id, "/submit"), { message: "Hello" });
+    const remote = f.sessions.get(created.session.id);
+    const [prompt, answer] = remote.messages;
+    const error = { id: "error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", message: "Native failure" }, blocks: [] };
+    const receipt: any = { target, sessionId: created.session.id, turn: { clientRequestId: "creq_23456789ab", digest: "digest", state: "accepted", baselineMessageIds: [], messageDigest: createHash("sha256").update("Hello").digest("hex"), ...accepted } };
+    for (const messages of [
+      [prompt, answer, { ...error, status: "partial" }],
+      [prompt, answer, { ...error, system_event: { kind: "retry", category: "provider_retry" } }],
+      [prompt, { ...answer, status: "partial" }, error],
+      [prompt, { ...answer, blocks: [{ type: "tool_use", id: "unclosed", name: "Bash" }] }, error],
+    ]) {
+      remote.messages = messages;
+      await journal.put("guards", receipt);
+      await assert.rejects(recoverThread(f.config, journal, "guards"), /no settled outcome/);
+      assert.equal((await journal.get("guards"))?.turn?.state, "accepted");
+    }
+    remote.messages = [error, prompt, answer];
+    await journal.put("guards", { ...receipt, turn: { ...receipt.turn, baselineMessageIds: [error.id] } });
+    assert.equal((await recoverThread(f.config, journal, "guards")).turn?.state, "completed");
+    remote.messages = [prompt, error, answer];
+    await journal.put("guards", receipt);
+    assert.equal((await recoverThread(f.config, journal, "guards")).turn?.state, "completed", "later real success wins over an earlier native error");
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
+  } finally { await f.close(); }
+});

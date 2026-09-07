@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { ApiError, GasCityClient } from "./client.js";
 import { Journal, type Receipt } from "./journal.js";
-import type { Frame } from "./transcript.js";
+import { Transcript, type Frame } from "./transcript.js";
 import type { Config } from "./config.js";
 
 export const sessionAlias = (threadId: string) => `bb-${createHash("sha256").update(threadId).digest("hex").slice(0, 24)}`;
@@ -48,9 +48,15 @@ export async function recoverThread(config: Config, journal: Journal, threadId: 
       const base = new Set(turn.baselineMessageIds);
       const promptIndex = messages.findIndex(message => message.role === "user" && !base.has(message.id) &&
         createHash("sha256").update(message.user_prompt?.text ?? message.blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n")).digest("hex") === turn.messageDigest);
-      if (promptIndex < 0 || !messages.slice(promptIndex + 1).some(m => m.role === "assistant" && m.status === "final"))
-        throw new Error("The submitted prompt and its completed answer are not yet present in structured history. Delivery may still be queued; wait and retry recovery. No prompt was resent.");
-      receipt.turn.state = "completed";
+      if (promptIndex < 0)
+        throw new Error("The submitted prompt is not yet present in structured history. Delivery may still be queued; wait and retry recovery. No prompt was resent.");
+      // Reuse live settlement: a planning answer before a native failure is not
+      // success, and partial text, open tools, or a retry cannot be settled.
+      const transcript = new Transcript({ ...snapshot, structured_messages: messages.filter((message, index) => index <= promptIndex || base.has(message.id)) });
+      transcript.apply(snapshot);
+      const outcome = transcript.outcome();
+      if (!outcome) throw new Error("The submitted prompt has no settled outcome in structured history. Wait and retry recovery. No prompt was resent.");
+      receipt.turn.state = outcome.status;
     }
     await journal.put(threadId, receipt);
     return receipt;

@@ -394,3 +394,53 @@ The harness now matches the failed answer's hash against its private native
 records and publishes only finite error enums, the native error boolean and an
 HTTP status where available. Seven guards protect the privacy boundary; the
 original marker assertion remains strict. Raw output stays private.
+
+[CI run 34074965026](https://github.com/gastownhall/gascity-packs/actions/runs/34074965026)
+at `252ac34` confirms the cause: all four Claude cases match native API errors
+classified as `authentication_failed`, HTTP 403, on the Manifold route. Both
+build jobs pass; all four live jobs and the aggregate fail. This establishes
+access rejection, not whether the token is expired or an access policy changed.
+The workflow now supports a dedicated `BB_CLAUDE_API_KEY` for direct Anthropic
+access and otherwise retains Manifold. Direct access unsets the Manifold token,
+endpoint and model aliases; shell checks verify both routes and reject missing
+Manifold model aliases. No direct Claude CI credential has been configured.
+The available Anthropic vault notes are labeled for other projects, so none
+was reused without approval.
+
+The GC terminal-error correction is pushed as `59382ce25`. The matching pack
+change uses one settlement path for success and typed provider failure, guarded
+by complete prompt delivery, reliable idle, closed text/tools and no pending
+interactions. A terminal provider error marks both BB and the durable receipt
+failed, allowing an explicit later prompt. Recovery shares those guards and
+cannot mistake an earlier planning message for success. Active retries stay
+unsettled and a later successful answer can complete normally. Ordinary
+transport failures preserve uncertainty. Forty-six provider tests, typecheck
+and the actual BB 0.42.1 plugin build pass; the interrupt/release write race
+is exercised for both success and failure. The five full `.9` conversation
+runs precede this follow-up; error handling has the separate native producer,
+API projection and pack-consumer evidence in the
+[GC validation report](gc-runtime-fix-validation-2026-09-06.md).
+
+## Final pack in the retained conversations
+
+The final provider source (`b388fceaf975b9055dab85127a8270bcd457582046004e1adb0afb65d345a06e`)
+was installed with prior installations preserved. All five existing threads had
+completed receipts, empty BB queues and reliable GC idle state before their
+idle bridge leases were released. Restored threads used the current source.
+Neither GC nor BB was restarted; GC remains development `.9`.
+
+Codex global and rig pass three fresh turns each, including complete forwarded
+prompts, actual tool artifacts and tool-free memory after agent suspend/resume.
+Both retain their original GC, logical, provider and stream identities across
+BB release/restore and agent resume.
+
+All three Claude cases fail their first turn. The identical 68-byte answer hash
+`68df770c7fe4ffda5f92b07ff9d33479cea0fac7db53547d9285fc32959568cf`
+matches native `isApiErrorMessage=true`, `error=rate_limit`, HTTP 429. Each full
+3,108-byte forwarded prompt, request correlation, receipt digest and prior
+identity is independently verified. No prompt was resent. Their receipts are
+completed because the retained `.9` GC still projects native errors as assistant
+answers; the new GC error-projection commit is not loaded in that server.
+The strict marker gate correctly fails. Earlier five-case success does not
+certify the final pack's Claude behavior. Safe reports are retained under
+`/private/tmp/bb-live-9dbgrsx5/current-pack-fivecase-ki6iozqc`.

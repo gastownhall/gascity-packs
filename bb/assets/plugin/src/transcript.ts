@@ -1,7 +1,7 @@
 import type { ThreadDelta, DeltaItemShape } from "@get-bb/plugin-sdk/provider-bridge";
 
 export interface Block { type: string; text?: string; thinking?: string; id?: string; tool_call_id?: string; name?: string; input?: unknown; content?: string; is_error?: boolean; structured?: unknown }
-export interface Message { id: string; role: string; status: string; blocks: Block[]; user_prompt?: { text?: string } }
+export interface Message { id: string; role: string; status: string; blocks: Block[]; system_event?: { kind: string; category?: string; code?: string; message?: string }; user_prompt?: { text?: string } }
 export interface Frame {
   schema_version: string;
   operation?: string;
@@ -10,8 +10,27 @@ export interface Frame {
 }
 const presentation = (label: string) => ({ label: { pending: label, completed: label }, icon: { glyph: "Bot" } });
 
+export type TurnOutcome = { status: "completed" } | { status: "failed"; error: { message: string } };
+
+// Records are ordered history, not arrival order of individual block deltas.
+// A retry or unfinished response invalidates an earlier apparent outcome.
+export function latestTurnOutcome(messages: Iterable<Message>): TurnOutcome | undefined {
+  let outcome: TurnOutcome | undefined;
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      outcome = message.status === "final" ? { status: "completed" } : undefined;
+    } else if (message.role === "system") {
+      const event = message.system_event;
+      if (event?.kind === "error" && event.category === "provider_error") {
+        outcome = message.status === "final" ? { status: "failed", error: { message: event.message || "Gas City provider failed" } } : undefined;
+      } else if (event?.kind === "retry" && event.category === "provider_retry") outcome = undefined;
+    }
+  }
+  return outcome;
+}
+
 export class Transcript {
-  private messages = new Map<string, string>();
+  private messages = new Map<string, Message>();
   private text = new Map<string, { text: string; closed: boolean }>();
   private tools = new Map<string, { name: string; input: unknown; closed: boolean }>();
   private base = new Set<string>();
@@ -57,8 +76,8 @@ export class Transcript {
       if (this.base.has(message.id)) continue;
       if (message.status === "superseded") throw new Error("Gas City superseded an entry in the active turn; inspect its current transcript.");
       const signature = JSON.stringify(message);
-      if (this.messages.get(message.id) === signature) continue;
-      this.messages.set(message.id, signature);
+      if (JSON.stringify(this.messages.get(message.id)) === signature) continue;
+      this.messages.set(message.id, message);
       if (message.role === "assistant") this.hasAssistant = true;
       for (const [index, block] of message.blocks.entries()) {
         const id = `gc-${message.id}-${block.id ?? index}`;
@@ -95,5 +114,9 @@ export class Transcript {
     }
     return deltas;
   }
-  complete() { return this.hasAssistant && this.idle && !this.pending && [...this.text.values()].every(t => t.closed) && [...this.tools.values()].every(t => t.closed); }
+  outcome(): TurnOutcome | undefined {
+    if (this.waitingForPrompt || !this.idle || this.pending || [...this.text.values()].some(t => !t.closed) || [...this.tools.values()].some(t => !t.closed)) return undefined;
+    return latestTurnOutcome(this.messages.values());
+  }
+  complete() { return this.outcome()?.status === "completed"; }
 }

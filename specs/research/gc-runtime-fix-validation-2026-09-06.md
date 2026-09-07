@@ -76,3 +76,62 @@ further input. Normal pre-commit lint, generators and vet pass.
 The draft GC PR's evidence watchdog also fails because its workflow calls
 `scripts/prwatchdog/cmd/watchdog`, which is absent from this v1.4.1-based source.
 That is a concrete CI failure, not model-backed acceptance evidence.
+
+## Subsequent CI corrections and provider errors
+
+GC CI at `55cfa4acc` also identified two failures introduced by this branch:
+the API Codex-resume fixture did not supply an idle-readiness result, and the
+hook tests added three environment mutations beyond the resource census.
+Commit `0ff2cfda0` supplies explicit fake readiness and asserts one immediate
+delivery. It preserves the managed Claude hook proof in the existing managed
+startup test and changes the foreign-bead fixture directly, removing those
+extra environment mutations without raising a baseline or dropping assertions.
+The API regression reproduced locally before correction. Focused API tests
+pass (1.249 s), hook tests pass (6.106 s), and the unchanged resource-census
+guard passes (1.533 s). Independent review is clear.
+
+`make dashboard-check` passes in a disposable checkout carrying the exact
+test changes; existing checkout build artifacts were preserved. Evidence:
+`/var/tmp/gc-dashboard-check-mxy4in7z/dashboard-check.log`. Normal commit hooks
+pass lint, generators and vet. CI at `0ff2cfda0`
+([run 34075239627](https://github.com/gastownhall/gascity/actions/runs/34075239627))
+no longer fails those two cases; the expired provider-waiver ledger still
+fails the required integration aggregate. The separate watchdog remains red.
+
+Commit `59382ce25` retains native terminal Claude API errors as typed system
+events instead of successful assistant answers. Active retries remain in-turn;
+ordinary error-looking model text is unchanged. Native UUIDs, raw provenance
+and DAG types remain intact. Full sessionlog (6.190 s) and worker (14.721 s)
+suites pass, including history stability after append/reload. Normal commit
+hooks pass lint, generators and vet; producer and pack-consumer peer reviews
+are clear. These pushes use the same explicitly disclosed per-command skip
+of the known-red broad pre-push suite, without changing repository hook settings.
+
+A single actual Claude 2.1.263 request to an owned loopback HTTP 403 stub
+produces `isApiErrorMessage=true`, `error=authentication_failed` and
+`apiErrorStatus=403`. No real inference or credentials are involved. A
+scratch-only Go overlay loads that native JSONL through the real worker and
+API projection, preserving its UUID and producing a final provider-error event
+with reliable idle state (1.209 s). The real pack Transcript consumes the frame
+as a failed outcome. The native print transcript omits its user record, so the
+separate full-prompt guard correctly refuses settlement when delivery is not
+proved. This proves classification/projection, not a complete BB request.
+Safe reports: `/private/var/tmp/claude-native-403-proof-n8t55r3f/report.json`,
+`gc-projection-report.json` and `bb-consumer-report.json`. The earlier loopback
+401 experiment timed out and is not a passing proof. No GC or BB service was
+restarted for these checks; the retained `.9` environment remains running.
+
+Latest [GC CI at `59382ce25`](https://github.com/gastownhall/gascity/actions/runs/34075726529)
+passes sessionlog (0.266 s), worker (12.388 s), worker/transcript (0.056 s),
+API (68.256 s), all twelve cmd/gc process shards, all six tmux shards, both REST
+smoke shards and static checks. The changed native-error regressions are in
+the successful whole-package runs; these logs do not name each passing test.
+The sole substantive package failure is
+`TestCatalogMatchesProductionWiringAndDocumentation`: eight runtime.Provider
+waivers owned by `ga-80po0c.3` expired on 2026-08-26. Their provider/owner/expiry
+tuples match the preserved unchanged-v1.4.1 baseline exactly. Integration and
+required aggregates consequently fail. The separate
+[watchdog](https://github.com/gastownhall/gascity/actions/runs/34075724672)
+fails before observing evidence because its command directory is absent from
+both this head and v1.4.1. Sanitized review:
+`/var/tmp/gc-ci-59382-review-1hx4gylh/summary.json`.

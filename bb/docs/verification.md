@@ -1,8 +1,9 @@
 # Verification and release status
 
 The pack remains a release candidate. Fixture, CLI, installation and launcher
-checks pass. Real Claude and Codex conversations now pass locally with the GC
-corrections in [draft PR #6106](https://github.com/gastownhall/gascity/pull/6106);
+checks pass. Earlier real Claude and Codex conversations passed locally with the GC
+corrections in [draft PR #6106](https://github.com/gastownhall/gascity/pull/6106).
+The final-pack check passes Codex but is blocked by native Claude rate limits;
 acceptance against unchanged released GC still fails. No registry release has
 been published for this hardening change.
 
@@ -114,11 +115,41 @@ worker, which may correctly drain before receiving a conversational request.
 The fixture keeps the core import and real runtime configuration; it does not
 override the behavior of agents selected by production users.
 
-Claude CI uses the repository's Manifold credentials and configured models with
-Claude Code 2.1.263. Codex CLI 0.153.4 requires the `BB_CODEX_API_KEY` repository
+Claude CI uses Claude Code 2.1.263 with `BB_CLAUDE_API_KEY` for direct Anthropic
+access when configured, otherwise the repository's Manifold credentials and
+model aliases. The direct-key route removes the Manifold endpoint, token and
+model overrides. Codex CLI 0.153.4 requires the `BB_CODEX_API_KEY` repository
 secret, configured after a real Codex API response check. Missing credentials (including on fork PRs), timeouts, failed or
 interrupted turns and skipped jobs cannot make the aggregate check pass.
 No `pull_request_target` job exposes credentials to fork code.
+
+[CI at `252ac34`](https://github.com/gastownhall/gascity-packs/actions/runs/34074965026)
+passes both build/fixture/CLI jobs and fails every live job. All four Claude
+cases match native HTTP 403 errors classified as `authentication_failed` on
+the Manifold route. Codex never reaches reliable startup on the unchanged
+released binaries. The Claude credential/access issue and the GC runtime
+corrections both need resolution before release. No direct Claude CI key has
+been configured by this work.
+
+The follow-up provider-error correction makes native terminal errors fail BB
+turns and settle their receipts as failed, while preserving active retries and
+later successful answers. Live settlement and reviewed recovery share the same
+prompt, idle, text and tool guards. Forty-six provider tests pass, including
+interruption/release races during failed settlement. These follow-up changes
+have separate native-error and integration evidence; the five full development
+conversation runs above used `.9` before this follow-up.
+
+The final installed pack was then checked in those same five BB conversations,
+after releasing only their verified idle bridge leases. Codex global and rig
+pass all three fresh turns, tools and memory after agent resume, preserving
+their earlier conversation identities. Claude's three cases fail their first
+turn on native `rate_limit` errors, HTTP 429. Their complete 3,108-byte forwarded
+prompts, receipt digests and unchanged identities are independently verified;
+no request was resent. The retained GC remains `.9`, which lacks the subsequent
+native-error projection and still presents those errors as assistant answers.
+Thus this is a failed five-case gate, not final-pack Claude certification.
+GC and BB were not restarted. Evidence:
+`/private/tmp/bb-live-9dbgrsx5/current-pack-fivecase-ki6iozqc/summary.json`.
 
 This is the conversation and agent-resume gate. Approval/denial/repetition and
 interrupt/release have additional local development evidence; their released-runtime

@@ -14,7 +14,7 @@ import { discover, modelRow, parseTarget, targetId, validateTarget, type Target 
 import { GasCityClient } from "./client.js";
 import { Journal, type Receipt, type Lease } from "./journal.js";
 import { resolveCreation, sessionAlias } from "./recovery.js";
-import { Transcript, type Frame } from "./transcript.js";
+import { Transcript, type Frame, type TurnOutcome } from "./transcript.js";
 
 const remoteIdentity = z.object({ v: z.literal(1), target: z.object({ v: z.literal(1), connection: z.string(), city: z.string(), agent: z.string() }), sessionId: z.string().min(1) }).strict();
 const encodeRemote = (target: Target, sessionId: string) => `gcs1_${Buffer.from(JSON.stringify({ v: 1, target, sessionId })).toString("base64url")}`;
@@ -328,8 +328,9 @@ export class GasCityProvider {
         if (controller.signal.aborted) return;
         if (event.event === "structured") {
           this.emit(session, transcript.apply(JSON.parse(event.data)));
-          if (transcript.complete()) {
-            const completion = this.completeTurn(session, controller);
+          const outcome = transcript.outcome();
+          if (outcome) {
+            const completion = this.completeTurn(session, controller, outcome);
             session.completion = completion;
             try { await completion; }
             finally { if (session.completion === completion) session.completion = undefined; }
@@ -353,20 +354,20 @@ export class GasCityProvider {
       }
     } finally { clearTimeout(startup); }
   }
-  private async completeTurn(session: LiveSession, controller: AbortController) {
+  private async completeTurn(session: LiveSession, controller: AbortController, outcome: TurnOutcome) {
     const receipt = (await this.journal.get(session.threadId))!;
-    if (controller.signal.aborted) return;
+    if (controller !== session.controller || controller.signal.aborted) return;
     const previous = receipt.turn!.state;
-    receipt.turn!.state = "completed";
+    receipt.turn!.state = outcome.status;
     await this.journal.put(session.threadId, receipt);
-    if (controller.signal.aborted) {
+    if (controller !== session.controller || controller.signal.aborted) {
       // An atomic write cannot be cancelled once started. Restore uncertainty
       // before stop/discard can finish and a later turn can own the receipt.
       receipt.turn!.state = previous;
       await this.journal.put(session.threadId, receipt);
       return;
     }
-    this.emit(session, [{ kind: "turn.boundary", status: "completed" }]);
+    this.emit(session, [{ kind: "turn.boundary", ...outcome }]);
     session.busy = false; session.turnOpen = false; controller.abort();
   }
   private async respond(session: LiveSession, pending: any, signal: AbortSignal) {

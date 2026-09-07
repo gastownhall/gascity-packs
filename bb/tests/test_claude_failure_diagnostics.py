@@ -52,6 +52,20 @@ class ClaudeFailureDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["classifications"], [{"is_api_error_message": True, "http_status": 403}])
         self.assertNotIn("secret", json.dumps(result))
 
+    def test_native_http_status_is_preferred_and_strictly_bounded(self):
+        for index, (value, expected) in enumerate(((401, 401), (599, 599),
+                                                  (True, 403), ("secret", 403),
+                                                  (400.0, 403), (399, 403), (600, 403))):
+            with self.subTest(value=value):
+                owned = self.root / str(index)
+                project = owned / "claude-config/projects/owned"
+                project.mkdir(parents=True)
+                (project / "session.jsonl").write_text(json.dumps(self.entry(apiErrorStatus=value)) + "\n")
+                result = claude_failure_diagnostics(owned, self.report)
+                self.assertEqual(result["classifications"][0]["http_status"], expected)
+                self.assertNotIn("secret", json.dumps(result))
+                self.assertEqual(self.report["status"], "failed")
+
     def test_matches_a_single_completed_text_block(self):
         entry = self.entry()
         entry["message"]["content"].insert(0, {"type": "text", "text": "private earlier block"})

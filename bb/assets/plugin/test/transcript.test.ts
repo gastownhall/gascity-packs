@@ -43,3 +43,54 @@ test("later turns require the complete new prompt before presenting an answer", 
   assert.ok(valid.apply(frame("s1", [user, { ...user, id: "new-user" }, answer])).length);
   assert.equal(valid.complete(), true);
 });
+
+test("typed native outcomes use ordered current-turn records after the whole frame", () => {
+  const user = { id: "prompt", role: "user", status: "final", blocks: [{ type: "text", text: "Complete prompt" }] };
+  const answer = { id: "answer", role: "assistant", status: "final", blocks: [{ type: "text", text: "API Error is ordinary quoted text" }] };
+  const error = { id: "error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", message: "Native failure" }, blocks: [{ type: "text", text: "Native failure" }] };
+  const retry = { ...error, id: "retry", system_event: { kind: "retry", category: "provider_retry", message: "Provider retry in progress" } };
+  for (const [label, messages, expected] of [
+    ["error without assistant", [error], "failed"],
+    ["planning then error", [answer, error], "failed"],
+    ["error then real success in same frame", [error, answer], "completed"],
+    ["retry then real success", [retry, answer], "completed"],
+    ["planning then retry", [answer, retry], undefined],
+    ["unfinished native error", [answer, { ...error, status: "partial" }], undefined],
+    ["error then unfinished response", [error, { ...answer, status: "partial" }], undefined],
+    ["ordinary error words", [answer], "completed"],
+    ["other system error", [answer, { ...error, system_event: { kind: "error", category: "other", message: "Unrelated" } }], "completed"],
+  ] as const) {
+    const transcript = new Transcript(frame("s1"), "Complete prompt");
+    transcript.apply(frame("s1", [user, ...messages]));
+    assert.equal(transcript.outcome()?.status, expected, label);
+  }
+  const transcript = new Transcript(frame("s1", [error]), "Complete prompt");
+  transcript.apply(frame("s1", [error, user, answer]));
+  assert.equal(transcript.outcome()?.status, "completed", "baseline native errors are ignored");
+  transcript.apply(frame("s1", [error], "idle", "upsert"));
+  assert.equal(transcript.outcome()?.status, "completed", "historical replay cannot replace the outcome");
+});
+
+test("native failure requires full prompt, reliable idle, and closed text and tools", () => {
+  const user = { id: "prompt", role: "user", status: "final", blocks: [{ type: "text", text: "Complete prompt" }] };
+  const error = { id: "error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", message: "Native failure" }, blocks: [] };
+  const assistant = { id: "answer", role: "assistant", status: "partial", blocks: [{ type: "text", text: "Planning" }] };
+  const tool = { id: "tool", role: "assistant", status: "final", blocks: [{ type: "tool_use", id: "call", name: "Bash" }] };
+  const result = { id: "result", role: "user", status: "final", blocks: [{ type: "tool_result", tool_call_id: "call", content: "Done" }] };
+  const unproven = new Transcript(frame("s1"), "Complete prompt");
+  unproven.apply(frame("s1", [error]));
+  assert.equal(unproven.outcome(), undefined);
+  for (const guard of ["busy", "pending", "tail-tool", "partial-text", "unclosed-tool"] as const) {
+    const transcript = new Transcript(frame("s1"), "Complete prompt");
+    const messages = [user, ...(guard === "partial-text" ? [assistant] : guard === "unclosed-tool" ? [tool] : []), error];
+    const blocked = frame("s1", messages, guard === "busy" ? "in_turn" : "idle");
+    if (guard === "pending") blocked.history.tail_state.pending_interaction_ids = ["approval"];
+    if (guard === "tail-tool") blocked.history.tail_state.open_tool_call_ids = ["call"];
+    transcript.apply(blocked);
+    assert.equal(transcript.outcome(), undefined, guard);
+    // Error stays last in ordered history even when earlier text is finalized.
+    const settled = guard === "partial-text" ? [{ ...assistant, status: "final" }] : guard === "unclosed-tool" ? [result] : [];
+    transcript.apply(frame("s1", settled, "idle", "upsert"));
+    assert.equal(transcript.outcome()?.status, "failed", `${guard} settled`);
+  }
+});

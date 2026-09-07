@@ -90,11 +90,12 @@ jobs:
       - name: Require real runtime credentials
         env:
           RUNTIME: ${{ matrix.runtime }}
+          CLAUDE_KEY: ${{ secrets.BB_CLAUDE_API_KEY }}
           CLAUDE_TOKEN: ${{ secrets.MANIFOLD_AUTH_TOKEN }}
           CODEX_KEY: ${{ secrets.BB_CODEX_API_KEY }}
         run: |
           if [ "$RUNTIME" = claude ]; then
-            test -n "$CLAUDE_TOKEN" || { echo 'Missing MANIFOLD_AUTH_TOKEN; live Claude acceptance cannot pass'; exit 1; }
+            test -n "$CLAUDE_KEY" || test -n "$CLAUDE_TOKEN" || { echo 'Missing BB_CLAUDE_API_KEY or MANIFOLD_AUTH_TOKEN; live Claude acceptance cannot pass'; exit 1; }
           else
             test -n "$CODEX_KEY" || { echo 'Missing BB_CODEX_API_KEY; live Codex acceptance cannot pass'; exit 1; }
           fi
@@ -127,6 +128,7 @@ jobs:
         env:
           RUNTIME: ${{ matrix.runtime }}
           ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api
+          ANTHROPIC_API_KEY: ${{ matrix.runtime == 'claude' && secrets.BB_CLAUDE_API_KEY || '' }}
           ANTHROPIC_AUTH_TOKEN: ${{ matrix.runtime == 'claude' && secrets.MANIFOLD_AUTH_TOKEN || '' }}
           ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_HAIKU_MODEL }}
           ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SONNET_MODEL }}
@@ -135,10 +137,17 @@ jobs:
           OPENAI_API_KEY: ${{ matrix.runtime == 'codex' && secrets.BB_CODEX_API_KEY || '' }}
         run: |
           if [ "$RUNTIME" = claude ]; then
-            test -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" || { echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL resolved empty'; exit 1; }
-            test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo 'ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty'; exit 1; }
-            test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo 'ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty'; exit 1; }
-            test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo 'CLAUDE_CODE_SUBAGENT_MODEL resolved empty'; exit 1; }
+            if [ -n "$ANTHROPIC_API_KEY" ]; then
+              # A direct Anthropic key must never be sent to the Manifold route.
+              unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN
+              unset ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL
+              unset ANTHROPIC_DEFAULT_OPUS_MODEL CLAUDE_CODE_SUBAGENT_MODEL
+            else
+              test -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" || { echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL resolved empty'; exit 1; }
+              test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo 'ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty'; exit 1; }
+              test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo 'ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty'; exit 1; }
+              test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo 'CLAUDE_CODE_SUBAGENT_MODEL resolved empty'; exit 1; }
+            fi
           fi
           python3 -u bb/tests/live_acceptance.py \
             --runtime "$RUNTIME" \

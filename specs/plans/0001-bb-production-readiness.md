@@ -147,3 +147,25 @@ Initial working tree: only the untracked assessment under `specs/research/`.
   host/server loss, lost HTTP replies and interruption during delivery still
   need live fault-injection evidence. Controlled supervisor replacement,
   agent resume and reviewed recovery now have actual development proof.
+
+- CI diagnostics at `252ac34` prove Claude's fixed response is native
+  `authentication_failed` / HTTP 403 on the Manifold route. A direct Anthropic
+  CI credential route is prepared but no other project's vault key is reused.
+- GC `0ff2cfda0` fixes the branch's API readiness fixture and resource-census
+  failures; the expired-waiver and missing-watchdog failures remain. GC
+  `59382ce25` and the matching pack changes preserve terminal provider errors,
+  settle failed receipts correctly and retain retry/uncertainty safeguards.
+  Forty-six provider tests and full GC worker/sessionlog suites pass. An actual
+  native Claude 403 record passes real GC projection and pack classification;
+  its absent user record correctly prevents unproved delivery settlement.
+  No retained GC/BB service was restarted for this follow-up.
+- Final pack installation preserves previous versions and matches reviewed
+  source hashes. Existing Codex global/rig threads pass all three fresh turns,
+  tools and memory after idle BB release/restore and agent resume. Claude's
+  three first turns fail on exact-correlated native rate limits (HTTP 429),
+  despite verified full prompts and stable identities; none is resent.
+  The retained `.9` GC lacks the separate native-error projection follow-up.
+  This five-case gate fails; the earlier all-five pass is historical evidence.
+  Neither GC nor BB is restarted. Latest GC `59382ce25` CI passes the changed
+  packages but remains red on the unchanged expired-waiver ledger and the
+  separate missing watchdog command. Release gates remain unchecked.

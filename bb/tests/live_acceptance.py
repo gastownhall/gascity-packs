@@ -93,11 +93,15 @@ def claude_failure_diagnostics(root, scope_report):
                             value = entry.get(source)
                             if isinstance(value, str) and value in allowed:
                                 classification[target] = value
-                        # Native CLI messages retain the HTTP code in this
-                        # specific prefix; never inspect or publish errorDetails.
-                        status = re.search(r"(?:^| · )API Error: ([45]\d{2})(?=\s|:|$)", matches[0])
-                        if status:
-                            classification["http_status"] = int(status[1])
+                        # Prefer the native HTTP status; older messages may
+                        # retain it only in this specific text prefix.
+                        status = entry.get("apiErrorStatus")
+                        if type(status) is int and 400 <= status <= 599:
+                            classification["http_status"] = status
+                        else:
+                            prefix = re.search(r"(?:^| · )API Error: ([45]\d{2})(?=\s|:|$)", matches[0])
+                            if prefix:
+                                classification["http_status"] = int(prefix[1])
                     if classification not in classifications:
                         classifications.append(classification)
     except (OSError, UnicodeError, RecursionError):

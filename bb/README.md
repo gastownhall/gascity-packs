@@ -203,6 +203,13 @@ Stream replay is deduplicated by structured message/block identity. The
 bridge reports transcript rewrites, degraded history, and unknown interaction
 types instead of presenting a successful turn.
 
+When GC supplies a typed terminal provider error, the same delivery and idle
+checks settle the BB turn and its receipt as failed. The error is shown in BB,
+and an explicit next prompt is allowed after the underlying problem is fixed.
+Active retry notices keep the turn open. This requires the GC corrections
+linked in [verification](docs/verification.md); released GC 1.4.0/1.4.1 can
+misrepresent native Claude API errors as ordinary assistant messages.
+
 A fresh session can temporarily have only GC's terminal fallback. After checking
 the actual workspace, the bridge acknowledges BB's turn promptly and waits up
 to 150 seconds for reliable idle structured history before journaling or sending
@@ -224,9 +231,9 @@ gc bb recover --thread <BB-thread-ID> --confirm-reviewed
 
 Recovery resolves a lost creation reply through its deterministic alias. For
 an unsettled turn it verifies the exact asynchronous submit result, the new
-submitted prompt and subsequent answer, and reliable idle history without
+submitted prompt and subsequent settled answer or typed provider failure, and reliable idle history without
 pending tools/interactions. Idle history alone does not prove delivery.
-It acknowledges reviewed output; it does not import missing history into BB
+It records success or failure from that reviewed outcome; it does not import missing history into BB
 or resend the prompt. If the submit reply was lost, supply the original GC
 request evidence from inspected events:
 

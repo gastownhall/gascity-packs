@@ -185,21 +185,31 @@ for (const lateFailure of ["observer rejection", "startup timeout"] as const) {
   });
 }
 
-for (const intent of ["interrupt", "release"] as const) {
-  test(`${intent} during completion preserves one terminal outcome`, async () => {
+for (const settlement of ["completed", "failed"] as const) for (const intent of ["interrupt", "release"] as const) {
+  test(`${intent} during ${settlement} settlement preserves one terminal outcome`, async () => {
     const f = await fixture(); const messages: any[] = [];
     let writingCompletion = false; let finishWrite!: () => void; let didWrite!: () => void;
     const paused = new Promise<void>(resolve => { finishWrite = resolve; });
     const written = new Promise<void>(resolve => { didWrite = resolve; });
     class PausingJournal extends Journal {
       override async put(threadId: string, receipt: Receipt) {
-        if (receipt.turn?.state === "completed") { writingCompletion = true; await paused; }
+        if (receipt.turn?.state === settlement) { writingCompletion = true; await paused; }
         await super.put(threadId, receipt);
-        if (receipt.turn?.state === "completed") didWrite();
+        if (receipt.turn?.state === settlement) didWrite();
       }
     }
     const journal = new PausingJournal(join(f.cwd, "journal"));
-    const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal });
+    let injected = false;
+    class SettlementClient extends GasCityClient {
+      override async *events(path: string, signal: AbortSignal, cursor?: string) {
+        if (settlement !== "failed" || injected || !path.includes("/session/")) { yield* super.events(path, signal, cursor); return; }
+        injected = true;
+        const remote = [...f.sessions.values()][0];
+        remote.messages.push({ id: "native-error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", message: "Native failure" }, blocks: [] });
+        yield { event: "structured", data: JSON.stringify(frame(remote.id, remote.messages)) };
+      }
+    }
+    const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new SettlementClient(c), journal });
     try {
       const execution = { ...options, model: targetId(target) };
       const start: any = await provider.dispatch("thread/start", { threadId: "completion-race", cwd: f.cwd, instructionMode: "append", options: execution });
@@ -505,5 +515,36 @@ test("unsupported tier and unverifiable working directory fail before prompt sub
     assert.equal(f.sessions.size, 0);
     await assert.rejects(provider.dispatch("thread/start", args), /cannot verify workspace ownership/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
+  } finally { await provider.close(); await f.close(); }
+});
+
+test("a correlated native provider failure settles failed and permits a manual next turn", async () => {
+  const f = await fixture(); const messages: any[] = [];
+  const journal = new Journal(join(f.cwd, "journal"));
+  let failedOnce = false;
+  class NativeErrorClient extends GasCityClient {
+    override async *events(path: string, signal: AbortSignal, cursor?: string) {
+      if (!path.includes("/session/") || failedOnce) { yield* super.events(path, signal, cursor); return; }
+      failedOnce = true;
+      const remote = [...f.sessions.values()][0];
+      remote.messages.push({ id: "native-error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", code: "authentication_failed", message: "Provider authentication failed" }, blocks: [{ type: "text", text: "Provider authentication failed" }] });
+      yield { event: "structured", data: JSON.stringify(frame(remote.id, remote.messages)) };
+    }
+  }
+  const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new NativeErrorClient(c), journal });
+  try {
+    const execution = { ...options, model: targetId(target) };
+    const start: any = await provider.dispatch("thread/start", { threadId: "native-failure", cwd: f.cwd, instructionMode: "append", options: execution });
+    const turn = (clientRequestId: string) => provider.dispatch("turn/start", { threadId: "native-failure", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "Hello" }], clientRequestId, options: execution });
+    await turn("creq_23456789ab");
+    await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary"));
+    const boundary = messages.flatMap(m => m.params?.deltas ?? []).find(d => d.kind === "turn.boundary");
+    assert.equal(boundary.status, "failed");
+    assert.match(boundary.error.message, /Provider authentication failed/);
+    assert.equal((await journal.get("native-failure"))?.turn?.state, "failed");
+    assert.equal((await journal.get("native-failure"))?.turn?.clientRequestId, "creq_23456789ab");
+    await turn("creq_23456789ac");
+    await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary" && d.status === "completed"));
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 2);
   } finally { await provider.close(); await f.close(); }
 });
