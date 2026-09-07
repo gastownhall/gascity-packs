@@ -134,6 +134,12 @@ jobs:
           CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SUBAGENT_MODEL }}
           OPENAI_API_KEY: ${{ matrix.runtime == 'codex' && secrets.BB_CODEX_API_KEY || '' }}
         run: |
+          if [ "$RUNTIME" = claude ]; then
+            test -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" || { echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL resolved empty'; exit 1; }
+            test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo 'ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty'; exit 1; }
+            test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo 'ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty'; exit 1; }
+            test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo 'CLAUDE_CODE_SUBAGENT_MODEL resolved empty'; exit 1; }
+          fi
           python3 -u bb/tests/live_acceptance.py \
             --runtime "$RUNTIME" \
             --gc-bin "$RUNNER_TEMP/gc14/gc" \

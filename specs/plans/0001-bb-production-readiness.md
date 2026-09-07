@@ -14,6 +14,7 @@ Finish the remaining work identified in [the assessment](../research/bb-producti
 - [x] Improve diagnostics and update user setup/recovery docs and compatibility declarations.
 - [ ] Verify actual BB/GC installation and UI with isolated state: global/rig agents, two turns, tools, approval/denial/repetition, busy follow-up, interrupt/release, restart/resume, failures/recovery, and mismatched workspaces.
 - [x] Extend build, fixture and CLI CI to the release matrix.
+- [x] Pass retained development Claude global/rig/underscore and Codex global/rig three-turn/tool/resume checks, with full forwarded-prompt and stable-identity evidence.
 - [ ] Pass actual Claude and Codex two-turn/tool acceptance in CI on GC 1.4.0 and 1.4.1; build/fixture success alone is insufficient.
 - [ ] Commit/push the completed change and publish a versioned pack through the repository's release workflow only after release gates pass.
 
@@ -129,3 +130,20 @@ Initial working tree: only the untracked assessment under `specs/research/`.
 - Corrected first-input lifecycle docs and report-upload help. Registry-only
   changes now trigger the mandatory BB acceptance workflow too. Only the three
   named JSON reports are uploadable; raw evidence remains private.
+
+- GC corrections through `55cfa4acc` are pushed in draft PR #6106. Development
+  `.9` passes all five real conversation cases; an independent review verifies
+  all 15 complete forwarded prompts and preserved identities. Four existing
+  conversations survive the controlled GC binary replacement. BB, its store,
+  the city and all prior evidence remain intact.
+- Two completed remote Codex tool turns are recovered after explicit evidence
+  review and release of their idle BB leases. Only receipt completion changes;
+  no request is resent. A real mismatched-workspace case also fails before any
+  input acceptance or GC submission.
+- Pack CI at `2eb6424` fails the live matrix and aggregate. Codex never reaches
+  reliable startup on the released binaries. Claude returns an identical
+  unrequested response in all four scopes; safe native error classification
+  is added without weakening acceptance. Publication remains blocked. Abrupt
+  host/server loss, lost HTTP replies and interruption during delivery still
+  need live fault-injection evidence. Controlled supervisor replacement,
+  agent resume and reviewed recovery now have actual development proof.

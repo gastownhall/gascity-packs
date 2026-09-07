@@ -334,3 +334,63 @@ fail the final-answer marker assertion in both scopes. Safe diagnostics now
 record only output size/hash and marker-presence booleans on that failure;
 model output and private words remain excluded. The assertion stays strict.
 Run: https://github.com/gastownhall/gascity-packs/actions/runs/34073849774.
+
+## Final retained development conversations
+
+GC `1.4.1-bb-live.9` (`55cfa4acc`) passes all five real BB conversation cases:
+Claude global, rig and underscore workspace; Codex global and rig. Each case
+passes three turns with full forwarded prompts of 3,108, 1,507 and 1,312 bytes,
+an exact tool-created artifact, agent suspension/reconciliation and tool-free
+memory recall after resume. All GC, logical, provider and stream identities
+remain stable. An independent review recomputed all 15 prompt hashes from the
+saved GC frames and verified their reliable idle state.
+
+The four global/rig cases reuse threads from before the GC binary replacement;
+their pre-replacement identities match the final frames. The existing BB server,
+store, city, ports, workspaces and provider histories were retained. This proves
+controlled supervisor replacement and continued conversations, not arbitrary
+process loss during active work. Reports and binary/source hashes:
+`/private/tmp/bb-live-9dbgrsx5/live9-final-jxzl2zm0/summary.json` and its five
+case `report.json` files. The new Claude workspace passed without manually
+seeding workspace trust. Existing Codex histories continued growing without
+rewriting previously exposed metadata.
+
+The two reviewed Codex recoveries changed only receipt state from accepted to
+completed; request IDs, digests, baselines, targets and sessions stayed intact.
+No prompt was resent. The prior Claude approve/deny/repetition/stop proofs were
+run on `.7`; they are separate evidence, not fresh `.9` executions.
+
+A further `.9` BB check selected the exact global agent with a different
+existing scratch workspace. BB rejected the mismatch, emitted no input
+acceptance, and left a creation-only receipt with no turn or GC submit result.
+Evidence: `live9-lifecycle-1b4k6fph/mismatch-report.json`.
+
+BB 0.42.1's public stop operation selects interruption for active threads and
+release for idle/error threads. There is no separate public active-release
+operation in the inspected CLI/server contract. Therefore an active approval
+stop cannot be presented as a release proof. Existing idle release/restore and
+pending-approval interruption have actual BB evidence; active bridge release
+has provider-contract tests. Abrupt host/server loss, lost HTTP replies and
+interruption during delivery still need live fault-injection evidence.
+
+## Released-runtime CI after the corrections
+
+[Pack CI run 34074336510](https://github.com/gastownhall/gascity-packs/actions/runs/34074336510)
+at `2eb6424` fails all four live jobs and the required aggregate while both
+build/fixture/CLI jobs pass. Codex global and rig on each released GC version
+fail the bounded startup wait; no BB prompt was sent. All four Claude scopes
+return the same 426-byte answer with SHA-256
+`c6d2a670b7d411bea2d4e6b064840da6ebba19c060a72f1c350934d50e2cff8d`,
+containing neither requested marker. This is not evidence of a formatting-only
+failure or proof of a particular authentication/model error.
+
+Claude 2.1.263's native error constructor writes API failures as assistant
+records with `isApiErrorMessage` and error metadata. GC's current structured
+reader omits that distinction, allowing such a record to appear as a completed
+assistant message. That is a source-confirmed observability gap; the CI response
+hash alone does not prove it caused these failures. CI uses repository Manifold
+credentials/model aliases, while the successful local Claude runs use OAuth.
+The harness now matches the failed answer's hash against its private native
+records and publishes only finite error enums, the native error boolean and an
+HTTP status where available. Seven guards protect the privacy boundary; the
+original marker assertion remains strict. Raw output stays private.

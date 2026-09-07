@@ -1,8 +1,10 @@
 # Verification and release status
 
 The pack remains a release candidate. Fixture, CLI, installation and launcher
-checks pass; model-backed acceptance is blocked on the runtime cases below.
-No registry release has been published for this hardening change.
+checks pass. Real Claude and Codex conversations now pass locally with the GC
+corrections in [draft PR #6106](https://github.com/gastownhall/gascity/pull/6106);
+acceptance against unchanged released GC still fails. No registry release has
+been published for this hardening change.
 
 ## Versions exercised
 
@@ -10,7 +12,8 @@ No registry release has been published for this hardening change.
 - BB 0.42.1: actual server/host/frontend build, installation, upgrade,
   registration, browser launcher and thread creation.
 - Plugin SDK 0.4.47; Node 22; Chrome via Playwright.
-- Live GC 1.4.1 with Codex CLI 0.153.4 and Claude Code 2.1.263.
+- Released GC 1.4.0/1.4.1 and development GC `1.4.1-bb-live.9`
+  (`55cfa4acc`), with Codex CLI 0.153.4 and Claude Code 2.1.263.
 
 ## Passing checks
 
@@ -59,17 +62,27 @@ workspaces there.
    an ineffective interrupt. These require GC corrections before approval
    support is safe; no approval was sent during the failed test.
 
-The retained development environment now passes complete Claude two-turn/tool
-conversations in both scopes, Codex three-turn/tool/agent-resume conversations
-in both scopes, and real Claude approve-once, deny, repeated identical approvals,
-and interruption at an approval prompt. Claude BB release/restore also passed.
-The next combined build passed Claude global and rig three-turn/agent-resume
-checks after correcting configured transcript paths. Extending the existing
-Codex conversations exposed unstable historical usage/model metadata after
-log growth; a fresh Claude workspace also exposed an obsolete trust-menu
-selection. Those GC fixes remain in progress. These development results do
-not certify unchanged GC 1.4.0 or 1.4.1. Broader restart/recovery and the
-released-binary CI matrix remain required before publication.
+The retained development environment passes all five conversation cases on
+`1.4.1-bb-live.9`: Claude global, rig and an underscore workspace, plus Codex
+global and rig. Each passes three turns, complete forwarded-prompt checks, a
+real tool artifact, agent suspension/reconciliation, and tool-free memory recall
+after resume with unchanged conversation identities. Four cases continue BB
+threads retained across the GC binary replacement; BB and its store stayed
+running throughout. The Codex cases also exercise continued log growth after
+the historical usage/model metadata correction. The fresh Claude workspace
+passes the corrected current trust-menu handling without manual trust seeding.
+
+Real Claude approve-once, deny, repeated identical approvals, interruption at
+an approval prompt, and BB release/restore have additional development evidence.
+Two Codex turns that failed before the metadata correction were independently
+proved complete and recovered after releasing their idle BB leases. Their
+original request IDs were preserved and no prompt was resent. These results
+do not certify unchanged GC 1.4.0 or 1.4.1, abrupt process-loss recovery, or the
+remaining release gates. The full GC test baseline is also red; its broad
+pre-push check was explicitly bypassed for the review branch after focused
+tests and normal pre-commit checks passed. See the
+[GC validation report](../../specs/research/gc-runtime-fix-validation-2026-09-06.md)
+for the failures and limits.
 See [the evidence report](../../specs/research/bb-live-verification-2026-09-06.md)
 for concrete observations and the [plan](../../specs/plans/0001-bb-production-readiness.md)
 for outstanding gates. [Root-cause experiments and development validation](../../specs/research/bb-runtime-root-causes-2026-09-06.md)

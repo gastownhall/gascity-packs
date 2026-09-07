@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
@@ -30,6 +31,81 @@ CORE_COMMITS = {
 
 class GateError(Exception):
     pass
+
+
+def claude_failure_diagnostics(root, scope_report):
+    """Classify only a hash-matched reply in this harness's private Claude store.
+
+    Claude 2.1.263 emits API failures as assistant records with
+    isApiErrorMessage, apiError and error. Never publish arbitrary native fields.
+    This diagnostic cannot change the acceptance result or retry a turn.
+    """
+    digest = (scope_report.get("marker_mismatch") or {}).get("output_sha256")
+    if (scope_report.get("status") != "failed" or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+        return None
+    api_errors = {"dlp_request_denied", "claude_code_version_too_old", "max_output_tokens"}
+    errors = {"authentication_failed", "invalid_request", "rate_limit", "server_error",
+              "billing_error", "model_not_found", "max_output_tokens", "account_on_hold",
+              "oauth_org_not_allowed", "unknown"}
+    projects = Path(root) / "claude-config/projects"
+    classifications, matching_records = [], 0
+    budget = 16 * 1024 * 1024
+    try:
+        if projects.is_symlink() or projects.parent.is_symlink() or not projects.is_dir():
+            return {"status": "unavailable"}
+        for index, path in enumerate(projects.glob("*/*.jsonl")):
+            if index >= 64:
+                return {"status": "limit_reached"}
+            if (path.is_symlink() or path.parent.is_symlink() or not path.is_file()
+                    or not path.resolve().is_relative_to(projects.resolve())):
+                continue
+            with path.open("rb") as stream:
+                while True:
+                    line = stream.readline(min(budget, 1024 * 1024) + 1)
+                    if not line:
+                        break
+                    budget -= len(line)
+                    if budget < 0 or len(line) > 1024 * 1024:
+                        return {"status": "limit_reached"}
+                    try:
+                        entry = json.loads(line)
+                    except (ValueError, UnicodeError):
+                        continue
+                    if not isinstance(entry, dict) or entry.get("type") != "assistant":
+                        continue
+                    message = entry.get("message")
+                    blocks = message.get("content") if isinstance(message, dict) else None
+                    if not isinstance(blocks, list):
+                        continue
+                    texts = [block["text"] for block in blocks if isinstance(block, dict)
+                             and block.get("type") == "text" and isinstance(block.get("text"), str)]
+                    matches = [text for text in [*texts, "\n".join(texts)]
+                               if hashlib.sha256(text.encode()).hexdigest() == digest]
+                    if not matches:
+                        continue
+                    matching_records += 1
+                    native_error = entry.get("isApiErrorMessage") is True
+                    classification = {"is_api_error_message": native_error}
+                    if native_error:
+                        for source, target, allowed in (("apiError", "api_error", api_errors),
+                                                        ("error", "error", errors)):
+                            value = entry.get(source)
+                            if isinstance(value, str) and value in allowed:
+                                classification[target] = value
+                        # Native CLI messages retain the HTTP code in this
+                        # specific prefix; never inspect or publish errorDetails.
+                        status = re.search(r"(?:^| · )API Error: ([45]\d{2})(?=\s|:|$)", matches[0])
+                        if status:
+                            classification["http_status"] = int(status[1])
+                    if classification not in classifications:
+                        classifications.append(classification)
+    except (OSError, UnicodeError, RecursionError):
+        return {"status": "unavailable"}
+    if matching_records:
+        return {"status": "matched", "matching_records": matching_records,
+                "classifications": classifications}
+    return {"status": "unmatched"}
 
 
 def save_new(path, value):
@@ -272,7 +348,16 @@ def main():
                 "--model", targets[0]["id"], "--workspace", str(workspace),
                 "--artifacts", str(args.report_dir / scope), "--timeout", str(args.timeout), "--exercise-resume",
             ], env=env, cwd=root, timeout=args.timeout * 3 + 210)
-            report["scopes"].append({"scope": scope, "status": "passed" if result.returncode == 0 else "failed"})
+            scope_result = {"scope": scope, "status": "passed" if result.returncode == 0 else "failed"}
+            if args.runtime == "claude" and result.returncode != 0:
+                try:
+                    scope_report = json.loads((args.report_dir / scope / "report.json").read_text())
+                    diagnostic = claude_failure_diagnostics(root, scope_report)
+                    if diagnostic is not None:
+                        scope_result["native_diagnostics"] = diagnostic
+                except (OSError, ValueError):
+                    scope_result["native_diagnostics"] = {"status": "unavailable"}
+            report["scopes"].append(scope_result)
         if len(report["scopes"]) != 2 or any(row["status"] != "passed" for row in report["scopes"]):
             raise GateError("Real conversation acceptance failed; inspect scope reports")
         report["status"] = "passed"
