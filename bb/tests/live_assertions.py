@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise two real BB turns against an already provisioned, isolated GC agent.
+"""Exercise real BB turns and optional agent resume against an isolated GC agent.
 
 The caller owns provisioning and teardown. This never retries a mutation, stops
 a thread, or deletes evidence. Only report.json is suitable for CI upload;
@@ -32,6 +32,8 @@ def safe_provider_failure(payload):
         return "GC runtime activity or structured history is unreliable"
     if "complete submitted prompt" in text or "missing or truncated delivery" in text:
         return "GC did not preserve the complete forwarded prompt"
+    if "reliable idle transcript" in text:
+        return "GC startup did not become ready; no BB prompt was sent"
     if "session is busy" in text or "needs a response" in text or "active gas city turn" in text:
         return "GC session is busy or waiting for a response"
     return "BB reported a provider failure; inspect private evidence"
@@ -69,9 +71,17 @@ def verify_prompt_frame(frame, turn, prompt):
     raise AcceptanceFailure("GC transcript lacks a new user entry preserving the complete forwarded prompt")
 
 
+def verify_resume_identity(before, after):
+    """A restarted agent must retain the same GC and provider conversation."""
+    for field in ("gc_session_id", "logical_conversation_id", "provider_session_id", "transcript_stream_id"):
+        original = (before.get("history") or {}).get(field)
+        if not original or original != (after.get("history") or {}).get(field):
+            raise AcceptanceFailure("Agent resume changed a conversation or transcript identity")
+
+
 class LiveAssertions:
     def __init__(self, *, bb_bin, host, project, model, workspace, artifacts,
-                 timeout=240, env=None):
+                 timeout=240, env=None, existing_thread_id=None, exercise_resume=False):
         self.bb_bin = str(bb_bin)
         self.host, self.project, self.model = host, project, model
         self.workspace = Path(workspace).resolve(strict=True)
@@ -84,7 +94,9 @@ class LiveAssertions:
         self.timeout = timeout
         self.env = os.environ.copy() if env is None else dict(env)
         self.counter = 0
-        self.thread_id = None
+        self.thread_id = existing_thread_id
+        self.existing_thread = bool(existing_thread_id)
+        self.exercise_resume = exercise_resume
         self.report = {"schema_version": 1, "status": "running", "model": model,
                        "assertions": [], "turns": []}
 
@@ -188,14 +200,19 @@ class LiveAssertions:
         endpoint = (connections[0]["url"].rstrip("/") + "/v0/city/" + urllib.parse.quote(target["city"], safe="")
                     + "/session/" + urllib.parse.quote(receipt["sessionId"], safe=""))
 
-        def fetch(suffix, label):
+        def fetch(suffix, label, method="GET"):
             try:
-                with opener.open(urllib.request.Request(endpoint + suffix, headers=headers), timeout=20) as response:
+                request_headers = dict(headers)
+                if method != "GET":
+                    request_headers.update({"X-GC-Request": "bb-provider", "Content-Type": "application/json"})
+                request = urllib.request.Request(endpoint + suffix, headers=request_headers,
+                                                 method=method, data=b"{}" if method != "GET" else None)
+                with opener.open(request, timeout=20) as response:
                     raw = response.read(8 * 1024 * 1024 + 1)
                 if len(raw) > 8 * 1024 * 1024:
                     raise AcceptanceFailure("GC evidence exceeded the response size limit")
             except urllib.error.URLError as error:
-                raise AcceptanceFailure("Independent GC evidence request failed; inspect isolated server state") from error
+                raise AcceptanceFailure("GC evidence operation failed; inspect isolated state before any retry") from error
             with (self.private / f"gc-turn-{len(self.report['turns'])}-{label}.json").open("xb") as stream:
                 os.fchmod(stream.fileno(), 0o600)
                 stream.write(raw)
@@ -205,12 +222,49 @@ class LiveAssertions:
         if (session.get("id") != receipt["sessionId"] or session.get("template") != target["agent"]
                 or Path(session.get("work_dir") or "/").resolve() != self.workspace):
             raise AcceptanceFailure("GC session endpoint does not match the receipt target and workspace")
-        evidence = verify_prompt_frame(fetch("/transcript?format=structured", "transcript"), turn, prompt)
+        frame = fetch("/transcript?format=structured", "transcript")
+        evidence = verify_prompt_frame(frame, turn, prompt)
         evidence["gc_submit_request_id"] = turn["request_id"]
         self.report["turns"][-1].update(evidence)
         self.report["assertions"].append(f"turn-{len(self.report['turns'])}-independent-full-forwarded-prompt")
+        # This closure is bound only after independently validating the exact
+        # owned thread, configured loopback endpoint, agent and workspace.
+        self.gc_fetch, self.last_gc_frame = fetch, frame
 
-    def await_turn(self, *, after, expected, require_tool=False, previous_provider_id=None):
+    def verify_agent_resume(self, provider_id, memory, nonce):
+        self.progress("suspending only the verified idle agent; GC and BB stay running")
+        before = self.gc_fetch("/transcript?format=structured", "before-suspend")
+        verify_resume_identity(self.last_gc_frame, before)
+        tail = (before.get("history") or {}).get("tail_state") or {}
+        if tail.get("activity") != "idle" or tail.get("degraded") or tail.get("open_tool_call_ids") or tail.get("pending_interaction_ids"):
+            raise AcceptanceFailure("Refusing to suspend an agent without reliable idle history")
+        self.gc_fetch("/suspend", "suspend-result", "POST")
+        # Wait for the controller's canonical asleep projection. Immediate
+        # send after the legacy suspended response can miss reconciliation bugs.
+        deadline, poll = time.monotonic() + 30, 0
+        while True:
+            state = self.gc_fetch("", f"suspend-state-{poll}")
+            if state.get("state") == "asleep" and state.get("running") is False:
+                break
+            if time.monotonic() >= deadline:
+                raise AcceptanceFailure("Controller did not settle the suspended agent as asleep")
+            time.sleep(1)
+            poll += 1
+        self.report["assertions"].append("agent-suspended-and-controller-reconciled")
+        after_seq = max((row["seq"] for row in self.events()), default=0)
+        expected = f"RESUMED_{nonce} {memory}"
+        prompt = ("Without tools, end your final answer with a standalone line containing "
+                  f"RESUMED_{nonce}, one space, and the private test word from the first turn. "
+                  "Use the conversation's retained memory; do not guess.")
+        self.report["prompt_bytes"].append(len(prompt.encode()))
+        self.report["prompt_sha256"].append(hashlib.sha256(prompt.encode()).hexdigest())
+        self.command("thread", "tell", self.thread_id, prompt, "--mode", "auto", "--model", self.model, "--json")
+        self.await_turn(after=after_seq, expected=expected, previous_provider_id=provider_id, forbid_tools=True)
+        self.verify_gc_prompt(prompt, provider_id)
+        verify_resume_identity(before, self.last_gc_frame)
+        self.report["assertions"].extend(["same-provider-conversation-after-agent-resume", "resumed-conversation-memory"])
+
+    def await_turn(self, *, after, expected, require_tool=False, previous_provider_id=None, forbid_tools=False):
         deadline = time.monotonic() + self.timeout
         last_progress = 0
         while time.monotonic() < deadline:
@@ -252,12 +306,15 @@ class LiveAssertions:
                             if row.get("type") == "item/completed"]
                 answers = [item.get("text", "").strip() for item in messages
                            if item.get("type") == "agentMessage"]
-                if not answers or answers[-1] != expected:
+                if not answers or not answers[-1].splitlines() or answers[-1].splitlines()[-1] != expected:
                     raise AcceptanceFailure("Fresh final assistant message did not match the requested markers")
                 output = self.command("thread", "output", self.thread_id, "--json")
-                if output.get("output", "").strip() != expected:
+                output_lines = output.get("output", "").strip().splitlines()
+                if not output_lines or output_lines[-1] != expected:
                     raise AcceptanceFailure("BB thread output did not expose the completed answer")
                 tools = [item for item in messages if item.get("type") in {"toolCall", "commandExecution"}]
+                if forbid_tools and tools:
+                    raise AcceptanceFailure("Resumed conversation must recall its memory without tools")
                 if require_tool and not any(item.get("status") == "completed" and not item.get("error")
                                             and item.get("exitCode", 0) == 0 for item in tools):
                     raise AcceptanceFailure("BB did not expose a successfully completed tool call")
@@ -280,8 +337,8 @@ class LiveAssertions:
         first = (f"The beginning marker is {prefix}. Remember the private test word {memory} for the next turn.\n"
                  + "\n".join(f"Context line {index:02d}: Preserve this complete multiline acceptance request."
                              for index in range(24))
-                 + f"\nThe ending marker is {suffix}. Reply only with the beginning marker, one space, "
-                   "and the ending marker. Do not run tools on this turn.")
+                 + f"\nThe ending marker is {suffix}. End your final answer with a standalone line containing "
+                   "the beginning marker, one space, and the ending marker. Do not run tools on this turn.")
         proof = self.workspace / f"bb-live-proof-{nonce}.txt"
         if proof.exists() or proof.is_symlink():
             raise AcceptanceFailure("Refusing to replace an existing proof artifact")
@@ -291,22 +348,31 @@ class LiveAssertions:
                   + " in the current workspace. Its entire contents must be the private test word "
                     "I asked you to remember in the previous turn, followed by exactly one newline. "
                     "Do not overwrite an existing file. Read the file back using a tool to verify it. "
-                    f"Then reply exactly {expected_second}.")
+                    f"End your final answer with this exact standalone line: {expected_second}.")
         self.report["prompt_bytes"] = [len(first.encode()), len(second.encode())]
         self.report["prompt_sha256"] = [hashlib.sha256(text.encode()).hexdigest() for text in (first, second)]
         try:
-            self.progress("spawning exact GC agent through BB")
-            spawned = self.command("thread", "spawn", "--project", self.project,
-                                   "--host", self.host, "--provider", "gas-city", "--model", self.model,
-                                   "--environment", str(self.workspace), "--permission-mode", "full",
-                                   "--reasoning-level", "none", "--service-tier", "default",
-                                   "--prompt", first, "--json")
-            self.thread_id = spawned.get("id")
-            if not self.thread_id:
-                raise AcceptanceFailure("BB spawn returned no thread ID")
+            before = 0
+            if self.existing_thread:
+                self.progress("continuing the explicitly selected BB thread")
+                self.verify_destination()
+                before = max((row["seq"] for row in self.events()), default=0)
+                self.command("thread", "tell", self.thread_id, first, "--mode", "auto",
+                             "--model", self.model, "--json")
+                self.report["reused_thread"] = True
+            else:
+                self.progress("spawning exact GC agent through BB")
+                spawned = self.command("thread", "spawn", "--project", self.project,
+                                       "--host", self.host, "--provider", "gas-city", "--model", self.model,
+                                       "--environment", str(self.workspace), "--permission-mode", "full",
+                                       "--reasoning-level", "none", "--service-tier", "default",
+                                       "--prompt", first, "--json")
+                self.thread_id = spawned.get("id")
+                if not self.thread_id:
+                    raise AcceptanceFailure("BB spawn returned no thread ID")
             self.report["thread_id"] = self.thread_id
             self.verify_destination()
-            after, provider_id = self.await_turn(after=0, expected=expected_first)
+            after, provider_id = self.await_turn(after=before, expected=expected_first)
             self.verify_gc_prompt(first, provider_id)
             self.report["assertions"].append("multiline-first-turn-markers-and-completion")
             self.progress("first turn passed; sending second turn with a real tool artifact")
@@ -320,8 +386,10 @@ class LiveAssertions:
             self.report["assertions"].extend(["same-session-second-turn-completion", "bb-tool-event",
                                               "tool-artifact-exact-bytes-and-conversation-memory"])
             self.report["artifact_sha256"] = hashlib.sha256(expected_bytes).hexdigest()
+            if self.exercise_resume:
+                self.verify_agent_resume(provider_id, memory, nonce)
             self.report["status"] = "passed"
-            self.progress("two real turns, retained context, tool artifact, and BB completion passed")
+            self.progress("real turns, retained context, tool artifact, and requested lifecycle checks passed")
             return self.report
         except Exception as error:
             self.report["status"] = "failed"
@@ -337,6 +405,8 @@ class LiveAssertions:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bb-bin", default="bb")
+    parser.add_argument("--existing-thread-id", help="Run fresh turns in this explicitly selected BB thread; preserves existing history and services")
+    parser.add_argument("--exercise-resume", action="store_true", help="After two verified turns, suspend only this test agent and require a third turn with the same provider conversation and memory")
     for name in ("host", "project", "model", "workspace", "artifacts"):
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--timeout", type=int, default=240, help="Per-turn completion deadline in seconds")

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Real BB -> GC -> Claude/Codex smoke gate. Never uses an existing city or BB store.
 
-All state and raw logs stay in a new private /tmp directory. Only the explicit
-report directory is suitable for CI upload; provider state can contain secrets.
+Provider state stays in a new private /tmp directory. The report directory also
+contains private command/transcript captures. Only summary.json, global/report.json
+and rig/report.json are suitable for CI upload; never upload the whole directory.
 Missing credentials, incomplete turns and setup/cleanup failures are failures.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +18,8 @@ import sys
 import tempfile
 import threading
 import time
+
+from codex_hook_trust import trust_config, write_provider_commands
 
 PACK = Path(__file__).resolve().parents[1]
 CORE_COMMITS = {
@@ -53,8 +57,10 @@ def main():
     parser.add_argument("--gc-bin", required=True)
     parser.add_argument("--bb-bin", required=True)
     parser.add_argument("--bb-app-bin", required=True)
+    parser.add_argument("--gc-development-base", choices=CORE_COMMITS,
+                        help="Validate an explicitly labeled development GC build using this release's core; never release acceptance")
     parser.add_argument("--report-dir", required=True, type=Path,
-                        help="New directory for safe CI reports, never raw state")
+                        help="New evidence directory; upload only summary.json and global/rig report.json, never private/ captures")
     parser.add_argument("--timeout", type=int, default=240, help="Seconds per model turn")
     args = parser.parse_args()
     if args.timeout < 1:
@@ -100,7 +106,8 @@ def main():
                 "bb": str(Path(args.bb_bin).absolute()),
                 "app": str(Path(args.bb_app_bin).absolute())}
     report = {"runtime": args.runtime, "status": "failed", "stages": [], "scopes": [],
-              "commit": os.environ.get("GITHUB_SHA"), "coverage": "two-turn-tool-smoke"}
+              "commit": os.environ.get("GITHUB_SHA"), "coverage": "three-turn-tool-and-agent-resume",
+              "verificationMode": "development" if args.gc_development_base else "release"}
     started_gc = started_bb = False
     app_process = None
     command_count = 0
@@ -155,8 +162,16 @@ def main():
             if not shutil.which(binary, path=env["PATH"]):
                 raise GateError(f"Missing required executable: {binary}")
         gc_version = run("gc", "version").stdout.strip().split()[0]
-        if gc_version not in CORE_COMMITS:
+        core_release = args.gc_development_base or gc_version
+        if core_release not in CORE_COMMITS:
             raise GateError("Live acceptance requires released GC 1.4.0 or 1.4.1")
+        if args.gc_development_base:
+            if not gc_version.startswith(args.gc_development_base + "-"):
+                raise GateError("Development GC must carry an explicit prerelease version based on --gc-development-base")
+            progress("DEVELOPMENT VALIDATION ONLY: this cannot certify a released GC binary")
+        with Path(commands["gc"]).open("rb") as stream:
+            report["gcBinarySha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+        report["coreRelease"] = core_release
         report["versions"] = {"gc": gc_version,
                               "bb": run("bb", "--version").stdout.strip(),
                               args.runtime: run(args.runtime, "--version").stdout.strip()}
@@ -173,6 +188,12 @@ def main():
         with (root / "codex-config/config.toml").open("x") as stream:
             for workspace in workspaces.values():
                 stream.write(f'[projects.{json.dumps(str(workspace))}]\ntrust_level = "trusted"\n')
+            if args.runtime == "codex":
+                stream.write(trust_config(workspaces.values(), report["versions"]["codex"]))
+        runtime_command = ""
+        if args.runtime == "codex":
+            runtime_command = write_provider_commands(root, shutil.which("codex", path=env["PATH"]),
+                                                      env["CODEX_HOME"], workspaces.values())
         (city / ".gc").mkdir()
         (root / "gc-home").mkdir()
         (root / "gc-home/supervisor.toml").write_text(
@@ -184,17 +205,22 @@ def main():
         (city / "pack.toml").write_text(
             '[pack]\nname = "bb-live-acceptance"\nschema = 2\n'
             f'[imports.bb]\nsource = {json.dumps(str(PACK))}\n'
-            f'[imports.core]\nsource = "https://github.com/gastownhall/gascity/tree/v{gc_version}/internal/bootstrap/packs/core"\n'
-            f'version = "sha:{CORE_COMMITS[gc_version]}"\n')
+            f'[imports.core]\nsource = "https://github.com/gastownhall/gascity/tree/v{core_release}/internal/bootstrap/packs/core"\n'
+            f'version = "sha:{CORE_COMMITS[core_release]}"\n')
         (city / "city.toml").write_text(
             f'[workspace]\nprovider = "{args.runtime}"\n[beads]\nprovider = "file"\n'
             f'[session]\nprovider = "tmux"\nsocket = "{city_name}"\n'
             f'[providers.{args.runtime}]\nbase = "builtin:{args.runtime}"\n'
+            + runtime_command +
             '[[rigs]]\nname = "sample"\n[daemon]\n'
             f'observe_paths = {json.dumps([str(root / "claude-config/projects"), str(root / "codex-config/sessions")])}\n')
         for scope, workspace in workspaces.items():
             agent_dir = city / "agents" / scope
             agent_dir.mkdir(parents=True)
+            # Native agent prompt convention gives these BB conversation
+            # fixtures an explicit role; core's default graph worker drains
+            # immediately when there is no queued bead to claim.
+            shutil.copyfile(PACK / "tests/conversation-agent-prompt.md", agent_dir / "prompt.md")
             (agent_dir / "agent.toml").write_text(
                 ('dir = "sample"\n' if scope == "rig" else '') +
                 f'name = "{scope}"\nprovider = "{args.runtime}"\n'
@@ -235,7 +261,7 @@ def main():
             "--rig", "sample", "--path", workspace_root)
         catalog = json.loads(run("gc", "bb", "agents", "--project", project, "--json").stdout)
         for scope, workspace in workspaces.items():
-            progress(f"Running real {scope} agent: full prompt, two completions, tool artifact")
+            progress(f"Running real {scope} agent: full prompt, three completions, tool artifact, agent resume")
             name = "sample/rig" if scope == "rig" else "global"
             targets = [agent for agent in catalog["agents"] if agent["agent"] == name]
             if len(targets) != 1:
@@ -244,8 +270,8 @@ def main():
                 sys.executable, str(PACK / "tests/live_assertions.py"),
                 "--bb-bin", commands["bb"], "--host", host, "--project", project,
                 "--model", targets[0]["id"], "--workspace", str(workspace),
-                "--artifacts", str(args.report_dir / scope), "--timeout", str(args.timeout),
-            ], env=env, cwd=root, timeout=args.timeout * 2 + 180)
+                "--artifacts", str(args.report_dir / scope), "--timeout", str(args.timeout), "--exercise-resume",
+            ], env=env, cwd=root, timeout=args.timeout * 3 + 210)
             report["scopes"].append({"scope": scope, "status": "passed" if result.returncode == 0 else "failed"})
         if len(report["scopes"]) != 2 or any(row["status"] != "passed" for row in report["scopes"]):
             raise GateError("Real conversation acceptance failed; inspect scope reports")

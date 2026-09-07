@@ -5,7 +5,7 @@ import hashlib
 import unittest
 from unittest.mock import patch
 
-from live_assertions import AcceptanceFailure, LiveAssertions, safe_provider_failure, verify_prompt_frame
+from live_assertions import AcceptanceFailure, LiveAssertions, safe_provider_failure, verify_prompt_frame, verify_resume_identity
 
 
 def completed_events():
@@ -24,7 +24,34 @@ def completed_events():
     ]
 
 
+class ResumeIdentityTests(unittest.TestCase):
+    def test_provider_reset_cannot_pass_with_same_gc_session(self):
+        before = {"history": {"gc_session_id": "gc-213", "logical_conversation_id": "gc-213",
+                              "provider_session_id": "original-conversation", "transcript_stream_id": "original-stream"}}
+        verify_resume_identity(before, copy.deepcopy(before))
+        for field in before["history"]:
+            with self.subTest(field=field):
+                after = copy.deepcopy(before)
+                after["history"][field] = "replacement"
+                with self.assertRaisesRegex(AcceptanceFailure, "identity"):
+                    verify_resume_identity(before, after)
+
+    def test_absent_identity_is_not_evidence_of_resume(self):
+        with self.assertRaisesRegex(AcceptanceFailure, "identity"):
+            verify_resume_identity({"history": {}}, {"history": {}})
+
+
 class AcceptanceGuardTests(unittest.TestCase):
+    def test_resume_memory_cannot_pass_after_reading_a_tool_artifact(self):
+        events = completed_events()
+        tool = copy.deepcopy(events[3])
+        tool["seq"] = 5
+        events[-1]["seq"] = 6
+        tool["data"]["item"] = {"type": "toolCall", "status": "completed", "name": "Read"}
+        events.insert(4, tool)
+        with self.assertRaisesRegex(AcceptanceFailure, "without tools"):
+            self.run_guard(events, forbid_tools=True)
+
     def run_guard(self, events, **kwargs):
         # Exercise the real event parser and acceptance decision, without starting
         # any server or pretending these synthetic rows are inference evidence.
@@ -33,9 +60,10 @@ class AcceptanceGuardTests(unittest.TestCase):
         harness.thread_id = "test-thread"
         harness.model = "exact-agent"
         harness.report = {"turns": []}
+        output = kwargs.pop("output", "TEST_MARKER")
 
         def command(*args):
-            return {"output": "TEST_MARKER"} if args[1] == "output" else copy.deepcopy(events)
+            return {"output": output} if args[1] == "output" else copy.deepcopy(events)
 
         with patch.object(harness, "command", side_effect=command), \
                 patch.object(harness, "progress"), \
@@ -45,6 +73,20 @@ class AcceptanceGuardTests(unittest.TestCase):
 
     def test_correlated_completed_response_is_accepted(self):
         self.assertEqual(self.run_guard(completed_events()), (5, "test-gc-session"))
+
+    def test_explanation_before_final_marker_is_accepted(self):
+        events = completed_events()
+        text = "Verified the requested file.\n\nTEST_MARKER"
+        events[3]["data"]["item"]["text"] = text
+        self.assertEqual(self.run_guard(events, output=text), (5, "test-gc-session"))
+
+    def test_embedded_or_nonfinal_marker_cannot_pass(self):
+        for text in ["Not TEST_MARKER", "TEST_MARKER\nSomething else"]:
+            with self.subTest(text=text):
+                events = completed_events()
+                events[3]["data"]["item"]["text"] = text
+                with self.assertRaisesRegex(AcceptanceFailure, "Fresh final assistant"):
+                    self.run_guard(events, output=text)
 
     def test_marker_without_terminal_event_times_out(self):
         with self.assertRaisesRegex(AcceptanceFailure, "No verified BB completion"):

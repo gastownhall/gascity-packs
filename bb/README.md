@@ -11,10 +11,19 @@ retains the agent’s model, prompt, tools, permissions, and runtime configurati
 The launcher requires matching BB/GC directories and never substitutes a
 default agent for an unavailable selection.
 
+For interactive conversations, configure an agent role that finishes startup
+and waits for user messages. GC's default graph-worker role may drain when no
+bead work is assigned; BB preserves that configured behavior. The
+[conversation test role](./tests/conversation-agent-prompt.md) provides a minimal
+example suitable for an agent's `prompt.md`.
+
 **Release status:** the pack is still a release candidate. Live testing found
 that GC 1.4.1 reports Codex transcript activity as `unknown`, so the bridge cannot
 verify completion for that runtime. It fails visibly rather than treating an
-assistant message as proof of completion. See [verification](./docs/verification.md)
+assistant message as proof of completion. Current Claude approval menus also
+require GC fixes: the released runtime's hardcoded denial key can select a
+broader permission mode. Do not use this candidate for Claude approvals on
+unchanged GC 1.4.0/1.4.1. See [verification](./docs/verification.md)
 for the tested versions, results, and remaining gates.
 
 ## Capabilities
@@ -194,15 +203,15 @@ Stream replay is deduplicated by structured message/block identity. The
 bridge reports transcript rewrites, degraded history, and unknown interaction
 types instead of presenting a successful turn.
 
-A fresh session can temporarily have only GC's terminal fallback. For its
-first prompt, the bridge checks for pending interactions, submits once, and
-waits up to 150 seconds for normalized history containing that exact prompt.
-Every later turn also requires its complete new prompt to appear in history
-before output is attributed to it. Terminal fallback text and startup output
-are not rendered as its answer.
-If structured history never becomes available, the turn fails visibly and
-keeps its receipt for inspection. Existing conversations require a reliable
-idle transcript before accepting another prompt.
+A fresh session can temporarily have only GC's terminal fallback. After checking
+the actual workspace, the bridge acknowledges BB's turn promptly and waits up
+to 150 seconds for reliable idle structured history before journaling or sending
+the first prompt. Startup cancellation or failure sends no prompt. After a
+submit, the complete forwarded prompt must appear as a new transcript entry
+before output is attributed to that turn. This delivery check also has a bounded
+150-second wait. Terminal fallback and startup output cannot satisfy it.
+A failed or uncertain submission keeps its receipt for inspection. Existing
+conversations require reliable idle history before another prompt is sent.
 
 Completed threads resume the same GC session on the original BB host. An
 interrupted stream or uncertain HTTP response can leave remote work running.
@@ -279,7 +288,8 @@ tests exercise failed builds, registration rollback and retained data.
 `BB end-to-end acceptance` additionally requires actual Claude and Codex
 conversations through released BB and both GC versions, for global and rig
 agents: two verified completions, retained context, a tool event and its file
-output. Missing inference credentials fail the check. See
+output, followed by agent suspension and a third turn proving the same provider
+conversation and memory without tools. Missing inference credentials fail the check. See
 [live CI setup and reproduction](./docs/verification.md#ci-acceptance).
 
 The layout follows this repository's pack pattern: schema-2 `pack.toml`,

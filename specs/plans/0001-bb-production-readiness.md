@@ -69,3 +69,63 @@ Initial working tree: only the untracked assessment under `specs/research/`.
   `bb-acceptance-reports-*` directories. A BB child-reaping cleanup defect in
   the harness was corrected and independently retested with a fresh BB app;
   all task-owned panes were captured before stopping the disposable cities.
+
+- Replaced repeated environment creation with one retained test city and BB
+  server. GC remains running between pack/configuration changes; replacing its
+  binary preserved all state. Controlled runtime experiments isolated Claude
+  short-input loss, missing Codex activity/adapter wiring, Claude hook session
+  identity loss, and a Codex resumed-terminal readiness race. Corrections are
+  in the separate GC `fix/bb-live-runtime-compatibility` worktree, based on
+  v1.4.1. Focused tests and `go vet` pass; the broad GC baseline failed, including
+  an expired waiver reproduced on unchanged v1.4.1. See the
+  [validation report](../research/gc-runtime-fix-validation-2026-09-06.md).
+- Development build `.5` passed the retained Claude global two-turn/tool/full
+  prompt checks. Claude rig exposed BB's 30-second `turn/start` response limit;
+  Codex exposed an acceptance role inheriting graph-worker drain behavior.
+  Explicit conversational test roles now resolve through actual GC for all
+  four agents. These failures remain recorded; release acceptance is pending.
+- Python installer/CLI/acceptance guards pass: 35 tests on GC 1.4.0 and 1.4.1.
+  The harness uses narrowly reviewed native Codex hook trust, with five guards,
+  and supports new turns in a selected existing BB thread without recreating
+  services. Personal credentials and private runtime evidence remain local.
+- Fixed BB's asynchronous turn acknowledgment and the overlapping stop/new-turn
+  journal race; 37 provider tests and typechecking pass. On the retained GC
+  development build, both Claude scopes and Codex rig passed complete two-turn
+  conversations and tool artifacts. Codex global and controlled Codex resume
+  failed transcript identity changes; no uncertain operation was resent. The
+  existing runtime gates and publication remain pending.
+- BB release/restore passed two fresh Claude turns in the same existing
+  conversation. The live gate now additionally suspends only its verified
+  idle agent, waits for reconciliation, then requires a third turn with the
+  same provider identity and first-turn memory without tools. New guards
+  reject conversation resets and reading the proof file to fake memory.
+- Actual Claude manual-permission testing exposed obsolete GC menu detection,
+  an unsafe hardcoded deny key on the new four-choice menu, and a false idle
+  match after an ineffective interrupt. No approval was sent and no test file
+  was created. These GC corrections and their live verification remain required.
+
+- Final Python guards/CLI matrix: 39 tests pass on each released GC binary.
+  Two more asynchronous ownership regressions reproduced old observer failures
+  and old startup timers aborting a newer turn; all 39 provider tests and
+  typechecking pass after binding callbacks to their originating controller.
+- Development `.7` passed Codex three-turn/tool/agent-resume checks in both
+  scopes, preserving all conversation identities and recalling memory without
+  tools. Real Claude approve-once, deny, identical repeated approvals, and BB
+  stop at an approval all passed in the retained city. Claude resume exposed
+  another GC defect: the stale-key probe ignores configured transcript roots
+  and clears a valid key. Fix and final validation remain in progress.
+- Verified an existing Dashlane OpenAI project key using actual Codex 0.153.4
+  inference in a fresh private configuration, then configured repository secret
+  `BB_CODEX_API_KEY`. This removes the missing-secret blocker; unchanged released
+  GC runtime defects still keep acceptance and registry publication blocked.
+
+- GC corrections through `f7e64f0b4` are pushed for review in
+  [draft GC PR #6106](https://github.com/gastownhall/gascity/pull/6106). Development
+  `.8` passes both Claude three-turn/tool/resume cases. Longer existing Codex
+  conversations expose historical usage/model fields disappearing beyond the
+  tail-read window; a fresh Claude workspace exposes a changed trust-menu
+  default. Those upstream corrections remain in progress, with original
+  failed reports and all state preserved.
+- Corrected first-input lifecycle docs and report-upload help. Registry-only
+  changes now trigger the mandatory BB acceptance workflow too. Only the three
+  named JSON reports are uploadable; raw evidence remains private.

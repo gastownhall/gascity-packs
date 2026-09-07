@@ -6,7 +6,7 @@ import { GasCityProvider } from "../src/provider.js";
 import { Journal, type Receipt } from "../src/journal.js";
 import { GasCityClient } from "../src/client.js";
 import { targetId } from "../src/catalog.js";
-import { fixture, options, until } from "./fixture.js";
+import { fixture, frame, options, until } from "./fixture.js";
 
 const target = { v: 1 as const, connection: "local", city: "alpha", agent: "gc.mayor" };
 
@@ -58,6 +58,7 @@ test("release preserves the remote turn and uncertain resume blocks", async () =
     const execution = { ...options, model: targetId(target) };
     const start: any = await provider.dispatch("thread/start", { threadId: "held", cwd: f.cwd, instructionMode: "append", options: execution });
     await provider.dispatch("turn/start", { threadId: "held", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "hold" }], clientRequestId: "creq_23456789ac", options: execution });
+    await until(() => !!provider.sessions.get("held")?.observation);
     await provider.dispatch("thread/stop", { threadId: "held", providerThreadId: start.providerThreadId, intent: "release", activeTurnId: null });
     assert.equal(f.calls.filter(c => c.path.endsWith("/stop")).length, 0);
     await assert.rejects(provider.dispatch("thread/resume", { threadId: "held", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution }), /interrupted or its delivery is uncertain/);
@@ -78,13 +79,111 @@ test("release during preflight prevents a later prompt submission", async () => 
   try {
     const execution = { ...options, model: targetId(target) };
     const start: any = await provider.dispatch("thread/start", { threadId: "preflight", cwd: f.cwd, instructionMode: "append", options: execution });
-    const pending = assert.rejects(provider.dispatch("turn/start", { threadId: "preflight", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ag", input: [{ type: "text", text: "Hello" }], options: execution }), /abort/i);
+    await provider.dispatch("turn/start", { threadId: "preflight", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ag", input: [{ type: "text", text: "Hello" }], options: execution });
+    const pending = provider.sessions.get("preflight")!.submission!.catch(() => {});
     await until(() => reached);
     await provider.dispatch("thread/stop", { threadId: "preflight", providerThreadId: start.providerThreadId, intent: "release", activeTurnId: null });
     release(); await pending;
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit") || c.path.endsWith("/stop")).length, 0);
   } finally { release(); await provider.close(); await f.close(); }
 });
+
+test("a canceled startup cannot accept another turn until interrupt finishes", async () => {
+  const f = await fixture(); const messages: any[] = [];
+  let pauseRead = false, readingStop = false, releaseRead!: () => void;
+  const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
+  class PausingJournal extends Journal {
+    override async get(threadId: string) {
+      if (pauseRead) { pauseRead = false; readingStop = true; await readGate; }
+      return super.get(threadId);
+    }
+  }
+  let waitingForStartup = false, first = true;
+  class StartupClient extends GasCityClient {
+    override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
+      if (path.includes("/transcript?") && first) {
+        first = false; waitingForStartup = true;
+        await new Promise<void>(resolve => { if (signal!.aborted) resolve(); else signal!.addEventListener("abort", () => resolve(), { once: true }); });
+        signal!.throwIfAborted();
+      }
+      return super.get<T>(path, signal);
+    }
+  }
+  const journal = new PausingJournal(join(f.cwd, "journal"));
+  const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal, client: c => new StartupClient(c) });
+  try {
+    const execution = { ...options, model: targetId(target) };
+    const start: any = await provider.dispatch("thread/start", { threadId: "stop-race", cwd: f.cwd, instructionMode: "append", options: execution });
+    const turn = (clientRequestId: string) => provider.dispatch("turn/start", { threadId: "stop-race", providerThreadId: start.providerThreadId, clientRequestId, input: [{ type: "text", text: "hold" }], options: execution });
+    await turn("creq_23456789ak");
+    await until(() => waitingForStartup);
+    pauseRead = true;
+    const stopping = provider.dispatch("thread/stop", { threadId: "stop-race", providerThreadId: start.providerThreadId, intent: "interrupt", activeTurnId: null });
+    await until(() => readingStop && !provider.sessions.get("stop-race")?.submission);
+    await assert.rejects(turn("creq_23456789am"), /stopping/);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
+    releaseRead(); await stopping;
+    await turn("creq_23456789an");
+    await until(() => !!provider.sessions.get("stop-race")?.observation);
+    assert.equal(provider.sessions.get("stop-race")?.busy, true);
+    assert.equal((await journal.get("stop-race"))?.turn?.state, "accepted");
+    assert.equal((await journal.get("stop-race"))?.turn?.clientRequestId, "creq_23456789an");
+    assert.deepEqual(messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.boundary").map(d => d.status), ["interrupted"]);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/stop")).length, 0);
+  } finally { releaseRead(); await provider.close(); await f.close(); }
+});
+
+for (const lateFailure of ["observer rejection", "startup timeout"] as const) {
+  test(`a canceled turn's late ${lateFailure} cannot fail its successor`, async t => {
+    const f = await fixture(); const messages: any[] = [];
+    const journal = new Journal(join(f.cwd, "journal"));
+    let releaseOld!: () => void, streamCount = 0;
+    const oldGate = new Promise<void>(resolve => { releaseOld = resolve; });
+    const startupTimers: (() => void)[] = [];
+    const setTimer = globalThis.setTimeout;
+    t.mock.method(globalThis, "setTimeout", (callback: (...args: any[]) => void, delay?: number, ...args: any[]) => {
+      if (delay === 150_000) startupTimers.push(() => callback(...args));
+      return setTimer(callback, delay, ...args);
+    });
+    class DelayedObserverClient extends GasCityClient {
+      override async *events(path: string, signal: AbortSignal, resume?: string) {
+        if (path.includes("/stream?format=structured")) {
+          if (++streamCount === 1) {
+            // A transport may finish cancellation/cleanup after stop returns.
+            await oldGate;
+            if (lateFailure === "observer rejection") throw new Error("old observer cleanup failed");
+          } else {
+            await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
+          }
+          return;
+        }
+        yield* super.events(path, signal, resume);
+      }
+    }
+    const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new DelayedObserverClient(c), journal });
+    let oldObservation: Promise<void> | undefined;
+    try {
+      const execution = { ...options, model: targetId(target) };
+      const start: any = await provider.dispatch("thread/start", { threadId: "late-observer", cwd: f.cwd, instructionMode: "append", options: execution });
+      const turn = (clientRequestId: string) => provider.dispatch("turn/start", { threadId: "late-observer", providerThreadId: start.providerThreadId, clientRequestId, input: [{ type: "text", text: "hold" }], options: execution });
+      await turn("creq_23456789ak");
+      await until(() => streamCount === 1 && !provider.sessions.get("late-observer")?.submission);
+      oldObservation = provider.sessions.get("late-observer")!.observation;
+      await provider.dispatch("thread/stop", { threadId: "late-observer", providerThreadId: start.providerThreadId, intent: "interrupt", activeTurnId: null });
+      await turn("creq_23456789am");
+      await until(() => streamCount === 2 && !provider.sessions.get("late-observer")?.submission);
+      const currentController = provider.sessions.get("late-observer")!.controller!;
+      if (lateFailure === "observer rejection") { releaseOld(); await oldObservation; }
+      else { assert.equal(startupTimers.length, 2); startupTimers[0]!(); }
+      assert.equal(provider.sessions.get("late-observer")?.busy, true);
+      assert.equal(currentController.signal.aborted, false);
+      const receipt = await journal.get("late-observer");
+      assert.equal(receipt?.turn?.clientRequestId, "creq_23456789am");
+      assert.equal(receipt?.turn?.state, "accepted");
+      assert.deepEqual(messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.boundary").map(d => d.status), ["interrupted"]);
+    } finally { releaseOld(); await oldObservation; await provider.close(); await f.close(); }
+  });
+}
 
 for (const intent of ["interrupt", "release"] as const) {
   test(`${intent} during completion preserves one terminal outcome`, async () => {
@@ -136,17 +235,47 @@ test("published BB bridge conformance against the GC 1.4 fixture", async () => {
 });
 
 test("lost submit response is journaled and never automatically resent", async () => {
+  const messages: any[] = [];
   const f = await fixture(); const journal = new Journal(join(f.cwd, "journal"));
-  const provider = new GasCityProvider({ send: () => {}, config: async () => f.config, journal });
+  const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal });
   try {
     const execution = { ...options, model: targetId(target) };
     const start: any = await provider.dispatch("thread/start", { threadId: "uncertain", cwd: f.cwd, instructionMode: "append", options: execution });
     f.faults.dropSubmitReply = true;
     const turn = { threadId: "uncertain", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "Hello" }], clientRequestId: "creq_23456789ad", options: execution };
-    await assert.rejects(provider.dispatch("turn/start", turn), /fetch failed/);
+    await provider.dispatch("turn/start", turn);
+    await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary" && d.status === "failed" && /fetch failed/.test(d.error.message)));
     assert.equal((await journal.get("uncertain"))?.turn?.state, "submitting");
     await assert.rejects(provider.dispatch("turn/start", turn), /already journaled/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
+  } finally { await provider.close(); await f.close(); }
+});
+
+test("interrupt before GC confirms delivery closes the BB turn but preserves uncertainty", async () => {
+  const f = await fixture(); const messages: any[] = [];
+  const journal = new Journal(join(f.cwd, "journal"));
+  let awaitingResult = false;
+  class UnconfirmedClient extends GasCityClient {
+    override async result(city: string, accepted: { request_id: string; event_cursor: string }, operation: "create" | "submit", signal?: AbortSignal): Promise<any> {
+      if (operation !== "submit") return super.result(city, accepted, operation, signal);
+      awaitingResult = true;
+      await new Promise<void>(resolve => { if (signal!.aborted) resolve(); else signal!.addEventListener("abort", () => resolve(), { once: true }); });
+      signal!.throwIfAborted();
+    }
+  }
+  const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new UnconfirmedClient(c), journal });
+  try {
+    const execution = { ...options, model: targetId(target) };
+    const start: any = await provider.dispatch("thread/start", { threadId: "unconfirmed", cwd: f.cwd, instructionMode: "append", options: execution });
+    await provider.dispatch("turn/start", { threadId: "unconfirmed", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ag", input: [{ type: "text", text: "hold" }], options: execution });
+    await until(() => awaitingResult);
+    await provider.dispatch("thread/stop", { threadId: "unconfirmed", providerThreadId: start.providerThreadId, intent: "interrupt", activeTurnId: null });
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/stop")).length, 1);
+    assert.equal((await journal.get("unconfirmed"))?.turn?.state, "accepted");
+    assert.deepEqual(messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.boundary").map(d => d.status), ["interrupted"]);
+    await assert.rejects(provider.dispatch("turn/start", { threadId: "unconfirmed", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ah", input: [{ type: "text", text: "retry" }], options: execution }), /uncertain delivery/);
+    experimental_assembleCapturedThreadEvents(messages, "gas-city");
   } finally { await provider.close(); await f.close(); }
 });
 
@@ -183,21 +312,94 @@ test("GC tmux approval remains an explicit user decision in BB full mode", async
   } finally { await provider.close(); await f.close(); }
 });
 
-test("a fresh session can bootstrap from GC terminal fallback into structured history", async () => {
+test("first input waits through startup and records the full baseline after a suffix-only idle upsert", async () => {
   const f = await fixture(); const messages: any[] = [];
   f.faults.freshHistoryFallback = true;
-  const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal: new Journal(join(f.cwd, "journal")) });
+  const journal = new Journal(join(f.cwd, "journal"));
+  let reached!: () => void; let finish!: () => void;
+  const waiting = new Promise<void>(resolve => { reached = resolve; });
+  const finished = new Promise<void>(resolve => { finish = resolve; });
+  let startup = true;
+  class StartupClient extends GasCityClient {
+    override async *events(path: string, signal: AbortSignal, resume?: string) {
+      if (path.includes("/stream?format=structured") && startup) {
+        startup = false;
+        const session = [...f.sessions.values()][0]!;
+        session.messages = [
+          { id: "startup-user", role: "user", status: "final", blocks: [{ type: "text", text: "GC startup prompt" }] },
+          { id: "startup-answer", role: "assistant", status: "partial", blocks: [{ type: "text", text: "Startup response must not appear in BB" }] },
+        ];
+        yield { event: "structured", data: JSON.stringify(frame(session.id, session.messages, "in_turn")) };
+        reached(); await finished;
+        session.messages[1].status = "final";
+        yield { event: "structured", data: JSON.stringify(frame(session.id, [session.messages[1]], "idle", "upsert")) };
+        return;
+      }
+      yield* super.events(path, signal, resume);
+    }
+  }
+  const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new StartupClient(c), journal });
   try {
     const execution = { ...options, model: targetId(target) };
     const start: any = await provider.dispatch("thread/start", { threadId: "fresh", cwd: f.cwd, instructionMode: "append", options: execution });
-    await provider.dispatch("turn/start", { threadId: "fresh", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ah", input: [{ type: "text", text: "Hello" }], options: execution });
+    provider.handleLine(JSON.stringify({ jsonrpc: "2.0", id: "startup-rpc", method: "turn/start", params: { threadId: "fresh", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ah", input: [{ type: "text", text: "Hello" }], options: execution } }));
+    await waiting;
+    await until(() => messages.some(m => m.id === "startup-rpc"));
+    assert.deepEqual(messages.find(m => m.id === "startup-rpc"), { jsonrpc: "2.0", id: "startup-rpc", result: {} });
+    assert.equal(messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.open").length, 1);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
+    assert.equal((await journal.get("fresh"))?.turn, undefined);
+    finish();
     await until(() => messages.some(m => m.params?.deltas?.some((d: any) => d.kind === "turn.boundary" && d.status === "completed")));
     const text = messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "item.textDelta").map(d => d.text).join("");
     assert.equal(text, "Hello from Gas City");
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
     assert.equal(f.calls.filter(c => c.path.endsWith("/pending")).length, 1);
-  } finally { await provider.close(); await f.close(); }
+    assert.deepEqual((await journal.get("fresh"))?.turn?.baselineMessageIds, ["startup-user", "startup-answer"]);
+  } finally { finish(); await provider.close(); await f.close(); }
 });
+
+for (const failure of ["pending", "deadline", "interrupt", "release"] as const) {
+  test(`first-input readiness ${failure} sends no prompt and leaves no uncertain turn`, async () => {
+    const messages: any[] = [];
+    const f = await fixture(); f.faults.freshHistoryFallback = true;
+    const journal = new Journal(join(f.cwd, "journal"));
+    const deadline = new AbortController();
+    let reached!: () => void;
+    const waiting = new Promise<void>(resolve => { reached = resolve; });
+    class StartupClient extends GasCityClient {
+      override async *events(path: string, signal: AbortSignal, resume?: string) {
+        if (path.includes("/stream?format=structured")) {
+          reached();
+          if (failure === "pending") yield { event: "pending", data: JSON.stringify({ request_id: "startup-approval" }) };
+          else await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
+          return;
+        }
+        yield* super.events(path, signal, resume);
+      }
+    }
+    const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new StartupClient(c), journal, readinessDeadline: () => deadline.signal });
+    try {
+      const execution = { ...options, model: targetId(target) };
+      const start: any = await provider.dispatch("thread/start", { threadId: "not-ready", cwd: f.cwd, instructionMode: "append", options: execution });
+      await provider.dispatch("turn/start", { threadId: "not-ready", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789az", input: [{ type: "text", text: "Hello" }], options: execution });
+      await waiting;
+      if (failure === "deadline") deadline.abort();
+      if (failure === "release" || failure === "interrupt") await provider.dispatch("thread/stop", { threadId: "not-ready", providerThreadId: start.providerThreadId, intent: failure, activeTurnId: null });
+      if (failure === "pending" || failure === "deadline") {
+        await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary"));
+        const boundary = messages.flatMap(m => m.params?.deltas ?? []).find(d => d.kind === "turn.boundary");
+        assert.equal(boundary.status, "failed");
+        assert.match(boundary.error.message, failure === "pending" ? /needs a response/ : /reliable idle transcript.*no prompt/i);
+      } else {
+        assert.deepEqual(messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.boundary").map(d => d.status), failure === "interrupt" ? ["interrupted"] : []);
+      }
+      experimental_assembleCapturedThreadEvents(messages, "gas-city");
+      assert.equal(f.calls.filter(c => c.path.endsWith("/submit") || c.path.endsWith("/stop")).length, 0);
+      assert.equal((await journal.get("not-ready"))?.turn, undefined);
+    } finally { deadline.abort(); await provider.close(); await f.close(); }
+  });
+}
 
 test("the same GC approval ID prompts again on later turns and forwards deny", async () => {
   const f = await fixture(); const messages: any[] = [];
@@ -223,6 +425,7 @@ test("unsupported steering preserves a live turn and never submits the follow-up
     const start: any = await provider.dispatch("thread/start", { threadId: "steer", cwd: f.cwd, instructionMode: "append", options: execution });
     const turn = { threadId: "steer", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "hold" }], clientRequestId: "creq_23456789ae", options: execution };
     await provider.dispatch("turn/start", turn);
+    await until(() => !!provider.sessions.get("steer")?.observation);
     await assert.rejects(provider.dispatch("turn/steer", { ...turn, expectedTurnId: "turn-active" }), (error: any) => error.code === -32601);
     assert.equal(provider.sessions.get("steer")?.busy, true);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
@@ -261,21 +464,24 @@ test("a lost create response recovers the deterministic alias without creating t
 });
 
 
-test("failed initial preflight relinquishes ownership so the same BB thread can retry", async () => {
-  const f = await fixture(); let fail = true;
+test("initial transcript failure closes the accepted turn and permits an explicit retry", async () => {
+  const f = await fixture(); let fail = true; const messages: any[] = [];
   class PreflightClient extends GasCityClient {
     override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
       if (path.includes("/transcript?") && fail) { fail = false; throw new Error("transient preflight failure"); }
       return super.get<T>(path, signal);
     }
   }
-  const provider = new GasCityProvider({ send: () => {}, config: async () => f.config, client: c => new PreflightClient(c), journal: new Journal(join(f.cwd, "journal")) });
+  const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new PreflightClient(c), journal: new Journal(join(f.cwd, "journal")) });
   try {
     const args = { threadId: "retry-preflight", cwd: f.cwd, instructionMode: "append", options: { ...options, model: targetId(target) }, input: [{ type: "text", text: "Hello" }] };
-    await assert.rejects(provider.dispatch("thread/start", args), /transient preflight/);
-    assert.equal(provider.sessions.size, 0);
+    const start: any = await provider.dispatch("thread/start", args);
+    await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary" && d.status === "failed"));
+    assert.match(messages.flatMap(m => m.params?.deltas ?? []).find(d => d.kind === "turn.boundary").error.message, /transient preflight failure.*No prompt was sent/);
+    assert.equal(provider.sessions.size, 1);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
-    await provider.dispatch("thread/start", args);
+    await provider.dispatch("turn/start", { threadId: args.threadId, providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ag", options: args.options, input: args.input });
+    await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary" && d.status === "completed"));
     assert.equal(f.calls.filter(c => c.path.endsWith("/sessions") && c.method === "POST").length, 1);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
   } finally { await provider.close(); await f.close(); }

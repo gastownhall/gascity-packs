@@ -3,9 +3,9 @@ name: BB provider (Gas City 1.4)
 on:
   workflow_dispatch:
   pull_request:
-    paths: ["bb/**", ".github/workflows/bb-provider.yml"]
+    paths: ["bb/**", "registry.toml", ".github/workflows/bb-provider.yml"]
   push:
-    paths: ["bb/**", ".github/workflows/bb-provider.yml"]
+    paths: ["bb/**", "registry.toml", ".github/workflows/bb-provider.yml"]
 
 permissions:
   contents: read
@@ -64,7 +64,9 @@ jobs:
   live-conversations:
     name: Live ${{ matrix.runtime }} conversations (GC ${{ matrix.gc }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Two scopes, each with three bounded turns and agent-resume settlement,
+    # plus dependency setup and preservation/teardown.
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -121,7 +123,7 @@ jobs:
           cd "$RUNNER_TEMP/gc14"
           echo "$GC_SHA256  gascity.tar.gz" | sha256sum --check
           tar --extract --gzip --no-same-owner --file gascity.tar.gz gc
-      - name: Complete two real turns and a tool through BB for global and rig agents
+      - name: Verify real conversations, tool output and agent resume through BB
         env:
           RUNTIME: ${{ matrix.runtime }}
           ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api
