@@ -64,8 +64,11 @@ test, so both helper modes use exec's separate final-answer file.
 The caller's output file receives that answer; `FILE.log` holds the transcript.
 The helper accepts exactly one final standalone `VERDICT: CLEAN` or
 `VERDICT: BLOCK` line. Exit codes are 0 for CLEAN, 1 for BLOCK, 2 for invalid
-verdict/usage; Codex invocation failures retain their exit status. A stale CLEAN
-answer is cleared before each invocation. Commit changes before review.
+verdict/usage; Codex invocation failures retain their exit status and leave the
+answer file empty. A stale CLEAN answer is cleared before each invocation.
+Review mode rejects empty committed deltas and worktrees with staged, modified,
+or untracked files before invoking Codex. Commit changes before review and keep
+prompt/output files outside the reviewed worktree.
 
 Codex QUICK reviews supplement the required Fable adversarial review for
 Codex-built changes. Publishing a PR does not authorize merging it.

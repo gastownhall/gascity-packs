@@ -21,29 +21,40 @@ print('VERDICT: CLEAN')  # A transcript match must never pass the gate.
 sys.exit(int(os.environ.get('CODEX_EXIT', '0')))
 ''')
     binary.chmod(0o755)
-    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
-    subprocess.run(['git', '-C', str(tmp_path), '-c', 'user.name=Gate Test',
+    repo = tmp_path / 'repo'
+    subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+    source = repo / 'source.txt'
+    source.write_text('base\n')
+    subprocess.run(['git', '-C', str(repo), 'add', 'source.txt'], check=True)
+    subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Gate Test',
                     '-c', 'user.email=gate@example.invalid', 'commit',
-                    '--allow-empty', '-qm', 'base'], check=True)
-    subprocess.run(['git', '-C', str(tmp_path), 'branch', 'review-base'], check=True)
-    subprocess.run(['git', '-C', str(tmp_path), '-c', 'user.name=Gate Test',
+                    '-qm', 'base'], check=True)
+    subprocess.run(['git', '-C', str(repo), 'branch', 'review-base'], check=True)
+    source.write_text('delta\n')
+    subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Gate Test',
                     '-c', 'user.email=gate@example.invalid', 'commit',
-                    '--allow-empty', '-qm', 'delta'], check=True)
+                    '-qam', 'delta'], check=True)
     prompt = tmp_path / 'prompt file.txt'
     prompt.write_text('Review a literal `command` and $(touch nope).\nSecond line.')
     output = tmp_path / 'answer file.txt'
     capture = tmp_path / 'capture.json'
 
-    def run(mode='exec', *, answer='VERDICT: CLEAN\n', exit_code=0, extra=()):
+    def run(mode='exec', *, answer='VERDICT: CLEAN\n', exit_code=0, extra=(), dirty=None):
+        if dirty == 'untracked':
+            (repo / 'new.txt').write_text('unreviewed\n')
+        elif dirty:
+            source.write_text('unreviewed\n')
+            if dirty == 'staged':
+                subprocess.run(['git', '-C', str(repo), 'add', 'source.txt'], check=True)
         args = ['exec', str(prompt)] if mode == 'exec' else ['review', '--base', 'review-base']
         result = subprocess.run(
-            ['bash', str(SCRIPT), *args, '-C', str(tmp_path), '--output', str(output), *extra],
+            ['bash', str(SCRIPT), *args, '-C', str(repo), '--output', str(output), *extra],
             input='inherited stdin must not reach Codex', text=True, capture_output=True,
             env={**os.environ, 'PATH': str(tmp_path) + os.pathsep + os.environ['PATH'],
                  'CAPTURE': str(capture), 'ANSWER': answer, 'CODEX_EXIT': str(exit_code)},
             timeout=10,
         )
-        return result, json.loads(capture.read_text()), output
+        return result, json.loads(capture.read_text()) if capture.exists() else None, output
     return run
 
 
@@ -63,8 +74,9 @@ def test_city_astra_invocation_and_stdin(gate, mode):
     assert output.read_text() == 'VERDICT: CLEAN\n'
     if mode == 'review':
         assert 'QUICK code review of committed changes' in args[-1]
-        base = subprocess.check_output(['git', '-C', str(output.parent), 'rev-parse', 'review-base'], text=True).strip()
-        head = subprocess.check_output(['git', '-C', str(output.parent), 'rev-parse', 'HEAD'], text=True).strip()
+        repo = args[args.index('-C') + 1]
+        base = subprocess.check_output(['git', '-C', repo, 'rev-parse', 'review-base'], text=True).strip()
+        head = subprocess.check_output(['git', '-C', repo, 'rev-parse', 'HEAD'], text=True).strip()
         assert base != head
         assert f'git diff {base} {head}' in args[-1]
         assert 'review-base' not in args[-1]
@@ -105,3 +117,18 @@ def test_cli_failure_cannot_pass_or_reuse_stale_verdict(gate):
     result, _, _ = gate(answer='VERDICT: CLEAN\n', exit_code=7)
     assert result.returncode == 7
     assert output.read_text() == ''
+
+
+def test_review_rejects_empty_delta_before_calling_codex(gate):
+    result, call, _ = gate('review', extra=('--base', 'HEAD'))
+    assert result.returncode == 2
+    assert 'nonempty committed delta' in result.stderr
+    assert call is None
+
+
+@pytest.mark.parametrize('dirty', ['untracked', 'modified', 'staged'])
+def test_review_rejects_uncommitted_work_before_calling_codex(gate, dirty):
+    result, call, _ = gate('review', dirty=dirty)
+    assert result.returncode == 2
+    assert 'uncommitted or untracked changes' in result.stderr
+    assert call is None

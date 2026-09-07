@@ -57,7 +57,14 @@ if [[ "$mode" == review ]]; then
   # requested VERDICT line. Use exec with the same committed merge-base delta.
   base_commit=$(git -C "$repo" rev-parse --verify --end-of-options "${base}^{commit}") || fail 'invalid review base'
   merge_base=$(git -C "$repo" merge-base "$base_commit" HEAD) || fail 'no merge base with HEAD'
-  head_commit=$(git -C "$repo" rev-parse --verify HEAD)
+  head_commit=$(git -C "$repo" rev-parse --verify HEAD) || fail 'HEAD must resolve to a commit'
+  worktree_status=$(git -C "$repo" status --porcelain --untracked-files=all) || fail 'cannot inspect worktree'
+  [[ -z "$worktree_status" ]] || fail 'worktree has uncommitted or untracked changes; commit before review'
+  if git -C "$repo" diff --quiet "$merge_base" "$head_commit"; then
+    fail 'review requires a nonempty committed delta'
+  else
+    [[ $? -eq 1 ]] || fail 'cannot inspect review delta'
+  fi
   prompt="QUICK code review of committed changes in this repository. Inspect git diff $merge_base $head_commit and the relevant surrounding code. Review only that delta; the immutable base and head are $merge_base and $head_commit. Report actionable correctness and regression findings."
 else
   [[ -z "$base" ]] || fail '--base is only valid for review'
@@ -66,11 +73,12 @@ else
   prompt=$(cat -- "$prompt_file")
 fi
 [[ -d "$(dirname -- "$output")" ]] || fail 'output directory must exist'
+[[ ! -d "$output" ]] || fail 'output must name a file'
 output="$(cd -- "$(dirname -- "$output")" && pwd)/$(basename -- "$output")"
 answer=$(mktemp "${output}.answer.XXXXXX")
 trap 'rm -f -- "$answer"' EXIT
 # Clear any old answer so a failed run cannot leave a stale CLEAN result.
-: > "$output"
+: > "$output" || fail 'cannot write output'
 args+=(exec --skip-git-repo-check --json --output-last-message "$answer")
 args+=(-- "$prompt"$'\n\n'"$contract")
 result=0
