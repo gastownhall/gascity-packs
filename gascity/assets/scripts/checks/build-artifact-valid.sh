@@ -24,6 +24,7 @@ BEAD_ID="${GC_BEAD_ID:-}"
 [ -n "$BEAD_ID" ] || fail "GC_BEAD_ID is required"
 command -v gc >/dev/null 2>&1 || fail "gc is required on PATH"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required on PATH"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 metadata_value() {
   # metadata_value <json> <key> -> prints metadata[key] or empty
@@ -79,13 +80,30 @@ done
 case "$ARTIFACT_PATH" in
   /*) ;;
   *)
-    [ -n "${GC_WORK_DIR:-}" ] || fail "artifact path $ARTIFACT_PATH from $RESOLVED_KEY is relative and GC_WORK_DIR is unset"
-    ARTIFACT_PATH="$GC_WORK_DIR/$ARTIFACT_PATH"
+    # Formula artifact paths are rig-relative. A producer runs in a disposable
+    # per-bead worktree, so GC_WORK_DIR points at the wrong place whenever the
+    # runtime provides the durable rig root. Controller checks use
+    # GC_BEADS_SCOPE_ROOT on some runtimes, while agent sessions use
+    # GC_RIG_ROOT. Older controllers supply neither but execute the installed
+    # check from <rig>/.gc/scripts/checks, which is another durable root
+    # signal. Do not use that fallback for a source-tree script.
+    ARTIFACT_ROOT="${GC_RIG_ROOT:-${GC_BEADS_SCOPE_ROOT:-${GC_DIR:-}}}"
+    if [ -z "$ARTIFACT_ROOT" ]; then
+      INSTALLED_RIG_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+      if [ -d "$INSTALLED_RIG_ROOT/.gc" ]; then
+        ARTIFACT_ROOT="$INSTALLED_RIG_ROOT"
+      fi
+    fi
+    if [ -n "$ARTIFACT_ROOT" ]; then
+      ARTIFACT_PATH="$ARTIFACT_ROOT/$ARTIFACT_PATH"
+    else
+      [ -n "${GC_WORK_DIR:-}" ] || fail "artifact path $ARTIFACT_PATH from $RESOLVED_KEY is relative and no rig-root environment is set"
+      ARTIFACT_PATH="$GC_WORK_DIR/$ARTIFACT_PATH"
+    fi
     ;;
 esac
 [ -f "$ARTIFACT_PATH" ] || fail "artifact $ARTIFACT_PATH from $RESOLVED_KEY does not exist"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VALIDATOR=""
 for candidate in \
   ${GC_WORK_DIR:+"$GC_WORK_DIR/gascity/assets/scripts/validate_build_artifact.py"} \

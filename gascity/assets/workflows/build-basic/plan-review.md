@@ -14,3 +14,8 @@ If you write a plan-readiness note, record it on the workflow root as
 `gc.build.plan_review_report_path=<path>`. Do not write or overwrite
 `gc.build.review_report_path`; that key is reserved for the later
 build-basic implementation review artifact.
+
+Before closing this step, set the claimed step outcome with
+`gc bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close
+with `gc bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
+`--metadata` or `--set-metadata` to `gc bd close`.

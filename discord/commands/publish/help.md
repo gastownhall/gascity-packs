@@ -9,6 +9,12 @@ Examples:
   gc discord publish --binding room:123456789012345678 --conversation-id 323456789012345678 --trigger 223456789012345678 --body "Reply in thread"
   gc discord publish --binding launch-room:123456789012345678 --source-event-kind discord_human_message --source-ingress-receipt-id in-223456789012345678 --body-file ./reply.txt
   gc discord publish --binding room:123456789012345678 --source-event-kind discord_human_message --source-ingress-receipt-id in-223456789012345678 --source-session corp--sky --body-file ./reply.txt
+  gc discord publish --app ollie --binding room:123456789012345678 --body-file ./reply.txt
+
+`--app <name>` selects a named app binding and its isolated token. If a room
+has more than one named binding and no default binding, an unqualified publish
+fails as ambiguous. `reply-current` inherits the qualified binding from the
+inbound turn and therefore replies as the same bot automatically.
 
 `--conversation-id` overrides the destination channel or thread for this send.
 Use it when the saved room binding is the parent channel but the inbound message

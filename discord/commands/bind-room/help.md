@@ -7,9 +7,14 @@ Examples:
   gc discord bind-room --guild-id 223456789012345678 --enable-ambient-read --allow-untargeted-ambient-delivery 123456789012345678 randy
   gc discord bind-room --guild-id 223456789012345678 --enable-peer-fanout 123456789012345678 corp--sky corp--priya
   gc discord bind-room --guild-id 223456789012345678 --enable-peer-fanout --allow-untargeted-peer-fanout 123456789012345678 corp--sky corp--priya
+  gc discord bind-room --app ollie --guild-id 223456789012345678 123456789012345678 teams.lead
+  gc discord bind-room --app olivia --guild-id 223456789012345678 123456789012345678 teams.pm
 
 This stores the binding under `.gc/services/discord/data/config.json`.
 Use exact permanent session names.
+`--app <name>` binds the room through that named bot. Multiple named apps can
+bind the same room independently; each receives and replies through its own
+Discord identity.
 Direct `bind-room` routing is mutually exclusive with `gc discord enable-room-launch`
 for the same room.
 

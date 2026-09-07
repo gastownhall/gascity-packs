@@ -18,6 +18,7 @@ def render_text(snapshot: dict[str, object]) -> str:
     ingress = snapshot.get("recent_chat_ingress", [])
     publishes = snapshot.get("recent_chat_publishes", [])
     launches = snapshot.get("recent_room_launches", [])
+    gateway_statuses = snapshot.get("gateway_statuses", {})
     lines = [
         "Discord",
         f"  interactions_url: {snapshot.get('interactions_url') or '(not published yet)'}",
@@ -33,8 +34,27 @@ def render_text(snapshot: dict[str, object]) -> str:
         f"  chat_ingress:     {len(ingress)}",
         f"  chat_publishes:   {len(publishes)}",
         "",
-        "Recent Requests:",
+        "Apps:",
     ]
+    app_config = ((config or {}).get("app") or {})
+    named_apps = ((config or {}).get("apps") or {})
+    app_rows = [("default", app_config)] + sorted(named_apps.items())
+    for app_name, item in app_rows:
+        app_gateway = (gateway_statuses or {}).get(app_name, {})
+        lines.append(
+            "  - {app} application_id={application_id} token={token} gateway={gateway} "
+            "routed={routed} ignored={ignored} failed={failed} dropped={dropped}".format(
+                app=app_name,
+                application_id=item.get("application_id", "") or "-",
+                token="present" if item.get("bot_token_present") else "missing",
+                gateway=app_gateway.get("state", "") or "(unknown)",
+                routed=int(app_gateway.get("routed_messages", 0) or 0),
+                ignored=int(app_gateway.get("ignored_messages", 0) or 0),
+                failed=int(app_gateway.get("failed_messages", 0) or 0),
+                dropped=int(app_gateway.get("dropped_messages", 0) or 0),
+            )
+        )
+    lines.extend(["", "Recent Requests:"])
     if not requests:
         lines.append("  (none)")
     else:
@@ -55,8 +75,9 @@ def render_text(snapshot: dict[str, object]) -> str:
     else:
         for item in bindings:
             lines.append(
-                "  - {binding_id} kind={kind} conversation={conversation_id} sessions={sessions}".format(
+                "  - {binding_id} app={app} kind={kind} conversation={conversation_id} sessions={sessions}".format(
                     binding_id=item.get("id", ""),
+                    app=item.get("app", "") or "default",
                     kind=item.get("kind", ""),
                     conversation_id=item.get("conversation_id", ""),
                     sessions=",".join(item.get("session_names", [])),

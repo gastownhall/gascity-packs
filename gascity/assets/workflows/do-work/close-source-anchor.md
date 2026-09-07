@@ -5,6 +5,12 @@ summary evidence are present in that worktree. Write per-item summary to
 `gc.implementation.summary_path` from the preceding implementation step when it
 is present; otherwise use `{{artifact_root}}/task-<source-anchor-id>-summary.md`.
 
+When reading beads with `gc bd show --json`, handle both an object and a
+one-element list before reading metadata. `gc.work_dir` is the launcher rig
+root, not the implementation worktree. If the source anchor `work_dir` is
+missing, equals the launcher root, or points at a worktree without the
+implementation commit, fail this step instead of closing the source anchor.
+
 On success, close only `<source-anchor-id>` with `gc.outcome=pass`. Include the
 verified commit and summary path in the source-anchor close reason. Read the
 source anchor back with `gc bd show <source-anchor-id> --json` and verify

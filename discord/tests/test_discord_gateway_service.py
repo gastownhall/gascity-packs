@@ -22,6 +22,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
+        self.addCleanup(self._restore_environment)
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
         gateway_service.CHANNEL_INFO_CACHE.clear()
         gateway_service.CHANNEL_INFO_FETCH_LOCKS.clear()
@@ -32,7 +33,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         gateway_service.AMBIENT_ROOM_BINDINGS_CACHE["config_signature"] = None
         gateway_service.AMBIENT_ROOM_BINDINGS_CACHE["bindings"] = {}
 
-    def tearDown(self) -> None:
+    def _restore_environment(self) -> None:
         os.environ.clear()
         os.environ.update(self._old_environ)
 
@@ -48,6 +49,53 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
     def test_gateway_requests_message_content_intent(self) -> None:
         self.assertTrue(gateway_service.GATEWAY_INTENTS & (1 << 15))
+
+    def test_build_gateway_workers_creates_one_worker_per_configured_app(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "111", "public_key": "ab" * 32},
+        )
+        config = common.import_app_config(
+            config,
+            {"application_id": "222", "public_key": "cd" * 32},
+            app_name="ollie",
+        )
+        config = common.import_app_config(
+            config,
+            {"application_id": "333", "public_key": "ef" * 32},
+            app_name="olivia",
+        )
+
+        with mock.patch.object(gateway_service, "GATEWAY_WORKER_THREADS", 0):
+            workers = gateway_service.build_gateway_workers(config)
+        self.addCleanup(lambda: [worker.stop() for worker in workers])
+
+        self.assertEqual(workers[0].app_name, "")
+        self.assertEqual({worker.app_name for worker in workers[1:]}, {"ollie", "olivia"})
+        bot_ids = {worker.app_name: worker.current_bot_user_id(config) for worker in workers}
+        self.assertEqual(bot_ids, {"": "111", "ollie": "222", "olivia": "333"})
+        delays = [worker.initial_connect_delay_seconds for worker in workers]
+        self.assertEqual(delays[0], 0)
+        self.assertEqual(delays[1:], [
+            gateway_service.GATEWAY_IDENTIFY_STAGGER_SECONDS,
+            gateway_service.GATEWAY_IDENTIFY_STAGGER_SECONDS * 2,
+        ])
+
+    def test_build_gateway_workers_rejects_duplicate_application_ids_from_config(self) -> None:
+        config = common.normalize_config(
+            {
+                "app": {"application_id": "111", "public_key": "ab" * 32},
+                "apps": {
+                    "ollie": {
+                        "application_id": "111",
+                        "public_key": "cd" * 32,
+                    }
+                },
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "application_id.*more than once"):
+            gateway_service.build_gateway_workers(config)
 
     def test_display_name_from_message_skips_none_strings(self) -> None:
         message = {
@@ -79,7 +127,9 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertIn("kind: discord_human_message", envelope)
         self.assertIn('untrusted_body_json: "hello from discord"', envelope)
         self.assertIn("reply_tool: gc discord reply-current --conversation-id 55 --reply-to 101 --body-file <path>", envelope)
-        self.assertEqual(common.load_chat_ingress("in-101")["status"], "delivered")
+        receipt = common.load_chat_ingress("in-101")
+        self.assertEqual(receipt["status"], "delivered")
+        self.assertEqual(receipt["app"], "")
 
     def test_process_inbound_room_message_targets_only_named_alias(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["sky", "lawrence"], guild_id="1")
@@ -109,6 +159,623 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         receipt = common.load_chat_ingress("in-202")
         self.assertEqual(receipt["delivery"], "targeted")
         self.assertEqual(receipt["mentioned_aliases"], ["sky"])
+
+    def test_named_apps_route_the_same_discord_message_independently(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "999", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        config = common.import_app_config(
+            config,
+            {"application_id": "998", "public_key": "cd" * 32},
+            app_name="olivia",
+        )
+        config = common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            channel_metadata={"channel_type": 0},
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.pm"],
+            guild_id="1",
+            app_name="olivia",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "multi-202",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> <@998> please coordinate",
+            "mentions": [{"id": "999"}, {"id": "998"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={
+                "teams.lead": {"session_name": "teams.lead", "state": "active"},
+                "teams.pm": {"session_name": "teams.pm", "state": "active"},
+            },
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver:
+            lead_outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+            pm_outcome = gateway_service.process_inbound_message(message, bot_user_id="998", app_name="olivia")
+
+        self.assertEqual(lead_outcome["status"], "delivered")
+        self.assertEqual(pm_outcome["status"], "delivered")
+        self.assertEqual([call.args[0] for call in deliver.call_args_list], ["teams.lead", "teams.pm"])
+        lead_receipt = common.load_chat_ingress("in-multi-202-app-ollie")
+        pm_receipt = common.load_chat_ingress("in-multi-202-app-olivia")
+        self.assertEqual(lead_receipt["app"], "ollie")
+        self.assertEqual(pm_receipt["app"], "olivia")
+        self.assertEqual(lead_receipt["binding_id"], "room:22@app:ollie")
+        self.assertEqual(pm_receipt["binding_id"], "room:22@app:olivia")
+
+    def test_named_app_async_submit_failure_cannot_leave_delivered_receipt(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "999", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "async-failure-203",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> please investigate",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+        accepted_response = mock.MagicMock()
+        accepted_response.__enter__.return_value = mock.Mock(
+            read=mock.Mock(
+                return_value=b'{"status":"accepted","request_id":"req-submit","event_cursor":"41"}'
+            )
+        )
+        accepted_response.__enter__.return_value.status = 202
+        accepted_response.__exit__.return_value = False
+        failed_stream = mock.MagicMock()
+        failed_stream.__enter__.return_value = iter(
+            [
+                b"event: request.failed\n",
+                b'data: {"type":"request.failed","payload":{"request_id":"req-other-app","operation":"session.submit","error_code":"submit_failed","error_message":"other app failed"}}\n',
+                b"\n",
+                b"event: request.failed\n",
+                b'data: {"type":"request.failed","payload":{"request_id":"req-submit","operation":"session.submit","error_code":"submit_failed","error_message":"session disappeared"}}\n',
+                b"\n",
+            ]
+        )
+        failed_stream.__exit__.return_value = False
+
+        with mock.patch.dict(
+            os.environ,
+            {"GC_API_BASE_URL": "http://gc.test/v0/city/test"},
+        ), mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"teams.lead": {"session_name": "teams.lead", "state": "active"}},
+        ), mock.patch.object(
+            common.urllib.request,
+            "urlopen",
+            side_effect=[accepted_response, failed_stream],
+        ) as urlopen:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "failed")
+        self.assertEqual(len(urlopen.call_args_list), 2)
+        self.assertEqual(
+            urlopen.call_args_list[1].args[0].full_url,
+            "http://gc.test/v0/city/test/events/stream?after_seq=41",
+        )
+        receipt = common.load_chat_ingress("in-async-failure-203-app-ollie")
+        self.assertEqual(receipt["app"], "ollie")
+        self.assertEqual(receipt["status"], "failed")
+        self.assertEqual(receipt["targets"][0]["status"], "failed")
+        self.assertIn("session.submit failed: submit_failed: session disappeared", receipt["targets"][0]["error"])
+        self.assertEqual(receipt["targets"][0]["terminal_evidence"]["status"], "failed")
+        self.assertEqual(receipt["targets"][0]["terminal_evidence"]["payload"]["error_code"], "submit_failed")
+
+    def test_named_app_gateway_policy_is_evaluated_independently(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "999",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["allowed-guild"],
+                "channel_allowlist": ["22"],
+            },
+            app_name="ollie",
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="blocked-guild",
+            app_name="ollie",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "policy-203",
+            "guild_id": "blocked-guild",
+            "channel_id": "22",
+            "content": "<@999> hello",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "deliver_session_message") as deliver:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "rejected_policy")
+        self.assertEqual(outcome["reason"], "guild_not_allowed")
+        self.assertEqual(common.load_chat_ingress("in-policy-203-app-ollie")["app"], "ollie")
+        deliver.assert_not_called()
+
+    def test_default_app_gateway_chat_uses_the_top_level_policy(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "999",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["allowed-guild"],
+                "channel_allowlist": ["22"],
+            },
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="blocked-guild",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "default-policy-203",
+            "guild_id": "blocked-guild",
+            "channel_id": "22",
+            "content": "<@999> hello",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "deliver_session_message") as deliver:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "rejected_policy")
+        self.assertEqual(outcome["reason"], "guild_not_allowed")
+        self.assertEqual(common.load_chat_ingress("in-default-policy-203")["app"], "")
+        deliver.assert_not_called()
+
+    def test_named_app_rest_recovery_uses_its_own_token(self) -> None:
+        named_token = "ollie-test-token"
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "999", "public_key": "ab" * 32},
+            app_name="ollie",
+            bot_token=named_token,
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "recovery-204",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "discord_api_request",
+            return_value={**message, "content": "<@999> recovered body"},
+        ) as discord_api_request, mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"teams.lead": {"session_name": "teams.lead", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(discord_api_request.call_args.kwargs["bot_token"], named_token)
+
+    def test_named_app_binding_takes_precedence_over_default_room_launcher(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+        config = common.import_app_config(
+            config,
+            {"application_id": "999", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "launcher-isolation-205",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> use the direct binding",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"teams.lead": {"session_name": "teams.lead", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(deliver.call_args.args[0], "teams.lead")
+        self.assertEqual(outcome["receipt"]["binding_id"], "room:22@app:ollie")
+
+    def test_named_app_channel_policy_accepts_thread_under_allowed_parent(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "999",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["1"],
+                "channel_allowlist": ["22"],
+            },
+            app_name="ollie",
+            bot_token="ollie-test-token",
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "thread-policy-206",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "<@999> thread follow-up",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "discord_api_request",
+            return_value={"id": "222", "parent_id": "22", "type": 11},
+        ), mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"teams.lead": {"session_name": "teams.lead", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(outcome["receipt"]["binding_id"], "room:22@app:ollie")
+
+    def test_named_app_channel_policy_accepts_a_direct_thread_binding_under_allowed_parent(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "999",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["1"],
+                "channel_allowlist": ["22"],
+            },
+            app_name="ollie",
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "222",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            channel_metadata={"channel_type": 11, "thread_parent_id": "22"},
+        )
+        message = {
+            "id": "direct-thread-policy-206",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "<@999> direct thread follow-up",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"teams.lead": {"session_name": "teams.lead", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(outcome["receipt"]["binding_id"], "room:222@app:ollie")
+
+    def test_default_gateway_policy_rejects_before_extmsg_routing(self) -> None:
+        common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "999",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["1"],
+                "channel_allowlist": ["22"],
+            },
+        )
+        runtime_state = gateway_service.GatewayRuntimeState()
+        with mock.patch.object(gateway_service, "GATEWAY_WORKER_THREADS", 0):
+            worker = gateway_service.GatewayWorker(runtime_state)
+        self.addCleanup(worker.stop)
+        message = {
+            "id": "extmsg-policy-207",
+            "guild_id": "1",
+            "channel_id": "33",
+            "content": "@sky hello",
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(gateway_service, "_resolve_thread_parent", return_value=""), mock.patch.object(
+            common,
+            "resolve_at_mentions",
+            return_value=["sky"],
+        ) as resolve_at_mentions, mock.patch.object(
+            common,
+            "resolve_mention_targets",
+            return_value=[{"mention": "sky"}],
+        ), mock.patch.object(common, "launch_thread_for_mentions") as launch_thread_for_mentions:
+            worker.handle_gateway_message(message, bot_user_id="999")
+
+        resolve_at_mentions.assert_called_once_with("@sky hello")
+        launch_thread_for_mentions.assert_not_called()
+        receipt = common.load_chat_ingress("in-extmsg-policy-207")
+        self.assertEqual(receipt["status"], "rejected_policy")
+        self.assertEqual(receipt["reason"], "channel_not_allowed")
+        self.assertEqual(receipt["app"], "")
+
+    def test_default_gateway_policy_does_not_turn_bot_messages_into_failures(self) -> None:
+        common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "999",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["1"],
+                "channel_allowlist": ["22"],
+            },
+        )
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "extmsg-bot-policy-208",
+            "guild_id": "1",
+            "channel_id": "33",
+            "content": "automated",
+            "author": {"id": "other-bot", "username": "robot", "bot": True},
+        }
+
+        worker.handle_gateway_message(message, bot_user_id="999")
+
+        self.assertIsNone(common.load_chat_ingress("in-extmsg-bot-policy-208"))
+        self.assertEqual(worker.runtime_state.snapshot()["ignored_messages"], 1)
+
+    def test_default_gateway_policy_does_not_persist_irrelevant_unmentioned_messages(self) -> None:
+        common.import_app_config(
+            common.load_config(),
+            {
+                "application_id": "999",
+                "public_key": "ab" * 32,
+                "guild_allowlist": ["1"],
+                "channel_allowlist": ["22"],
+            },
+        )
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "extmsg-unmentioned-policy-209",
+            "guild_id": "1",
+            "channel_id": "33",
+            "content": "ordinary chatter",
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(gateway_service, "_resolve_thread_parent", return_value=""):
+            worker.handle_gateway_message(message, bot_user_id="999")
+
+        self.assertIsNone(common.load_chat_ingress("in-extmsg-unmentioned-policy-209"))
+        self.assertEqual(worker.runtime_state.snapshot()["ignored_messages"], 1)
+
+    def test_extmsg_prefers_a_direct_bindings_stored_thread_parent(self) -> None:
+        self._configure_discord_app()
+        common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "222",
+            ["randy"],
+            guild_id="1",
+            channel_metadata={"channel_type": 11, "thread_parent_id": "22"},
+        )
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "stored-thread-parent-210",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "@randy still there?",
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(gateway_service, "_resolve_thread_parent") as resolve_thread_parent:
+            handled = worker._record_extmsg_inbound(message, bot_user_id="999")
+
+        self.assertFalse(handled)
+        resolve_thread_parent.assert_not_called()
+
+    def test_default_extmsg_ignores_a_thread_message_aimed_only_at_a_named_bot(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "111", "public_key": "ab" * 32},
+        )
+        common.import_app_config(
+            config,
+            {"application_id": "222", "public_key": "cd" * 32},
+            app_name="ollie",
+        )
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "named-only-thread-211",
+            "guild_id": "1",
+            "channel_id": "2222",
+            "content": "<@222> can you handle this?",
+            "mentions": [{"id": "222"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(gateway_service, "_resolve_thread_parent", return_value="22"), mock.patch.object(
+            common,
+            "resolve_at_mentions",
+            return_value=[],
+        ), mock.patch.object(common, "resolve_nl_agent_mentions", return_value=[]), mock.patch.object(
+            common,
+            "normalize_to_extmsg_message",
+            return_value={"id": "normalized"},
+        ), mock.patch.object(common, "deliver_to_extmsg") as deliver_to_extmsg:
+            handled = worker._record_extmsg_inbound(message, bot_user_id="111")
+
+        self.assertFalse(handled)
+        deliver_to_extmsg.assert_not_called()
+
+    def test_named_ambient_binding_cache_cannot_substitute_default_binding(self) -> None:
+        config = common.set_chat_binding(
+            common.load_config(),
+            "room",
+            "22",
+            ["legacy.session"],
+            guild_id="1",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+            channel_metadata={"channel_type": 0},
+        )
+        config = common.import_app_config(
+            config,
+            {"application_id": "999", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "ambient-cache-207",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> route to Ollie",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={
+                "legacy.session": {"session_name": "legacy.session", "state": "active"},
+                "teams.lead": {"session_name": "teams.lead", "state": "active"},
+            },
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(deliver.call_args.args[0], "teams.lead")
+        self.assertEqual(outcome["receipt"]["binding_id"], "room:22@app:ollie")
+
+    def test_sticky_named_binding_ignores_message_for_another_configured_bot(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "999", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        config = common.import_app_config(
+            config,
+            {"application_id": "998", "public_key": "cd" * 32},
+            app_name="olivia",
+        )
+        config = common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+            channel_metadata={"channel_type": 0},
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.pm"],
+            guild_id="1",
+            app_name="olivia",
+            policy={"ambient_read_enabled": True, "allow_untargeted_ambient_delivery": True},
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "other-bot-208",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> Ollie only",
+            "mentions": [{"id": "999"}],
+            "author": {"id": "u-2", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={
+                "teams.lead": {"session_name": "teams.lead", "state": "active"},
+                "teams.pm": {"session_name": "teams.pm", "state": "active"},
+            },
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver:
+            lead_outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+            pm_outcome = gateway_service.process_inbound_message(message, bot_user_id="998", app_name="olivia")
+
+        self.assertEqual(lead_outcome["status"], "delivered")
+        self.assertEqual(pm_outcome, {
+            "status": "ignored",
+            "reason": "different_configured_bot_mentioned",
+            "ingress_id": "in-other-bot-208-app-olivia",
+        })
+        self.assertEqual([call.args[0] for call in deliver.call_args_list], ["teams.lead"])
 
     def test_process_inbound_room_message_matches_session_names_case_insensitively(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["Sky"], guild_id="1")
@@ -1718,6 +2385,260 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(outcome["status"], "delivered")
         deliver_session_message.assert_called_once()
 
+    def test_process_inbound_message_persists_async_correlation_when_result_is_unknown(self) -> None:
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        message = {
+            "id": "917",
+            "channel_id": "55",
+            "content": "hello from discord",
+            "author": {"id": "u-17", "username": "alice"},
+        }
+
+        def unknown_after_acceptance(*args: object, **kwargs: object) -> dict[str, object]:
+            kwargs["on_async_accepted"](
+                {
+                    "http_status": 202,
+                    "request_id": "req-17",
+                    "event_cursor": "42",
+                    "intent": "follow_up",
+                    "response": {"status": "accepted", "request_id": "req-17", "event_cursor": "42"},
+                }
+            )
+            raise common.GCAPIResultUnknown("event stream closed")
+
+        with mock.patch.object(common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "active"}}), mock.patch.object(
+            common,
+            "deliver_session_message",
+            side_effect=unknown_after_acceptance,
+        ):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "pending")
+        receipt = common.load_chat_ingress("in-917")
+        assert receipt is not None
+        self.assertEqual(receipt["delivery_protocol_version"], 2)
+        self.assertEqual(receipt["targets"][0]["status"], "awaiting_result")
+        self.assertEqual(receipt["targets"][0]["request_id"], "req-17")
+        self.assertEqual(receipt["targets"][0]["event_cursor"], "42")
+
+    def test_recover_pending_ingress_resumes_original_async_request_without_posting(self) -> None:
+        common.atomic_write_json(
+            common.chat_ingress_path("in-919-app-ollie"),
+            {
+                "ingress_id": "in-919-app-ollie",
+                "app": "ollie",
+                "status": "pending",
+                "delivery_protocol_version": 2,
+                "targets": [
+                    {
+                        "session_name": "teams.lead",
+                        "status": "awaiting_result",
+                        "request_id": "req-19",
+                        "event_cursor": "51",
+                        "intent": "follow_up",
+                        "response": {"status": "accepted", "request_id": "req-19", "event_cursor": "51"},
+                    }
+                ],
+                "created_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+            },
+        )
+        terminal = {"request_id": "req-19", "session_id": "session-19", "queued": True}
+
+        with mock.patch.object(
+            common,
+            "resume_session_message_delivery",
+            return_value=terminal,
+        ) as resume_session_message_delivery, mock.patch.object(
+            common,
+            "deliver_session_message",
+        ) as deliver_session_message:
+            recovered = gateway_service.recover_pending_ingress_receipts(
+                bot_user_id="999",
+                app_name="ollie",
+                cancel_event=threading.Event(),
+            )
+
+        self.assertEqual(recovered, ["in-919-app-ollie"])
+        deliver_session_message.assert_not_called()
+        resume_session_message_delivery.assert_called_once_with(
+            "req-19",
+            "51",
+            intent="follow_up",
+            timeout=common.GC_API_ASYNC_RESULT_TIMEOUT_SECONDS,
+            cancel_event=mock.ANY,
+        )
+        receipt = common.load_chat_ingress("in-919-app-ollie")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "delivered")
+        self.assertEqual(receipt["targets"][0]["status"], "delivered")
+        self.assertEqual(receipt["targets"][0]["terminal_evidence"], {"status": "succeeded", "payload": terminal})
+
+    def test_recover_pending_ingress_does_not_retain_or_repost_pre_submission_body(self) -> None:
+        common.atomic_write_json(
+            common.chat_ingress_path("in-921-app-ollie"),
+            {
+                "ingress_id": "in-921-app-ollie",
+                "app": "ollie",
+                "status": "pending",
+                "delivery_protocol_version": 2,
+                "targets": [
+                    {
+                        "session_name": "teams.lead",
+                        "status": "pending",
+                        "intent": "follow_up",
+                        "idempotency_key": "ingress:in-921-app-ollie:target:teams.lead",
+                    }
+                ],
+                "created_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+            },
+        )
+
+        with mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted"},
+        ) as deliver_session_message:
+            recovered = gateway_service.recover_pending_ingress_receipts(
+                bot_user_id="999",
+                app_name="ollie",
+                cancel_event=threading.Event(),
+            )
+
+        self.assertEqual(recovered, ["in-921-app-ollie"])
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-921-app-ollie")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "delivery_unknown")
+        self.assertEqual(receipt["targets"][0]["status"], "delivery_unknown")
+        self.assertEqual(receipt["targets"][0]["reason"], "delivery_payload_not_retained")
+        self.assertNotIn("envelope", receipt["targets"][0])
+
+    def test_recover_pending_ingress_quarantines_legacy_receipt_without_async_correlation(self) -> None:
+        common.atomic_write_json(
+            common.chat_ingress_path("in-920-app-ollie"),
+            {
+                "ingress_id": "in-920-app-ollie",
+                "app": "ollie",
+                "status": "pending",
+                "targets": [{"session_name": "teams.lead", "status": "pending"}],
+                "created_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+            },
+        )
+
+        with mock.patch.object(common, "resume_session_message_delivery") as resume_session_message_delivery, mock.patch.object(
+            common,
+            "deliver_session_message",
+        ) as deliver_session_message:
+            recovered = gateway_service.recover_pending_ingress_receipts(
+                bot_user_id="999",
+                app_name="ollie",
+                cancel_event=threading.Event(),
+            )
+
+        self.assertEqual(recovered, ["in-920-app-ollie"])
+        resume_session_message_delivery.assert_not_called()
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-920-app-ollie")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "delivery_unknown")
+        self.assertEqual(receipt["targets"][0]["status"], "delivery_unknown")
+        self.assertEqual(receipt["targets"][0]["reason"], "missing_async_correlation")
+
+    def test_recovery_applies_missing_room_launch_thread_routing_side_effect(self) -> None:
+        common.atomic_write_json(
+            common.chat_ingress_path("in-922-app-ollie"),
+            {
+                "ingress_id": "in-922-app-ollie",
+                "app": "ollie",
+                "status": "delivered",
+                "delivery_protocol_version": 2,
+                "route_kind": "room_launch_thread",
+                "launch_id": "room-launch:thread-922",
+                "qualified_handle": "corp/priya",
+                "targets": [{"session_name": "teams.priya", "status": "delivered"}],
+                "created_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+            },
+        )
+
+        with mock.patch.object(
+            common,
+            "set_room_launch_last_addressed",
+            return_value={"launch_id": "room-launch:thread-922"},
+        ) as set_room_launch_last_addressed:
+            recovered = gateway_service.recover_pending_ingress_receipts(
+                bot_user_id="999",
+                app_name="ollie",
+                cancel_event=threading.Event(),
+            )
+
+        self.assertEqual(recovered, ["in-922-app-ollie"])
+        set_room_launch_last_addressed.assert_called_once_with(
+            "room-launch:thread-922",
+            "corp/priya",
+            delivery_order=mock.ANY,
+        )
+        receipt = common.load_chat_ingress("in-922-app-ollie")
+        assert receipt is not None
+        self.assertTrue(receipt["routing_state_applied_at"])
+
+    def test_recovery_does_not_replay_routing_state_for_legacy_delivered_receipt(self) -> None:
+        common.atomic_write_json(
+            common.chat_ingress_path("in-923-app-ollie"),
+            {
+                "ingress_id": "in-923-app-ollie",
+                "app": "ollie",
+                "status": "delivered",
+                "route_kind": "room_launch_thread",
+                "launch_id": "room-launch:thread-923",
+                "qualified_handle": "corp/priya",
+                "targets": [{"session_name": "teams.priya", "status": "delivered"}],
+                "created_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+            },
+        )
+
+        with mock.patch.object(common, "set_room_launch_last_addressed") as set_room_launch_last_addressed:
+            recovered = gateway_service.recover_pending_ingress_receipts(
+                bot_user_id="999",
+                app_name="ollie",
+                cancel_event=threading.Event(),
+            )
+
+        self.assertEqual(recovered, [])
+        set_room_launch_last_addressed.assert_not_called()
+
+    def test_process_inbound_message_keeps_fresh_pending_receipt_as_duplicate(self) -> None:
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        now = common.utcnow()
+        common.atomic_write_json(
+            common.chat_ingress_path("in-918"),
+            {
+                "ingress_id": "in-918",
+                "status": "pending",
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        message = {
+            "id": "918",
+            "channel_id": "55",
+            "content": "hello from discord",
+            "author": {"id": "u-18", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "deliver_session_message") as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "duplicate")
+        deliver_session_message.assert_not_called()
+        receipt = common.load_chat_ingress("in-918")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "pending")
+
     def test_process_inbound_message_records_unreadable_claim_conflict(self) -> None:
         path = common.chat_ingress_path("in-910")
         pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -1738,6 +2659,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         assert receipt is not None
         self.assertEqual(receipt["status"], "failed_claim_conflict")
         self.assertEqual(receipt["reason"], "ingress_claim_unreadable")
+        self.assertEqual(receipt["app"], "")
 
     def test_failed_claim_conflict_receipt_retries_after_backoff(self) -> None:
         common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
@@ -1769,6 +2691,7 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         receipt = common.load_chat_ingress("in-915")
         assert receipt is not None
         self.assertEqual(receipt["reason"], "retry_after_failed_claim_conflict")
+        self.assertEqual(receipt["app"], "")
 
     def test_rejected_shutting_down_receipt_retries_immediately(self) -> None:
         common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
@@ -2007,19 +2930,83 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertIs(lock_a, gateway_service.channel_info_fetch_lock("222"))
         self.assertIsNot(lock_a, lock_b)
 
-    def test_worker_stop_drains_queued_messages_before_exit(self) -> None:
+    def test_worker_stop_rejects_queued_messages_before_exit(self) -> None:
         runtime_state = gateway_service.GatewayRuntimeState()
-        worker = gateway_service.GatewayWorker(runtime_state)
+        with mock.patch.object(gateway_service, "GATEWAY_WORKER_THREADS", 1):
+            worker = gateway_service.GatewayWorker(runtime_state)
         self.addCleanup(lambda: worker.stop() if not worker.stop_event.is_set() else None)
 
         handled: list[str] = []
-        with mock.patch.object(worker, "handle_gateway_message", side_effect=lambda message, bot_user_id: handled.append(str(message.get("id", "")))):
+        active_started = threading.Event()
+
+        def handle_until_stopped(message: dict[str, object], bot_user_id: str) -> None:
+            del bot_user_id
+            handled.append(str(message.get("id", "")))
+            active_started.set()
+            worker.stop_event.wait(timeout=1)
+
+        with mock.patch.object(worker, "handle_gateway_message", side_effect=handle_until_stopped):
+            worker.dispatch_gateway_message({"id": "1000", "channel_id": "55", "author": {"id": "u-1000"}}, "999")
+            self.assertTrue(active_started.wait(timeout=1))
             worker.dispatch_gateway_message({"id": "1001", "channel_id": "55", "author": {"id": "u-1001"}}, "999")
             worker.stop()
 
-        self.assertEqual(handled, ["1001"])
+        self.assertEqual(handled, ["1000"])
         self.assertTrue(worker.stop_event.is_set())
         self.assertTrue(all(not thread.is_alive() for thread in worker.worker_threads))
+        receipt = common.load_chat_ingress("in-1001")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "rejected_shutting_down")
+        self.assertEqual(receipt["reason"], "service_shutting_down")
+
+    def test_named_worker_starts_app_scoped_pending_recovery(self) -> None:
+        runtime_state = gateway_service.GatewayRuntimeState("ollie")
+        with mock.patch.object(gateway_service, "GATEWAY_NAMED_WORKER_THREADS", 0):
+            worker = gateway_service.GatewayWorker(runtime_state, "ollie")
+        self.addCleanup(worker.stop)
+        recovered = threading.Event()
+
+        def recover_once(**kwargs: object) -> list[str]:
+            recovered.set()
+            worker.stop_event.set()
+            return []
+
+        with mock.patch.object(
+            gateway_service,
+            "recover_pending_ingress_receipts",
+            side_effect=recover_once,
+        ) as recover_pending_ingress_receipts:
+            worker.start_pending_recovery("999")
+            self.assertTrue(recovered.wait(timeout=1))
+            assert worker.recovery_thread is not None
+            worker.recovery_thread.join(timeout=1)
+
+        recover_pending_ingress_receipts.assert_called_once_with(
+            bot_user_id="999",
+            app_name="ollie",
+            cancel_event=worker.stop_event,
+        )
+
+    def test_handle_gateway_message_passes_worker_stop_event_to_delivery(self) -> None:
+        runtime_state = gateway_service.GatewayRuntimeState("ollie")
+        with mock.patch.object(gateway_service, "GATEWAY_NAMED_WORKER_THREADS", 0):
+            worker = gateway_service.GatewayWorker(runtime_state, "ollie")
+        self.addCleanup(worker.stop)
+        message = {"id": "1003", "channel_id": "55", "author": {"id": "u-1003"}}
+
+        with mock.patch.object(worker, "_record_extmsg_inbound", return_value=False), mock.patch.object(
+            gateway_service,
+            "process_inbound_message",
+            return_value={"status": "duplicate", "receipt": {}},
+        ) as process_inbound_message:
+            worker.handle_gateway_message(message, "999")
+
+        process_inbound_message.assert_called_once_with(
+            message,
+            "999",
+            "ollie",
+            cancel_event=worker.stop_event,
+        )
 
     def test_dispatch_gateway_message_persists_shutting_down_receipt(self) -> None:
         runtime_state = gateway_service.GatewayRuntimeState()
@@ -2046,6 +3033,38 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertTrue(worker.stop_event.is_set())
         self.assertTrue(all(not thread.is_alive() for thread in worker.worker_threads))
 
+    def test_worker_stop_is_bounded_when_consumer_ignores_cancellation(self) -> None:
+        runtime_state = gateway_service.GatewayRuntimeState()
+        with mock.patch.object(gateway_service, "GATEWAY_WORKER_THREADS", 1):
+            worker = gateway_service.GatewayWorker(runtime_state)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def block_delivery(message: dict[str, object], bot_user_id: str) -> None:
+            del message, bot_user_id
+            entered.set()
+            release.wait(timeout=2)
+
+        with mock.patch.object(worker, "handle_gateway_message", side_effect=block_delivery), mock.patch.object(
+            gateway_service,
+            "GATEWAY_WORKER_STOP_TIMEOUT_SECONDS",
+            0.05,
+        ):
+            worker.dispatch_gateway_message({"id": "1004", "channel_id": "55", "author": {"id": "u-1004"}}, "999")
+            self.assertTrue(entered.wait(timeout=1))
+            stop_thread = threading.Thread(target=worker.stop)
+            stop_thread.start()
+            stop_thread.join(timeout=0.25)
+            returned_before_release = not stop_thread.is_alive()
+            release.set()
+            stop_thread.join(timeout=1)
+
+        self.assertTrue(returned_before_release)
+        self.assertEqual(runtime_state.snapshot()["state"], "stop_timeout")
+        self.assertTrue(all(thread.daemon for thread in worker.worker_threads))
+        for thread in worker.worker_threads:
+            thread.join(timeout=1)
+
     def test_utc_age_seconds_uses_utc_epoch_conversion(self) -> None:
         if not hasattr(time, "tzset"):
             self.skipTest("tzset not available on this platform")
@@ -2067,6 +3086,17 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
         self.assertGreaterEqual(age, gateway_service.STALE_PROCESSING_RECEIPT_SECONDS)
         self.assertLess(age, gateway_service.STALE_PROCESSING_RECEIPT_SECONDS + 30)
+
+    def test_processing_receipt_staleness_exceeds_max_async_delivery_wait(self) -> None:
+        max_delivery_wait = (
+            common.GC_API_REQUEST_TIMEOUT_SECONDS
+            + common.GC_API_ASYNC_RESULT_TIMEOUT_SECONDS
+        )
+
+        self.assertGreaterEqual(
+            gateway_service.STALE_PROCESSING_RECEIPT_SECONDS - max_delivery_wait,
+            60,
+        )
 
     def test_gateway_connect_url_preserves_resume_host_and_adds_required_query_params(self) -> None:
         worker = object.__new__(gateway_service.GatewayWorker)
@@ -2092,15 +3122,49 @@ class DiscordGatewayServiceTests(unittest.TestCase):
 
     def test_current_bot_user_id_prefers_last_known_id_after_resume(self) -> None:
         worker = object.__new__(gateway_service.GatewayWorker)
+        worker.app_name = ""
 
         bot_user_id = gateway_service.GatewayWorker.current_bot_user_id(
             worker,
-            {"app": {"application_id": "app-1"}},
+            {"app": {"application_id": "bot-9"}},
             None,
             "bot-9",
         )
 
         self.assertEqual(bot_user_id, "bot-9")
+
+    def test_named_gateway_rejects_resumed_identity_mismatched_to_configured_app(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "222", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        worker = object.__new__(gateway_service.GatewayWorker)
+        worker.app_name = "ollie"
+
+        with self.assertRaisesRegex(RuntimeError, "authenticated as.*configured application_id"):
+            gateway_service.GatewayWorker.current_bot_user_id(
+                worker,
+                config,
+                None,
+                "999",
+            )
+
+    def test_named_gateway_rejects_ready_identity_mismatched_to_configured_app(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "222", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        worker = object.__new__(gateway_service.GatewayWorker)
+        worker.app_name = "ollie"
+
+        with self.assertRaisesRegex(RuntimeError, "authenticated as.*configured application_id"):
+            gateway_service.GatewayWorker.current_bot_user_id(
+                worker,
+                config,
+                {"user": {"id": "999"}},
+            )
 
     def test_gateway_health_status_code_requires_gc_api_when_ready(self) -> None:
         self.assertEqual(
@@ -2131,6 +3195,239 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             gateway_service.gateway_health_status_code(state, gc_api_reachable=True),
             gateway_service.HTTPStatus.NO_CONTENT,
         )
+
+    def test_gateway_status_payload_preserves_legacy_default_fields_and_exposes_all_apps(self) -> None:
+        states = {
+            "default": {"state": "stopped", "routed_messages": 4},
+            "ollie": {"state": "ready", "routed_messages": 7},
+        }
+
+        payload = gateway_service.gateway_status_payload(
+            states,
+            configured_app_names={"default", "ollie"},
+            gc_api_reachable=True,
+        )
+
+        self.assertEqual(payload["state"], "stopped")
+        self.assertEqual(payload["routed_messages"], 4)
+        self.assertEqual(payload["gateway_statuses"], states)
+        self.assertEqual(payload["aggregate"]["state"], "degraded")
+        self.assertEqual(payload["aggregate"]["configured_apps"], 2)
+        self.assertEqual(payload["aggregate"]["ready_apps"], 1)
+
+    def test_aggregate_health_is_available_when_default_fails_but_named_app_is_ready(self) -> None:
+        states = {
+            "default": {"state": "stopped"},
+            "ollie": {"state": "ready"},
+        }
+
+        self.assertEqual(
+            gateway_service.aggregate_gateway_health_status_code(
+                states,
+                configured_app_names={"default", "ollie"},
+                gc_api_reachable=True,
+            ),
+            gateway_service.HTTPStatus.NO_CONTENT,
+        )
+
+    def test_aggregate_health_is_available_when_named_app_fails_but_default_is_ready(self) -> None:
+        states = {
+            "default": {"state": "ready"},
+            "ollie": {"state": "stopped"},
+        }
+
+        self.assertEqual(
+            gateway_service.aggregate_gateway_health_status_code(
+                states,
+                configured_app_names={"default", "ollie"},
+                gc_api_reachable=True,
+            ),
+            gateway_service.HTTPStatus.NO_CONTENT,
+        )
+
+    def test_reconnecting_named_worker_does_not_stop_ready_default_worker(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "111"},
+            bot_token="default-test-token",
+        )
+        config = common.import_app_config(
+            config,
+            {"application_id": "222"},
+            app_name="ollie",
+            bot_token="ollie-test-token",
+        )
+
+        with mock.patch.object(gateway_service, "GATEWAY_WORKER_THREADS", 0), mock.patch.object(
+            gateway_service,
+            "GATEWAY_NAMED_WORKER_THREADS",
+            0,
+        ), mock.patch.object(gateway_service, "GATEWAY_IDENTIFY_STAGGER_SECONDS", 0):
+            workers = gateway_service.build_gateway_workers(config)
+        workers_by_app = {worker.app_name: worker for worker in workers}
+        default_worker = workers_by_app[""]
+        named_worker = workers_by_app["ollie"]
+
+        ready_frames = iter(
+            [
+                {"op": 10, "d": {"heartbeat_interval": 60_000}},
+                {
+                    "op": 0,
+                    "t": "READY",
+                    "s": 1,
+                    "d": {"user": {"id": "111"}, "session_id": "default-session"},
+                },
+            ]
+        )
+        ready_closed = threading.Event()
+
+        def receive_ready_frame(timeout: float | None = None) -> dict[str, object]:
+            del timeout
+            try:
+                return next(ready_frames)
+            except StopIteration:
+                ready_closed.wait()
+                raise gateway_service.WebSocketClosed("websocket closed")
+
+        ready_websocket = mock.Mock()
+        ready_websocket.recv_event.side_effect = receive_ready_frame
+        ready_websocket.close.side_effect = ready_closed.set
+
+        named_attempts = 0
+        named_retried = threading.Event()
+
+        def fail_named_gateway_url(_bot_token: str = "") -> str:
+            nonlocal named_attempts
+            named_attempts += 1
+            if named_attempts >= 2:
+                named_retried.set()
+            raise RuntimeError("named gateway unavailable")
+
+        top_level_threads = [
+            threading.Thread(target=default_worker.run_forever, name="discord-gateway-test-default"),
+            threading.Thread(target=named_worker.run_forever, name="discord-gateway-test-ollie"),
+        ]
+        with mock.patch.object(default_worker, "gateway_url", return_value="wss://ready.example"), mock.patch.object(
+            named_worker,
+            "gateway_url",
+            side_effect=fail_named_gateway_url,
+        ), mock.patch.object(default_worker, "prune_runtime_data"), mock.patch.object(
+            gateway_service,
+            "GatewayWebSocket",
+            return_value=ready_websocket,
+        ), mock.patch.object(gateway_service, "RECONNECT_BASE_DELAY_SECONDS", 0.01), mock.patch.object(
+            gateway_service,
+            "RECONNECT_MAX_DELAY_SECONDS",
+            0.01,
+        ), mock.patch.object(gateway_service.random, "uniform", return_value=1.0):
+            try:
+                for thread in top_level_threads:
+                    thread.start()
+
+                self.assertTrue(named_retried.wait(2.0), "named gateway did not retry")
+                deadline = time.monotonic() + 2.0
+                while True:
+                    default_state = default_worker.runtime_state.snapshot()
+                    named_state = named_worker.runtime_state.snapshot()
+                    if default_state["state"] == "ready" and named_state["state"] == "reconnecting":
+                        break
+                    if time.monotonic() >= deadline:
+                        self.fail(f"gateway states did not converge: default={default_state}, named={named_state}")
+                    time.sleep(0.01)
+
+                self.assertTrue(top_level_threads[0].is_alive())
+                self.assertTrue(top_level_threads[1].is_alive())
+                self.assertFalse(default_worker.stop_event.is_set())
+                self.assertFalse(named_worker.stop_event.is_set())
+                self.assertTrue(default_state["connected"])
+                self.assertIn("named gateway unavailable", named_state["last_error"])
+            finally:
+                for worker in workers:
+                    worker.request_stop()
+                for thread in top_level_threads:
+                    if thread.ident is not None:
+                        thread.join(timeout=2.0)
+                for worker in workers:
+                    worker.stop()
+
+        self.assertTrue(all(not thread.is_alive() for thread in top_level_threads))
+
+    def test_aggregate_health_fails_when_all_configured_apps_are_stale(self) -> None:
+        states = {
+            "default": {"state": "reconnecting", "last_ready_epoch": 1},
+            "ollie": {"state": "stopped"},
+        }
+
+        self.assertEqual(
+            gateway_service.aggregate_gateway_health_status_code(
+                states,
+                configured_app_names={"default", "ollie"},
+                gc_api_reachable=True,
+            ),
+            gateway_service.HTTPStatus.SERVICE_UNAVAILABLE,
+        )
+
+    def test_aggregate_health_requires_shared_gc_api(self) -> None:
+        states = {
+            "default": {"state": "ready"},
+            "ollie": {"state": "ready"},
+        }
+
+        self.assertEqual(
+            gateway_service.aggregate_gateway_health_status_code(
+                states,
+                configured_app_names={"default", "ollie"},
+                gc_api_reachable=False,
+            ),
+            gateway_service.HTTPStatus.SERVICE_UNAVAILABLE,
+        )
+
+    def test_aggregate_status_ignores_an_unconfigured_default_worker(self) -> None:
+        states = {
+            "default": {"state": "waiting_for_config"},
+            "ollie": {"state": "ready"},
+        }
+
+        aggregate = gateway_service.aggregate_gateway_status(
+            states,
+            configured_app_names={"ollie"},
+            gc_api_reachable=True,
+        )
+
+        self.assertEqual(aggregate["state"], "ready")
+        self.assertEqual(aggregate["configured_apps"], 1)
+        self.assertEqual(aggregate["ready_apps"], 1)
+
+    def test_aggregate_health_allows_all_apps_to_provision(self) -> None:
+        states = {
+            "default": {"state": "starting"},
+            "ollie": {"state": "waiting_for_config"},
+        }
+
+        self.assertEqual(
+            gateway_service.aggregate_gateway_health_status_code(
+                states,
+                configured_app_names={"default", "ollie"},
+                gc_api_reachable=True,
+            ),
+            gateway_service.HTTPStatus.NO_CONTENT,
+        )
+
+    def test_named_gateway_uses_one_consumer_while_default_keeps_legacy_pool(self) -> None:
+        default_state = gateway_service.GatewayRuntimeState()
+        named_state = gateway_service.GatewayRuntimeState("ollie")
+        with mock.patch.object(gateway_service, "GATEWAY_WORKER_THREADS", 3), mock.patch.object(
+            gateway_service,
+            "GATEWAY_NAMED_WORKER_THREADS",
+            1,
+        ):
+            default_worker = gateway_service.GatewayWorker(default_state)
+            named_worker = gateway_service.GatewayWorker(named_state, "ollie")
+        self.addCleanup(default_worker.stop)
+        self.addCleanup(named_worker.stop)
+
+        self.assertEqual(len(default_worker.worker_threads), 3)
+        self.assertEqual(len(named_worker.worker_threads), 1)
 
     def test_gateway_websocket_recv_event_reassembles_fragmented_text_frames(self) -> None:
         ws = object.__new__(gateway_service.GatewayWebSocket)
