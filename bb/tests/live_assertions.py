@@ -304,9 +304,22 @@ class LiveAssertions:
                     raise AcceptanceFailure("GC session identity missing or changed between turns")
                 messages = [row.get("data", {}).get("item", {}) for row in scoped
                             if row.get("type") == "item/completed"]
-                answers = [item.get("text", "").strip() for item in messages
+                answers = [item.get("text", "") for item in messages
                            if item.get("type") == "agentMessage"]
-                if not answers or not answers[-1].splitlines() or answers[-1].splitlines()[-1] != expected:
+                answer = answers[-1] if answers else ""
+                answer_lines = answer.strip().splitlines()
+                if not answer_lines or answer_lines[-1] != expected:
+                    # These reports are public CI artifacts. Keep model output,
+                    # expected markers and the private memory word out of them.
+                    tokens = expected.split()
+                    encoded = answer.encode()
+                    self.report["marker_mismatch"] = {
+                        "output_bytes": len(encoded),
+                        "output_sha256": hashlib.sha256(encoded).hexdigest(),
+                        "first_expected_token_present": bool(tokens) and tokens[0] in answer,
+                        "last_expected_token_present": bool(tokens) and tokens[-1] in answer,
+                        "expected_line_present": expected in answer_lines,
+                    }
                     raise AcceptanceFailure("Fresh final assistant message did not match the requested markers")
                 output = self.command("thread", "output", self.thread_id, "--json")
                 output_lines = output.get("output", "").strip().splitlines()

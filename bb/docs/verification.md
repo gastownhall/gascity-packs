@@ -113,8 +113,9 @@ certification and supervisor restart/recovery remain separate release requiremen
 branch protection to require `BB end-to-end acceptance` if merges must be
 enforced by GitHub; defining a workflow alone does not change branch protection.
 
-To run the same live gate locally, provide inference credentials explicitly
-and the released binaries on `PATH` (Node 22, tmux and the selected runtime):
+To run the same live gate locally, use Python 3.11 or later, provide inference
+credentials explicitly, and put the released binaries on `PATH` (Node 22, tmux
+and the selected runtime):
 
 ```sh
 python3 -u bb/tests/live_acceptance.py \

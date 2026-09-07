@@ -317,3 +317,20 @@ exposed this separate GC compatibility bug. Both polling and streaming dialog
 paths require an exact-menu correction under the existing auto-accept policy.
 The role and underscore transcript lookup are independently verified. Evidence:
 `live8-final-dowk6nvn/claude/underscore/report.json`, GC session `gc-493`.
+
+The Codex correction uses token-count/context records already loaded by the
+full parser, without an additional file scan; the bounded telemetry tail reader
+retains its existing purpose. Both failed `.8` tool turns were independently
+reviewed against complete prompt hashes, native logs, exact request-result
+events, successful tools and artifact bytes. After the `.9` build loaded,
+recovery initially rejected an active BB lease without changing the receipt.
+The operator then released those two idle BB threads and ran reviewed recovery
+once each. Both accepted receipts became completed with their original request
+IDs; no prompt was resent. Evidence: `live9-released-recovery-km2q2sgn/report.json`.
+
+Pack commit `d8d10fb` runs actual inference in CI with the newly configured Codex
+key. Both build/CLI jobs pass. Both Claude jobs reach real conversations but
+fail the final-answer marker assertion in both scopes. Safe diagnostics now
+record only output size/hash and marker-presence booleans on that failure;
+model output and private words remain excluded. The assertion stays strict.
+Run: https://github.com/gastownhall/gascity-packs/actions/runs/34073849774.

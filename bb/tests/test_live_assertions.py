@@ -2,6 +2,7 @@
 
 import copy
 import hashlib
+import json
 import unittest
 from unittest.mock import patch
 
@@ -59,7 +60,7 @@ class AcceptanceGuardTests(unittest.TestCase):
         harness.timeout = 1
         harness.thread_id = "test-thread"
         harness.model = "exact-agent"
-        harness.report = {"turns": []}
+        harness.report = kwargs.pop("report", {"turns": []})
         output = kwargs.pop("output", "TEST_MARKER")
 
         def command(*args):
@@ -69,7 +70,7 @@ class AcceptanceGuardTests(unittest.TestCase):
                 patch.object(harness, "progress"), \
                 patch("live_assertions.time.monotonic", side_effect=[0, 0, 0, 2]), \
                 patch("live_assertions.time.sleep"):
-            return harness.await_turn(after=kwargs.pop("after", 0), expected="TEST_MARKER", **kwargs)
+            return harness.await_turn(after=kwargs.pop("after", 0), expected=kwargs.pop("expected", "TEST_MARKER"), **kwargs)
 
     def test_correlated_completed_response_is_accepted(self):
         self.assertEqual(self.run_guard(completed_events()), (5, "test-gc-session"))
@@ -87,6 +88,42 @@ class AcceptanceGuardTests(unittest.TestCase):
                 events[3]["data"]["item"]["text"] = text
                 with self.assertRaisesRegex(AcceptanceFailure, "Fresh final assistant"):
                     self.run_guard(events, output=text)
+
+    def test_marker_mismatch_reports_only_safe_diagnostics_and_still_fails(self):
+        expected = "BEGIN_private END_private"
+        for text, first, last, line in [
+            ("  private-answer café\n", False, False, False),
+            ("BEGIN_private private-answer", True, False, False),
+            ("private-answer END_private", False, True, False),
+            (expected + "\nprivate-answer", True, True, True),
+        ]:
+            with self.subTest(text=text):
+                events = completed_events()
+                events[3]["data"]["item"]["text"] = text
+                report = {"turns": []}
+                with self.assertRaisesRegex(AcceptanceFailure, "Fresh final assistant"):
+                    self.run_guard(events, expected=expected, report=report)
+                self.assertEqual(report["turns"], [])
+                self.assertEqual(report["marker_mismatch"], {
+                    "output_bytes": len(text.encode()),
+                    "output_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                    "first_expected_token_present": first,
+                    "last_expected_token_present": last,
+                    "expected_line_present": line,
+                })
+                serialized = json.dumps(report)
+                for private in (text, expected, "private-answer", "BEGIN_private", "END_private"):
+                    self.assertNotIn(private, serialized)
+
+    def test_missing_answer_reports_empty_output_without_passing(self):
+        events = completed_events()
+        del events[3]
+        report = {"turns": []}
+        with self.assertRaisesRegex(AcceptanceFailure, "Fresh final assistant"):
+            self.run_guard(events, report=report)
+        self.assertEqual(report["marker_mismatch"]["output_bytes"], 0)
+        self.assertEqual(report["marker_mismatch"]["output_sha256"], hashlib.sha256(b"").hexdigest())
+        self.assertFalse(report["marker_mismatch"]["expected_line_present"])
 
     def test_marker_without_terminal_event_times_out(self):
         with self.assertRaisesRegex(AcceptanceFailure, "No verified BB completion"):

@@ -63,3 +63,16 @@ The branch push deliberately bypasses only the pre-push invocation of
 suite is already recorded red, including an expired-waiver failure reproduced
 on unchanged v1.4.1. The normal repository hook setting is unchanged. Focused
 checks above passed; the full GC baseline remains a release risk, not a pass.
+
+Commit `55cfa4acc` fixes the subsequent Codex full-history metadata and Claude
+workspace-trust failures. Full worker/sessionlog suites pass (14.935 s / 6.538 s),
+including append/reload and original invocation-attribution regressions. A
+scratch-only replay of both preserved native rollouts kept all 29/31 earlier
+entries unchanged when they grew to 38/40 entries (0.978 s). Trust-menu
+regressions and the full runtime suite pass (25.397 s); additional focused
+startup tests prove an unknown trust menu stops both launch passes before
+further input. Normal pre-commit lint, generators and vet pass.
+
+The draft GC PR's evidence watchdog also fails because its workflow calls
+`scripts/prwatchdog/cmd/watchdog`, which is absent from this v1.4.1-based source.
+That is a concrete CI failure, not model-backed acceptance evidence.
