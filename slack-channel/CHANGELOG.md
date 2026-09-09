@@ -25,10 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     identically to the HTTP path.
   - Supervised reconnect with capped exponential backoff (1s → 30s), a 30s
     keepalive ping as the liveness check, and an overlap on Slack's advance
-    disconnect warning so in-flight envelopes are still acked.
-  - Events from a workspace other than `SLACK_WORKSPACE_ID` are dropped
-    rather than filed under the wrong account or matched against another
-    workspace's channel bindings.
+    disconnect warning so in-flight envelopes are still acked. The backoff
+    floor is restored only once a connection has lasted 30s, so a server
+    that accepts a connection and drops it immediately — or the
+    connection-limit churn two adapters sharing one app token produce —
+    escalates the delay instead of redialling at the floor forever.
   - Dialled through Go's default HTTP client, so `HTTPS_PROXY`/`NO_PROXY`
     are honoured.
   - **Interactivity is not carried over Socket Mode.** Tier 2 ships
@@ -41,8 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The adapter now depends on `github.com/coder/websocket` v1.8.15, which
-  has no dependencies of its own. The HTTP transport is unchanged and still
-  verifies request signatures exactly as before.
+  has no dependencies of its own. The HTTP transport still verifies request
+  signatures exactly as before.
+- **Events carrying another workspace's `team_id` are now dropped on both
+  transports**, at the shared `routeEvent` funnel. Previously the HTTP path
+  accepted them: a request signature proves only that Slack sent the event
+  for this app, not that it came from this workspace, so an app installed
+  in a second workspace had that workspace's messages filed under
+  `SLACK_WORKSPACE_ID` and matched against this workspace's channel
+  bindings. An absent `team_id` is still accepted — Slack sends one on
+  every `event_callback`.
 
 ## [0.1.0] — Tier 2
 

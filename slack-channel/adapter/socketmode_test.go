@@ -342,27 +342,6 @@ func TestPumpSocketStopsOnContextCancel(t *testing.T) {
 	}
 }
 
-func TestHandleSocketEnvelopeDropsForeignWorkspace(t *testing.T) {
-	gc, inbound := gcStub(t)
-	srv := newTestServer(t)
-	srv.cfg.gcAPIBase = gc.URL
-
-	var env socketEnvelope
-	if err := json.Unmarshal(appMentionEnvelope(t, "env-3", "T_OTHER", "<@U0BOT> hi"), &env); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	// Every bridged message is stamped with cfg.workspaceID as its account
-	// id, so an event from another workspace would be filed under the wrong
-	// account. Socket Mode has no signature to catch it — this check does.
-	srv.handleSocketEnvelope(env)
-
-	select {
-	case msg := <-inbound:
-		t.Fatalf("bridged an event from a foreign workspace: %+v", msg)
-	case <-time.After(250 * time.Millisecond):
-	}
-}
-
 func TestHandleSocketEnvelopeIgnoresNonEventTypes(t *testing.T) {
 	gc, inbound := gcStub(t)
 	srv := newTestServer(t)
@@ -547,6 +526,38 @@ func TestPumpSocketSurvivesIdleConnection(t *testing.T) {
 	}
 }
 
+// TestPumpSocketTearsDownWedgedConnection is the other half of the liveness
+// design, and the half that needed the injectable interval: a connection Slack
+// has stopped answering must be abandoned. TestKeepaliveClosesWedgedConnection
+// calls keepaliveSocket directly, so it stays green if pumpSocket never starts
+// one; this drives the production wiring instead.
+func TestPumpSocketTearsDownWedgedConnection(t *testing.T) {
+	srv := newTestServer(t)
+	srv.cfg.gcAPIBase = "http://127.0.0.1:1"
+	srv.timings.pingInterval = time.Millisecond
+	// Reads block forever, as a wedged connection does: only the keepalive can
+	// end this pump.
+	conn := &scriptedConn{blockAfterScript: true, pingErr: errors.New("no pong")}
+
+	done := make(chan error, 1)
+	go func() { done <- srv.pumpSocket(context.Background(), conn, nil) }()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("pumpSocket reported a clean end for a wedged connection")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("pumpSocket read forever from a connection Slack had stopped answering")
+	}
+	conn.mu.Lock()
+	closed := conn.closed
+	conn.mu.Unlock()
+	if !closed {
+		t.Error("wedged connection was left open")
+	}
+}
+
 func TestKeepaliveClosesWedgedConnection(t *testing.T) {
 	conn := &scriptedConn{blockAfterScript: true, pingErr: errors.New("no pong")}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -608,5 +619,206 @@ func TestPumpSocketWarnsBeforeDraining(t *testing.T) {
 	// Slack's early warning. A repeat warning is not a second reconnect.
 	if warnings != 1 {
 		t.Errorf("onWarning fired %d times, want exactly 1", warnings)
+	}
+}
+
+// TestPumpSocketBoundsDrain pins the drain bound. The existing drain test ends
+// because its scripted frames run out and Read returns io.EOF, so it never
+// exercises the timer; here Read never returns on its own, which leaves the
+// AfterFunc as the only way out.
+func TestPumpSocketBoundsDrain(t *testing.T) {
+	gc, _ := gcStub(t)
+	srv := newTestServer(t)
+	srv.cfg.gcAPIBase = gc.URL
+	srv.timings.drainGrace = 25 * time.Millisecond
+	conn := &scriptedConn{
+		frames:           [][]byte{[]byte(`{"type":"disconnect","reason":"warning"}`)},
+		blockAfterScript: true,
+	}
+
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() { done <- srv.pumpSocket(context.Background(), conn, nil) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("drain ended with err = %v, want nil (an elapsed drain is expected, not a failure)", err)
+		}
+		if elapsed := time.Since(start); elapsed < srv.timings.drainGrace {
+			t.Errorf("drain ended after %s, before the %s grace — in-flight envelopes lose their ack window", elapsed, srv.timings.drainGrace)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("a warned connection whose close never landed drained past %s and would linger beside its replacement", srv.timings.drainGrace)
+	}
+}
+
+// TestDefaultSocketTimingsMatchConstants pins the production timer set to
+// literal durations rather than to the constants it is built from. Every other
+// test in this section injects scaled-down timings, so without this pin a
+// production interval could drift — or be zeroed — with the whole suite green.
+// Changing a timer here is fine; it just has to be visible in the diff.
+func TestDefaultSocketTimingsMatchConstants(t *testing.T) {
+	want := socketTimings{
+		pingInterval: 30 * time.Second,
+		drainGrace:   10 * time.Second,
+		backoffMin:   1 * time.Second,
+		backoffMax:   30 * time.Second,
+		minLifetime:  30 * time.Second,
+	}
+	if got := defaultSocketTimings(); got != want {
+		t.Errorf("defaultSocketTimings() = %+v, want %+v", got, want)
+	}
+	// newServer must wire the production set: a zero-valued timings field would
+	// give a 0s ping interval and an unpaced reconnect with every unit test
+	// above still green, because they all set their own.
+	if got := newTestServer(t).timings; got != want {
+		t.Errorf("newServer timings = %+v, want %+v", got, want)
+	}
+}
+
+func TestSettleBackoffResetsOnlyAfterMinLifetime(t *testing.T) {
+	tm := socketTimings{backoffMin: time.Second, backoffMax: 30 * time.Second, minLifetime: 30 * time.Second}
+	for _, tc := range []struct {
+		name     string
+		backoff  time.Duration
+		lifetime time.Duration
+		want     time.Duration
+	}{
+		// A connection that proved the endpoint healthy earns its successor
+		// the floor again — this is the ordinary Slack refresh.
+		{"outlived the minimum", 8 * time.Second, 30 * time.Second, time.Second},
+		{"long-lived", 30 * time.Second, time.Hour, time.Second},
+		// Dial-OK then instant death is the case a reset-on-establishment
+		// misreads as health, redialling at the floor forever.
+		{"died immediately", 8 * time.Second, 0, 8 * time.Second},
+		{"just short of the minimum", 8 * time.Second, 29 * time.Second, 8 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := settleBackoff(tc.backoff, tc.lifetime, tm); got != tc.want {
+				t.Errorf("settleBackoff(%s, %s) = %s, want %s", tc.backoff, tc.lifetime, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNextBackoffDoublesToCap(t *testing.T) {
+	tm := socketTimings{backoffMin: time.Second, backoffMax: 30 * time.Second}
+	for _, tc := range []struct{ in, want time.Duration }{
+		{time.Second, 2 * time.Second},
+		{8 * time.Second, 16 * time.Second},
+		{16 * time.Second, 30 * time.Second}, // 32s clamped
+		{30 * time.Second, 30 * time.Second},
+	} {
+		if got := nextBackoff(tc.in, tm); got != tc.want {
+			t.Errorf("nextBackoff(%s) = %s, want %s", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestRunSocketModePacesWarnedReconnect drives the supervisor over a real
+// transport against a server that warns every connection the moment it opens —
+// the shape two adapters sharing one app token produce as they displace each
+// other. That path used to redial at network speed, one apps.connections.open
+// plus handshake per cycle, because it was the only reconnect arm with no
+// delay and because backoff reset on every successful dial.
+func TestRunSocketModePacesWarnedReconnect(t *testing.T) {
+	var mu sync.Mutex
+	var dials []time.Time
+	stop := make(chan struct{})
+	dialed := make(chan struct{}, 16)
+
+	wsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		dials = append(dials, time.Now())
+		mu.Unlock()
+		select {
+		case dialed <- struct{}{}:
+		default:
+		}
+
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = c.CloseNow() }()
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		if err := c.Write(ctx, websocket.MessageText, []byte(`{"type":"hello"}`)); err != nil {
+			return
+		}
+		if err := c.Write(ctx, websocket.MessageText, []byte(`{"type":"disconnect","reason":"link_disabled"}`)); err != nil {
+			return
+		}
+		// Hold the connection open. If it ended here, the supervisor could take
+		// its `done` arm instead of the warned arm — both are paced now, so the
+		// test would pass without ever measuring the path it is about.
+		select {
+		case <-stop:
+		case <-ctx.Done():
+		}
+	}))
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"url":"ws` + strings.TrimPrefix(wsSrv.URL, "http") + `"}`))
+	}))
+
+	srv := newTestServer(t)
+	srv.cfg.gcAPIBase = "http://127.0.0.1:1"
+	srv.cfg.slackAPIBase = apiSrv.URL
+	srv.cfg.appToken = "xapp-1-A-abc"
+	srv.timings = socketTimings{
+		backoffMin: 40 * time.Millisecond,
+		backoffMax: 5 * time.Second,
+		// No connection here reaches minLifetime, so each successor must carry
+		// the escalating delay: this is what distinguishes pacing from a reset
+		// on every dial.
+		minLifetime: time.Hour,
+		// Neither timer should fire during the test; the connections are held
+		// open by the server, not ended by a keepalive or an elapsed drain.
+		pingInterval: time.Hour,
+		drainGrace:   time.Hour,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Unwind inside out: release the handlers, stop the supervisor redialling,
+	// then close the servers, so nothing touches t after this test returns.
+	defer wsSrv.Close()
+	defer apiSrv.Close()
+	defer cancel()
+	defer close(stop)
+
+	go func() { _ = srv.runSocketMode(ctx) }()
+
+	const wantDials = 4
+	for i := 0; i < wantDials; i++ {
+		select {
+		case <-dialed:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("only %d of %d dials arrived", i, wantDials)
+		}
+	}
+
+	mu.Lock()
+	got := append([]time.Time(nil), dials...)
+	mu.Unlock()
+	if len(got) < wantDials {
+		t.Fatalf("recorded %d dials, want %d", len(got), wantDials)
+	}
+
+	gaps := make([]time.Duration, 0, len(got)-1)
+	for i := 1; i < len(got); i++ {
+		gaps = append(gaps, got[i].Sub(got[i-1]))
+	}
+	for i, gap := range gaps {
+		if gap < srv.timings.backoffMin {
+			t.Errorf("redial %d came %s after the previous one, inside the %s floor: gaps=%v", i+1, gap, srv.timings.backoffMin, gaps)
+		}
+	}
+	// Doubling from a 40ms floor gives ~40ms, ~80ms, ~160ms. A backoff that
+	// reset on every dial would hold every gap near the floor, so requiring
+	// the last one to exceed 3x it is what pins the escalation.
+	if last := gaps[len(gaps)-1]; last < 3*srv.timings.backoffMin {
+		t.Errorf("last redial gap %s did not escalate past 3x the %s floor: gaps=%v", last, srv.timings.backoffMin, gaps)
 	}
 }

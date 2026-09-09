@@ -25,12 +25,16 @@ Flags:
   --thread-current  Thread under the latest inbound message. Mutually
                     exclusive with --reply-to.
   --conversation-id Assert which conversation the reply is for. Optional and
-                    redundant — the target is always the session's latest
-                    inbound — but if given it must match, so a stale reply
-                    fails loudly instead of landing in the wrong channel.
-                    Accepted for parity with slack-full and discord, whose
-                    reply-current take the same flag; gc's injected reply
-                    instruction passes it.
+                    redundant — the target is the session's current reply
+                    target (its latest inbound, or its single channel
+                    binding before any inbound) — but if given it must
+                    match, so a stale reply fails loudly instead of landing
+                    in the wrong channel.
+                    Same flag name as slack-full and discord, but not the
+                    same semantics: there it retargets the reply to that
+                    conversation, here it only asserts the one already
+                    resolved. Accepted so gc's injected reply instruction,
+                    which passes it, works across tiers.
   --reply-to        Slack message ts to thread under.
   --idempotency-key Caller-supplied key to dedupe retries. When omitted, the
                     adapter derives a deterministic key from the resolved

@@ -46,9 +46,9 @@ schema = 2
 # collide with a slack-mini or slack-full install. Per the tiering design,
 # run exactly one Slack tier per city regardless.
 #
-# Secrets (SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_WORKSPACE_ID),
-# GC_CITY_NAME, and GC_CITY_PATH are inherited from the service environment
-# at start. See README.md "Configure".
+# Secrets (SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_APP_TOKEN,
+# SLACK_WORKSPACE_ID), GC_CITY_NAME, and GC_CITY_PATH are inherited from the
+# service environment at start. See README.md "Configure".
 
 [[service]]
 name = "slack-channel"

@@ -45,7 +45,7 @@ flags.
 
 ## Install
 
-## Choose a transport
+### Choose a transport
 
 Inbound messages reach the adapter one of two ways. Pick one before you
 create the app — the choice is baked into the app manifest.
@@ -244,6 +244,14 @@ understanding before you install:
   it). Treat the token as a secret, scope it to one workspace, and rotate it
   by hand if it is exposed. Enable rotation in the Slack app settings if your
   deployment policy requires it.
+- **Events from another workspace are dropped, on both transports.** Neither
+  transport establishes which workspace an event came from: Socket Mode has
+  no signature at all, and an HTTP request signature proves only that Slack
+  sent the event *for this app*, not that it came *from this team*. An app
+  installed in a second workspace would otherwise have that workspace's
+  messages filed under `SLACK_WORKSPACE_ID` and matched against this
+  workspace's channel bindings, so an event whose `team_id` is set and does
+  not match is dropped with a log line. Run one workspace per install.
 - **Internal verb listener is loopback / dev-only.** When the adapter is
   *not* run as a gc `proxy_process` service (`GC_SERVICE_SOCKET` unset), the
   verb endpoints are served over plain TCP on `127.0.0.1:8776`

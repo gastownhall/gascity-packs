@@ -44,6 +44,26 @@ func newInboundCollector(t *testing.T, s *server) *inboundCollector {
 	return c
 }
 
+// count returns how many deliveries have landed so far, safely against the
+// goroutine handleSlackEvents routes in.
+func (c *inboundCollector) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.all)
+}
+
+// awaitCount waits up to timeout for the collector to reach want deliveries,
+// returning what it actually saw.
+func (c *inboundCollector) awaitCount(want int, timeout time.Duration) int {
+	deadline := time.Now().Add(timeout)
+	for {
+		if got := c.count(); got >= want || time.Now().After(deadline) {
+			return got
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 func routeMessage(s *server, ev slackMessageEvent) {
 	raw, _ := json.Marshal(ev)
 	s.routeEvent(slackEventEnvelope{Type: "event_callback", Event: raw})
@@ -167,6 +187,82 @@ func TestRouteEventDrops(t *testing.T) {
 				t.Errorf("%s: expected drop, but a delivery was made", tc.name)
 			}
 		})
+	}
+}
+
+// TestRouteEventDropsForeignWorkspace pins the foreign-workspace drop at
+// routeEvent, the funnel both transports feed. Neither transport establishes
+// which workspace an event came from — Socket Mode has no signature, and the
+// HTTP path's HMAC proves only that Slack sent it for this app — so a guard on
+// one transport leaves the other open. Both arms send the same event payload;
+// the local-team arm is the control that proves a drop is the guard firing and
+// not the event simply going nowhere.
+func TestRouteEventDropsForeignWorkspace(t *testing.T) {
+	srv := newTestServer(t)
+	c := newInboundCollector(t, srv)
+
+	// The app_mention fallback delivers to the default inbound target from any
+	// unbound channel, so an un-dropped event here is always a delivery. Both
+	// arms carry the identical payload: the socket frame's payload is
+	// byte-for-byte the body Slack would have POSTed.
+	frameFor := func(teamID string) socketEnvelope {
+		var env socketEnvelope
+		if err := json.Unmarshal(appMentionEnvelope(t, "env-fw", teamID, "<@U0BOT> hi"), &env); err != nil {
+			t.Fatalf("unmarshal socket frame: %v", err)
+		}
+		return env
+	}
+
+	overSocket := func(t *testing.T, teamID string) {
+		t.Helper()
+		srv.handleSocketEnvelope(frameFor(teamID))
+	}
+
+	overHTTP := func(t *testing.T, teamID string) {
+		t.Helper()
+		body := []byte(frameFor(teamID).Payload)
+		ts := strconv.FormatInt(time.Now().Unix(), 10)
+		req := httptest.NewRequest(http.MethodPost, "/slack/events", strings.NewReader(string(body)))
+		req.Header.Set("X-Slack-Request-Timestamp", ts)
+		req.Header.Set("X-Slack-Signature", signSlack(srv.cfg.signingSecret, ts, body))
+		rec := httptest.NewRecorder()
+		srv.handleSlackEvents()(rec, req)
+		// A valid signature: Slack is satisfied, which is exactly why the
+		// signature cannot be what decides the workspace question.
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		send func(*testing.T, string)
+	}{
+		{"socket path", overSocket},
+		{"http path", overHTTP},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := c.count()
+
+			tc.send(t, "T_OTHER")
+			if got := c.awaitCount(before+1, 250*time.Millisecond); got != before {
+				t.Errorf("delivered %d event(s) from a foreign workspace", got-before)
+			}
+
+			tc.send(t, srv.cfg.workspaceID)
+			if got := c.awaitCount(before+1, 5*time.Second); got != before+1 {
+				t.Errorf("local-workspace event delivered %d times, want 1 — the guard is dropping everything", got-before)
+			}
+		})
+	}
+
+	// Slack sends team_id on every event_callback, so an absent one only
+	// occurs in hand-built payloads and must not be dropped; the rest of this
+	// file's routeEvent tests rely on it.
+	before := c.count()
+	routeMessage(srv, slackMessageEvent{Type: "app_mention", User: "U9", Text: "<@U0BOT> hi", Channel: "C9", TS: "1700.9"})
+	if got := c.count(); got != before+1 {
+		t.Errorf("absent team_id delivered %d times, want 1", got-before)
 	}
 }
 

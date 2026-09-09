@@ -65,9 +65,10 @@ func (s *server) handleSlackEvents() http.HandlerFunc {
 //   - A plain message with no binding and no alias → dropped (Tier 2 does
 //     not firehose every channel message at the mayor).
 //
-// Bot, system, and edited messages are dropped to avoid echo loops.
+// Bot, system, and edited messages are dropped to avoid echo loops, as are
+// events carrying another workspace's team_id.
 func (s *server) routeEvent(env slackEventEnvelope) {
-	if env.Type != "event_callback" || len(env.Event) == 0 {
+	if !s.admitEvent(env) {
 		return
 	}
 	var msg slackMessageEvent
@@ -125,6 +126,40 @@ func (s *server) routeEvent(env slackEventEnvelope) {
 		}(sid, text)
 	}
 	wg.Wait()
+}
+
+// admitEvent reports whether an event envelope should be routed at all. Both
+// checks are transport-independent, which is why they live at the funnel
+// rather than in either transport.
+//
+// slack-mini keeps the same two checks inline at the top of bridgeEvent. They
+// are extracted here because Tier 2's funnel does considerably more below
+// them — bindings, aliases, the app_mention fallback, and the fan-out — and
+// the guard must not push that body past its complexity budget. Extracting
+// the admission tests rather than the routing arms keeps the diff against
+// mini's bridgeEvent readable: the guard is still the first thing either
+// funnel does.
+func (s *server) admitEvent(env slackEventEnvelope) bool {
+	if env.Type != "event_callback" || len(env.Event) == 0 {
+		return false
+	}
+	// Drop events from another workspace. Neither transport establishes which
+	// workspace an event belongs to — Socket Mode has no signature at all, and
+	// the HTTP path's HMAC proves only that Slack sent it for this app, not
+	// that it came from this team — yet every delivery below is stamped with
+	// cfg.workspaceID as its account id, and a channel id from a second
+	// workspace can collide with a binding belonging to this one. An app
+	// installed in a second workspace would therefore file that workspace's
+	// messages under this one. The guard sits here, at the funnel both
+	// transports feed, so neither can be missed.
+	//
+	// An absent team_id is allowed through: Slack sends one on every
+	// event_callback, so this only affects hand-built payloads.
+	if env.TeamID != "" && env.TeamID != s.cfg.workspaceID {
+		log.Printf("dropping event from unexpected team %s (want %s)", env.TeamID, s.cfg.workspaceID)
+		return false
+	}
+	return true
 }
 
 // deliverInbound POSTs one extmsg inbound addressed to target and records
