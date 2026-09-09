@@ -446,7 +446,7 @@ test_boot_wisp_queries_pin_include_infra() {
     # burn never runs and each cycle pours a fresh wisp while its predecessor
     # leaks. Boot shipped with the bare form on all three sites one commit
     # after the witness fix, so scope this per-agent rather than widening the
-    # witness test: a pack-wide assertion is red either way (measured 10/21 at
+    # witness test: a pack-wide assertion is red either way (measured 11/22 at
     # this commit) because the deacon and refinery sites are still bare and
     # tracked separately in #252.
     total=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
@@ -458,7 +458,7 @@ test_boot_wisp_queries_pin_include_infra() {
     # owns the contract, so the count is a floor that catches a deleted query
     # site, not a cardinality pin that a legitimate fourth query would break.
     [[ "$total" -ge 3 ]] ||
-        fail "expected at least 3 boot --type=molecule wisp queries (5 at this commit: 2 prompt + 3 formula), found $total"
+        fail "expected at least 3 boot --type=molecule wisp queries (6 at this commit: 3 prompt + 3 formula), found $total"
     [[ "$flagged" -eq "$total" ]] ||
         fail "boot --type=molecule wisp queries must pass --include-infra ($flagged/$total do)"
 }
@@ -539,6 +539,81 @@ test_boot_deacon_observation_query_sees_wisps_tier() {
         [[ "$unflagged" -eq 0 ]] ||
             fail "$name deacon-observation queries must pass --include-infra ($unflagged do not)"
     done
+}
+
+test_boot_open_wisps_reconcile_pins_tier_flags() {
+    local asset name live bad total
+
+    # The tier census cannot protect these two lines, and they are the ones that
+    # matter most: the OPEN_WISPS reconcile is the only leg enforcing the
+    # exactly-one-open-wisp invariant, so reverting it to the bare form IS the
+    # leak. That revert drops --type=molecule and --include-infra together, so
+    # the line leaves the census numerator and denominator at once (6/6 -> 5/5)
+    # and the -ge floor absorbs the loss: whole suite green, while at runtime the
+    # query returns [], the surplus burn never runs, and every cycle pours
+    # without ever burning.
+    #
+    # Assert every matching line rather than "at least one". A grep -q form goes
+    # green as soon as one good query exists, so a blind OPEN_WISPS query added
+    # beside a good one would read as covered -- the same addition shape the
+    # bare-burn and deacon-observation guards above exist to catch. The three
+    # flags are matched independently, so a legitimate flag reorder stays green.
+    for asset in "$GASTOWN/agents/boot/prompt.template.md" \
+                 "$GASTOWN/formulas/mol-boot-patrol.toml"; do
+        name=$(basename "$asset")
+
+        # || true is load-bearing: the suite runs under set -euo pipefail, so an
+        # unguarded grep would kill the run with no diagnostic on exactly the
+        # deletion arm the floor below exists to report.
+        #
+        # Commented-out lines are dropped before counting. The tier census above
+        # greps raw lines, so disabling a query with a leading # still reads as
+        # covered there; measured, that arm is green. Stripping them closes the
+        # shape in both directions -- a commented-out good query now falls
+        # through to the floor instead of passing, and a commented-out bad one
+        # no longer raises a failure over dead text.
+        live=$({ grep -- 'OPEN_WISPS=\$(gc bd list' "$asset" || true; } |
+            awk '!/^[[:space:]]*#/')
+
+        # NF guards both counts: printf on an empty $live still emits one blank
+        # line, which would otherwise read as a live query and mask deletion.
+        bad=$(printf '%s\n' "$live" |
+            awk 'NF && !(/--status=open/ && /--type=molecule/ && /--include-infra/)' |
+            wc -l)
+        [[ "$bad" -eq 0 ]] ||
+            fail "$name: OPEN_WISPS reconcile queries must pass --status=open --type=molecule --include-infra ($bad do not)"
+
+        # The floor is not optional: an every-line assertion is vacuously green
+        # once the line is gone, so without it deletion passes.
+        total=$(printf '%s\n' "$live" | awk 'NF' | wc -l)
+        [[ "$total" -ge 1 ]] ||
+            fail "$name: OPEN_WISPS reconcile query missing entirely"
+    done
+}
+
+test_boot_startup_claims_its_wisp() {
+    local prompt formula
+
+    prompt="$GASTOWN/agents/boot/prompt.template.md"
+    formula="$GASTOWN/formulas/mol-boot-patrol.toml"
+
+    # Pour and assign both leave the wisp open, while Step 1's assigned-work
+    # query and the CURRENT_WISP fallback in next-iteration both filter on
+    # --status=in_progress. Without the claim neither can ever resolve: the burn
+    # arm is unreachable, the "could not resolve current wisp" diagnostic prints
+    # on every healthy cycle, and each cycle re-pours. Nothing else in the loop
+    # sets in_progress -- gc exports GC_BEAD_ID only into ralph check scripts and
+    # boot has no hook-claim block -- so this line is the whole lifecycle.
+    grep -qF 'gc bd update "$NEW_WISP" --status=in_progress' "$prompt" ||
+        fail "boot prompt startup must claim the wisp --status=in_progress after pour+assign"
+    grep -qF 'gc bd update $WISP --status=in_progress' "$formula" ||
+        fail "mol-boot-patrol startup contract must document the --status=in_progress claim"
+
+    # The reuse leg is the other half: next-iteration deliberately leaves the
+    # successor assigned and open, so a startup that pours unconditionally
+    # duplicates it every recycle and leans on the surplus burn to clean up.
+    grep -q -- 'NEW_WISP=\$(gc bd list .*--status=open .*--include-infra' "$prompt" ||
+        fail "boot prompt startup must reuse an assigned open wisp before pouring"
 }
 
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed() {
@@ -629,6 +704,8 @@ test_witness_handoff_recovery_is_guarded_and_fail_closed
 test_boot_wisp_queries_pin_include_infra
 test_boot_patrol_burn_resolves_current_wisp
 test_boot_deacon_observation_query_sees_wisps_tier
+test_boot_open_wisps_reconcile_pins_tier_flags
+test_boot_startup_claims_its_wisp
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 
 echo "gastown pack asset tests passed"
