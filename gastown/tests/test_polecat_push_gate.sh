@@ -18,11 +18,15 @@
 #      reported "no key" on a ledger serving metadata as a JSON string and the
 #      EXPLICIT auto_push=false opt-out silently stopped firing (gci-to0l).
 #
-# Properties 1-4 assert what the gate SAYS. The last block runs it: the gate's
-# bash is lifted out of the shipped step and executed against stubbed `gc` and
-# `git`, so what is tested is the text an agent reads at pour time, never a
-# retyped copy. "The words are all present" is a weaker claim than "it does not
-# push" for a gate whose failure mode is a push to a customer estate.
+# Properties 1-4 assert what the gate SAYS. Two later blocks RUN it — one per
+# gate in this step, the push gate and the branch-content gate: each one's bash
+# is lifted out of the shipped step and executed against stubbed `gc` and `git`,
+# so what is tested is the text an agent reads at pour time, never a retyped
+# copy. "The words are all present" is a weaker claim than "it does not push"
+# for a gate whose failure mode is a push to a customer estate — and a weaker
+# claim than "it does not hand off" for one whose failure mode is a phantom
+# handoff. Words-only guards are blind to edits that ADD, which is how a gate
+# gets disarmed with every literal still pinned and present.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -185,9 +189,33 @@ if 'error("auto_push value is outside the vocabulary")' not in body:
 # Every halt hands the bead back the same way. A halt that forgets one of these
 # leaves the bead assigned and routed, and the next sweep treats it as ordinary
 # mergeable work — a publish-without-approval bug, worse than the one being fixed.
-for marker in ("branch_ready=true", 'gc.routed_to=""', '--assignee=""', "--status=open"):
-    if body.count(marker) < 3:
-        problems.append("halt marker not written by all three halts: %s" % marker)
+#
+# The count is pinned, not floored, for the same reason the halt_reason count
+# above is. A floor of 3 was exact while three halts wrote these markers; the
+# branch-content halt then padded `--assignee=""` to 4 and the floor went slack,
+# so deleting one from any halt passed. Each pin below names its writers, so a
+# halt that forgets a marker — or a fifth nobody counted — reports here as an
+# off-by-one instead of being absorbed by the slack.
+PARITY = {
+    # The four halts that hand the bead back to a human: the branch-content
+    # gate's single halt (no_commits / content_gate_error) plus the push gate's
+    # three (metadata_unreadable, auto_push_false, no_push_rail_unresolved).
+    '--assignee=""': 4,
+    # Those same four, plus the refinery-reassign block, which also reopens and
+    # unroutes the bead — but hands it to the refinery BY NAME, so it is
+    # deliberately not an `--assignee=""` writer.
+    "--status=open": 5,
+    'gc.routed_to=""': 5,
+    # The three push-gate halts only. The branch-content halt deliberately does
+    # not write it: a branch with no commits is not ready to hand off, and
+    # stamping it ready is the phantom handoff that gate exists to stop.
+    "branch_ready=true": 3,
+}
+for marker, want in PARITY.items():
+    found = body.count(marker)
+    if found != want:
+        problems.append("halt marker parity: expected exactly %d of %s, found %d"
+                        % (want, marker, found))
 
 for p in problems:
     print("  " + p, file=sys.stderr)
@@ -765,6 +793,147 @@ JQSTUB
     never "(h2) jq stub, no fault" "$log" "halt_reason"
 }
 
+# --- 4b. the branch-content gate, executed ----------------------------------
+
+# The block above runs the PUSH gate. This one runs the BRANCH-CONTENT gate, and
+# it exists because every other guard on that gate is a containment check.
+#
+# The fragment pins here and the parsed positional validator in
+# scripts/gascity_pack_inference_gate.py both answer "are the words present, in
+# this order". Neither runs the block, and `test_gate_execution` above cannot:
+# it selects blocks by `"git push origin HEAD" in b`, which excludes this fence
+# entirely. Measured, two ADDITION-shaped edits leave every one of those guards
+# green — 74 pytest tests, both shell suites — while the gate is fully disarmed:
+#
+#   B: `COMMITS_AHEAD=1` inserted after the count line
+#   C: `exit 0` inserted at the top of the halt body
+#
+# Both keep every pinned literal present, in order, and exactly once, so nothing
+# that counts words can see them. That matters more here than ordinary missing
+# coverage because the sanctioned drift workflow in this repo is to RE-PIN
+# literals to match new formula text: a future editor who re-pins faithfully
+# still ships a gate that waves the phantom through. Deletion is already covered
+# — remove the count line and both the pins and the validator go red — so the
+# addition direction is the whole of what this arm adds.
+#
+# It asserts on the ACTION LOG, not on rc alone. Mutation B exits 0 AND takes
+# zero actions, so rc and actions happen to agree there; they do not agree for a
+# mutation that still halts but drops the park or an escalation, which an
+# rc-only arm would pass while the bead is never handed back. Pinning the log as
+# an ordered sequence also pins the halt_reason each arm reports, which is the
+# only durable record of WHY a bead was parked.
+test_content_gate_execution() {
+    local tmp
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+
+    # The same anchored lift the push gate uses, keyed to this fence: tomllib
+    # parses the formula and the block is selected by COMMITS_AHEAD, which must
+    # occur in exactly ONE bash block of the step. A position-based lift would
+    # start testing some other block the day one is added above this one.
+    python3 - "$FORMULA" >"$tmp/content_gate.sh" <<'PY' || fail "could not lift the branch-content gate out of $FORMULA"
+import re
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    steps = tomllib.load(handle)["steps"]
+step = [s for s in steps if s["id"] == "submit-and-exit"][0]["description"]
+blocks = [b for b in re.findall(r"^```bash\n(.*?)^```$", step, re.S | re.M)
+          if "COMMITS_AHEAD" in b]
+if len(blocks) != 1:
+    raise SystemExit("expected exactly 1 branch-content fence, got %d" % len(blocks))
+sys.stdout.write(blocks[0].replace("{{base_branch}}", "main")
+                          .replace("{{binding_prefix}}", "gastown."))
+PY
+
+    bash -n "$tmp/content_gate.sh" || fail "the rendered branch-content gate is not valid bash"
+
+    # run_content_gate <label> <rev-list stdout> <rev-list rc> -> "<rc>|<log>"
+    #
+    # `git rev-list` is the only call whose answer varies per arm; every other
+    # git call is logged so a gate that started doing something else is visible.
+    run_content_gate() {
+        local d="$tmp/run.$1"
+        rm -rf "$d"; mkdir -p "$d/bin"
+        : >"$d/log"
+        cat >"$d/bin/gc" <<'GCSTUB'
+#!/usr/bin/env bash
+case "$1" in
+  bd)
+    reason=""
+    for a in "$@"; do
+      case "$a" in halt_reason=*) reason="${a#halt_reason=}" ;; esac
+    done
+    printf 'BD_UPDATE halt_reason=%s\n' "$reason" >>"$GATE_DIR/log" ;;
+  session) printf 'NUDGE %s\n' "$3" >>"$GATE_DIR/log" ;;
+  runtime) printf 'DRAIN\n' >>"$GATE_DIR/log" ;;
+  *)       printf 'GC_OTHER %s\n' "$*" >>"$GATE_DIR/log" ;;
+esac
+exit 0
+GCSTUB
+        cat >"$d/bin/git" <<'GITSTUB'
+#!/usr/bin/env bash
+if [ "$1" = "rev-list" ]; then
+    printf '%s' "$REVLIST_OUT"
+    exit "$REVLIST_RC"
+fi
+printf 'GIT %s\n' "$*" >>"$GATE_DIR/log"
+exit 0
+GITSTUB
+        chmod +x "$d/bin/gc" "$d/bin/git"
+        local rc=0
+        GATE_DIR="$d" PATH="$d/bin:$PATH" WORK_BEAD_ID=test-1 \
+            EXPECTED_BRANCH=polecat/test-1 GC_RIG=testrig \
+            REVLIST_OUT="$2" REVLIST_RC="$3" \
+            bash "$tmp/content_gate.sh" >"$d/out" 2>&1 || rc=$?
+        printf '%s|%s' "$rc" "$(tr '\n' ',' <"$d/log")"
+    }
+
+    # gate_did <label> <rev-list stdout> <rev-list rc> <expected "rc|log">
+    gate_did() {
+        local label="$1" got
+        got=$(run_content_gate "$label" "$2" "$3")
+        [[ "$got" == "$4" ]] \
+            || fail "content gate ($label): expected '$4', got '$got'"
+    }
+
+    # The full hand-back: park the bead open/unassigned/unrouted with the reason,
+    # page mayor and witness, release the claim, and exit non-zero. Pinned as an
+    # ordered sequence — dropping any one of the four, or reordering the park
+    # after the drain-ack, is a different string.
+    local HALT_NO_COMMITS="1|BD_UPDATE halt_reason=no_commits,NUDGE mayor,NUDGE testrig/gastown.witness,DRAIN,"
+    local HALT_ERROR="1|BD_UPDATE halt_reason=content_gate_error,NUDGE mayor,NUDGE testrig/gastown.witness,DRAIN,"
+
+    # (a) THE phantom: a branch with no commits ahead of the base. This is the
+    # arm mutations B and C both break, and the only one that reports no_commits.
+    gate_did zero "0" 0 "$HALT_NO_COMMITS"
+
+    # (b) real work — the gate must stay out of the way. Zero gc actions, rc 0:
+    # a gate that halts here is a wall, and gets routed around.
+    gate_did three "3" 0 "0|"
+
+    # (c) the count could not be TAKEN (missing or corrupt origin/main, a
+    # concurrent prune). rev-list dies, the substitution yields "", and an
+    # unmeasurable branch must fail closed rather than read as "0, therefore
+    # push" or as a number.
+    gate_did revlist_failed "" 128 "$HALT_ERROR"
+
+    # (c2) rev-list exits 0 but says nothing. `$?` cannot catch this one, so it
+    # is the empty-string arm of the same guard and must not fall through.
+    gate_did revlist_silent "" 0 "$HALT_ERROR"
+
+    # (d) a malformed count. It must report content_gate_error and NOT be
+    # mislabelled no_commits: the two mean different things to the coordinator
+    # who reads halt_reason, and "12x" is not zero commits.
+    gate_did malformed "  12x " 0 "$HALT_ERROR"
+
+    # (d2) `[ "$COMMITS_AHEAD" -eq 0 ]` would abort on a non-numeric value and
+    # take the branch with it; `case` is the load-bearing choice, so a value that
+    # merely CONTAINS a digit is pinned too.
+    gate_did malformed_leading_digit "0x" 0 "$HALT_ERROR"
+}
+
 # --- 5. the mayor's read-back recipe, executed ------------------------------
 
 # The mayor prompt tells an operator how to read `auto_push` back after writing
@@ -858,6 +1027,7 @@ test_rail_detection
 test_rail_scan_shape
 test_halt_notes_append
 test_gate_execution
+test_content_gate_execution
 test_mayor_readback_mirrors_probe
 
 echo "polecat push gate tests passed"
