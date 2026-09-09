@@ -390,12 +390,18 @@ off if the refinery's `--has-metadata-key=branch` query cannot see the work.
 ```bash
 if [ "$HANDOFF_STAGE" = "target_recorded" ] && [ -n "$BRANCH_ON_ORIGIN" ]; then
   REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
-  # --force: this is a cross-actor write against the dead polecat's live
-  # in_progress claim, which bd refuses without it (the same claim guard
-  # Step 3's close cites, gastownhall/beads#3734). Step 6 needs no --force
-  # only because the polecat runs it as the bead's own actor.
+  # --if-assignee: this is a cross-actor write against the dead polecat's live
+  # in_progress claim, which bd refuses unguarded (the same claim guard Step 3's
+  # close cites, gastownhall/beads#3734). The CAS -- not --force -- is what
+  # satisfies that guard on `gc bd update`: the wrapper allowlists flags per
+  # subcommand, and --force is registered for close and delete but not for
+  # update, so passing it here aborts in the arg scanner before the call reaches
+  # any store. Naming the dead polecat's own assignee also makes the write
+  # conditional on it still holding the bead, so a claim race falls through to
+  # Step 3b instead of overwriting a live claim. Step 6 needs no guard only
+  # because the polecat runs it as the bead's own actor.
   if gc bd update <bead> --status=open --assignee="$REFINERY_TARGET" \
-       --set-metadata gc.routed_to="" --force; then
+       --set-metadata gc.routed_to="" --if-assignee "$ASSIGNEE"; then
     # Close the crashed polecat's workflow subtree, as Step 3b does. Only the
     # delete-source half: reopen-source would clear the assignee just set.
     # Ordered after the reassignment so the failure arm mutates nothing, and
