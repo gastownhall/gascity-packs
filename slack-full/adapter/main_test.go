@@ -909,6 +909,43 @@ func TestPublishDedupCache(t *testing.T) {
 	}
 }
 
+// TestPublishDedupCacheGetDoesNotAliasMetadata pins the property that keeps
+// concurrent same-key retries off a shared map. Get copies the receipt by
+// value, but Metadata is a map, so without an explicit clone every caller
+// holds a header onto the cache entry's own map — and replayPublishReceipt
+// writes that map through confirmPublishReceipt outside the cache lock.
+//
+// This is deterministic on purpose: it fails on every run against an
+// aliasing Get and needs no race detector, unlike a concurrency probe that
+// only reports under -race and only some of the time.
+func TestPublishDedupCacheGetDoesNotAliasMetadata(t *testing.T) {
+	cache := newPublishDedupCache(publishDedupTTL)
+	cache.Put("k", publishReceipt{
+		MessageID: "1700.001",
+		Metadata:  map[string]string{receiptMetadataKeyReadback: slackReadbackUnavailable},
+	})
+	first, ok := cache.Get("k")
+	if !ok {
+		t.Fatal("seeded receipt not found")
+	}
+	// confirmPublishReceipt writes this map on every replay, outside the cache
+	// lock. If Get hands back the cache entry's own map, two concurrent
+	// replays on one key write the same map from two request goroutines.
+	first.Metadata["probe"] = "mutated"
+	delete(first.Metadata, receiptMetadataKeyReadback)
+
+	second, ok := cache.Get("k")
+	if !ok {
+		t.Fatal("seeded receipt not found on re-read")
+	}
+	if _, leaked := second.Metadata["probe"]; leaked {
+		t.Error("Get returned a receipt whose Metadata aliases the cache entry: a write through one caller's copy is visible to the next")
+	}
+	if got := second.Metadata[receiptMetadataKeyReadback]; got != slackReadbackUnavailable {
+		t.Errorf("a delete through one caller's copy mutated the cached receipt: readback = %q, want %q", got, slackReadbackUnavailable)
+	}
+}
+
 // TestReferenceSuffixMatchesCrossLanguageTestVector asserts the same
 // (key, suffix) pair as gas-city's messaging state reconciler.
 func TestReferenceSuffixMatchesCrossLanguageTestVector(t *testing.T) {
