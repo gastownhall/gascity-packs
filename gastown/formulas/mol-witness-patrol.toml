@@ -159,8 +159,22 @@ assignees use the shape `<rig>/{{binding_prefix}}<polecat-suffix>`.
 Get the full session roster for liveness checks:
 ```bash
 gc session list --state=all --json
-gc bd list --type=session --label=gc:session --include-infra --include-gates --all --json --limit=0
+gc bd --city "${GC_CITY:-${GC_CITY_PATH:?GC_CITY/GC_CITY_PATH unset — cannot locate HQ store}}" list --type=session --label=gc:session --include-infra --include-gates --all --json --limit=0
 ```
+
+Two things about that second command (ga-ogl):
+
+- `--city` is REQUIRED. Session beads live ONLY in the HQ (town) store; every
+  rig ledger holds zero of them. A witness always runs inside a rig, so a bare
+  `gc bd list` resolves to the rig ledger and returns `[]` for every session
+  query — silently, with exit 0.
+- It is a BACKSTOP, not the primary source. `gc session list` is the live
+  runtime roster and is authoritative for liveness. The session-bead index is
+  durable history: it contains long-dead sessions alongside current ones, so it
+  may only FILL IN identities the roster does not mention. It must never
+  overwrite a roster answer. Verified 2026-09-10: letting it overwrite flipped
+  five live agents (the mayor, two refineries, two crews) from `active` to
+  `closed`, which would have false-orphaned their beads.
 
 For each bead with an assignee, check **session-ID liveness** — NOT
 template pattern matching. Pool instances get new IDs on restart, so
@@ -178,7 +192,10 @@ a NEW session with a different ID — the old one never comes back.
    may be a session bead ID, session name, alias, concrete agent name, or
    configured named identity.
 
-   Two schema facts this recipe depends on (verified live, gc-3tn8g):
+   Three schema facts this recipe depends on (verified live, gc-3tn8g / ga-ogl):
+   - Session beads are HQ-scoped, not rig-scoped, and the session-bead leg is
+     a fill-in-only backstop behind the live roster. See the note above the
+     liveness-check procedure — both properties are load-bearing.
    - `gc session list --json` returns an OBJECT `{sessions:[...], ...}`, not
      a top-level array — iterate `.sessions[]`, never the top level (the
      top-level values include booleans, so `$x.id` on them errors).
@@ -193,7 +210,7 @@ a NEW session with a different ID — the old one never comes back.
    ```bash
    SESSIONS_FILE=$(mktemp); SESSION_BEADS_FILE=$(mktemp)
    gc session list --state=all --json > "$SESSIONS_FILE"
-   gc bd list --type=session --label=gc:session --include-infra --include-gates --all --json --limit=0 > "$SESSION_BEADS_FILE"
+   gc bd --city "${GC_CITY:-${GC_CITY_PATH:?GC_CITY/GC_CITY_PATH unset — cannot locate HQ store}}" list --type=session --label=gc:session --include-infra --include-gates --all --json --limit=0 > "$SESSION_BEADS_FILE"
 
    LIVENESS_MAP=$(jq -n --slurpfile sessions "$SESSIONS_FILE" --slurpfile session_beads "$SESSION_BEADS_FILE" '
      def add($m; $key; $state; $closed):
@@ -207,12 +224,28 @@ a NEW session with a different ID — the old one never comes back.
        | add(.; $s.alias;      $s.state; ($s.closed // false))
        | add(.; $s.agent_name; $s.state; ($s.closed // false))
      )) as $from_sessions
-     | reduce ($session_beads[0] // [])[] as $b ($from_sessions;
-         add(.; $b.metadata.configured_named_identity; $b.metadata.state; ($b.status == "closed")))')
+     | reduce ($session_beads[0] // [] | sort_by(.updated_at) | reverse)[] as $b ($from_sessions;
+         (($b.metadata.configured_named_identity) // "") as $k
+         | if ($k | length) == 0 or has($k) then .
+           else . + {($k): (if $b.status == "closed" then "closed" else (($b.metadata.state) // "") end)}
+           end)')
 
    SESSION_COUNT=$(jq -r '(.sessions // []) | length' "$SESSIONS_FILE")
+   SESSION_BEAD_COUNT=$(jq -r 'if type == "array" then length else 0 end' "$SESSION_BEADS_FILE")
    MAP_COUNT=$(printf '%s' "$LIVENESS_MAP" | jq -r 'length')
    rm -f "$SESSIONS_FILE" "$SESSION_BEADS_FILE"
+   ```
+
+   **Backstop check — warn, do NOT abort.** `SESSION_BEAD_COUNT` of 0 while
+   sessions are live means the session-bead leg stopped resolving (most likely
+   `--city` no longer pins the HQ store, or session beads changed type/label).
+   That leg only fills in identities the live roster omits, so losing it does
+   not by itself mis-resolve anything the roster covers — do not disable
+   recovery for it. Note it and keep going:
+   ```bash
+   if [ "${SESSION_BEAD_COUNT:-0}" -eq 0 ] && [ "${SESSION_COUNT:-0}" -gt 0 ]; then
+     echo "WARN: session-bead backstop returned 0 rows with $SESSION_COUNT live sessions (ga-ogl) — continuing on the live roster alone."
+   fi
    ```
 
    **Fail safe — never orphan on an empty map.** If the map is empty while
