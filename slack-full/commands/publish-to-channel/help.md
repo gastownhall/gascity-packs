@@ -32,7 +32,13 @@ gc slack publish-to-channel --conversation-id <chan-id> \
 - `--session SID` — session id to attribute the publish to. Defaults
   to `$GC_SESSION_ID`.
 - `--kind` — conversation kind for the envelope (`room` default).
-- `--idempotency-key KEY` — caller-supplied dedup key (optional).
+- `--idempotency-key KEY` — dedup key. Optional: when omitted, one is
+  derived from the session, conversation, kind, thread anchor and body, so
+  re-running the same command after a client timeout replays the original
+  receipt instead of posting the message twice. Pass a distinct value to
+  send the same text twice on purpose. Keyed publishes carry the adapter's
+  low-visibility `_ref:<12hex>_` footer, which is how `/publish` reads the
+  message back to confirm delivery.
 - `--body STR` / `--body-file PATH` — message body. One required.
 
 ## Typical mayor / cos reply flow

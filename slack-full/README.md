@@ -367,7 +367,7 @@ package docstring at the top of that file. Summary:
 | Var                    | Purpose                                                            |
 | ---------------------- | ------------------------------------------------------------------ |
 | `SLACK_WORKSPACE_ID`   | Slack team id (e.g. `T0XXXXXXXXX`).                                |
-| `SLACK_BOT_TOKEN`      | `xoxb-…` token. Scopes: `chat:write`, `reactions:write`, `files:write`, and `chat:write.customize` for per-session identity overrides. |
+| `SLACK_BOT_TOKEN`      | `xoxb-…` token. Scopes: `chat:write`, `reactions:write`, `files:write`, `chat:write.customize` for per-session identity overrides, **and a history scope for every conversation kind you bind** — `channels:history` (public channels), `groups:history` (private channels), `im:history` (DMs), `mpim:history` (group DMs). `/publish` confirms each post by reading it back, so a token without history for a bound conversation reports every publish as `Delivered:false` / `readback_auth` even though the message is visible in Slack. `schema/apps.schema.json` is the authoritative scope list. |
 | `SLACK_SIGNING_SECRET` | Used to verify HMAC signatures on `/slack/events` requests.        |
 | `GC_CITY_NAME`         | gc city the adapter posts inbound + session-message traffic to. Matches `[workspace].name` in `city.toml`. No fallback default — the adapter fails fast rather than silently route to a wrong city. |
 
