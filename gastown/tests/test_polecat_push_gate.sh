@@ -169,13 +169,14 @@ if '[ -z "$WORK_JSON" ]' not in body:
     # jq prints nothing for empty input and exits 0, so a dead ledger cannot be
     # caught on jq's exit status alone.
     problems.append("no explicit guard for an empty payload from the ledger read")
-# Four halts write halt_reason in this step: the push gate's three
-# (metadata_unreadable, auto_push_false, no_push_rail_unresolved) plus the
+# Five halts write halt_reason in this step: the push gate's three
+# (metadata_unreadable, auto_push_false, no_push_rail_unresolved), the
 # branch-content gate's single write of "$HALT_REASON", which carries either
-# no_commits or content_gate_error. The count is pinned, not floored, so a
-# fifth unaccounted halt -- or a deleted one -- still reports here.
-if body.count("halt_reason=") != 4:
-    problems.append("expected exactly four halt_reason writes, found %d" % body.count("halt_reason="))
+# no_commits or content_gate_error, and the refinery precondition's
+# base_branch_local_only. The count is pinned, not floored, so a sixth
+# unaccounted halt -- or a deleted one -- still reports here.
+if body.count("halt_reason=") != 5:
+    problems.append("expected exactly five halt_reason writes, found %d" % body.count("halt_reason="))
 if "ascii_downcase" not in body:
     # `False` and `no` are hand-written by humans following the mayor prompt;
     # reading them as "any other value -> explicit consent" fails open on the
@@ -194,22 +195,29 @@ if 'error("auto_push value is outside the vocabulary")' not in body:
 # above is. A floor of 3 was exact while three halts wrote these markers; the
 # branch-content halt then padded `--assignee=""` to 4 and the floor went slack,
 # so deleting one from any halt passed. Each pin below names its writers, so a
-# halt that forgets a marker — or a fifth nobody counted — reports here as an
-# off-by-one instead of being absorbed by the slack.
+# halt that forgets a marker — or a sixth nobody counted — reports here as an
+# off-by-one instead of being absorbed by the slack. That is not hypothetical:
+# these counts read 4/5/5/3 until the refinery precondition below landed from
+# another branch, and this block is what reported it.
 PARITY = {
-    # The four halts that hand the bead back to a human: the branch-content
-    # gate's single halt (no_commits / content_gate_error) plus the push gate's
-    # three (metadata_unreadable, auto_push_false, no_push_rail_unresolved).
-    '--assignee=""': 4,
-    # Those same four, plus the refinery-reassign block, which also reopens and
+    # The five halts that hand the bead back to a human: the branch-content
+    # gate's single halt (no_commits / content_gate_error), the push gate's
+    # three (metadata_unreadable, auto_push_false, no_push_rail_unresolved),
+    # and the refinery precondition's base_branch_local_only.
+    '--assignee=""': 5,
+    # Those same five, plus the refinery-reassign block, which also reopens and
     # unroutes the bead — but hands it to the refinery BY NAME, so it is
     # deliberately not an `--assignee=""` writer.
-    "--status=open": 5,
-    'gc.routed_to=""': 5,
-    # The three push-gate halts only. The branch-content halt deliberately does
-    # not write it: a branch with no commits is not ready to hand off, and
-    # stamping it ready is the phantom handoff that gate exists to stop.
-    "branch_ready=true": 3,
+    "--status=open": 6,
+    'gc.routed_to=""': 6,
+    # The three push-gate halts, plus base_branch_local_only — which fires only
+    # after the content gate has already passed, so the branch genuinely carries
+    # commits and stamping it ready is correct there; what that halt blocks is
+    # the refinery handoff, until someone pushes the base branch. The
+    # branch-content halt is still deliberately not a writer: a branch with no
+    # commits is not ready to hand off, and stamping it ready is the phantom
+    # handoff that gate exists to stop.
+    "branch_ready=true": 4,
 }
 for marker, want in PARITY.items():
     found = body.count(marker)

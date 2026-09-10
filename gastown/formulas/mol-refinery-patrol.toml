@@ -232,16 +232,73 @@ BRANCH=$(gc bd show $WORK --json | jq -r '.[0].metadata.branch')
 TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_branch}}"')
 ```
 
-Fetch and attempt mechanical rebase:
+Fetch and attempt mechanical rebase. Confirm the target resolves on
+origin *before* rebasing: `git rebase` reports a missing upstream with the
+same non-zero exit as a conflict, and the rejection path below would then
+delete the workflow, reopen the bead, and bounce a configuration error
+back to a polecat that hits the same wall. A target that does not exist
+on origin is not a conflict, and no polecat can resolve it — park the bead
+for a human, escalate, and keep the patrol running. Parking is the part
+that makes the halt safe: `find-work` selects open beads assigned to this
+refinery that carry `metadata.branch`, so a bead left assigned here is
+re-selected on the next cycle and one misconfigured `target` head-of-line
+blocks every other merge in the rig. Same shape as `block_existing_pr` in
+the merge step — the other invalid-configuration halt in this formula.
 ```bash
 git fetch --prune origin
+if ! git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
+  REASON="Target branch $TARGET does not exist on origin; there is nothing to rebase onto. This is an invalid upstream, not a merge conflict, so the rejection path is wrong: no polecat can rebase onto a branch that is not there. Fix metadata.target on $WORK, or push $TARGET, then route the bead back to the refinery."
+  echo "STOP: $REASON"
+  # Take the bead out of find-work's candidate set. Clearing the assignee is
+  # what deselects it; gc.routed_to=human is what keeps it inside a
+  # work-query tier instead of stranding it open+unassigned+unrouted. The
+  # branch, metadata.branch, and metadata.target are all left untouched —
+  # this is not the destructive delete-source/reopen-source path.
+  gc bd update $WORK \
+    --assignee="" \
+    --set-metadata merge_result=blocked \
+    --set-metadata gc.routed_to=human \
+    --set-metadata halt_reason=target_branch_missing \
+    --set-metadata blocked_reason="$REASON"
+  gc mail send mayor/ -s "ESCALATION: invalid target branch for $WORK" -m "$REASON
+Work bead: $WORK
+Branch: $BRANCH
+Target: $TARGET"
+  # Pour the next patrol iteration before burning this one: a halt on one
+  # bead must not end the merge lane.
+  CURRENT_WISP=${GC_BEAD_ID:-}
+  if [ -z "$CURRENT_WISP" ]; then
+    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  fi
+  NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
+  if [ -z "$NEXT" ]; then
+    echo "Could not pour next refinery wisp; not burning."
+    gc runtime drain-ack
+    exit 1
+  fi
+  if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
+    echo "Could not assign next refinery wisp; not burning."
+    gc runtime drain-ack
+    exit 1
+  fi
+  if [ -n "$CURRENT_WISP" ]; then
+    gc bd mol burn "$CURRENT_WISP" --force
+  else
+    echo "Could not resolve current wisp; not burning."
+    gc runtime drain-ack
+    exit 1
+  fi
+  gc runtime drain-ack
+  exit 1
+fi
 git checkout -b temp origin/$BRANCH
 git rebase origin/$TARGET
 ```
 
 If rebase SUCCEEDED (exit 0): close this step, proceed to run-tests.
 
-If rebase FAILED (conflicts):
+If rebase FAILED (conflicts) — and only then, since the guard above has
+already ruled out an unresolvable target:
 
 1. Abort: `git rebase --abort`
 2. Clean up the existing workflow and reopen the source bead:

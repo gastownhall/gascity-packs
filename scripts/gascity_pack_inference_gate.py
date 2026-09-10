@@ -109,7 +109,7 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "{{lint_command}}",
         "{{build_command}}",
         "{{test_command}}",
-        'COMMITS_AHEAD=$(git rev-list --count "origin/{{base_branch}}..HEAD" 2>/dev/null)',
+        'COMMITS_AHEAD=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null)',
         "''|*[!0-9]*) HALT_REASON=content_gate_error ;;",
         "0) HALT_REASON=no_commits ;;",
         "git push origin HEAD",
@@ -169,7 +169,7 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
 # the ref and let the handoff be stamped.
 POLECAT_BRANCH_CONTENT_GATE_ORDER = (
     ("clean-state commit", 'git commit -m "chore: capture remaining work ($WORK_BEAD_ID)"'),
-    ("branch-content count", 'COMMITS_AHEAD=$(git rev-list --count "origin/{{base_branch}}..HEAD" 2>/dev/null)'),
+    ("branch-content count", 'COMMITS_AHEAD=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null)'),
     ("branch push", "git push origin HEAD"),
 )
 # Required between the count and the push. `git rev-list` failing must halt on
@@ -211,6 +211,30 @@ POLECAT_BRANCH_CONTENT_GATE_HALT_PATH = (
     # the bead.
     ("halt exit", "    done\n    gc runtime drain-ack\n    exit 1"),
 )
+# mol-polecat-work resolves its base branch once (remote-first, local fallback,
+# else STOP) and carries the result forward. A literal-fragment pin catches
+# deletion of that block but stays green when a later step reintroduces a
+# hard-coded origin ref, or when the STOP arm is inverted into a silent
+# fallback -- which is how gas-e6r put polecats on main. These constants drive
+# a structural lint over the formula's executable shell instead.
+POLECAT_WORK_FORMULA = "mol-polecat-work"
+POLECAT_SHELL_FENCE_INFO = frozenset({"bash", "sh", "shell"})
+# Matches a bare `origin/{{base_branch}}` git ref, but not the fully-qualified
+# `refs/remotes/origin/{{base_branch}}` the resolution block is required to use.
+POLECAT_BARE_ORIGIN_BASE_REF = re.compile(r"(?<!refs/remotes/)\borigin/\{\{base_branch\}\}")
+POLECAT_BASE_REF_ANCHOR = 'if git show-ref --verify --quiet "$BASE_REMOTE"; then'
+POLECAT_BASE_REF_REQUIRED_FRAGMENTS = (
+    'BASE_REMOTE="refs/remotes/origin/{{base_branch}}"',
+    'BASE_LOCAL="refs/heads/{{base_branch}}"',
+    'gc bd update "$WORK_BEAD_ID" --set-metadata base_ref="$BASE_REF"',
+    "metadata.base_ref",
+)
+# The resolution block may only ever name one of the two probed refs. Anything
+# else is a substituted base, which is the defect class this lint exists for.
+POLECAT_BASE_REF_ALLOWED_ASSIGNMENTS = frozenset(
+    {'BASE_REF="$BASE_REMOTE"', 'BASE_REF="$BASE_LOCAL"'}
+)
+POLECAT_BASE_REF_STOP_MESSAGE = "STOP: base branch {{base_branch}} exists neither on origin nor locally."
 METHODOLOGY_FLOW_CONTRACTS = {
     "superpowers": {
         "review_expansion": "superpowers-code-review",
@@ -1446,6 +1470,7 @@ def initialize_city(
         )
     if pack_spec.gastown and should_validate_gastown_orchestration_contract(gates):
         validate_gastown_orchestration_contract(pack_spec.source)
+        validate_polecat_base_ref_contract(pack_spec.source)
     else:
         validate_methodology_flow_contract(pack_spec)
 
@@ -2922,6 +2947,190 @@ def validate_polecat_branch_content_gate(pack_source: Path) -> None:
     if problems:
         raise GateError(
             "Gastown polecat branch-content gate drifted:\n" + "\n".join(f"- {item}" for item in problems)
+        )
+
+
+def strip_shell_comment(line: str) -> str:
+    """Drop a trailing `#` comment, ignoring `#` inside single or double quotes."""
+    in_single = False
+    in_double = False
+    for index, char in enumerate(line):
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == "#" and not in_single and not in_double:
+            if index == 0 or line[index - 1].isspace():
+                return line[:index]
+    return line
+
+
+def formula_shell_lines(text: str) -> tuple[list[tuple[int, str]], list[str]]:
+    """Return (line number, comment-stripped source) for fenced shell lines.
+
+    Formula descriptions are markdown; only fenced ```bash blocks are executed.
+    Prose and comments may still discuss a ref the shell must not use, so they
+    are excluded here rather than being matched by the caller's patterns.
+    """
+    lines: list[tuple[int, str]] = []
+    problems: list[str] = []
+    fence_info: str | None = None
+    fence_line = 0
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            if fence_info is None:
+                fence_info = stripped[3:].strip().lower() or "text"
+                fence_line = lineno
+            else:
+                fence_info = None
+            continue
+        if fence_info in POLECAT_SHELL_FENCE_INFO and stripped:
+            code = strip_shell_comment(raw).strip()
+            if code:
+                lines.append((lineno, code))
+    if fence_info is not None:
+        # An unbalanced fence desynchronises every downstream judgement about
+        # what is executable, so fail closed instead of linting half the file.
+        problems.append(f"unterminated ``` fence opened at line {fence_line}")
+    return lines, problems
+
+
+def polecat_base_ref_block(shell_lines: Sequence[tuple[int, str]]) -> tuple[list[str], list[str]]:
+    """Extract the base-ref resolution `if ... fi`, failing closed on both anchors."""
+    start = next(
+        (index for index, (_, code) in enumerate(shell_lines) if code == POLECAT_BASE_REF_ANCHOR),
+        None,
+    )
+    if start is None:
+        return [], [f"missing base-ref resolution block anchored by {POLECAT_BASE_REF_ANCHOR!r}"]
+    depth = 0
+    block: list[str] = []
+    for _, code in shell_lines[start:]:
+        block.append(code)
+        if code.startswith("if ") or code == "if":
+            depth += 1
+        elif code == "fi" or code.startswith("fi "):
+            depth -= 1
+            if depth == 0:
+                return block, []
+    return [], [f"base-ref resolution block anchored by {POLECAT_BASE_REF_ANCHOR!r} has no matching 'fi'"]
+
+
+def polecat_bare_origin_problems(shell_lines: Sequence[tuple[int, str]]) -> list[str]:
+    """Report executable shell lines that name the bare origin base ref."""
+    problems: list[str] = []
+    for lineno, code in shell_lines:
+        if POLECAT_BARE_ORIGIN_BASE_REF.search(code):
+            problems.append(
+                f"line {lineno}: executable shell uses a bare origin/{{{{base_branch}}}} ref "
+                f"({code!r}); use the resolved base ref instead"
+            )
+    return problems
+
+
+def polecat_base_ref_fragment_problems(text: str) -> list[str]:
+    """Report required resolution and carrier fragments the formula has dropped."""
+    problems: list[str] = []
+    for fragment in POLECAT_BASE_REF_REQUIRED_FRAGMENTS:
+        if fragment not in text:
+            problems.append(f"missing base-ref resolution fragment {fragment!r}")
+    return problems
+
+
+def polecat_base_ref_assignment_problems(block: Sequence[str]) -> list[str]:
+    """Report a resolution block that assigns no base, or a substituted one."""
+    problems: list[str] = []
+    assignments = [code for code in block if code.startswith("BASE_REF=")]
+    if not assignments:
+        problems.append("base-ref resolution block assigns no BASE_REF")
+    for assignment in assignments:
+        if assignment not in POLECAT_BASE_REF_ALLOWED_ASSIGNMENTS:
+            problems.append(
+                f"base-ref resolution block assigns a substituted base: {assignment!r} "
+                f"(allowed: {sorted(POLECAT_BASE_REF_ALLOWED_ASSIGNMENTS)})"
+            )
+    return problems
+
+
+def polecat_base_ref_stop_arm(block: Sequence[str]) -> list[str] | None:
+    """Return the resolution block's `else` arm, or None when it has none.
+
+    Depth tracking is what keeps a nested `if ... fi` inside the arm from
+    ending it: such a nesting's own `fi` returns to depth 1 and is therefore
+    kept, so the STOP assertions below see the whole arm rather than a prefix.
+    """
+    depth = 0
+    stop_arm: list[str] | None = None
+    for code in block:
+        if code.startswith("if ") or code == "if":
+            depth += 1
+        elif code == "fi" or code.startswith("fi "):
+            depth -= 1
+        elif code == "else" and depth == 1:
+            stop_arm = []
+            continue
+        if stop_arm is not None and depth == 1:
+            stop_arm.append(code)
+    return stop_arm
+
+
+def polecat_base_ref_stop_arm_problems(stop_arm: Sequence[str]) -> list[str]:
+    """Report a STOP arm that stopped reporting, or stopped exiting non-zero."""
+    problems: list[str] = []
+    if not any(POLECAT_BASE_REF_STOP_MESSAGE in code for code in stop_arm):
+        problems.append(f"base-ref STOP arm no longer reports {POLECAT_BASE_REF_STOP_MESSAGE!r}")
+    if not any(code.startswith("exit ") and code != "exit 0" for code in stop_arm):
+        problems.append("base-ref STOP arm must exit non-zero rather than fall through to a default base")
+    return problems
+
+
+def polecat_base_ref_problems(text: str) -> list[str]:
+    """Collect every base-ref contract problem in one formula's shell.
+
+    Each per-class helper above owns one decision. This function only sequences
+    them and fails closed at the two points where a later class cannot be
+    judged at all: an unbalanced fence (no trustworthy shell to read) and a
+    resolution block that cannot be located (nothing to assert about).
+    """
+    shell_lines, problems = formula_shell_lines(text)
+    if problems:
+        return problems
+
+    problems.extend(polecat_bare_origin_problems(shell_lines))
+    problems.extend(polecat_base_ref_fragment_problems(text))
+
+    block, block_problems = polecat_base_ref_block(shell_lines)
+    problems.extend(block_problems)
+    if not block:
+        return problems
+
+    problems.extend(polecat_base_ref_assignment_problems(block))
+
+    stop_arm = polecat_base_ref_stop_arm(block)
+    if stop_arm is None:
+        problems.append("base-ref resolution block has no else arm; an unresolvable base must STOP")
+        return problems
+    problems.extend(polecat_base_ref_stop_arm_problems(stop_arm))
+    return problems
+
+
+def validate_polecat_base_ref_contract(pack_source: Path) -> None:
+    """Pin mol-polecat-work's base-ref resolution against reintroduced origin refs.
+
+    Complements the literal-fragment contract above: this reads the formula's
+    executable shell structurally, so a hard-coded ref added to a later step,
+    a substituted base, or a neutralised STOP arm fails the gate even while
+    every pinned fragment is still present.
+    """
+    path = pack_source / "formulas" / f"{POLECAT_WORK_FORMULA}.toml"
+    if not path.is_file():
+        raise GateError(f"{POLECAT_WORK_FORMULA}: missing formula file {path}")
+    problems = polecat_base_ref_problems(path.read_text(encoding="utf-8", errors="replace"))
+    if problems:
+        raise GateError(
+            f"{POLECAT_WORK_FORMULA} base-ref resolution contract drifted:\n"
+            + "\n".join(f"- {item}" for item in problems)
         )
 
 

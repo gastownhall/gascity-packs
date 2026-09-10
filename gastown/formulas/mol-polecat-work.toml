@@ -28,7 +28,7 @@ be inherited from a parent convoy with `metadata.target` set.
 | Variable | Source | Description |
 |----------|--------|-------------|
 | binding_prefix | import binding | Agent identity prefix for bound Gas Town imports. |
-| affected_tests_command | rig `formula_vars` | Shell-safe command that reads `git diff --name-only origin/{{base_branch}}...HEAD` and runs the matching test subset. Empty = run full `test_command`. |
+| affected_tests_command | rig `formula_vars` | Shell-safe command that reads `git diff --name-only $BASE_REF...HEAD` (`self-review` exports `BASE_REF` from the base recorded by `workspace-setup`) and runs the matching test subset. Must exit non-zero if that diff fails, rather than running zero tests. Empty = run full `test_command`. |
 
 **Rejection-aware.** If the work bead has `metadata.branch` and
 `metadata.rejection_reason`, a previous attempt was rejected by the
@@ -54,7 +54,7 @@ description = "Import binding prefix for gastown agent identities, including tra
 default = ""
 
 [vars.affected_tests_command]
-description = "Shell-safe affected-tests command. Must read `git diff --name-only origin/{{base_branch}}...HEAD` and run the matching test subset. From rig `formula_vars` or empty to run full test_command."
+description = "Shell-safe affected-tests command. Must read `git diff --name-only $BASE_REF...HEAD` (self-review exports BASE_REF from the base recorded by workspace-setup) and run the matching test subset. Must exit non-zero when that diff fails instead of silently running zero tests. From rig `formula_vars` or empty to run full test_command."
 default = ""
 
 [[steps]]
@@ -73,7 +73,7 @@ Every check is idempotent — safe to re-run after crash/restart.
 2. `metadata.target` on the parent convoy chain
 3. the rig repo's default branch
 
-**1. Fetch latest and derive your work bead:**
+**1. Fetch latest, derive your work bead, and resolve the base ref:**
 ```bash
 git fetch --prune origin
 CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
@@ -92,6 +92,69 @@ fi
 gc bd update "$WORK_BEAD_ID" --unset-metadata handoff_stage
 ```
 
+Then resolve what `{{base_branch}}` means in this clone, remote-first.
+A base that exists on origin is used via its freshly-fetched
+remote-tracking ref. A base that exists only locally (an unpushed
+integration branch) is still a valid pin — use the local branch. If
+neither exists the base configuration is wrong: STOP rather than
+substituting a different base, because silently falling back to the
+repo default is how a rig pinned to an integration branch got polecats
+branched off main (gas-e6r).
+
+When the base exists in both places, the local copy must not be ahead of
+origin: a base that has advanced only locally is not the base the
+refinery will merge against, and branching from either side silently
+picks a different fork point. Ancestry-check instead of guessing.
+
+Both arms name fully-qualified refs. Git resolves `refs/tags/<name>`
+before `refs/heads/<name>`, so a bare branch name lets a same-named tag
+shadow the branch `show-ref --verify` just confirmed — worktree add,
+rebase, `checkout -B`, and the recorded `fork_sha` would all pin the
+tag's tip.
+
+This order — remote, then local, else stop — is the same contract
+`gastown/assets/scripts/worktree-setup.sh` must follow when it grows
+base selection of its own; keep the two halves in step, or they will
+disagree about what "the base" means.
+
+```bash
+BASE_REMOTE="refs/remotes/origin/{{base_branch}}"
+BASE_LOCAL="refs/heads/{{base_branch}}"
+WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"
+if git show-ref --verify --quiet "$BASE_REMOTE"; then
+    if git show-ref --verify --quiet "$BASE_LOCAL" && ! git merge-base --is-ancestor "$BASE_LOCAL" "$BASE_REMOTE"; then
+        echo "STOP: local {{base_branch}} is ahead of, or diverged from, the copy on origin."
+        echo "Reconcile or push {{base_branch}} first; do not branch from a stale base."
+        gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=base_branch_diverged
+        gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_diverged ($WORK_BEAD_ID)" -m "Local {{base_branch}} is not an ancestor of the copy on origin; $WORK_BEAD_ID cannot pick a fork point. Reconcile the branch."
+        gc runtime drain-ack
+        exit 1
+    fi
+    BASE_REF="$BASE_REMOTE"    # preferred: freshly fetched, no local drift
+elif git show-ref --verify --quiet "$BASE_LOCAL"; then
+    BASE_REF="$BASE_LOCAL"     # local-only base (unpushed integration branch)
+    echo "note: base branch {{base_branch}} is local-only — it does not exist on origin"
+else
+    echo "STOP: base branch {{base_branch}} exists neither on origin nor locally."
+    echo "Fix the rig/bead base configuration; do not substitute a different base."
+    gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=base_branch_missing
+    gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_missing ($WORK_BEAD_ID)" -m "Base branch {{base_branch}} exists neither on origin nor locally in this clone. $WORK_BEAD_ID cannot start until the rig/bead base configuration is fixed."
+    gc runtime drain-ack
+    exit 1
+fi
+gc bd update "$WORK_BEAD_ID" --set-metadata base_ref="$BASE_REF"
+```
+
+The STOP arms stamp `halt_reason` and mail the witness on the way out —
+a base misconfiguration needs a human, and an unrecorded exit just loops
+through witness recovery until someone reads session logs.
+
+Every later block in this step uses `$BASE_REF` — never assume
+`origin/{{base_branch}}` exists. `$BASE_REF` is a shell variable and
+dies with this session, so the resolution is also recorded on the work
+bead as `metadata.base_ref`; later steps run in fresh sessions and read
+it back from there.
+
 **2. Ensure worktree exists.**
 
 Check if `metadata.work_dir` already records your worktree path:
@@ -108,8 +171,9 @@ to create a new one.
 
 **If no worktree** — create one scoped to the bead, not the agent:
 ```bash
+: "${BASE_REF:?base ref not resolved — run step 1 first}"
 WORKTREE_PATH=$(pwd)/worktrees/"$WORK_BEAD_ID"
-git worktree add "$WORKTREE_PATH" --detach origin/{{base_branch}}
+git worktree add "$WORKTREE_PATH" --detach "$BASE_REF"
 cd "$WORKTREE_PATH"
 ```
 Record immediately so restarts and witness recovery can find it:
@@ -162,31 +226,49 @@ If resuming a rejected branch, rebase onto latest base:
 ```bash
 REJECTION=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.rejection_reason // empty')
 if [ -n "$REJECTION" ]; then
-    git rebase origin/{{base_branch}}
+    : "${BASE_REF:?base ref not resolved — run step 1 first}"
+    git rebase "$BASE_REF"
     # If conflicts: resolve them (this is likely the rejection reason)
     # After resolving: git rebase --continue
     gc bd update "$WORK_BEAD_ID" \
       --unset-metadata rejection_reason \
-      --set-metadata fork_sha="$(git rev-parse "origin/{{base_branch}}")"
+      --set-metadata fork_sha="$(git rev-parse "$BASE_REF")"
 fi
 ```
 
 **If no branch** — create one and record it. Always branch from the
-freshly-fetched `origin/{{base_branch}}`, never from local
-{{base_branch}} or whatever branch happens to be checked out.
-Polecat worktrees are reused across beads, so the local copy of
-{{base_branch}} may lag the remote — branching from a stale local ref
-inherits already-merged commits with stale hashes and causes the next
-refinery rebase to reject for spurious "duplicate" conflicts.
+resolved `$BASE_REF`, never from whatever branch happens to be checked
+out. When the base exists on origin, `$BASE_REF` is its freshly-fetched
+remote-tracking ref: polecat worktrees are reused across beads, so the
+local copy of {{base_branch}} may lag the remote — branching from a
+stale local ref inherits already-merged commits with stale hashes and
+causes the next refinery rebase to reject for spurious "duplicate"
+conflicts. When the base is local-only, the local branch IS the tip;
+there is no remote ref to prefer.
 
 ```bash
-git fetch origin {{base_branch}}                     # ensure origin ref is current
+: "${BASE_REF:?base ref not resolved — run step 1 first}"
+if [ "$BASE_REF" = "refs/heads/{{base_branch}}" ]; then
+    :                                                      # local-only base: nothing on origin to refresh
+elif ! git fetch origin {{base_branch}} >/dev/null 2>&1; then
+    # Step 1 already resolved this base on origin, so a failure here is
+    # either transient or the base disappearing mid-run. A blanket `|| true`
+    # would silently branch from a stale remote-tracking ref, so ask origin.
+    if git ls-remote --exit-code --heads origin "refs/heads/{{base_branch}}" >/dev/null 2>&1; then
+        echo "warning: could not refresh {{base_branch}}; using the ref fetched in step 1"
+    else
+        echo "STOP: {{base_branch}} no longer resolves on origin (deleted, renamed, or unreachable)."
+        echo "Re-run workspace-setup to re-resolve the base; do not branch from a stale ref."
+        gc runtime drain-ack
+        exit 1
+    fi
+fi
 BRANCH="polecat/$WORK_BEAD_ID"
-git branch -D "$BRANCH" 2>/dev/null || true          # drop any stale local branch with the same name
-git checkout -B "$BRANCH" "origin/{{base_branch}}"   # force-create from the freshly-fetched remote tip
+git branch -D "$BRANCH" 2>/dev/null || true                # drop any stale local branch with the same name
+git checkout -B "$BRANCH" "$BASE_REF"                      # force-create from the resolved base tip
 gc bd update "$WORK_BEAD_ID" \
   --set-metadata branch="$BRANCH" \
-  --set-metadata fork_sha="$(git rev-parse "origin/{{base_branch}}")"
+  --set-metadata fork_sha="$(git rev-parse "$BASE_REF")"
 ```
 
 Recording the branch early means:
@@ -232,11 +314,29 @@ locally-runnable failures should have been caught before push.
 **Config: test_command = {{test_command}}**
 **Config: affected_tests_command = {{affected_tests_command}}**
 
-**1. Review the diff:**
+**1. Read back the resolved base ref, then review the diff.**
+
+`workspace-setup` recorded the base it actually branched from as
+`metadata.base_ref`. This step runs in a fresh session, so read it back
+rather than assuming `origin/{{base_branch}}` exists — for a local-only
+base it does not, and every command below would die on a bad revision.
+If it is missing or no longer resolves, STOP: reviewing against a
+guessed base reviews the wrong commit set.
+
 ```bash
-git diff origin/{{base_branch}}...HEAD
-git log --oneline origin/{{base_branch}}..HEAD
-git diff --stat origin/{{base_branch}}...HEAD
+CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+BASE_REF=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.base_ref // empty')
+if [ -z "$BASE_REF" ] || ! git rev-parse --verify --quiet "$BASE_REF^{commit}" >/dev/null; then
+    echo "STOP: base ref unresolved (metadata.base_ref='$BASE_REF')."
+    echo "Re-run workspace-setup to resolve and record the base; do not substitute a different one."
+    gc runtime drain-ack
+    exit 1
+fi
+export BASE_REF
+git diff "$BASE_REF"...HEAD
+git log --oneline "$BASE_REF"..HEAD
+git diff --stat "$BASE_REF"...HEAD
 ```
 
 Check for: bugs, security issues, style violations, missing error handling,
@@ -252,11 +352,18 @@ debug cruft, unintended file changes. Fix anything you find.
 
 **3. Run tests — affected subset if rig provides one, full suite otherwise:**
 ```bash
+: "${BASE_REF:?base ref not resolved — run step 1 of this step first}"
 if [ -n "{{affected_tests_command}}" ]; then
     # Rig has an affected-tests detector. Run only the tests our diff
     # touches — same logic the rig's CI uses to dispatch test workflows.
-    # The command must read `git diff --name-only origin/{{base_branch}}...HEAD`
-    # internally and execute the relevant test subset.
+    # The command must read `git diff --name-only $BASE_REF...HEAD`
+    # internally (BASE_REF is exported in step 1) and execute the relevant
+    # subset. The guard above is load-bearing: fenced blocks run in separate
+    # shells, and an unset BASE_REF makes that diff read `HEAD...HEAD`, which
+    # exits 0 with no files — zero tests run, and the fail-closed clause
+    # below never fires. It must also fail closed: a pipe-style detector
+    # without `set -o pipefail` swallows a failed diff, runs zero tests,
+    # exits 0, and pushes untested work.
     {{affected_tests_command}}
 else
     # No affected detector — run the full suite (legacy behavior).
@@ -274,8 +381,9 @@ submitting.
 
 **4. Ensure everything is committed:**
 ```bash
+: "${BASE_REF:?base ref not resolved — run step 1 of this step first}"
 git status                  # Must be clean
-git log origin/{{base_branch}}..HEAD --oneline  # Must show your commits
+git log "$BASE_REF"..HEAD --oneline  # Must show your commits
 ```
 
 If uncommitted changes exist, commit them with a body explaining what
@@ -316,6 +424,7 @@ handoff contract is broken and the bead is permanently stranded as
 ```bash
 CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
 WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+BASE_REF=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.base_ref // empty')
 CURRENT_BRANCH=$(git branch --show-current)
 EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"
 if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
@@ -328,7 +437,8 @@ if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
     echo ""
     echo "Recover by re-running the workspace-setup step:"
     echo "  - Create the per-bead worktree at \\$(pwd)/worktrees/$WORK_BEAD_ID"
-    echo "  - Create branch '$EXPECTED_BRANCH' from origin/{{base_branch}}"
+    echo "  - Create branch '$EXPECTED_BRANCH' from the recorded base ref '$BASE_REF'"
+    echo "    (metadata.base_ref, resolved by workspace-setup — not a re-guessed base)"
     echo "  - Cherry-pick your commits from $CURRENT_BRANCH onto the new branch"
     echo "  - Re-run submit-and-exit"
     echo ""
@@ -376,13 +486,22 @@ no-work-on-branch check catches it, one gate slot later; without that check
 it merges as a no-op and the bead closes with the work undone. An idle worker
 is visible, this is not.
 
-The predicate is deliberately commit-count-only, measured against the
-`origin/{{base_branch}}` tip: it catches the phantom handoff — a branch with
+The predicate is deliberately commit-count-only, measured against the resolved
+`$BASE_REF` tip: it catches the phantom handoff — a branch with
 nothing on it — at the cheapest point, before any push. It is weaker than the
 refinery's canonical `branch_has_real_change`, which also requires a non-empty
 `git diff` against the merge-base and therefore additionally catches a net-zero
 branch (commit plus revert). That split is intentional: the refinery stays the
 backstop for net-zero work. Do not "fix" only one side of the pair.
+
+`$BASE_REF` is the base this bead was actually branched from, read back from
+`metadata.base_ref` by the branch-shape gate above — the same block this gate
+already takes `$EXPECTED_BRANCH` from, so it is in scope here for exactly the
+same reason. Counting against a bare `origin/{{base_branch}}` instead would
+report a local-only base as an *unmeasurable* count and halt a perfectly good
+branch under `content_gate_error`. An unresolved `$BASE_REF` still lands in
+that same arm, so reading the resolved base fixes the false halt without
+opening the gate.
 
 `git rev-list` failing is not the same answer as "zero commits", and neither is
 a licence to hand off: a count that is not a plain number halts under its own
@@ -391,7 +510,7 @@ is why the count is matched with `case` instead of `[ "$COMMITS_AHEAD" -eq 0 ]`,
 which evaluates false — and so fails open — on an empty value.
 
 ```bash
-COMMITS_AHEAD=$(git rev-list --count "origin/{{base_branch}}..HEAD" 2>/dev/null)
+COMMITS_AHEAD=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null)
 HALT_REASON=""
 case "$COMMITS_AHEAD" in
     ''|*[!0-9]*) HALT_REASON=content_gate_error ;;
@@ -401,13 +520,13 @@ if [ -n "$HALT_REASON" ]; then
     echo "BRANCH CONTENT GATE FAILED ($HALT_REASON)"
     echo "  branch:  $EXPECTED_BRANCH"
     if [ "$HALT_REASON" = content_gate_error ]; then
-        echo "  commits ahead of origin/{{base_branch}}: could not be measured"
+        echo "  commits ahead of $BASE_REF: could not be measured"
         echo ""
-        echo "The count could not be taken (missing or corrupt origin/{{base_branch}},"
-        echo "a concurrent prune). A tool error is a suspect, not a licence to merge:"
-        echo "an unmeasurable branch is not pushed and no handoff is stamped."
+        echo "The count could not be taken (unresolved, missing or corrupt base ref"
+        echo "'$BASE_REF', a concurrent prune). A tool error is a suspect, not a licence"
+        echo "to merge: an unmeasurable branch is not pushed and no handoff is stamped."
     else
-        echo "  commits ahead of origin/{{base_branch}}: 0"
+        echo "  commits ahead of $BASE_REF: 0"
         echo ""
         echo "There is nothing to hand off. Do NOT push and do NOT reassign to the"
         echo "refinery — an empty branch is a phantom handoff, not a completion."
@@ -708,6 +827,29 @@ and re-sling. Use --set-metadata so branch and gc.routed_to survive."
 fi
 
 # (c) Normal path.
+# Refinery hand-off precondition. mol-refinery-patrol resolves the merge
+# target through origin (rebase, ancestry check, merge worktree), so a base
+# that exists only in this clone cannot be resolved there — and the refinery
+# reads the resulting invalid-upstream error as a merge conflict: it deletes
+# the workflow, reopens the bead, stamps a rejection reason computed from the
+# same unresolvable ref, and bounces the work to a polecat that hits the same
+# wall. Hand over only a target the refinery can actually resolve.
+git fetch --prune origin >/dev/null 2>&1 || true
+if ! git show-ref --verify --quiet "refs/remotes/origin/{{base_branch}}"; then
+  echo "base branch {{base_branch}} is local-only: halting at branch-ready (no push, no refinery handoff)"
+  BRANCH=$(git branch --show-current)
+  gc bd update "$WORK_BEAD_ID" \
+    --status=open --assignee="" \
+    --set-metadata branch="$BRANCH" \
+    --set-metadata target={{base_branch}} \
+    --set-metadata branch_ready=true \
+    --set-metadata halt_reason=base_branch_local_only \
+    --set-metadata gc.routed_to="" \
+    --append-notes "Branch ready: base branch {{base_branch}} does not exist on origin, so the refinery cannot merge it. Push the base branch, then re-run submit-and-exit."
+  gc mail send "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness" -s "polecat halted: base_branch_local_only ($WORK_BEAD_ID)" -m "Work is committed on branch $BRANCH, but base branch {{base_branch}} does not exist on origin, so the refinery cannot merge it. Push the base branch, then re-run submit-and-exit for $WORK_BEAD_ID."
+  gc runtime drain-ack
+  exit 0
+fi
 git push origin HEAD
 PUSH_EXIT=$?
 if [ $PUSH_EXIT -ne 0 ]; then

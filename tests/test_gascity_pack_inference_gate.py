@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import inspect
 import json
 import os
 import re
@@ -1093,8 +1094,29 @@ def gastown_formulas_copy(tmp_path: Path) -> Path:
     return pack_source
 
 
+def mutated_gastown_source(tmp_path: Path, old: str, new: str) -> Path:
+    """Copy the real gastown formulas into tmp_path with one mol-polecat-work edit."""
+    pack_source = tmp_path / "gastown"
+    shutil.copytree(
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source / "formulas",
+        pack_source / "formulas",
+    )
+    formula = pack_source / "formulas" / "mol-polecat-work.toml"
+    original = formula.read_text(encoding="utf-8")
+    mutated = original.replace(old, new, 1)
+    assert mutated != original, f"mutation anchor not present in the formula: {old!r}"
+    formula.write_text(mutated, encoding="utf-8")
+    return pack_source
+
+
 def test_validate_polecat_branch_content_gate_accepts_current_pack() -> None:
     gascity_pack_inference_gate.validate_polecat_branch_content_gate(
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+    )
+
+
+def test_validate_polecat_base_ref_contract_accepts_current_pack() -> None:
+    gascity_pack_inference_gate.validate_polecat_base_ref_contract(
         gascity_pack_inference_gate.PACK_SPECS["gastown"].source
     )
 
@@ -1227,6 +1249,169 @@ def test_validate_polecat_branch_content_gate_rejects_deleting_the_gates_own_dra
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="halt exit"):
         gascity_pack_inference_gate.validate_polecat_branch_content_gate(pack_source)
+def test_polecat_base_ref_contract_runs_in_the_gastown_gate() -> None:
+    # Every other test here calls the validator directly, so they all stay green
+    # if the gate stops invoking it. Pin the call site alongside its sibling.
+    source = inspect.getsource(gascity_pack_inference_gate.initialize_city)
+    assert "validate_gastown_orchestration_contract(pack_spec.source)" in source
+    assert "validate_polecat_base_ref_contract(pack_spec.source)" in source
+
+
+def test_polecat_base_ref_contract_rejects_bare_origin_ref_in_a_later_step(tmp_path) -> None:
+    # Finding 1's defect class: workspace-setup resolves the base, a later step
+    # reintroduces the hard-coded ref and dies on a local-only base.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'git diff --stat "$BASE_REF"...HEAD',
+        "git diff --stat origin/{{base_branch}}...HEAD",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="bare origin"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_allows_prose_mentions_of_the_bare_ref(tmp_path) -> None:
+    # Control: the rule is about executable shell. The formula has to be able to
+    # explain in prose which ref it is refusing to assume.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        "**2. Ensure worktree exists.**",
+        "Never assume origin/{{base_branch}} exists.\n\n**2. Ensure worktree exists.**",
+    )
+
+    gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_allows_shell_comment_mentions_of_the_bare_ref(tmp_path) -> None:
+    # Control: a `#` comment inside a bash fence is rationale, not a git ref.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'BASE_REF="$BASE_REMOTE"    # preferred: freshly fetched, no local drift',
+        'BASE_REF="$BASE_REMOTE"    # preferred over origin/{{base_branch}}, freshly fetched',
+    )
+
+    gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_rejects_a_substituted_base(tmp_path) -> None:
+    # gas-e6r itself: the resolution block naming a base nobody probed for.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'BASE_REF="$BASE_LOCAL"     # local-only base',
+        'BASE_REF="refs/heads/main"     # local-only base',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="substituted base"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_rejects_a_neutralised_stop_arm(tmp_path) -> None:
+    # A literal-fragment pin stays green here: every fragment is still present,
+    # the STOP just stopped stopping.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        "    gc runtime drain-ack\n"
+        "    exit 1\n"
+        "fi\n"
+        'gc bd update "$WORK_BEAD_ID" --set-metadata base_ref',
+        "    gc runtime drain-ack\n"
+        "    exit 0\n"
+        "fi\n"
+        'gc bd update "$WORK_BEAD_ID" --set-metadata base_ref',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="exit non-zero"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_rejects_a_missing_stop_arm(tmp_path) -> None:
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'else\n    echo "STOP: base branch {{base_branch}} exists neither on origin nor locally."',
+        'elif true; then\n    echo "STOP: base branch {{base_branch}} exists neither on origin nor locally."',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="no else arm"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_fails_closed_when_the_block_moves(tmp_path) -> None:
+    # If the anchored range cannot be located the lint must fail, not pass by
+    # silently measuring nothing.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'if git show-ref --verify --quiet "$BASE_REMOTE"; then',
+        'if git show-ref --verify --quiet "$BASE_REMOTE" ; then',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="resolution block anchored by"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_reports_only_the_anchor_when_the_block_moves() -> None:
+    # Fail-closed diagnosis quality, not merely noise suppression: the checks
+    # after the block lookup all read the block, so on an empty one they report
+    # "assigns no BASE_REF" and "has no else arm" -- both false, and both send a
+    # maintainer after an intact block instead of the moved anchor. The exact
+    # count is the assertion: it is what fails if the short-circuit is dropped.
+    formula = (
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+        / "formulas"
+        / f"{gascity_pack_inference_gate.POLECAT_WORK_FORMULA}.toml"
+    )
+    text = formula.read_text(encoding="utf-8")
+    moved = text.replace(
+        'if git show-ref --verify --quiet "$BASE_REMOTE"; then',
+        'if git show-ref --verify --quiet "$BASE_REMOTE" ; then',
+        1,
+    )
+    assert moved != text, "mutation anchor not present in the formula"
+
+    problems = gascity_pack_inference_gate.polecat_base_ref_problems(moved)
+
+    assert len(problems) == 1, problems
+    assert "resolution block anchored by" in problems[0]
+
+
+def test_polecat_base_ref_contract_rejects_a_dropped_carrier_stamp(tmp_path) -> None:
+    # Finding 1's fix is the durable carrier: without the stamp, later steps
+    # have nothing to read back and the bare-ref rule is unsatisfiable.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'gc bd update "$WORK_BEAD_ID" --set-metadata base_ref="$BASE_REF"\n',
+        "",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="base_ref"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_fails_closed_on_an_unbalanced_fence(tmp_path) -> None:
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'BASE_REMOTE="refs/remotes/origin/{{base_branch}}"',
+        '```\nBASE_REMOTE="refs/remotes/origin/{{base_branch}}"',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="unterminated"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_formula_shell_lines_excludes_prose_and_comments() -> None:
+    lines, problems = gascity_pack_inference_gate.formula_shell_lines(
+        "prose mentioning origin/{{base_branch}}\n"
+        "```bash\n"
+        "git rebase \"$BASE_REF\"   # not origin/{{base_branch}}\n"
+        "# origin/{{base_branch}}\n"
+        'echo "a # b"\n'
+        "```\n"
+        "```text\n"
+        "git rebase origin/{{base_branch}}\n"
+        "```\n"
+    )
+
+    assert problems == []
+    assert [code for _, code in lines] == ['git rebase "$BASE_REF"', 'echo "a # b"']
 
 
 def test_validate_methodology_flow_contracts_accept_current_packs() -> None:
@@ -1283,7 +1468,7 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     }
     assert "gc session wake \"$REFINERY_TARGET\"" in contracts["mol-polecat-work"]
     assert (
-        'COMMITS_AHEAD=$(git rev-list --count "origin/{{base_branch}}..HEAD" 2>/dev/null)'
+        'COMMITS_AHEAD=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null)'
         in contracts["mol-polecat-work"]
     )
     assert "''|*[!0-9]*) HALT_REASON=content_gate_error ;;" in contracts["mol-polecat-work"]
