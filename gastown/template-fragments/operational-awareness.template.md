@@ -57,7 +57,15 @@ are hard to reproduce. A blind restart destroys the evidence. Always:
 # Bound a command without depending on GNU coreutils `timeout`, which is not
 # installed by default on macOS. This mirrors Gas City's Dolt runtime helper:
 # preserve normal exit codes, return 124 at the deadline, and escalate from
-# SIGTERM to SIGKILL after a short grace period.
+# SIGTERM to SIGKILL after a short grace period. The canonical full helper is
+# the dolt pack's `doctor/check-dolt/run.sh`; this variant deliberately drops
+# its `gtimeout`/`timeout` fast path so a pasted runbook takes one code path on
+# every host — the asset test pins that absence, so don't harmonize it back in.
+# Copy notes: the bound is seconds as a bare number (`run_bounded 5 ...`), not
+# GNU suffix syntax (`5s`), and the bounded command does not inherit your stdin
+# because the helper's own script arrives there — redirect input per command if
+# it needs any. The canonical helper has that same stdin limitation whenever it
+# takes its python fallback, but not when it finds a real `timeout` binary.
 run_bounded() {
   bound_seconds="$1"
   shift
@@ -69,7 +77,14 @@ run_bounded() {
 import subprocess
 import sys
 
-limit = float(sys.argv[1])
+try:
+    limit = float(sys.argv[1])
+except ValueError:
+    sys.stderr.write(
+        "diagnostic: run_bounded takes seconds as a bare number"
+        " (run_bounded 5 ...), not GNU suffix syntax (5s)\n"
+    )
+    sys.exit(124)
 command = sys.argv[2:]
 process = subprocess.Popen(command)
 try:
@@ -82,7 +97,10 @@ except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
     sys.exit(124)
-sys.exit(process.returncode)
+# A child killed by a signal reports a negative returncode; surface it as the
+# shell's 128+N convention (SIGTERM -> 143) so "preserve normal exit codes"
+# holds for that class too.
+sys.exit(process.returncode if process.returncode >= 0 else 128 - process.returncode)
 PY
 }
 

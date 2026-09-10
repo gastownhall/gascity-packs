@@ -631,6 +631,41 @@ test_prime_prompts_are_city_generic_and_compact() {
         fail "operational awareness should use the conventional timeout exit status"
     ! grep -E '(^|[[:space:]])timeout[[:space:]]+[0-9]' "$awareness" >/dev/null ||
         fail "operational awareness must not require GNU coreutils timeout"
+
+    # The pins above are content-only: they cannot see a python syntax error, a
+    # dropped `shift`, or a deleted exit path inside the fenced helper. Execute
+    # the shipped helper so a functionally broken run_bounded cannot ship green.
+    # This also carries the deadline contract that `sys.exit(124)` above can no
+    # longer carry alone: that literal now appears twice (deadline and bad-bound
+    # rejection), so the presence pin is satisfied by either occurrence.
+    local helper helper_rc
+    helper="$(sed -n '/^run_bounded() {$/,/^}$/p' "$awareness")"
+    [[ -n "$helper" ]] ||
+        fail "run_bounded helper not found between 'run_bounded() {' and its closing brace"
+    [[ "$helper" != *'run_bounded 5 gc dolt sql'* ]] ||
+        fail "run_bounded helper extraction overshot its closing brace anchor"
+
+    helper_rc=0
+    ( eval "$helper"; run_bounded 5 sh -c 'exit 7' ) || helper_rc=$?
+    [[ "$helper_rc" -eq 7 ]] ||
+        fail "shipped run_bounded must pass a bounded command's exit status through (want 7, got $helper_rc)"
+
+    helper_rc=0
+    ( eval "$helper"; run_bounded 1 sleep 3 ) || helper_rc=$?
+    [[ "$helper_rc" -eq 124 ]] ||
+        fail "shipped run_bounded must return 124 when the deadline fires (want 124, got $helper_rc)"
+
+    helper_rc=0
+    ( eval "$helper"; run_bounded 5s true ) 2>/dev/null || helper_rc=$?
+    [[ "$helper_rc" -eq 124 ]] ||
+        fail "shipped run_bounded must reject a GNU-suffix bound closed with 124 (want 124, got $helper_rc)"
+
+    # A child that dies to a signal inside the bound reports a negative
+    # returncode; the helper must report the shell's 128+N (143), not 241.
+    helper_rc=0
+    ( eval "$helper"; run_bounded 5 sh -c 'kill -TERM $$; sleep 5' ) || helper_rc=$?
+    [[ "$helper_rc" -eq 143 ]] ||
+        fail "shipped run_bounded must report a signal-killed child as 128+N (want 143, got $helper_rc)"
 }
 
 test_dog_assets_are_pack_local
