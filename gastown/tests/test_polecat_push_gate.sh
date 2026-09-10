@@ -139,7 +139,7 @@ PY
 # is: the step names the old probe shape in its prose, and a check over the whole
 # step text would be red on a correct patch.
 test_metadata_probe_shape() {
-    python3 - "$FORMULA" <<'PY' || fail "the metadata probe must decode object/null/string and halt on the rest"
+    python3 - "$FORMULA" <<'PY' || fail "the metadata probe must decode object/null/string and halt on the rest, and every halt must hold exact marker parity"
 import sys
 import tomllib
 
@@ -581,7 +581,13 @@ PY
 
     bash -n "$tmp/gate.sh" || fail "the rendered gate is not valid bash"
 
-    # run_gate <label> <bead-json> [jq-calls-that-succeed] -> action log on stdout
+    # run_gate <label> <bead-json> [jq-calls-that-succeed] [show-ref rc] -> action
+    # log on stdout
+    #
+    # The show-ref rc is the refinery precondition's only input: 0 means
+    # origin/<base> resolves (the normal path), non-zero means the base branch
+    # exists only in this clone. It defaults to 0, so every arm written before
+    # that halt existed keeps the answer it was written against.
     run_gate() {
         local d="$tmp/run.$1"
         rm -rf "$d"; mkdir -p "$d/bin"
@@ -604,6 +610,10 @@ case "$1 $2" in
   "push origin")           printf 'PUSH\n' >>"$GATE_DIR/log"; exit 0 ;;
   "ls-remote origin")      echo "deadbeef	refs/heads/polecat/test-1"; exit 0 ;;
   "rev-parse HEAD")        echo "deadbeef"; exit 0 ;;
+  # The refinery precondition's probe. Without a case of its own it fell to the
+  # catch-all `exit 0` below -- "the ref resolves" -- so the halt below it could
+  # never fire and no arm here could reach it.
+  "show-ref --verify")     exit "$SHOWREF_RC" ;;
 esac
 exit 0
 GITSTUB
@@ -625,9 +635,17 @@ JQSTUB
         fi
         GATE_DIR="$d" PATH="$d/bin:$PATH" WORK_BEAD_ID=test-1 \
             CURRENT_BRANCH=polecat/test-1 GC_RIG=testrig \
-            JQ_OK_CALLS="${3:-}" REAL_JQ="$REAL_JQ" \
+            JQ_OK_CALLS="${3:-}" REAL_JQ="$REAL_JQ" SHOWREF_RC="${4:-0}" \
             bash "$tmp/gate.sh" >"$d/out" 2>&1 || true
         cat "$d/log"
+    }
+
+    # The ordered action verbs, one per gc call. `saw` proves a marker is
+    # somewhere in the log; this proves the hand-back happened in the right
+    # ORDER — parking after the drain-ack releases the claim on a bead that is
+    # still assigned, which is a different bug with an identical marker set.
+    action_seq() {
+        sed -n 's/^\([A-Z_][A-Z_]*\).*/\1/p' <<<"$1" | tr '\n' ','
     }
 
     saw() {
@@ -799,6 +817,45 @@ JQSTUB
     log=$(run_gate h2 '[{"metadata":{},"description":"Add a retry to the ingest job when the API 429s.","notes":""}]' 9)
     saw   "(h2) jq stub, no fault" "$log" "PUSH"
     never "(h2) jq stub, no fault" "$log" "halt_reason"
+
+    # ---- the refinery hand-off precondition --------------------------------
+    # The fifth halt in this fence: origin/<base> does not resolve, so the base
+    # branch exists only in this clone and the refinery cannot merge onto it.
+    #
+    # Every arm above reaches this halt's `if` and passes through it, so its
+    # WORDS were already pinned by the parity block and its position by the
+    # ordering check. What nothing covered was the body running: with `exit 0`
+    # inserted at the top of it the whole suite stayed green, which is the same
+    # mutation-C shape section 4b exists for, one halt over. The bead it strands
+    # is one that HAS commits and HAS passed the content gate — the furthest
+    # along a bead gets before a human has to touch it.
+    local bead_normal='[{"metadata":{},"description":"Add a retry to the ingest job when the API 429s.","notes":""}]'
+
+    # (j) origin/<base> missing. Park the bead open/unassigned/unrouted with the
+    # reason, page the witness, release the claim — and never reach the push,
+    # because a branch pushed here is one the refinery will bounce back.
+    log=$(run_gate j "$bead_normal" '' 1)
+    saw   "(j) base branch local-only" "$log" "halt_reason=base_branch_local_only"
+    saw   "(j) base branch local-only" "$log" "--status=open "
+    # `$*` collapses `--assignee=""` to `--assignee=`, so the trailing space is
+    # what distinguishes "handed back to the pool" from "handed to a name":
+    # bare `--assignee=` would match `--assignee=somebody` just as happily.
+    saw   "(j) base branch local-only" "$log" "--assignee= "
+    saw   "(j) base branch local-only" "$log" "gc.routed_to= "
+    saw   "(j) base branch local-only" "$log" "branch_ready=true "
+    saw   "(j) base branch local-only" "$log" "gastown.witness"
+    never "(j) base branch local-only" "$log" "PUSH"
+    # Ordered, so a park moved after the drain-ack is a different string even
+    # though every marker above still matches.
+    [[ "$(action_seq "$log")" == "BD_UPDATE,MAIL,DRAIN," ]] \
+        || fail "(j) base branch local-only: expected 'BD_UPDATE,MAIL,DRAIN,', got '$(action_seq "$log")'"
+
+    # (j2) the same bead with the ref resolving. The stub and its case arm are
+    # identical in both runs, so (j)'s halt is the missing ref talking and not
+    # the new arm's mere presence — the same control (h2) is for (h).
+    log=$(run_gate j2 "$bead_normal" '' 0)
+    saw   "(j2) base branch on origin" "$log" "PUSH"
+    never "(j2) base branch on origin" "$log" "halt_reason"
 }
 
 # --- 4b. the branch-content gate, executed ----------------------------------
