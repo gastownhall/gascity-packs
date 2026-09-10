@@ -382,10 +382,25 @@ test_witness_handoff_recovery_is_guarded_and_fail_closed() {
 
     # The claim guard and the fail-closed arm. bd refuses a cross-actor
     # --assignee write against the dead polecat's live in_progress claim
-    # without --force; unchecked, the witness would then mail success, delete
-    # the worktree, and skip the 3b reset that used to recover the bead.
-    printf '%s\n' "$block" | grep -F -- '--set-metadata gc.routed_to="" --force' >/dev/null ||
-        fail "Step 3a's cross-actor reassignment must pass --force"
+    # unguarded; unchecked, the witness would then mail success, delete the
+    # worktree, and skip the 3b reset that used to recover the bead. The guard
+    # must be the --if-assignee CAS: gc bd allowlists flags per subcommand and
+    # registers --force for close and delete but not for update, so a --force
+    # form aborts in the arg scanner before it reaches any store, leaving the
+    # handoff inert behind a green suite.
+    printf '%s\n' "$block" |
+        grep -F -- '--set-metadata gc.routed_to="" --if-assignee "$ASSIGNEE"' >/dev/null ||
+        fail "Step 3a's cross-actor reassignment must guard the write with --if-assignee \"\$ASSIGNEE\""
+    # Paired negative pin: the positive literal above is a prefix of the
+    # --force-appended form, so on its own it stays green over the one
+    # regression most likely to be reattempted -- a pair that is rejected twice
+    # over, first by the arg scanner and then by cobra's force/if-assignee
+    # mutual exclusion. Comment lines are excluded so the rationale above can
+    # name the flag it forbids; the worktree removal's own --force is a
+    # different call and stays allowed.
+    ! printf '%s\n' "$block" | grep -v '^[[:space:]]*#' | grep -F -- '--force' |
+        grep -vF 'git worktree remove' >/dev/null ||
+        fail "Step 3a must not pass --force to gc bd update: gc bd's per-subcommand allowlist rejects it before the store"
     # Failure policy, pinned separately from the ordering signature below so a
     # change to either reports as itself. delete-source runs after the
     # reassignment has already succeeded, so it is best-effort like the
