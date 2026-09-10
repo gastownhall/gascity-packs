@@ -129,6 +129,14 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "branch_has_real_change",
         'git worktree add --detach "$MERGE_WT" "origin/$TARGET"',
         'git -C "$MERGE_WT" merge --ff-only "$TEMP_SHA"',
+        # The invalid-upstream halt: a missing target is not a merge conflict,
+        # and without this arm one misconfigured `target` blocks every other
+        # merge in the rig. Pin the guard and the typed reason, NOT
+        # `--set-metadata merge_result=blocked` -- that literal occurs twice in
+        # this formula (here and in `block_existing_pr`), so a pin on it
+        # union-joins with the sibling and stays green with this arm deleted.
+        'if ! git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then',
+        "--set-metadata halt_reason=target_branch_missing",
         "--set-metadata merge_result=merged",
         '--set-metadata merged_sha="$MERGED_SHA"',
         'gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"',
@@ -228,6 +236,30 @@ POLECAT_BASE_REF_REQUIRED_FRAGMENTS = (
     'BASE_LOCAL="refs/heads/{{base_branch}}"',
     'gc bd update "$WORK_BEAD_ID" --set-metadata base_ref="$BASE_REF"',
     "metadata.base_ref",
+    # The ancestry check is the only thing standing between a locally-advanced
+    # base and a silently different fork point; the structural checks below
+    # cannot see it, because it is a nested `if`, not the block's `else` arm.
+    'if git show-ref --verify --quiet "$BASE_LOCAL" && ! git merge-base --is-ancestor "$BASE_LOCAL" "$BASE_REMOTE"; then',
+    # One stamp and one witness mail per base STOP arm. The mail is the
+    # load-bearing half: `halt_reason` has no runtime consumers, so a halt that
+    # only stamps is invisible until a human reads session logs. Each literal
+    # occurs exactly once in the formula, so a deletion cannot union-join with
+    # a sibling arm's copy and stay green.
+    "halt_reason=base_branch_diverged",
+    'gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_diverged',
+    "halt_reason=base_branch_missing",
+    'gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_missing',
+    "halt_reason=base_branch_vanished",
+    'gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_vanished',
+    "halt_reason=base_ref_lost",
+    'gc mail send "$WITNESS_TARGET" -s "polecat halted: base_ref_lost',
+    # `self-review` is a fresh session, so its arm has to re-derive
+    # WITNESS_TARGET or mail an empty target. The bare assignment cannot pin
+    # that: it now occurs twice, so a pin on it is satisfied by the
+    # workspace-setup copy alone and stays green with this one deleted. Pin the
+    # adjacency to the arm it serves instead -- that pair occurs exactly once.
+    '    WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"\n'
+    '    gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=base_ref_lost',
 )
 # The resolution block may only ever name one of the two probed refs. Anything
 # else is a substituted base, which is the defect class this lint exists for.
