@@ -311,9 +311,11 @@ test_witness_wisp_queries_pin_include_infra() {
     # --include-infra is passed: a wisp-reconcile query without it returns []
     # even when a wisp is assigned, and the witness pours a duplicate. That
     # regressed once already, so pin the flag rather than trust the comments.
-    # Deliberately witness-scoped: the refinery and deacon patrol queries
-    # still carry the bare form and are tracked separately in #252, so a
-    # pack-wide assertion would fail here instead of guarding this contract.
+    # Deliberately witness-scoped: the refinery and deacon prompt templates
+    # still carry the bare form under #266, so a pack-wide assertion would
+    # fail here instead of guarding this contract. Their formulas are no
+    # longer part of that gap -- they are pinned by the refinery and deacon
+    # guards below.
     total=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
         grep -c -F 'gc bd list' || true)
     flagged=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
@@ -446,9 +448,10 @@ test_boot_wisp_queries_pin_include_infra() {
     # burn never runs and each cycle pours a fresh wisp while its predecessor
     # leaks. Boot shipped with the bare form on all three sites one commit
     # after the witness fix, so scope this per-agent rather than widening the
-    # witness test: a pack-wide assertion is red either way (measured 10/21 at
-    # this commit) because the deacon and refinery sites are still bare and
-    # tracked separately in #252.
+    # witness test: a pack-wide assertion is still red at this commit
+    # (measured 18/22) because agents/refinery/prompt.template.md and
+    # agents/deacon/prompt.template.md remain bare under #266. The deacon and
+    # refinery formulas have since been fixed and carry their own guards.
     total=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
         grep -c -F 'gc bd list' || true)
     flagged=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
@@ -539,6 +542,65 @@ test_boot_deacon_observation_query_sees_wisps_tier() {
         [[ "$unflagged" -eq 0 ]] ||
             fail "$name deacon-observation queries must pass --include-infra ($unflagged do not)"
     done
+}
+
+test_refinery_wisp_queries_pin_include_infra() {
+    local formula total flagged
+    formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+
+    # Same contract as the witness and boot guards above, scoped to the
+    # refinery formula. The refinery resolves its current patrol wisp at every
+    # early-exit path and again at the next-iteration pour, and without
+    # --include-infra all of them resolve empty: the cycle burns nothing and
+    # pours a duplicate on top of the wisp it failed to see. Observed live --
+    # gas-city held two concurrent open mol-refinery-patrol wisps, which is
+    # this loop's own output (gastownhall/gascity-packs#252).
+    #
+    # Formula-scoped on purpose. agents/refinery/prompt.template.md still
+    # carries two bare sites, and the prompt half of #252 belongs to #266;
+    # widening this guard to the prompt would fail here on another PR's
+    # unlanded work instead of pinning what this one fixed.
+    total=$(grep -h -- '--type=molecule' "$formula" |
+        grep -c -F 'gc bd list' || true)
+    flagged=$(grep -h -- '--type=molecule' "$formula" |
+        grep -F 'gc bd list' | grep -c -- '--include-infra' || true)
+
+    # -ge, not -eq, for the reason the witness guard states: the flagged/total
+    # assertion owns the contract, so the count is a floor that catches a
+    # deleted query site rather than a cardinality pin a legitimate eighth
+    # site would break. The prose reference in patrol-summary is counted
+    # deliberately -- it is the line that tells the next session how to find
+    # its predecessor, and a bare form there teaches the blind query onward.
+    [[ "$total" -ge 7 ]] ||
+        fail "expected at least 7 refinery --type=molecule wisp queries (6 code sites + 1 prose reference), found $total"
+    [[ "$flagged" -eq "$total" ]] ||
+        fail "refinery --type=molecule wisp queries must pass --include-infra ($flagged/$total do)"
+}
+
+test_deacon_wisp_queries_pin_include_infra() {
+    local formula total flagged
+    formula="$GASTOWN/formulas/mol-deacon-patrol.toml"
+
+    # The deacon has the same defect by the same route, and no PR ever covered
+    # it: #266 took the prompts, #325 took the witness formula, and the deacon
+    # formula was left holding the bare form at its one reconciliation site.
+    # A single site is still a per-iteration leak, because it is the only
+    # thing standing between "burn the wisp I am on" and "pour a second one".
+    #
+    # Formula-scoped for the same reason as the refinery guard above:
+    # agents/deacon/prompt.template.md carries two bare sites that are #266's.
+    total=$(grep -h -- '--type=molecule' "$formula" |
+        grep -c -F 'gc bd list' || true)
+    flagged=$(grep -h -- '--type=molecule' "$formula" |
+        grep -F 'gc bd list' | grep -c -- '--include-infra' || true)
+
+    # A floor of 1 is the whole population here, so this arm is really the
+    # deletion guard: it fires if the reconciliation query is removed outright,
+    # which would take the burn with it and leak just as surely.
+    [[ "$total" -ge 1 ]] ||
+        fail "expected at least 1 deacon --type=molecule wisp query, found $total"
+    [[ "$flagged" -eq "$total" ]] ||
+        fail "deacon --type=molecule wisp queries must pass --include-infra ($flagged/$total do)"
 }
 
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed() {
@@ -682,6 +744,8 @@ test_witness_handoff_recovery_is_guarded_and_fail_closed
 test_boot_wisp_queries_pin_include_infra
 test_boot_patrol_burn_resolves_current_wisp
 test_boot_deacon_observation_query_sees_wisps_tier
+test_refinery_wisp_queries_pin_include_infra
+test_deacon_wisp_queries_pin_include_infra
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 
 echo "gastown pack asset tests passed"

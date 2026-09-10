@@ -119,7 +119,7 @@ wisp, burn the current wisp, then request a restart:
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -268,7 +268,7 @@ Target: $TARGET"
   # bead must not end the merge lane.
   CURRENT_WISP=${GC_BEAD_ID:-}
   if [ -z "$CURRENT_WISP" ]; then
-    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
   fi
   NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
   if [ -z "$NEXT" ]; then
@@ -323,7 +323,7 @@ Step 3a hand this already-rejected tip straight back here on the next crash.
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -428,7 +428,7 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
      ```bash
      CURRENT_WISP=${GC_BEAD_ID:-}
      if [ -z "$CURRENT_WISP" ]; then
-       CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+       CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
      fi
      NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
      if [ -z "$NEXT" ]; then
@@ -520,7 +520,7 @@ Branch: $BRANCH
 Target: $TARGET"
   CURRENT_WISP=${GC_BEAD_ID:-}
   if [ -z "$CURRENT_WISP" ]; then
-    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
   fi
   if [ -z "$CURRENT_WISP" ]; then
     echo "Could not resolve current wisp; not burning."
@@ -1191,8 +1191,11 @@ If the cycle ended early (conflict rejection, no work found), note
 why and what state was left.
 
 This summary is not stored separately — it lives in the wisp's
-closing reason. The next session can find it via `gc bd list --type=molecule
---status=closed --limit=5` if it needs predecessor context."""
+closing reason. The next session can find it with:
+`gc bd list --type=molecule --include-infra --status=closed --limit=5`
+if it needs predecessor context. `--include-infra` is required — wisp roots
+are ephemeral infrastructure beads and are hidden from `gc bd list` without
+it."""
 
 [[steps]]
 id = "next-iteration"
@@ -1228,7 +1231,7 @@ If auto_land = "false": skip this entirely.
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
