@@ -4180,8 +4180,13 @@ def _room_launch_participant_matches_session(participant: dict[str, Any], *, ses
     return False
 
 
-def _alias_matches_qualified_handle(alias: str, qualified_handle: str) -> bool:
-    """Does a platform-stored session alias name the seat `qualified_handle`?
+_ALIAS_MATCH_NONE = 0
+_ALIAS_MATCH_PREFIXED = 1
+_ALIAS_MATCH_EXACT = 2
+
+
+def _alias_match_specificity(alias: str, qualified_handle: str) -> int:
+    """How specifically does a stored alias name the seat `qualified_handle`?
 
     The platform qualifies an explicitly requested alias with the binding it
     resolves under, so the seat we asked to call `meltron` comes back stored
@@ -4190,26 +4195,89 @@ def _alias_matches_qualified_handle(alias: str, qualified_handle: str) -> bool:
     neither crosses a scope: a rig-qualified handle only matches aliases
     under the same rig, and a bare handle only matches bare aliases.
 
-    This is the single tail-match policy — the attach lookup
-    (resolve_existing_session_for_handle) and the publish-side re-pin share
-    it so a seat reachable by @@handle is also re-pinnable, and vice versa.
+    Returns _ALIAS_MATCH_EXACT, _ALIAS_MATCH_PREFIXED, or _ALIAS_MATCH_NONE.
+    Callers that must choose between two matching seats prefer the exact one;
+    a bare boolean cannot express that, which is why this returns a rank.
+
+    The prefixed arm strips *exactly one* leading segment. That encodes the
+    assumption that the platform prepends exactly one pack-namespace segment.
+    If some path ever prepends more, this rule fails **closed** — the seat is
+    not found and the launcher spawns a new one, which is visible. The looser
+    `alias_tail.endswith("." + handle_tail)` rule it replaced failed **open**:
+    `corp/gasburger.zeta.sky` answered to `@@corp/sky`, so a mention reached a
+    different agent than the one it named, silently and with no receipt
+    anomaly. That asymmetry is the argument for strictness — keep the
+    strip-exactly-one-segment shape if this is ever revisited.
     """
     alias_key = str(alias).strip().lower()
     handle_key = str(qualified_handle).strip().lower()
     if not alias_key or not handle_key:
-        return False
+        return _ALIAS_MATCH_NONE
     if alias_key == handle_key:
-        return True
+        return _ALIAS_MATCH_EXACT
     if ("/" in alias_key) != ("/" in handle_key):
-        return False
+        return _ALIAS_MATCH_NONE
     if "/" in handle_key:
         alias_rig, alias_tail = alias_key.split("/", 1)
         handle_rig, handle_tail = handle_key.split("/", 1)
         if alias_rig != handle_rig:
-            return False
+            return _ALIAS_MATCH_NONE
     else:
         alias_tail, handle_tail = alias_key, handle_key
-    return alias_tail == handle_tail or alias_tail.endswith("." + handle_tail)
+    if "." in alias_tail and alias_tail.split(".", 1)[-1] == handle_tail:
+        return _ALIAS_MATCH_PREFIXED
+    return _ALIAS_MATCH_NONE
+
+
+def _alias_matches_qualified_handle(alias: str, qualified_handle: str) -> bool:
+    """Does a platform-stored session alias name the seat `qualified_handle`?
+
+    This is the single tail-match policy — the attach lookup
+    (resolve_existing_session_for_handle) and the publish-side re-pin share
+    it so a seat reachable by @@handle is also re-pinnable, and vice versa.
+    """
+    return _alias_match_specificity(alias, qualified_handle) != _ALIAS_MATCH_NONE
+
+
+def _participant_handle_for_alias(launch: dict[str, Any], alias: str) -> str:
+    """Which launch participant does a publishing session's alias name?
+
+    Exact matches before prefixed ones, because a launch can hold both
+    `R/<seat>` and `R/<pack>.<seat>` and the pack-qualified alias matches
+    both — the exact entry and the strip-one-segment one. Taking the first
+    match in record order would pick whichever sorts first (records
+    round-trip through `sort_keys=True`, so iteration is alphabetical), which
+    for `corp/zulu.alpha` picks `corp/alpha`: the wrong participant's future
+    deliveries get redirected, and the seat that actually needed the re-pin
+    is left stale.
+
+    Returns "" when no participant matches, and also when more than one
+    matches within the winning tier — a re-pin mutates persisted routing
+    state, so an ambiguity is refused and logged rather than guessed. Only
+    participant keys that differ by case or surrounding whitespace can
+    collide within a tier: each tier admits exactly one normalized key.
+    """
+    exact: list[str] = []
+    prefixed: list[str] = []
+    for handle in room_launch_participants(launch):
+        normalized = str(handle).strip()
+        specificity = _alias_match_specificity(alias, normalized)
+        if specificity == _ALIAS_MATCH_EXACT:
+            exact.append(normalized)
+        elif specificity == _ALIAS_MATCH_PREFIXED:
+            prefixed.append(normalized)
+    for tier, candidates in (("exact", exact), ("prefixed", prefixed)):
+        if len(candidates) == 1:
+            return candidates[0]
+        if candidates:
+            print(
+                f"[extmsg] room-launch re-pin skipped: alias {alias!r} matches "
+                f"{len(candidates)} participants {sorted(candidates)!r} ({tier} tier); "
+                "refusing to guess which seat to rebind",
+                flush=True,
+            )
+            return ""
+    return ""
 
 
 def ensure_room_launch_session_for_handle(
@@ -5940,10 +6008,9 @@ def publish_binding_message(
             except GCAPIError:
                 effective_source_alias = ""
         if effective_source_alias:
-            for handle in room_launch_participants(launch_record):
-                if _alias_matches_qualified_handle(effective_source_alias, handle):
-                    effective_source_qualified_handle = str(handle).strip()
-                    break
+            effective_source_qualified_handle = _participant_handle_for_alias(
+                launch_record, effective_source_alias
+            )
     if effective_source_qualified_handle and launch_record:
         repinned = repin_room_launch_participant_for_session(
             str(launch_record.get("launch_id", "")).strip() or str(source_meta.get("launch_id", "")).strip(),
