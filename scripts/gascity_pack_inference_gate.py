@@ -546,7 +546,6 @@ METHODOLOGY_FLOW_CONTRACTS = {
                 "bmad.blind-hunter-reviewer",
                 "bmad.edge-case-reviewer",
                 "bmad.acceptance-auditor",
-                "bmad.story-self-checker",
                 "bmad.bmad-review-synthesizer",
                 "{implementation_target}",
             ),
@@ -761,7 +760,6 @@ def make_pack_specs() -> dict[str, PackSpec]:
                 "bmad.blind-hunter-reviewer",
                 "bmad.edge-case-reviewer",
                 "bmad.acceptance-auditor",
-                "bmad.story-self-checker",
                 "bmad.bmad-review-synthesizer",
             ),
             required_build_routes=(
