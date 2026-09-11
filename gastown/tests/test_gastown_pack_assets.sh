@@ -354,10 +354,13 @@ test_witness_handoff_recovery_is_guarded_and_fail_closed() {
     # it dead code for every bead 3b has already returned to pool. A sequence
     # signature pins order, count, and cardinality together, and pins the
     # precondition (Step 3's on-main close) rather than 3a alone.
+    # Leading whitespace is tolerated because the close now sits inside the
+    # STILL_ORPHANED gate asserted below; the line is still pinned whole, so
+    # this admits indentation and nothing else.
     signature=$(awk '
-        /^gc bd close <bead> --force$/ { print "step3-close" }
-        /^\*\*Step 3a:/               { print "step3a" }
-        /^\*\*Step 3b:/               { print "step3b" }
+        /^[[:space:]]*gc bd close <bead> --force$/ { print "step3-close" }
+        /^\*\*Step 3a:/                           { print "step3a" }
+        /^\*\*Step 3b:/                           { print "step3b" }
     ' "$witness" | tr '\n' ' ')
     [[ "$signature" == "step3-close step3a step3b " ]] ||
         fail "witness recovery must run Step 3's on-main close, then Step 3a, then Step 3b (got: $signature)"
@@ -367,8 +370,10 @@ test_witness_handoff_recovery_is_guarded_and_fail_closed() {
     # it fires 3a for beads that never submitted -- shipping an already-rejected
     # or half-finished tip to a refinery whose only merge gate is tests-pass.
     block=$(awk '/^\*\*Step 3a:/{f=1} /^\*\*Step 3b:/{f=0} f' "$witness")
+    # Matched without the leading `if `: the same condition now carries the
+    # STILL_ORPHANED gate in front of it, pinned as a whole line below.
     printf '%s\n' "$block" |
-        grep -F 'if [ "$HANDOFF_STAGE" = "target_recorded" ] && [ -n "$BRANCH_ON_ORIGIN" ]; then' >/dev/null ||
+        grep -F '[ "$HANDOFF_STAGE" = "target_recorded" ] && [ -n "$BRANCH_ON_ORIGIN" ]; then' >/dev/null ||
         fail "Step 3a must key the handoff on handoff_stage and a branch that is really on origin"
     ! printf '%s\n' "$block" | grep -F '[ -n "$BEAD_TARGET" ]' >/dev/null ||
         fail "Step 3a must not treat metadata.target as a completion signal"
@@ -433,6 +438,21 @@ test_witness_handoff_recovery_is_guarded_and_fail_closed() {
     # 3b keeps its own recovery for everything that falls through.
     grep -F 'gc workflow delete-source <bead> --apply && gc workflow reopen-source <bead>' "$witness" >/dev/null ||
         fail "Step 3b must still reopen the source bead for fall-through recoveries"
+
+    # All three destructive outcomes re-state the pre-destruction verdict, and
+    # the verdict itself starts closed. Step 3a is not covered by a guard at the
+    # pool reset: its success arm skips to Step 4 and never reaches Step 3b, so
+    # each site is pinned individually rather than inferred from one of them.
+    grep -F 'STILL_ORPHANED=false' "$witness" >/dev/null ||
+        fail "the pre-destruction verdict must start closed (STILL_ORPHANED=false)"
+    local gate
+    for gate in \
+        'if [ "$STILL_ORPHANED" = "true" ] && [ "$ON_MAIN" = "true" ]; then' \
+        'if [ "$STILL_ORPHANED" = "true" ] && [ "$HANDOFF_STAGE" = "target_recorded" ] && [ -n "$BRANCH_ON_ORIGIN" ]; then' \
+        'if [ "$STILL_ORPHANED" != "true" ]; then'; do
+        grep -F -- "$gate" "$witness" >/dev/null ||
+            fail "a destructive witness recovery path is not gated on the liveness re-check: $gate"
+    done
 }
 
 test_boot_wisp_queries_pin_include_infra() {

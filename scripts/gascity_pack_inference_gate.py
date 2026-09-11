@@ -145,6 +145,43 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         "gc session nudge <rig>/{{binding_prefix}}refinery",
         "--labels=warrant",
         "\"gc.routed_to\":\"{{binding_prefix}}dog\"",
+        # recover-orphaned-beads destroys work: it force-closes beads, force-
+        # reassigns them, and deletes worktrees. Every guard standing between a
+        # stale classification and one of those is pinned below, because the
+        # formula is prose and a guard can be dropped in an edit that still
+        # reads as a sensible recipe. Companion executed coverage lives in
+        # gastown/tests/test_mol_witness_patrol_on_main.sh, which lifts the
+        # Step 3 decision block out of this file and runs it.
+        #
+        # One shared liveness-map builder, so Step 1's classification and the
+        # pre-destruction re-check cannot drift apart, and a build failure
+        # returns non-zero rather than an empty map that reads as "all absent".
+        "build_liveness_map() {",
+        "MAP_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        'CYCLE_MAP_BUILT_AT="$MAP_BUILT_AT"',
+        # The pre-destruction verdict: starts false, is only promoted by a check
+        # that provably succeeded, and an unusable map skips instead of orphaning.
+        "STILL_ORPHANED=false",
+        "elif ! build_liveness_map; then",
+        # updated_at is a top-level bead field; read off .metadata it is always
+        # empty and the staleness guard silently never fires. Fractional seconds
+        # must be truncated before the compare, and the compare must be strictly
+        # older, so the boundary second falls on the skip side.
+        "jq -r '.[0].updated_at // empty'",
+        'BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"',
+        'elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then',
+        # The rebase/squash content test. `-z` plus the quoted array are jointly
+        # load-bearing: drop either and a path with whitespace or a newline
+        # becomes a pathspec matching nothing, `git diff --quiet` exits 0, and an
+        # unmerged branch reads as merged and is force-closed.
+        'done < <(git diff --name-only -z "$MERGE_BASE" "origin/$BRANCH")',
+        'elif git diff --quiet "origin/main" "origin/$BRANCH" -- "${CHANGED[@]}"; then',
+        # All three destructive sites re-state the verdict. Step 3a is not
+        # redundant with Step 3b: it skips to Step 4, so a guard placed only at
+        # the pool reset would never cover it.
+        'if [ "$STILL_ORPHANED" = "true" ] && [ "$ON_MAIN" = "true" ]; then',
+        'if [ "$STILL_ORPHANED" = "true" ] && [ "$HANDOFF_STAGE" = "target_recorded" ] && [ -n "$BRANCH_ON_ORIGIN" ]; then',
+        'if [ "$STILL_ORPHANED" != "true" ]; then',
     ),
     "mol-deacon-patrol": (
         "Work-layer health",
