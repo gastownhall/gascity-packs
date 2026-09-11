@@ -204,6 +204,429 @@ Default formula routes use these qualified targets: `gc.run-operator`,
 `gc.implementation-worker`, `gc.gap-analyst`, `gc.implementation-reviewer`,
 and `gc.publisher`.
 
+## Worker workspaces
+
+The unit of isolation is the agent. A rig role agent starts in the rig root
+unless its `work_dir` says otherwise; in the standard model every role agent
+that reads or writes a rig's source has one. gc creates the `work_dir`,
+starts the session in it, exports it as `$GC_DIR`, and materializes the
+agent's skills and hooks into it (because it differs from the scope root); a
+`pre_start` command runs before the session, in `$GC_DIR`, with the session
+environment (`GC_TRIGGER_BEAD_ID` for a slung bead), and makes that
+directory a git worktree of the rig on the bead's branch. Workers never
+choose, create, or hunt for a workspace, and the rig root stays a human
+checkout that no agent touches. A role the city gave no `work_dir` still
+starts in the rig root and has no lane; the role prompt then has it create no
+worktree and write nothing there, whatever the rig's own rules say: it reads
+by `git show` and `git log` only, and a step that needs a checkout closes with
+`gc.outcome=fail` and `gc.failure_class=no-lane`, naming the fix, a lane for
+the role (the `[[patches.agent]]` entry below). No prompt-side path makes a
+workspace for an unconfigured role.
+
+This pack ships `assets/scripts/worker-worktree.sh` for the `pre_start` half.
+Copy it into the city's scripts directory, `.gc/scripts` (gc does not sync a
+pack's `assets/scripts` there), and reference it through `{{.CityRoot}}`:
+
+```sh
+cp path/to/gascity/assets/scripts/worker-worktree.sh "$CITY/.gc/scripts/"
+```
+
+Wire the roles per city with `[[patches.agent]]` in `city.toml`, the
+documented surface for overriding an imported pack agent's fields
+(`work_dir` and `pre_start` are both patchable; `rig = "*"` reaches the role
+in every rig; the bare role name matches the pack agent whatever import
+alias the city gave it). One entry per role. Give the read-only roles
+(reviewers, analysts, planners) a lane too, so no role ever starts in the
+rig root; for them the script's reuse path is a fetch and a checkout.
+
+```toml
+# city.toml — every gc role agent starts in its own lane worktree.
+[[patches.agent]]
+rig = "*"
+name = "implementation-worker"
+work_dir = ".worktrees/{{.Rig}}/lane-{{.AgentBase}}"
+pre_start = ["sh {{.CityRoot}}/.gc/scripts/worker-worktree.sh"]
+
+# Repeat the entry for the other roles this pack ships: publisher,
+# run-operator, review-synthesizer, design-author, requirements-planner,
+# task-decomposer, issue-triager, implementation-reviewer,
+# design-implementation-reviewer, design-test-risk-reviewer, gap-analyst.
+```
+
+A second role instance on another provider (an `agents/<name>/agent.toml`,
+see the repository README, "Codex code workers") carries the same two keys
+directly. `{{.AgentBase}}` is the agent identity gc resolves the session
+under. A pool slot is named `<role>-<slot>`, so concurrent sessions of one
+role get distinct lanes (`lane-gc.implementation-worker-1`,
+`lane-gc.implementation-worker-3`, …) and never share a checkout; a singleton
+agent (`max_active_sessions = 1`) keeps one lane across sessions, so the
+script's reuse path (fetch, switch to the new bead's branch) applies.
+`gc session list` shows each live session's work dir. A lane belongs to one
+live session at a time and the branch is the handoff (below): a helper
+session, a nested review or a second worker never writes into another
+agent's lane, and the role prompt has a worker pin its lane before its
+first write (`gc session list` shows it as the only live session with that
+work dir; otherwise it writes nothing and mails the mayor).
+
+The pack does not set these keys on its role agents by default. The
+`pre_start` half needs the script installed in the city's `.gc/scripts`, and
+a `pre_start` that fails aborts the session start by design, so a pack-level
+default would stop every role session in a city that has not installed it;
+which roles need filesystem isolation is a deployment decision in gc's
+model. `gc doctor` reports a `pre_start` script referenced via
+`{{.CityRoot}}` that is missing on disk.
+
+The script makes `$GC_DIR` a worktree of `$GC_RIG_ROOT`'s repository and
+never touches the rig root's working tree; the rig root, anything inside it,
+and any ancestor of it are refused up front. Runs on one repository are
+serialized by a lock in its git dir, so concurrent sessions cannot race on a
+branch or a lane. With a trigger bead it reuses the one branch whose name
+contains the bead id as a whole token (local or on the remote) or creates
+`<bead id>` from a resolved base: `<remote>/HEAD`, else `<remote>/main`, else
+`<remote>/master`, else the rig root's `HEAD` with a WARN (the remote is
+`origin` unless `--remote` names another; `--base` overrides); a branch
+checked out in another worktree is not stolen (the lane is left detached at
+its tip, with a WARN). Nothing is
+ever deleted: a lane with tracked modifications, or a non-empty directory
+that is not a git checkout, is moved to `<lane>.aside-<utc stamp>` first; a
+checkout of another repository is refused. Untracked files (materialized
+skills, hooks, `node_modules`) do not count as modifications. `sh
+worker-worktree.sh --help` prints the full contract.
+
+The lane is on the bead's branch when the worker claims (a pooled session
+with no trigger bead starts detached and takes the bead's branch itself after
+the claim, below). With a gascity that
+resolves the work branch from the session work dir (`hookClaimWorkBranchDir`,
+the companion core change), `gc hook --claim` then stamps a correct
+`gc.work_branch`; older builds read the rig root's branch, so the role prompt
+has the worker compare `gc.work_branch` with its branch after the claim and
+restamp it when they differ: the bead's branch is the one whose name contains
+the bead id as a whole token (the `pre_start` rule), so a record naming
+anything else is a claim-time stamp, and the worker never writes a fresh base
+branch over a recorded item branch, which carries the bead's committed work.
+
+Inside a formula the branch is also the handoff between lanes, under one
+lifecycle: a lane holds the item's branch only while it is writing to it and
+releases it (`git switch --detach`) when it hands off, because git allows one
+worktree per branch; every reader inspects the recorded commit detached in its
+own lane (`git switch --detach <commit>`, `git show <commit>:<path>`), so
+parallel reviewers never contend and the fix lane finds the branch free.
+Every read that resolves the item's branch to a commit names the full ref,
+`refs/heads/<branch>` (`git log -1 "refs/heads/<branch>"`, `git rev-parse
+--verify "refs/heads/<branch>"`), never the bare name: git resolves a bare
+name tag-first, so a tag with the branch's name would send readers and review
+to the base instead of the implementation; only the branch operand of `git
+switch`, which resolves branches alone, stays bare, and a tracked take starts
+from `refs/remotes/origin/<branch>`. A
+branch left held by a crashed writer is released by the operator from that
+lane, never by another agent's step. Every lane, writer or reader, proves it
+is a lane before it switches or detaches anything (the three-part boundary
+test in `do-work/prepare-worktree` step 4: the resolved top-level is `$GC_DIR`
+itself, not the rig root or inside it, and the git common dir is the rig's);
+a role with no `work_dir` starts in the rig root, and a reader there reads by
+`git show` only and never detaches the human checkout. After the fix lane
+commits it refreshes the recorded commit of the item it fixed (that source
+anchor's record in the review context file and `gc.review_commit` on that
+source anchor, never a workflow-wide key: separate drains put several items
+on independent branches, each reviewed at its own commit) before it releases
+the branch, so the next review attempt inspects the fixed code, not the
+commit the setup saw, and the other items' recorded commits stay as they
+were. A re-launched item keeps its branch: `pre_start` names a lane's branch
+for the trigger step bead, so a new run puts the operator's lane on a fresh
+step branch, and `do-work/prepare-worktree` reads the source anchor's
+recorded `gc.work_branch` first and resolves the item's branch by name, the
+one branch naming `<source-anchor-id>` as a whole token, local or on
+`origin` (exactly one such branch is the item's whether or not the record
+agrees; none means a new `<source-anchor-id>`; several fail closed for the
+operator to reconcile), takes it in the operator's lane and records it only
+when the record differs, never a fresh base branch over a recorded item
+branch. A branch held by another worktree, a human checkout included, fails
+the step closed with the holder named, and no checkout state, not the rig
+root's branch nor a default branch, is consulted: the record on its own
+decides nothing, because a claim-time stamp can name anything. The same
+name rule binds a directly claimed bead: its branch is the one naming the
+bead id, a worker whose `pre_start` had no trigger bead takes that branch
+itself after the claim by the same listing (full ref names, one namespace
+prefix removed), a worker whose `pre_start` found that branch held elsewhere
+closes `gc.failure_class=branch-held` naming the holder instead of creating a
+second candidate, and a branch recorded before this rule under a name
+without the id is renamed by the operator before the rule is rolled out on a
+city.
+
+Two related core behaviors complete the picture:
+
+- A bead carrying `work_dir=<absolute path>` metadata, assigned and in
+  progress, starts its next session in that directory (an existing per-bead
+  worktree wins over the agent's lane). The role prompt tells workers to stamp
+  it, with `gc.work_branch`, before closing a bead whose work continues.
+- Toolchain on the worker PATH belongs to the provider: `[providers.<name>]
+  env = { PATH = "..." }` (values expand `$VAR` against the controller
+  environment) or a command shim that prepends a directory of wrappers. The
+  role prompt does not install package managers; the wrappers this pack
+  ships for that directory are the next section.
+
+## Worker toolchain
+
+The directory a provider shim puts first on PATH (`CODEX_SHIM_PATH_PREPEND`,
+or a `[providers.<name>] env` PATH) holds thin wrappers, and this pack ships
+two in `assets/scripts/toolchain/`: `pnpm`, and `node` (installed three
+times, as `node`, `npm` and `npx`; the name it is called by selects the
+program). Each installs its tool ONCE under the city, in
+`$CITY/.gc/toolchain/`, never machine-wide, and per-city settings live in a
+`toolchain.env` beside the wrappers (plain `KEY=VALUE` lines, never
+evaluated; a variable in the environment, even empty, wins over the file).
+Each wrapper's full contract is the comment at its head.
+
+```sh
+mkdir -p "$CITY/.gc/shims/toolchain"
+install -m 0755 path/to/gascity/assets/scripts/toolchain/pnpm "$CITY/.gc/shims/toolchain/pnpm"
+install -m 0755 path/to/gascity/assets/scripts/toolchain/node "$CITY/.gc/shims/toolchain/node"
+ln -sf node "$CITY/.gc/shims/toolchain/npm"
+ln -sf node "$CITY/.gc/shims/toolchain/npx"
+cat > "$CITY/.gc/shims/toolchain/toolchain.env" <<'EOT'
+NODE_VERSION=24.21.0
+PNPM_VERSION=11.20.0
+EOT
+# outside any sandbox, once, so the first worker command is not the install:
+(cd "$CITY" && export PATH="$CITY/.gc/shims/toolchain:$PATH" && node --version && pnpm --version)
+```
+
+The installed copies are city runtime state; the files here are their
+source of record. Record each canonical md5 once, from the pack checkout at
+the installed pin, and compare the installed file to the literal (a missing
+file or a missing md5 tool then fails the check instead of matching an empty
+string; `md5sum` on Linux prints the same hash first):
+
+```sh
+canonical=$(mktemp) && git -C path/to/gascity-packs show <pin>:gascity/assets/scripts/toolchain/pnpm > "$canonical" && md5 -q "$canonical"
+canonical=$(mktemp) && git -C path/to/gascity-packs show <pin>:gascity/assets/scripts/toolchain/node > "$canonical" && md5 -q "$canonical"
+test "$(md5 -q "$CITY/.gc/shims/toolchain/pnpm")" = <that md5>
+test "$(md5 -q "$CITY/.gc/shims/toolchain/node")" = <that md5>
+```
+
+### pnpm: the lane install runs once, never inside a check
+
+Measured on pnpm 11.20.0: `verify-deps-before-run` defaults to `install`, so
+every `pnpm run`, `pnpm exec`, `pnpm test` and bare `pnpm <script>` first
+re-runs `pnpm install` when `node_modules` is out of sync with the lockfile,
+which is the state of a fresh lane and of a lane that just switched to a
+branch with different dependencies. pnpm spawns that install by name through
+PATH, and three parallel read-only checks (a test, a lint, a render) after
+one branch switch each ran it against the same `node_modules`, racing on the
+bin links (`ENOENT ... chmod .../node_modules/.bin/...`). From the
+environment only `pnpm_config_verify_deps_before_run=false` reaches the
+setting (any other value, and an `.npmrc` line, still install); the
+`--config.verify-deps-before-run=error` flag is what makes pnpm answer
+read-only, with `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN` instead of an install.
+
+The wrapper exports the `false` value for the command it runs and sorts
+each command into one of three kinds by the first bare token after the
+global options and the prefixes pnpm accepts (`recursive`/`m`, `pm`, `with
+<runtime>`). Which option swallows which token is pnpm's own option table,
+copied from the pinned `pnpm.mjs` (the nopt pass pnpm finds its command
+with: the global options plus `add`'s and `install`'s, the universal
+shorthands, unique prefixes, `--no-` negation, a boolean swallowing only a
+literal `true`/`false`, `--` and the words `create`/`exec`/`test` ending the
+options), so `pnpm --filter app install`, `pnpm --child-concurrency 1
+install` and `pnpm --recursive false install` are installs, and the flags
+the wrapper acts on are read again with the command's own table, as pnpm
+reads them:
+
+- **info** (`store`, `config`, `list`, `outdated`, `--version`, `help`, ...,
+  and any command whose last `-h`/`--help`/`-v`/`--version` in pnpm's option
+  scope is on; `--no-help`, `--help=false` and `--help --no-help` ask for
+  none, `--no-help --help` asks, as pnpm's parser keeps the last value) runs
+  as is and touches no lock.
+- **mutate** (`install`, `ci`, `add`, `remove`, `update`, `link`, `prune`,
+  `dedupe`, `rebuild`, `clean`, `purge`, ... every pnpm 11.20 built-in that
+  can change `node_modules`) runs where typed, arguments unchanged, under
+  the lane lock, so it never overlaps another caller's install. A package
+  script named `clean`, `purge`, `rebuild` (`rb`), `setup` or `deploy` in
+  the manifest of the directory pnpm acts on wins over the built-in for
+  pnpm, so it is a project command here too, unless `pnpm pm <name>` forces
+  the built-in; an empty script (`"clean": ""`) is no script to pnpm and
+  none here.
+- **project** (`run`, `exec`, `test`, a bare script or bin name, anything
+  else) first makes sure the lane is in sync, then runs.
+
+In sync is pnpm's own word, never the wrapper's: before a project command
+the wrapper asks pnpm read-only, in the directory pnpm will act on, with
+`--config.verify-deps-before-run=error` and a command that runs nothing
+(`pnpm exec true`). pnpm's `checkDepsStatus` compares `node_modules` with
+the lockfile, every manifest, the workspace membership and the settings, and
+answers yes or no (a missing `node_modules` included); any other failure
+(a broken manifest; a denied write to pnpm's workspace state file on a
+read-only lane, which pnpm reports under the same error code with the file
+error as its reason, measured: `[ERR_PNPM_VERIFY_DEPS_BEFORE_RUN] EACCES:
+permission denied, open '…/.pnpm-workspace-state-v1.json.…'`, so a reason
+that is a system error code is no verdict either) is no verdict: one WARN
+and the command runs as is, never an install. The question is asked under
+the lane lock, `node_modules/.gc-lane-deps.lock` (a mutate or install in
+flight holds it, and a `rebuild` half done still reads as yes to pnpm, so
+it is waited for first). Yes: the lock is released and the command runs,
+holding nothing. No: the caller, still under the lock in the lane
+(the workspace root above the target, the nearest `pnpm-workspace.yaml`,
+because a workspace install writes every member's tree whatever
+`sharedWorkspaceLockfile` says; else the nearest `pnpm-lock.yaml`; under
+`--ignore-workspace`, pnpm's "this directory is a standalone project", the
+lane is the target directory itself when it holds `pnpm-lock.yaml`, and the
+question and the install carry the flag, so a fixture project inside a
+workspace is prepared as itself, never its parent; a project command with
+no lane runs as is), runs `pnpm install --frozen-lockfile` in the lane,
+releases, and runs; concurrent callers wait for the lock and ask pnpm
+again, so a lane is installed once whatever runs in parallel. That is the
+wrapper's whole concurrency contract (shape A, the mayor's decision after
+gate rounds 19 to 29 each found a hole around a reader/writer model of
+running commands): it owns its own question and the one frozen install per
+lockfile, under the lane lock, and mutate-vs-mutate serialization, two
+callers that both change dependencies (`install`, `add`, `remove`,
+`update`, `dedupe`, `import`, `link`, `unlink`, `prune`, `patch`,
+`rebuild`, and the other mutating built-ins in pnpm's own command table)
+serializing on that same lock; a project command (`run`, `exec`, `test`, a
+script or bin name, `dlx`, any non-mutating command) runs after the
+question with no token of any kind, and nothing tracks running commands.
+**Non-goal:** A running command is not fenced from a dependency mutation
+another caller starts afterwards. This is bare pnpm's own position, and
+under the lane model one lane belongs to one agent (memory
+dispatch-worktree-constraint), so the two callers are the same agent. That
+names `pnpm run build` under `syncInjectedDepsAfterScripts` (pnpm writes
+injected dependencies and bin links after the script: a writer holding no
+lock, unfenced by design) as much as `node check.js & pnpm rebuild`. A
+command a running project command starts is any other caller: a project
+command asks pnpm again under the lock, a mutate takes the lock and runs,
+under the command that started it. A lane whose `node_modules` refuses the
+lock for this caller (a sandbox, a read-only checkout) cannot be
+coordinated from here, its question and install serialize on that lock, so
+the command fails closed at once naming the refusal;
+`GC_TOOLCHAIN_LANE_DEPS=off` runs there when the lane is this caller's
+alone. A failed install fails the
+command (the requested check never runs against a half-installed tree);
+pnpm fails the frozen install closed when a manifest is ahead of the
+lockfile, and the worker's own `pnpm install` (a mutate) resolves that.
+Three gate rounds showed why the wrapper keeps no marker of its own: a
+lockfile hash, then a manifest fingerprint, then a workspace enumeration
+each re-implemented a part of pnpm's definition and each missed a case pnpm
+already covers (`install --lockfile-only`, a cleanup built-in, a new
+workspace package). The question costs one pnpm start (about a third of a
+second) per project command.
+
+The directory pnpm acts on is the last `-C`/`--dir`/`--config.dir=` value
+in pnpm's own option scope, else the last `--prefix` (`--dir` wins wherever
+it stands beside `--prefix`, measured; `--config.prefix=` and
+`--config.workspace-root=` are not read by pnpm) (the whole line for a built-in; for `run` up to
+the script name, whose own arguments are its own; nothing after `exec`,
+`test` or `create`, whose next token is the bin or script name whatever it
+looks like, measured: `pnpm exec -C x vitest` is 'Command "-C" not found';
+a bare script name ends it), resolved against the working directory, else
+the working directory itself. A lock whose owner is dead is moved aside by rename
+(nothing deleted). Every change of hands of the lock goes through one gate,
+`.gc-lane-deps.lock.reclaim` (mkdir, held for an instant): making the lock
+(the mkdir and the pid inside as one step, with HUP, INT and TERM held for
+it) and judging a stale lock and moving it aside, so a waiter cannot make a
+fresh lock while another judges the old one, two waiters cannot both clear
+it, and a lock that under the gate names another owner than the one judged
+dead is never moved; a gate left standing for two minutes (a wrapper killed
+outright inside it) fails the command closed for a human to remove. A live
+lock is waited for (`LANE_DEPS_WAIT`, default 600 s) and then the command
+fails closed naming the holder; a lock that cannot be made at all
+(`node_modules` refusing the write under a sandbox, or the pid file it
+records the owner in) fails the command at once with the refusal, leaving
+no lock standing; a failed frozen install fails the command with pnpm's own
+exit status; only the pid that took a lock releases it, and the making and
+the releasing of the lock and the gate each run with HUP, INT and TERM held
+(a signal in that instant is lost, never a lock left standing). The lock records the wrapper's pid, and
+the dead-wrapper window is accepted, not chased: a wrapper killed outright
+(SIGKILL) while its pnpm child still runs leaves a lock whose owner is dead,
+the next caller reclaims it and may run beside the orphaned child; a signal
+the wrapper traps (HUP, INT, TERM) releases the lock only after the child
+has ended, as `sh` runs a trap after the foreground command completes
+(measured). No child-pid tracking, no ancestor exemption. A lifecycle
+script the mutation itself
+runs (a `postinstall` that calls `pnpm run build`) re-enters the wrapper
+with `GC_TOOLCHAIN_LANE_DEPS_INSTALLING=<lane>` set by its parent and runs
+as info instead of asking pnpm or waiting on its parent's lock. pnpm itself
+is installed once per version, under `<toolchain>/pnpm/v<version>/`, so a
+changed `PNPM_VERSION` is a fresh install, never a stale cache (an older
+unversioned `<toolchain>/pnpm/` from a previous wrapper is left alone). To
+take even the first lane install out of the worker's first check, a city can
+pre-warm the lane in `pre_start` after the worktree script, with
+`[session] setup_timeout` raised to cover a cold install:
+`"{{.CityRoot}}/.gc/shims/toolchain/pnpm exec true"`.
+
+### node: a Node the repository accepts, without touching the machine's
+
+The wrapper picks a version from `GC_TOOLCHAIN_NODE_VERSION`, else the
+nearest `.nvmrc` / `.node-version` above the working directory (`24`,
+`24.21`, `24.21.0`, with or without `v`; `lts/*` is skipped with a WARN),
+else `NODE_VERSION` in `toolchain.env`; with none it is transparent and runs
+the next `node` on PATH. A major resolves to the newest matching install
+under the toolchain, else the newest matching release in
+`<dist>/index.json`. A missing version is downloaded once from
+`https://nodejs.org/dist` (`GC_TOOLCHAIN_NODE_DIST` overrides; `file://`
+works), checked against that release's `SHASUMS256.txt` before extraction,
+staged beside the target and renamed into place under a lock other callers
+wait for (owner pid inside; an interrupted install's lock, its owner dead
+or absent for two minutes, is moved aside by rename under a second reclaim
+lock after a re-read, the same shape as the pnpm lane lock, so two waiters
+never clear it twice and one tree is installed). When the pin cannot be installed (no network, the toolchain
+directory not writable as under a sandbox, a checksum mismatch, installs
+off), the wrapper prints one WARN and falls through to the next `node` on
+PATH, so a toolchain error strands no session. The selected install's `bin`
+goes first on PATH before the program runs, so `npm` and `npx` (`#!/usr/bin/env
+node` scripts) find the selected node even when called by absolute path with
+no node on the caller's PATH. pnpm's own bin resolves
+`node` through PATH and the pnpm wrapper puts this directory first, so pnpm
+and every script it runs use the pinned Node.
+
+Say in the city's notes what the machine has and what the wrapper selects.
+On the city this was built for: Homebrew `node` is v25.9.0, outside the
+rig's `engines` range `^22.13.0 || ^24.0.0 || >=26.0.0` (every pnpm command
+printed `Unsupported engine`); the Codex CLI's bundled runtime is v24.19.0
+but belongs to Codex; `toolchain.env` pins 24.21.0 (the current 24 LTS), and
+a `.nvmrc` in the repository, when it lands, wins over that pin.
+
+### Codex review sandbox and local listeners
+
+A worker's own `codex review --base origin/main` runs inside codex's
+workspace-write sandbox even when the session itself was started with
+`--dangerously-bypass-approvals-and-sandbox`, so a fixture that listens on
+127.0.0.1, or on a unix socket under `TMPDIR` (tsx's IPC pipe), fails with
+`EPERM` there while the same suite passes in the session. Measured on
+codex-cli 0.153.4, driving a listener through real `codex exec` runs: no
+configuration grants loopback binding without egress. `network.allow_local_binding=true`
+alone, with `features.network_proxy=true`, with `network.mode="limited"` and
+an empty domain list, and under `sandbox_mode="read-only"` all still deny the
+TCP and the unix-socket listen; `sandbox_workspace_write.network_access=true`
+is the egress switch, which a review must never gain. The decision is the
+documented skip marker plus parent evidence:
+
+- codex sets `CODEX_SANDBOX=seatbelt` and `CODEX_SANDBOX_NETWORK_DISABLED=1`
+  in every sandboxed command. A fixture that needs a local listener skips
+  under `CODEX_SANDBOX_NETWORK_DISABLED=1` (vitest: `it.skipIf(...)`), and
+  the repository's test contract names that marker (a repository change,
+  owned by the repository's own bead).
+- The review takes the session's evidence as input: run the suite in the
+  session first, then hand the log path to the review as its prompt
+  (`codex review --base origin/main "Tests ran in the parent session: see
+  <path>. Do not start listeners."`). The gate helper a city runs with `-s
+  read-only` (`codex-gate.sh`) is already a read-only reviewer that runs no
+  suite; its header should say that listener-bound tests are parent
+  evidence, never gate work.
+
+The trade-off: a sandboxed review cannot prove a listener-bound test itself;
+it reads the session's log. The alternative, network egress for the review,
+is rejected.
+
+### Running this pack's tests
+
+`make test` at the repository root runs the pytest suites CI runs
+(`python3 -m pytest` when pytest, PyYAML and jsonschema import, else `uv run
+--with pytest --with pyyaml --with jsonschema`), and `make test-gascity`
+runs only `tests` and `gascity/tests`. Both unset `GC_TEMPLATE`, which a gc
+worker session exports and one claim-command test would otherwise inherit.
+A city's role prompt for this repository names the same target in its test
+paragraph, so no worker rediscovers the runner.
+
 ## Build Methodology Contract
 
 `build-base` is the virtual full-lifecycle workflow contract. It defines the
