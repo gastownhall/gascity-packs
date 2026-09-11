@@ -1481,6 +1481,71 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     assert "gc bd dep add" in contracts["mol-idea-to-plan"]
 
 
+# Guards standing between a stale orphan classification and one of the witness's
+# three destructive outcomes (force-close, force-reassign, worktree deletion).
+# Each must be pinned in the gate contract AND occur exactly once in the formula.
+WITNESS_ORPHAN_GUARD_PINS = (
+    # One shared map builder that reports failure instead of returning an empty
+    # map, and a cycle-scoped watermark the per-candidate rebuild cannot reset.
+    "build_liveness_map() {",
+    "MAP_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    'CYCLE_MAP_BUILT_AT="$MAP_BUILT_AT"',
+    "elif ! build_liveness_map; then",
+    # Fail-closed pre-destruction verdict.
+    "STILL_ORPHANED=false",
+    # Staleness guard: top-level field path, truncated fraction, strict compare.
+    "jq -r '.[0].updated_at // empty'",
+    'BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"',
+    'elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then',
+    # Content test: -z and the quoted array are jointly load-bearing.
+    'done < <(git diff --name-only -z "$MERGE_BASE" "origin/$BRANCH")',
+    'elif git diff --quiet "origin/main" "origin/$BRANCH" -- "${CHANGED[@]}"; then',
+    # All three destructive sites re-state the verdict.  Step 3a skips to Step
+    # 4, so a guard placed only at the pool reset would never cover it.
+    'if [ "$STILL_ORPHANED" = "true" ] && [ "$ON_MAIN" = "true" ]; then',
+    'if [ "$STILL_ORPHANED" = "true" ] && [ "$HANDOFF_STAGE" = "target_recorded" ]'
+    ' && [ -n "$BRANCH_ON_ORIGIN" ]; then',
+    'if [ "$STILL_ORPHANED" != "true" ]; then',
+)
+
+
+def test_gastown_witness_patrol_pins_orphan_recovery_guards() -> None:
+    """Every guard on the witness's destructive paths must stay pinned.
+
+    ``recover-orphaned-beads`` force-closes beads, force-reassigns them and
+    deletes worktrees.  The formula is prose, so a guard can be removed by an
+    edit that still reads as a sensible recipe; without a pin per guard the
+    gate stays green while the recipe goes back to destroying live work.
+    Asserting the fragments here means deleting a pin fails as loudly as
+    deleting the guard it protects.
+    """
+    witness = gascity_pack_inference_gate.GASTOWN_BUILD_WORKFLOW_CONTRACTS["mol-witness-patrol"]
+
+    for fragment in WITNESS_ORPHAN_GUARD_PINS:
+        assert fragment in witness, f"unpinned witness orphan-recovery guard: {fragment!r}"
+
+
+def test_gastown_witness_patrol_guard_pins_are_present_in_the_formula() -> None:
+    """The pins must actually match the shipped formula.
+
+    A pin that matches nothing is dead — it can never fail, so it protects
+    nothing.  A guard pin that matches more than once can also be satisfied by
+    narration left behind after the guard itself is deleted, so those are held
+    to exactly one occurrence.  Both failure modes leave the gate green, so
+    check the raw formula text the gate actually reads.
+    """
+    spec = gascity_pack_inference_gate.PACK_SPECS["gastown"]
+    formula = spec.source / "formulas" / "mol-witness-patrol.toml"
+    text = formula.read_text(encoding="utf-8")
+
+    for fragment in gascity_pack_inference_gate.GASTOWN_BUILD_WORKFLOW_CONTRACTS["mol-witness-patrol"]:
+        assert fragment in text, f"dead pin, matches nothing in {formula}: {fragment!r}"
+
+    for fragment in WITNESS_ORPHAN_GUARD_PINS:
+        count = text.count(fragment)
+        assert count == 1, f"{fragment!r} occurs {count} times in {formula}, want exactly 1"
+
+
 def test_build_basic_work_item_targets_code_and_pytest() -> None:
     text = gascity_pack_inference_gate.build_basic_work_item()
 

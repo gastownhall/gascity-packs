@@ -189,41 +189,84 @@ a NEW session with a different ID — the old one never comes back.
 
    Stream both JSON blobs through temp files, never `--argjson` on argv: on a
    busy city the session `command` fields are large and overflow ARG_MAX
-   (`argument list too long: jq`). Build the map once:
+   (`argument list too long: jq`). Build the map through this function rather
+   than inline — Step 2a re-runs it per orphan candidate, and a single
+   definition is what stops the pre-destruction re-check from drifting away
+   from this classification: same two legs, same identifier forms, same
+   last-write-wins tie-break on duplicate identifiers.
    ```bash
-   SESSIONS_FILE=$(mktemp); SESSION_BEADS_FILE=$(mktemp)
-   gc session list --state=all --json > "$SESSIONS_FILE"
-   gc bd list --type=session --label=gc:session --include-infra --include-gates --all --json --limit=0 > "$SESSION_BEADS_FILE"
+   build_liveness_map() {
+     # Stamp the watermark BEFORE the snapshot. Everything touched from this
+     # instant onward is by definition not represented in the map about to be
+     # built, so the staleness guard has to measure against the START of the
+     # build, not its end. Measured on a 36-session city, the two queries plus
+     # the jq build take 2.56s — stamping last put that whole window on the
+     # wrong side of the comparison, which is the fail-open direction.
+     MAP_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+     LIVENESS_MAP='{}'; MAP_COUNT=0; SESSION_COUNT=0; MAP_QUERY_RC=0
 
-   LIVENESS_MAP=$(jq -n --slurpfile sessions "$SESSIONS_FILE" --slurpfile session_beads "$SESSION_BEADS_FILE" '
-     def add($m; $key; $state; $closed):
-       if (($key // "") | length) == 0 then $m
-       else $m + {($key): (if $closed then "closed" else ($state // "") end)}
-       end;
-     (reduce ($sessions[0].sessions // [])[] as $s ({};
-         add(.; $s.id;         $s.state; ($s.closed // false))
-       | add(.; $s.name;       $s.state; ($s.closed // false))
-       | add(.; $s.session_name; $s.state; ($s.closed // false))
-       | add(.; $s.alias;      $s.state; ($s.closed // false))
-       | add(.; $s.agent_name; $s.state; ($s.closed // false))
-     )) as $from_sessions
-     | reduce ($session_beads[0] // [])[] as $b ($from_sessions;
-         add(.; $b.metadata.configured_named_identity; $b.metadata.state; ($b.status == "closed")))')
+     SESSIONS_FILE=$(mktemp); SESSION_BEADS_FILE=$(mktemp)
+     gc session list --state=all --json > "$SESSIONS_FILE" || MAP_QUERY_RC=1
+     gc bd list --type=session --label=gc:session --include-infra --include-gates --all --json --limit=0 > "$SESSION_BEADS_FILE" || MAP_QUERY_RC=1
 
-   SESSION_COUNT=$(jq -r '(.sessions // []) | length' "$SESSIONS_FILE")
-   MAP_COUNT=$(printf '%s' "$LIVENESS_MAP" | jq -r 'length')
-   rm -f "$SESSIONS_FILE" "$SESSION_BEADS_FILE"
+     if [ "$MAP_QUERY_RC" -eq 0 ]; then
+       LIVENESS_MAP=$(jq -n --slurpfile sessions "$SESSIONS_FILE" --slurpfile session_beads "$SESSION_BEADS_FILE" '
+         def add($m; $key; $state; $closed):
+           if (($key // "") | length) == 0 then $m
+           else $m + {($key): (if $closed then "closed" else ($state // "") end)}
+           end;
+         (reduce ($sessions[0].sessions // [])[] as $s ({};
+             add(.; $s.id;         $s.state; ($s.closed // false))
+           | add(.; $s.name;       $s.state; ($s.closed // false))
+           | add(.; $s.session_name; $s.state; ($s.closed // false))
+           | add(.; $s.alias;      $s.state; ($s.closed // false))
+           | add(.; $s.agent_name; $s.state; ($s.closed // false))
+         )) as $from_sessions
+         | reduce ($session_beads[0] // [])[] as $b ($from_sessions;
+             add(.; $b.metadata.configured_named_identity; $b.metadata.state; ($b.status == "closed")))') || MAP_QUERY_RC=1
+       SESSION_COUNT=$(jq -r '(.sessions // []) | length' "$SESSIONS_FILE" 2>/dev/null || echo 0)
+       MAP_COUNT=$(printf '%s' "$LIVENESS_MAP" | jq -r 'length' 2>/dev/null || echo 0)
+     fi
+     rm -f "$SESSIONS_FILE" "$SESSION_BEADS_FILE"
+
+     # Non-zero means "could not verify liveness" — it never means "nobody is
+     # alive". Callers must read it as a reason to leave beads alone, never as
+     # a licence to orphan them.
+     if [ "$MAP_QUERY_RC" -ne 0 ]; then return 1; fi
+     if [ "${MAP_COUNT:-0}" -eq 0 ] && [ "${SESSION_COUNT:-0}" -gt 0 ]; then return 1; fi
+     return 0
+   }
+
+   build_liveness_map; MAP_BUILD_RC=$?
+
+   # Pin the cycle's opening watermark. Step 2a rebuilds the map per candidate,
+   # which re-stamps MAP_BUILT_AT to ~now; comparing a bead against *that* would
+   # leave a guard that only ever catches a sub-second window. This is the
+   # baseline that stays fixed for the whole cycle.
+   CYCLE_MAP_BUILT_AT="$MAP_BUILT_AT"
    ```
 
-   **Fail safe — never orphan on an empty map.** If the map is empty while
-   sessions exist, the schema has drifted again (the exact failure in
-   gc-3tn8g). An empty map resolves every assignee to `absent` and would
-   false-orphan live agents. ABORT recovery this cycle — do NOT classify any
-   bead as orphaned — escalate, then continue to `check-refinery`:
+   `CYCLE_MAP_BUILT_AT` is the instant this cycle's first snapshot was
+   *started* — anything the map cannot know about was touched at or after it.
+   A bead whose own `updated_at` is not strictly older than that watermark was
+   changed during this cycle, by someone other than us, so its classification
+   may already be stale. Step 2a uses that to skip such a bead before anything
+   acts on it.
+
+   **Fail safe — never orphan on an unusable map.** If either query failed, or
+   the map is empty while sessions exist, the schema has drifted again (the
+   exact failure in gc-3tn8g). An empty or unbuilt map resolves every assignee
+   to `absent` and would false-orphan live agents. ABORT recovery this cycle —
+   do NOT classify any bead as orphaned — escalate, then continue to
+   `check-refinery`:
    ```bash
-   if [ "${MAP_COUNT:-0}" -eq 0 ] && [ "${SESSION_COUNT:-0}" -gt 0 ]; then
-     echo "FAIL-SAFE: empty liveness map with $SESSION_COUNT live sessions — skipping orphan recovery (treat all assignees as live)."
-     gc mail send mayor/ -s "WITNESS: orphan-recovery disabled — empty liveness map" -m "Built an empty assignee->state map from $SESSION_COUNT live sessions. gc session list --json schema likely drifted again (gc-3tn8g); skipping orphan recovery this cycle to avoid false-orphaning live agents. Re-check the recover-orphaned-beads liveness recipe."
+   if [ "${MAP_BUILD_RC:-1}" -ne 0 ]; then
+     if [ "${MAP_COUNT:-0}" -eq 0 ] && [ "${SESSION_COUNT:-0}" -gt 0 ]; then
+       echo "FAIL-SAFE: empty liveness map with $SESSION_COUNT live sessions — skipping orphan recovery (treat all assignees as live)."
+     else
+       echo "FAIL-SAFE: liveness map could not be built (gc session list / gc bd list did not both succeed) — skipping orphan recovery (treat all assignees as live)."
+     fi
+     gc mail send mayor/ -s "WITNESS: orphan-recovery disabled — liveness map unusable" -m "Could not build a usable assignee->state map (build rc=$MAP_BUILD_RC, map entries=$MAP_COUNT, live sessions=$SESSION_COUNT). Either a query failed or the gc session list --json schema drifted again (gc-3tn8g); skipping orphan recovery this cycle to avoid false-orphaning live agents. Re-check the recover-orphaned-beads liveness recipe."
      # Skip the rest of this step; proceed to check-refinery.
    fi
    ```
@@ -263,6 +306,93 @@ META=$(gc bd show <bead> --json | jq '.[0].metadata')
 WORKTREE=$(echo "$META" | jq -r '.worktree // empty')
 BRANCH=$(echo "$META" | jq -r '.branch // empty')
 ```
+
+**Step 2a: Re-verify liveness before anything acts on this bead.**
+
+Step 1's classification is a snapshot, and the per-bead loop can run for
+minutes after it. An agent that spawned in between resolves to `absent` there
+while being alive and mid-edit right now. Re-check here — **above** the
+salvage cases and all three destructive paths — rather than at any one of
+them:
+
+- Step 3 closes the bead with `gc bd close --force` and deletes its worktree
+  when the branch reads as already on main;
+- Step 3a reassigns the bead with `gc bd update --force`, runs
+  `gc workflow delete-source` and deletes its worktree, then skips Step 3b
+  entirely, so a guard placed there would never see this path;
+- Step 3b deletes the worktree and resets the bead to pool.
+
+All three use `--force`, which overrides exactly the cross-actor claim guard
+that would otherwise refuse a write against a live agent, and all three act on
+this same Step 2 snapshot. One check above them covers all three; three copies
+would drift. Salvage (Cases C and D below) is gated on the same verdict: it
+commits and pushes whatever is in the worktree, which is not something to do
+to an agent that is still editing it.
+
+Only `absent`/orphan candidates reach here — beads classified `active`,
+`asleep` or another do-not-touch state in Step 1 never enter this loop — so
+this is one extra map build per candidate orphan, not per bead.
+
+```bash
+# Fail closed by construction: the verdict starts at "do not touch" and is
+# only promoted by a check that provably succeeded. Every arm below that
+# cannot prove orphanhood leaves it false, so an unset, errored or
+# half-computed verdict skips rather than destroys.
+STILL_ORPHANED=false
+
+if [ -z "$ASSIGNEE" ]; then
+  echo "SKIP: <bead> has no assignee to re-verify — cannot confirm it is orphaned; leaving it alone this cycle."
+elif ! build_liveness_map; then
+  # Same fail-safe as Step 1's: a failed query or an empty map is "cannot
+  # verify", never "the assignee is gone". Escalate; do not fall through.
+  echo "SKIP: <bead> liveness re-check unavailable (map build rc=1) — cannot verify, leaving it alone this cycle."
+  gc mail send mayor/ -s "WITNESS: orphan re-check inconclusive for <bead>" -m "The pre-destruction liveness rebuild failed for assignee $ASSIGNEE (map entries=$MAP_COUNT, live sessions=$SESSION_COUNT). Skipped this candidate rather than acting on an unverified classification."
+else
+  # Re-read the bead itself. Two fields matter and both must be current: the
+  # assignee (a human or the controller may have handed this bead to a live
+  # agent since Step 1, which would make Step 1's $ASSIGNEE the wrong identity
+  # to resolve) and updated_at.
+  #
+  # `updated_at` is a TOP-LEVEL bead field, never a metadata key, so reading it
+  # off Step 2's $META (which is `jq '.[0].metadata'`) returned empty on every
+  # bead and this guard could never fire.
+  BEAD_JSON=$(gc bd show <bead> --json) || BEAD_JSON=""
+  FRESH_ASSIGNEE=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null || true)
+  FRESH_ASSIGNEE="${FRESH_ASSIGNEE:-$ASSIGNEE}"
+  BEAD_UPDATED_AT=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].updated_at // empty' 2>/dev/null || true)
+
+  FRESH_STATE=$(printf '%s' "$LIVENESS_MAP" | jq -r --arg a "$FRESH_ASSIGNEE" '.[$a] // "absent"')
+
+  # Normalize away fractional seconds before comparing. The watermark is stamped
+  # whole-second by `date`, while `gc bd show` emits whole seconds for rig beads
+  # and nanoseconds for graph-resident ones; comparing those two shapes as
+  # strings inverts, because "." (0x2E) sorts before "Z" (0x5A), and it inverts
+  # toward destroying. Truncating both to whole seconds and skipping unless the
+  # bead is *strictly older* than the watermark keeps the boundary second on the
+  # safe side: a bead touched in the same second the cycle started costs one
+  # wasted cycle, which is the direction to be wrong in.
+  BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"
+  case "$BEAD_UPDATED_AT" in ""|*Z) ;; *) BEAD_UPDATED_AT="${BEAD_UPDATED_AT}Z" ;; esac
+
+  if [ "$FRESH_ASSIGNEE" != "$ASSIGNEE" ]; then
+    echo "SKIP: <bead> was reassigned from $ASSIGNEE to $FRESH_ASSIGNEE since Step 1 — someone else owns it now; leave it alone."
+  elif [ "$FRESH_STATE" != "absent" ] && [ "$FRESH_STATE" != "closed" ] && [ "$FRESH_STATE" != "archived" ]; then
+    echo "SKIP: <bead> assignee $FRESH_ASSIGNEE is now '$FRESH_STATE' — spawned after the Step 1 snapshot. Not orphaned; leave it alone."
+  elif [ -z "$BEAD_UPDATED_AT" ]; then
+    echo "SKIP: <bead> updated_at could not be read — cannot confirm the classification is current; leaving it alone this cycle."
+  elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then
+    echo "SKIP: <bead> updated_at ($BEAD_UPDATED_AT) is not older than this cycle's liveness snapshot ($CYCLE_MAP_BUILT_AT) — something touched it mid-cycle. Not acting on a stale classification."
+  else
+    STILL_ORPHANED=true
+  fi
+fi
+```
+
+If `STILL_ORPHANED` is not `true`, skip this bead entirely and continue the
+per-bead loop — do not salvage, do not close, do not reassign, do not delete
+the worktree. Everything from here to Step 4 assumes `STILL_ORPHANED=true`
+and each destructive site re-states the check, so a step reached out of order
+still fails closed.
 
 Check the bead and worktree state, then act:
 
@@ -323,21 +453,80 @@ starts fresh.
 **Step 3: Verify work on main before resetting.**
 
 Before resetting the bead to pool, check if the branch was already merged
-to main (polecat finished, pushed, but crashed before closing the bead):
+to main (polecat finished, pushed, but crashed before closing the bead).
+
+**Ancestry alone is not enough.** `git merge-base --is-ancestor` only holds
+when the branch's own commit objects are literally reachable from main —
+true for a plain fast-forward or a real merge commit. It false-negatives
+whenever the refinery lands the branch by *recreating* its commits
+(rebase-then-fast-forward onto a main that has moved since the branch was
+cut, or a squash) — main then carries a new commit with a different SHA
+that contains exactly the branch's changes, and ancestry can never see
+that. This is the normal case, not an edge case: any queue with 2+ beads
+produces it as soon as a second bead lands after the first was rebased.
+A false negative here re-dispatches already-merged work.
+
 ```bash
-git log main --oneline | grep -q "$BRANCH"
-# Or check if branch commits are reachable from main:
-git merge-base --is-ancestor origin/$BRANCH origin/main
+# Every check below reads *local* remote-tracking refs, while Step 2's
+# existence checks used live `ls-remote` — two freshness sources in one flow.
+# Refresh first. A failed fetch must not be read as "nothing changed": fall
+# back to not-merged, which re-dispatches (wasteful) rather than closing
+# (terminal).
+if ! git fetch -q origin main "$BRANCH"; then
+  ON_MAIN=false
+# Cheap first pass — catches the plain fast-forward/merge-commit case:
+elif git merge-base --is-ancestor origin/$BRANCH origin/main; then
+  ON_MAIN=true
+else
+  # Rebase/squash recreates commits, so a "not an ancestor" result does
+  # NOT mean "not merged" -- fall back to a content test, scoped to the
+  # branch's own changed files. Bound, stated honestly: this holds while main
+  # has not itself touched those files since the landing, and while the refs
+  # above are fresh. Outside that bound it answers not-merged and the bead is
+  # re-dispatched -- the pre-PR direction, wasteful but never destructive.
+  MERGE_BASE=$(git merge-base origin/$BRANCH origin/main 2>/dev/null || true)
+  if [ -z "$MERGE_BASE" ]; then
+    ON_MAIN=false   # no shared history found; treat conservatively as not-yet-merged
+  else
+    # Collect NUL-separated into a quoted array. Both halves are load-bearing:
+    # an unquoted `-- $CHANGED_FILES` word-splits, so a path containing
+    # whitespace becomes pathspecs matching nothing -- and `git diff --quiet`
+    # over pathspecs that match nothing exits 0, i.e. an UNMERGED branch reads
+    # as merged and gets force-closed with its worktree deleted. `-z` is needed
+    # as well as the quoting: without it `--name-only` C-quotes a path
+    # containing a newline, and re-reading that quoted form yields a pathspec
+    # that matches nothing in exactly the same way.
+    # `while read -d ''` rather than `mapfile -d ''`: mapfile is a bash-4
+    # builtin, and gastown/tests/test_witness_heartbeat_check.sh bans bash-4
+    # constructs outright because the fleet includes macOS on bash 3.2.
+    CHANGED=(); CHANGED_COUNT=0
+    while IFS= read -r -d '' f; do
+      CHANGED[$CHANGED_COUNT]="$f"; CHANGED_COUNT=$((CHANGED_COUNT + 1))
+    done < <(git diff --name-only -z "$MERGE_BASE" "origin/$BRANCH")
+    if [ "$CHANGED_COUNT" -eq 0 ]; then
+      ON_MAIN=false   # branch introduced nothing beyond the merge-base; nothing to confirm
+    elif git diff --quiet "origin/main" "origin/$BRANCH" -- "${CHANGED[@]}"; then
+      ON_MAIN=true    # main's current content for exactly these files matches the branch
+    else
+      ON_MAIN=false
+    fi
+  fi
+fi
 ```
 
-If the work is already on main:
+If the work is already on main (`ON_MAIN=true`):
 - **Close the bead** (work is done, don't re-dispatch). Use `--force`: the bead
   is still assigned to the crashed polecat, so this is a cross-actor close and
-  bd's close-authority guard (gastownhall/beads#3734) would otherwise refuse it:
+  bd's close-authority guard (gastownhall/beads#3734) would otherwise refuse it.
+  `--force` is also what makes this destructive against a *live* agent, so it
+  runs only on Step 2a's verdict — a terminal close on a bead whose work never
+  landed cannot be undone by the next patrol cycle:
 ```bash
-gc bd close <bead> --force
-gc mail send mayor/ -s "ORPHAN_CLOSED: <bead> already merged" \
-  -m "Branch $BRANCH already on main. Closed instead of resetting."
+if [ "$STILL_ORPHANED" = "true" ] && [ "$ON_MAIN" = "true" ]; then
+  gc bd close <bead> --force
+  gc mail send mayor/ -s "ORPHAN_CLOSED: <bead> already merged" \
+    -m "Branch $BRANCH already on main. Closed instead of resetting."
+fi
 ```
 - Clean up worktree and skip to Step 4.
 
@@ -388,7 +577,10 @@ branch-on-origin conjunct is a fail-closed backstop: there is nothing to hand
 off if the refinery's `--has-metadata-key=branch` query cannot see the work.
 
 ```bash
-if [ "$HANDOFF_STAGE" = "target_recorded" ] && [ -n "$BRANCH_ON_ORIGIN" ]; then
+# STILL_ORPHANED is re-stated here because this arm never reaches Step 3b:
+# `:455` skips straight to Step 4, so this is the one destructive path a guard
+# placed at the pool reset would miss entirely.
+if [ "$STILL_ORPHANED" = "true" ] && [ "$HANDOFF_STAGE" = "target_recorded" ] && [ -n "$BRANCH_ON_ORIGIN" ]; then
   REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
   # --force: this is a cross-actor write against the dead polecat's live
   # in_progress claim, which bd refuses without it (the same claim guard
@@ -436,7 +628,23 @@ a rejection cleared it — and pool reset is the correct recovery.
 
 **Step 3b: Clean up worktree and return bead to pool.**
 
-Once the branch is canonical (on origin), the worktree is disposable:
+**This bead is about to have its worktree deleted and be reset to pool.**
+That is destructive, but it is *not* the only destructive action in this
+recipe, and it is the mildest of the three: Step 3 closes the bead
+terminally with `gc bd close --force`, and Step 3a reassigns it with
+`gc bd update --force` and tears down its workflow subtree before skipping
+here entirely. All three are covered by Step 2a's `STILL_ORPHANED` verdict,
+which is re-stated at each of them so a step reached out of order still fails
+closed.
+
+```bash
+if [ "$STILL_ORPHANED" != "true" ]; then
+  echo "SKIP: <bead> did not pass the Step 2a liveness re-check — not deleting its worktree or resetting it."
+  # Continue the per-bead loop; this bead is retried next cycle.
+fi
+```
+
+Once the verdict is `true`, the worktree is disposable:
 ```bash
 # Delete worktree if it exists
 cd <rig-root>
