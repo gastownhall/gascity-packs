@@ -188,8 +188,8 @@ test_work_bead_resolution_discriminator_is_pinned() {
     # pins still green.
     grep -F 'IDLE: no work, exiting turn.' "$deacon" >/dev/null ||
         fail "the deacon's trigger-first wisp resolution is safe only while each iteration ends by exiting the turn; mol-deacon-patrol.toml no longer emits the IDLE exit signal"
-    grep -F 'the restarted session resumes from it' "$deacon" >/dev/null ||
-        fail "the deacon's trigger-first wisp resolution is safe only while the successor wisp is resumed by a RESTARTED session (fresh trigger); mol-deacon-patrol.toml no longer hands the successor to a restarted session"
+    grep -F 'the recycled session' "$deacon" >/dev/null ||
+        fail "the deacon's trigger-first wisp resolution is safe only while the successor wisp is resumed by a RECYCLED session (fresh trigger via idle_timeout); mol-deacon-patrol.toml no longer hands the successor to a recycled session"
     ! grep -F 're-read formula steps to begin' "$deacon" >/dev/null ||
         fail "the deacon now rotates wisps in-session like the refinery, so its spawn trigger goes stale mid-loop; mol-deacon-patrol.toml must drop the trigger-preferring resolution for the bare \${GC_BEAD_ID:-} plus live assignee query"
 
@@ -558,6 +558,19 @@ test_boot_deacon_observation_query_sees_wisps_tier() {
         unflagged=$(printf '%s\n' "$lines" | grep -c -v -- '--include-infra' || true)
         [[ "$unflagged" -eq 0 ]] ||
             fail "$name deacon-observation queries must pass --include-infra ($unflagged do not)"
+
+        # Same every-line discipline for the status pin: this query went blind
+        # once through the tier flags pinned above, once through
+        # --status=in_progress, which returns [] whenever the wisp sits at
+        # open (the 2026-08-01 six-hour undetected deacon stall). Match status
+        # flags by token grammar rather than spelling: bd list (Go pflag
+        # parsing) accepts --status=X, --status X, -s X, -s=X, -sX, and -s at
+        # end-of-line, so a token-boundary -s or a --status catches every
+        # spelling. The pattern cannot false-positive on this query's other
+        # flags (--sort's -s is preceded by '-', not a boundary).
+        pinned=$(printf '%s\n' "$lines" | grep -E -c -- '--status(=|[[:space:]])|(^|[[:space:]])-s(=|[^-=[:space:]]|[[:space:]]|$)' || true)
+        [[ "$pinned" -eq 0 ]] ||
+            fail "$name deacon-observation queries must not pin a status (--status/-s in any accepted spelling; a wisp alternates open -> in_progress, so a pinned status returns [] exactly when the deacon is stalled) ($pinned do)"
     done
 }
 
