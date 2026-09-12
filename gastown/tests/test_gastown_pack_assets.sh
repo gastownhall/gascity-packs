@@ -560,13 +560,15 @@ test_boot_deacon_observation_query_sees_wisps_tier() {
             fail "$name deacon-observation queries must pass --include-infra ($unflagged do not)"
 
         # Same every-line discipline for the status pin: this query went blind
-        # twice -- once through the tier flags pinned above, once through
+        # once through the tier flags pinned above, once through
         # --status=in_progress, which returns [] whenever the wisp sits at
         # open (the 2026-08-01 six-hour undetected deacon stall). Pin the
-        # absence so a regression cannot reintroduce it under a green suite.
-        pinned=$(printf '%s\n' "$lines" | grep -c -- '--status=' || true)
+        # absence in every accepted spelling -- --status=X, --status X, and
+        # -s X are all status pins to bd list -- so a regression cannot
+        # reintroduce it under a green suite.
+        pinned=$(printf '%s\n' "$lines" | grep -E -c -- '(--status[ =]|[[:space:]]-s[[:space:]])' || true)
         [[ "$pinned" -eq 0 ]] ||
-            fail "$name deacon-observation queries must not pin --status (a wisp alternates open -> in_progress, so a pinned status returns [] exactly when the deacon is stalled) ($pinned do)"
+            fail "$name deacon-observation queries must not pin a status (--status=X, --status X, or -s X; a wisp alternates open -> in_progress, so a pinned status returns [] exactly when the deacon is stalled) ($pinned do)"
     done
 }
 
