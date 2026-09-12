@@ -562,13 +562,15 @@ test_boot_deacon_observation_query_sees_wisps_tier() {
         # Same every-line discipline for the status pin: this query went blind
         # once through the tier flags pinned above, once through
         # --status=in_progress, which returns [] whenever the wisp sits at
-        # open (the 2026-08-01 six-hour undetected deacon stall). Pin the
-        # absence in every accepted spelling -- --status=X, --status X, and
-        # -s X are all status pins to bd list -- so a regression cannot
-        # reintroduce it under a green suite.
-        pinned=$(printf '%s\n' "$lines" | grep -E -c -- '(--status[ =]|[[:space:]]-s[[:space:]])' || true)
+        # open (the 2026-08-01 six-hour undetected deacon stall). Match status
+        # flags by token grammar rather than spelling: bd list (Go pflag
+        # parsing) accepts --status=X, --status X, -s X, -s=X, -sX, and -s at
+        # end-of-line, so a token-boundary -s or a --status catches every
+        # spelling. The pattern cannot false-positive on this query's other
+        # flags (--sort's -s is preceded by '-', not a boundary).
+        pinned=$(printf '%s\n' "$lines" | grep -E -c -- '--status(=|[[:space:]])|(^|[[:space:]])-s(=|[^-=[:space:]]|[[:space:]]|$)' || true)
         [[ "$pinned" -eq 0 ]] ||
-            fail "$name deacon-observation queries must not pin a status (--status=X, --status X, or -s X; a wisp alternates open -> in_progress, so a pinned status returns [] exactly when the deacon is stalled) ($pinned do)"
+            fail "$name deacon-observation queries must not pin a status (--status/-s in any accepted spelling; a wisp alternates open -> in_progress, so a pinned status returns [] exactly when the deacon is stalled) ($pinned do)"
     done
 }
 
