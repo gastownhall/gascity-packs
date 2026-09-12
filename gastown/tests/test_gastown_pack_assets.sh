@@ -188,8 +188,8 @@ test_work_bead_resolution_discriminator_is_pinned() {
     # pins still green.
     grep -F 'IDLE: no work, exiting turn.' "$deacon" >/dev/null ||
         fail "the deacon's trigger-first wisp resolution is safe only while each iteration ends by exiting the turn; mol-deacon-patrol.toml no longer emits the IDLE exit signal"
-    grep -F 'the restarted session resumes from it' "$deacon" >/dev/null ||
-        fail "the deacon's trigger-first wisp resolution is safe only while the successor wisp is resumed by a RESTARTED session (fresh trigger); mol-deacon-patrol.toml no longer hands the successor to a restarted session"
+    grep -F 'the recycled session' "$deacon" >/dev/null ||
+        fail "the deacon's trigger-first wisp resolution is safe only while the successor wisp is resumed by a RECYCLED session (fresh trigger via idle_timeout); mol-deacon-patrol.toml no longer hands the successor to a recycled session"
     ! grep -F 're-read formula steps to begin' "$deacon" >/dev/null ||
         fail "the deacon now rotates wisps in-session like the refinery, so its spawn trigger goes stale mid-loop; mol-deacon-patrol.toml must drop the trigger-preferring resolution for the bare \${GC_BEAD_ID:-} plus live assignee query"
 
