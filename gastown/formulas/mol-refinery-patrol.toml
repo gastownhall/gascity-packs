@@ -214,8 +214,9 @@ Write exactly:
 IDLE: no work, exiting turn.
 ```
 Then stop immediately. Do NOT sleep, call ScheduleWakeup, or use Monitor.
-The session_sleep policy will restart this session after the configured idle interval.
-When restarted, re-read formula steps — this step stays open until a work bead is found.
+The idle_timeout (2h for this agent) will recycle this session after the idle
+interval. When recycled, re-read formula steps — this step stays open until a
+work bead is found.
 
 **Do not close this step until you have a work bead with branch metadata.**"""
 
