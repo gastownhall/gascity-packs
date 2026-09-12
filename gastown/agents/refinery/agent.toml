@@ -5,3 +5,4 @@ nudge = "Run 'gc prime' to check merge queue and begin processing."
 pre_start = ["{{.ConfigDir}}/assets/scripts/worktree-setup.sh {{.RigRoot}} {{.WorkDir}} {{.AgentBase}} --sync"]
 idle_timeout = "2h"
 max_active_sessions = 1
+work_query = """gc bd list ${GC_RIG:+--rig="$GC_RIG"} --include-infra --assignee="$GC_AGENT" --status=open,in_progress --type=molecule --title="mol-refinery-patrol" --sort=created --limit=0 --json | jq -c '[.[] | select(.title == "mol-refinery-patrol")]'"""
