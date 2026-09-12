@@ -277,6 +277,104 @@ test_polecat_startup_uses_standard_hook_claim() {
         fail "polecat propulsion fragment must not regress to an unclaimed hook/work-query choice"
 }
 
+test_refinery_startup_claims_assigned_patrol_before_pour() {
+    local agent prompt startup
+    agent="$GASTOWN/agents/refinery/agent.toml"
+    prompt="$GASTOWN/agents/refinery/prompt.template.md"
+    startup="$(sed -n '/^## Startup$/,/^## Sequential Rebase Protocol$/p' "$prompt")"
+
+    # Refinery successors are assigned while still open. A startup query that
+    # sees only in_progress roots misses every waiting successor and pours one
+    # more on each context restart. Keep the agent's atomic hook candidate set
+    # exact: this rig, this assignee, molecule roots, this patrol formula, and
+    # both resumable statuses. The final jq equality check prevents a similarly
+    # named foreign molecule from entering the claim path.
+    for want in \
+        'work_query = """gc bd list' \
+        '--include-infra' \
+        '--assignee="$GC_AGENT"' \
+        '--status=open,in_progress' \
+        '--type=molecule' \
+        '--title="mol-refinery-patrol"' \
+        '--sort=created --limit=0 --json' \
+        'select(.title == "mol-refinery-patrol")'; do
+        grep -F -- "$want" "$agent" >/dev/null ||
+        fail "refinery work_query missing assigned-open patrol selector: $want"
+    done
+    ! grep -F '.[:1]' "$agent" >/dev/null ||
+        fail "refinery work_query must return every exact candidate so hook ranking can prefer in_progress"
+
+    # The startup must run the standard atomic claim before its only pour. The
+    # second claim promotes a just-poured open successor before formula work.
+    # This makes an empty queue stable across completion and process/context
+    # restarts instead of depending on a read-then-write race in prompt shell.
+    [[ "$(grep -cF 'gc hook --claim --json' <<<"$startup")" -eq 2 ]] ||
+        fail "refinery startup must atomically claim both existing and just-poured patrol roots"
+    [[ "$(grep -cF 'gc bd mol wisp mol-refinery-patrol' <<<"$startup")" -eq 1 ]] ||
+        fail "refinery startup must have exactly one guarded fallback pour"
+    grep -F '[ "$CLAIM_ACTION" = "drain" ] && [ "$CLAIM_REASON" = "no_work" ]' <<<"$startup" >/dev/null ||
+        fail "refinery startup must pour only after an explicit no_work claim result"
+    grep -F 'not pouring' <<<"$startup" >/dev/null ||
+        fail "refinery startup must fail closed on malformed or operational claim failures"
+    python3 - "$prompt" <<'PY' || fail "refinery startup must claim before pouring and verify the fallback claim"
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+startup = text.split("## Startup", 1)[1].split("## Sequential Rebase Protocol", 1)[0]
+first_claim = startup.index("gc hook --claim --json")
+pour = startup.index("gc bd mol wisp mol-refinery-patrol")
+second_claim = startup.index("gc hook --claim --json", first_claim + 1)
+verified = startup.index('[ "$CLAIMED_WISP" != "$WISP" ]')
+if not first_claim < pour < second_claim < verified:
+    raise SystemExit("claim/pour/claim-verification order is unsafe")
+if "{{ .AssignedInProgressQuery }}" in startup:
+    raise SystemExit("legacy in_progress-only startup query still present")
+PY
+
+    # Executable state model for the escaped regression: an assigned open root
+    # is claimed rather than duplicated, and two empty restarts converge on the
+    # same single root. Unrelated molecules are outside the configured selector.
+    python3 <<'PY' || fail "refinery restart model accumulated patrol roots"
+roots = []
+foreign = [{"id": "foreign", "title": "mol-witness-patrol", "status": "open"}]
+
+def restart():
+    candidates = [r for r in roots if r["title"] == "mol-refinery-patrol" and r["status"] in {"open", "in_progress"}]
+    if candidates:
+        ranked = sorted(candidates, key=lambda r: (r["status"] != "in_progress", r["created"]))
+        ranked[0]["status"] = "in_progress"
+        return ranked[0]["id"]
+    root = {"id": f"patrol-{len(roots) + 1}", "title": "mol-refinery-patrol", "status": "open", "created": len(roots) + 1}
+    roots.append(root)
+    root["status"] = "in_progress"
+    return root["id"]
+
+assert restart() == "patrol-1"
+roots[0]["status"] = "open"  # successor waiting across a fresh context
+assert restart() == "patrol-1"
+roots[0]["status"] = "open"  # process restart repeats the same boundary
+assert restart() == "patrol-1"
+assert len(roots) == 1
+assert foreign == [{"id": "foreign", "title": "mol-witness-patrol", "status": "open"}]
+
+# Query/claim failures are not an empty queue and must never authorize a pour.
+before = list(roots)
+claim_result = {"action": "drain", "reason": "claims_errored"}
+if claim_result == {"action": "drain", "reason": "no_work"}:
+    roots.append({"id": "unsafe", "title": "mol-refinery-patrol", "status": "open"})
+assert roots == before
+
+# Hook ranking, not query truncation, preserves a legitimate current root when
+# historical assigned-open successors are also present.
+roots = [
+    {"id": "old-open", "title": "mol-refinery-patrol", "status": "open", "created": 1},
+    {"id": "current", "title": "mol-refinery-patrol", "status": "in_progress", "created": 2},
+]
+assert restart() == "current"
+assert roots[0]["status"] == "open"
+PY
+}
+
 test_review_leg_contract_forbids_synthetic_mutation() {
     local formula prompt
     formula="$GASTOWN/formulas/mol-review-leg.toml"
@@ -695,6 +793,7 @@ test_shutdown_dance_lifecycle_and_audit_contracts
 test_work_bead_resolution_discriminator_is_pinned
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
+test_refinery_startup_claims_assigned_patrol_before_pour
 test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_witness_wisp_queries_pin_include_infra
