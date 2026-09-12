@@ -2199,6 +2199,1120 @@ class FormulaAssetTests(unittest.TestCase):
 
         self.assertIn("do not patch the launcher root", apply)
         self.assertIn("source anchor and implementation\nworktree", synthesize)
+
+    def test_do_work_lane_case_hands_over_the_branch_never_the_directory(self) -> None:
+        """When gc started the session in an agent lane (work_dir + pre_start),
+        prepare-worktree (run operator) records the item's BRANCH on the source
+        anchor and detaches its own lane from it; it never persists a work_dir,
+        because a lane is per agent and a directory is never handed to another
+        agent. implement (implementation worker) works in its own lane on that
+        branch and never enters another agent's lane; close-source-anchor
+        verifies by branch. The rig-root steps stay word for word
+        (test_do_work_formula_requires_persisted_item_worktree).
+
+        Round 4 (gate r3 M1): `--is-inside-work-tree` and `branch
+        --show-current` both succeed from any SUBDIRECTORY of the rig checkout,
+        so a work_dir inside the human checkout passed the round-3 lane test and
+        `switch --detach` would have detached the human checkout's HEAD. Both
+        steps now run a three-part boundary test (resolved top-level equals
+        `$GC_DIR`; not the rig root nor inside it; `--git-common-dir` is the
+        rig's) BEFORE recording the branch, detaching, or switching."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        rows = {
+            "assets/workflows/do-work/prepare-worktree.md": (
+                "When `$GC_DIR` is already a git worktree of the rig on a branch",
+                '`git -C "$GC_DIR" rev-parse --is-inside-work-tree` prints `true`',
+                '`git -C "$GC_DIR" branch --show-current` prints a branch name',
+                "or the `pre_start` log says so",
+                "and `$GC_DIR` is not the rig root",
+                "this MAY be the lane case",
+                "Prove it with the boundary test below before recording a branch or detaching anything",
+                "a subdirectory of a human checkout must never be detached",
+                "this step creates nothing and hands no directory to anyone",
+                'The canonical git top-level of `$GC_DIR` IS `$GC_DIR`: `git -C "$GC_DIR" rev-parse --show-toplevel`, resolved, equals `$GC_DIR`, resolved',
+                "A subdirectory of any checkout fails this",
+                "That top-level is NOT the rig root and is NOT inside the rig root",
+                "a prefix match of the resolved rig root path plus a path separator",
+                '`git -C "$GC_DIR" rev-parse --git-common-dir`, resolved, is the same directory as the rig root\'s `.git`',
+                "A worktree of another repository fails this",
+                "When any part fails, this is NOT the lane case: record no branch, run no `switch` in `$GC_DIR`, detach nothing",
+                "continue with step 5 exactly as before",
+                "the item's BRANCH is the handoff",
+                "Resolve the item's branch by NAME, before recording anything",
+                '`git -C "$GC_DIR" switch --no-overwrite-ignore -c "$BRANCH"` from HEAD',
+                "gc bd update <source-anchor-id> --set-metadata gc.work_branch=<branch>",
+                'Detach this lane from the branch with `git -C "$GC_DIR" switch --detach`',
+                "Do NOT persist `work_dir` in the lane case: step 6 is skipped",
+                "Otherwise (the session started in the rig root; the role has no lane)",
+                "Create or reuse a deterministic git worktree at",
+            ),
+            "assets/workflows/do-work/implement.md": (
+                "When the source anchor has no `work_dir` and records `gc.work_branch`",
+                "your own `$GC_DIR` is the worktree",
+                "a lane your `pre_start` put on the item's branch (the branch recorded by `prepare-worktree`); work there",
+                "Prove it before editing, and before any `switch`, with the boundary test `prepare-worktree` step 4 applies",
+                '`git -C "$GC_DIR" rev-parse --show-toplevel` equals `$GC_DIR` itself',
+                "neither the rig root (`gc.work_dir` on the workflow root bead) nor inside the rig root",
+                '`git -C "$GC_DIR" rev-parse --git-common-dir` is the rig root\'s `.git`',
+                "fail this step before editing and never run `switch` there",
+                "switching a subdirectory of the rig checkout would switch the human checkout's branch",
+                'switch your own lane onto the recorded branch with `git -C "$GC_DIR" switch --no-overwrite-ignore "<gc.work_branch>"`',
+                "If git refuses, for that or any other reason, or the branch is missing from the repository, fail this step before editing",
+                "Never enter another agent's lane",
+                "never treat a persisted `work_dir` that points into `.worktrees/<rig>/lane-*` of another agent as yours",
+                "Otherwise the steps below apply unchanged",
+                'then `cd "$WORKTREE"` before reading or editing source files',
+            ),
+            "assets/workflows/do-work/close-source-anchor.md": (
+                "When the source anchor has no `work_dir` and records `gc.work_branch`",
+                'verify from your own lane instead: `git -C "$GC_DIR" log -1 "refs/heads/<gc.work_branch>"`',
+                "Never enter another agent's lane to verify",
+            ),
+        }
+        flat_by_path = {
+            relative_path: " ".join((root / relative_path).read_text(encoding="utf-8").split())
+            for relative_path in rows
+        }
+        for relative_path, clauses in rows.items():
+            for clause in clauses:
+                with self.subTest(asset=relative_path, clause=clause):
+                    self.assertIn(clause, flat_by_path[relative_path])
+
+        # The lane case (step 4) never persists a directory: the work_dir stamp
+        # lives only in the rig-root path (step 6), and the round-2 shape that
+        # recorded the operator's lane as the item worktree is gone from both files.
+        prepare = flat_by_path["assets/workflows/do-work/prepare-worktree.md"]
+        step4 = prepare[prepare.index("4. Check the workspace") : prepare.index("5. Create or reuse")]
+        self.assertNotIn("work_dir=", step4)
+        self.assertNotIn('WORKTREE="$GC_DIR"', step4)
+        self.assertIn(
+            "6. Persist the absolute path on the source anchor with "
+            "`gc bd update <source-anchor-id> --set-metadata work_dir=<absolute worktree path>`",
+            prepare,
+        )
+        self.assertNotIn("When `work_dir` equals `$GC_DIR`", flat_by_path["assets/workflows/do-work/implement.md"])
+
+        # Round 4 (gate r3 M1): the three-part boundary test comes BEFORE the
+        # branch is recorded and BEFORE the detach in step 4, and BEFORE the
+        # switch in implement's lane paragraph. A subdirectory of the human
+        # checkout passes the two round-3 probes; it must never be detached or
+        # switched.
+        record_at = step4.index("--set-metadata gc.work_branch=")
+        detach_at = step4.index("switch --detach")
+        for probe in ("rev-parse --show-toplevel", "NOT inside the rig root", "rev-parse --git-common-dir"):
+            with self.subTest(step4_probe=probe):
+                self.assertLess(step4.index(probe), record_at)
+                self.assertLess(step4.index(probe), detach_at)
+        implement = flat_by_path["assets/workflows/do-work/implement.md"]
+        lane = implement[
+            implement.index("When the source anchor has no `work_dir`") : implement.index(
+                "Otherwise the steps below apply unchanged"
+            )
+        ]
+        switch_at = lane.index('switch --no-overwrite-ignore "<gc.work_branch>"')
+        for probe in ("rev-parse --show-toplevel", "nor inside the rig root", "rev-parse --git-common-dir"):
+            with self.subTest(implement_probe=probe):
+                self.assertLess(lane.index(probe), switch_at)
+
+    # Gate r9 on fork #32 (merged with this hole named; bead gp-d6gd): a
+    # re-launched item must keep its branch. The writers of `gc.work_branch`
+    # are found by grep, so a step added later that records the key without
+    # reading it first fails here.
+    WORK_BRANCH_WRITERS_READ_FIRST = {
+        "assets/workflows/do-work/prepare-worktree.md": "Read the record FIRST",
+        "template-fragments/gc-role-worker.template.md": "The bead's branch is the one whose name contains the claimed bead id",
+    }
+
+    def test_relaunched_item_reuses_the_recorded_branch_and_no_writer_records_over_it(self) -> None:
+        """Gate r9 MAJOR: `pre_start` names a lane's branch for the trigger STEP
+        bead, so re-launching do-work for an open source anchor put the
+        operator's lane on a fresh step branch, and step 4 recorded that fresh
+        branch over the anchor's existing `gc.work_branch`; implementation then
+        resumed from the base, the committed work abandoned. Codex r1 on this
+        bead: a claim-time stamp overwrites the record with a name that no
+        checkout state (the rig root's branch, a default branch) can tell from
+        an item branch, both directions. So the operand is the NAME: the item's
+        branch is the one branch naming `<source-anchor-id>` as a whole token,
+        `pre_start`'s own rule. Step 4 reads the record FIRST and checks it
+        against that rule (case 1), else finds the one branch naming the item
+        or starts a new `<source-anchor-id>`, several failing closed (case 2),
+        takes it in the lane with any refusal failing closed and the holder
+        named, the rig root included (case 3), and records only when the
+        record differs. Every writer of the key in the workflows tree and the
+        role fragment (grep-driven) reads the record before it writes and says
+        it never records a fresh base branch over a recorded item branch. The
+        real-git scenarios are in test_lane_lifecycle (rule 10)."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        prepare = " ".join((root / "assets/workflows/do-work/prepare-worktree.md").read_text(encoding="utf-8").split())
+        step4 = prepare[prepare.index("4. Check the workspace") : prepare.index("5. Create or reuse")]
+        for clause in (
+            "Resolve the item's branch by NAME, before recording anything",
+            "the one branch whose name contains `<source-anchor-id>` as a whole token",
+            "never `<source-anchor-id>0`",
+            "using the same whole-token matching as `pre_start` (worker-worktree.sh, \"Bead branch\")",
+            "Nothing else identifies it",
+            "Not the branch `pre_start` put THIS lane on: it is named for the trigger STEP bead",
+            "a re-launched item",
+            "puts this lane on a fresh step branch, cut from the base and knowing nothing of the item's committed work",
+            "left where it is, unused and recorded nowhere",
+            "Not the recorded `gc.work_branch` on its own: a claim-time stamp",
+            "a name no checkout state can tell from an item branch",
+            "a stamp can even contain the id (`human/<source-anchor-id>-notes`), so the record decides nothing on its own",
+            "Read the record FIRST (`gc bd show <source-anchor-id> --json`, metadata `gc.work_branch`; it is checked against the resolution below and re-aligned when stale), then decide once, by name",
+            "1. List every branch naming the item, the way `pre_start` does, by FULL ref name with exactly one namespace prefix removed",
+            "neither a tag of the same name (`%(refname:short)` would then print `heads/x`) nor a local branch literally named `origin/x` can change a name",
+            "`git -C \"$GC_DIR\" for-each-ref --format='%(refname)' refs/heads`, with the leading `refs/heads/` removed",
+            "`git -C \"$GC_DIR\" for-each-ref --format='%(refname)' refs/remotes/origin`, with the leading `refs/remotes/origin/` removed and `HEAD` dropped",
+            "`(^|[^A-Za-z0-9])<source-anchor-id>([^A-Za-z0-9]|$)`",
+            "Exactly one: `BRANCH=` that name, whether or not the record agrees",
+            "a listed name that no longer resolves when taken below fails this step closed (it vanished under you), never falls through to a new branch",
+            "None: `BRANCH=<source-anchor-id>`, a new branch",
+            "Several: fail this step closed listing them, even when one of them is the record; take nothing, record nothing",
+            "The run operator reconciles them with each branch's owner before the item is re-launched",
+            "renamed to a name without the id, its commits preserved, on `origin` as well as locally",
+            "then a fetch and this listing show exactly one candidate",
+            "2. Take the branch in this lane, `--no-overwrite-ignore` always",
+            '`git -C "$GC_DIR" switch --no-overwrite-ignore "$BRANCH"`',
+            "a retry of this step after the record and before the detach, is a no-op and counts as taken",
+            '`git -C "$GC_DIR" switch --no-overwrite-ignore -c "$BRANCH" --track "refs/remotes/origin/$BRANCH"`',
+            '`git -C "$GC_DIR" switch --no-overwrite-ignore -c "$BRANCH"` from HEAD',
+            "Any refusal fails this step closed, creates nothing and records nothing",
+            "a writer crashed before releasing, or a human checkout took the branch",
+            "the holder's path from `git worktree list` goes in the close reason",
+            "never this step and never `--force`",
+            "an ignored file is in the way (never removed; the close reason quotes git's refusal, and names no holder because there is none)",
+            "The committed work stays where it is",
+            "only when the record differs from `$BRANCH` (no record, a claim-time stamp, a record of a gone or renamed branch); an equal record is left as it is",
+            "This never records a fresh base branch over a recorded item branch: a new branch is created only when no branch names the item",
+            "A branch recorded before this rule under a name that does not contain `<source-anchor-id>` is not found by it",
+            "the operator audits open items' `gc.work_branch` values and renames such branches to contain the id as a whole token",
+        ):
+            with self.subTest(step4=clause):
+                self.assertIn(clause, step4)
+        # The rig root's branch, a default branch, and a record-first shortcut
+        # past the enumeration are not consulted anywhere in step 4.
+        for gone in (
+            "rig's default branch",
+            "refs/remotes/origin/HEAD",
+            "the branch the rig root holds",
+            "The record names the item (whole token) and that branch exists",
+            "refs/heads refs/remotes/origin`",
+            "for-each-ref --format='%(refname:short)'",
+        ):
+            with self.subTest(not_consulted=gone):
+                self.assertNotIn(gone, step4)
+        # Order: the boundary test, then the READ, then the enumeration by
+        # name, then the switch that takes the branch, then the record, then
+        # the detach.
+        read_at = step4.index("Read the record FIRST")
+        list_at = step4.index("1. List every branch naming the item")
+        take_at = step4.index('`git -C "$GC_DIR" switch --no-overwrite-ignore "$BRANCH"`')
+        record_at = step4.index("--set-metadata gc.work_branch=")
+        detach_at = step4.index('`git -C "$GC_DIR" switch --detach`')
+        self.assertLess(read_at, list_at)
+        self.assertLess(list_at, take_at)
+        self.assertLess(take_at, record_at)
+        self.assertLess(record_at, detach_at)
+        for probe in ("rev-parse --show-toplevel", "NOT inside the rig root", "rev-parse --git-common-dir"):
+            with self.subTest(probe_before_read=probe):
+                self.assertLess(step4.index(probe), read_at)
+        # The name rule in the text is the script's rule, character for
+        # character, and the script too strips the prefix from remote refs only.
+        script = (root / "assets" / "scripts" / "worker-worktree.sh").read_text(encoding="utf-8")
+        self.assertIn('grep -E -- "(^|[^A-Za-z0-9])${id_re}([^A-Za-z0-9]|\\$)"', script)
+        self.assertIn("git_rig for-each-ref --format='%(refname)' refs/heads", script)
+        self.assertIn("printf '%s\\n' \"${ref#refs/heads/}\"", script)
+        self.assertIn('ref="${ref#"refs/remotes/$REMOTE/"}"', script)
+        self.assertNotIn("%(refname:short)' refs/heads", script)
+        # The script's WARN no longer tells a worker to create a second candidate.
+        self.assertNotIn("Create your own branch in this work dir before committing", script)
+        self.assertIn("Do not create a second branch naming the bead; fail closed (branch-held) until that holder releases it.", script)
+
+        # Every writer of the key, by grep: reads first, never records over an item branch.
+        writers: dict[str, str] = {}
+        for path in sorted([*(root / "assets" / "workflows").rglob("*.md"), *(root / "template-fragments").glob("*.md")]):
+            text = path.read_text(encoding="utf-8")
+            if "gc.work_branch=" in text:
+                writers[path.relative_to(root).as_posix()] = " ".join(text.split())
+        self.assertEqual(sorted(writers), sorted(self.WORK_BRANCH_WRITERS_READ_FIRST))
+        for relative_path, flat in writers.items():
+            with self.subTest(writer=relative_path):
+                self.assertRegex(flat, r"[Nn]ever (records?|writes?) a fresh base branch over a recorded item branch")
+                read_first = self.WORK_BRANCH_WRITERS_READ_FIRST[relative_path]
+                self.assertLess(flat.index(read_first), flat.index("gc.work_branch="))
+
+        readme = " ".join((root / "README.md").read_text(encoding="utf-8").split())
+        section = readme[readme.index("## Worker workspaces") : readme.index("## Build Methodology Contract")]
+        for clause in (
+            "A re-launched item keeps its branch",
+            "reads the source anchor's recorded `gc.work_branch` first",
+            "resolves the item's branch by name",
+            "the one branch naming `<source-anchor-id>` as a whole token",
+            "never a fresh base branch over a recorded item branch",
+            "a human checkout included, fails the step closed with the holder named",
+            "no checkout state, not the rig root's branch nor a default branch, is consulted",
+            "exactly one such branch is the item's whether or not the record agrees",
+            "several fail closed for the operator to reconcile",
+            "closes `gc.failure_class=branch-held` naming the holder instead of creating a second candidate",
+            "a branch recorded before this rule under a name without the id is renamed by the operator",
+        ):
+            with self.subTest(readme=clause):
+                self.assertIn(clause, section)
+
+    # Round 2 of gp-d6gd (the mayor's codex gate r1 MAJOR on fork #34,
+    # 2026-09-10): round 1 lists branches by full ref name, so a tag of the
+    # same name cannot rename the item's branch, but the CONSUMERS of
+    # `gc.work_branch` resolved the bare name, and gitrevisions checks
+    # `refs/tags/<name>` before `refs/heads/<name>`: a tag at the base sent
+    # close-source-anchor's verification, the commit the review setup records
+    # and the fix lane's refresh to the base. Codex r5 on this round: a
+    # `--track` START POINT is a commit-ish too (a tag named `origin/<branch>`
+    # makes the bare form fail "ambiguous object name"), the script's
+    # generated BASE was the bare `<remote>/main`, the fix lane's refresh has
+    # no item branch to read in the `work_dir` case, and a pin that expects
+    # the operand right after the verb misses `log -1 --format=%H <branch>`
+    # and `diff HEAD <branch>`. So every command span (a backtick span of the
+    # prose, a line of the script) that runs a read verb is inspected for a
+    # branch-name operand in ANY position, every `--track` starts from
+    # `refs/remotes/`, and the script's generated base is a full ref. The
+    # sweep is grep-driven over every surface (DO-NOT 218), so a consumer
+    # added later with a bare read fails here.
+    BRANCH_READ_VERB = re.compile(
+        r"\bgit(?:_rig)?\b(?:\s+-C\s+\S+)?\s+(?:log|rev-parse|show|merge-base|diff|rev-list|cat-file|describe)\b"
+    )
+    BARE_BRANCH_OPERAND = re.compile(
+        r'(?<![\w/.\-])"?(?:<gc\.work_branch>|\$BRANCH|\$TARGET|<branch>|origin/<branch>|origin/\$BRANCH|\$REMOTE/\$TARGET)'
+    )
+    BARE_TRACK_START = re.compile(r'(?<![\w/.\-])"?(?:origin/<branch>|origin/\$BRANCH|\$REMOTE/\$TARGET)')
+    QUALIFIED_BRANCH_OPERAND = re.compile(
+        r"refs/(?:heads|remotes/origin|remotes/\$REMOTE)/(?:<gc\.work_branch>|\$BRANCH|\$TARGET|<branch>)"
+    )
+    ITEM_BRANCH_FULL_REF_READERS = (
+        "README.md",
+        "assets/scripts/worker-worktree.sh",
+        "assets/workflows/build-basic-review/{target}.acceptance-review.md",
+        "assets/workflows/build-basic-review/{target}.apply-review-findings.md",
+        "assets/workflows/build-basic-review/{target}.setup-build-basic-review.md",
+        "assets/workflows/build-basic-review/{target}.simplicity-review.md",
+        "assets/workflows/build-basic-review/{target}.test-evidence-review.md",
+        "assets/workflows/do-work-item/implement-item.md",
+        "assets/workflows/do-work/close-source-anchor.md",
+        "assets/workflows/do-work/implement.md",
+        "assets/workflows/do-work/prepare-worktree.md",
+        "assets/workflows/implementation-base/implement.md",
+        "assets/workflows/implementation-item-base/implement-item.md",
+    )
+
+    @staticmethod
+    def _command_spans(path: pathlib.Path) -> list[str]:
+        """The units a bare operand is looked for in: every code line of a
+        shell script (comments are not commands); in a prose file every
+        inline backtick span outside fenced blocks (whitespace flattened, so
+        a command wrapped across lines is one span) and every line inside a
+        fenced block (the fence's info string dropped)."""
+        text = path.read_text(encoding="utf-8")
+        if path.suffix == ".sh":
+            return [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        spans: list[str] = []
+        for index, part in enumerate(text.split("```")):
+            if index % 2 == 1:
+                spans.extend(line.strip() for line in part.splitlines()[1:] if line.strip())
+            else:
+                spans.extend(re.findall(r"`([^`]+)`", " ".join(part.split())))
+        return spans
+
+    @classmethod
+    def _bare_branch_reads(cls, span: str) -> list[str]:
+        """The bare branch-name operands of a span that runs a read verb, in
+        any operand position; a span with no read verb has none (`switch`
+        resolves branches only and keeps its branch operand bare)."""
+        if not cls.BRANCH_READ_VERB.search(span):
+            return []
+        return [match.group(0) for match in cls.BARE_BRANCH_OPERAND.finditer(span)]
+
+    def test_every_read_of_the_item_branch_names_the_full_ref(self) -> None:
+        """The mayor's codex gate r1 on fork #34 (gp-d6gd round 2): "Same-name
+        tags still redirect downstream review. The new resolver accepts branch
+        gp-item1 alongside tag gp-item1, but downstream close-source-anchor.md
+        and {target}.setup-build-basic-review.md use unqualified git
+        log/rev-parse. Git prefers the tag, so a tag at the base makes review
+        inspect the base instead of the implementation." Every read that
+        resolves the item's branch NAME to a commit, in every workflow step,
+        the role fragment, the README's commands and the pre_start script,
+        names the full ref `refs/heads/<branch>`; no bare form remains in any
+        operand position; every tracked take starts from `refs/remotes/`;
+        the script's generated base is a full ref; the allowed forms are
+        spelled per consumer; the contract is stated once in prepare-worktree
+        step 4 and in the README. The real-git scenarios are
+        test_lane_lifecycle rule 11 and the two script rows."""
+        # The detector itself, on the forms codex r5 showed a verb-adjacent grep misses.
+        for bad in (
+            "git log -1 --format=%H <gc.work_branch>",
+            "git diff HEAD <gc.work_branch>",
+            'git -C "$GC_DIR" rev-parse "<gc.work_branch>"',
+            'git -C "$GC_DIR" log -1 <gc.work_branch>',
+            "git show <branch>",
+            'git_rig rev-parse --verify "$TARGET^{commit}"',
+            'git -C "$GC_DIR" rev-parse origin/<branch>',
+        ):
+            with self.subTest(detects=bad):
+                self.assertTrue(self._bare_branch_reads(bad), bad)
+        for good in (
+            'git -C "$GC_DIR" log -1 "refs/heads/<gc.work_branch>"',
+            'git log -1 --format=%H "refs/heads/<gc.work_branch>"',
+            'git switch --no-overwrite-ignore "<gc.work_branch>"',
+            'git -C "$GC_DIR" show <commit>:<path>',
+            'git_rig rev-parse --verify "refs/heads/$TARGET^{commit}"',
+            'git -C "$WORKTREE" rev-parse --verify HEAD',
+        ):
+            with self.subTest(passes=good):
+                self.assertEqual(self._bare_branch_reads(good), [], good)
+        for bad in (
+            'git switch -c "$BRANCH" --track "origin/$BRANCH"',
+            'git_rig worktree add --quiet --track -b "$TARGET" "$WORKDIR" "$REMOTE/$TARGET"',
+            "-c <branch> --track origin/<branch>",
+        ):
+            with self.subTest(detects_track=bad):
+                self.assertTrue(self.BARE_TRACK_START.search(bad), bad)
+        for good in (
+            'git switch -c "$BRANCH" --track "refs/remotes/origin/$BRANCH"',
+            'git_rig worktree add --quiet --track -b "$TARGET" "$WORKDIR" "refs/remotes/$REMOTE/$TARGET"',
+            "-c <branch> --track refs/remotes/origin/<branch>",
+        ):
+            with self.subTest(passes_track=good):
+                self.assertIsNone(self.BARE_TRACK_START.search(good), good)
+
+        root = pathlib.Path(__file__).resolve().parents[1]
+        surfaces = sorted(
+            [
+                *(root / "assets" / "workflows").rglob("*.md"),
+                *(root / "template-fragments").glob("*.md"),
+                root / "README.md",
+                root / "assets" / "scripts" / "worker-worktree.sh",
+            ]
+        )
+        full_ref_readers = []
+        for path in surfaces:
+            relative = path.relative_to(root).as_posix()
+            spans = self._command_spans(path)
+            with self.subTest(surface=relative):
+                bare = [(span, self._bare_branch_reads(span)) for span in spans if self._bare_branch_reads(span)]
+                self.assertEqual(bare, [], "a bare branch name resolves tag-first (refs/tags before refs/heads)")
+                for span in spans:
+                    if re.search(r"--track\s+\S", span):  # a tracked take with its start point in the span
+                        self.assertIn("refs/remotes/", span, span)
+                        self.assertIsNone(self.BARE_TRACK_START.search(span), span)
+                    if re.search(r"\bswitch\b", span):
+                        # `git switch` resolves branches only: its branch operand stays bare.
+                        self.assertNotIn("refs/heads/", span, span)
+            if any(self.BRANCH_READ_VERB.search(span) and self.QUALIFIED_BRANCH_OPERAND.search(span) for span in spans):
+                full_ref_readers.append(relative)
+        self.assertEqual(sorted(full_ref_readers), sorted(self.ITEM_BRANCH_FULL_REF_READERS))
+
+        # The allowed forms, per consumer.
+        workflows = root / "assets" / "workflows"
+
+        def flat(relative_path: str) -> str:
+            return " ".join((workflows / relative_path).read_text(encoding="utf-8").split())
+
+        log_form = '`git -C "$GC_DIR" log -1 "refs/heads/<gc.work_branch>"`'
+        verify_form = '`git -C "$GC_DIR" rev-parse --verify "refs/heads/<gc.work_branch>"`'
+        close = flat("do-work/close-source-anchor.md")
+        self.assertIn(log_form + " shows the implementation commit", close)
+        self.assertIn("the FULL ref, never the bare name", close)
+        for relative_path in (
+            "do-work/implement.md",
+            "do-work-item/implement-item.md",
+            "implementation-base/implement.md",
+            "implementation-item-base/implement-item.md",
+        ):
+            with self.subTest(writer=relative_path):
+                self.assertIn('`git log -1 "refs/heads/<gc.work_branch>"`', flat(relative_path))
+        setup = flat("build-basic-review/{target}.setup-build-basic-review.md")
+        self.assertIn(verify_form + ", read from your own lane", setup)
+        self.assertIn("git resolves a bare name tag-first", setup)
+        self.assertIn("every review lane would inspect the base instead of the implementation", setup)
+        for relative_path in self.LIFECYCLE_READERS:
+            with self.subTest(reader=relative_path):
+                self.assertIn(verify_form, flat(relative_path))
+                self.assertIn("a bare name resolves tag-first", flat(relative_path))
+        # The fix lane reads HEAD of the worktree it committed in (the branch's tip
+        # by full ref in the lane case; a detached per-item worktree has no item
+        # branch), after the take and before it records.
+        fix = flat("build-basic-review/{target}.apply-review-findings.md")
+        head_form = '`git -C "$WORKTREE" rev-parse --verify HEAD`'
+        take_at = fix.index('switch --no-overwrite-ignore "<gc.work_branch>"')
+        head_at = fix.index(head_form)
+        record_at = fix.index("gc.review_commit=<sha>")
+        self.assertLess(take_at, head_at)
+        self.assertLess(head_at, fix.index(verify_form))
+        self.assertLess(fix.index(verify_form), record_at)
+        self.assertIn("in the `work_dir` case the per-item worktree is detached at your commit and has no item branch to read", fix)
+        self.assertIn("would record the tag's commit, the base, as the reviewed commit", fix)
+
+        # The contract, stated once in prepare-worktree step 4 ...
+        prepare = flat("do-work/prepare-worktree.md")
+        step4 = prepare[prepare.index("4. Check the workspace") : prepare.index("5. Create or reuse")]
+        for clause in (
+            "the next step reads the commit by the branch's full ref",
+            'reads the branch\'s commit with `git log -1 "refs/heads/<branch>"` / `git show`',
+            "Every read that resolves the branch NAME to a commit",
+            "names the FULL ref, `refs/heads/<branch>`",
+            "`refs/remotes/origin/<branch>` for a branch that is only on `origin`",
+            "git resolves a bare name tag-first (`refs/tags/<name>` before `refs/heads/<name>`)",
+            "review would inspect and record the base instead of the implementation",
+            "while the listing above still finds the branch",
+            "Only the branch operand of `git switch`, which resolves branches alone, stays bare",
+            "a tracked take's start point is `refs/remotes/origin/<branch>`",
+            "a `--track` start point is a commit-ish, not a branch lookup",
+            'makes the bare form fail "ambiguous object name"',
+            '`git -C "$GC_DIR" switch --no-overwrite-ignore -c "$BRANCH" --track "refs/remotes/origin/$BRANCH"`',
+        ):
+            with self.subTest(contract=clause):
+                self.assertIn(clause, step4)
+        self.assertNotIn('--track "origin/', prepare)
+        # ... in the README ...
+        readme = " ".join((root / "README.md").read_text(encoding="utf-8").split())
+        section = readme[readme.index("## Worker workspaces") : readme.index("## Build Methodology Contract")]
+        for clause in (
+            "Every read that resolves the item's branch to a commit names the full ref, `refs/heads/<branch>`",
+            '`git log -1 "refs/heads/<branch>"`',
+            '`git rev-parse --verify "refs/heads/<branch>"`',
+            "never the bare name: git resolves a bare name tag-first",
+            "would send readers and review to the base instead of the implementation",
+            "only the branch operand of `git switch`, which resolves branches alone, stays bare",
+            "a tracked take starts from `refs/remotes/origin/<branch>`",
+        ):
+            with self.subTest(readme=clause):
+                self.assertIn(clause, section)
+        # ... and the fragment's tracked take and the script's generated base follow it.
+        fragment = " ".join((root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8").split())
+        self.assertIn("`-c <branch> --track refs/remotes/origin/<branch>` when it is only on `origin`", fragment)
+        self.assertNotIn("--track origin/", fragment)
+        script = (root / "assets" / "scripts" / "worker-worktree.sh").read_text(encoding="utf-8")
+        for clause in (
+            'BASE="$(git_rig symbolic-ref --quiet "refs/remotes/$REMOTE/HEAD" 2>/dev/null)"',
+            'BASE="refs/remotes/$REMOTE/main"',
+            'BASE="refs/remotes/$REMOTE/master"',
+            '--track -b "$TARGET" "$add_dir" "refs/remotes/$REMOTE/$TARGET"',
+            '-c "$TARGET" --track "refs/remotes/$REMOTE/$TARGET"',
+            'DETACH_AT="$(git_rig rev-parse --verify "refs/heads/$TARGET^{commit}")"',
+        ):
+            with self.subTest(script=clause):
+                self.assertIn(clause, script)
+        self.assertNotIn("symbolic-ref --quiet --short", script)
+        self.assertNotIn('BASE="$REMOTE/', script)
+
+        # The real-git companions: the tag scenario through review-commit
+        # recording, the work_dir refresh, and the script's two tag rows.
+        lifecycle = (root / "tests" / "test_lane_lifecycle.py").read_text(encoding="utf-8")
+        for name in (
+            "test_a_tag_at_the_base_never_redirects_review_from_the_branch_tip",
+            "test_fix_in_a_per_item_worktree_refreshes_its_own_head_not_a_branch",
+        ):
+            with self.subTest(lifecycle_test=name):
+                self.assertIn(f"def {name}(", lifecycle)
+        script_tests = (root / "tests" / "test_worker_worktree.py").read_text(encoding="utf-8")
+        for name in (
+            "test_tag_named_like_the_remote_branch_neither_redirects_nor_fails_the_tracked_start",
+            "test_tag_named_like_origin_main_does_not_move_the_base",
+        ):
+            with self.subTest(script_test=name):
+                self.assertIn(f"def {name}(", script_tests)
+
+    # Round 5 (gate r4). The lane case is ONE contract carried by EVERY step
+    # that reads the source anchor's work_dir, not by the two steps a gate
+    # happened to name: rounds 3 and 4 each fixed the readers the gate found
+    # and the next gate found the next reader (implement.md line 45 and the
+    # review setup still required a directory). These rows are grep-driven so
+    # a consumer added later without the clause fails here.
+    WORK_DIR_READERS_WITH_LANE_CLAUSE = (
+        "do-work/prepare-worktree.md",
+        "do-work/implement.md",
+        "do-work/close-source-anchor.md",
+        "do-work-item/implement-item.md",
+        "implementation-base/implement.md",
+        "implementation-item-base/implement-item.md",
+        "build-basic-review/{target}.setup-build-basic-review.md",
+        "build-basic-review/{target}.acceptance-review.md",
+        "build-basic-review/{target}.simplicity-review.md",
+        "build-basic-review/{target}.test-evidence-review.md",
+        "build-basic-review/{target}.apply-review-findings.md",
+    )
+
+    @staticmethod
+    def _work_dir_readers(workflows: pathlib.Path) -> dict[str, str]:
+        """Every workflow step whose text reads the source anchor's `work_dir`.
+        `gc.work_dir` is the launcher rig root (a different key) and is excluded;
+        `metadata.work_dir` and `work_dir=` are the same key and count."""
+        readers = {}
+        for path in sorted(workflows.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            if re.search(r"(?<!gc\.)\bwork_dir\b", text):
+                readers[path.relative_to(workflows).as_posix()] = " ".join(text.split())
+        return readers
+
+    def test_every_work_dir_reader_carries_the_lane_clause(self) -> None:
+        """Gate r4 finding 1: prepare-worktree in a lane records `gc.work_branch`
+        and persists no `work_dir`, so every reader of `work_dir` must resolve
+        that case in its OWN lane (switch its lane onto the branch to work, or
+        read the branch's commit to inspect) and must fail closed on a
+        `work_dir` naming an agent lane. The marker is the pair `gc.work_branch`
+        + "no `work_dir`"; the reader list below is the floor, found by grep,
+        not a ceiling."""
+        workflows = pathlib.Path(__file__).resolve().parents[1] / "assets" / "workflows"
+        readers = self._work_dir_readers(workflows)
+        missing = set(self.WORK_DIR_READERS_WITH_LANE_CLAUSE) - set(readers)
+        self.assertEqual(missing, set(), f"expected work_dir readers vanished: {sorted(missing)}")
+        for relative_path, flat in readers.items():
+            with self.subTest(reader=relative_path):
+                self.assertIn("`gc.work_branch`", flat)
+                self.assertIn("no `work_dir`", flat)
+                self.assertRegex(flat, r"(?i)never enters? another agent's (lane|directory)")
+                self.assertRegex(flat, r"lane-\*|own lane|OWN lane")
+        # The four `gc.work_dir`-only steps read the launcher rig root for the
+        # artifact validator and are NOT source-anchor work_dir readers.
+        for relative_path in (
+            "build-base/summarize-implementation.md",
+            "implement/summarize.md",
+        ):
+            with self.subTest(launcher_root_only=relative_path):
+                self.assertNotIn(relative_path, readers)
+                self.assertIn("`gc.work_dir`", (workflows / relative_path).read_text(encoding="utf-8"))
+
+    def test_every_lane_switch_refuses_to_overwrite_ignored_files(self) -> None:
+        """Gate r4 finding 2: a plain `git switch` onto the recorded branch
+        silently overwrites an ignored file in the lane that the branch tracks.
+        Every switch onto `<gc.work_branch>` in every workflow step carries
+        `--no-overwrite-ignore` and the step fails on the refusal (never
+        `--force`, never a stash, never removing the file), as
+        `worker-worktree.sh` already does in switch_worktree."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflows = root / "assets" / "workflows"
+        spans_by_file: dict[str, list[str]] = {}
+        for path in sorted(workflows.rglob("*.md")):
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            spans = [s for s in re.findall(r"`[^`]*`", flat) if "switch" in s and "<gc.work_branch>" in s]
+            if spans:
+                spans_by_file[path.relative_to(workflows).as_posix()] = spans
+        for relative_path, spans in spans_by_file.items():
+            for span in spans:
+                with self.subTest(asset=relative_path, span=span):
+                    self.assertIn("--no-overwrite-ignore", span)
+                    self.assertNotIn("--force", span)
+        for relative_path in (
+            "do-work/prepare-worktree.md",
+            "do-work/implement.md",
+            "do-work-item/implement-item.md",
+            "implementation-base/implement.md",
+            "implementation-item-base/implement-item.md",
+            "build-basic-review/{target}.apply-review-findings.md",
+        ):
+            with self.subTest(switching_step=relative_path):
+                self.assertIn(relative_path, spans_by_file)
+        # Round 6 (gate r5): the review lanes are READERS and never switch onto
+        # the branch at all; their detach at the recorded commit is pinned in
+        # test_lane_handoff_lifecycle_holds_while_writing_and_releases_on_handoff.
+        for relative_path in self.LIFECYCLE_READERS:
+            with self.subTest(reader_never_switches_onto_branch=relative_path):
+                self.assertNotIn(relative_path, spans_by_file)
+        # The steps that EDIT in the lane say what the flag protects and how
+        # the refusal is handled; the boundary test comes before the switch.
+        for relative_path in (
+            "do-work/implement.md",
+            "do-work-item/implement-item.md",
+            "implementation-base/implement.md",
+            "implementation-item-base/implement-item.md",
+            "build-basic-review/{target}.apply-review-findings.md",
+        ):
+            flat = " ".join((workflows / relative_path).read_text(encoding="utf-8").split())
+            with self.subTest(editing_step=relative_path):
+                self.assertRegex(flat, r"ignored file in your lane .*collid")
+                self.assertIn("never `--force`", flat)
+                self.assertIn("never a stash", flat)
+                self.assertRegex(flat, r"never remove the colliding file")
+                switch_at = flat.index('switch --no-overwrite-ignore "<gc.work_branch>"')
+                for probe in ("rev-parse --show-toplevel", "rev-parse --git-common-dir"):
+                    self.assertLess(flat.index(probe), switch_at, probe)
+        script = (root / "assets" / "scripts" / "worker-worktree.sh").read_text(encoding="utf-8")
+        self.assertIn('git -C "$WORKDIR" switch --quiet --no-overwrite-ignore "$TARGET"', script)
+
+    def test_review_setup_records_branch_and_commit_when_work_dir_is_absent(self) -> None:
+        """Gate r4 finding 1, the review half: setup-build-basic-review wrote the
+        source anchor's `work_dir` into the review context, so the review and
+        fix lanes of the default separate-drain build had no workspace after a
+        lane handoff. It now records the BRANCH and the COMMIT id instead,
+        read from its own lane, and the lanes resolve those in their own
+        lanes; a `work_dir` naming an agent lane fails the setup bead."""
+        workflows = pathlib.Path(__file__).resolve().parents[1] / "assets" / "workflows"
+        setup = " ".join(
+            (workflows / "build-basic-review/{target}.setup-build-basic-review.md").read_text(encoding="utf-8").split()
+        )
+        for clause in (
+            "Include, per source anchor, its id, its `work_dir`, changed files, commit id, and proof commands in the context",
+            "When the source anchor has no `work_dir` and records `gc.work_branch`",
+            "record the BRANCH (`gc.work_branch`) and the COMMIT id",
+            '`git -C "$GC_DIR" rev-parse --verify "refs/heads/<gc.work_branch>"`, read from your own lane',
+            "in the context in place of a directory",
+            "the review and fix lanes resolve those in their own lanes",
+            "a persisted `work_dir` that names an agent lane (`.worktrees/<rig>/lane-*`) is invalid",
+            "a recorded branch that is missing from the repository",
+            "close this setup bead with `gc.outcome=fail`",
+        ):
+            with self.subTest(clause=clause):
+                self.assertIn(clause, setup)
+        # The consumers read the branch + commit, from their own lanes.
+        for relative_path, clauses in {
+            "build-basic-review/{target}.acceptance-review.md": (
+                "as a branch and a commit id",
+                '`git -C "$GC_DIR" log -1 <commit>`',
+                '`git -C "$GC_DIR" show <commit>:<path>`',
+                "inspect the recorded commit DETACHED in your own lane",
+                "write an iterate finding against review setup instead of entering it",
+            ),
+            "build-basic-review/{target}.simplicity-review.md": (
+                "the recorded branch and commit read from your OWN lane",
+                '`git -C "$GC_DIR" show <commit>:<path>`',
+            ),
+            "build-basic-review/{target}.test-evidence-review.md": (
+                "the recorded branch and commit read from your OWN lane",
+                '`git -C "$GC_DIR" show <commit>:<path>`',
+            ),
+            "build-basic-review/{target}.apply-review-findings.md": (
+                "When the review context records a branch and a commit instead of a `work_dir`",
+                "the workspace for fixes is your OWN lane, `$GC_DIR`, put on that branch exactly as `do-work/implement` does for the lane case",
+                "commit the fix on that branch",
+            ),
+            "do-work/implement.md": (
+                "use only its `work_dir` metadata as `WORKTREE`, or, when it has no `work_dir` and records `gc.work_branch`, your own lane `$GC_DIR` on that branch",
+            ),
+            "do-work/prepare-worktree.md": (
+                "The source anchor then has no `work_dir` and records `gc.work_branch`, and every later step that reads `work_dir`",
+                "resolves that case in its OWN lane",
+            ),
+        }.items():
+            flat = " ".join((workflows / relative_path).read_text(encoding="utf-8").split())
+            for clause in clauses:
+                with self.subTest(asset=relative_path, clause=clause):
+                    self.assertIn(clause, flat)
+
+    # Round 6 (gate r5). Round 5 had every review lane put its OWN lane on
+    # `<gc.work_branch>` to run proof commands, but git allows one worktree
+    # per branch: the implementation lane still held it after implement, so
+    # the reviewer's switch failed ("already checked out at ..."), three
+    # parallel reviewers would have contended for it, and the fix lane was
+    # blocked the same way. The static rows could not see a worktree
+    # LIFECYCLE; these rows pin the sentences, and
+    # test_lane_lifecycle.py runs the same commands in real worktrees.
+    LIFECYCLE_WRITERS = (
+        "do-work/implement.md",
+        "do-work-item/implement-item.md",
+        "implementation-base/implement.md",
+        "implementation-item-base/implement-item.md",
+        "build-basic-review/{target}.apply-review-findings.md",
+    )
+    LIFECYCLE_READERS = (
+        "build-basic-review/{target}.acceptance-review.md",
+        "build-basic-review/{target}.simplicity-review.md",
+        "build-basic-review/{target}.test-evidence-review.md",
+    )
+
+    def test_lane_handoff_lifecycle_holds_while_writing_and_releases_on_handoff(self) -> None:
+        """One lifecycle, stated once in prepare-worktree's contract paragraph
+        and applied by every step: a lane HOLDS the item's branch only while
+        writing and RELEASES it (`switch --detach`) on handoff; every reader
+        INSPECTS the recorded commit detached; the fix lane takes then releases
+        the branch and fails closed naming a holder; recovery is the operator
+        releasing the holder's lane; close-source-anchor is unchanged."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflows = root / "assets" / "workflows"
+
+        def flat(relative_path: str) -> str:
+            return " ".join((workflows / relative_path).read_text(encoding="utf-8").split())
+
+        release_clause = (
+            "After the final commit and BEFORE closing this step with `gc.outcome=pass`, "
+            'release the branch from your lane: `git -C "$GC_DIR" switch --detach`'
+        )
+        verify_clause = '`git -C "$GC_DIR" branch --show-current` prints nothing'
+
+        # The contract, stated once.
+        prepare = flat("do-work/prepare-worktree.md")
+        step4 = prepare[prepare.index("4. Check the workspace") : prepare.index("5. Create or reuse")]
+        for clause in (
+            "under one lifecycle, because git allows one worktree per branch",
+            "a lane HOLDS the item's branch only while it is writing to it and RELEASES it when it hands off",
+            "every reader INSPECTS the recorded commit detached, never on the branch",
+            "every writer releases the branch the same way when it hands off",
+            "never takes the branch",
+            "`git switch --detach --no-overwrite-ignore <commit>`",
+            "Readers detached at one commit never contend",
+            "A writer that crashed before releasing leaves the branch held",
+            "already checked out at <path>",
+            "`git worktree list`",
+            "`git -C <holder lane> switch --detach`",
+            "already used by worktree at <path>",
+            "A step never enters another agent's lane and never releases it",
+        ):
+            with self.subTest(contract=clause):
+                self.assertIn(clause, step4)
+
+        # Rule 1: every WRITER releases after its commit and before its close.
+        for relative_path in self.LIFECYCLE_WRITERS:
+            text = flat(relative_path)
+            with self.subTest(writer=relative_path):
+                self.assertIn(release_clause, text)
+                self.assertIn(verify_clause, text)
+                self.assertIn("name the commit id in this step's close reason", text)
+                self.assertIn("HOLDS the item's branch only while it is writing to it", text)
+                self.assertIn("one worktree per branch", text)
+                take_at = text.index('switch --no-overwrite-ignore "<gc.work_branch>"')
+                release_at = text.index(release_clause)
+                self.assertLess(take_at, release_at, "the release comes after the take")
+                # The release is a detach of the OWN lane, never a force or a stash.
+                self.assertNotIn("switch --detach --force", text)
+                self.assertNotIn("git stash", text)
+
+        # Rule 2: every READER detaches at the recorded commit and never takes the branch.
+        for relative_path in self.LIFECYCLE_READERS:
+            text = flat(relative_path)
+            with self.subTest(reader=relative_path):
+                self.assertIn('`git -C "$GC_DIR" switch --detach --no-overwrite-ignore <commit>`', text)
+                self.assertIn('`git -C "$GC_DIR" rev-parse --verify "refs/heads/<gc.work_branch>"`', text)
+                self.assertIn("fail closed when git refuses", text)
+                self.assertIn("A review lane never takes the branch itself", text)
+                self.assertIn("never contend", text)
+                self.assertNotIn('switch "<gc.work_branch>"', text)
+                self.assertNotIn('switch --no-overwrite-ignore "<gc.work_branch>"', text)
+                self.assertNotIn("put your own lane on the recorded branch", text)
+                self.assertNotIn("switch --detach`", text)  # a reader releases nothing: it held nothing
+
+        # Rule 3: the fix lane names the holder-of-the-branch failure.
+        fix = flat("build-basic-review/{target}.apply-review-findings.md")
+        for clause in (
+            "second WRITER in the item's lifecycle",
+            "The branch is free when you arrive because the implementation lane released it on handoff",
+            "Take it only when there is a fix to commit",
+            "If the switch fails because another worktree still holds the branch",
+            "already checked out at <path>",
+            "already used by worktree at <path>",
+            "`git worktree list` names the holder",
+            "fail this step closed with the holder's path in the close reason and mail the mayor",
+            "`git -C <holder lane> switch --detach`",
+            "Never enter that lane, never `--force`, never remove its checkout, never release another agent's lane",
+        ):
+            with self.subTest(fix_lane=clause):
+                self.assertIn(clause, fix)
+        boundary_at = fix.index("rev-parse --show-toplevel")
+        take_at = fix.index('switch --no-overwrite-ignore "<gc.work_branch>"')
+        holder_at = fix.index("If the switch fails because another worktree still holds the branch")
+        release_at = fix.index(release_clause)
+        self.assertLess(boundary_at, take_at)
+        self.assertLess(take_at, holder_at)
+        self.assertLess(holder_at, release_at)
+
+        # Rule 5: close-source-anchor still verifies by branch and takes nothing.
+        close = flat("do-work/close-source-anchor.md")
+        self.assertIn('`git -C "$GC_DIR" log -1 "refs/heads/<gc.work_branch>"`', close)
+        self.assertNotIn("switch", close)
+
+        # README: the lifecycle in the Worker workspaces section.
+        readme = " ".join((root / "README.md").read_text(encoding="utf-8").split())
+        section = readme[readme.index("## Worker workspaces") : readme.index("## Build Methodology Contract")]
+        for clause in (
+            "a lane holds the item's branch only while it is writing to it and releases it (`git switch --detach`) when it hands off",
+            "every reader inspects the recorded commit detached in its own lane",
+            "the fix lane finds the branch free",
+            "released by the operator from that lane, never by another agent's step",
+        ):
+            with self.subTest(readme=clause):
+                self.assertIn(clause, section)
+
+        # The real-git companion exists and covers both scenarios.
+        lifecycle = (root / "tests" / "test_lane_lifecycle.py").read_text(encoding="utf-8")
+        for name in (
+            "test_hold_while_writing_release_on_handoff_inspect_detached",
+            "test_writer_that_did_not_release_blocks_the_fix_lane_with_the_holder_named",
+            "test_detach_at_commit_refuses_to_overwrite_an_ignored_file",
+            "test_fix_lane_refreshes_the_recorded_commit_so_the_next_attempt_reviews_the_fix",
+            "test_reviewer_in_the_rig_root_never_detaches_the_human_checkout",
+            "test_role_session_without_a_lane_reads_detached_creates_no_worktree_and_moves_nothing",
+            "test_two_source_anchors_keep_their_own_review_commits_when_one_is_fixed",
+        ):
+            with self.subTest(lifecycle_test=name):
+                self.assertIn(f"def {name}(", lifecycle)
+
+    # Round 7 (gate r6). Two findings, both about the review loop's second
+    # and later attempts: (M1) the review setup runs ONCE, outside the loop,
+    # and recorded the commit the reviewers inspect, so after a fix every
+    # later attempt re-reviewed the ORIGINAL code; (M2) the review lanes
+    # detached `$GC_DIR` without the boundary test the writers apply, and a
+    # reviewer role with no `work_dir` starts in the RIG ROOT, so that detach
+    # would have moved the human checkout's HEAD. Both rows below are
+    # grep-driven over the whole workflows tree (DO-NOT 218), and
+    # test_lane_lifecycle.py runs both scenarios in real worktrees.
+    REVIEW_COMMIT_KEY = "gc.review_commit"
+    # Round 7's key lived on the workflow root; round 9 (gate r8 MAJOR) removed
+    # it. Spelled in two halves so this constant is not itself a hit.
+    ROOT_REVIEW_COMMIT_KEY = "gc.build." + "review_commit"
+
+    def test_review_context_is_refreshed_after_a_fix_and_readers_read_the_current_commit(self) -> None:
+        """Gate r6 M1, reshaped by gate r8 MAJOR: the review commit is recorded
+        PER SOURCE ANCHOR (`gc.review_commit` on the anchor, and the anchor's
+        own record in the context file), never workflow-wide, because separate
+        drains produce several source anchors on independent branches and one
+        key would send every reader to one item's revision and let a fix on
+        one item overwrite the others'. The fix lane rewrites the record and
+        key of the anchor it committed on, after its fix commit and BEFORE it
+        releases the branch, and touches no other anchor's; the setup writes
+        each anchor's key on its first run; every reader reads its anchor's
+        key first and falls back to that anchor's record. Grep-driven: every
+        workflow step that commits against a recorded review context carries
+        the refresh, nothing writes the key on the workflow root, and the old
+        workflow-wide key is gone from the tree (no dual path)."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflows = root / "assets" / "workflows"
+
+        def flat(relative_path: str) -> str:
+            return " ".join((workflows / relative_path).read_text(encoding="utf-8").split())
+
+        key = self.REVIEW_COMMIT_KEY
+        # The setup writes the key per anchor on first run and says why (it runs once).
+        setup = flat("build-basic-review/{target}.setup-build-basic-review.md")
+        for clause in (
+            "The context carries one record PER SOURCE ANCHOR",
+            "the commit each record carries is recorded on that source anchor, never on the workflow root",
+            f"`gc bd update \"<source-anchor-id>\" --set-metadata '{key}=<commit>'`",
+            "once per source anchor the context names",
+            "the original drain member, never the synthetic convoy",
+            "There is no workflow-wide review commit",
+            "This setup runs ONCE, outside the review loop",
+            f"the review lanes read each source anchor's `{key}` first and fall back to that anchor's record in the context file",
+            "the fix lane refreshes that anchor's record and key after every fix commit",
+            "reviews the CURRENT commit of each item, never the one this step saw",
+            f"only after the review context path is recorded on the workflow root and `{key}` is recorded on every source anchor the context names",
+        ):
+            with self.subTest(setup=clause):
+                self.assertIn(clause, setup)
+
+        # The fix lane refreshes AFTER the fix commit and BEFORE the release,
+        # in ITS anchor's record AND on ITS anchor and no other, and states
+        # the retry sequence.
+        fix = flat("build-basic-review/{target}.apply-review-findings.md")
+        for clause in (
+            "Refresh the review context after the fix commit and BEFORE releasing the branch",
+            "The review setup ran ONCE, outside the review loop",
+            "review the ORIGINAL code and repeat the findings you just resolved until the attempts run out",
+            "The record is PER SOURCE ANCHOR",
+            "rewrite the commit id (and the changed-file list, when the context carries one) in the record of the source anchor you committed on, in the review context file at `gc.build.code_review_context_path`",
+            f"`gc bd update \"<source-anchor-id>\" --set-metadata '{key}=<sha>'`",
+            "the review lanes read that anchor's key first and fall back to that anchor's record in the context file",
+            "Touch no other source anchor's record or key",
+            "there is no workflow-wide review commit to update",
+            "The retry sequence is: fix, commit, refresh the context, release the branch; then the loop re-runs the reviewers on the new commit",
+            "Never leave the old commit in the context after a fix",
+            "The refresh applies in the `work_dir` case too",
+            "the commit id in the context and on the source anchor are rewritten the same way",
+        ):
+            with self.subTest(fix_lane=clause):
+                self.assertIn(clause, fix)
+        commit_at = fix.index("commit the fix on that branch")
+        refresh_at = fix.index("Refresh the review context after the fix commit")
+        key_at = fix.index(f"--set-metadata '{key}=<sha>'")
+        release_at = fix.index(
+            "After the final commit and BEFORE closing this step with `gc.outcome=pass`, release the branch"
+        )
+        self.assertLess(commit_at, refresh_at, "the refresh comes after the fix commit")
+        self.assertLess(refresh_at, key_at)
+        self.assertLess(key_at, release_at, "the refresh comes before the release")
+
+        # Every reader reads ITS anchor's key first and falls back to that
+        # anchor's record; none reads the workflow root for it.
+        for relative_path in self.LIFECYCLE_READERS:
+            text = flat(relative_path)
+            with self.subTest(reader=relative_path):
+                self.assertIn("one record per source anchor", text)
+                self.assertIn("Read the CURRENT commit first", text)
+                self.assertIn(f"`{key}` on that source anchor bead", text)
+                self.assertIn("`gc bd show <source-anchor-id> --json`", text)
+                self.assertRegex(text, r"fall back to (the commit in )?that anchor's record in the review context file")
+                self.assertIn("only when that key is absent", text)
+                self.assertIn("no workflow-wide review commit", text)
+                self.assertRegex(text, r"(?i)the (review )?loop re-runs this lane after a fix")
+                read_at = text.index("Read the CURRENT commit first")
+                detach_at = text.index('`git -C "$GC_DIR" switch --detach --no-overwrite-ignore <commit>`')
+                self.assertLess(read_at, detach_at, "the current commit is read before the detach")
+                self.assertNotIn(f"`{key}` on the workflow root", text)
+                self.assertNotIn("<workflow-root-id>", text)
+
+        # The contract paragraph names the per-anchor refresh as part of the lifecycle.
+        prepare = flat("do-work/prepare-worktree.md")
+        step4 = prepare[prepare.index("4. Check the workspace") : prepare.index("5. Create or reuse")]
+        self.assertIn("A writer that commits after a commit was recorded for readers", step4)
+        self.assertIn(
+            f"this source anchor's record in the review context file and `{key}` on this source anchor", step4
+        )
+        self.assertIn("per item, never a workflow-wide key", step4)
+        self.assertIn("never the one the setup saw", step4)
+        self.assertIn("no other item's recorded commit moves", step4)
+
+        # Grep-driven: every workflow step that names the review context AND
+        # commits code carries the per-anchor refresh; every step that names
+        # the key is the setup (writes), a reader (reads first) or the fix
+        # lane (refreshes), or the contract that states the lifecycle; no step
+        # writes the key on the workflow root; and the old workflow-wide key
+        # is gone from every step, the README and the role fragment (no dual
+        # path).
+        writers_against_a_context = []
+        key_holders = []
+        old_key = self.ROOT_REVIEW_COMMIT_KEY
+        root_write = re.compile(r"<workflow-root-id>\"? --set-metadata '?" + re.escape(key) + "=")
+        for path in sorted(workflows.rglob("*.md")):
+            text = " ".join(path.read_text(encoding="utf-8").split())
+            rel = path.relative_to(workflows).as_posix()
+            with self.subTest(no_dual_path=rel):
+                self.assertNotIn(old_key, text)
+                self.assertNotRegex(text, root_write)
+            if key in text:
+                key_holders.append(rel)
+            # A step COMMITS when it names the git action (readers only speak of
+            # "the fix commit" as a noun and commit nothing).
+            if "review context" in text and re.search(r"commit the fix on|`git commit`", text):
+                writers_against_a_context.append(rel)
+                with self.subTest(writer_against_context=rel):
+                    self.assertIn(f"\"<source-anchor-id>\" --set-metadata '{key}=<sha>'", text)
+                    self.assertIn("Touch no other source anchor's record or key", text)
+                    self.assertIn("Never leave the old commit in the context after a fix", text)
+        self.assertEqual(writers_against_a_context, ["build-basic-review/{target}.apply-review-findings.md"])
+        self.assertEqual(
+            sorted(key_holders),
+            sorted(
+                (
+                    "do-work/prepare-worktree.md",
+                    "build-basic-review/{target}.setup-build-basic-review.md",
+                    "build-basic-review/{target}.apply-review-findings.md",
+                )
+                + self.LIFECYCLE_READERS
+            ),
+        )
+        for relative_path in ("README.md", "template-fragments/gc-role-worker.template.md"):
+            with self.subTest(no_dual_path=relative_path):
+                self.assertNotIn(old_key, (root / relative_path).read_text(encoding="utf-8"))
+
+        readme = " ".join((root / "README.md").read_text(encoding="utf-8").split())
+        section = readme[readme.index("## Worker workspaces") : readme.index("## Build Methodology Contract")]
+        self.assertIn(
+            "After the fix lane commits it refreshes the recorded commit of the item it fixed (that source "
+            f"anchor's record in the review context file and `{key}` on that source anchor, never a workflow-wide key",
+            section,
+        )
+        self.assertIn("the other items' recorded commits stay as they were", section)
+
+    def test_every_switch_or_detach_in_the_workflows_tree_is_preceded_by_the_boundary_test(self) -> None:
+        """Gate r6 M2: a reviewer role with no configured `work_dir` starts in
+        the RIG ROOT (the human checkout), and the round-6 reader clause ran
+        `switch --detach --no-overwrite-ignore <commit>` in `$GC_DIR` with no
+        boundary test, which would have moved the human checkout's HEAD.
+        Grep-driven over the whole workflows tree: every backticked span that
+        switches or detaches comes AFTER the three-part boundary test in its
+        file and the file says what happens when a part fails; every reader
+        names the rig-root case and the "no lane for this role" failure and,
+        failing the test, inspects by `git show`/`git log` only."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflows = root / "assets" / "workflows"
+        probes = ("rev-parse --show-toplevel", "rev-parse --git-common-dir")
+        switching_files: dict[str, list[str]] = {}
+        for path in sorted(workflows.rglob("*.md")):
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            # Command spans only: a span that RUNS git (`git ... switch`,
+            # `git switch --detach ...`, `git worktree add ... --detach`), not
+            # the prose mention `switch` in "before any `switch`".
+            spans = [
+                s for s in re.findall(r"`[^`]*`", flat)
+                if re.search(r"\bgit\b", s) and re.search(r"\bswitch\b|--detach|\bcheckout\b", s)
+            ]
+            if not spans:
+                continue
+            rel = path.relative_to(workflows).as_posix()
+            switching_files[rel] = spans
+            with self.subTest(asset=rel):
+                self.assertRegex(flat, r"(?i)when any part fails")
+                for probe in probes:
+                    self.assertIn(probe, flat)
+            for span in spans:
+                with self.subTest(asset=rel, span=span):
+                    self.assertNotIn("--force", span)
+                    self.assertNotIn("git checkout", span)  # switch is the only checkout verb in the tree
+                    span_at = flat.index(span)
+                    for probe in probes:
+                        self.assertLess(flat.index(probe), span_at, f"{probe} must come before {span}")
+        # The floor, found by grep: the contract, the five writers, the three readers.
+        for relative_path in ("do-work/prepare-worktree.md",) + self.LIFECYCLE_WRITERS + self.LIFECYCLE_READERS:
+            with self.subTest(switching_file=relative_path):
+                self.assertIn(relative_path, switching_files)
+        # Nothing else in the tree switches, detaches or checks out.
+        self.assertEqual(
+            sorted(switching_files),
+            sorted(("do-work/prepare-worktree.md",) + self.LIFECYCLE_WRITERS + self.LIFECYCLE_READERS),
+        )
+
+        # Every reader: boundary test before its detach; the rig-root case is
+        # named; failing the test it detaches nothing, inspects by git
+        # show/log only, and fails closed "no lane for this role" naming the fix.
+        for relative_path in self.LIFECYCLE_READERS:
+            flat = " ".join((workflows / relative_path).read_text(encoding="utf-8").split())
+            with self.subTest(reader=relative_path):
+                detach_at = flat.index('`git -C "$GC_DIR" switch --detach --no-overwrite-ignore <commit>`')
+                boundary_at = flat.index("boundary test `do-work/prepare-worktree` step 4 applies")
+                self.assertLess(boundary_at, detach_at)
+                for probe in probes:
+                    self.assertLess(flat.index(probe), detach_at)
+                self.assertRegex(flat, r"prove the lane FIRST, before any `switch` or detach")
+                self.assertIn("starts in the RIG ROOT, the human checkout", flat)
+                self.assertRegex(flat, r"(?i)switch(es)? and detach(es)? nothing")
+                self.assertIn("moves the human checkout's HEAD", flat)
+                self.assertIn('`git -C "$GC_DIR" show <commit>:<path>` and `git -C "$GC_DIR" log -1 <commit>` only', flat)
+                self.assertIn("`gc.outcome=fail`, `gc.failure_class=no-lane`", flat)
+                self.assertIn('"no lane for this role"', flat)
+                self.assertIn("a `work_dir` for this role (README, Worker workspaces)", flat)
+                self.assertIn("Only when all three parts hold:", flat)
+                self.assertLess(flat.index("Only when all three parts hold:"), detach_at)
+                # A reader still releases nothing and never takes the branch (round 6).
+                self.assertNotIn("switch --detach`", flat)
+                self.assertNotIn('switch --no-overwrite-ignore "<gc.work_branch>"', flat)
+
+        # The fix lane's release sits inside the guarded lane case.
+        fix = " ".join(
+            (workflows / "build-basic-review/{target}.apply-review-findings.md").read_text(encoding="utf-8").split()
+        )
+        release_at = fix.index('release the branch from your lane: `git -C "$GC_DIR" switch --detach`')
+        for probe in probes:
+            self.assertLess(fix.index(probe), release_at)
+        for clause in (
+            "This release is inside the guarded lane case above",
+            "only after the boundary test passed and your switch onto the branch succeeded",
+            "was never switched and detaches nothing",
+            "a detach there would move the human checkout's HEAD",
+            "the per-item worktree is already detached and shared with no one, so there is nothing to release",
+        ):
+            with self.subTest(fix_release=clause):
+                self.assertIn(clause, fix)
+
+        # The contract paragraph: readers apply the same boundary test.
+        prepare = " ".join((workflows / "do-work/prepare-worktree.md").read_text(encoding="utf-8").split())
+        step4 = prepare[prepare.index("4. Check the workspace") : prepare.index("5. Create or reuse")]
+        self.assertIn("after the same boundary test above that every writer applies", step4)
+        self.assertIn("detaches nothing and reads by `git show` and `git log` only", step4)
+
+        readme = " ".join((root / "README.md").read_text(encoding="utf-8").split())
+        section = readme[readme.index("## Worker workspaces") : readme.index("## Build Methodology Contract")]
+        for clause in (
+            "Every lane, writer or reader, proves it is a lane before it switches or detaches anything",
+            "a reader there reads by `git show` only and never detaches the human checkout",
+        ):
+            with self.subTest(readme=clause):
+                self.assertIn(clause, section)
+
     def test_build_artifact_prompts_use_set_metadata_for_paths(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         path_contracts = {
