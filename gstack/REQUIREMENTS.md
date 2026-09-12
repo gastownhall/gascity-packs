@@ -17,12 +17,20 @@
   rig's reports namespace, registers an active library card, and verifies its
   live tailnet URL before completion.
 - One bead has one implementation owner and one immutable source-head lease.
-- Material changes receive one different-family review against an immutable
-  candidate head.
-- At most one repair owner may write after review. The prior owner must be
-  drain-acknowledged or forcibly closed before reassignment.
 - Repository-native checks precede model review; a green baseline may be
   inherited only when bound to the same immutable head and check definition.
+- The same checked immutable candidate is exposed to required CI, configured
+  external PR review bots, and one different-family review for material changes.
+  Bounded timeout/unavailable results are explicit.
+- Findings are deduplicated in one exact-head artifact before the single repair
+  allowance begins. All applicable surfaces evaluate the exact repaired head, and
+  only a blocking consolidated re-review fails upward; safety always blocks.
+- At most one repair owner may write after consolidated review. The prior owner
+  must be drain-acknowledged or forcibly closed before reassignment.
+- Rejected branches remain durably reachable with their exact commit, diff, and
+  evidence until an approved successor carries them. Rescue carries work
+  forward by default; rebuild from protected main requires a recorded
+  architecture, provenance, or security reason.
 - Protected publication, deployment, and a behavior canary remain distinct
   terminal states.
 - Retired delivery graphs under `../deprecated/` are historical artifacts only

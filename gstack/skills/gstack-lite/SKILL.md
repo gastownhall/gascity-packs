@@ -15,11 +15,17 @@ change is correct in production. This is a delivery policy, not a large formula.
   workflow names to the user unless they ask about history or an active
   configuration violation is detected.
 - Keep one durable `main`. Use one short-lived branch only when repository
-  protection requires a pull request, then delete it after merge.
+  protection or review requires a pull request. Delete a rejected branch only
+  after its exact commit, diff, and evidence are reachable from an approved
+  successor or another durable remote reference; delete the accepted branch
+  after merge.
 - Cap implementation at two genuinely independent writers and review at one
   reviewer. Rescue replaces a writer; it never adds a seat.
-- Fail upward after one failed attempt and one targeted repair. Carry the failed
-  diff and exact test evidence to the stronger lane.
+- Fail upward only after one consolidated review round, one targeted repair,
+  and a blocking consolidated re-review. Safety findings always block merge.
+  Carry the failed candidate and exact evidence to the stronger lane by
+  default; rebuild from protected `main` only when an architecture, provenance,
+  or security defect makes carry-forward unsafe, and record why.
 - Never allow two sessions to write the same bead, branch, or worktree. Rescue
   replaces the implementation owner after a verified stop; it does not join it.
 - Never call work complete before its requested terminal state. “Implemented,”
@@ -135,17 +141,28 @@ Bind every reusable green result to the immutable candidate head and the check
 definition (command or CI workflow revision). Inherit it only when both match;
 do not rerun an unchanged broad baseline for each slice.
 
-### 4. Review once, independently
+### 4. Consolidate review, then repair once
 
-For material code, run one direct `gstack.review` pass over the exact candidate
-head with a different model family. Record one structured artifact with the
-candidate SHA, verdict, severity, file/line, evidence, and required fix.
-Documentation-only or harmless test-only changes may use deterministic checks
-alone. Add `gstack.qa`, `gstack.cso`, design review, or migration review only
-when the changed surface triggers that risk.
+After deterministic checks, expose the same immutable candidate head to every
+applicable configured review surface: required CI, external PR review bots, and
+one direct `gstack.review` pass with a different model family for material code.
+A draft or otherwise non-mergeable PR may obtain CI and bot feedback, but grants
+no merge authority. Documentation-only or harmless test-only changes may omit
+the model pass. Add `gstack.qa`, `gstack.cso`, design review, or migration review
+only when the changed surface triggers that risk.
 
-Apply actionable findings once and rerun affected checks. If the repaired diff
-materially changes, perform one focused re-review. Escalate rather than loop.
+Wait for all applicable surfaces, or record a bounded explicit timeout or
+unavailable result. Aggregate and deduplicate their findings into one
+structured artifact tied to the exact candidate SHA, including each surface, verdict,
+severity, file/line, evidence, and required fix. The single repair allowance
+does not begin until this consolidated artifact exists; never repair serially
+while later CI or bot feedback is still pending.
+
+Use one focused repair pass for the consolidated findings and rerun affected
+deterministic checks. Every applicable review surface must evaluate the
+exact repaired head; aggregate that consolidated re-review before merge. Fail upward
+only if it still contains a blocking finding. Any safety finding blocks merge
+regardless of repair accounting.
 
 Before assigning the one repair owner, revoke the previous lease:
 
@@ -159,11 +176,18 @@ with `gc session close <session-id>` or `gc session kill <session-id>`, verify
 it is stopped with `gc session list --state=all --json`, then replace the bead
 lease. Never accept a late commit from a revoked owner.
 
+Preserve a rejected PR branch until its exact commit/diff and review evidence
+are durably reachable from the approved successor or another remote reference.
+A rescue owner carries the failed candidate forward by default. Rebuild from
+protected `main` only for a recorded architecture, provenance, or security
+reason that makes carry-forward unsafe.
+
 ### 5. Publish and deploy through repository controls
 
-Use the repository's normal protected path. Confirm the PR head is current,
-required CI is green, review findings are resolved, and the merge result is on
-the protected base. Prefer repository-owned CI/CD credentials. Local cloud
+Use the repository's normal protected path. Confirm the PR head is the exact
+consolidated re-review head, required CI and configured review surfaces are
+green, review findings are resolved, and the merge result is on the protected
+base. Prefer repository-owned CI/CD credentials. Local cloud
 authentication is not required when GitHub workload identity owns deployment;
 request it only when no authoritative CI or public verification path exists.
 

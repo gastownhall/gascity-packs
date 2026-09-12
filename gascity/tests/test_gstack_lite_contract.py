@@ -112,7 +112,7 @@ class GstackLiteContractTests(unittest.TestCase):
         self.assertIn("Never install or launch a retired delivery graph", skill)
         self.assertIn("Do not mention retired", skill)
         self.assertNotIn("TODO", skill)
-        self.assertLess(len(skill.splitlines()), 210)
+        self.assertLess(len(skill.splitlines()), 240)
 
     def test_mayor_and_prompt_fragment_default_to_gstack_lite(self) -> None:
         mayor = (REPO_ROOT / "gascity/skills/mayor/SKILL.md").read_text(encoding="utf-8")
@@ -122,7 +122,7 @@ class GstackLiteContractTests(unittest.TestCase):
         self.assertIn("## Default Delivery Policy", mayor)
         self.assertIn("Do not mention retired workflow names", mayor)
         self.assertIn('{{ define "gstack-lite-policy" -}}', fragment)
-        self.assertIn("one independent review", fragment)
+        self.assertIn("one consolidated exact-head", fragment)
         self.assertIn("sol-research", fragment)
         self.assertIn("Sol/max", fragment)
         self.assertIn("--no-formula", fragment)
@@ -135,6 +135,65 @@ class GstackLiteContractTests(unittest.TestCase):
         self.assertIn("gc session logs", mayor)
         self.assertIn("queue autonomous continuation", mayor)
         self.assertIn("--intent follow_up", mayor)
+
+    def test_active_policy_surfaces_require_consolidated_review_before_repair(self) -> None:
+        canonical = (REPO_ROOT / "gstack/skills/gstack-lite/SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        mayor = (REPO_ROOT / "gascity/skills/mayor/SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        public_fragment = (
+            REPO_ROOT / "gascity/template-fragments/gstack-lite-policy.template.md"
+        ).read_text(encoding="utf-8")
+        roles_fragment = (
+            REPO_ROOT
+            / "gascity/roles/template-fragments/gstack-lite-policy.template.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(public_fragment, roles_fragment)
+        for content in (canonical, mayor, public_fragment):
+            normalized = " ".join(content.split())
+            self.assertIn("required CI", normalized)
+            self.assertIn("external PR", normalized)
+            self.assertIn("bounded", normalized)
+            self.assertIn("timeout", normalized)
+            self.assertIn("unavailable", normalized)
+            self.assertIn("exact repaired head", normalized)
+            self.assertIn("safety", normalized.lower())
+            self.assertIn("blocks", normalized.lower())
+
+        self.assertIn("never repair serially", canonical)
+        self.assertLess(
+            canonical.index("external PR review bots"),
+            canonical.index("single repair allowance"),
+        )
+
+    def test_active_policy_preserves_rejected_work_for_rescue(self) -> None:
+        canonical = (REPO_ROOT / "gstack/skills/gstack-lite/SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        mayor = (REPO_ROOT / "gascity/skills/mayor/SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        fragment = (
+            REPO_ROOT / "gascity/template-fragments/gstack-lite-policy.template.md"
+        ).read_text(encoding="utf-8")
+
+        for content in (canonical, mayor, fragment):
+            normalized = " ".join(content.split())
+            self.assertIn("exact commit", normalized)
+            self.assertIn("diff", normalized)
+            self.assertIn("evidence", normalized)
+            self.assertIn(
+                "carries the failed candidate forward by default", normalized
+            )
+            self.assertIn("rebuild from protected", normalized.lower())
+            self.assertIn("architecture, provenance, or security", normalized)
+
+        self.assertNotIn(
+            "delete any protection-required PR branch after\n  merge", fragment
+        )
 
     def test_research_planner_is_persistent_attachable_and_publishes(self) -> None:
         role_root = REPO_ROOT / "gascity/roles/agents/research-planner"

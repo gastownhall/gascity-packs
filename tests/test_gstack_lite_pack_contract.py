@@ -65,6 +65,44 @@ def test_gstack_lite_records_owner_and_candidate_leases() -> None:
         assert required in text
 
 
+def test_gstack_lite_consolidates_every_review_surface_before_repair() -> None:
+    skill = (GSTACK_ROOT / "skills/gstack-lite/SKILL.md").read_text(encoding="utf-8")
+    requirements = (GSTACK_ROOT / "REQUIREMENTS.md").read_text(encoding="utf-8")
+    readme = (GSTACK_ROOT / "README.md").read_text(encoding="utf-8")
+
+    for text in (skill, requirements, readme):
+        normalized = " ".join(text.split())
+        assert "required CI" in normalized
+        assert "external PR" in normalized
+        assert (
+            "different-family" in normalized
+            or "different model family" in normalized
+        )
+        assert (
+            "exact repaired head" in normalized
+            or "exact-repaired-head" in normalized
+        )
+        assert (
+            "Safety findings always block" in normalized
+            or "safety always blocks" in normalized
+        )
+
+    assert skill.index("external PR review bots") < skill.index(
+        "single repair allowance"
+    )
+    assert "never repair serially" in skill
+    assert "bounded explicit timeout or\nunavailable result" in skill
+
+
+def test_gstack_lite_preserves_rejected_candidates_for_successors() -> None:
+    skill = (GSTACK_ROOT / "skills/gstack-lite/SKILL.md").read_text(encoding="utf-8")
+
+    assert "exact commit/diff and review evidence" in skill
+    assert "carries the failed candidate forward by default" in skill
+    assert "Rebuild from\nprotected `main` only" in skill
+    assert "delete any protection-required PR branch after\n  merge" not in skill
+
+
 def test_audit_rejects_retired_formula_names(monkeypatch, tmp_path: Path) -> None:
     audit = load_audit_module()
     city = tmp_path / "city"

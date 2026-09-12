@@ -1,9 +1,11 @@
 # Gas City Build Pack (`gc`)
 
 > **Current default: Gstack Lite.** For ordinary delivery, use one durable
-> bead, one implementation owner, repository-native checks, one direct
-> independent gstack review for material changes, one bounded repair, then the
-> repository's protected publish/deploy/smoke path. The large formulas below
+> bead, one implementation owner, repository-native checks, one consolidated
+> exact-head review round across required CI, external PR bots, and one direct
+> different-family review for material changes, one bounded repair with the
+> same surfaces re-reviewing the repaired head, then the repository's protected
+> publish/deploy/smoke path. The large formulas below
 > remain explicit tools for genuinely complex work; they are not the default
 > response to “finish this” or “ship it.”
 

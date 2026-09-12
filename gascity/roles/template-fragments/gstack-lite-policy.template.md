@@ -2,9 +2,10 @@
 # Gstack Lite Delivery Policy
 
 For ordinary software work, use the lightweight path: one durable bead, one
-implementation owner, repository-native checks, one independent review for
-material changes, at most one repair cycle, protected publication, deployment,
-smoke verification, and concise wall-clock/rework accounting.
+implementation owner, repository-native checks, one consolidated exact-head
+review round, at most one repair cycle with consolidated exact-repaired-head
+re-review, protected publication, deployment, smoke verification, and concise
+wall-clock/rework accounting.
 
 - Keep the persistent Mayor on Sol/high for responsive intake and final
   adjudication. For substantial research or planning, create a persistent,
@@ -28,12 +29,19 @@ smoke verification, and concise wall-clock/rework accounting.
 - Record one exclusive write lease per bead/branch/worktree. Before rescue or
   repair, drain and verify the prior owner is stopped; reject late commits from
   a revoked lease.
-- Bind checks and review to an immutable candidate head. Reuse green evidence
-  only when both the head and check definition match.
-- Use one structured review artifact and at most one focused repair. A rescue
-  lane must reproduce or edit within four minutes or return the evidence.
-- Preserve one durable `main`; delete any protection-required PR branch after
-  merge.
+- After checks, expose the same immutable candidate to required CI, configured
+  external PR bots, and one different-family reviewer for material changes. A
+  draft/non-mergeable PR gathers feedback but grants no merge authority.
+- Wait for every applicable surface or record a bounded timeout/unavailable
+  result; aggregate and deduplicate one exact-SHA artifact before repair starts.
+- Use one focused repair, rerun affected checks, and require every applicable
+  surface to review the exact repaired head. Only a blocking consolidated
+  re-review fails upward; any safety finding always blocks merge.
+- Preserve rejected branches until exact commits, diffs, and evidence are
+  durably reachable. Rescue carries the failed candidate forward by default;
+  rebuild from protected
+  `main` only for a recorded architecture, provenance, or security reason. A
+  rescue lane must reproduce or edit within four minutes or return the evidence.
 - “Implemented,” “merged,” and “verified in production” are distinct states.
   Continue until the user's requested terminal state is proven.
 {{- end }}
