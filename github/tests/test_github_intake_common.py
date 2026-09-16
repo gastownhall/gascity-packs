@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import pathlib
+import shlex
 import tempfile
 import unittest
 
@@ -641,7 +642,7 @@ class GitHubIntakePublishIdentityTests(unittest.TestCase):
         os.environ["PUBLISH_CAPTURE_PATH"] = str(capture)
         import sys as _sys
 
-        return f"{_sys.executable} {script}", capture
+        return f"{shlex.quote(_sys.executable)} {shlex.quote(str(script))}", capture
 
     def test_publish_identity_skips_when_no_publisher_configured(self) -> None:
         result = common.publish_identity({"app_id": "7"}, identity="mayor")
@@ -694,7 +695,7 @@ class GitHubIntakePublishIdentityTests(unittest.TestCase):
         import sys as _sys
 
         result = common.publish_identity(
-            {"app_id": "7"}, identity="mayor", publisher=f"{_sys.executable} {script}"
+            {"app_id": "7"}, identity="mayor", publisher=f"{shlex.quote(_sys.executable)} {shlex.quote(str(script))}"
         )
 
         self.assertEqual(result["status"], "error")
