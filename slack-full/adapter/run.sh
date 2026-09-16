@@ -180,8 +180,10 @@ fi
 # build then dies with "build cache is required, but could not be
 # located". Fill only that gap: when Go can find a cache on its own,
 # leave it alone so rebuilds keep sharing the normal one.
+_gc_slack_tmp="${TMPDIR:-/tmp}"
+_gc_slack_tmp="${_gc_slack_tmp%/}"
 if [[ -z "${GOCACHE:-}" && -z "${XDG_CACHE_HOME:-}" && -z "${HOME:-}" ]]; then
-  export GOCACHE="${TMPDIR:-/tmp}/gc-slack-adapter-gocache"
+  export GOCACHE="${_gc_slack_tmp}/gc-slack-adapter-gocache"
   log "no HOME / XDG_CACHE_HOME / GOCACHE in the environment — building with GOCACHE=$GOCACHE"
 fi
 
@@ -193,7 +195,7 @@ fi
 # previous error — HOME still unset, so the toolchain fetch dies on
 # "module cache not found: neither GOMODCACHE nor GOPATH is set".
 if [[ -z "${GOPATH:-}" && -z "${GOMODCACHE:-}" && -z "${HOME:-}" ]]; then
-  export GOPATH="${TMPDIR:-/tmp}/gc-slack-adapter-gopath"
+  export GOPATH="${_gc_slack_tmp}/gc-slack-adapter-gopath"
   log "no HOME / GOMODCACHE / GOPATH in the environment — building with GOPATH=$GOPATH"
 fi
 
