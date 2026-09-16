@@ -117,43 +117,43 @@ set_roster() { printf '%s' "$1" >"$GC_SESSIONS_JSON"; }
 # agent in a plain shell, not under strict mode -- testing it stricter than it
 # ships would measure the wrong thing.
 run_verdict() {
-    local ASSIGNEE bead_assignee spec
-    ASSIGNEE="$1"
-    bead_assignee="$2"
-    spec="$3"
-    : >"$tmp/verdict"
-    # Subshell, not $(...): bash 3.2 cannot parse `case ... ;;` inside command
-    # substitution. The recipe still runs with `set +eu` like an agent shell.
-    (
+    VERDICT=$(
         set +eu
-        . "$STEP1"
-        case "$spec" in
-            OLD) u="2020-01-01T00:00:00Z" ;;
-            BOUNDARY) u="${CYCLE_MAP_BUILT_AT%Z}.7035126Z" ;;
-            NEWER) u="2099-01-01T00:00:00Z" ;;
-            MID_CYCLE)
-                # Timestamp inside the cycle but before Step 2a's rebuild.
-                # Sleeping first makes the two watermarks differ by whole
-                # seconds. Python instead of GNU date -d: macOS is in the fleet.
-                u=$(python3 -c 'import datetime,sys
-s=sys.argv[1].replace("Z","+00:00")
-dt=datetime.datetime.fromisoformat(s)
-print((dt+datetime.timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))' "$CYCLE_MAP_BUILT_AT")
-                sleep 2.1
-                ;;
-            MISSING) u="" ;;
-            *) u="$spec" ;;
-        esac
-        if [ -n "$u" ]; then
-            printf '[{"id":"TESTBEAD","assignee":"%s","updated_at":"%s"}]' \
-                "$bead_assignee" "$u" >"$GC_BEAD_JSON"
-        else
-            printf '[{"id":"TESTBEAD","assignee":"%s"}]' "$bead_assignee" >"$GC_BEAD_JSON"
-        fi
-        . "$STEP2A"
-        printf '%s' "$STILL_ORPHANED" >"$tmp/verdict"
-    ) >>"$ERRLOG" 2>&1
-    VERDICT=$(cat "$tmp/verdict")
+        ASSIGNEE="$1"
+        bead_assignee="$2"
+        spec="$3"
+        # The recipe narrates its decisions on stdout; send that to the log so
+        # only the verdict is captured, and so `fail` can show the reasoning.
+        {
+            . "$STEP1"
+            case "$spec" in
+                OLD) u="2020-01-01T00:00:00Z" ;;
+                BOUNDARY) u="${CYCLE_MAP_BUILT_AT%Z}.7035126Z" ;;
+                NEWER) u="2099-01-01T00:00:00Z" ;;
+                MID_CYCLE)
+                    # A timestamp inside the cycle but before Step 2a's own
+                    # rebuild.  Sleeping first makes the two watermarks differ
+                    # by whole seconds, which is what separates "compared
+                    # against the cycle's snapshot" from "compared against the
+                    # rebuild that just happened".  GNU date, as in the sibling
+                    # heartbeat test: the recipe needs BSD portability, this
+                    # Linux-only CI test does not.
+                    u=$(date -u -d "$CYCLE_MAP_BUILT_AT + 1 second" +%Y-%m-%dT%H:%M:%SZ)
+                    sleep 2.1
+                    ;;
+                MISSING) u="" ;;
+                *) u="$spec" ;;
+            esac
+            if [ -n "$u" ]; then
+                printf '[{"id":"TESTBEAD","assignee":"%s","updated_at":"%s"}]' \
+                    "$bead_assignee" "$u" >"$GC_BEAD_JSON"
+            else
+                printf '[{"id":"TESTBEAD","assignee":"%s"}]' "$bead_assignee" >"$GC_BEAD_JSON"
+            fi
+            . "$STEP2A"
+        } >>"$ERRLOG" 2>&1
+        printf '%s' "$STILL_ORPHANED"
+    )
 }
 
 assert_verdict() {

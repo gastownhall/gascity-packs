@@ -42,18 +42,10 @@ run_check() {
     ERR=$(cat "$ERRFILE")
 }
 
-epoch_rfc3339() {
-    # Unix epoch -> RFC3339 UTC. Python, not GNU date -d: CI is Linux, the
-    # fleet under test includes macOS bash 3.2 / BSD date.
-    python3 -c 'import datetime,sys; print(datetime.datetime.fromtimestamp(int(sys.argv[1]), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))' "$1"
-}
-
 ts_ago() {
-    epoch_rfc3339 "$(( $(date -u +%s) - $1 ))"
-}
-
-ts_ahead() {
-    epoch_rfc3339 "$(( $(date -u +%s) + $1 ))"
+    # Seconds ago -> RFC3339 UTC. GNU date here; the script under test is what
+    # needs BSD portability, not this Linux-only CI test.
+    date -u -d "@$(( $(date -u +%s) - $1 ))" +%Y-%m-%dT%H:%M:%SZ
 }
 
 tmp=$(mktemp -d)
@@ -127,7 +119,7 @@ test_fractional_seconds_parse() {
 }
 
 test_future_heartbeat_is_clock_skew_not_stale() {
-    run_check "$(printf '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","state":"asleep","last_active":"%s","closed":false}]}' "$(ts_ahead 3600)")"
+    run_check "$(printf '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","state":"asleep","last_active":"%s","closed":false}]}' "$(date -u -d "@$(( $(date -u +%s) + 3600 ))" +%Y-%m-%dT%H:%M:%SZ)")"
     [ "$RC" -eq 0 ] || fail "a future heartbeat is skew, not staleness, got $RC ($OUT)"
     printf '%s' "$OUT" | grep -q '^fresh	alpha	alpha/witness	asleep	0	' ||
         fail "a future heartbeat should clamp to age 0, got: $OUT"
