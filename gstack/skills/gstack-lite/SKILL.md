@@ -4,7 +4,6 @@ description: Deliver software pragmatically from a durable work item through imp
 ---
 
 # Gstack Lite
-
 Use one accountable owner and the smallest set of controls that can prove the
 change is correct in production. This is a delivery policy, not a large formula.
 
@@ -113,19 +112,7 @@ Record an exclusive lease on the bead before the first edit:
 - `gc.delivery.source_head`: immutable starting SHA;
 - `gc.delivery.phase`: `implementation`, `review`, or `repair`.
 
-Record a repository-defined `gc.delivery.lane` and concrete risk reasons with
-the lease. A lane is descriptive rather than a shared numeric taxonomy: a
-repository may name its own lane/profile. Safety, actuation, credential,
-production-data, migration, and publication risks must name their reasons and
-the deployment target. A claimed, leased bead authorizes ordinary repository
-work; do not create repeated approval mail for normal edits, checks, or review.
-Separate authority is still required for an external publish, production
-cutover, service restart, credential use, or other irreversible operation.
-
-Keep owner-visible status concise: report start, a transition to an external
-wait, a material risk or ETA change, a decision gate with the recommended
-option, and terminal outcome. Use the ephemeral status channel for routine
-updates; durable mail is only for state a restarted recipient must retain.
+Record a repository-defined `gc.delivery.lane`, risk reasons, and deployment target where safety, actuation, credentials, production data, migration, or publication apply. A claimed lease authorizes ordinary work; external publishing, cutover, restarts, credentials, and other irreversible operations need separate authority. Report only start, external waits, material risk/ETA changes, decisions, and terminal outcomes; routine status is ephemeral.
 
 Clear stale inbox work before claiming a new delivery. Verify the assignee and
 lease again before every write after a handoff.
@@ -180,21 +167,14 @@ while later CI or bot feedback is still pending.
 
 Use one focused repair pass for the consolidated findings and rerun affected
 deterministic checks. Every applicable review surface must evaluate the
-exact repaired head; aggregate that consolidated re-review before merge. Submit
-the repaired head to the same live reviewer conversation with `gc session
-submit <reviewer-session> ... --intent follow_up`; replace that reviewer only
-when its unavailability is recorded. The same reviewer session, bead, branch,
-worktree, and lease remain in place for a narrowly authorized second repair
-that corrects a safety finding. The
+exact repaired head; aggregate that consolidated re-review before merge. Submit the repaired head to the same live reviewer conversation with `gc session submit <reviewer-session> ... --intent follow_up`; replace it only when its unavailability is recorded. A narrowly authorized second safety repair keeps that session, bead, branch, worktree, and lease. The
 same bounded timeout/unavailable recording applies to re-review. An unavailable
 required surface blocks merge unless repository protection explicitly does not
 require it, and that exception is recorded. Fail upward only if the consolidated
 re-review still contains a blocking finding. Any safety finding blocks merge
 regardless of repair accounting.
 
-Keep benchmarks outside delivery lineage: use an experiment root, `bench/`
-branch namespace, isolated worktree, dataset, and result path. A benchmark
-never consumes a product delivery lease or changes its delivery metrics.
+Keep benchmarks outside delivery lineage: use an isolated experiment root, `bench/` branch, worktree, dataset, and results; never consume a product lease or metrics.
 
 Before assigning the one repair owner, revoke the previous lease:
 
@@ -246,10 +226,7 @@ Close the bead only after the requested terminal state is proven. Report:
 Store comparable terminal accounting in the durable product bead's
 `gc.delivery.metrics` metadata object. Its versioned contract,
 [`schemas/gc.delivery.v1.schema.json`](schemas/gc.delivery.v1.schema.json),
-covers stage timing, rework, human intervention, model lanes, repository lane
-and risk, exact-SHA review evidence, checks, deployment/canary outcomes,
-immutable revisions, and outcome. Do not optimize scorecards using test/source
-ratio or owner-prompt count; report missing coverage honestly.
+covers timing, rework, intervention, model and repository lanes/risk, exact-SHA review evidence, checks, deployment/canary outcomes, revisions, and outcome. Do not optimize scorecards using test/source ratios or owner-prompt counts.
 
 Use `scripts/delivery_snapshot.py delivery` for a bounded product rollup with
 telemetry coverage, and `scripts/delivery_snapshot.py health` for separate
