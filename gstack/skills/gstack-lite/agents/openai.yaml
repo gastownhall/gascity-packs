@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gstack Lite"
+  short_description: "Pragmatic delivery from bead to production"
+  default_prompt: "Use $gstack-lite to deliver this change with one owner, targeted checks, one review, and production verification."

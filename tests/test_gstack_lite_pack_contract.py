@@ -30,27 +30,22 @@ def test_gstack_pack_is_skills_only() -> None:
     for retired_surface in ("agents", "commands", "formulas"):
         assert not (GSTACK_ROOT / retired_surface).exists()
     assert (GSTACK_ROOT / "skills/gstack-lite/SKILL.md").is_file()
-    assert (
-        REPO_ROOT / "deprecated/gstack-graph/formulas/gstack-build.formula.toml"
-    ).is_file()
 
 
-def test_gc_roles_pack_is_standalone() -> None:
+def test_gc_roles_pack_inherits_public_worker_and_adds_lightweight_policy() -> None:
     roles = REPO_ROOT / "gascity/roles"
     manifest = tomllib.loads((roles / "pack.toml").read_text(encoding="utf-8"))
 
     assert manifest["pack"]["name"] == "gc-roles"
-    assert "imports" not in manifest
-    for fragment in ("gc-role-worker", "gstack-lite-policy"):
-        assert (roles / f"template-fragments/{fragment}.template.md").is_file()
-
-
-def test_complete_delivery_tombstone_has_no_runnable_surface() -> None:
-    tombstone = REPO_ROOT / "complete-delivery"
-    assert (tombstone / "pack.toml").is_file()
-    for retired_surface in ("agents", "commands", "formulas", "skills"):
-        assert not (tombstone / retired_surface).exists()
-    assert (REPO_ROOT / "deprecated/complete-delivery/pack.toml").is_file()
+    assert manifest["imports"]["gc"]["source"] == ".."
+    assert (
+        REPO_ROOT / "gascity/template-fragments/gc-role-worker.template.md"
+    ).is_file()
+    assert (
+        roles / "template-fragments/gstack-lite-policy.template.md"
+    ).is_file()
+    assert (roles / "agents/research-planner/agent.toml").is_file()
+    assert (roles / "agents/research-planner/prompt.template.md").is_file()
 
 
 def test_gstack_lite_records_owner_and_candidate_leases() -> None:
@@ -88,8 +83,9 @@ def test_gstack_lite_consolidates_every_review_surface_before_repair() -> None:
     skill = normalized_text(GSTACK_ROOT / "skills/gstack-lite/SKILL.md")
     requirements = normalized_text(GSTACK_ROOT / "REQUIREMENTS.md")
     readme = normalized_text(GSTACK_ROOT / "README.md")
-    root_readme = normalized_text(REPO_ROOT / "README.md")
-    gascity_requirements = normalized_text(REPO_ROOT / "gascity/REQUIREMENTS.md")
+    role_fragment = normalized_text(
+        REPO_ROOT / "gascity/roles/template-fragments/gstack-lite-policy.template.md"
+    )
 
     assert (
         "After deterministic checks, expose the same immutable candidate head to "
@@ -115,16 +111,8 @@ def test_gstack_lite_consolidates_every_review_surface_before_repair() -> None:
         "reviewer to evaluate the exact repaired head, then consolidate the re-review "
         "findings;"
     ) in readme
-    assert (
-        "one consolidated exact-head round across required CI, configured PR bots, and "
-        "one different-family review for material changes, one repair, the same "
-        "surfaces' exact-repaired-head re-review"
-    ) in root_readme
-    assert (
-        "direct bead → owner → native checks → consolidated exact-head "
-        "CI/bot/different-family review → one repair → the same surfaces' "
-        "exact-repaired-head re-review → publish/deploy/canary path"
-    ) in gascity_requirements
+    assert "one consolidated exact-head review round" in role_fragment
+    assert "exact-repaired-head re-review" in role_fragment
     assert (
         "A surface skipped by its configuration (draft state, labels, or path filters) "
         "is not a valid timeout;"

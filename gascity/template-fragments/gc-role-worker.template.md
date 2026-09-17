@@ -38,6 +38,18 @@ Never ask a human whether to proceed after a successful claim. Do not stop for
 confirmation in a headless workflow. If required task input is missing, record
 the bead's failure contract and close it instead of idling.
 
+## Exclusive write lease
+
+Before editing or testing a shared worktree, verify the claimed bead remains
+assigned to this exact session and that its delivery lease names this session,
+repository, worktree/branch, and source head. If another session owns the
+lease, do not touch its worktree. Report the conflict and exit.
+
+A rescue or repair owner replaces the prior writer; it never overlaps it. On a
+focused repair, reproduce the failure or make the first relevant edit within
+four minutes. Return evidence instead of wandering or starting another repair
+lane.
+
 ## Close
 
 Honor bead's requested `gc.outcome` metadata. If no failure contract exists,
