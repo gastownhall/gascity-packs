@@ -249,7 +249,6 @@ def test_plain_gastown_polecat_sling_starts_default_graph_workflow(
             "superpowers.implementer",
             "# Superpowers Implementer",
         ),
-        ("gstack", "gstack", "gstack.implementer", "# gstack Implementer"),
         (
             "compound-engineering",
             "compound-engineering",

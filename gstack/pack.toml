@@ -1,7 +1,4 @@
 [pack]
 name = "gstack"
-version = "0.1.0"
+version = "0.2.0"
 schema = 2
-
-[imports.gc]
-source = "../gascity"
