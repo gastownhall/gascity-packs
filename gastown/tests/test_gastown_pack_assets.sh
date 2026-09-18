@@ -336,6 +336,39 @@ test_witness_wisp_queries_pin_include_infra() {
         fail "witness --type=molecule wisp queries must pass --include-infra ($flagged/$total do)"
 }
 
+test_witness_wisp_reconcile_excludes_current() {
+    local prompt formula
+    prompt="$GASTOWN/agents/witness/prompt.template.md"
+    formula="$GASTOWN/formulas/mol-witness-patrol.toml"
+
+    # The reconcile must exclude the wisp it is executing BY ID, never infer
+    # "not the current one" from status. The current wisp is frequently still
+    # status=open while being executed (assigning it does not transition it),
+    # so a status-only reconcile matches it, reuses it as the successor, skips
+    # the pour, and then burns it in the burn step -- the witness ends the turn
+    # holding zero wisps and the patrol stalls until externally rebootstrapped.
+    # Observed live 2026-09-17 (pv-wisp-0k5) and earlier as PR #253's report.
+    for asset in "$prompt" "$formula"; do
+        grep -Eq -- '--arg self "\$\{?THIS_WISP|\$CURRENT_WISP\}?"' "$asset" ||
+            fail "$(basename "$asset") wisp reconcile must pass the current wisp id into the open-wisp query as --arg self"
+        grep -Fq -- '.id != $self' "$asset" ||
+            fail "$(basename "$asset") wisp reconcile must exclude the current wisp by id (select .id != \$self)"
+    done
+    # The formula's burn step must burn the resolved current wisp, not a
+    # placeholder id that a status-blind reading can repoint at the successor.
+    grep -Fq 'gc bd mol burn "$THIS_WISP" --force' "$formula" ||
+        fail "witness next-iteration must burn the resolved current wisp ($THIS_WISP), not a placeholder id"
+    # Poured successors must be assigned WITH --status=in_progress: a wisp
+    # left at status=open is invisible to the next restart's resume check
+    # (which filters status=in_progress), so startup pours a duplicate on top.
+    # Do not "fix" by switching to bd update --claim: it errors "already
+    # claimed" instead of repairing status when the assignee already matches.
+    ! grep -Eq 'gc bd update "?\$(NEXT|WISP)"? --assignee=("?\$GC_AGENT"?)\s*(;|$)' "$formula" "$prompt" ||
+        fail "witness wisp assigns must pass --status=in_progress (assign-without-transition leaves the successor invisible to the resume check)"
+    grep -Fq 'gc bd update "$NEXT" --assignee="$GC_AGENT" --status=in_progress' "$formula" ||
+        fail "witness next-iteration must assign the successor with --status=in_progress"
+}
+
 test_witness_handoff_recovery_is_guarded_and_fail_closed() {
     local witness polecat refinery block signature writers
 
@@ -698,6 +731,7 @@ test_polecat_startup_uses_standard_hook_claim
 test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_witness_wisp_queries_pin_include_infra
+test_witness_wisp_reconcile_excludes_current
 test_witness_handoff_recovery_is_guarded_and_fail_closed
 test_boot_wisp_queries_pin_include_infra
 test_boot_patrol_burn_resolves_current_wisp
