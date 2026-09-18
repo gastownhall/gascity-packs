@@ -853,6 +853,52 @@ class FormulaAssetTests(unittest.TestCase):
             },
         )
 
+    def test_city_claim_command_prefers_live_session_id_over_pool_actor(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "assigned=${GC_TEST_ASSIGNEE:-session-1}\n"
+                "if [ \"$1\" = hook ]; then\n"
+                "  printf '{\"action\":\"work\",\"bead_id\":\"bd-123\",\"assignee\":\"%s\",\"route\":\"gc.implementation-worker\"}\\n' \"$assigned\"\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ]; then\n"
+                "  printf '{\"id\":\"bd-123\",\"status\":\"in_progress\",\"assignee\":\"%s\",\"metadata\":{\"gc.routed_to\":\"gc.implementation-worker\"}}\\n' \"$assigned\"\n"
+                "else\n"
+                "  exit 2\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "gascity--gc__implementation-worker-1-pool",
+                "GC_SESSION_NAME": "gascity--gc__implementation-worker-1-pool",
+                "GC_SESSION_ID": "session-1",
+                "GC_AGENT": "gc.implementation-worker",
+                "GC_TEMPLATE": "gc.implementation-worker",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
+            rejected = subprocess.run(
+                [str(command)],
+                capture_output=True,
+                env={**env, "GC_TEST_ASSIGNEE": "unrelated-session"},
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["bead_id"], "bd-123")
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn("assignee mismatch", rejected.stderr)
+
     def test_city_claim_command_returns_drain_without_bead_lookup(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         command = root / "commands" / "claim" / "run.sh"
