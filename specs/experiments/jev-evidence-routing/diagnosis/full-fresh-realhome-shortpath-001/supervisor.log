@@ -1,0 +1,27 @@
+gc supervisor: started: previous_exit=crash
+gc supervisor: workspace-service startup cleanup is not available on darwin; after a non-graceful supervisor exit, stale workspace-service processes may keep sockets bound. Registered workspace-service roots: /tmp/gc-jev-diag-001/workspace/city/.gc/services. Stop stale processes whose environment includes GC_SERVICE_STATE_ROOT under those roots, then restart those cities.
+gc supervisor: WARNING: API binding to ephemeral port 55275 -- set port = 8372 in ~/.gc/supervisor.toml
+Supervisor API listening on http://127.0.0.1:55275
+Dashboard:  http://127.0.0.1:55275/
+Supervisor started.
+2026/09/19 11:09:18 api: GET /v0/cities 200 10.137ms [memory] req_id=5aa95ac4b16cc933
+gc supervisor: city 'jev-ab-gc-jev-diag-001': starting_bead_store took 3m14.65s
+gc supervisor: city 'jev-ab-gc-jev-diag-001': checking_bead_store_health took 10.04s
+2026/09/19 11:10:27 api: GET /v0/cities 200 628µs [memory] req_id=e5b07d4cf3fd9d62
+gc supervisor: city 'jev-ab-gc-jev-diag-001': projecting_mcp took 6.9s
+gc supervisor: city 'jev-ab-gc-jev-diag-001': creating_session_provider took 3.55s
+gc supervisor: shutdown requested: source=socket_stop signal="" client="" mode=destructive
+gc supervisor: city 'jev-ab-gc-jev-diag-001': building_city_runtime took 5.43s
+2026/09/19 11:10:47 caching-store: priming ...
+2026/09/19 11:10:47 beads cache: stagger=16261ms agent=
+2026/09/19 11:10:51 caching-store: priming ...
+2026/09/19 11:10:51 beads cache: stagger=16261ms agent=
+gc supervisor: city 'jev-ab-gc-jev-diag-001': opening_controller_state took 8.62s
+2026/09/19 11:11:17 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=326ms cadence=default
+2026/09/19 11:11:21 beads cache: reconciled rig=jagjd0 beads=0 adds=0 updates=0 removes=0 took=379ms cadence=default
+gc supervisor: city 'jev-ab-gc-jev-diag-001': running_pool_on_boot took 1m11.11s
+Launching city 'jev-ab-gc-jev-diag-001' (/tmp/gc-jev-diag-001/workspace/city)
+Stopping city '/tmp/gc-jev-diag-001/workspace/city'...
+gc supervisor: shutdown session listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+City '/tmp/gc-jev-diag-001/workspace/city' stopped.
+Supervisor stopped.

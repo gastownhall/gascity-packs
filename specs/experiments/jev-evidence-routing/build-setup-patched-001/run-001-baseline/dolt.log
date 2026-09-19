@@ -1,0 +1,21 @@
+gc scope watchdog: supervising dolt sql-server pid 60554 (config /tmp/gcja-yvj4pc26/w/city/.gc/runtime/packs/dolt/dolt-config.yaml, poll interval 30s)
+Starting server with Config HP="127.0.0.1:39260"|T="15000"|R="false"|L="warning"
+time="2026-09-19T13:58:26-07:00" level=warning msg="secure_file_priv is set to \"\", which is insecure."
+time="2026-09-19T13:58:26-07:00" level=warning msg="Any user with GRANT FILE privileges will be able to read any file which the sql-server process can read."
+time="2026-09-19T13:58:26-07:00" level=warning msg="Please consider restarting the server with secure_file_priv set to a safe (or non-existent) directory."
+time="2026-09-19T13:58:33-07:00" level=warning msg="error running query" connectTime="2026-09-19 13:58:33.562201 -0700 PDT m=+7.777155585" connectionID=14 error="database not found: hq" queryTime="2026-09-19 13:58:33.57227 -0700 PDT m=+7.787224460"
+time="2026-09-19T13:58:34-07:00" level=warning msg="error running query" connectTime="2026-09-19 13:58:34.932806 -0700 PDT m=+9.147752168" connectionDb=hq connectionID=17 error="table not found: config" queryTime="2026-09-19 13:58:34.964782 -0700 PDT m=+9.179727293"
+time="2026-09-19T13:58:39-07:00" level=warning msg="error running query" connectTime="2026-09-19 13:58:39.372654 -0700 PDT m=+13.587570418" connectionDb=hq connectionID=21 error="table not found: issues" queryTime="2026-09-19 13:58:39.421289 -0700 PDT m=+13.636205376"
+time="2026-09-19T13:58:40-07:00" level=warning msg="error running query" connectTime="2026-09-19 13:58:39.995196 -0700 PDT m=+14.210108376" connectionDb=hq connectionID=25 error="table not found: issues" queryTime="2026-09-19 13:58:40.263651 -0700 PDT m=+14.478561543"
+time="2026-09-19T14:00:17-07:00" level=warning msg="error running query" connectTime="2026-09-19 14:00:17.737241 -0700 PDT m=+111.951510376" connectionID=98 error="database not found: fi" queryTime="2026-09-19 14:00:17.764326 -0700 PDT m=+111.978595043"
+time="2026-09-19T14:00:20-07:00" level=warning msg="error running query" connectTime="2026-09-19 14:00:20.25842 -0700 PDT m=+114.472673085" connectionDb=fi connectionID=101 error="table not found: config" queryTime="2026-09-19 14:00:20.317287 -0700 PDT m=+114.531539793"
+time="2026-09-19T14:00:24-07:00" level=warning msg="error running query" connectTime="2026-09-19 14:00:24.017188 -0700 PDT m=+118.231416210" connectionDb=fi connectionID=105 error="table not found: issues" queryTime="2026-09-19 14:00:24.099525 -0700 PDT m=+118.313752668"
+time="2026-09-19T14:00:24-07:00" level=warning msg="error running query" connectTime="2026-09-19 14:00:24.604133 -0700 PDT m=+118.818357335" connectionDb=fi connectionID=109 error="table not found: issues" queryTime="2026-09-19 14:00:24.847506 -0700 PDT m=+119.061729043"
+
+
+gc scope watchdog: dolt sql-server pid 60554 exited cleanly
+gc scope watchdog: supervising dolt sql-server pid 71698 (config /tmp/gcja-yvj4pc26/w/city/.gc/runtime/packs/dolt/dolt-config.yaml, poll interval 30s)
+Starting server with Config HP="127.0.0.1:39260"|T="15000"|R="false"|L="warning"
+time="2026-09-19T14:04:43-07:00" level=warning msg="secure_file_priv is set to \"\", which is insecure."
+time="2026-09-19T14:04:43-07:00" level=warning msg="Any user with GRANT FILE privileges will be able to read any file which the sql-server process can read."
+time="2026-09-19T14:04:43-07:00" level=warning msg="Please consider restarting the server with secure_file_priv set to a safe (or non-existent) directory."

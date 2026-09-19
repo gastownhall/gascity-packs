@@ -1,0 +1,45 @@
+import importlib.util,sys,os,json
+from pathlib import Path
+from types import SimpleNamespace
+ROOT=Path(__file__).resolve().parent
+PACK=ROOT.parent/'gascity-jev'
+s=importlib.util.spec_from_file_location('build',PACK/'scripts/jev_build_ab.py');m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+name=sys.argv[1];out=Path('/private/tmp/gc-jev-diag-001') if 'shortpath' in name else ROOT/name
+m.gate.seed_claude_project_state=lambda **kwargs:None
+if 'fresh' in name:
+ shim=ROOT/(name+'-bin');shim.mkdir()
+ wrapper=shim/'bd'
+ wrapper.write_text('''#!/opt/homebrew/bin/python3
+import os,sys,json
+from pathlib import Path
+args=sys.argv[1:]
+if args and args[0]=='init' and '--force' in args:
+ root=Path('''+repr(str(out))+''').resolve()
+ beads=Path(os.environ['BEADS_DIR']).resolve()
+ assert beads.is_relative_to(root), 'Diagnostic wrapper must never touch other cities'
+ p=beads/'metadata.json'
+ d=json.loads(p.read_text())
+ assert not d.get('project_id'), 'Expected new metadata stub only'
+ p.rename(beads/'metadata.before-diagnostic-init.json')
+ args.remove('--force')
+ print('[DEBUG-bd-init] Fresh diagnostic stub deferred; removed --force',file=sys.stderr)
+os.environ.pop('BD_ALLOW_REMOTE_MIGRATE',None)
+os.execv('/opt/homebrew/bin/bd',['/opt/homebrew/bin/bd',*args])
+''')
+ wrapper.chmod(0o755)
+ original=m.gate.build_gate_env
+ def environment(*args,**kwargs):
+  env=original(*args,**kwargs);env['PATH']=str(shim)+os.pathsep+env['PATH'];return env
+ m.gate.build_gate_env=environment
+if 'realhome' in name:
+ original_init=m.gate.initialize_city
+ def initialize(*args,**kwargs):
+  env=kwargs['env'];env['HOME']=str(Path.home());env['GIT_CONFIG_GLOBAL']=str(Path(env['GC_HOME'])/'diagnostic.gitconfig')
+  return original_init(*args,**kwargs)
+ m.gate.initialize_city=initialize
+args=SimpleNamespace(model='claude-sonnet-5',jev_model='jev-1.13.0',gc_bin='/opt/homebrew/bin/gc',bd_bin='/opt/homebrew/bin/bd',setup_only=True,timeout=1200)
+print(f'Starting {name}; no model dispatch; log {out}/run.log',flush=True)
+result=m.run(args,'baseline',out)
+print(json.dumps(result,indent=2),flush=True)
+
+sys.exit(0 if result['status']=='setup_only' else 1)

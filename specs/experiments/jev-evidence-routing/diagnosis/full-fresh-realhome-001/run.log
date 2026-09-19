@@ -1,0 +1,29 @@
++ git init -b main
++ git config user.email gascity-pack-gate@example.invalid
++ git config user.name 'Gas City Pack Gate'
++ git add .
++ git commit -m 'Add inference gate fixtures'
++ /opt/homebrew/bin/gc init --skip-provider-readiness --name jev-ab-full-fresh-realhome-001 --file /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/city/city.toml --preserve-existing --yes /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/city
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-ab-full-fresh-realhome-001" from city.toml.
+Skipping provider readiness checks.
+Registered city 'jev-ab-full-fresh-realhome-001' (/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/city)
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-31c6bf96.plist: exit status 1
+gc supervisor start: supervisor did not become ready; see /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/gc-home/supervisor.log
+gc init: supervisor did not start; keeping registration for 'jev-ab-full-fresh-realhome-001' so the supervisor can retry automatically
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-ab-full-fresh-realhome-001" from city.toml.
+Skipping provider readiness checks.
+Registered city 'jev-ab-full-fresh-realhome-001' (/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/city)
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-31c6bf96.plist: exit status 1
+gc supervisor start: supervisor did not become ready; see /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/gc-home/supervisor.log
+gc init: supervisor did not start; keeping registration for 'jev-ab-full-fresh-realhome-001' so the supervisor can retry automatically
+CalledProcessError: Command '['/opt/homebrew/bin/gc', 'init', '--skip-provider-readiness', '--name', 'jev-ab-full-fresh-realhome-001', '--file', '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/city/city.toml', '--preserve-existing', '--yes', '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/city']' returned non-zero exit status 1.
++ /opt/homebrew/bin/gc stop /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/city --force --timeout 30s
++ /opt/homebrew/bin/gc supervisor stop --wait --wait-timeout 30s
+gc supervisor stop: supervisor is not running
+cleanup command failed (/opt/homebrew/bin/gc supervisor stop --wait --wait-timeout 30s): Command '['/opt/homebrew/bin/gc', 'supervisor', 'stop', '--wait', '--wait-timeout', '30s']' returned non-zero exit status 1.

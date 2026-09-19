@@ -1,0 +1,49 @@
+# Dolt SQL server configuration — managed by gc-beads-bd
+# Do not edit manually; changes are overwritten on each server start.
+# To customize, set environment variables:
+#   GC_DOLT_PORT, GC_DOLT_HOST, GC_DOLT_USER, GC_DOLT_PASSWORD, GC_DOLT_LOGLEVEL
+
+log_level: warning
+
+listener:
+  port: 49820
+  host: 127.0.0.1
+  # Managed multi-agent cities open a short-lived bd/dolt-sql client connection
+  # per operation. When the client process exits without a clean COM_QUIT, the
+  # server holds the socket in Sleep until read_timeout fires. A 5-minute
+  # read_timeout let these dead per-call connections pile to the hundreds
+  # (200-460 idle Sleep conns observed), burning Dolt CPU managing the swarm.
+  # The managed default reaps idle sockets promptly; city.toml [dolt]
+  # overrides can raise it for cities with slower live operations.
+  max_connections: 256
+  back_log: 50
+  max_connections_timeout_millis: 5000
+  read_timeout_millis: 15000
+  write_timeout_millis: 300000
+
+data_dir: "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-003/run-001-baseline/workspace/city/.beads/dolt"
+
+# Incremental auto-GC bounds the noms journal so it never reaches GB scale,
+# shrinking both the unclean-stop corruption window and the recovery blast
+# radius (#3176). Historically OFF to work around dolt#10944 (load-avg gating
+# that never fired); fixed upstream in dolt 2.0.3 and the managed floor is
+# 2.1.0+. Scheduled compaction (gc dolt compact) still handles history
+# flattening — see #1918, #1200 for that lineage. Override via city.toml
+# [dolt] auto_gc_enabled or GC_DOLT_AUTO_GC_ENABLED.
+behavior:
+  auto_gc_behavior:
+    enable: true
+    archive_level: 0
+
+# Managed Gas City workloads generate short-lived probe and metadata queries.
+# Dolt's persistent stats worker can make those tiny databases grow large
+# stats stores and burn CPU, especially on macOS endpoint-managed machines.
+# Keep stats disabled for managed servers; use explicit gc dolt maintenance
+# commands for storage cleanup instead of background workers.
+system_variables:
+  dolt_auto_gc_enabled: "ON"
+  dolt_stats_enabled: "OFF"
+  dolt_stats_gc_enabled: "OFF"
+  dolt_stats_memory_only: "ON"
+  dolt_stats_paused: "ON"
+  wait_timeout: "30"

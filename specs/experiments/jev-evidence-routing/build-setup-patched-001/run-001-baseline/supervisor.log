@@ -1,0 +1,134 @@
+gc supervisor: started: previous_exit=crash
+gc supervisor: workspace-service startup cleanup is not available on darwin; after a non-graceful supervisor exit, stale workspace-service processes may keep sockets bound. Registered workspace-service roots: /tmp/gcja-yvj4pc26/w/city/.gc/services. Stop stale processes whose environment includes GC_SERVICE_STATE_ROOT under those roots, then restart those cities.
+gc supervisor: WARNING: API binding to ephemeral port 55512 -- set port = 8372 in ~/.gc/supervisor.toml
+Supervisor API listening on http://127.0.0.1:55512
+Dashboard:  http://127.0.0.1:55512/
+Supervisor started.
+gc supervisor: city 'jev-ab-run-001-baseline': starting_bead_store took 2m5.07s
+gc supervisor: city 'jev-ab-run-001-baseline': checking_bead_store_health took 8.28s
+gc supervisor: city 'jev-ab-run-001-baseline': projecting_mcp took 8.25s
+gc supervisor: city 'jev-ab-run-001-baseline': creating_session_provider took 3.62s
+gc supervisor: city 'jev-ab-run-001-baseline': building_city_runtime took 6.18s
+2026/09/19 14:02:03 caching-store: priming ...
+2026/09/19 14:02:03 beads cache: stagger=16261ms agent=
+2026/09/19 14:02:06 caching-store: priming ...
+2026/09/19 14:02:07 beads cache: stagger=16261ms agent=
+gc supervisor: city 'jev-ab-run-001-baseline': opening_controller_state took 5.6s
+2026/09/19 14:02:34 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=50ms cadence=default
+2026/09/19 14:02:37 beads cache: reconciled rig=jar0b beads=0 adds=0 updates=0 removes=0 took=54ms cadence=default
+gc supervisor: city 'jev-ab-run-001-baseline': running_pool_on_boot took 1m10.79s
+Launching city 'jev-ab-run-001-baseline' (/tmp/gcja-yvj4pc26/w/city)
+adoption barrier: listing running sessions partially failed: tmux server unreachable: no tmux server running
+gc supervisor: adoption barrier: 0 session(s) failed bead creation
+gc supervisor: startup phase=adoption-barrier elapsed=53ms
+2026/09/19 14:03:19 api: GET /v0/cities 200 648µs [memory] req_id=2c29c83850d21a6d
+gc supervisor: startup phase=config-reload elapsed=465ms
+2026/09/19 14:03:19 api: GET /v0/cities 200 290µs [memory] req_id=e250cc56532b6f7a
+2026/09/19 14:03:19 api: GET /v0/cities 200 243µs [memory] req_id=f0794c4fde6cf993
+2026/09/19 14:03:19 api: GET /v0/cities 200 2.441ms [memory] req_id=677dfbb7505f136f
+2026/09/19 14:03:19 api: GET /v0/cities 200 172µs [memory] req_id=7289cdb90dbed829
+2026/09/19 14:03:20 api: GET /v0/cities 200 1.883ms [memory] req_id=2ab9192924a48bd3
+2026/09/19 14:03:20 api: GET /v0/cities 200 719µs [memory] req_id=e6b65ce9207d5497
+2026/09/19 14:03:20 api: GET /v0/cities 200 116µs [memory] req_id=80bcea84ae55ce9a
+2026/09/19 14:03:20 api: GET /v0/cities 200 381µs [memory] req_id=3b1a86a0dbcc2b9e
+2026/09/19 14:03:20 api: GET /v0/cities 200 142µs [memory] req_id=129fcf4db5d9169a
+[mysql] 2026/09/19 14:03:20 packets.go:58 unexpected EOF
+2026/09/19 14:03:20 api: GET /v0/cities 200 412µs [memory] req_id=e7419eca239bcc00
+2026/09/19 14:03:20 api: GET /v0/cities 200 404µs [memory] req_id=16cd8353fbef0a59
+2026/09/19 14:03:20 api: GET /v0/cities 200 80µs [memory] req_id=bc91b7bb9f704179
+2026/09/19 14:03:20 api: GET /v0/cities 200 1.801ms [memory] req_id=d963ff0f5405c87c
+2026/09/19 14:03:21 api: GET /v0/cities 200 142µs [memory] req_id=3ec9973879edbdc2
+2026/09/19 14:03:21 api: GET /v0/cities 200 112µs [memory] req_id=cd967ba3c79af970
+2026/09/19 14:03:21 api: GET /v0/cities 200 117µs [memory] req_id=6a7a67371ffa9107
+2026/09/19 14:03:21 api: GET /v0/cities 200 260µs [memory] req_id=6d75200c28a6d634
+2026/09/19 14:03:21 api: GET /v0/cities 200 886µs [memory] req_id=b719121ba600cc86
+2026/09/19 14:03:21 api: GET /v0/cities 200 384µs [memory] req_id=ba9605e2016841c5
+2026/09/19 14:03:21 api: GET /v0/cities 200 614µs [memory] req_id=b650f23c8e6cccf7
+2026/09/19 14:03:21 api: GET /v0/cities 200 103µs [memory] req_id=9c19130261caed49
+2026/09/19 14:03:21 api: GET /v0/cities 200 103µs [memory] req_id=2a614dab168253b5
+2026/09/19 14:03:21 api: GET /v0/cities 200 161µs [memory] req_id=369c63a93a479a71
+2026/09/19 14:03:22 api: GET /v0/cities 200 185µs [memory] req_id=292abffddd24a1fb
+2026/09/19 14:03:22 api: GET /v0/cities 200 141µs [memory] req_id=2955e57b6bf00436
+2026/09/19 14:03:22 api: GET /v0/cities 200 142µs [memory] req_id=52df0305ffcfdc24
+2026/09/19 14:03:22 api: GET /v0/cities 200 5.037ms [memory] req_id=d8f9be7eb683c955
+2026/09/19 14:03:22 api: GET /v0/cities 200 9.272ms [memory] req_id=af5cad2f51564cd7
+2026/09/19 14:03:22 api: GET /v0/cities 200 377µs [memory] req_id=4d7574406f544a1e
+2026/09/19 14:03:22 api: GET /v0/cities 200 309µs [memory] req_id=18aa4dcf55dfaa3c
+2026/09/19 14:03:22 api: GET /v0/cities 200 110µs [memory] req_id=7c6f09b65a9174f5
+2026/09/19 14:03:23 api: GET /v0/cities 200 432µs [memory] req_id=30a4138690692b55
+2026/09/19 14:03:23 api: GET /v0/cities 200 125µs [memory] req_id=501a3dbc768c0d56
+2026/09/19 14:03:23 api: GET /v0/cities 200 154µs [memory] req_id=b87815a3b64f4079
+2026/09/19 14:03:23 api: GET /v0/cities 200 190µs [memory] req_id=74d1fa89a14ed99d
+2026/09/19 14:03:23 api: GET /v0/cities 200 1.173ms [memory] req_id=e7134952450e3a6a
+2026/09/19 14:03:23 api: GET /v0/cities 200 240µs [memory] req_id=a2d261f1a98fdb7d
+2026/09/19 14:03:23 api: GET /v0/cities 200 1.723ms [memory] req_id=e5490c3a2c3bc9ab
+2026/09/19 14:03:23 api: GET /v0/cities 200 2.463ms [memory] req_id=bce267b397bd91dd
+2026/09/19 14:03:23 api: GET /v0/cities 200 116µs [memory] req_id=6acf1cc2f049d964
+2026/09/19 14:03:24 api: GET /v0/cities 200 1.795ms [memory] req_id=72a8594d2e625736
+gc supervisor: startup phase=startup-orders elapsed=4.526s
+gc supervisor: startup phase=startup-route-recovery elapsed=0s
+2026/09/19 14:03:24 api: GET /v0/cities 200 290µs [memory] req_id=e07d59704f319580
+2026/09/19 14:03:24 api: GET /v0/cities 200 2.562ms [memory] req_id=4ee4fd8ecd9deb4a
+2026/09/19 14:03:24 api: GET /v0/cities 200 122µs [memory] req_id=efcd2045cd24cc99
+2026/09/19 14:03:24 api: GET /v0/cities 200 340µs [memory] req_id=02f1d32e395a1910
+2026/09/19 14:03:24 api: GET /v0/cities 200 186µs [memory] req_id=e8b0725501512bd6
+2026/09/19 14:03:24 api: GET /v0/cities 200 153µs [memory] req_id=52ffe9bb11cf2a9f
+2026/09/19 14:03:24 api: GET /v0/cities 200 87µs [memory] req_id=46b5c2e4a314ae81
+2026/09/19 14:03:24 api: GET /v0/cities 200 119µs [memory] req_id=6662f5b167ba3816
+2026/09/19 14:03:25 api: GET /v0/cities 200 249µs [memory] req_id=d817106d88fa3c37
+2026/09/19 14:03:25 api: GET /v0/cities 200 256µs [memory] req_id=d410fa2e8c5e882b
+2026/09/19 14:03:25 api: GET /v0/cities 200 874µs [memory] req_id=dc5c0d2362d37e1e
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 14:03:25 api: GET /v0/cities 200 166µs [memory] req_id=8a1e59885e181055
+2026/09/19 14:03:25 api: GET /v0/cities 200 144µs [memory] req_id=010a3901ac2a09ef
+2026/09/19 14:03:25 api: GET /v0/cities 200 100µs [memory] req_id=d3a9d4d6921c5b96
+2026/09/19 14:03:25 api: GET /v0/cities 200 152µs [memory] req_id=51c42592f2a1917a
+2026/09/19 14:03:25 api: GET /v0/cities 200 114µs [memory] req_id=8a38cdddc84d8371
+2026/09/19 14:03:25 api: GET /v0/cities 200 82µs [memory] req_id=792f3d26bd182e8c
+2026/09/19 14:03:26 api: GET /v0/cities 200 120µs [memory] req_id=da18ca14afbfee62
+2026/09/19 14:03:26 api: GET /v0/cities 200 960µs [memory] req_id=5272ceb7c07fd704
+2026/09/19 14:03:26 api: GET /v0/cities 200 249µs [memory] req_id=a99921240a43cb91
+2026/09/19 14:03:26 api: GET /v0/cities 200 150µs [memory] req_id=d80f81568fb7a9fe
+2026/09/19 14:03:26 api: GET /v0/cities 200 365µs [memory] req_id=91c227cf6e4223a1
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+2026/09/19 14:03:26 api: GET /v0/cities 200 152µs [memory] req_id=b7843b10a8033d49
+2026/09/19 14:03:26 api: GET /v0/cities 200 140µs [memory] req_id=6a729d3d725a700c
+2026/09/19 14:03:26 api: GET /v0/cities 200 423µs [memory] req_id=4351696c01a7f23d
+2026/09/19 14:03:26 api: GET /v0/cities 200 432µs [memory] req_id=7c53449d53327029
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 14:03:26 api: GET /v0/cities 200 194µs [memory] req_id=3bcd3102c133ebac
+2026/09/19 14:03:27 api: GET /v0/cities 200 111µs [memory] req_id=719dcbf90a5cd7ac
+2026/09/19 14:03:27 api: GET /v0/cities 200 126µs [memory] req_id=939bc704eaa4fe20
+gc supervisor: startup phase=startup elapsed=3.108s
+gc supervisor: startup phase=convergence-startup elapsed=0s
+gc supervisor: startup ready elapsed=8.154s
+City started.
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 14:03:27 api: GET /v0/cities 200 169µs [memory] req_id=ea68ca1349ee7824
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 14:03:34 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=45ms cadence=default
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 14:03:37 beads cache: reconciled rig=jar0b beads=5 adds=5 updates=0 removes=0 took=29ms cadence=default
+Unregistered city 'jev-ab-run-001-baseline', stopping...
+2026/09/19 14:03:39 gc: order exec mol-dog-doctor failed: context canceled
+gc: order exec mol-dog-doctor failed: context canceled
+2026/09/19 14:03:39 gc: order exec beads-health failed: context canceled
+gc: order exec beads-health failed: context canceled
+2026/09/19 14:03:39 gc: order exec cross-rig-deps failed: context canceled
+gc: order exec cross-rig-deps failed: context canceled
+2026/09/19 14:03:39 gc: order exec dolt-health failed: context canceled
+gc: order exec dolt-health failed: context canceled
+2026/09/19 14:03:39 gc: order exec mol-dog-compactor failed: context canceled
+gc: order exec mol-dog-compactor failed: context canceled
+gc supervisor: city 'jev-ab-run-001-baseline' did not exit within 5s after cancel; forcing shutdown
+gc supervisor: shutdown session listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+gc supervisor: force shutdown late async-start listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+gc supervisor: city 'jev-ab-run-001-baseline' did not exit within 25s after forced shutdown
+gc supervisor: city 'jev-ab-run-001-baseline': no pending request_id for city.unregister completion event (path=/tmp/gcja-yvj4pc26/w/city)
+2026/09/19 14:04:21 api: GET /v0/cities 200 771µs [memory] req_id=023425fccd3cb258
+gc supervisor: shutdown requested: source=socket_stop signal="" client="" mode=destructive
+Supervisor stopped.

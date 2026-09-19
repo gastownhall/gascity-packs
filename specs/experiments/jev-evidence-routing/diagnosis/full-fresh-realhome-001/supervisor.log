@@ -1,0 +1,6 @@
+gc supervisor: started: previous_exit=crash
+gc supervisor: workspace-service startup cleanup is not available on darwin; after a non-graceful supervisor exit, stale workspace-service processes may keep sockets bound. Registered workspace-service roots: /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/city/.gc/services. Stop stale processes whose environment includes GC_SERVICE_STATE_ROOT under those roots, then restart those cities.
+gc supervisor: WARNING: API binding to ephemeral port 55069 -- set port = 8372 in ~/.gc/supervisor.toml
+Supervisor API listening on http://127.0.0.1:55069
+Dashboard:  http://127.0.0.1:55069/
+gc supervisor: listening on supervisor socket: listen unix /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/full-fresh-realhome-001/workspace/gc-home/supervisor.sock: bind: invalid argument

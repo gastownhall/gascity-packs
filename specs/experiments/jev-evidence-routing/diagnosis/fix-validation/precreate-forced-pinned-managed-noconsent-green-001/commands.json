@@ -1,0 +1,172 @@
+[
+  {
+    "command": [
+      "git",
+      "init",
+      "-q"
+    ],
+    "exit": 0,
+    "seconds": 1.5055975830182433,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "config",
+      "--global",
+      "--add",
+      "user.name",
+      "Diagnostic"
+    ],
+    "exit": 0,
+    "seconds": 0.7274781668093055,
+    "stdout": "Config successfully updated.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "config",
+      "--global",
+      "--add",
+      "user.email",
+      "diagnostic@example.invalid"
+    ],
+    "exit": 0,
+    "seconds": 0.44899275014176965,
+    "stdout": "Config successfully updated.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "55208",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "CREATE DATABASE hq"
+    ],
+    "exit": 0,
+    "seconds": 0.5724342910107225,
+    "stdout": "{}\n\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/build/bin/bd",
+      "init",
+      "--force",
+      "--non-interactive",
+      "--quiet",
+      "--server",
+      "-p",
+      "hq",
+      "--database",
+      "hq",
+      "--skip-hooks",
+      "--skip-agents",
+      "--server-host",
+      "127.0.0.1",
+      "--server-port",
+      "55208",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-noconsent-green-001/city"
+    ],
+    "exit": 0,
+    "seconds": 20.196707166032866,
+    "stdout": "",
+    "stderr": "Thanks for using bd! Quick heads-up: bd shares anonymous usage metrics \u2014\n   just which commands get run (plus the bd version and OS platform), never your\n   issues, paths, remotes, identity, or anything you type. Seeing how people use\n   bd is how we decide what to improve next, so it genuinely makes bd better for\n   everyone.\n      Curious what's sent?   bd metrics example\n      Prefer to opt out?     bd metrics off    (one command, no restart needed)\n\nWarning: /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-noconsent-green-001/city/.beads has permissions 0755 (recommended: 0700). Run: chmod 700 /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-noconsent-green-001/city/.beads\nDeprecationWarning: --force is deprecated; use --reinit-local instead.\n  See 'bd help init-safety' for the init flag surface.\n\n"
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "55208",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "USE hq; SELECT MAX(version) AS version FROM schema_migrations; SELECT * FROM dolt_status;"
+    ],
+    "exit": 0,
+    "seconds": 0.6993529999163002,
+    "stdout": "{\"rows\": [{\"version\":\"66\"}]}\n{}\n\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/build/bin/bd",
+      "create",
+      "preflight-preservation-probe",
+      "--json"
+    ],
+    "exit": 0,
+    "seconds": 0.8040921250358224,
+    "stdout": "{\n  \"created_at\": \"2026-09-19T20:56:42.325538Z\",\n  \"created_by\": \"unknown\",\n  \"id\": \"hq-zpb\",\n  \"issue_type\": \"task\",\n  \"priority\": 2,\n  \"schema_version\": 1,\n  \"status\": \"open\",\n  \"title\": \"preflight-preservation-probe\",\n  \"updated_at\": \"2026-09-19T20:56:42.325538Z\"\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/build/bin/bd",
+      "init",
+      "--force",
+      "--non-interactive",
+      "--quiet",
+      "--server",
+      "-p",
+      "hq",
+      "--database",
+      "hq",
+      "--skip-hooks",
+      "--skip-agents",
+      "--server-host",
+      "127.0.0.1",
+      "--server-port",
+      "55208",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-noconsent-green-001/city"
+    ],
+    "exit": 12,
+    "seconds": 0.38507062499411404,
+    "stdout": "",
+    "stderr": "DeprecationWarning: --force is deprecated; use --reinit-local instead.\n  See 'bd help init-safety' for the init flag surface.\n\n\nWARNING: Re-initializing will destroy the existing database.\n\n  Existing issues: 1\n\n  This action CANNOT be undone. All issues, dependencies, and\n  Dolt commit history will be permanently lost.\n\n  Before proceeding, consider:\n    bd export > issue-export.jsonl    # Export issue records, not full DB state\n    bd dolt status              # Check if this is a server config issue\n\nRefusing to destroy 1 issues in non-interactive mode.\n  See 'bd help init-safety' for the required --destroy-token format.\n  Or export issue records first: bd export > issue-export.jsonl\n"
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "55208",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "SELECT COUNT(*) AS count FROM hq.issues WHERE title='preflight-preservation-probe'"
+    ],
+    "exit": 0,
+    "seconds": 0.23557254089973867,
+    "stdout": "{\"rows\": [{\"count\":\"1\"}]}\n",
+    "stderr": ""
+  }
+]

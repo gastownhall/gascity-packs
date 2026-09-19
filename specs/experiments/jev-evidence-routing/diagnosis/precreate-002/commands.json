@@ -1,0 +1,111 @@
+[
+  {
+    "command": [
+      "git",
+      "init",
+      "-q"
+    ],
+    "exit": 0,
+    "seconds": 0.923158833058551,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "config",
+      "--global",
+      "--add",
+      "user.name",
+      "Diagnostic"
+    ],
+    "exit": 0,
+    "seconds": 0.6770685419905931,
+    "stdout": "Config successfully updated.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "config",
+      "--global",
+      "--add",
+      "user.email",
+      "diagnostic@example.invalid"
+    ],
+    "exit": 0,
+    "seconds": 0.2734343749471009,
+    "stdout": "Config successfully updated.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "54078",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "CREATE DATABASE hq"
+    ],
+    "exit": 0,
+    "seconds": 0.7665932499803603,
+    "stdout": "{}\n\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/bd",
+      "init",
+      "--non-interactive",
+      "--quiet",
+      "--server",
+      "-p",
+      "hq",
+      "--database",
+      "hq",
+      "--skip-hooks",
+      "--skip-agents",
+      "--server-host",
+      "127.0.0.1",
+      "--server-port",
+      "54078",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-002/city"
+    ],
+    "exit": 0,
+    "seconds": 25.015860500046983,
+    "stdout": "",
+    "stderr": "Thanks for using bd! Quick heads-up: bd shares anonymous usage metrics \u2014\n   just which commands get run (plus the bd version and OS platform), never your\n   issues, paths, remotes, identity, or anything you type. Seeing how people use\n   bd is how we decide what to improve next, so it genuinely makes bd better for\n   everyone.\n      Curious what's sent?   bd metrics example\n      Prefer to opt out?     bd metrics off    (one command, no restart needed)\n\n"
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "54078",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "USE hq; SELECT MAX(version) AS version FROM schema_migrations; SELECT * FROM dolt_status;"
+    ],
+    "exit": 0,
+    "seconds": 1.6981742498464882,
+    "stdout": "{\"rows\": [{\"version\":\"66\"}]}\n{}\n\n",
+    "stderr": ""
+  }
+]

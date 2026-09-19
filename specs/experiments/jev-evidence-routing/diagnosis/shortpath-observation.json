@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-19T18:11:44.171873+00:00",
+  "source": "Read-only CLI and HTTP observations before setup timeout",
+  "city_schema_version": 66,
+  "rig_schema_version": 66,
+  "last_observed_city_phase": "projecting_mcp",
+  "supervisor_pid": 62409,
+  "global_supervisor_pid": 23099,
+  "setup_timeout_seconds": 300,
+  "full_setup_pass": false
+}

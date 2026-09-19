@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-19T21:05:56.359989+00:00",
+  "experiment_pids_absent": [
+    61906,
+    60554
+  ],
+  "preexisting_supervisor_running": 23099,
+  "task_launchagent_plist_exists": false,
+  "gc_stop_timed_out": true,
+  "supervisor_stop_succeeded": true
+}

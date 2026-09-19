@@ -1,0 +1,57 @@
+....FFF                                                                  [100%]
+=================================== FAILURES ===================================
+__________________ test_cleanup_resolves_config_path_aliases ___________________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-12/test_cleanup_resolves_config_p0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108efdc70>
+
+    def test_cleanup_resolves_config_path_aliases(tmp_path, monkeypatch):
+        actual=tmp_path/'actual'; actual.mkdir()
+        alias=tmp_path/'alias'; alias.symlink_to(actual, target_is_directory=True)
+        config=alias/'city/.gc/runtime/packs/dolt/dolt-config.yaml'
+        listing=f'12 dolt sql-server --config {config}\n'
+        monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))
+        signals=[]
+        monkeypatch.setattr(build.os,'kill',lambda pid,sig:signals.append(pid))
+>       assert build.stop_disposable_dolt(actual/'city')['pids']==[12]
+E       assert [] == [12]
+E         
+E         Right contains one more item: 12
+E         Use -v to get more diff
+
+gascity/tests/test_jev_build_ab.py:67: AssertionError
+________ test_experiment_env_retains_home_and_separates_mutable_config _________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-12/test_experiment_env_retains_ho0')
+
+    def test_experiment_env_retains_home_and_separates_mutable_config(tmp_path):
+        workspace=SimpleNamespace(gc_home=tmp_path/'h')
+        env={'HOME':str(tmp_path/'wrong'),'PATH':'/bin','BD_ALLOW_REMOTE_MIGRATE':'1'}
+>       result=build.configure_experiment_env(env,workspace,real_home=Path('/Users/example'))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'jev_build_ab' has no attribute 'configure_experiment_env'
+
+gascity/tests/test_jev_build_ab.py:73: AttributeError
+______ test_workspace_socket_path_fits_even_with_deep_artifact_directory _______
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-12/test_workspace_socket_path_fit0')
+
+    def test_workspace_socket_path_fits_even_with_deep_artifact_directory(tmp_path):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        captured={}
+        def workspace(root,**kwargs):
+            captured['root']=root
+            return SimpleNamespace(root=root,gc_home=root/'gc-home')
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(build.gate,'write_gate_workspace',workspace))
+>           result=build.new_runtime_workspace(SimpleNamespace(source=tmp_path,roles_source=tmp_path),'unit')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'jev_build_ab' has no attribute 'new_runtime_workspace'
+
+gascity/tests/test_jev_build_ab.py:89: AttributeError
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_build_ab.py::test_cleanup_resolves_config_path_aliases
+FAILED gascity/tests/test_jev_build_ab.py::test_experiment_env_retains_home_and_separates_mutable_config
+FAILED gascity/tests/test_jev_build_ab.py::test_workspace_socket_path_fits_even_with_deep_artifact_directory
+3 failed, 4 passed in 3.37s

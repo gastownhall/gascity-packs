@@ -1,0 +1,29 @@
+{
+  "arm": "baseline",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-19T20:57:31.845778+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "setup_only",
+  "setup_seconds": 365.9288744581863,
+  "cleanup": {
+    "status": "no_leftover_server",
+    "pids": []
+  },
+  "otel_usage": {
+    "status": "missing",
+    "request_count": 0,
+    "models": [],
+    "totals": null,
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "elapsed_seconds": 428.60080783301964,
+  "llm_usage": {
+    "status": "missing",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 0,
+    "models": [],
+    "totals": null
+  }
+}

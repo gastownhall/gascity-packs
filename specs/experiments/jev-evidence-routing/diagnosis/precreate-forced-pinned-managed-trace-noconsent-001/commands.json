@@ -1,0 +1,112 @@
+[
+  {
+    "command": [
+      "git",
+      "init",
+      "-q"
+    ],
+    "exit": 0,
+    "seconds": 0.9433550001122057,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "config",
+      "--global",
+      "--add",
+      "user.name",
+      "Diagnostic"
+    ],
+    "exit": 0,
+    "seconds": 1.0853710409719497,
+    "stdout": "Config successfully updated.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "config",
+      "--global",
+      "--add",
+      "user.email",
+      "diagnostic@example.invalid"
+    ],
+    "exit": 0,
+    "seconds": 0.258352458011359,
+    "stdout": "Config successfully updated.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "54562",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "CREATE DATABASE hq"
+    ],
+    "exit": 0,
+    "seconds": 0.5358829158358276,
+    "stdout": "{}\n\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/bd",
+      "init",
+      "--force",
+      "--non-interactive",
+      "--quiet",
+      "--server",
+      "-p",
+      "hq",
+      "--database",
+      "hq",
+      "--skip-hooks",
+      "--skip-agents",
+      "--server-host",
+      "127.0.0.1",
+      "--server-port",
+      "54562",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-trace-noconsent-001/city"
+    ],
+    "exit": 1,
+    "seconds": 7.229204208822921,
+    "stdout": "",
+    "stderr": "Thanks for using bd! Quick heads-up: bd shares anonymous usage metrics \u2014\n   just which commands get run (plus the bd version and OS platform), never your\n   issues, paths, remotes, identity, or anything you type. Seeing how people use\n   bd is how we decide what to improve next, so it genuinely makes bd better for\n   everyone.\n      Curious what's sent?   bd metrics example\n      Prefer to opt out?     bd metrics off    (one command, no restart needed)\n\nWarning: /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-trace-noconsent-001/city/.beads has permissions 0755 (recommended: 0700). Run: chmod 700 /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-trace-noconsent-001/city/.beads\nDeprecationWarning: --force is deprecated; use --reinit-local instead.\n  See 'bd help init-safety' for the init flag surface.\n\nrefusing to auto-apply 50 pending schema migrations to a shared server database (v16 -> v66): migrating would lock out every co-resident bd client still on the old schema (#5920)\n\n  This database is served to multiple clients (dolt sql-server /\n  proxied-server mode). Applying schema migrations promotes the schema\n  version for EVERY client at once: bd clients still running an older\n  version will refuse this database until they are upgraded.\n\n  To migrate (explicit consent):\n    1. Upgrade bd on every client of this server first (or accept that\n       older clients refuse until they are upgraded).\n    2. Then run, once, from a workspace already set up against this\n       server:\n        bd migrate schema\n        (bd migrate schema --global for the shared global database;\n        BD_ALLOW_REMOTE_MIGRATE=1 bd <cmd> in scripted/CI use)\n\n  Read commands keep working against the current schema in the meantime;\n  writes stay refused until the schema is migrated.\n\n  If the migration then reports dirty tables, that working set has to be\n  committed first \u2014 see the recovery the dirty-table error names; do not\n  re-run this command in a loop.\n\n  This workspace was NOT created \u2014 bd init stopped before writing\n  .beads/metadata.json, so `bd migrate schema` cannot be run from here yet.\n  Either run it from a workspace already set up against this server, or\n  join and migrate in one step once every client is upgraded:\n        BD_ALLOW_REMOTE_MIGRATE=1 bd init \u2026\n"
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "54562",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "USE hq; SELECT MAX(version) AS version FROM schema_migrations; SELECT * FROM dolt_status;"
+    ],
+    "exit": 0,
+    "seconds": 0.733791874954477,
+    "stdout": "{\"rows\": [{\"version\":\"16\"}]}\n{\"rows\": [{\"staged\":\"1\",\"status\":\"modified\",\"table_name\":\"config\"},{\"staged\":\"1\",\"status\":\"modified\",\"table_name\":\"schema_migrations\"}]}\n",
+    "stderr": ""
+  }
+]

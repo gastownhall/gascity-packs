@@ -2,7 +2,7 @@
 
 Recorded 2026-09-19. **No measured A/B benefit is established.** The optional pack
 integration and experiment harnesses are implemented, but live Jev access and
-full-workflow database initialization remain unresolved. No Jev inference has
+full-workflow validation remain unresolved. No Jev inference has
 been performed. Held-out cases remain unevaluated.
 
 ## What changed
@@ -79,8 +79,24 @@ saving, quality improvement, or speedup can be computed from these pilots.
 
 ## Full build setup attempts
 
+Follow-up: [root-cause diagnosis](diagnosis/README.md) identifies a mutating
+five-second forced-init preflight and separate harness isolation errors.
+The same installed binaries successfully initialize both databases when that
+preflight is avoided; this was not established by the initial checkpoint.
+A local Beads patch now makes the preflight read-only. Its real CLI regression
+passes fresh schema creation, clean working set, refusal of unconfirmed
+reinitialization, and preservation of an existing issue. See
+[patch and validation](diagnosis/fix-validation/README.md). The global Beads
+executable remains unchanged.
+
+
 No full `build-basic` run reached model dispatch. Each setup attempt has its own
-manifest, raw log and failed result. Setup durations are not build-speed results.
+manifest, raw log and result. Setup durations are not build-speed results.
+The [patched setup](build-setup-patched-001/run-001-baseline/run.log) completed
+city initialization, import install/check, configuration loading and the
+`build-basic` formula check. Both city and rig databases reached schema v66.
+This validates setup with the local patched Beads binary, not a completed build
+or a Jev comparison.
 
 | Attempt | Observed blocker / intervention |
 | --- | --- |
@@ -91,14 +107,15 @@ manifest, raw log and failed result. Setup durations are not build-speed results
 
 The exact migration error asks for a Dolt commit at the current schema before
 migration. These are newly created experimental databases; no user database was
-migrated or repaired. Further runtime diagnosis is needed before treating the
-full-build harness as validated. All four leftover disposable Dolt servers were
+migrated or repaired. The local read-only-preflight patch now passes setup; model execution and
+full-build validation still remain. All four leftover disposable Dolt servers were
 identified by their unique configuration paths and stopped; their data remain
 local. The user's global supervisor and unrelated Dolt servers were retained.
 
-Full-workflow token collection currently uses deduplicated assistant transcript
-records and marks its coverage as partial because auxiliary CLI calls may not
-appear. Missing telemetry remains unknown. Full token-saving claims require
+Full-workflow token collection retains deduplicated assistant transcript
+records and a filtered local Claude OTLP receiver. A main-request smoke test
+matched CLI counters exactly; auxiliary coverage is still unverified. See
+[fix validation](diagnosis/fix-validation/README.md). Missing telemetry remains unknown. Full token-saving claims require
 complete comparable coverage; transcript totals alone are insufficient.
 
 ## Validation
@@ -111,6 +128,8 @@ complete comparable coverage; transcript totals alone are insufficient.
 - The 17 skipped integration tests were rerun against `/opt/homebrew/bin/gc`
   1.4.2 and all passed; see [integration log](integration-validation.log).
 - `gc lint gascity` and Python compilation pass.
+- Final startup-fix and telemetry validation: **122 passed**.
+  [Validation log](final-startup-fix-validation.log).
 
 Unit tests use synthetic responses to verify error handling and routing. These
 are not Jev inference results. The complete workflow and live Jev response
@@ -137,21 +156,26 @@ python scripts/jev_ab.py --split heldout --arms both --repetitions 3 \
   --model claude-sonnet-5 --jev-model jev-1.13.0 \
   --out /absolute/new/heldout-directory
 
-# Resolve the recorded fresh-database initialization failure first:
+# Use the recorded locally patched binary until the fix is in a release:
 python scripts/jev_build_ab.py --arms baseline --repetitions 1 --setup-only \
+  --bd-bin /absolute/path/to/patched/bd \
   --out /absolute/new/build-preflight-directory
 python scripts/jev_build_ab.py --arms both --repetitions 2 \
   --out /absolute/new/build-directory
 ```
 
-Before running Jev, resolve whether the user's API-endpoint restriction applies
-to Jev itself and obtain `TYPESAFE_API_KEY` privately. No key was found in the
-available vault. Generative model work continues through subscription CLIs.
+Live Jev requires `TYPESAFE_API_KEY` supplied privately. No key was found in the
+available vault, and the secure-entry request timed out. Generative model work
+continues through subscription CLIs.
 Verify the pinned Jev model with a real preflight and retain the resolved model.
 A fallback-only full build is a treatment failure, not a successful Jev result.
+Automatic approval review rejected a Claude probe outside safe mode because it
+could include workspace instructions/configuration. Approval for the full
+experiment’s Claude runs has been requested and remains pending; it is separate
+from the missing Jev credential.
 
 Remaining work: live paired pilot; frozen held-out evaluation; working full-build
-runtime and complete token telemetry; paired full-build measurements; final
+execution and complete token telemetry; paired full-build measurements; final
 comparative report. This checkpoint evaluates Claude only. Codex or another
 subscription-backed CLI needs its own adapter and separately reported cohort.
 

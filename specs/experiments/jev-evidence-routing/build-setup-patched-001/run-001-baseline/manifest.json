@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "scripts/jev_build_ab.py",
+    "--arms",
+    "baseline",
+    "--repetitions",
+    "1",
+    "--setup-only",
+    "--bd-bin",
+    "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/build/bin/bd",
+    "--out",
+    "specs/experiments/jev-evidence-routing/build-setup-patched-001"
+  ],
+  "versions": {
+    "gc": "1.4.2",
+    "bd": "bd version 1.3.0-jev-preflight (local-regression)",
+    "claude": "2.1.278 (Claude Code)",
+    "bash": "GNU bash, version 5.3.20(1)-release (aarch64-apple-darwin25.6.0)\nCopyright (C) 2025 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n\nThis is free software; you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law."
+  },
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "arm": "baseline",
+  "core_source": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/runtime-sources/gascity-1.4.2",
+  "pack_git_head": "3b40b20c4074ba91eab0320dd4e9962019b3a9a7",
+  "pack_diff": "diff --git a/gascity/tests/test_jev_build_ab.py b/gascity/tests/test_jev_build_ab.py\nindex 9b7f91e..0444c70 100644\n--- a/gascity/tests/test_jev_build_ab.py\n+++ b/gascity/tests/test_jev_build_ab.py\n@@ -54,3 +54,38 @@ def test_cleanup_reports_when_process_inspection_fails(tmp_path, monkeypatch):\n     monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=1,stdout='',stderr='denied'))\n     monkeypatch.setattr(build.os,'kill',lambda *a:pytest.fail('must not signal without ownership evidence'))\n     assert build.stop_disposable_dolt(tmp_path)['status']=='unverified'\n+\n+\n+def test_cleanup_resolves_config_path_aliases(tmp_path, monkeypatch):\n+    actual=tmp_path/'actual'; actual.mkdir()\n+    alias=tmp_path/'alias'; alias.symlink_to(actual, target_is_directory=True)\n+    config=alias/'city/.gc/runtime/packs/dolt/dolt-config.yaml'\n+    listing=f'12 dolt sql-server --config {config}\\n'\n+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))\n+    signals=[]\n+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:signals.append(pid))\n+    assert build.stop_disposable_dolt(actual/'city')['pids']==[12]\n+\n+\n+def test_experiment_env_retains_home_and_separates_mutable_config(tmp_path):\n+    workspace=SimpleNamespace(gc_home=tmp_path/'h')\n+    env={'HOME':str(tmp_path/'wrong'),'PATH':'/bin','BD_ALLOW_REMOTE_MIGRATE':'1'}\n+    result=build.configure_experiment_env(env,workspace,real_home=Path('/Users/example'))\n+    assert result['HOME']=='/Users/example'\n+    assert result['GIT_CONFIG_GLOBAL']==str(workspace.gc_home/'gitconfig')\n+    assert result['DOLT_ROOT_PATH']==str(workspace.gc_home)\n+    assert 'BD_ALLOW_REMOTE_MIGRATE' not in result\n+\n+\n+def test_workspace_socket_path_fits_even_with_deep_artifact_directory(tmp_path):\n+    from contextlib import ExitStack\n+    from unittest.mock import patch\n+    captured={}\n+    def workspace(root,**kwargs):\n+        captured['root']=root\n+        return SimpleNamespace(root=root,gc_home=root/'gc-home')\n+    with ExitStack() as stack:\n+        stack.enter_context(patch.object(build.gate,'write_gate_workspace',workspace))\n+        result=build.new_runtime_workspace(SimpleNamespace(source=tmp_path,roles_source=tmp_path),'unit')\n+        stack.callback(build.shutil.rmtree,result.root.parent)\n+        assert len(str(result.gc_home/'supervisor.sock').encode())<100\n"
+}

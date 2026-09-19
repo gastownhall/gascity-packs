@@ -1,0 +1,3 @@
+# Preserve the original bytes of captured logs and unified patches.
+*.log -whitespace
+*.patch -whitespace

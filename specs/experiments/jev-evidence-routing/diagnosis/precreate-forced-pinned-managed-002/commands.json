@@ -1,0 +1,112 @@
+[
+  {
+    "command": [
+      "git",
+      "init",
+      "-q"
+    ],
+    "exit": 0,
+    "seconds": 1.8111640829592943,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "config",
+      "--global",
+      "--add",
+      "user.name",
+      "Diagnostic"
+    ],
+    "exit": 0,
+    "seconds": 0.7600698750466108,
+    "stdout": "Config successfully updated.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "config",
+      "--global",
+      "--add",
+      "user.email",
+      "diagnostic@example.invalid"
+    ],
+    "exit": 0,
+    "seconds": 0.516340000089258,
+    "stdout": "Config successfully updated.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "54578",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "CREATE DATABASE hq"
+    ],
+    "exit": 0,
+    "seconds": 1.1218546249438077,
+    "stdout": "{}\n\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/bd",
+      "init",
+      "--force",
+      "--non-interactive",
+      "--quiet",
+      "--server",
+      "-p",
+      "hq",
+      "--database",
+      "hq",
+      "--skip-hooks",
+      "--skip-agents",
+      "--server-host",
+      "127.0.0.1",
+      "--server-port",
+      "54578",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-002/city"
+    ],
+    "exit": 0,
+    "seconds": 28.714723624987528,
+    "stdout": "",
+    "stderr": "Thanks for using bd! Quick heads-up: bd shares anonymous usage metrics \u2014\n   just which commands get run (plus the bd version and OS platform), never your\n   issues, paths, remotes, identity, or anything you type. Seeing how people use\n   bd is how we decide what to improve next, so it genuinely makes bd better for\n   everyone.\n      Curious what's sent?   bd metrics example\n      Prefer to opt out?     bd metrics off    (one command, no restart needed)\n\nWarning: /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-002/city/.beads has permissions 0755 (recommended: 0700). Run: chmod 700 /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/precreate-forced-pinned-managed-002/city/.beads\nDeprecationWarning: --force is deprecated; use --reinit-local instead.\n  See 'bd help init-safety' for the init flag surface.\n\nWarning: applying 29 pending schema migration(s) to a shared server database (BD_ALLOW_REMOTE_MIGRATE=1); co-resident bd clients still on an older binary will refuse this database until they are upgraded (#5920)\n"
+  },
+  {
+    "command": [
+      "/opt/homebrew/bin/dolt",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "54578",
+      "--user",
+      "root",
+      "--password",
+      "",
+      "--no-tls",
+      "sql",
+      "-r",
+      "json",
+      "-q",
+      "USE hq; SELECT MAX(version) AS version FROM schema_migrations; SELECT * FROM dolt_status;"
+    ],
+    "exit": 0,
+    "seconds": 1.1640395419672132,
+    "stdout": "{\"rows\": [{\"version\":\"66\"}]}\n{}\n\n",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "gc": {
+    "path": "/opt/homebrew/Cellar/gascity/1.4.2/bin/gc",
+    "sha256": "9bd8728e7b41316e89cbf1a53ee39c9fa1de7ba7b26798f56f57660238a9810a",
+    "version": "1.4.2"
+  },
+  "bd": {
+    "path": "/opt/homebrew/Cellar/beads/1.3.0/bin/beads",
+    "sha256": "61444b021e6eafb156d975060c86bcbdf55e274ee92519234ded0d50cf75037c",
+    "version": "bd version 1.3.0 (Homebrew)"
+  },
+  "dolt": {
+    "path": "/opt/homebrew/Cellar/dolt/2.3.5/bin/dolt",
+    "sha256": "b0ebb5402a9f219fa6bc89c3bea58e5d0f0a1df8eabdbdd659524a7dd7fadb9b",
+    "version": "dolt version 2.3.5"
+  },
+  "beads_source_archive_sha256": "82ca742097222f44333d20aea66f443cf721f0b8e156367731acefccec8f404f"
+}

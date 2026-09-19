@@ -1,0 +1,24 @@
++ git init -b main
++ git config user.email gascity-pack-gate@example.invalid
++ git config user.name 'Gas City Pack Gate'
++ git add .
++ git commit -m 'Add inference gate fixtures'
++ /opt/homebrew/bin/gc init --skip-provider-readiness --name jev-ab-run-001-baseline --file /private/tmp/gcja-yvj4pc26/w/city/city.toml --preserve-existing --yes /private/tmp/gcja-yvj4pc26/w/city
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-ab-run-001-baseline" from city.toml.
+Skipping provider readiness checks.
+Registered city 'jev-ab-run-001-baseline' (/tmp/gcja-yvj4pc26/w/city)
+Supervisor started (PID 61906)
+Dashboard:  http://127.0.0.1:55512/
+Waiting for supervisor to start city...
+  Adopting sessions...
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-16f56755.plist: exit status 1
++ /opt/homebrew/bin/gc --city /private/tmp/gcja-yvj4pc26/w/city import install
++ /opt/homebrew/bin/gc --city /private/tmp/gcja-yvj4pc26/w/city import check
++ /opt/homebrew/bin/gc --city /private/tmp/gcja-yvj4pc26/w/city config show
++ /opt/homebrew/bin/gc --city /private/tmp/gcja-yvj4pc26/w/city --rig fixture formula show build-basic
++ /opt/homebrew/bin/gc stop /private/tmp/gcja-yvj4pc26/w/city --force --timeout 30s
+cleanup command failed (/opt/homebrew/bin/gc stop /private/tmp/gcja-yvj4pc26/w/city --force --timeout 30s): Command '['/opt/homebrew/bin/gc', 'stop', '/private/tmp/gcja-yvj4pc26/w/city', '--force', '--timeout', '30s']' timed out after 60.0 seconds
++ /opt/homebrew/bin/gc supervisor stop --wait --wait-timeout 30s

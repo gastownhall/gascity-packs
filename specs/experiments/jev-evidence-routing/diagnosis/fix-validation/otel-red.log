@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+___________ ERROR collecting gascity/tests/test_jev_claude_usage.py ____________
+gascity/tests/test_jev_claude_usage.py:7: in <module>
+    spec.loader.exec_module(usage)
+<frozen importlib._bootstrap_external>:755: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:892: in get_code
+    ???
+<frozen importlib._bootstrap_external>:950: in get_data
+    ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/scripts/jev_claude_usage.py'
+=========================== short test summary info ============================
+ERROR gascity/tests/test_jev_claude_usage.py - FileNotFoundError: [Errno 2] N...
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 3.34s

@@ -1,0 +1,16 @@
++ git init -b main
++ git config user.email gascity-pack-gate@example.invalid
++ git config user.name 'Gas City Pack Gate'
++ git add .
++ git commit -m 'Add inference gate fixtures'
++ /opt/homebrew/bin/gc init --skip-provider-readiness --name jev-ab-gc-jev-diag-001 --file /private/tmp/gc-jev-diag-001/workspace/city/city.toml --preserve-existing --yes /private/tmp/gc-jev-diag-001/workspace/city
+TimeoutExpired: Command '['/opt/homebrew/bin/gc', 'init', '--skip-provider-readiness', '--name', 'jev-ab-gc-jev-diag-001', '--file', '/private/tmp/gc-jev-diag-001/workspace/city/city.toml', '--preserve-existing', '--yes', '/private/tmp/gc-jev-diag-001/workspace/city']' timed out after 300.0 seconds
++ /opt/homebrew/bin/gc stop /private/tmp/gc-jev-diag-001/workspace/city --force --timeout 30s
+Unregistered city 'jev-ab-gc-jev-diag-001' (/tmp/gc-jev-diag-001/workspace/city)
+gc supervisor reload: reconcile queue is busy; try again shortly
+gc stop: reconcile failed; restored registration for 'jev-ab-gc-jev-diag-001'
+cleanup command failed (/opt/homebrew/bin/gc stop /private/tmp/gc-jev-diag-001/workspace/city --force --timeout 30s): Command '['/opt/homebrew/bin/gc', 'stop', '/private/tmp/gc-jev-diag-001/workspace/city', '--force', '--timeout', '30s']' returned non-zero exit status 1.
++ /opt/homebrew/bin/gc supervisor stop --wait --wait-timeout 30s
+Supervisor stopping...
+gc supervisor stop: timed out after -5.503875ms waiting for supervisor at /tmp/gc-jev-diag-001/workspace/gc-home/supervisor.sock to exit
+cleanup command failed (/opt/homebrew/bin/gc supervisor stop --wait --wait-timeout 30s): Command '['/opt/homebrew/bin/gc', 'supervisor', 'stop', '--wait', '--wait-timeout', '30s']' returned non-zero exit status 1.

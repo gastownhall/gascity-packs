@@ -1,0 +1,52 @@
+import os,sys,json,socket,subprocess,time
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent
+variant=sys.argv[1]
+out=ROOT/variant;out.mkdir()
+home=out/'home';home.mkdir()
+city=out/'city';city.mkdir()
+data=out/'data';data.mkdir()
+env={k:v for k,v in os.environ.items() if k in ('PATH','TMPDIR','LANG','LC_ALL')}
+env.update(HOME=str(home),DOLT_ROOT_PATH=str(home),BD_ALLOW_REMOTE_MIGRATE='1',BEADS_DOLT_AUTO_START='0')
+s=socket.socket();s.bind(('127.0.0.1',0));port=s.getsockname()[1];s.close()
+config=out/'dolt.yaml';config.write_text(f'listener:\n  host: 127.0.0.1\n  port: {port}\ndata_dir: "{data}"\nlog_level: warning\n')
+if 'short' in variant:
+ config.write_text(config.read_text().replace('data_dir:', '  read_timeout_millis: 15000\n  write_timeout_millis: 300000\ndata_dir:'))
+if 'managed' in variant:
+ original=ROOT.parent/'gascity-jev/specs/experiments/jev-evidence-routing/build-setup-003/run-001-baseline/workspace/city/.gc/runtime/packs/dolt/dolt-config.yaml'
+ import re
+ conf=original.read_text();conf=re.sub(r'  port: \d+',f'  port: {port}',conf);conf=re.sub(r'data_dir: .*',f'data_dir: \"{data}\"',conf);config.write_text(conf)
+if 'trace' in variant:config.write_text(config.read_text().replace('log_level: warning','log_level: trace'))
+if 'noconsent' in variant:env.pop('BD_ALLOW_REMOTE_MIGRATE')
+logs=[]
+def run(cmd,timeout=40):
+ t=time.monotonic();p=subprocess.run(cmd,cwd=city,env=env,capture_output=True,text=True,timeout=timeout)
+ row={'command':cmd,'exit':p.returncode,'seconds':time.monotonic()-t,'stdout':p.stdout,'stderr':p.stderr};logs.append(row)
+ print(json.dumps(row),flush=True);return p
+sql=['/opt/homebrew/bin/dolt','--host','127.0.0.1','--port',str(port),'--user','root','--password','','--no-tls','sql','-r','json','-q']
+run(['git','init','-q'])
+run(['/opt/homebrew/bin/dolt','config','--global','--add','user.name','Diagnostic'])
+run(['/opt/homebrew/bin/dolt','config','--global','--add','user.email','diagnostic@example.invalid'])
+with (out/'server.log').open('w') as log:
+ server=subprocess.Popen(['/opt/homebrew/bin/dolt','sql-server','--config',str(config)],cwd=data,env=env,stdout=log,stderr=log)
+ try:
+  for _ in range(100):
+   try:
+    with socket.create_connection(('127.0.0.1',port),timeout=.2):break
+   except OSError:time.sleep(.1)
+  else:raise RuntimeError('server unavailable')
+  if 'precreate' in variant:
+   assert run(sql+['CREATE DATABASE hq']).returncode == 0
+  extra=[]
+  if 'forced' in variant:
+   beads=city/'.beads';beads.mkdir();(beads/'metadata.json').write_text(json.dumps({'backend':'dolt','database':'dolt','dolt_database':'hq','dolt_mode':'server'}));(beads/'dolt').mkdir();(beads/'.local_version').write_text('1.3.0\n');extra=['--force']
+   if 'pinned' in variant:
+    env.update(BEADS_DIR=str(beads),BEADS_DOLT_SERVER_HOST='127.0.0.1',BEADS_DOLT_SERVER_PORT=str(port),BEADS_DOLT_SERVER_USER='root')
+    (beads/'config.yaml').write_text('dolt.auto-start: false\ndolt:\n  disable-event-flush: true\nexport.auto: false\nbackup.enabled: false\n')
+  run(['/opt/homebrew/bin/bd','init',*extra,'--non-interactive','--quiet','--server','-p','hq','--database','hq','--skip-hooks','--skip-agents','--server-host','127.0.0.1','--server-port',str(port),str(city)],timeout=70)
+  run(sql+['USE hq; SELECT MAX(version) AS version FROM schema_migrations; SELECT * FROM dolt_status;'])
+ finally:
+  (out/'commands.json').write_text(json.dumps(logs,indent=2))
+  server.terminate()
+  try:server.wait(timeout=10)
+  except subprocess.TimeoutExpired:server.kill();server.wait()

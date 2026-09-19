@@ -1,0 +1,21 @@
+{
+  "arm": "baseline",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-19T18:05:32.184933+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "failed",
+  "error": "TimeoutExpired: Command '['/opt/homebrew/bin/gc', 'init', '--skip-provider-readiness', '--name', 'jev-ab-gc-jev-diag-001', '--file', '/private/tmp/gc-jev-diag-001/workspace/city/city.toml', '--preserve-existing', '--yes', '/private/tmp/gc-jev-diag-001/workspace/city']' timed out after 300.0 seconds",
+  "cleanup": {
+    "status": "no_leftover_server",
+    "pids": []
+  },
+  "elapsed_seconds": 341.36846512486227,
+  "llm_usage": {
+    "status": "missing",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 0,
+    "models": [],
+    "totals": null
+  }
+}

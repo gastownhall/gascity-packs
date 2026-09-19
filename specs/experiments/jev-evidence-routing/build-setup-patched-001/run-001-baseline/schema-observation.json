@@ -1,0 +1,23 @@
+{
+  "at": "2026-09-19T21:02:23.880394+00:00",
+  "command": [
+    "/opt/homebrew/bin/dolt",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "39260",
+    "--user",
+    "root",
+    "--password",
+    "",
+    "--no-tls",
+    "sql",
+    "-r",
+    "json",
+    "-q",
+    "SELECT MAX(version) AS version FROM hq.schema_migrations; SELECT MAX(version) AS version FROM fi.schema_migrations"
+  ],
+  "exit": 0,
+  "stdout": "{\"rows\": [{\"version\":\"66\"}]}\n{\"rows\": [{\"version\":\"66\"}]}\n",
+  "stderr": ""
+}

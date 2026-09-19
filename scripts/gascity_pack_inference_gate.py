@@ -1469,13 +1469,16 @@ def initialize_city(
     pack_spec: PackSpec,
     gates: Sequence[str],
     env: Mapping[str, str],
+    seed_claude_state: bool = True,
+    init_timeout: float = 300,
 ) -> None:
     write_supervisor_config(workspace.gc_home)
-    seed_claude_project_state(
-        home=Path(env["HOME"]),
-        config_dir=Path(env["CLAUDE_CONFIG_DIR"]),
-        project_paths=[workspace.city_dir, workspace.rig_dir],
-    )
+    if seed_claude_state:
+        seed_claude_project_state(
+            home=Path(env["HOME"]),
+            config_dir=Path(env["CLAUDE_CONFIG_DIR"]),
+            project_paths=[workspace.city_dir, workspace.rig_dir],
+        )
     initialize_rig_git(workspace.rig_dir, env=env)
 
     run_checked(
@@ -1492,7 +1495,7 @@ def initialize_city(
             str(workspace.city_dir),
         ],
         env=env,
-        timeout=parse_duration("5m"),
+        timeout=init_timeout,
         log_output=True,
     )
     run_checked([gc_bin, "--city", str(workspace.city_dir), "import", "install"], env=env, timeout=parse_duration("5m"))

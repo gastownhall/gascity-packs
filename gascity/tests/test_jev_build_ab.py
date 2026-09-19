@@ -54,3 +54,38 @@ def test_cleanup_reports_when_process_inspection_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=1,stdout='',stderr='denied'))
     monkeypatch.setattr(build.os,'kill',lambda *a:pytest.fail('must not signal without ownership evidence'))
     assert build.stop_disposable_dolt(tmp_path)['status']=='unverified'
+
+
+def test_cleanup_resolves_config_path_aliases(tmp_path, monkeypatch):
+    actual=tmp_path/'actual'; actual.mkdir()
+    alias=tmp_path/'alias'; alias.symlink_to(actual, target_is_directory=True)
+    config=alias/'city/.gc/runtime/packs/dolt/dolt-config.yaml'
+    listing=f'12 dolt sql-server --config {config}\n'
+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))
+    signals=[]
+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:signals.append(pid))
+    assert build.stop_disposable_dolt(actual/'city')['pids']==[12]
+
+
+def test_experiment_env_retains_home_and_separates_mutable_config(tmp_path):
+    workspace=SimpleNamespace(gc_home=tmp_path/'h')
+    env={'HOME':str(tmp_path/'wrong'),'PATH':'/bin','BD_ALLOW_REMOTE_MIGRATE':'1'}
+    result=build.configure_experiment_env(env,workspace,real_home=Path('/Users/example'))
+    assert result['HOME']=='/Users/example'
+    assert result['GIT_CONFIG_GLOBAL']==str(workspace.gc_home/'gitconfig')
+    assert result['DOLT_ROOT_PATH']==str(workspace.gc_home)
+    assert 'BD_ALLOW_REMOTE_MIGRATE' not in result
+
+
+def test_workspace_socket_path_fits_even_with_deep_artifact_directory(tmp_path):
+    from contextlib import ExitStack
+    from unittest.mock import patch
+    captured={}
+    def workspace(root,**kwargs):
+        captured['root']=root
+        return SimpleNamespace(root=root,gc_home=root/'gc-home')
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(build.gate,'write_gate_workspace',workspace))
+        result=build.new_runtime_workspace(SimpleNamespace(source=tmp_path,roles_source=tmp_path),'unit')
+        stack.callback(build.shutil.rmtree,result.root.parent)
+        assert len(str(result.gc_home/'supervisor.sock').encode())<100
