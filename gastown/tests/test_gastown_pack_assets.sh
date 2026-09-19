@@ -311,9 +311,10 @@ test_witness_wisp_queries_pin_include_infra() {
     # --include-infra is passed: a wisp-reconcile query without it returns []
     # even when a wisp is assigned, and the witness pours a duplicate. That
     # regressed once already, so pin the flag rather than trust the comments.
-    # Deliberately witness-scoped: the refinery and deacon patrol queries
-    # still carry the bare form and are tracked separately in #252, so a
-    # pack-wide assertion would fail here instead of guarding this contract.
+    # Deliberately witness-scoped: the refinery and deacon patrol queries are
+    # guarded per-agent by test_refinery_deacon_wisp_queries_pin_include_infra
+    # (they carried the bare form through #252), and a pack-wide assertion
+    # would fail here naming no agent if any one of them regresses.
     total=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
         grep -c -F 'gc bd list' || true)
     flagged=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
@@ -466,9 +467,10 @@ test_boot_wisp_queries_pin_include_infra() {
     # burn never runs and each cycle pours a fresh wisp while its predecessor
     # leaks. Boot shipped with the bare form on all three sites one commit
     # after the witness fix, so scope this per-agent rather than widening the
-    # witness test: a pack-wide assertion is red either way (measured 10/21 at
-    # this commit) because the deacon and refinery sites are still bare and
-    # tracked separately in #252.
+    # witness test: a pack-wide census is red on any one regression without
+    # naming which agent broke. The refinery and deacon sites — bare through
+    # #252 — are pinned per-agent by
+    # test_refinery_deacon_wisp_queries_pin_include_infra below.
     total=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
         grep -c -F 'gc bd list' || true)
     flagged=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
@@ -558,6 +560,30 @@ test_boot_deacon_observation_query_sees_wisps_tier() {
         unflagged=$(printf '%s\n' "$lines" | grep -c -v -- '--include-infra' || true)
         [[ "$unflagged" -eq 0 ]] ||
             fail "$name deacon-observation queries must pass --include-infra ($unflagged do not)"
+    done
+}
+
+test_refinery_deacon_wisp_queries_pin_include_infra() {
+    local prompt formula total flagged owner
+
+    # Same contract as the witness and boot guards: wisp roots are ephemeral,
+    # so gc bd list skips the wisps tier unless --include-infra is passed, a
+    # wisp-reconcile or CURRENT_WISP query without it returns [] even when a
+    # wisp is assigned, and the patrol pours a duplicate every cycle. The
+    # refinery and deacon sites carried the bare form through #252; this is
+    # the flip cleanup, scoped per-agent like the guards above so a
+    # regression fails naming the agent that broke.
+    for owner in refinery deacon; do
+        prompt="$GASTOWN/agents/$owner/prompt.template.md"
+        formula="$GASTOWN/formulas/mol-$owner-patrol.toml"
+        total=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
+            grep -c -F 'gc bd list' || true)
+        flagged=$(grep -h -- '--type=molecule' "$prompt" "$formula" |
+            grep -F 'gc bd list' | grep -c -- '--include-infra' || true)
+        [[ "$total" -ge 2 ]] ||
+            fail "expected at least 2 $owner --type=molecule wisp queries, found $total"
+        [[ "$flagged" -eq "$total" ]] ||
+            fail "$owner --type=molecule wisp queries must pass --include-infra ($flagged/$total do)"
     done
 }
 
@@ -702,6 +728,7 @@ test_witness_handoff_recovery_is_guarded_and_fail_closed
 test_boot_wisp_queries_pin_include_infra
 test_boot_patrol_burn_resolves_current_wisp
 test_boot_deacon_observation_query_sees_wisps_tier
+test_refinery_deacon_wisp_queries_pin_include_infra
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 
 echo "gastown pack asset tests passed"
