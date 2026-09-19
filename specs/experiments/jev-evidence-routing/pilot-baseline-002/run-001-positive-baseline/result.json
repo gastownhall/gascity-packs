@@ -1,0 +1,57 @@
+{
+  "case_id": "positive",
+  "arm": "baseline",
+  "started_at": "2026-09-19T17:26:39.749871+00:00",
+  "expected": "supported",
+  "scope": "evidence-assessment",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 1626,
+      "outputTokens": 43,
+      "cacheReadInputTokens": 4439,
+      "cacheCreationInputTokens": 2339,
+      "totalTokens": 8447
+    },
+    "models": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1624,
+        "outputTokens": 14,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001694,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 2,
+        "outputTokens": 29,
+        "cacheReadInputTokens": 4439,
+        "cacheCreationInputTokens": 2339,
+        "webSearchRequests": 0,
+        "costUSD": 0.0105378,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "status": "completed",
+  "predicted": [
+    {
+      "id": "AC-1",
+      "choice": "supported"
+    }
+  ],
+  "correct": true,
+  "false_support": false,
+  "elapsed_seconds": 7.389216625131667
+}

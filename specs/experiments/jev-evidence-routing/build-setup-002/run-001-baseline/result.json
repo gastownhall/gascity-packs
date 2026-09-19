@@ -1,0 +1,17 @@
+{
+  "arm": "baseline",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-19T17:34:19.166161+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "failed",
+  "error": "CalledProcessError: Command '['/opt/homebrew/bin/gc', 'init', '--skip-provider-readiness', '--name', 'jev-ab-run-001-baseline', '--file', '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-002/run-001-baseline/workspace/city/city.toml', '--preserve-existing', '--yes', '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-002/run-001-baseline/workspace/city']' returned non-zero exit status 1.",
+  "elapsed_seconds": 60.16822462505661,
+  "llm_usage": {
+    "status": "missing",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 0,
+    "models": [],
+    "totals": null
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "elapsed_seconds": 0.38197074993513525,
+  "returncode": 0,
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "-m",
+    "unittest",
+    "discover",
+    "-v"
+  ]
+}

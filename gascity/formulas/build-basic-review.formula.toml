@@ -15,6 +15,18 @@ contract = "graph.v2"
 description = "Role target used to apply starter review findings."
 default = "gc.implementation-worker"
 
+[vars.jev_mode]
+description = "Optional evidence assistance: off or assist."
+default = "off"
+
+[vars.jev_model]
+description = "TypeSafe model for optional evidence assistance."
+default = "jev-1.13.0"
+
+[vars.jev_threshold]
+description = "Minimum confidence for advisory evidence routing."
+default = "0.85"
+
 [[template]]
 id = "{target}.setup-build-basic-review"
 title = "Prepare build-basic starter review"

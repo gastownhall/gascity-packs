@@ -213,3 +213,12 @@ this ledger against the `FORMULAS` constant and formula directory.
   side effects, stage selectors, drain semantics, and extension expectations.
 - Do not let external toolkit-specific behavior into this base ledger unless it
   becomes a shared requirement for all methodology implementations.
+
+## Optional Jev integration
+
+- `build-basic` forwards `jev_mode`, `jev_model`, and `jev_threshold` to
+  `build-basic-review`; `off` preserves the default review behavior.
+- `build-basic-review` uses those variables only in its test-evidence lane.
+  All three lanes, synthesis, fixes, and existing check contracts remain.
+  Jev reports are advisory artifacts; failures and low confidence require
+  ordinary LLM review, and every attempt is retained separately.

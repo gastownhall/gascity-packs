@@ -867,3 +867,12 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 - Derived-pack implementation ledgers live in `compound-engineering`,
   `superpowers`, `bmad`, and `gstack`; keep them in sync with
   `tests/test_derived_pack_compatibility.py`.
+
+## Experimental evidence assistance
+
+`build-basic` MAY opt into Jev with `jev_mode=assist`; the default MUST be `off`.
+The helper MUST bind source/proof files to hashes and the implementation HEAD,
+record inputs/responses/usage/timing, and route uncertainty to ordinary review.
+Jev MUST NOT independently approve a review, publish work, execute model-selected
+commands, or change the mandatory review lanes. Failures MUST be recorded and
+explicitly fall back to ordinary review. Derived methodologies are unaffected.

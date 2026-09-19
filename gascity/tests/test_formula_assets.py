@@ -1874,6 +1874,9 @@ class FormulaAssetTests(unittest.TestCase):
             review_step["expand_vars"],
             {
                 "implementation_target": "{{implementation_target}}",
+                "jev_mode": "{{jev_mode}}",
+                "jev_model": "{{jev_model}}",
+                "jev_threshold": "{{jev_threshold}}",
             },
         )
         self.assertEqual(review_step["needs"], ["summarize-implementation"])

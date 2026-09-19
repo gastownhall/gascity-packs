@@ -1,0 +1,95 @@
++ git init -b main
++ git config user.email gascity-pack-gate@example.invalid
++ git config user.name 'Gas City Pack Gate'
++ git add .
++ git commit -m 'Add inference gate fixtures'
++ /opt/homebrew/bin/gc init --skip-provider-readiness --name jev-ab-run-001-baseline --file /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city/city.toml --preserve-existing --yes /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-ab-run-001-baseline" from city.toml.
+Skipping provider readiness checks.
+gc init: exec beads init: gc-beads-bd: setting git config --global beads.role maintainer
+warning: database 'hq' missing bd schema; re-initializing
+Thanks for using bd! Quick heads-up: bd shares anonymous usage metrics —
+   just which commands get run (plus the bd version and OS platform), never your
+   issues, paths, remotes, identity, or anything you type. Seeing how people use
+   bd is how we decide what to improve next, so it genuinely makes bd better for
+   everyone.
+      Curious what's sent?   bd metrics example
+      Prefer to opt out?     bd metrics off    (one command, no restart needed)
+
+DeprecationWarning: --force is deprecated; use --reinit-local instead.
+  See 'bd help init-safety' for the init flag surface.
+
+
+bd init refuses: remote 'origin' already has Dolt history (refs/dolt/data).
+
+  Why: this init mode would create or reuse local history instead of
+       adopting the remote. --force / --reinit-local bypasses only the
+       LOCAL data-safety guard; --from-jsonl selects JSONL as the local
+       source. Neither authorizes silent divergence of remote history.
+
+  Next:
+    Adopt the remote (recommended):
+      bd bootstrap
+
+    Diagnose first:
+      bd doctor
+
+    Overwrite the remote intentionally (destructive):
+      See 'bd help init-safety' for the --discard-remote workflow.
+
+bd init failed for /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city
+hint: run "gc doctor" for diagnostics
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-ab-run-001-baseline" from city.toml.
+Skipping provider readiness checks.
+gc init: exec beads init: gc-beads-bd: setting git config --global beads.role maintainer
+warning: database 'hq' missing bd schema; re-initializing
+Thanks for using bd! Quick heads-up: bd shares anonymous usage metrics —
+   just which commands get run (plus the bd version and OS platform), never your
+   issues, paths, remotes, identity, or anything you type. Seeing how people use
+   bd is how we decide what to improve next, so it genuinely makes bd better for
+   everyone.
+      Curious what's sent?   bd metrics example
+      Prefer to opt out?     bd metrics off    (one command, no restart needed)
+
+DeprecationWarning: --force is deprecated; use --reinit-local instead.
+  See 'bd help init-safety' for the init flag surface.
+
+
+bd init refuses: remote 'origin' already has Dolt history (refs/dolt/data).
+
+  Why: this init mode would create or reuse local history instead of
+       adopting the remote. --force / --reinit-local bypasses only the
+       LOCAL data-safety guard; --from-jsonl selects JSONL as the local
+       source. Neither authorizes silent divergence of remote history.
+
+  Next:
+    Adopt the remote (recommended):
+      bd bootstrap
+
+    Diagnose first:
+      bd doctor
+
+    Overwrite the remote intentionally (destructive):
+      See 'bd help init-safety' for the --discard-remote workflow.
+
+bd init failed for /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city
+hint: run "gc doctor" for diagnostics
+CalledProcessError: Command '['/opt/homebrew/bin/gc', 'init', '--skip-provider-readiness', '--name', 'jev-ab-run-001-baseline', '--file', '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city/city.toml', '--preserve-existing', '--yes', '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city']' returned non-zero exit status 1.
++ /opt/homebrew/bin/gc stop /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city --force --timeout 30s
+2026/09/19 10:32:54 ERROR native_store_unavailable gate=identity_match reason="metadata project_id is missing" scope=/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city
+gc stop: marking sessions: bd list: exit status 1: Error: search count issues: Error 1146 (HY000): table not found: issues
+bd query (wisps): exit status 1: search count issues: Error 1146 (HY000): table not found: issues
+2026/09/19 10:32:58 ERROR native_store_unavailable gate=identity_match reason="metadata project_id is missing" scope=/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city
+gc lifecycle: pool bead lookup for bd.dog returned error (legacy discovery also runs): listing session beads by type: bd list: exit status 1: Error: search count issues: Error 1146 (HY000): table not found: issues
+bd query (wisps): exit status 1: search count issues: Error 1146 (HY000): table not found: issues
+gc stop: timed out after 30s; some sessions may not have stopped — retry with --force if stop is wedged, or raise --timeout for large stop sets
+cleanup command failed (/opt/homebrew/bin/gc stop /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city --force --timeout 30s): Command '['/opt/homebrew/bin/gc', 'stop', '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/build-setup-001/run-001-baseline/workspace/city', '--force', '--timeout', '30s']' returned non-zero exit status 1.
++ /opt/homebrew/bin/gc supervisor stop --wait --wait-timeout 30s
+gc supervisor stop: supervisor is not running
+cleanup command failed (/opt/homebrew/bin/gc supervisor stop --wait --wait-timeout 30s): Command '['/opt/homebrew/bin/gc', 'supervisor', 'stop', '--wait', '--wait-timeout', '30s']' returned non-zero exit status 1.

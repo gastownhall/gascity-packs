@@ -1,0 +1,36 @@
+..................................................................F....F................. [ 36%]
+....................................................................................................................... [ 84%]
+.....................sssssssssssssssss        [100%]
+=================================== FAILURES ===================================
+_ FormulaAssetTests.test_city_claim_command_bounds_ambiguous_hook_failures_without_drain_ack _
+gascity/tests/test_formula_assets.py:1017: in test_city_claim_command_bounds_ambiguous_hook_failures_without_drain_ack
+    result = subprocess.run(
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:557: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1221: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2154: in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: in _check_timeout
+    raise TimeoutExpired(
+E   subprocess.TimeoutExpired: Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/gascity/commands/claim/run.sh']' timed out after 2 seconds
+_ FormulaAssetTests.test_city_claim_command_preserves_unreadable_claim_after_bounded_retries _
+gascity/tests/test_formula_assets.py:1266: in test_city_claim_command_preserves_unreadable_claim_after_bounded_retries
+    result = subprocess.run(
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:557: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1221: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2154: in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: in _check_timeout
+    raise TimeoutExpired(
+E   subprocess.TimeoutExpired: Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/gascity/commands/claim/run.sh']' timed out after 2 seconds
+=========================== short test summary info ============================
+FAILED gascity/tests/test_formula_assets.py::FormulaAssetTests::test_city_claim_command_bounds_ambiguous_hook_failures_without_drain_ack
+FAILED gascity/tests/test_formula_assets.py::FormulaAssetTests::test_city_claim_command_preserves_unreadable_claim_after_bounded_retries
+2 failed, 227 passed, 17 skipped, 9467 subtests passed in 128.83s (0:02:08)

@@ -1,0 +1,32 @@
+{
+  "head": "e5b0de138e12e9c420004b620ef378262ec804da",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Double a negative integer.",
+      "claim": "The passing test exercises negative input.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "0acad6f4e1d6f146d18d1605a04fa66431fe588f3397f9928f083696b40e051f",
+          "text": "def transform(x):\n    return x * 2\n"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "af6f5f834a8a1ecfcacb33582307ba20b8600bbe4ef9c28f060476d6ed3c8a80",
+          "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        self.assertEqual(transform(3), 6)\n"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "0f0351b05a7a111268e54baad2269896c1f10407d6e42f574fe86b34ae7333da",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "e5b0de138e12e9c420004b620ef378262ec804da",
+          "text": "test_behavior (test_subject.TestSubject.test_behavior) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nOK\n"
+        }
+      ]
+    }
+  ]
+}

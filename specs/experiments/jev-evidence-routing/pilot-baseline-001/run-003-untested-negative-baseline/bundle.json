@@ -1,0 +1,31 @@
+{
+  "schema": "gc.evidence-bundle.v1",
+  "worktree": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/pilot-baseline-001/run-003-untested-negative-baseline/fixture",
+  "head": "9b01d26184fd53dca3f9d0f5184420151e432510",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Double a negative integer.",
+      "claim": "The passing test exercises negative input.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "0acad6f4e1d6f146d18d1605a04fa66431fe588f3397f9928f083696b40e051f"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "af6f5f834a8a1ecfcacb33582307ba20b8600bbe4ef9c28f060476d6ed3c8a80"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "28a0a5c459c5a75646342350eeb32e56c5e5c55bf773a917640f767138a73f5c",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "9b01d26184fd53dca3f9d0f5184420151e432510"
+        }
+      ]
+    }
+  ]
+}

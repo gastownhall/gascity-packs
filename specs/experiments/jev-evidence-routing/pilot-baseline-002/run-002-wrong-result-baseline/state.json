@@ -1,0 +1,32 @@
+{
+  "head": "a2d4c897287ada7580b1968258c0ed11b43461d2",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Double a positive integer.",
+      "claim": "The implementation doubles a positive integer and its proof passes.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "bc8041a96faa034467110c5a115ac80d7c4633be03fb16c78602d06e5eeb4f4e",
+          "text": "def transform(x):\n    return x * 3\n"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "af6f5f834a8a1ecfcacb33582307ba20b8600bbe4ef9c28f060476d6ed3c8a80",
+          "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        self.assertEqual(transform(3), 6)\n"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "5c7e73484cacf2202e8e8bfd1bed5062e0d1e36d734a2071030a22de7bb4fab3",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 1,
+          "head": "a2d4c897287ada7580b1968258c0ed11b43461d2",
+          "text": "test_behavior (test_subject.TestSubject.test_behavior) ... FAIL\n\n======================================================================\nFAIL: test_behavior (test_subject.TestSubject.test_behavior)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/pilot-baseline-002/run-002-wrong-result-baseline/fixture/test_subject.py\", line 6, in test_behavior\n    self.assertEqual(transform(3), 6)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\nAssertionError: 9 != 6\n\n----------------------------------------------------------------------\nRan 1 test in 0.002s\n\nFAILED (failures=1)\n"
+        }
+      ]
+    }
+  ]
+}

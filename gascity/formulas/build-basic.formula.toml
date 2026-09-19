@@ -21,6 +21,18 @@ implementation_strategy = "drain"
 interaction_modes = ["interactive", "autonomous", "headless"]
 review_modes = ["report", "agent", "interactive"]
 
+[vars.jev_mode]
+description = "Optional advisory evidence checking: off or assist. Never changes review approval authority."
+default = "off"
+
+[vars.jev_model]
+description = "Pinned TypeSafe decision model for evidence assistance."
+default = "jev-1.13.0"
+
+[vars.jev_threshold]
+description = "Minimum Choice confidence before using a suggested route; lower confidence requires ordinary LLM review."
+default = "0.85"
+
 [[steps]]
 id = "requirements"
 title = "Generate requirements"
@@ -109,7 +121,7 @@ title = "Run starter implementation review"
 needs = ["summarize-implementation"]
 metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
 expand = "build-basic-review"
-expand_vars = { implementation_target = "{{implementation_target}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", jev_mode = "{{jev_mode}}", jev_model = "{{jev_model}}", jev_threshold = "{{jev_threshold}}" }
 description_file = "../assets/workflows/build-basic/review.md"
 
 [[steps]]

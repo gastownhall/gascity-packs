@@ -1,0 +1,15 @@
+[
+  "claude",
+  "-p",
+  "--safe-mode",
+  "--tools",
+  "",
+  "--no-session-persistence",
+  "--model",
+  "sonnet",
+  "--effort",
+  "low",
+  "--output-format",
+  "json",
+  "Reply with exactly OK."
+]

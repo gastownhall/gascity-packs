@@ -1042,3 +1042,17 @@ gc sling gc.run-operator github-issue-fix --formula \
 GitHub API calls go through wrapper scripts in
 `<pack-root>/assets/scripts/`. Formulas should call those wrappers, not `gh`
 directly, except when diagnosing wrapper failures.
+
+## Experimental Jev evidence assistance
+
+The default `build-basic` behavior is unchanged. Opt in with
+`--var jev_mode=assist`, optionally setting `jev_model` (default `jev-1.13.0`)
+and `jev_threshold` (default `0.85`). The test-evidence lane checks bounded,
+hash-bound evidence bundles with Jev and uses its suggestions to focus proof
+gathering and defect investigation. Existing review lanes and approval gates
+remain authoritative. Worker environments need `TYPESAFE_API_KEY`.
+
+See [the evidence contract](assets/jev-evidence.md) for bundle creation, failure
+behavior, and immutable decision artifacts. Live efficacy has not yet been
+established; [the experiment ledger](../specs/experiments/jev-evidence-routing/README.md)
+tracks the evaluation. Generative-model experiments use subscription CLIs.

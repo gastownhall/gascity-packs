@@ -1,0 +1,29 @@
+{
+  "at": "2026-09-19T17:26:39.654199+00:00",
+  "scope": "evidence-assessment",
+  "argv": [
+    "scripts/jev_ab.py",
+    "--split",
+    "pilot",
+    "--arms",
+    "baseline",
+    "--repetitions",
+    "1",
+    "--out",
+    "specs/experiments/jev-evidence-routing/pilot-baseline-002"
+  ],
+  "versions": {
+    "gc": "1.4.2",
+    "bd": "bd version 1.3.0 (Homebrew)",
+    "claude": "2.1.273 (Claude Code)"
+  },
+  "base": "05031f2c66e080865c379ff799c7369430560a8f",
+  "suite_sha256": "044ef422163410e84160d9bd5e883cd335d885ccf2f1b680280d248717bb39dd",
+  "helper_sha256": "b15d2047019d30086929337861c86a52f4979227af1d7aeb1438aea2bded4c4f",
+  "harness_sha256": "ed466b7481a5b7def9c6bac1e43de315c397058f9c1722f2c54ae76bc40409ce",
+  "question_version": "gc.evidence-question.v2",
+  "split": "pilot",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "threshold": 0.85
+}

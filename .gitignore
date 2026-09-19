@@ -18,3 +18,10 @@
 # Python test/runtime artifacts
 __pycache__/
 *.py[cod]
+
+# Disposable experimental cities may persist process environments. Keep local.
+/specs/experiments/jev-evidence-routing/**/workspace/
+/specs/experiments/jev-evidence-routing/**/pack-snapshot/
+
+# Fixture source and proof are retained in suite/state JSON; nested Git stores stay local.
+/specs/experiments/jev-evidence-routing/**/fixture/

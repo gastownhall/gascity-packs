@@ -1,0 +1,17 @@
+[
+  {
+    "repetition": 0,
+    "case": "positive",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "wrong-result",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "untested-negative",
+    "arm": "baseline"
+  }
+]
