@@ -11,7 +11,7 @@ versions. Native BB frontend changes and the listed richer v1 exclusions remain
 outside this pack change.
 
 The user's current Hillsboro goal can use Kimi through Claude's Anthropic
-adapter; this does not certify GC's native Kimi CLI, unavailable Codex capacity,
+adapter; this does not certify GC's native Kimi CLI, full Codex acceptance,
 stock-GC CI, or the separate macOS desktop/publication gates. Preserve those
 outstanding requirements rather than marking them passed. Current evidence:
 [Hillsboro qualification](../research/bb-hillsboro-verification-2026-09-19.md).
@@ -24,11 +24,14 @@ outstanding requirements rather than marking them passed. Current evidence:
 - [x] Enforce matching workspaces for project work; support personal global conversations in GC's own directory and explicit conversation-only project work.
 - [x] Stage and validate upgrades before activation, retain previous installations, and exercise rollback failures while preserving config and journals.
 - [x] Improve diagnostics and update user setup/recovery docs and compatibility declarations.
-- [ ] Verify actual BB/GC installation and UI with isolated state: global/rig agents, two turns, tools, approval/denial/repetition, busy follow-up, interrupt/release, restart/resume, failures/recovery, and mismatched workspaces.
+- [x] Verify actual BB/GC installation and UI with isolated Hillsboro state on Manifold Kimi through Claude CLI 2.1.270: all 40 cases pass, including global/rig agents, two turns, tools, approval/denial/repetition, busy follow-up, interrupt/release, restart/resume, failures/recovery, and mismatched workspaces. Exact provider `b17e84154ec3…` and patched GC `4f41f8285070…`.
 - [x] Extend build, fixture and CLI CI to the release matrix.
 - [x] Pass retained development Claude global/rig/underscore and Codex global/rig three-turn/tool/resume checks, with full forwarded-prompt and stable-identity evidence.
 - [ ] Pass actual Claude and Codex two-turn/tool acceptance in CI on GC 1.4.0 and 1.4.1; build/fixture success alone is insufficient.
-- [ ] Commit/push the completed change and publish a versioned pack through the repository's release workflow only after release gates pass.
+- [x] Commit/push the implementation for review: provider commit `0a9d6f0`, draft PR #455, and exact GC candidate `4f41f8285070`, draft PR #6481.
+- [x] Deploy the exact qualified artifacts to Hillsboro and pass read-only production verification of all 121 pins, service identities, installed provider, six role prompts, connections, bindings, and global/mapped-rig catalogs; preserve original state and submit no production test inference.
+- [ ] Complete the native Claude/Codex full matrices and separate macOS qualification.
+- [ ] Publish a versioned pack through the repository's release workflow only after release gates pass.
 
 ## Preservation and evidence
 
@@ -43,8 +46,10 @@ The full-product runner now declares 40 required cases and drives the released
 BB UI, including personal and mapped-project conversations, all six reasoning
 choices, fresh trust, manual permissions, visible errors, and process/transport
 faults. The earlier conversation smoke runner remains a narrower gate. The
-complete revised matrix has not passed; diagnostic subsets and supplemental
-proofs do not turn an incomplete run into a release certification.
+complete revised matrix passed all 40 cases on Hillsboro's Manifold Kimi route
+through Claude CLI 2.1.270 with the exact patched GC candidate. This scoped
+pass does not certify stock GC or replace native Claude/Codex and macOS gates;
+diagnostic subsets and supplemental proofs retain their incomplete status.
 
 Complete the gate in a retained, task-owned BB/GC environment. Pin the pack
 artifact hash, released BB build, GC commit and binary hash, and both runtime
@@ -311,7 +316,7 @@ the fixes ship in a supported GC release or compatibility is otherwise proved.
   a prompt could be submitted. No provider error was certified by that run.
   The ordering correction and remaining live cases are still in progress.
 
-- September 19–20 Hillsboro qualification remains IN PROGRESS. Completion-11
+- September 19–20 isolated Hillsboro qualification PASSED on the Kimi route. Completion-11
   pins BB 0.43.3, SDK 0.4.104, Claude CLI 2.1.270, and GC
   `4f41f8285070d3509dae94cd97509eb562f2f068`. Automated checks pass:
   193 Python checks without skips against raw released GC 1.4.2 and 29
@@ -339,7 +344,7 @@ the fixes ship in a supported GC release or compatibility is otherwise proved.
   three passes, one failure, and 36 unexecuted cases; the separate recovery
   ledger has two passes and 38 unexecuted cases. Stock-GC
   Claude/Codex CI, macOS desktop,
-  complete live acceptance, and publication gates remain open; current artifact
+  full native Claude/Codex acceptance, and registry publication gates remain open; current artifact
   hashes and retained evidence are in the
   [Hillsboro report](../research/bb-hillsboro-verification-2026-09-19.md).
 
@@ -381,8 +386,47 @@ the fixes ship in a supported GC release or compatibility is otherwise proved.
   The provider and GC artifacts are unchanged; the GC [source patch](../research/bb-hillsboro-evidence-2026-09-19/gc-1.4.2-bb-runtime-4f41f8285070.patch)
   remains available. The new focused approval-interruption fixture passed,
   leaving 39 cases unexecuted ([scrubbed summary](../research/bb-hillsboro-evidence-2026-09-19/completion11-approval-interrupt-summary.json)).
-  A fresh full matrix is running. The corresponding deployment proposal at
+  The fresh full matrix passed all 40 required cases, with zero failed,
+  blocked, or unexecuted ([full ledger](../research/bb-hillsboro-evidence-2026-09-19/completion11-summary.json)).
+  The corresponding deployment proposal at
   `/tmp/bb-gascity-deployment-review-ppt6o__j` has 14 proposed files and 121
-  artifact pins; its review checks are finishing, and it has not been
-  activated. Full acceptance, original compatibility gates, and publication
-  remain pending.
+  artifact pins. Deployment and read-only production verification passed. The scoped
+  Hillsboro Kimi gate is complete; original compatibility gates, complete
+  native Claude/Codex matrices, macOS, and registry publication remain open.
+
+- The exact GC candidate `4f41f8285070d3509dae94cd97509eb562f2f068`
+  now passes its normal pre-push command, `make test-fast-parallel`: eight
+  jobs passed, zero failed, exit 0 in 320 seconds. Runner corrections use
+  pinned OSS `bd` 1.3.0, a short disk-backed `TMPDIR`, real `HOME`, and isolated
+  test `GC_HOME`; no source changes were required. Normal pre-commit checks,
+  including full vet, passed for this exact commit. The
+  [normal-hook summary](../research/bb-hillsboro-evidence-2026-09-19/gc-normal-hook-summary.json)
+  records the result and preserved prior failures. Herdr was unavailable and
+  its capability-dependent coverage remains explicitly waived. This result
+  does not claim `make check`, the broader integration suite, Herdr coverage,
+  or registry publication; earlier failed ledgers remain unchanged. The exact
+  candidate was subsequently pushed with the normal hook passing, as recorded
+  in the [publication summary](../research/bb-hillsboro-evidence-2026-09-19/gc-publication-summary.json).
+
+- Review branches are published: provider commit `0a9d6f0` in
+  [draft PR #455](https://github.com/gastownhall/gascity-packs/pull/455) and
+  GC candidate `4f41f8285070` in
+  [draft PR #6481](https://github.com/gastownhall/gascity/pull/6481).
+  The [retained CI observation](../research/bb-hillsboro-evidence-2026-09-19/ci-35522219285-summary.json)
+  records three passing build/fixture/CLI jobs and six failed stock-GC live
+  jobs, with selected-host mismatches and native Claude HTTP 403 errors.
+  It does not establish a current Codex quota failure. Candidate jobs were
+  still running at that observation. The plan stays open for its remaining
+  release requirements.
+
+- Hillsboro deployment is complete. The
+  [production verification](../research/bb-hillsboro-evidence-2026-09-19/deployment-verification.json)
+  passes all 121 artifact pins, six conversation-role prompts, running GC
+  executable identity, BB 0.43.3 and 32 installed source files, connections,
+  bindings, global/mapped-rig catalogs, private Kimi permissions, suspended
+  duplicate aliases, and stable service identity. Both production services are
+  active; enterprise `bd` 1.1.0 is unchanged. The backup is
+  `/home/ubuntu/bb-gascity/backups/deployment-20260920T162634-hjxf6rqa`.
+  No inference was submitted against production user state; all 40 model and
+  fault cases ran in isolated state with the exact deployed artifacts. Public
+  release requirements remain open, so this plan is not archived.

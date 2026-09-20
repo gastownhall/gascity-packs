@@ -1,7 +1,8 @@
 # Hillsboro BB provider qualification
 
-Status: IN PROGRESS. This report records observed results, not a release
-certification. Production data and previous installations are preserved; all
+Status: HILLSBORO DEPLOYED AND VERIFIED — 40/40 isolated live cases on Manifold
+Kimi through Claude CLI 2.1.270, followed by passing production deployment
+verification. Broader release gates remain open. Production data and previous installations are preserved; all
 inference, fault injection, and installation tests use marked scratch roots.
 
 ## Artifacts
@@ -59,11 +60,21 @@ counts of 23 are historical; completion-9's 184 Python checks are also a prior
 snapshot result. All six affected GC package suites and each
 commit's formatting, lint, code generation, and full vet hooks pass.
 
-The broad GC baseline is not green. The identity work reproduced
-`TestCustomTypesCheck_MissingTypes` on unchanged release source under the same
-login-shell environment. A separate broad run also encountered unrelated
-probe timeouts and installed-CLI incompatibilities; its detached-probe failure
-passed alone. These do not count as a passing broad suite.
+The exact GC candidate now passes its normal pre-push command,
+`make test-fast-parallel`: eight jobs passed, zero failed, exit 0 in 320 seconds.
+The runner uses pinned OSS `bd` 1.3.0, a short disk-backed `TMPDIR`, the real
+`HOME`, and isolated test `GC_HOME`. Correcting that environment resolved the
+remaining failures without source changes. The normal pre-commit checks,
+including full vet, also passed for this exact commit. The retained
+[normal-hook summary](bb-hillsboro-evidence-2026-09-19/gc-normal-hook-summary.json)
+records the artifacts and earlier failure diagnoses.
+
+Earlier failed runs remain retained, including the enterprise-`bd` custom-type
+failure, long Unix-socket fixture paths, and the runner's invalid `HOME`
+override. They are not rewritten as passes. Herdr was unavailable and its
+capability-dependent coverage remains explicitly waived; this green fast-suite
+result does not establish Herdr coverage, `make check`, or the broader
+integration suite. Separate review-branch publication evidence appears below.
 
 ## Live observations
 
@@ -71,7 +82,7 @@ Evidence paths below are beneath `/home/ubuntu/bb-gascity/evidence` on Hillsboro
 
 | Route/run | Result |
 | --- | --- |
-| `completion11-kimi-full` | Fresh full matrix running with the clarified startup prompt. No overall pass yet. |
+| `completion11-kimi-full` | Passed: all 40 required cases, zero failed, blocked, or unexecuted. Exact provider and GC pins above; Manifold Kimi through Claude CLI 2.1.270. [Scrubbed full ledger](bb-hillsboro-evidence-2026-09-19/completion11-summary.json). |
 | `completion11-approval-interrupt` | Approval interruption passed in a new fixture; 39 cases unexecuted. This targeted proof does not replace the full matrix or rewrite snapshot-10. [Scrubbed summary](bb-hillsboro-evidence-2026-09-19/completion11-approval-interrupt-summary.json). |
 | `completion10-kimi-full` | Finished: 39 passed, one failed, zero blocked, zero unexecuted. Approval interruption failed before the user task reached GC: Kimi requested a directory listing during startup instead of reporting ready. The provider correctly failed closed on that pending interaction. The task's tool did not execute. Snapshot-11 clarifies startup instructions and reports failed startup immediately; this failed ledger remains unchanged. [Scrubbed summary](bb-hillsboro-evidence-2026-09-19/completion10-summary.json). |
 | `completion10-kimi-gc-lifecycle` | Three passed, 37 unexecuted: personal conversation, GC controller restart, and GC binary replacement. This focused subset is incomplete, not an aggregate pass. [Scrubbed summary](bb-hillsboro-evidence-2026-09-19/completion10-gc-lifecycle-summary.json). |
@@ -137,16 +148,50 @@ It does not change the cache, application clock, or stored catalog rows.
 
 ## Scope boundaries
 
-Deployment has not been activated. The completion-11 proposal at
-`/tmp/bb-gascity-deployment-review-ppt6o__j` contains 14 proposed files and
-121 artifact pins; its review checks are finishing. It uses the same pinned
-provider and GC artifacts and the clarified conversation startup instructions.
-Earlier proposals and all original state remain preserved; they are not
-evidence of a completed installation.
+The completion-11 proposal at `/tmp/bb-gascity-deployment-review-ppt6o__j`
+was applied, and its [production verifier passed](bb-hillsboro-evidence-2026-09-19/deployment-verification.json).
+It checked all 121 artifact pins, all six conversation-role prompts, the actual
+running GC executable and stable service identity, BB 0.43.3 and 32 installed
+provider source files, connections/bindings, and global and mapped-rig catalogs.
+Kimi's private directory is `0700` and files are `0600`; duplicate generated
+aliases are suspended. Both production services are active, and enterprise
+`bd` 1.1.0 is unchanged. The current roles are global `claude`, `codex`, and
+`kimi`, with their mapped rig counterparts; catalog presence alone does not
+certify every role's upstream model route.
 
-Hillsboro qualification uses the two authorized available model routes.
+Original configuration, BB state, and installations were backed up under
+`/home/ubuntu/bb-gascity/backups/deployment-20260920T162634-hjxf6rqa`.
+The production verifier was read-only: it submitted no inference, modified no
+user conversations, and did not alter BB's cache. The 40-case inference and
+fault matrix used isolated state with the exact deployed artifacts.
+
+The provider branch was pushed at `0a9d6f00fde18357264f98caf9838c73cc4d9620`
+with [draft PR #455](https://github.com/gastownhall/gascity-packs/pull/455).
+The exact GC candidate was pushed with its normal hook passing, with
+[draft PR #6481](https://github.com/gastownhall/gascity/pull/6481);
+the [publication evidence](bb-hillsboro-evidence-2026-09-19/gc-publication-summary.json)
+verifies the remote commit. These are review branches, not registry releases.
+
+The retained [CI observation](bb-hillsboro-evidence-2026-09-19/ci-35522219285-summary.json)
+for [run 35522219285](https://github.com/gastownhall/gascity-packs/actions/runs/35522219285)
+records three passing build/fixture/CLI jobs and six failing stock-GC live
+jobs. Those failures report selected-host mismatches and native Claude HTTP
+403 authentication errors; this run does not establish a Codex quota failure.
+Its candidate jobs were still running at the recorded observation. None of
+these stock-runtime gates is replaced by the Hillsboro Kimi pass.
+
+Hillsboro's complete matrix qualifies the Kimi route; native Claude has
+supplemental evidence and still lacks a complete matrix pass.
 Original stock-GC Claude/Codex CI gates, macOS desktop qualification, and public
 registry publication remain separate requirements. A patched GC pass cannot
 certify unchanged 1.4.0–1.4.2. Codex quota availability and the ZCode GLM5.3
 upstream billing failure are not fixed by the provider pack; ZCode's requested
 GLM5.3 default is retained.
+
+The [native model proof](bb-hillsboro-evidence-2026-09-19/completion11-model-proof.json)
+independently reads `kimi-for-coding` from the passing run's structured
+transcript and retains its hash without publishing the private transcript.
+After qualification, all 28 full-run sessions were verified idle and the
+owned test services stopped; production process identities and health remained
+unchanged. Cleanup audit: `obsolete-kimi11-stop-grcw8umc/actions.json` beneath
+the Hillsboro evidence directory. All test state and prior results are retained.

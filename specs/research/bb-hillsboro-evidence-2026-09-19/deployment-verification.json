@@ -1,0 +1,63 @@
+{
+  "status": "passed",
+  "checks": [
+    {
+      "name": "pinned artifacts and reviewed configuration",
+      "passed": true,
+      "artifact_pins": 121
+    },
+    {
+      "name": "reviewed startup prompts for all conversation roles",
+      "passed": true,
+      "roles": [
+        "claude",
+        "rig-claude",
+        "codex",
+        "rig-codex",
+        "kimi",
+        "rig-kimi"
+      ],
+      "prompt_sha256": "4578272e770f12b180aa7dc024298aacd8eb275ed6dc49ca81e530503dd9fefb"
+    },
+    {
+      "name": "running GC executable and service identity",
+      "passed": true,
+      "main_pid": 816249,
+      "version": "1.4.2-bb-runtime.4f41f8285070",
+      "commit": "4f41f8285070d3509dae94cd97509eb562f2f068",
+      "executable_sha256": "ab81653e1542c5422e1ac1405e3eddef781fdce6eae283b18670b4f01cccfdad"
+    },
+    {
+      "name": "BB version and complete installed plugin source identity",
+      "passed": true,
+      "bb_version": "0.43.3",
+      "source_file_count": 32,
+      "source_manifest_sha256": "6cca2cfcc3d3143675960d74909039bbeb5e18f4ada4995cd234a1b73f0ac04f"
+    },
+    {
+      "name": "connections, bindings, and native catalog routes",
+      "passed": true,
+      "global_agents": [
+        "claude",
+        "codex",
+        "kimi"
+      ],
+      "mapped_bindings_checked": 1,
+      "connections_checked": 1
+    },
+    {
+      "name": "live aliases and private Kimi configuration",
+      "passed": true,
+      "private_directory_mode": "0700",
+      "private_file_modes": "0600",
+      "aliases_suspended": true
+    },
+    {
+      "name": "stable service identity throughout verification",
+      "passed": true
+    }
+  ],
+  "inference_submitted": false,
+  "production_mutations": false,
+  "bb_cache_modified": false
+}

@@ -2,13 +2,33 @@
 
 The pack remains a release candidate. Current Hillsboro qualification uses
 BB 0.43.3, SDK 0.4.104, Claude CLI 2.1.270, and a patched GC 1.4.2 candidate.
-The complete live matrix has not passed. No registry release has been published.
+All 40 required live cases passed on the Manifold Kimi route through Claude
+CLI 2.1.270, with zero failed, blocked, or unexecuted cases. The
+[full snapshot-11 ledger](../../specs/research/bb-hillsboro-evidence-2026-09-19/completion11-summary.json)
+pins provider `b17e84154ec3…` and GC `4f41f8285070…`. Those artifacts are now
+deployed on Hillsboro, and [production verification passed](../../specs/research/bb-hillsboro-evidence-2026-09-19/deployment-verification.json):
+all 121 pins, six role prompts, live service identities, installed provider
+source, private configuration permissions, and global/mapped-rig catalogs.
+Both services are active; enterprise `bd` 1.1.0 remains unchanged. The verifier
+submitted no production inference; the full model matrix used isolated state.
+Original configuration and state were backed up. No registry release has been published.
 
 Completion-11 passes 193 Python checks without skips against released GC 1.4.2.
 The unchanged browser driver retains 29 passing browser/desktop guards.
 Its plugin is identical to completion-8, whose
 61 provider tests, TypeScript, and CLI build pass. The GC candidate remains
 `4f41f8285070d3509dae94cd97509eb562f2f068`.
+
+That exact GC commit also passes its normal pre-push command,
+`make test-fast-parallel`: eight jobs passed, zero failed, exit 0 in 320 seconds.
+Pinned OSS `bd` 1.3.0, a short disk-backed temporary directory, real `HOME`, and
+isolated test `GC_HOME` corrected the runner without source changes. Normal
+pre-commit checks, including full vet, passed. The
+[normal-hook summary](../../specs/research/bb-hillsboro-evidence-2026-09-19/gc-normal-hook-summary.json)
+retains this result and the earlier failed-run evidence. Herdr was unavailable;
+its capability-dependent checks remain explicitly waived. This is a passing
+normal fast suite; `make check`, broader integration, and Herdr coverage remain
+separate. Review-branch publication is recorded below.
 
 The complete snapshot-8 matrix finished with 37 passes and three failures.
 Those failures exposed a process-exit race with a dependent restart failure,
@@ -24,8 +44,8 @@ approval-interruption task could be submitted. The provider correctly failed
 closed, and the requested task's tool did not run. Snapshot-11 changes only
 three test files: explicit tool-free startup instructions and an approval-wait
 guard with its regression test. A focused new approval-interruption fixture
-passed, leaving 39 cases unexecuted in that subset. A fresh full matrix is
-running. No overall pass or deployment is claimed.
+passed, leaving 39 cases unexecuted in that subset. The subsequent fresh full
+matrix passed all 40 cases. The earlier failed ledgers remain unchanged.
 
 The scrubbed [full snapshot-10 ledger](../../specs/research/bb-hillsboro-evidence-2026-09-19/completion10-summary.json)
 and [targeted lifecycle ledger](../../specs/research/bb-hillsboro-evidence-2026-09-19/completion10-gc-lifecycle-summary.json)
@@ -44,6 +64,18 @@ failed turn settlement. A fresh native invalid-token diagnostic passed with a
 rendered error, one failed completion, and no retry.
 See the [current Hillsboro report](../../specs/research/bb-hillsboro-verification-2026-09-19.md)
 for pinned artifacts, evidence, and remaining work.
+
+The implementation is published for review in
+[provider draft PR #455](https://github.com/gastownhall/gascity-packs/pull/455)
+(commit `0a9d6f0`) and
+[GC draft PR #6481](https://github.com/gastownhall/gascity/pull/6481).
+The [GC publication record](../../specs/research/bb-hillsboro-evidence-2026-09-19/gc-publication-summary.json)
+confirms the exact candidate and a passing normal pre-push hook. Complete
+native Claude/Codex matrices, stock-GC CI, macOS qualification, and registry
+publication remain open. The retained [current CI observation](../../specs/research/bb-hillsboro-evidence-2026-09-19/ci-35522219285-summary.json)
+has three passing build jobs and six failed stock-runtime live jobs, with host
+selection mismatches and native Claude HTTP 403 errors. It contains no current
+Codex quota evidence; candidate jobs were still running at that observation.
 
 The sections below preserve the earlier qualification history. Their BB
 0.42.1 / GC 1.4.0–1.4.1 results do not certify the current installation or the
@@ -122,9 +154,11 @@ Two Codex turns that failed before the metadata correction were independently
 proved complete and recovered after releasing their idle BB leases. Their
 original request IDs were preserved and no prompt was resent. These results
 do not certify unchanged GC 1.4.0 or 1.4.1, abrupt process-loss recovery, or the
-remaining release gates. The full GC test baseline is also red; its broad
-pre-push check was explicitly bypassed for the review branch after focused
-tests and normal pre-commit checks passed. See the
+remaining release gates. At that earlier revision the GC baseline was red;
+its broad pre-push check was explicitly bypassed for that review branch after
+focused tests and normal pre-commit checks passed. This historical result does
+not describe the current candidate's passing normal fast suite recorded above.
+See the
 [GC validation report](../../specs/research/gc-runtime-fix-validation-2026-09-06.md)
 for the failures and limits.
 See [the evidence report](../../specs/research/bb-live-verification-2026-09-06.md)

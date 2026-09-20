@@ -1,0 +1,66 @@
+{
+  "checkedAtUTC": "2026-09-20T16:17:33.176661+00:00",
+  "commit": "4f41f8285070d3509dae94cd97509eb562f2f068",
+  "ref": "refs/heads/fix/bb-runtime-v1.4.2",
+  "pushExitCode": 0,
+  "pushExitCodeEvidence": "Remote-query stage executes only when git push returned 0; original result contains remoteQueryExitCode=2. Push porcelain confirms new branch and Done.",
+  "normalPrePushHook": {
+    "passedJobs": 8,
+    "failedJobs": 0,
+    "bypassed": false,
+    "retainedShardLogs": 8
+  },
+  "remoteVerified": true,
+  "remoteProof": {
+    "ref": "refs/heads/fix/bb-runtime-v1.4.2",
+    "sha": "4f41f8285070d3509dae94cd97509eb562f2f068",
+    "type": "commit",
+    "url": "https://api.github.com/repos/gastownhall/gascity/git/refs/heads/fix/bb-runtime-v1.4.2",
+    "verificationMethod": "GitHub REST GET git/ref using authenticated local gh"
+  },
+  "originalResultPreserved": true,
+  "originalResult": "/var/tmp/gc-publication-wjztgdb0/result.json",
+  "runnerVerificationBug": {
+    "queryExitCode": 2,
+    "reason": "remote.origin.url is multivalued: command-line -c appends HTTPS URL while ls-remote origin uses first configured local source path. Push used explicit remote.origin.pushurl HTTPS correctly.",
+    "actualQueryTarget": "/home/ubuntu/bb-gascity/releases/gascity-1.4.2-bb-trust-source",
+    "intendedTarget": "https://github.com/gastownhall/gascity.git",
+    "repair": "Use explicit HTTPS URL in ls-remote instead of origin"
+  },
+  "sourceUnchanged": true,
+  "duplicatePushPerformed": false,
+  "retainedLogHashes": [
+    {
+      "path": "/var/tmp/gc-publication-wjztgdb0/retained-shard-logs/gc-local-tests.3ncsbM--fsys-darwin-compile.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/var/tmp/gc-publication-wjztgdb0/retained-shard-logs/gc-local-tests.3ncsbM--unit-cmd-gc-1-of-6.log",
+      "sha256": "051ca096c11336a61c5166521fa5020c456d2b0808583083b21538dccdf981ed"
+    },
+    {
+      "path": "/var/tmp/gc-publication-wjztgdb0/retained-shard-logs/gc-local-tests.3ncsbM--unit-cmd-gc-2-of-6.log",
+      "sha256": "2c29e9a3711554c43913f7b8de7c7cef2ceffce2d6fb2529de1062fa82254f05"
+    },
+    {
+      "path": "/var/tmp/gc-publication-wjztgdb0/retained-shard-logs/gc-local-tests.3ncsbM--unit-cmd-gc-3-of-6.log",
+      "sha256": "7f4c255e312450077be3929f593174c951be55f81a74e29417371db7df9d162f"
+    },
+    {
+      "path": "/var/tmp/gc-publication-wjztgdb0/retained-shard-logs/gc-local-tests.3ncsbM--unit-cmd-gc-4-of-6.log",
+      "sha256": "9e38c8611d215f5ae84055cdb322bbf78842a25bc6e274dc3de654f639fc2337"
+    },
+    {
+      "path": "/var/tmp/gc-publication-wjztgdb0/retained-shard-logs/gc-local-tests.3ncsbM--unit-cmd-gc-5-of-6.log",
+      "sha256": "3bec15bb45d2a0feca99137ac2bc03cba722f996729b031da19274574d9af55a"
+    },
+    {
+      "path": "/var/tmp/gc-publication-wjztgdb0/retained-shard-logs/gc-local-tests.3ncsbM--unit-cmd-gc-6-of-6.log",
+      "sha256": "f8be3f2bf2dea3a1a4c2a1f692de15e06098ca9da7253e897ce6bb63461ca680"
+    },
+    {
+      "path": "/var/tmp/gc-publication-wjztgdb0/retained-shard-logs/gc-local-tests.3ncsbM--unit-core.log",
+      "sha256": "222c2aee96fe3c91e82ca02ad8f926f6cb6c1ff42afbcee309d55143a676bd9f"
+    }
+  ]
+}

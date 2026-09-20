@@ -18,10 +18,20 @@ bead work is assigned; BB preserves that configured behavior. The
 [conversation test role](./tests/conversation-agent-prompt.md) provides a minimal
 example suitable for an agent's `prompt.md`.
 
-**Release status:** the pack is still a release candidate; the complete live
-product matrix has not passed. GC 1.4.2 trust handling, native session identity,
-approval menus, and API-error projection have source fixes under verification. A stock GC 1.4.2
-end-to-end pass has not been established.
+**Release status:** the pack remains a release candidate. All **40 live product
+cases passed on Hillsboro** using Manifold's **Kimi for Coding through Claude
+CLI 2.1.270**, BB 0.43.3, and patched GC `1.4.2-bb-runtime.4f41f8285070`.
+Those exact artifacts are **deployed and verified on Hillsboro**, with global
+and mapped-rig Kimi roles available alongside the existing Claude/Codex roles.
+The [deployment verification](../specs/research/bb-hillsboro-evidence-2026-09-19/deployment-verification.json)
+checks installed artifacts, configuration, catalogs, and service health;
+model inference was tested in isolated state, not user conversations.
+The tested provider source hash is `b17e84154ec3…`; the full pins and
+[passing ledger](../specs/research/bb-hillsboro-evidence-2026-09-19/completion11-summary.json)
+are retained. Stock-GC CI, the complete native Claude and Codex matrices,
+macOS qualification, and registry publication remain separate open gates.
+Drafts: [provider pack #455](https://github.com/gastownhall/gascity-packs/pull/455)
+and [GC runtime corrections #6481](https://github.com/gastownhall/gascity/pull/6481).
 
 Historical GC 1.4.0/1.4.1 compatibility checks remain visible. Live testing found
 that GC 1.4.1 reports Codex transcript activity as `unknown`, so the bridge cannot
@@ -70,11 +80,11 @@ BB cache. Wait for the ordinary refresh before selecting a new agent there.
 
 ## Prerequisites and topology
 
-- Gas City **1.4.2**, with a running supervisor and configured agents that can
+- Gas City **1.4.2 with the pinned runtime corrections above**, with a running supervisor and configured agents that can
   create sessions and produce a reliable structured transcript.
 - BB **0.43.3**, using `@get-bb/plugin-sdk` **0.4.104**.
   The plugin declares BB compatibility `>=0.43.3 <0.44` and SDK compatibility
-  `>=0.4.104 <0.5`; live qualification is still pending.
+  `>=0.4.104 <0.5`; the passing live matrix pins the versions above.
 - Node.js **22+**, npm, and the BB CLI.
 - For the initial setup below, the BB server, BB execution host, Gas City, and
   pack checkout are on the same machine and run as the same operator. This
@@ -87,11 +97,11 @@ in `[daemon].observe_paths`, retaining existing entries. For native Manifold
 launches, the Claude projects path must match the launch configuration's
 `session_root`; acceptance tests use separate homes and transcript roots.
 
-Hillsboro qualification covers Manifold's Claude route and **Kimi for Coding**
-through the stock Claude CLI's Anthropic protocol. Both use GC's Claude adapter.
-Native Kimi CLI integration and the original Codex acceptance gate remain
-separate from that model-route coverage. See [verification](./docs/verification.md)
-for current evidence and unresolved gates.
+Hillsboro's complete qualification covers **Kimi for Coding** through the stock
+Claude CLI's Anthropic protocol and GC's Claude adapter. Native Manifold Claude
+has supplemental passing checks, not a complete matrix pass. Native Kimi CLI
+integration and the original Codex acceptance gate remain separate. See
+[verification](./docs/verification.md) for evidence and remaining gates.
 
 The adapter runs inside BB's host-side provider infrastructure. There is no
 new HTTP service, ACP server, or background process started by importing this

@@ -1,0 +1,334 @@
+{
+  "observed_at_utc": "2026-09-20T16:22:20.610236+00:00",
+  "run_id": 35522219285,
+  "head_sha": "0a9d6f00fde18357264f98caf9838c73cc4d9620",
+  "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285",
+  "run_status": "in_progress",
+  "jobs": [
+    {
+      "databaseId": 106108144945,
+      "name": "Full browser E2E codex (GC candidate, Linux)",
+      "status": "in_progress",
+      "conclusion": "",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108144945",
+      "running_steps": [
+        "Run the full required browser and model matrix in one retained installation"
+      ]
+    },
+    {
+      "databaseId": 106108145040,
+      "name": "Build, fixtures and CLI (1.4.0)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145040",
+      "running_steps": []
+    },
+    {
+      "databaseId": 106108145048,
+      "name": "Build, fixtures and CLI (1.4.1)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145048",
+      "running_steps": []
+    },
+    {
+      "databaseId": 106108145051,
+      "name": "Full browser E2E claude (GC candidate, Linux)",
+      "status": "in_progress",
+      "conclusion": "",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145051",
+      "running_steps": [
+        "Run the full required browser and model matrix in one retained installation"
+      ]
+    },
+    {
+      "databaseId": 106108145055,
+      "name": "Live claude conversations (GC 1.4.2)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145055",
+      "running_steps": []
+    },
+    {
+      "databaseId": 106108145069,
+      "name": "Build, fixtures and CLI (1.4.2)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145069",
+      "running_steps": []
+    },
+    {
+      "databaseId": 106108145088,
+      "name": "Live claude conversations (GC 1.4.1)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145088",
+      "running_steps": []
+    },
+    {
+      "databaseId": 106108145089,
+      "name": "Live codex conversations (GC 1.4.1)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145089",
+      "running_steps": []
+    },
+    {
+      "databaseId": 106108145142,
+      "name": "Live codex conversations (GC 1.4.2)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145142",
+      "running_steps": []
+    },
+    {
+      "databaseId": 106108145163,
+      "name": "Live claude conversations (GC 1.4.0)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145163",
+      "running_steps": []
+    },
+    {
+      "databaseId": 106108145194,
+      "name": "Live codex conversations (GC 1.4.0)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/job/106108145194",
+      "running_steps": []
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 10609186391,
+      "name": "bb-live-codex-gc-1.4.1",
+      "size_in_bytes": 1639,
+      "digest": "sha256:402217fdf487c9c1b0208a570d190af006a12a1bc81b7890aa9c22fcaa0c5c6c",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/artifacts/10609186391",
+      "runtime": "codex",
+      "versions": {
+        "gc": "1.4.1",
+        "bb": "0.43.3",
+        "codex": "codex-cli 0.153.4"
+      },
+      "coreRelease": "1.4.1",
+      "scopes": [
+        {
+          "scope": "global",
+          "failure": "BB selected a different host",
+          "completed_turn_count": 0,
+          "assertions": [],
+          "native_diagnostics": null
+        },
+        {
+          "scope": "rig",
+          "failure": "BB selected a different host",
+          "completed_turn_count": 0,
+          "assertions": [],
+          "native_diagnostics": null
+        }
+      ]
+    },
+    {
+      "id": 10609136640,
+      "name": "bb-live-claude-gc-1.4.0",
+      "size_in_bytes": 1909,
+      "digest": "sha256:132c03cde71a883625d152be357cc5b3202633a1581b2d1eef1ecd09403dec48",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/artifacts/10609136640",
+      "runtime": "claude",
+      "versions": {
+        "gc": "1.4.0",
+        "bb": "0.43.3",
+        "claude": "2.1.263 (Claude Code)"
+      },
+      "coreRelease": "1.4.0",
+      "scopes": [
+        {
+          "scope": "global",
+          "failure": "BB selected a different host",
+          "completed_turn_count": 0,
+          "assertions": [],
+          "native_diagnostics": null
+        },
+        {
+          "scope": "rig",
+          "failure": "Fresh final assistant message did not match the requested markers",
+          "completed_turn_count": 0,
+          "assertions": [
+            "exact-provider-project-host-workspace"
+          ],
+          "native_diagnostics": {
+            "status": "matched",
+            "matching_records": 3,
+            "classifications": [
+              {
+                "is_api_error_message": true,
+                "error": "authentication_failed",
+                "http_status": 403
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 10609076693,
+      "name": "bb-live-claude-gc-1.4.2",
+      "size_in_bytes": 1918,
+      "digest": "sha256:478359cc735f38184bfd672ade81add443219184dc92bebb5d90f1e7ee099131",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/artifacts/10609076693",
+      "runtime": "claude",
+      "versions": {
+        "gc": "1.4.2",
+        "bb": "0.43.3",
+        "claude": "2.1.263 (Claude Code)"
+      },
+      "coreRelease": "1.4.2",
+      "scopes": [
+        {
+          "scope": "global",
+          "failure": "BB selected a different host",
+          "completed_turn_count": 0,
+          "assertions": [],
+          "native_diagnostics": null
+        },
+        {
+          "scope": "rig",
+          "failure": "Fresh final assistant message did not match the requested markers",
+          "completed_turn_count": 0,
+          "assertions": [
+            "exact-provider-project-host-workspace"
+          ],
+          "native_diagnostics": {
+            "status": "matched",
+            "matching_records": 4,
+            "classifications": [
+              {
+                "is_api_error_message": true,
+                "error": "authentication_failed",
+                "http_status": 403
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 10608856969,
+      "name": "bb-live-codex-gc-1.4.0",
+      "size_in_bytes": 1635,
+      "digest": "sha256:bc13436d52743b744daa2f40ba24c71bc5b936d191239850f63f24b2af94a53f",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/artifacts/10608856969",
+      "runtime": "codex",
+      "versions": {
+        "gc": "1.4.0",
+        "bb": "0.43.3",
+        "codex": "codex-cli 0.153.4"
+      },
+      "coreRelease": "1.4.0",
+      "scopes": [
+        {
+          "scope": "global",
+          "failure": "BB selected a different host",
+          "completed_turn_count": 0,
+          "assertions": [],
+          "native_diagnostics": null
+        },
+        {
+          "scope": "rig",
+          "failure": "BB selected a different host",
+          "completed_turn_count": 0,
+          "assertions": [],
+          "native_diagnostics": null
+        }
+      ]
+    },
+    {
+      "id": 10608777184,
+      "name": "bb-live-codex-gc-1.4.2",
+      "size_in_bytes": 1635,
+      "digest": "sha256:292b49455f38c5f4b5116326054d4ecf15c87a52bc1b68927c51d8060a1c9dec",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/artifacts/10608777184",
+      "runtime": "codex",
+      "versions": {
+        "gc": "1.4.2",
+        "bb": "0.43.3",
+        "codex": "codex-cli 0.153.4"
+      },
+      "coreRelease": "1.4.2",
+      "scopes": [
+        {
+          "scope": "global",
+          "failure": "BB selected a different host",
+          "completed_turn_count": 0,
+          "assertions": [],
+          "native_diagnostics": null
+        },
+        {
+          "scope": "rig",
+          "failure": "BB selected a different host",
+          "completed_turn_count": 0,
+          "assertions": [],
+          "native_diagnostics": null
+        }
+      ]
+    },
+    {
+      "id": 10608481751,
+      "name": "bb-live-claude-gc-1.4.1",
+      "size_in_bytes": 2085,
+      "digest": "sha256:c8f6392e344cae5eaad087d6123d0e05f03338f20619d999b6d2b3995321ec32",
+      "url": "https://github.com/gastownhall/gascity-packs/actions/runs/35522219285/artifacts/10608481751",
+      "runtime": "claude",
+      "versions": {
+        "gc": "1.4.1",
+        "bb": "0.43.3",
+        "claude": "2.1.263 (Claude Code)"
+      },
+      "coreRelease": "1.4.1",
+      "scopes": [
+        {
+          "scope": "global",
+          "failure": "Fresh final assistant message did not match the requested markers",
+          "completed_turn_count": 0,
+          "assertions": [
+            "personal-global-separate-bb-workspace"
+          ],
+          "native_diagnostics": {
+            "status": "matched",
+            "matching_records": 2,
+            "classifications": [
+              {
+                "is_api_error_message": true,
+                "error": "authentication_failed",
+                "http_status": 403
+              }
+            ]
+          }
+        },
+        {
+          "scope": "rig",
+          "failure": "Fresh final assistant message did not match the requested markers",
+          "completed_turn_count": 0,
+          "assertions": [
+            "exact-provider-project-host-workspace"
+          ],
+          "native_diagnostics": {
+            "status": "matched",
+            "matching_records": 4,
+            "classifications": [
+              {
+                "is_api_error_message": true,
+                "error": "authentication_failed",
+                "http_status": 403
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "host_failure_limit": "CLI verifies destination immediately after spawn and treats absent environment as host mismatch. Browser harness waits for environmentId. Uploaded safe evidence omits actual/expected host IDs and environment snapshots; timing race is plausible but not proven per failed job.",
+  "current_codex_quota_evidence": false,
+  "private_logs_or_transcripts_included": false
+}
