@@ -1,0 +1,27 @@
+{
+  "elapsed_seconds": 10.301826082868502,
+  "returncode": 0,
+  "totals": {
+    "inputTokens": 2,
+    "outputTokens": 29,
+    "cacheReadInputTokens": 4547,
+    "cacheCreationInputTokens": 2716,
+    "totalTokens": 7294
+  },
+  "models": {
+    "claude-sonnet-5": {
+      "inputTokens": 2,
+      "outputTokens": 29,
+      "cacheReadInputTokens": 4547,
+      "cacheCreationInputTokens": 2716,
+      "webSearchRequests": 0,
+      "costUSD": 0.0120674,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 0,
+      "canonicalModel": "claude-sonnet-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  }
+}

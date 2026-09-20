@@ -1,0 +1,31 @@
+{
+  "case_id": "rank-foreign-key",
+  "arm": "jev",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 708,
+    "output_tokens": 58
+  },
+  "gold_top_ids": [
+    "C1"
+  ],
+  "state_sha256": "610e9eedb727961e09ece84da8ecfa960c3cb42d0b5a569969d939cdfc0fa310",
+  "status": "completed",
+  "ranked_candidate_ids": [
+    "C1",
+    "C2",
+    "C3"
+  ],
+  "source_preserved": true,
+  "top1_correct": true,
+  "elapsed_seconds": 0.506389708025381
+}

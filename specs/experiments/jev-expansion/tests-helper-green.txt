@@ -1,0 +1,15 @@
+......F...........................                                       [100%]
+=================================== FAILURES ===================================
+___________ test_oversize_duplicate_ids_and_model_drift_are_rejected ___________
+
+    def test_oversize_duplicate_ids_and_model_drift_are_rejected():
+        with pytest.raises(ValueError):
+            tasks.prepare('findings', {'findings': [FINDINGS['findings'][0]] * 2})
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+gascity/tests/test_jev_tasks.py:97: Failed
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_tasks.py::test_oversize_duplicate_ids_and_model_drift_are_rejected
+1 failed, 33 passed in 1.02s

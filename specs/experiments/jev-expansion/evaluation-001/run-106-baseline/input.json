@@ -1,0 +1,5 @@
+{
+  "command": "go test ./...",
+  "output": "./parser.go:42: undefined: parseRecord",
+  "context": "The changed product file calls an undefined function; dependency resolution succeeded."
+}

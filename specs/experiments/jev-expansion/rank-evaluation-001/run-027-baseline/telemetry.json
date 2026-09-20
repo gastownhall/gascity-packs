@@ -1,0 +1,25 @@
+{
+  "totals": {
+    "inputTokens": 2,
+    "outputTokens": 151,
+    "cacheReadInputTokens": 2473,
+    "cacheCreationInputTokens": 2423,
+    "totalTokens": 5049
+  },
+  "models": {
+    "claude-opus-5": {
+      "inputTokens": 2,
+      "outputTokens": 151,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2423,
+      "webSearchRequests": 0,
+      "costUSD": 0.0292515,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 124,
+      "canonicalModel": "claude-opus-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "head": "b479a826dc39bebc6821592759845d6ec5996f60",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Remove surrounding whitespace.",
+      "claim": "The passing test verifies whitespace removal.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "6609800e6f8ab6ad3102b770f0831a0d4018ce6f3248f7c3543dae78f59ad758",
+          "text": "def transform(x):\n    return x.strip()\n"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "54004f3b8a41f015fc2a519cd55a8b3492d5d2bd8d77b7e1b8b45330b0e98906",
+          "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    @unittest.skip(\"not implemented\")\n    def test_behavior(self):\n        self.assertEqual(transform(\"  a  \"), \"a\")\n"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "b8cf9fd48c867f424074446f8afed84107d2ccc3893e615eedbb277be47d6008",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "b479a826dc39bebc6821592759845d6ec5996f60",
+          "text": "test_behavior (test_subject.TestSubject.test_behavior) ... skipped 'not implemented'\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nOK (skipped=1)\n"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "at": "2026-09-20T23:12:38.023303+00:00",
+  "status": "passed",
+  "rank_attempts": 36,
+  "rank_claude_calls": 18,
+  "rank_jev_calls": 18,
+  "evidence_attempts": 28,
+  "evidence_failed_attempts": 1,
+  "evidence_claude_calls": 16,
+  "evidence_jev_calls": 14,
+  "raw_usage_reconciled": true,
+  "candidate_source_preserved": true,
+  "key_absent": true,
+  "files_scanned": 2709,
+  "host_load_average": [
+    5.7880859375,
+    6.78955078125,
+    7.34619140625
+  ]
+}

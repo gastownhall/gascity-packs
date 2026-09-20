@@ -1,0 +1,31 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "candidate_0": {
+      "type": "choice",
+      "choice": "same_issue",
+      "confidence": 1.0,
+      "probabilities": {
+        "unclear": 0.0,
+        "same_issue": 1.0,
+        "related": 0.0,
+        "unrelated": 0.0
+      }
+    },
+    "candidate_1": {
+      "type": "choice",
+      "choice": "unrelated",
+      "confidence": 0.85,
+      "probabilities": {
+        "unclear": 0.0,
+        "same_issue": 0.0,
+        "related": 0.11,
+        "unrelated": 0.89
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 718,
+    "output_tokens": 102
+  }
+}

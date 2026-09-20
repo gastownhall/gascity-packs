@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-20T23:10:59.985431+00:00",
+  "status": "passed",
+  "attempts": 160,
+  "claude_calls": 124,
+  "jev_calls": 80,
+  "failed_attempts": 0,
+  "cohorts": [
+    {
+      "cohort": "pilot-001",
+      "manifest_sha256": "e38291eb8c292ed3da49cd18954af07b8f9ea83fa6270612bd544a8551cd56f5",
+      "attempts": 16
+    },
+    {
+      "cohort": "evaluation-001",
+      "manifest_sha256": "e8d4306fd5b18db669b5a188f8f1e608f5784a8f3334b6e8993daf3a152dcc94",
+      "attempts": 128
+    },
+    {
+      "cohort": "report-001",
+      "manifest_sha256": "d539a3f766b86d98ce38d437fcc3c60b19f7b72b177037161a0529c2fce61635",
+      "attempts": 16
+    }
+  ],
+  "raw_usage_reconciled": true,
+  "matched_state_and_questions": true,
+  "ground_truth_excluded_from_requests": true,
+  "known_credential_absent": true,
+  "files_scanned": 3540,
+  "host_load_average": [
+    6.673828125,
+    7.21240234375,
+    7.5478515625
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "case_id": "findings-proof-duplicates",
+  "task": "findings",
+  "arm": "baseline",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:51:27.901031+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 190,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2517,
+      "totalTokens": 5182
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 190,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2517,
+        "webSearchRequests": 0,
+        "costUSD": 0.0311665,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 143,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "raw_answers": null,
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "a1b178d2c7315fd91ded4968ad79f8dca8a7be669d19f14ba4324010c590b2cf",
+  "status": "completed",
+  "answers": {
+    "finding_0": "missing_evidence",
+    "finding_1": "missing_evidence",
+    "pair_0_1": "same"
+  },
+  "correct": 3,
+  "questions": 3,
+  "quality_pass": true,
+  "elapsed_seconds": 13.457385875051841
+}

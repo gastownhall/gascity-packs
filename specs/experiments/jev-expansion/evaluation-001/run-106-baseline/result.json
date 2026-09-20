@@ -1,0 +1,45 @@
+{
+  "case_id": "failure-compile",
+  "task": "failure",
+  "arm": "baseline",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:48:30.421678+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 172,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2049,
+      "totalTokens": 4696
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 172,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2049,
+        "webSearchRequests": 0,
+        "costUSD": 0.0260365,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 155,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "raw_answers": null,
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "17ec430e199b5fe3919616bb2dd3ad7130482579606d6bdeaa05db779174710b",
+  "status": "completed",
+  "answers": {
+    "failure": "product"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 9.96254187496379
+}

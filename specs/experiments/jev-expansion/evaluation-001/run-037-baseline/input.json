@@ -1,0 +1,5 @@
+{
+  "command": "make verify",
+  "output": "No captured output is available.",
+  "context": "A worker says tests passed; command execution and exit status were not recorded."
+}

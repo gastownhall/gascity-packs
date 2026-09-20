@@ -1,0 +1,45 @@
+{
+  "case_id": "kind-pilot-gascity-6435",
+  "task": "kind",
+  "arm": "baseline",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:27:11.547640+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 128,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2415,
+      "totalTokens": 5018
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 128,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2415,
+        "webSearchRequests": 0,
+        "costUSD": 0.0285965,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 110,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "raw_answers": null,
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "62ad9090ed686d66464abb44aba79abaf199e6efd7fc2d275aea6295a0c5ad25",
+  "status": "completed",
+  "answers": {
+    "kind": "bug"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 13.059571249876171
+}

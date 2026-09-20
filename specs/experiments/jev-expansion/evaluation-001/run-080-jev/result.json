@@ -1,0 +1,45 @@
+{
+  "case_id": "findings-mixed",
+  "task": "findings",
+  "arm": "jev",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:44:38.606116+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 1443,
+    "output_tokens": 287
+  },
+  "raw_answers": {
+    "finding_0": "required_fix",
+    "pair_0_1": "different",
+    "pair_0_2": "same",
+    "finding_1": "missing_evidence",
+    "pair_1_2": "different",
+    "finding_2": "required_fix"
+  },
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "39b0213b9c18f7e11ac50b8316ccaf1a61f75311e56d99a1953ef4d5e37c5a92",
+  "status": "completed",
+  "answers": {
+    "finding_0": "required_fix",
+    "pair_0_1": "different",
+    "pair_0_2": "same",
+    "finding_1": "missing_evidence",
+    "pair_1_2": "different",
+    "finding_2": "required_fix"
+  },
+  "correct": 6,
+  "questions": 6,
+  "quality_pass": true,
+  "elapsed_seconds": 0.5798326670192182
+}

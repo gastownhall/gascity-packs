@@ -1,0 +1,30 @@
+{
+  "case_id": "rank-pilot-export",
+  "arm": "jev",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 557,
+    "output_tokens": 40
+  },
+  "gold_top_ids": [
+    "C1"
+  ],
+  "state_sha256": "cb16b82a30f6be89129da9c0cc2160afc54ddac874ad1efe880f6205dfd1ad7a",
+  "status": "completed",
+  "ranked_candidate_ids": [
+    "C1",
+    "C2"
+  ],
+  "source_preserved": true,
+  "top1_correct": true,
+  "elapsed_seconds": 0.6446375420782715
+}

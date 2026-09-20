@@ -1,0 +1,12 @@
+{
+  "answers": {
+    "candidate_0": "unclear"
+  },
+  "report": [
+    {
+      "id": "candidate_0",
+      "choice": "unclear",
+      "quote": "No command, expected behavior or failure details are supplied."
+    }
+  ]
+}

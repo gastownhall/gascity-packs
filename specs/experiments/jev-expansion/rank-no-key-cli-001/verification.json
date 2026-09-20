@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "mode": "auto",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "mode": "off",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "mode": "assist",
+      "status": "failed",
+      "returncode": 1
+    }
+  ]
+}

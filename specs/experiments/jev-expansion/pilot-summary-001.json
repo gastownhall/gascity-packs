@@ -1,0 +1,273 @@
+{
+  "cohort": "pilot-001",
+  "pipeline": "decision",
+  "planned_attempts": 16,
+  "finished_attempts": 16,
+  "tasks": {
+    "duplicates": {
+      "unique_cases": 2,
+      "paired_attempts": 2,
+      "arms": {
+        "baseline": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 4,
+          "questions": 4,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 367,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 3811,
+            "totalTokens": 9128
+          },
+          "jev_tokens": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 25.986758375074714,
+          "median_seconds": 12.993379187537357
+        },
+        "jev": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 4,
+          "questions": 4,
+          "quality_pass_cases": 2,
+          "fallback_cases": 1,
+          "fallback_questions": 1,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 2,
+            "outputTokens": 275,
+            "cacheReadInputTokens": 2473,
+            "cacheCreationInputTokens": 1773,
+            "totalTokens": 4523
+          },
+          "jev_tokens": {
+            "input_tokens": 1438,
+            "output_tokens": 202
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 11.396889791358262,
+          "median_seconds": 5.698444895679131
+        }
+      },
+      "raw_agreement": 4,
+      "final_agreement": 4,
+      "paired_questions": 4,
+      "baseline_correct_treatment_wrong": 0,
+      "treatment_correct_baseline_wrong": 0,
+      "claude_token_reduction": 0.5044916739702016,
+      "time_reduction": 0.5614347266071621,
+      "speed_ratio": 2.280162294346242
+    },
+    "failure": {
+      "unique_cases": 2,
+      "paired_attempts": 2,
+      "arms": {
+        "baseline": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 2,
+          "questions": 2,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 237,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 3628,
+            "totalTokens": 8815
+          },
+          "jev_tokens": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 35.17923350003548,
+          "median_seconds": 17.58961675001774
+        },
+        "jev": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 2,
+          "questions": 2,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "totalTokens": 0
+          },
+          "jev_tokens": {
+            "input_tokens": 1062,
+            "output_tokens": 98
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 1.0774134581442922,
+          "median_seconds": 0.5387067290721461
+        }
+      },
+      "raw_agreement": 2,
+      "final_agreement": 2,
+      "paired_questions": 2,
+      "baseline_correct_treatment_wrong": 0,
+      "treatment_correct_baseline_wrong": 0,
+      "claude_token_reduction": 1.0,
+      "time_reduction": 0.9693735948469939,
+      "speed_ratio": 32.65156308760728
+    },
+    "findings": {
+      "unique_cases": 2,
+      "paired_attempts": 2,
+      "arms": {
+        "baseline": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 6,
+          "questions": 6,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 432,
+            "cacheReadInputTokens": 2473,
+            "cacheCreationInputTokens": 6430,
+            "totalTokens": 9339
+          },
+          "jev_tokens": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 18.946636750129983,
+          "median_seconds": 9.473318375064991
+        },
+        "jev": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 6,
+          "questions": 6,
+          "quality_pass_cases": 2,
+          "fallback_cases": 2,
+          "fallback_questions": 4,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 393,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 3980,
+            "totalTokens": 9323
+          },
+          "jev_tokens": {
+            "input_tokens": 1789,
+            "output_tokens": 304
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 19.711938040796667,
+          "median_seconds": 9.855969020398334
+        }
+      },
+      "raw_agreement": 6,
+      "final_agreement": 6,
+      "paired_questions": 6,
+      "baseline_correct_treatment_wrong": 0,
+      "treatment_correct_baseline_wrong": 0,
+      "claude_token_reduction": 0.0017132455294999183,
+      "time_reduction": -0.040392461245737143,
+      "speed_ratio": 0.9611757459320953
+    },
+    "kind": {
+      "unique_cases": 2,
+      "paired_attempts": 2,
+      "arms": {
+        "baseline": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 2,
+          "questions": 2,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 233,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 5902,
+            "totalTokens": 11085
+          },
+          "jev_tokens": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 26.026741832727566,
+          "median_seconds": 13.013370916363783
+        },
+        "jev": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 2,
+          "questions": 2,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "totalTokens": 0
+          },
+          "jev_tokens": {
+            "input_tokens": 2997,
+            "output_tokens": 108
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 1.6494407502468675,
+          "median_seconds": 0.8247203751234338
+        }
+      },
+      "raw_agreement": 2,
+      "final_agreement": 2,
+      "paired_questions": 2,
+      "baseline_correct_treatment_wrong": 0,
+      "treatment_correct_baseline_wrong": 0,
+      "claude_token_reduction": 1.0,
+      "time_reduction": 0.936625154203022,
+      "speed_ratio": 15.779131095695442
+    }
+  },
+  "mismatches": []
+}

@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "finding_0": "required_fix",
+    "pair_0_1": "different",
+    "pair_0_2": "same",
+    "finding_1": "missing_evidence",
+    "pair_1_2": "different",
+    "finding_2": "required_fix"
+  },
+  "report": [
+    {
+      "id": "finding_0",
+      "choice": "required_fix",
+      "quote": "archive() deletes the prior record; preserve it instead."
+    },
+    {
+      "id": "pair_0_1",
+      "choice": "different",
+      "quote": "Run the missing concurrency proof"
+    },
+    {
+      "id": "pair_0_2",
+      "choice": "same",
+      "quote": "preserve the record"
+    },
+    {
+      "id": "finding_1",
+      "choice": "missing_evidence",
+      "quote": "Run the missing concurrency proof before claiming the new archive operation is race-free."
+    },
+    {
+      "id": "pair_1_2",
+      "choice": "different",
+      "quote": "before claiming the new archive operation is race-free"
+    },
+    {
+      "id": "finding_2",
+      "choice": "required_fix",
+      "quote": "The earlier record is deleted during archiving despite required audit retention"
+    }
+  ]
+}

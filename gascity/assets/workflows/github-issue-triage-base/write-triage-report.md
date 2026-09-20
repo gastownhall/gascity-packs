@@ -44,14 +44,24 @@ Behavior customization:
 
 Optional kind classification (after the reuse no-op and rubric checks above):
 
-- Mode: {{jev_kind_mode}}. With `off`, continue ordinary triage. With `assist`,
-  read `{{pack_root}}/assets/jev-kind.md` and follow its workflow integration
+- Mode: {{jev_kind_mode}}. With `off`, continue ordinary triage. With `auto` or `assist`,
+  read `{{pack_root}}/assets/jev-decisions.md` and follow its workflow integration
   steps using the existing snapshot and triage directory. Model:
   {{jev_kind_model}}; confidence threshold: {{jev_kind_threshold}}; label map:
   {{jev_kind_labels_path}} (empty uses the default). Record an invalid mode as
   a configuration error and use ordinary triage.
 - This optional decision supplies kind only. Continue the full investigation,
   verdict, priority, and human-gate policy below.
+
+Duplicate candidate ranking: `jev_duplicates_mode={{jev_duplicates_mode}}`.
+When `auto` or `assist`, use `jev_rank.py` and follow the duplicate-ordering contract in
+`{{pack_root}}/assets/jev-decisions.md`. Use the current issue snapshot and the
+repository search shortlist, model `{{jev_decision_model}}`, and a new directory under
+`gc.github.triage_dir/jev/duplicates/`. In auto mode without a configured key,
+continue ordinary duplicate investigation without extra retrieval for Jev.
+Inspect ranked candidates to confirm a shared trigger or requirement before
+choosing `duplicate`; keep uncertain candidates and record fallback reasons.
+With `off`, use ordinary duplicate investigation.
 
 Investigate the issue and optional repro evidence. Write the report with schema
 `gc.github-issue-triage-report.v1`, then validate it with

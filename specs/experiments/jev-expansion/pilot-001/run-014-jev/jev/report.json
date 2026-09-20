@@ -1,0 +1,35 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "failure",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-20T22:28:22.928203+00:00",
+  "route": "use_decisions",
+  "usage": {
+    "input_tokens": 524,
+    "output_tokens": 49
+  },
+  "mode": "assist",
+  "threshold": 0.9,
+  "state_sha256": "d650b05a7a239b5184418b5a8e981df097fc4a02f1ab581ac4fa7bd52f4f4532",
+  "status": "completed",
+  "model": "jev-1.13.0",
+  "decision": {
+    "answers": {
+      "failure": {
+        "type": "choice",
+        "choice": "environment",
+        "confidence": 0.98,
+        "probabilities": {
+          "unclear": 0.0,
+          "environment": 0.98,
+          "product": 0.0,
+          "missing_evidence": 0.02
+        }
+      }
+    },
+    "fallback_questions": [],
+    "route": "use_decisions"
+  },
+  "elapsed_seconds": 0.22532783285714686
+}

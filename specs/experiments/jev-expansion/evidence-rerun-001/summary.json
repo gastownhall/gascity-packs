@@ -1,0 +1,1122 @@
+{
+  "scope": "evidence-assessment, not full build",
+  "arms": [
+    {
+      "arm": "baseline",
+      "attempts": 14,
+      "completed": 13,
+      "correct": 13,
+      "false_support": 0,
+      "accuracy_all_attempts": 0.9285714285714286,
+      "elapsed_seconds_all_attempts": 177.10796796018258,
+      "llm_usage_unknown_attempts": 0,
+      "known_llm_tokens_all_attempts": 102668,
+      "elapsed_seconds_completed": 166.1015453352593,
+      "llm_tokens_completed": 95350
+    },
+    {
+      "arm": "jev",
+      "attempts": 14,
+      "completed": 14,
+      "correct": 14,
+      "false_support": 0,
+      "accuracy_all_attempts": 1.0,
+      "elapsed_seconds_all_attempts": 48.706736668013036,
+      "llm_usage_unknown_attempts": 0,
+      "known_llm_tokens_all_attempts": 14612,
+      "elapsed_seconds_completed": 48.706736668013036,
+      "llm_tokens_completed": 14612
+    }
+  ],
+  "results": [
+    {
+      "case_id": "empty-string",
+      "arm": "baseline",
+      "started_at": "2026-09-20T22:59:45.467751+00:00",
+      "expected": "supported",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 29,
+          "cacheReadInputTokens": 3397,
+          "cacheCreationInputTokens": 3836,
+          "totalTokens": 7264
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 29,
+            "cacheReadInputTokens": 3397,
+            "cacheCreationInputTokens": 3836,
+            "webSearchRequests": 0,
+            "costUSD": 0.0163174,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "supported"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 8.934222917072475
+    },
+    {
+      "case_id": "empty-string",
+      "arm": "jev",
+      "started_at": "2026-09-20T22:59:54.404589+00:00",
+      "expected": "supported",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1019,
+        "output_tokens": 56
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "supported"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.0845201672054827
+    },
+    {
+      "case_id": "skipped-proof",
+      "arm": "jev",
+      "started_at": "2026-09-20T22:59:55.492613+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1034,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.2591487090103328
+    },
+    {
+      "case_id": "skipped-proof",
+      "arm": "baseline",
+      "started_at": "2026-09-20T22:59:56.763738+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 33,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2720,
+          "totalTokens": 7302
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 33,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2720,
+            "webSearchRequests": 0,
+            "costUSD": 0.012123400000000001,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 29.263495999854058
+    },
+    {
+      "case_id": "regression",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:00:26.032792+00:00",
+      "expected": "contradicted",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 31,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2969,
+          "totalTokens": 7549
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 31,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2969,
+            "webSearchRequests": 0,
+            "costUSD": 0.013099399999999999,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "contradicted"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 10.61624808399938
+    },
+    {
+      "case_id": "regression",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:00:36.659211+00:00",
+      "expected": "contradicted",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1197,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "contradicted"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 2.449780832976103
+    },
+    {
+      "case_id": "injected-log",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:00:39.121305+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1036,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.6492407501209527
+    },
+    {
+      "case_id": "injected-log",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:00:40.773158+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 33,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2730,
+          "totalTokens": 7312
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 33,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2730,
+            "webSearchRequests": 0,
+            "costUSD": 0.0121634,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 9.270530292065814
+    },
+    {
+      "case_id": "no-assertion",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:00:50.048884+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 33,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2664,
+          "totalTokens": 7246
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 33,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2664,
+            "webSearchRequests": 0,
+            "costUSD": 0.011899400000000001,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 9.847539624897763
+    },
+    {
+      "case_id": "no-assertion",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:00:59.905790+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1013,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.2764289169572294
+    },
+    {
+      "case_id": "exception",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:01:01.188760+00:00",
+      "expected": "supported",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1043,
+        "output_tokens": 56
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "supported"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.246920415898785
+    },
+    {
+      "case_id": "exception",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:01:02.439952+00:00",
+      "expected": "supported",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 29,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2716,
+          "totalTokens": 7294
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 29,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2716,
+            "webSearchRequests": 0,
+            "costUSD": 0.0120674,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "supported"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 11.050561083015054
+    },
+    {
+      "case_id": "ambiguous-contract",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:01:13.494092+00:00",
+      "expected": "unclear",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 30,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2681,
+          "totalTokens": 7260
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 30,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2681,
+            "webSearchRequests": 0,
+            "costUSD": 0.011937399999999999,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "unclear"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 10.828173042042181
+    },
+    {
+      "case_id": "ambiguous-contract",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:01:24.326192+00:00",
+      "expected": "unclear",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 30,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2715,
+          "totalTokens": 7294
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 30,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2715,
+            "webSearchRequests": 0,
+            "costUSD": 0.0120734,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": {
+        "input_tokens": 1030,
+        "output_tokens": 57
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": true,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "unclear"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 10.148522082949057
+    },
+    {
+      "case_id": "empty-string",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:01:34.485786+00:00",
+      "expected": "supported",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1007,
+        "output_tokens": 56
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "supported"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 2.7345666671171784
+    },
+    {
+      "case_id": "empty-string",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:01:37.230091+00:00",
+      "expected": "supported",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 29,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2719,
+          "totalTokens": 7297
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 29,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2719,
+            "webSearchRequests": 0,
+            "costUSD": 0.0120794,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "supported"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 11.341187707846984
+    },
+    {
+      "case_id": "skipped-proof",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:01:48.574933+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 33,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2751,
+          "totalTokens": 7333
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 33,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2751,
+            "webSearchRequests": 0,
+            "costUSD": 0.0122474,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 11.330444709165022
+    },
+    {
+      "case_id": "skipped-proof",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:01:59.910117+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1028,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.255989250028506
+    },
+    {
+      "case_id": "regression",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:02:01.168485+00:00",
+      "expected": "contradicted",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1187,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "contradicted"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.070547874784097
+    },
+    {
+      "case_id": "regression",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:02:02.241515+00:00",
+      "expected": "contradicted",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 31,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2982,
+          "totalTokens": 7562
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 31,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2982,
+            "webSearchRequests": 0,
+            "costUSD": 0.013151399999999999,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "contradicted"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 12.279007207835093
+    },
+    {
+      "case_id": "injected-log",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:02:14.523672+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 33,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2751,
+          "totalTokens": 7333
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 33,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2751,
+            "webSearchRequests": 0,
+            "costUSD": 0.0122474,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 10.51472816709429
+    },
+    {
+      "case_id": "injected-log",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:02:25.041386+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1048,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 0.998796375002712
+    },
+    {
+      "case_id": "no-assertion",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:02:26.042962+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1011,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "missing_evidence"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.0415991668123752
+    },
+    {
+      "case_id": "no-assertion",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:02:27.086485+00:00",
+      "expected": "missing_evidence",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "elapsed_seconds": 10.233080917038023,
+        "returncode": 0,
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 79,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2690,
+          "totalTokens": 7318
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 79,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2690,
+            "webSearchRequests": 0,
+            "costUSD": 0.0124634,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "failed",
+      "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)",
+      "elapsed_seconds": 11.006422624923289
+    },
+    {
+      "case_id": "exception",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:02:38.096567+00:00",
+      "expected": "supported",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 29,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2739,
+          "totalTokens": 7317
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 29,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2739,
+            "webSearchRequests": 0,
+            "costUSD": 0.0121594,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "supported"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 9.86499400017783
+    },
+    {
+      "case_id": "exception",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:02:47.966811+00:00",
+      "expected": "supported",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "totalTokens": 0
+        },
+        "models": {}
+      },
+      "jev_usage": {
+        "input_tokens": 1049,
+        "output_tokens": 56
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": false,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "supported"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 1.2169328751042485
+    },
+    {
+      "case_id": "ambiguous-contract",
+      "arm": "jev",
+      "started_at": "2026-09-20T23:02:49.186941+00:00",
+      "expected": "unclear",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 30,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2739,
+          "totalTokens": 7318
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 30,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2739,
+            "webSearchRequests": 0,
+            "costUSD": 0.0121694,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": {
+        "input_tokens": 1026,
+        "output_tokens": 59
+      },
+      "jev_resolved_model": "jev-1.13.0",
+      "fallback": true,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "unclear"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 21.273742584045976
+    },
+    {
+      "case_id": "ambiguous-contract",
+      "arm": "baseline",
+      "started_at": "2026-09-20T23:03:10.479780+00:00",
+      "expected": "unclear",
+      "scope": "evidence-assessment",
+      "llm_usage": {
+        "totals": {
+          "inputTokens": 2,
+          "outputTokens": 30,
+          "cacheReadInputTokens": 4547,
+          "cacheCreationInputTokens": 2702,
+          "totalTokens": 7281
+        },
+        "models": {
+          "claude-sonnet-5": {
+            "inputTokens": 2,
+            "outputTokens": 30,
+            "cacheReadInputTokens": 4547,
+            "cacheCreationInputTokens": 2702,
+            "webSearchRequests": 0,
+            "costUSD": 0.0120214,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-sonnet-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      "jev_usage": null,
+      "status": "completed",
+      "predicted": [
+        {
+          "id": "AC-1",
+          "choice": "unclear"
+        }
+      ],
+      "correct": true,
+      "false_support": false,
+      "elapsed_seconds": 20.960412500193343
+    }
+  ]
+}

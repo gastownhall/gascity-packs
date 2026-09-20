@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "Save returns 500",
+    "body": "Saving with an expired access token returns 500 instead of the required 401."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Save 500 for database outage",
+      "body": "Saving returns 500 when the database is down."
+    },
+    {
+      "id": "C2",
+      "title": "Expired token response",
+      "body": "Save should return 401 on expired access tokens but currently returns 500."
+    }
+  ]
+}

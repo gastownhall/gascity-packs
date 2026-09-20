@@ -1,0 +1,15 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "failure",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-20T22:35:21.521958+00:00",
+  "route": "llm",
+  "usage": null,
+  "mode": "off",
+  "threshold": 0.9,
+  "state_sha256": "89281a9a2b6990981902cb458008e7099a9154dbcf5798afbd137ec74eacbaec",
+  "status": "skipped",
+  "reason": "disabled",
+  "elapsed_seconds": 0.005258291959762573
+}

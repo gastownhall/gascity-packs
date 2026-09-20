@@ -1,0 +1,37 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "route": "investigate_ranked_candidates",
+  "usage": {
+    "input_tokens": 557,
+    "output_tokens": 40
+  },
+  "started_at": "2026-09-20T23:04:51.710727+00:00",
+  "state_sha256": "cb16b82a30f6be89129da9c0cc2160afc54ddac874ad1efe880f6205dfd1ad7a",
+  "status": "completed",
+  "decision": {
+    "ranked_candidate_ids": [
+      "C1",
+      "C2"
+    ],
+    "scores": {
+      "C1": 0.93,
+      "C2": 0.08
+    },
+    "candidates": [
+      {
+        "id": "C1",
+        "title": "Report CSV",
+        "body": "Provide all report rows as a CSV file."
+      },
+      {
+        "id": "C2",
+        "title": "CSV commas",
+        "body": "Fix incorrect quoting of commas in existing CSV output."
+      }
+    ],
+    "requires_investigation": true
+  },
+  "model": "jev-1.13.0",
+  "elapsed_seconds": 0.22212225012481213
+}

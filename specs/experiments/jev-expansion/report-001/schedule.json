@@ -1,0 +1,82 @@
+[
+  {
+    "case_id": "kind-gascity-5261",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-5261",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6413",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6413",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-permission",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-permission",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-schema",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-schema",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-distinct-same-file",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-distinct-same-file",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-mixed",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-mixed",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-insufficient",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-insufficient",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-cross-component",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-cross-component",
+    "arm": "baseline",
+    "repetition": 1
+  }
+]

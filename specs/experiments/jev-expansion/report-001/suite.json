@@ -1,0 +1,168 @@
+{
+  "schema": "gc.jev-expansion-suite.v1",
+  "selection": "First two evaluation cases per task in pre-existing SHA256 order, selected while decision evaluation runs; no filtering on results.",
+  "cases": [
+    {
+      "id": "kind-gascity-5261",
+      "task": "kind",
+      "state": {
+        "title": "docs(session): clarify primed_at as delivery-attempted, not consumed (#5236)",
+        "body": "Fixes #5236.\n\n## What's misleading\n\n`primed_at` is stamped when delivery was *selected and runtime start succeeded* \u2014 but several doc comments described this as \"confirmed delivered\" / \"actually delivers,\" which reads as proof the agent consumed the prompt. It isn't proof of that: the issue's own qualifying incident had a worker holding `primed_at` while its trigger bead stayed open/unassigned until a manual nudge forced the claim.\n\n## Fix \u2014 comment/doc-string only, zero behavior or schema change\n\n- `internal/session/lifecycle_transition.go` \u2014 `PrimedAtMetadataKey`'s doc said \"confirmed delivered\" with no caveat; added that \"confirmed\" means transport succeeded, not consumption, and pointed at trigger-bead assignment as the real work-started signal.\n- `cmd/gc/prompt_delivery.go` \u2014 `promptDeliveryResult`/`Delivered` docs said \"actually delivered it,\" but `promptDelivery()` does no I/O at all (pure routing decision, per its own existing doc) \u2014 clarified `Delivered` means \"a mechanism was selected.\"\n- `cmd/gc/session_lifecycle_parallel.go` \u2014 `promptDelivered` field doc said \"actually delivers the rendered startup prompt\" (one of the issue's own evidence citations) \u2014 same fix.\n\n**Deliberately left `session_level_converge.go` untouched**, even though it also uses \"CONFIRMED\" language for `primedAt`: that's the S19 Stage-1 migration module (\"nothing reads the action list yet ... until Stage 3 wires the act loop\"), and its terminology is already precisely scoped within its own durable-world/runtime-world framework \u2014 it separately tracks `primedEnv` as \"delivered this runtime but may not yet be durably recorded,\" meaning it already distinguishes the two states this issue wants clarified. Touching an in-progress migration module's carefully-established vocabulary without Stage 3/4 context felt like the wrong call. `internal/runtime/herdr/provider.go` (the issue's other evidence citation) was already correctly worded \u2014 no change needed there either.\n\n## Verification\n\n`go test ./internal/session/... -run 'Primed|Priming|Prompt'` and `go test ./cmd/gc/... -run 'PromptDelivery|Primed|Priming'` both green (comment-only, no regressions); gofmt clean; `go vet` clean on changed + dependent packages; `go build ./...` clean.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)"
+      },
+      "expected": {
+        "kind": "docs"
+      },
+      "split": "evaluation",
+      "provenance": "Frozen real Gas City regression input, previously evaluated: https://github.com/gastownhall/gascity/pull/5261"
+    },
+    {
+      "id": "kind-gascity-6413",
+      "task": "kind",
+      "state": {
+        "title": "bug: pool seats retired mid-claim because alias-form claims are invisible to the keep-awake and drain-ack close gates",
+        "body": "### Gas City version\nmain `ed146d8d9` (2026-09-02); the unit-level reproduction also holds on `af596339d` (2026-09-14).\n\n### Environment\nLinux (Fedora 44), tmux runtime, opencode-backed pool agents (gastown pack `gastown.polecat`, `max_active_sessions = 10`).\n\n### Reproduction\n1. Route several beads to a pool template; seats claim them with `gc hook --claim`. The claim's `assignee` is the seat alias (`GC_ALIAS`, e.g. `rig/gastown.nux`), while the session bead's `session_name` is the tmux form (`rig--gastown__nux`).\n2. Let template demand drop (other beads finish) while one seat still holds an `in_progress` claim.\n3. Watch the reconciler: that seat is closed with `session drained: pool slot retired by reconciler`, followed immediately by `bead.dead_assignee_reopened` for its claim, and a fresh seat re-primes from zero.\n\n### Expected behavior\nA seat holding an `in_progress` claim stays desired (`assigned-work`), is counted by `countAssignedScaleSlots`, and the drain-ack close gate sees its claim.\n\n### Actual behavior\n`sessionAssignmentIdentifierRaw`/`RawInfo` and `ComputeAwakeSet`'s `sessionAssigneeMatches` only compare `{bead id, session_name, configured named identity}`. Claims are written under the alias (`session.AssigneeIdentifier` is alias-first), so every pool seat reads as work-free and becomes a scale-down victim. The orphan-release path (`session.AssigneeIdentities`) already honours the alias, which is why the reopen follows the drain within seconds.\n\n### Logs, screenshots, or traces\nOne city, 24 h, tributary pool: 122 polecat stops, 89 `bead.dead_assignee_reopened`, mean seat life ~20 min, 15\u201325 % of seats under 3 min; identical under three model providers, so not model-related. With the alias honoured in those three sites (see the linked PR): 22 stops and 0 reopens over the next 24 h.\n\n### Additional context\n`TestAssignmentGuardsIgnoreTransientPoolSlotAliases` states slot-form aliases (`<pool>-<n>`) must never keep a session alive. The PR keeps that guard and honours namepool aliases only. If the preferred fix is to claim under a stable identity instead (bead id / session_name), I'm happy to rework it that way."
+      },
+      "expected": {
+        "kind": "bug"
+      },
+      "split": "evaluation",
+      "provenance": "Frozen real Gas City regression input, previously evaluated: https://github.com/gastownhall/gascity/issues/6413"
+    },
+    {
+      "id": "failure-permission",
+      "task": "failure",
+      "state": {
+        "command": "./check.sh",
+        "output": "zsh: permission denied: ./check.sh",
+        "context": "The executable bit is absent on the external fixture script; no product code ran."
+      },
+      "expected": {
+        "failure": "environment"
+      },
+      "split": "evaluation",
+      "provenance": "Authored challenge fixture; expectations fixed before inference."
+    },
+    {
+      "id": "failure-schema",
+      "task": "failure",
+      "state": {
+        "command": "bd init",
+        "output": "Unknown column type in field list; migration bootstrap aborted",
+        "context": "External installed bd failed before candidate source was executed; schema capability lookup uses the wrong catalog."
+      },
+      "expected": {
+        "failure": "environment"
+      },
+      "split": "evaluation",
+      "provenance": "Authored challenge fixture; expectations fixed before inference."
+    },
+    {
+      "id": "findings-distinct-same-file",
+      "task": "findings",
+      "state": {
+        "findings": [
+          {
+            "id": "F1",
+            "text": "parser.py drops invalid-input errors; return a nonzero exit.",
+            "source": "lane-0/review.md:10"
+          },
+          {
+            "id": "F2",
+            "text": "parser.py reads the full upload without its required size limit; reject oversized uploads.",
+            "source": "lane-1/review.md:11"
+          }
+        ]
+      },
+      "expected": {
+        "finding_0": "required_fix",
+        "finding_1": "required_fix",
+        "pair_0_1": "different"
+      },
+      "split": "evaluation",
+      "provenance": "Authored challenge fixture; expectations fixed before inference."
+    },
+    {
+      "id": "findings-mixed",
+      "task": "findings",
+      "state": {
+        "findings": [
+          {
+            "id": "F1",
+            "text": "Accepted requirement: retain audit history. archive() deletes the prior record; preserve it instead.",
+            "source": "lane-0/review.md:10"
+          },
+          {
+            "id": "F2",
+            "text": "Run the missing concurrency proof before claiming the new archive operation is race-free.",
+            "source": "lane-1/review.md:11"
+          },
+          {
+            "id": "F3",
+            "text": "The earlier record is deleted during archiving despite required audit retention; preserve the record.",
+            "source": "lane-2/review.md:12"
+          }
+        ]
+      },
+      "expected": {
+        "finding_0": "required_fix",
+        "finding_1": "missing_evidence",
+        "finding_2": "required_fix",
+        "pair_0_1": "different",
+        "pair_0_2": "same",
+        "pair_1_2": "different"
+      },
+      "split": "evaluation",
+      "provenance": "Authored challenge fixture; expectations fixed before inference."
+    },
+    {
+      "id": "duplicates-insufficient",
+      "task": "duplicates",
+      "state": {
+        "issue": {
+          "title": "It does not work",
+          "body": "No command, expected behavior or failure details are supplied."
+        },
+        "candidates": [
+          {
+            "id": "C1",
+            "title": "Something broke",
+            "body": "No details supplied."
+          }
+        ]
+      },
+      "expected": {
+        "candidate_0": "unclear"
+      },
+      "split": "evaluation",
+      "provenance": "Authored challenge fixture; expectations fixed before inference."
+    },
+    {
+      "id": "duplicates-cross-component",
+      "task": "duplicates",
+      "state": {
+        "issue": {
+          "title": "CLI color switch ignored",
+          "body": "The CLI still emits ANSI escapes when --no-color is set."
+        },
+        "candidates": [
+          {
+            "id": "C1",
+            "title": "Dashboard colors",
+            "body": "The web dashboard color picker ignores saved selections."
+          },
+          {
+            "id": "C2",
+            "title": "ANSI escapes despite no-color",
+            "body": "--no-color on the CLI does not suppress ANSI escape sequences."
+          }
+        ]
+      },
+      "expected": {
+        "candidate_0": "unrelated",
+        "candidate_1": "same_issue"
+      },
+      "split": "evaluation",
+      "provenance": "Authored challenge fixture; expectations fixed before inference."
+    }
+  ]
+}

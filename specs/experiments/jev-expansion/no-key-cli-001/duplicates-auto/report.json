@@ -1,0 +1,15 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "duplicates",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-20T22:35:22.595701+00:00",
+  "route": "llm",
+  "usage": null,
+  "mode": "auto",
+  "threshold": 0.9,
+  "state_sha256": "7f638ac7b94daff9fbcd99f5de1542be66f6b02d4c80bb2895d4181949d82e42",
+  "status": "skipped",
+  "reason": "missing_credential",
+  "elapsed_seconds": 0.0036570830270648003
+}

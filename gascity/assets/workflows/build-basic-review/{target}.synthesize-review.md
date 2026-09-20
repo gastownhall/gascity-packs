@@ -4,6 +4,16 @@ Read the acceptance, test evidence, and simplicity review reports. Deduplicate
 findings, preserve the source review lane for each finding, and classify each
 item as required fix, missing evidence, or residual risk.
 
+For `jev_findings_mode={{jev_findings_mode}}` in `auto` or `assist`, follow
+`{{pack_root}}/assets/jev-decisions.md` for the `findings` task. Use model
+`{{jev_decision_model}}`, threshold `{{jev_decision_threshold}}`, and a new
+attempt directory under the build artifact root. Pass every original finding
+with its lane and source anchor. Use confident categories and proposed pairs
+to focus synthesis; resolve fallback questions and verify combined remedies.
+Preserve all finding IDs/sources and every original lane verdict. With `off`,
+perform ordinary synthesis. In auto mode without a key, avoid preparing a
+separate Jev bundle and record `missing_credential` in the synthesis.
+
 Also read `gc.build.code_review_context_path` from the workflow root bead. When
 you carry a finding forward, include the source anchor and implementation
 worktree from the context's `## Implementation Worktrees` section. If a finding

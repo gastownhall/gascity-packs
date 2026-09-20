@@ -1,0 +1,54 @@
+{
+  "cohort": "rank-pilot-001",
+  "planned_attempts": 4,
+  "finished_attempts": 4,
+  "unique_cases": 2,
+  "arms": {
+    "baseline": {
+      "attempts": 2,
+      "failed": 0,
+      "top1_correct": 2,
+      "top1_cases": 2,
+      "source_preserved": 2,
+      "llm_usage_unknown": 0,
+      "llm_tokens": {
+        "inputTokens": 4,
+        "outputTokens": 278,
+        "cacheReadInputTokens": 4946,
+        "cacheCreationInputTokens": 4355,
+        "totalTokens": 9583
+      },
+      "jev_usage_unknown": 0,
+      "jev_tokens": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "seconds": 15.584031249862164
+    },
+    "jev": {
+      "attempts": 2,
+      "failed": 0,
+      "top1_correct": 2,
+      "top1_cases": 2,
+      "source_preserved": 2,
+      "llm_usage_unknown": 0,
+      "llm_tokens": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "totalTokens": 0
+      },
+      "jev_usage_unknown": 0,
+      "jev_tokens": {
+        "input_tokens": 1110,
+        "output_tokens": 80
+      },
+      "seconds": 1.4405582090839744
+    }
+  },
+  "quality_regressions": 0,
+  "claude_token_reduction": 1.0,
+  "time_reduction": 0.9075619019246567,
+  "default_eligible": true
+}

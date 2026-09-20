@@ -1,0 +1,23 @@
+{
+  "issue": {
+    "title": "Package signature verification skipped",
+    "body": "Installer accepts an archive with an invalid signature, contrary to the required verification policy."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Bad signature accepted by installer",
+      "body": "An archive signed with the wrong key still installs; signature verification is required."
+    },
+    {
+      "id": "C2",
+      "title": "Signing release artifacts",
+      "body": "Add a new signing step to the release pipeline."
+    },
+    {
+      "id": "C3",
+      "title": "Checksum network timeout",
+      "body": "Checksum download times out during an outage."
+    }
+  ]
+}

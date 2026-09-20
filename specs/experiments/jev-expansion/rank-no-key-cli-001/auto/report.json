@@ -1,0 +1,13 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "requested_model": "jev-1.13.0",
+  "mode": "auto",
+  "route": "ordinary_investigation",
+  "usage": null,
+  "started_at": "2026-09-20T23:12:35.544593+00:00",
+  "state_sha256": "236fdcdc5cc3da30f7ba20da54763d9a886f608c4f1a32d578001916d169230b",
+  "status": "skipped",
+  "reason": "missing_credential",
+  "elapsed_seconds": 0.0058537921868264675
+}

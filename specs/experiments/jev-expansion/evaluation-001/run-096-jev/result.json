@@ -1,0 +1,35 @@
+{
+  "case_id": "failure-tests-skipped",
+  "task": "failure",
+  "arm": "jev",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:47:23.470716+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 532,
+    "output_tokens": 52
+  },
+  "raw_answers": {
+    "failure": "missing_evidence"
+  },
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "38ee93d1ba6694649c27c1eb201ee75bfb20aa8e1c514013339391247c8089cd",
+  "status": "completed",
+  "answers": {
+    "failure": "missing_evidence"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 0.6764285420067608
+}

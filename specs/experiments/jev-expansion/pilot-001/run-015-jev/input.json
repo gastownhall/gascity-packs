@@ -1,0 +1,5 @@
+{
+  "command": "pytest test_total.py",
+  "output": "FAILED test_total: expected 12, got 0",
+  "context": "The assertion checks sum([5,7]) required to return 12."
+}

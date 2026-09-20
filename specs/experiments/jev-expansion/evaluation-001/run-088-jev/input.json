@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "Regression in 2.0",
+    "body": "In 2.0, export ignores --output and writes to stdout; 1.9 works."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Export output path ignored after upgrade",
+      "body": "On 2.0 the --output flag is ignored and CSV goes to stdout."
+    },
+    {
+      "id": "C2",
+      "title": "1.0 output path permission bug",
+      "body": "In 1.0 output files failed if their parent had insufficient permissions; fixed in 1.1."
+    }
+  ]
+}

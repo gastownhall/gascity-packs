@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "Support JSON export",
+    "body": "Add JSON output to the report export command."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "CSV quoting bug",
+      "body": "CSV exports fail to quote commas."
+    },
+    {
+      "id": "C2",
+      "title": "Authentication prompt",
+      "body": "Login prompt should support password managers."
+    }
+  ]
+}

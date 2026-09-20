@@ -1066,3 +1066,25 @@ approval decisions retain their existing policies. Default mode is `off`.
 The standalone helper also accepts PR snapshots for maintainer-city adapters;
 it never applies GitHub labels. See [the kind contract](assets/jev-kind.md)
 for label mappings and [backtesting](../specs/experiments/jev-evidence-routing/KIND-TRIAGE.md).
+
+## Jev workflow decisions
+
+Issue triage now defaults `jev_duplicates_mode` to `auto`: when the worker has
+`TYPESAFE_API_KEY`, Jev orders the existing duplicate-candidate shortlist and
+code writes the source-preserving investigation packet. All candidates remain
+available, and the triager still confirms any duplicate verdict. Without the
+key, ordinary investigation continues without extra retrieval for Jev. Set
+`--var jev_duplicates_mode=off` to disable it or `assist` to require access.
+
+PR kind in `github-pr-review`, finding categories/pair matching in starter
+synthesis (`jev_findings_mode`), and failure investigation during starter fixes
+(`jev_failure_mode`) are available but default to `off`. Issue kind and evidence
+assistance also remain opt-in. Their repeated decision/report experiments did
+not meet all quality and resource criteria for default promotion.
+
+See [decision inputs and fallback policy](assets/jev-decisions.md) and
+[measured results, failures and limitations](../specs/experiments/jev-expansion/RESULTS.md).
+The ranking-plus-handoff benchmark preserved all candidate evidence and known
+match ordering while avoiding a Claude ranking call. It does not establish
+full-triage or full-build savings. Existing review coverage, lane verdicts,
+proof requirements and publication/human gates remain authoritative.

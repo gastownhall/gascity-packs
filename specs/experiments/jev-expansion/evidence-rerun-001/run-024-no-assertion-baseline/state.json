@@ -1,0 +1,32 @@
+{
+  "head": "0a582353bd614b8e9c9a5a718aeb35806eda1946",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Reversing abc returns cba.",
+      "claim": "The passing test asserts the returned reverse string.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "f3c911091008dd9a593d5084a165ab408c0a3d25a869f4d9c270796b41e38488",
+          "text": "def transform(x):\n    return x[::-1]\n"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "190fd6feef1a336813bb315d28ede46acc79a69520afb1019b20bd3ca8ffe971",
+          "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        transform(\"abc\")\n"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "0f0351b05a7a111268e54baad2269896c1f10407d6e42f574fe86b34ae7333da",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "0a582353bd614b8e9c9a5a718aeb35806eda1946",
+          "text": "test_behavior (test_subject.TestSubject.test_behavior) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nOK\n"
+        }
+      ]
+    }
+  ]
+}

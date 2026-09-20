@@ -1,0 +1,5 @@
+{
+  "command": "bd init",
+  "output": "Unknown column type in field list; migration bootstrap aborted",
+  "context": "External installed bd failed before candidate source was executed; schema capability lookup uses the wrong catalog."
+}

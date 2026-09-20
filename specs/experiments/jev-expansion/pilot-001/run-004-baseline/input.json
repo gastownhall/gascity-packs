@@ -1,0 +1,14 @@
+{
+  "findings": [
+    {
+      "id": "F1",
+      "text": "The parser returns success on malformed input, violating the specified nonzero exit contract.",
+      "source": "lane-0/review.md:10"
+    },
+    {
+      "id": "F2",
+      "text": "The malformed-input case has no executed test or saved proof.",
+      "source": "lane-1/review.md:11"
+    }
+  ]
+}

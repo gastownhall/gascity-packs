@@ -1,0 +1,68 @@
+{
+  "repository_private": false,
+  "authenticated_requests": false,
+  "synthetic_cases": 30,
+  "public_cases": [
+    {
+      "id": "kind-gascity-5261",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/5261",
+      "exact_title_body_match": true,
+      "state_sha256": "e665b453841d412fd1b17f08278d308de09a587311a0576efccb1f7e8f3868f7"
+    },
+    {
+      "id": "kind-gascity-6413",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/6413",
+      "exact_title_body_match": true,
+      "state_sha256": "1bb2c391649005be6e4ded48dbe3f5b7d633ead541e87b29b3a0cd064cf6f2fb"
+    },
+    {
+      "id": "kind-gascity-6408",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/6408",
+      "exact_title_body_match": true,
+      "state_sha256": "3d080a2b1dfccb3dff96d2a3a36b4a17d9d4770094bf239c3a04ff1cb172e28e"
+    },
+    {
+      "id": "kind-gascity-6417",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/6417",
+      "exact_title_body_match": true,
+      "state_sha256": "9d10c5c9105f19624362240cca07b6e9bde2e50e74f6b2f40de65f6d913275aa"
+    },
+    {
+      "id": "kind-pilot-gascity-6319",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/6319",
+      "exact_title_body_match": true,
+      "state_sha256": "d5a4b539c4c5e6465375ed9b1e115e20f022a0850933c92bfb58e1757a92adc1"
+    },
+    {
+      "id": "kind-pilot-gascity-6435",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/6435",
+      "exact_title_body_match": true,
+      "state_sha256": "62ad9090ed686d66464abb44aba79abaf199e6efd7fc2d275aea6295a0c5ad25"
+    },
+    {
+      "id": "kind-gascity-6376",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/6376",
+      "exact_title_body_match": true,
+      "state_sha256": "be7d9c0a8499b3a4f95b2bbea96b06f54eb1f3bdabe7dae4b8d812ecff1b8533"
+    },
+    {
+      "id": "kind-gascity-6396",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/6396",
+      "exact_title_body_match": true,
+      "state_sha256": "f8365aa73b33e1d98ce65dbb13a534312b2075d0d4db45dcc7233031f2f43d6e"
+    },
+    {
+      "id": "kind-gascity-5680",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/5680",
+      "exact_title_body_match": true,
+      "state_sha256": "a81d5dc4f07d62cd5621f2b3a362e552e2abb94f9fba9f974b217fc2e7c3b101"
+    },
+    {
+      "id": "kind-gascity-6327",
+      "unauthenticated_public_url": "https://api.github.com/repos/gastownhall/gascity/issues/6327",
+      "exact_title_body_match": true,
+      "state_sha256": "7061e78030da80b401e063099fc4cd57a932115e750ceb32c98c6f8b77270554"
+    }
+  ],
+  "suite_sha256": "99592d524a096ab2dcf23c8f1925da09e2fa1cde1db743540f490dd73002b8f8"
+}

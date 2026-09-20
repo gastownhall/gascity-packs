@@ -879,7 +879,8 @@ explicitly fall back to ordinary review. Derived methodologies are unaffected.
 
 ### Experimental kind classification
 
-`github-issue-triage` MAY use `jev_kind_mode=assist`; default MUST be `off`.
+`github-issue-triage` and `github-pr-review` MAY use Jev kind assistance.
+Modes MUST support off, auto when configured, and explicit assist.
 This MAY replace only the primary-kind decision under the supported rubric.
 Low confidence, ambiguity, invalid output, configuration/rubric mismatch, or
 service failure MUST use ordinary LLM kind triage and preserve the reason.
@@ -888,3 +889,23 @@ existing policy. No GitHub label-write authority is granted. The helper MUST
 exclude existing labels and reference decisions from model state, retain
 immutable decision artifacts and explicit label mappings, and distinguish
 historical model agreement from independently adjudicated accuracy.
+
+### Bounded workflow decisions
+
+The starter review MAY use Jev for finding categories and proposed duplicate
+pairs, and for failure investigation routing. Issue triage MAY rank retrieved
+duplicate candidates. Every finding/source and candidate MUST be retained;
+pair matches MUST NOT be treated as transitive equivalence. Residual-risk
+classifications MUST retain ordinary review. Failure routes MUST NOT waive
+proof or execute model-selected commands. Auto mode without a credential MUST
+record ordinary LLM handling. Operational failures and low confidence MUST
+remain visible and trigger ordinary handling. Existing schemas, lane verdicts,
+reuse paths, review coverage and human gates MUST remain unchanged.
+
+Duplicate-candidate ordering MUST default to auto when a Jev credential is
+configured, using the ranking-only Noul helper and deterministic source-copying
+renderer. Without access it MUST preserve ordinary investigation. Ranking MUST
+retain every candidate and MUST NOT supply a duplicate verdict. Low similarity
+or ambiguous ordering MUST NOT be interpreted as proof that no duplicate exists.
+Kind, finding categories/pairs and failure classification remain opt-in after
+the expanded quality/resource evaluation; evidence assistance remains opt-in.

@@ -1,0 +1,24 @@
+{
+  "answers": {
+    "finding_0": "required_fix",
+    "pair_0_1": "different",
+    "finding_1": "required_fix"
+  },
+  "report": [
+    {
+      "id": "finding_0",
+      "choice": "required_fix",
+      "quote": "parser.py drops invalid-input errors; return a nonzero exit."
+    },
+    {
+      "id": "pair_0_1",
+      "choice": "different",
+      "quote": "parser.py reads the full upload without its required size limit; reject oversized uploads."
+    },
+    {
+      "id": "finding_1",
+      "choice": "required_fix",
+      "quote": "reads the full upload without its required size limit"
+    }
+  ]
+}

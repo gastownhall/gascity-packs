@@ -1,0 +1,40 @@
+{
+  "case_id": "rank-none",
+  "arm": "baseline",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 203,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2195,
+      "totalTokens": 4873
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 203,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2195,
+        "webSearchRequests": 0,
+        "costUSD": 0.028271499999999998,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 179,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "gold_top_ids": [],
+  "state_sha256": "1553fcbd127f3c1ffe6f56fc7a75320e44a913ccd68e0eb069d22618a8dfe38f",
+  "status": "completed",
+  "ranked_candidate_ids": [
+    "C1",
+    "C2"
+  ],
+  "source_preserved": true,
+  "top1_correct": null,
+  "elapsed_seconds": 12.623264916008338
+}

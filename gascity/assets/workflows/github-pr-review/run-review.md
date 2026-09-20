@@ -14,6 +14,16 @@ validator result, close this step with `gc.outcome=pass`, and leave the reused
 artifacts untouched. This is the no-op path that makes current-head reuse
 effective even though the formula graph still schedules this step.
 
+Classify primary kind after the reuse no-op when `jev_kind_mode={{jev_kind_mode}}`
+is `auto` or `assist`. Follow the kind contract in
+`{{pack_root}}/assets/jev-decisions.md` using `gc.github.snapshot_path`, model
+`{{jev_kind_model}}`, threshold `{{jev_kind_threshold}}`, and optional label map
+`{{jev_kind_labels_path}}`. Use a new attempt directory under
+`gc.github.review_dir/jev/kind/`. Record the logical kind, source and fallback
+reason in the review subject. With `off`, use ordinary kind reasoning if needed.
+Preserve the full correctness, test, security and release-risk review for every
+kind; a docs/chore classification never skips a review lane.
+
 Create the deterministic generic-review handoff artifacts for this head SHA:
 
 - `SUBJECT_PATH=<gc.github.review_dir>/subject.md`

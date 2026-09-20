@@ -1,0 +1,35 @@
+{
+  "case_id": "failure-auth",
+  "task": "failure",
+  "arm": "jev",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:45:20.162384+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 528,
+    "output_tokens": 49
+  },
+  "raw_answers": {
+    "failure": "environment"
+  },
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "0e6686a7d650c6612ca83f68c9b98b7932af64c590a2fa6747630ea6878dc06f",
+  "status": "completed",
+  "answers": {
+    "failure": "environment"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 0.7194587499834597
+}

@@ -1,0 +1,12 @@
+{
+  "answers": {
+    "failure": "missing_evidence"
+  },
+  "report": [
+    {
+      "id": "failure",
+      "choice": "missing_evidence",
+      "quote": "External installed bd failed before candidate source was executed"
+    }
+  ]
+}

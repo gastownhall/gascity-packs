@@ -1,0 +1,45 @@
+{
+  "case_id": "failure-behavior",
+  "task": "failure",
+  "arm": "baseline",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:49:36.918927+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 144,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2071,
+      "totalTokens": 4690
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 144,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2071,
+        "webSearchRequests": 0,
+        "costUSD": 0.0255565,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 127,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "raw_answers": null,
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "410bf8e1b1b365f56dc7d75a53c3dde78345c1199cc1a5f830c0272f4e180118",
+  "status": "completed",
+  "answers": {
+    "failure": "product"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 8.700164958136156
+}

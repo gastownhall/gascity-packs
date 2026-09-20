@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "CLI color switch ignored",
+    "body": "The CLI still emits ANSI escapes when --no-color is set."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Dashboard colors",
+      "body": "The web dashboard color picker ignores saved selections."
+    },
+    {
+      "id": "C2",
+      "title": "ANSI escapes despite no-color",
+      "body": "--no-color on the CLI does not suppress ANSI escape sequences."
+    }
+  ]
+}

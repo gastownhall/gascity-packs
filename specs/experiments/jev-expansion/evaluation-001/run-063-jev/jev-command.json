@@ -1,0 +1,14 @@
+[
+  "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+  "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/gascity/assets/scripts/jev_tasks.py",
+  "findings",
+  "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-expansion/evaluation-001/run-063-jev/input.json",
+  "--output-dir",
+  "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-expansion/evaluation-001/run-063-jev/jev",
+  "--mode",
+  "assist",
+  "--model",
+  "jev-1.13.0",
+  "--threshold",
+  "0.9"
+]

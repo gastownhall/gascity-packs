@@ -1,0 +1,43 @@
+{
+  "case_id": "rank-signing",
+  "arm": "baseline",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 191,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2419,
+      "totalTokens": 5085
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 191,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2419,
+        "webSearchRequests": 0,
+        "costUSD": 0.030211500000000002,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 164,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "gold_top_ids": [
+    "C1"
+  ],
+  "state_sha256": "5edfa19c74effd11df22167f27b2d87c27f346ee8e68e91ccbd85d80413313bb",
+  "status": "completed",
+  "ranked_candidate_ids": [
+    "C1",
+    "C2",
+    "C3"
+  ],
+  "source_preserved": true,
+  "top1_correct": true,
+  "elapsed_seconds": 8.825668083038181
+}

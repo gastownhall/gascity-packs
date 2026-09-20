@@ -1,0 +1,47 @@
+{
+  "case_id": "findings-uncertain",
+  "task": "findings",
+  "arm": "baseline",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:38:40.575184+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 1022,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2471,
+      "totalTokens": 5968
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 1022,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2471,
+        "webSearchRequests": 0,
+        "costUSD": 0.0515065,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 975,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "raw_answers": null,
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "d72ff684fb83d627a8c639d9fb631c759326be901198a8741bdefa46a6cd6c75",
+  "status": "completed",
+  "answers": {
+    "finding_0": "missing_evidence",
+    "finding_1": "missing_evidence",
+    "pair_0_1": "different"
+  },
+  "correct": 2,
+  "questions": 3,
+  "quality_pass": false,
+  "elapsed_seconds": 12.035358583088964
+}

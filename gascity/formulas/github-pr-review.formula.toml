@@ -55,6 +55,23 @@ default = "report"
 description = "Comment posting policy: human_gate or auto."
 default = "human_gate"
 
+[vars.jev_kind_mode]
+description = "PR kind classification: off, auto (when configured), or assist."
+default = "off"
+
+[vars.jev_kind_model]
+description = "Pinned Jev model for primary kind."
+default = "jev-1.13.0"
+
+[vars.jev_kind_threshold]
+description = "Minimum kind confidence before ordinary LLM fallback."
+default = "0.90"
+
+[vars.jev_kind_labels_path]
+description = "Optional JSON mapping logical kinds to repository labels."
+default = ""
+
+
 [[steps]]
 id = "snapshot"
 title = "Snapshot GitHub PR"

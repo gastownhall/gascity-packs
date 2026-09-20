@@ -1,0 +1,284 @@
+{
+  "cohort": "report-001",
+  "pipeline": "report",
+  "planned_attempts": 16,
+  "finished_attempts": 16,
+  "tasks": {
+    "duplicates": {
+      "unique_cases": 2,
+      "paired_attempts": 2,
+      "arms": {
+        "baseline": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 3,
+          "questions": 3,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 703,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 4463,
+            "totalTokens": 10116
+          },
+          "jev_tokens": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 26.101035917177796,
+          "median_seconds": 13.050517958588898
+        },
+        "jev": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 3,
+          "questions": 3,
+          "quality_pass_cases": 2,
+          "fallback_cases": 2,
+          "fallback_questions": 2,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 622,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 4474,
+            "totalTokens": 10046
+          },
+          "jev_tokens": {
+            "input_tokens": 1233,
+            "output_tokens": 154
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 23.796963415807113,
+          "median_seconds": 11.898481707903557
+        }
+      },
+      "raw_agreement": 3,
+      "final_agreement": 3,
+      "paired_questions": 3,
+      "baseline_correct_treatment_wrong": 0,
+      "treatment_correct_baseline_wrong": 0,
+      "claude_token_reduction": 0.0069197311190193345,
+      "time_reduction": 0.088275136231444,
+      "speed_ratio": 1.0968221222645662
+    },
+    "failure": {
+      "unique_cases": 2,
+      "paired_attempts": 2,
+      "arms": {
+        "baseline": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 1,
+          "questions": 2,
+          "quality_pass_cases": 1,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 1432,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 4284,
+            "totalTokens": 10666
+          },
+          "jev_tokens": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 24.904052374185994,
+          "median_seconds": 12.452026187092997
+        },
+        "jev": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 1,
+          "questions": 2,
+          "quality_pass_cases": 1,
+          "fallback_cases": 1,
+          "fallback_questions": 1,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 1040,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 4290,
+            "totalTokens": 10280
+          },
+          "jev_tokens": {
+            "input_tokens": 1070,
+            "output_tokens": 98
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 27.050523416837677,
+          "median_seconds": 13.525261708418839
+        }
+      },
+      "raw_agreement": 1,
+      "final_agreement": 2,
+      "paired_questions": 2,
+      "baseline_correct_treatment_wrong": 0,
+      "treatment_correct_baseline_wrong": 0,
+      "claude_token_reduction": 0.03618976186011624,
+      "time_reduction": -0.08618962931818208,
+      "speed_ratio": 0.9206495560335218
+    },
+    "findings": {
+      "unique_cases": 2,
+      "paired_attempts": 2,
+      "arms": {
+        "baseline": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 9,
+          "questions": 9,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 1450,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 5946,
+            "totalTokens": 12346
+          },
+          "jev_tokens": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 25.097261958988383,
+          "median_seconds": 12.548630979494192
+        },
+        "jev": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 9,
+          "questions": 9,
+          "quality_pass_cases": 2,
+          "fallback_cases": 1,
+          "fallback_questions": 1,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 1464,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 6038,
+            "totalTokens": 12452
+          },
+          "jev_tokens": {
+            "input_tokens": 2339,
+            "output_tokens": 438
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 28.1459054579027,
+          "median_seconds": 14.07295272895135
+        }
+      },
+      "raw_agreement": 9,
+      "final_agreement": 9,
+      "paired_questions": 9,
+      "baseline_correct_treatment_wrong": 0,
+      "treatment_correct_baseline_wrong": 0,
+      "claude_token_reduction": -0.008585776769803877,
+      "time_reduction": -0.12147315129021341,
+      "speed_ratio": 0.8916842983263014
+    },
+    "kind": {
+      "unique_cases": 2,
+      "paired_attempts": 2,
+      "arms": {
+        "baseline": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 2,
+          "questions": 2,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 760,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 5962,
+            "totalTokens": 11672
+          },
+          "jev_tokens": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 23.546941625187173,
+          "median_seconds": 11.773470812593587
+        },
+        "jev": {
+          "attempts": 2,
+          "completed": 2,
+          "failed": 0,
+          "expected_matches": 2,
+          "questions": 2,
+          "quality_pass_cases": 2,
+          "fallback_cases": 0,
+          "fallback_questions": 0,
+          "jev_service_failures": 0,
+          "llm_usage_unknown": 0,
+          "llm_tokens": {
+            "inputTokens": 4,
+            "outputTokens": 796,
+            "cacheReadInputTokens": 4946,
+            "cacheCreationInputTokens": 5976,
+            "totalTokens": 11722
+          },
+          "jev_tokens": {
+            "input_tokens": 2166,
+            "output_tokens": 108
+          },
+          "jev_usage_unknown": 0,
+          "seconds": 23.33822820801288,
+          "median_seconds": 11.66911410400644
+        }
+      },
+      "raw_agreement": 2,
+      "final_agreement": 2,
+      "paired_questions": 2,
+      "baseline_correct_treatment_wrong": 0,
+      "treatment_correct_baseline_wrong": 0,
+      "claude_token_reduction": -0.004283755997258387,
+      "time_reduction": 0.00886371659201135,
+      "speed_ratio": 1.0089429846736453
+    }
+  },
+  "mismatches": [
+    {
+      "case_id": "failure-schema",
+      "repetition": 1,
+      "question": "failure",
+      "expected": "environment",
+      "baseline": "missing_evidence",
+      "raw_jev": "product",
+      "final_treatment": "missing_evidence",
+      "fallback": true
+    }
+  ]
+}

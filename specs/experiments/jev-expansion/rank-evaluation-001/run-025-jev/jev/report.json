@@ -1,0 +1,37 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "route": "investigate_ranked_candidates",
+  "usage": {
+    "input_tokens": 555,
+    "output_tokens": 40
+  },
+  "started_at": "2026-09-20T23:08:06.657913+00:00",
+  "state_sha256": "bcea31970b8e144c8e9c10da9b1f90ba32a5cc206c7f6e757d6a47cd66dc0b83",
+  "status": "completed",
+  "decision": {
+    "ranked_candidate_ids": [
+      "C2",
+      "C1"
+    ],
+    "scores": {
+      "C1": 0.33,
+      "C2": 0.4
+    },
+    "candidates": [
+      {
+        "id": "C1",
+        "title": "It is broken too",
+        "body": "No details supplied."
+      },
+      {
+        "id": "C2",
+        "title": "Maybe a problem",
+        "body": "No diagnosis or reproduction steps."
+      }
+    ],
+    "requires_investigation": true
+  },
+  "model": "jev-1.13.0",
+  "elapsed_seconds": 0.17677474999800324
+}

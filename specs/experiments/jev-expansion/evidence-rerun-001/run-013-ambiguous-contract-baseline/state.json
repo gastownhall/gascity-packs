@@ -1,0 +1,32 @@
+{
+  "head": "d4a418593052756d9da77e312fb3a21278f70d2b",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Return the appropriate half of the value according to the external rounding policy.",
+      "claim": "The implementation follows the external rounding policy.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "112831b9348a2b7a11b098f88478a017f5dcfb36853fc1d9e67c703fe508ba5b",
+          "text": "def transform(x):\n    return x // 2\n"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "7aebe739a4627ac45695ad6210b111598beb3b31c1281a635fe7df572e494652",
+          "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        self.assertEqual(transform(5), 2)\n"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "28a0a5c459c5a75646342350eeb32e56c5e5c55bf773a917640f767138a73f5c",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "d4a418593052756d9da77e312fb3a21278f70d2b",
+          "text": "test_behavior (test_subject.TestSubject.test_behavior) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n"
+        }
+      ]
+    }
+  ]
+}

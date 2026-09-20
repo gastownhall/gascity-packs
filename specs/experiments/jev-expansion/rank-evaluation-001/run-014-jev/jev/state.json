@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "Add keyboard shortcuts",
+    "body": "Provide configurable keyboard shortcuts for opening project tabs."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Mouse gesture",
+      "body": "Support mouse gestures for closing windows."
+    },
+    {
+      "id": "C2",
+      "title": "Server health",
+      "body": "Expose an HTTP health endpoint."
+    }
+  ]
+}

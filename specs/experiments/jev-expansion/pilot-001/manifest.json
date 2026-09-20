@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-20T22:26:17.959883+00:00",
+  "base": "f360ec4aa16205e4706a77d72276e6bfde7bb87f",
+  "suite_sha256": "99592d524a096ab2dcf23c8f1925da09e2fa1cde1db743540f490dd73002b8f8",
+  "sources": {
+    "jev_tasks_ab.py": "996148b6cb9b09a623eb36795d3e7e5150cc07a9dfa0038d5c7744a49f658c50",
+    "jev_tasks.py": "2551016987198189b39cb757c4c792d0a8a744da04efc79db5a1ca2bdd2f50c2",
+    "jev_kind.py": "f942e6b9c6a0e7b437a1f2e220e562abfde7a547aded3ad4e29d8935c4fed2f3",
+    "jev_evidence.py": "6ebe4c1e57920899270762f02ac5fadb4b3703fae1864019d038032b4a00eeee",
+    "jev_ab.py": "f5967dd64faab57eb1bb59ffa3fc95e62fc93cbdb69a00ab58b51cba7a1bdd23"
+  },
+  "split": "pilot",
+  "repetitions": 1,
+  "pipeline": "decision",
+  "model": "claude-opus-5",
+  "effort": "max",
+  "jev_model": "jev-1.13.0",
+  "threshold": 0.9,
+  "host_load_average": [
+    7.03466796875,
+    7.20166015625,
+    6.95751953125
+  ],
+  "claude_version": "2.1.278 (Claude Code)"
+}

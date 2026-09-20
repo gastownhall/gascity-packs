@@ -1,0 +1,71 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "findings",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-20T22:52:14.583217+00:00",
+  "route": "llm",
+  "usage": {
+    "input_tokens": 902,
+    "output_tokens": 154
+  },
+  "mode": "assist",
+  "threshold": 0.9,
+  "state_sha256": "ca712812ed628675c85acf97105f92e048fcdf8fbbc3a4f085cc47d7202c8bd5",
+  "status": "completed",
+  "model": "jev-1.13.0",
+  "decision": {
+    "answers": {
+      "finding_0": {
+        "type": "choice",
+        "choice": "residual_risk",
+        "confidence": 0.99,
+        "probabilities": {
+          "residual_risk": 0.99,
+          "unclear": 0.0,
+          "missing_evidence": 0.01,
+          "required_fix": 0.0
+        }
+      },
+      "pair_0_1": {
+        "type": "choice",
+        "choice": "different",
+        "confidence": 1.0,
+        "probabilities": {
+          "unclear": 0.0,
+          "same": 0.0,
+          "different": 1.0
+        }
+      },
+      "finding_1": {
+        "type": "choice",
+        "choice": "required_fix",
+        "confidence": 0.96,
+        "probabilities": {
+          "residual_risk": 0.0,
+          "unclear": 0.0,
+          "missing_evidence": 0.03,
+          "required_fix": 0.97
+        }
+      }
+    },
+    "fallback_questions": [
+      "finding_0"
+    ],
+    "route": "llm",
+    "findings": [
+      {
+        "id": "F1",
+        "text": "Optional future optimization: cache parsing results; current latency satisfies every requirement and all mandatory checks passed.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "The implementation hardcodes an empty result where the accepted export contract requires all rows.",
+        "source": "lane-1/review.md:11"
+      }
+    ],
+    "possible_duplicate_pairs": []
+  },
+  "elapsed_seconds": 0.22923220787197351
+}

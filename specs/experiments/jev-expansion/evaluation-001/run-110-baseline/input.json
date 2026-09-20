@@ -1,0 +1,23 @@
+{
+  "issue": {
+    "title": "Worker hangs on shutdown",
+    "body": "Worker hangs while closing an active database transaction during shutdown."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Worker hangs at startup",
+      "body": "Worker hangs at startup while authenticating to the queue."
+    },
+    {
+      "id": "C2",
+      "title": "Transaction prevents shutdown",
+      "body": "Shutdown waits forever when a database transaction is active."
+    },
+    {
+      "id": "C3",
+      "title": "Dark mode",
+      "body": "Add a dark theme."
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "finding_0": {
+      "type": "choice",
+      "choice": "required_fix",
+      "confidence": 0.61,
+      "probabilities": {
+        "unclear": 0.02,
+        "required_fix": 0.71,
+        "missing_evidence": 0.22,
+        "residual_risk": 0.05
+      }
+    },
+    "pair_0_1": {
+      "type": "choice",
+      "choice": "different",
+      "confidence": 0.8,
+      "probabilities": {
+        "unclear": 0.01,
+        "different": 0.87,
+        "same": 0.12
+      }
+    },
+    "finding_1": {
+      "type": "choice",
+      "choice": "missing_evidence",
+      "confidence": 0.9,
+      "probabilities": {
+        "unclear": 0.0,
+        "required_fix": 0.07,
+        "missing_evidence": 0.93,
+        "residual_risk": 0.0
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 908,
+    "output_tokens": 153
+  }
+}

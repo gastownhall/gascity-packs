@@ -1,0 +1,35 @@
+{
+  "case_id": "failure-compile",
+  "task": "failure",
+  "arm": "jev",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:48:29.818239+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 535,
+    "output_tokens": 49
+  },
+  "raw_answers": {
+    "failure": "product"
+  },
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "17ec430e199b5fe3919616bb2dd3ad7130482579606d6bdeaa05db779174710b",
+  "status": "completed",
+  "answers": {
+    "failure": "product"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 0.5979886250570416
+}

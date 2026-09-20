@@ -1,0 +1,72 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "finding_0": {
+      "type": "choice",
+      "choice": "required_fix",
+      "confidence": 0.81,
+      "probabilities": {
+        "unclear": 0.02,
+        "residual_risk": 0.0,
+        "required_fix": 0.86,
+        "missing_evidence": 0.12
+      }
+    },
+    "pair_0_1": {
+      "type": "choice",
+      "choice": "same",
+      "confidence": 0.79,
+      "probabilities": {
+        "different": 0.14,
+        "unclear": 0.01,
+        "same": 0.85
+      }
+    },
+    "pair_0_2": {
+      "type": "choice",
+      "choice": "same",
+      "confidence": 0.95,
+      "probabilities": {
+        "different": 0.03,
+        "unclear": 0.0,
+        "same": 0.97
+      }
+    },
+    "finding_1": {
+      "type": "choice",
+      "choice": "required_fix",
+      "confidence": 0.81,
+      "probabilities": {
+        "unclear": 0.02,
+        "residual_risk": 0.0,
+        "required_fix": 0.86,
+        "missing_evidence": 0.12
+      }
+    },
+    "pair_1_2": {
+      "type": "choice",
+      "choice": "same",
+      "confidence": 0.9,
+      "probabilities": {
+        "different": 0.07,
+        "unclear": 0.0,
+        "same": 0.93
+      }
+    },
+    "finding_2": {
+      "type": "choice",
+      "choice": "required_fix",
+      "confidence": 0.83,
+      "probabilities": {
+        "unclear": 0.02,
+        "residual_risk": 0.0,
+        "required_fix": 0.87,
+        "missing_evidence": 0.11
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 1439,
+    "output_tokens": 285
+  }
+}

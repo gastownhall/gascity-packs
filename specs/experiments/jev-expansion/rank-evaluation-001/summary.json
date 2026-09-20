@@ -1,0 +1,54 @@
+{
+  "cohort": "rank-evaluation-001",
+  "planned_attempts": 32,
+  "finished_attempts": 32,
+  "unique_cases": 8,
+  "arms": {
+    "baseline": {
+      "attempts": 16,
+      "failed": 0,
+      "top1_correct": 12,
+      "top1_cases": 12,
+      "source_preserved": 16,
+      "llm_usage_unknown": 0,
+      "llm_tokens": {
+        "inputTokens": 32,
+        "outputTokens": 2669,
+        "cacheReadInputTokens": 39568,
+        "cacheCreationInputTokens": 37566,
+        "totalTokens": 79835
+      },
+      "jev_usage_unknown": 0,
+      "jev_tokens": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "seconds": 193.09061449789442
+    },
+    "jev": {
+      "attempts": 16,
+      "failed": 0,
+      "top1_correct": 12,
+      "top1_cases": 12,
+      "source_preserved": 16,
+      "llm_usage_unknown": 0,
+      "llm_tokens": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "totalTokens": 0
+      },
+      "jev_usage_unknown": 0,
+      "jev_tokens": {
+        "input_tokens": 10624,
+        "output_tokens": 820
+      },
+      "seconds": 10.771286712260917
+    }
+  },
+  "quality_regressions": 0,
+  "claude_token_reduction": 1.0,
+  "time_reduction": 0.9442164149704004,
+  "default_eligible": true
+}

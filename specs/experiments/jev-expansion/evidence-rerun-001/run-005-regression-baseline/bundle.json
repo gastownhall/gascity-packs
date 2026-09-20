@@ -1,0 +1,31 @@
+{
+  "schema": "gc.evidence-bundle.v1",
+  "worktree": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-expansion/evidence-rerun-001/run-005-regression-baseline/fixture",
+  "head": "14248afc25011ee750d8953e38d3bd5d5ce7acff",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Remove surrounding whitespace while preserving case.",
+      "claim": "The implementation trims whitespace and preserves case.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "07251e7d53925a0e0794944c2a53a011c9414c47a7ab1170ada733a49b7d0662"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "d213ea35391f026459e448c8c0b7e17cb266120fe8d0cef14eff68c716f25681"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "2f76e6b465d6826c79a59549bdae33d75086dd74caacecf5a71b39add8f9d02d",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 1,
+          "head": "14248afc25011ee750d8953e38d3bd5d5ce7acff"
+        }
+      ]
+    }
+  ]
+}

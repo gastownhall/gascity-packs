@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+_______________ ERROR collecting gascity/tests/test_jev_rank.py ________________
+ImportError while importing test module '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/gascity/tests/test_jev_rank.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+gascity/tests/test_jev_rank.py:5: in <module>
+    import jev_rank as rank
+E   ModuleNotFoundError: No module named 'jev_rank'
+=========================== short test summary info ============================
+ERROR gascity/tests/test_jev_rank.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.24s

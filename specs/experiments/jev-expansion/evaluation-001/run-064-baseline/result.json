@@ -1,0 +1,47 @@
+{
+  "case_id": "findings-risk",
+  "task": "findings",
+  "arm": "baseline",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:42:10.317369+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 197,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2521,
+      "totalTokens": 5193
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 197,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2521,
+        "webSearchRequests": 0,
+        "costUSD": 0.03138149999999999,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 153,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "raw_answers": null,
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "ca712812ed628675c85acf97105f92e048fcdf8fbbc3a4f085cc47d7202c8bd5",
+  "status": "completed",
+  "answers": {
+    "finding_0": "residual_risk",
+    "pair_0_1": "different",
+    "finding_1": "required_fix"
+  },
+  "correct": 3,
+  "questions": 3,
+  "quality_pass": true,
+  "elapsed_seconds": 13.58498837496154
+}

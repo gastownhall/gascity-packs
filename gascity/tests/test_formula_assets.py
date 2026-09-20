@@ -1877,6 +1877,10 @@ class FormulaAssetTests(unittest.TestCase):
                 "jev_mode": "{{jev_mode}}",
                 "jev_model": "{{jev_model}}",
                 "jev_threshold": "{{jev_threshold}}",
+                "jev_findings_mode": "{{jev_findings_mode}}",
+                "jev_failure_mode": "{{jev_failure_mode}}",
+                "jev_decision_model": "{{jev_decision_model}}",
+                "jev_decision_threshold": "{{jev_decision_threshold}}",
             },
         )
         self.assertEqual(review_step["needs"], ["summarize-implementation"])
@@ -3720,7 +3724,7 @@ class FormulaAssetTests(unittest.TestCase):
     def test_github_adapter_formulas_are_targetless_url_adapters(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         expected = {
-            "github-issue-triage": ("github_issue_url", {"artifact_root", "post_mode", "triage_rubric_path", "jev_kind_mode", "jev_kind_model", "jev_kind_threshold", "jev_kind_labels_path"}),
+            "github-issue-triage": ("github_issue_url", {"artifact_root", "post_mode", "triage_rubric_path", "jev_kind_mode", "jev_kind_model", "jev_kind_threshold", "jev_kind_labels_path", "jev_duplicates_mode", "jev_decision_model"}),
             "github-pr-review": (
                 "github_pr_url",
                 {
@@ -3730,6 +3734,10 @@ class FormulaAssetTests(unittest.TestCase):
                     "interaction_mode",
                     "review_mode",
                     "post_mode",
+                    "jev_kind_mode",
+                    "jev_kind_model",
+                    "jev_kind_threshold",
+                    "jev_kind_labels_path",
                 },
             ),
             "github-issue-fix": (
@@ -4075,9 +4083,19 @@ description = "Override sink that writes the base triage report contract."
         self.assertEqual(data["vars"]["jev_kind_mode"]["default"], "off")
         text = effective_formula_text(root, "github-issue-triage")
         self.assertIn("{{jev_kind_mode}}", text)
-        self.assertIn("assets/jev-kind.md", text)
+        self.assertIn("assets/jev-decisions.md", text)
         self.assertIn("priority", text)
         self.assertIn("gc.github-issue-triage-report.v1", text)
+
+    def test_duplicate_ordering_is_auto_and_retains_investigation(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        data = resolve_formula(root, "github-issue-triage")
+        self.assertEqual(data["vars"]["jev_duplicates_mode"]["default"], "auto")
+        text = effective_formula_text(root, "github-issue-triage")
+        self.assertIn("jev_rank.py", text)
+        self.assertIn("confirm a shared trigger or requirement", text)
+        self.assertIn("without extra retrieval for Jev", text)
+        self.assertIn("human-gate-sensitive-output", [s["id"] for s in data["steps"]])
 
     def test_github_issue_triage_human_gate_uses_runtime_metadata_in_step_body(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]

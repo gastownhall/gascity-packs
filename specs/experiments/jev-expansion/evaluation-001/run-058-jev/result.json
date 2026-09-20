@@ -1,0 +1,66 @@
+{
+  "case_id": "findings-three-way",
+  "task": "findings",
+  "arm": "jev",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:41:10.252634+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 164,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 3254,
+      "totalTokens": 5893
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 164,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 3254,
+        "webSearchRequests": 0,
+        "costUSD": 0.0378865,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 90,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": {
+    "input_tokens": 1439,
+    "output_tokens": 285
+  },
+  "raw_answers": {
+    "finding_0": "required_fix",
+    "pair_0_1": "same",
+    "pair_0_2": "same",
+    "finding_1": "required_fix",
+    "pair_1_2": "same",
+    "finding_2": "required_fix"
+  },
+  "fallback_questions": [
+    "finding_0",
+    "pair_0_1",
+    "finding_1",
+    "pair_1_2",
+    "finding_2"
+  ],
+  "jev_failed": false,
+  "state_sha256": "d79472a7d4adf1608c62cf0060442f53ef55177bd755cf5353f34b3e090bd834",
+  "status": "completed",
+  "answers": {
+    "finding_0": "required_fix",
+    "pair_0_1": "same",
+    "pair_0_2": "same",
+    "finding_1": "required_fix",
+    "pair_1_2": "same",
+    "finding_2": "required_fix"
+  },
+  "correct": 6,
+  "questions": 6,
+  "quality_pass": true,
+  "elapsed_seconds": 14.527582375099882
+}

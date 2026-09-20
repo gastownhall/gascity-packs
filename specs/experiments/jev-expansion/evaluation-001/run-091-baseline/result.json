@@ -1,0 +1,46 @@
+{
+  "case_id": "duplicates-same-symptom",
+  "task": "duplicates",
+  "arm": "baseline",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:46:31.893866+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 210,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2291,
+      "totalTokens": 4976
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 210,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2291,
+        "webSearchRequests": 0,
+        "costUSD": 0.0294065,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 178,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "raw_answers": null,
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "b9906d9b36d1dd22fad8a342ac5d5c1ee91d042fb40054686ed3a95100ebe148",
+  "status": "completed",
+  "answers": {
+    "candidate_0": "related",
+    "candidate_1": "same_issue"
+  },
+  "correct": 2,
+  "questions": 2,
+  "quality_pass": true,
+  "elapsed_seconds": 9.011521459091455
+}

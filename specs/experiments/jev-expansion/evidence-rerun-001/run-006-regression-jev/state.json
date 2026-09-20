@@ -1,0 +1,32 @@
+{
+  "head": "cd8e8e5519e8514de1729f8ae8029262443ca82c",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Remove surrounding whitespace while preserving case.",
+      "claim": "The implementation trims whitespace and preserves case.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "07251e7d53925a0e0794944c2a53a011c9414c47a7ab1170ada733a49b7d0662",
+          "text": "def transform(x):\n    return x.lower()\n"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "d213ea35391f026459e448c8c0b7e17cb266120fe8d0cef14eff68c716f25681",
+          "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        self.assertEqual(transform(\"  A  \"), \"A\")\n"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "83397f32ad611a05fc3842188b41b64ff8d9231a293b18f80be4fc8b5a9a68c9",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 1,
+          "head": "cd8e8e5519e8514de1729f8ae8029262443ca82c",
+          "text": "test_behavior (test_subject.TestSubject.test_behavior) ... FAIL\n\n======================================================================\nFAIL: test_behavior (test_subject.TestSubject.test_behavior)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-expansion/evidence-rerun-001/run-006-regression-jev/fixture/test_subject.py\", line 6, in test_behavior\n    self.assertEqual(transform(\"  A  \"), \"A\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '  a  ' != 'A'\n-   a  \n+ A\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.004s\n\nFAILED (failures=1)\n"
+        }
+      ]
+    }
+  ]
+}

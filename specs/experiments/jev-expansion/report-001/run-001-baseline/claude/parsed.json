@@ -1,0 +1,12 @@
+{
+  "answers": {
+    "kind": "docs"
+  },
+  "report": [
+    {
+      "id": "kind",
+      "choice": "docs",
+      "quote": "comment/doc-string only, zero behavior or schema change"
+    }
+  ]
+}

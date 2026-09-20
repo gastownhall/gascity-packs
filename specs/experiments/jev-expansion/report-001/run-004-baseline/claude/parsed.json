@@ -1,0 +1,12 @@
+{
+  "answers": {
+    "kind": "bug"
+  },
+  "report": [
+    {
+      "id": "kind",
+      "choice": "bug",
+      "quote": "every pool seat reads as work-free and becomes a scale-down victim"
+    }
+  ]
+}

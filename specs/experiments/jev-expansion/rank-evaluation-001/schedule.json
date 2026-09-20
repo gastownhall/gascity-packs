@@ -1,0 +1,162 @@
+[
+  {
+    "case_id": "rank-timezone",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-timezone",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-unicode",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-unicode",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-signing",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-signing",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-retry",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-retry",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-unknown",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-unknown",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-foreign-key",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-foreign-key",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-none",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-none",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-bom",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-bom",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-timezone",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-timezone",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-unicode",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-unicode",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-signing",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-signing",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-retry",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-retry",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-unknown",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-unknown",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-foreign-key",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-foreign-key",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-none",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-none",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-bom",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "rank-bom",
+    "arm": "jev",
+    "repetition": 2
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "issue": {
+    "title": "It does not work",
+    "body": "No command, expected behavior or failure details are supplied."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Something broke",
+      "body": "No details supplied."
+    }
+  ]
+}

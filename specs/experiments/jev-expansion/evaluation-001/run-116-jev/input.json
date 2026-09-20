@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "Add CSV export",
+    "body": "Users need a CSV download of every report row."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Download report spreadsheet data",
+      "body": "Please provide all report rows as a CSV file."
+    },
+    {
+      "id": "C2",
+      "title": "Wrong report totals",
+      "body": "Numeric totals omit negative values."
+    }
+  ]
+}

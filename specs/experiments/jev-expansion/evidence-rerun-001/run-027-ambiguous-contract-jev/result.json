@@ -1,0 +1,48 @@
+{
+  "case_id": "ambiguous-contract",
+  "arm": "jev",
+  "started_at": "2026-09-20T23:02:49.186941+00:00",
+  "expected": "unclear",
+  "scope": "evidence-assessment",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 30,
+      "cacheReadInputTokens": 4547,
+      "cacheCreationInputTokens": 2739,
+      "totalTokens": 7318
+    },
+    "models": {
+      "claude-sonnet-5": {
+        "inputTokens": 2,
+        "outputTokens": 30,
+        "cacheReadInputTokens": 4547,
+        "cacheCreationInputTokens": 2739,
+        "webSearchRequests": 0,
+        "costUSD": 0.0121694,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": {
+    "input_tokens": 1026,
+    "output_tokens": 59
+  },
+  "jev_resolved_model": "jev-1.13.0",
+  "fallback": true,
+  "status": "completed",
+  "predicted": [
+    {
+      "id": "AC-1",
+      "choice": "unclear"
+    }
+  ],
+  "correct": true,
+  "false_support": false,
+  "elapsed_seconds": 21.273742584045976
+}

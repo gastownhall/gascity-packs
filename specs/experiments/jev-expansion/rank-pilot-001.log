@@ -1,0 +1,8 @@
+[1/4] rank-pilot-empty baseline rep=1 starting
+[1/4] completed; top1=True; 8.40s
+[2/4] rank-pilot-empty jev rep=1 starting
+[2/4] completed; top1=True; 0.80s
+[3/4] rank-pilot-export jev rep=1 starting
+[3/4] completed; top1=True; 0.64s
+[4/4] rank-pilot-export baseline rep=1 starting
+[4/4] completed; top1=True; 7.18s

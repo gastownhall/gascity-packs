@@ -1,0 +1,28 @@
+{
+  "case_id": "rank-unknown",
+  "arm": "jev",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 555,
+    "output_tokens": 40
+  },
+  "gold_top_ids": [],
+  "state_sha256": "bcea31970b8e144c8e9c10da9b1f90ba32a5cc206c7f6e757d6a47cd66dc0b83",
+  "status": "completed",
+  "ranked_candidate_ids": [
+    "C2",
+    "C1"
+  ],
+  "source_preserved": true,
+  "top1_correct": null,
+  "elapsed_seconds": 0.5424219998531044
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "duplicates",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-20T22:55:53.775094+00:00",
+  "route": "llm",
+  "usage": {
+    "input_tokens": 505,
+    "output_tokens": 52
+  },
+  "mode": "assist",
+  "threshold": 0.9,
+  "state_sha256": "7f638ac7b94daff9fbcd99f5de1542be66f6b02d4c80bb2895d4181949d82e42",
+  "status": "completed",
+  "model": "jev-1.13.0",
+  "decision": {
+    "answers": {
+      "candidate_0": {
+        "type": "choice",
+        "choice": "unclear",
+        "confidence": 0.48,
+        "probabilities": {
+          "same_issue": 0.38,
+          "unrelated": 0.0,
+          "unclear": 0.62,
+          "related": 0.0
+        }
+      }
+    },
+    "fallback_questions": [
+      "candidate_0"
+    ],
+    "route": "llm",
+    "ranked_candidate_ids": [
+      "C1"
+    ]
+  },
+  "elapsed_seconds": 0.21240104199387133
+}

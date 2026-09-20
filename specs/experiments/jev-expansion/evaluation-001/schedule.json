@@ -1,0 +1,642 @@
+[
+  {
+    "case_id": "kind-gascity-5261",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-5261",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-permission",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-permission",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6413",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6413",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-distinct-same-file",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-distinct-same-file",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-insufficient",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-insufficient",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6408",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6408",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-cross-component",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-cross-component",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-mixed",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-mixed",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-schema",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-schema",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-auth",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-auth",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-hostile",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-hostile",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-version",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-version",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-timeout",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-timeout",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-same-symptom",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-same-symptom",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-no-match",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-no-match",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-tests-skipped",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-tests-skipped",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6417",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6417",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-similar-proof",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-similar-proof",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-no-output",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-no-output",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-hostile",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-hostile",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-compile",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-compile",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-uncertain",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-uncertain",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-different-trigger",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-different-trigger",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-behavior",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-behavior",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6376",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6376",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-request",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-request",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6396",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6396",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-5680",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-5680",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-three-way",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-three-way",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-proof-duplicates",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-proof-duplicates",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6327",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-6327",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-risk",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-risk",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-gascity-5261",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-5261",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-permission",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-permission",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6413",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6413",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-distinct-same-file",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-distinct-same-file",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-insufficient",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-insufficient",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6408",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6408",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-cross-component",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-cross-component",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-mixed",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-mixed",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-schema",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-schema",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-auth",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-auth",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-hostile",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-hostile",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-version",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-version",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-timeout",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-timeout",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-same-symptom",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-same-symptom",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-no-match",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-no-match",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-tests-skipped",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-tests-skipped",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6417",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6417",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-similar-proof",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-similar-proof",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-no-output",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-no-output",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-hostile",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-hostile",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-compile",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-compile",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-uncertain",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-uncertain",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-different-trigger",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-different-trigger",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-behavior",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "failure-behavior",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6376",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6376",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-request",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "duplicates-request",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6396",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6396",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-5680",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-5680",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-three-way",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-three-way",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-proof-duplicates",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-proof-duplicates",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6327",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "kind-gascity-6327",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-risk",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "findings-risk",
+    "arm": "jev",
+    "repetition": 2
+  }
+]

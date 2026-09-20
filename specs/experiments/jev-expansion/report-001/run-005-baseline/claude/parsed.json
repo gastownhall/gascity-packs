@@ -1,0 +1,12 @@
+{
+  "answers": {
+    "failure": "environment"
+  },
+  "report": [
+    {
+      "id": "failure",
+      "choice": "environment",
+      "quote": "zsh: permission denied: ./check.sh"
+    }
+  ]
+}

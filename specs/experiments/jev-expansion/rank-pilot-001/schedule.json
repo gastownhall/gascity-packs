@@ -1,0 +1,22 @@
+[
+  {
+    "case_id": "rank-pilot-empty",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-pilot-empty",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-pilot-export",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "rank-pilot-export",
+    "arm": "baseline",
+    "repetition": 1
+  }
+]

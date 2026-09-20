@@ -1,0 +1,82 @@
+[
+  {
+    "case_id": "findings-repeated",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-repeated",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-simple",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "findings-simple",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-pilot-gascity-6319",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-pilot-gascity-6319",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-pilot-gascity-6435",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "kind-pilot-gascity-6435",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-clear",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-clear",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-related",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "duplicates-related",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-no-python",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-no-python",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-assert",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "failure-assert",
+    "arm": "baseline",
+    "repetition": 1
+  }
+]

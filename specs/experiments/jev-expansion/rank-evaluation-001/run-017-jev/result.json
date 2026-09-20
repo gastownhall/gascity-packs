@@ -1,0 +1,31 @@
+{
+  "case_id": "rank-timezone",
+  "arm": "jev",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 734,
+    "output_tokens": 58
+  },
+  "gold_top_ids": [
+    "C2"
+  ],
+  "state_sha256": "236fdcdc5cc3da30f7ba20da54763d9a886f608c4f1a32d578001916d169230b",
+  "status": "completed",
+  "ranked_candidate_ids": [
+    "C2",
+    "C1",
+    "C3"
+  ],
+  "source_preserved": true,
+  "top1_correct": true,
+  "elapsed_seconds": 0.753244417021051
+}

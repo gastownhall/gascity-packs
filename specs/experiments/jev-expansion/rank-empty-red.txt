@@ -1,0 +1,27 @@
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+___ test_empty_candidates_are_a_code_result_not_a_fabricated_model_response ____
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-37/test_empty_candidates_are_a_co0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1093e6ea0>
+
+    def test_empty_candidates_are_a_code_result_not_a_fabricated_model_response(tmp_path,monkeypatch):
+     import json
+     monkeypatch.delenv('TYPESAFE_API_KEY',raising=False)
+     def forbidden(*a,**kw):raise AssertionError('empty ranking called the network')
+     monkeypatch.setattr(rank.transport,'evaluate',forbidden)
+     source=tmp_path/'input.json';source.write_text(json.dumps({'issue':STATE['issue'],'candidates':[]}))
+     out=tmp_path/'out'
+     assert rank.main([str(source),'--output-dir',str(out),'--mode','assist'])==0
+     report=json.loads((out/'report.json').read_text())
+>    assert report.get('model') is None and report['reason']=='empty_candidates'
+E    AssertionError: assert ('jev-1.13.0' is None)
+E     +  where 'jev-1.13.0' = <built-in method get of dict object at 0x10946eec0>('model')
+E     +    where <built-in method get of dict object at 0x10946eec0> = {'schema': 'gc.duplicate-ranking.v1', 'question_version': 'gc.duplicate-ranking.v1', 'route': 'investigate_ranked_candidates', 'usage': {'input_tokens': 0, 'output_tokens': 0}, ...}.get
+
+gascity/tests/test_jev_rank.py:41: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"status": "completed", "route": "investigate_ranked_candidates", "report": "/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-37/test_empty_candidates_are_a_co0/out/report.json"}
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_rank.py::test_empty_candidates_are_a_code_result_not_a_fabricated_model_response
+1 failed, 3 passed in 0.23s

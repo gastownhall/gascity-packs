@@ -1,0 +1,14 @@
+{
+  "findings": [
+    {
+      "id": "F1",
+      "text": "Optional future optimization: cache parsing results; current latency satisfies every requirement and all mandatory checks passed.",
+      "source": "lane-0/review.md:10"
+    },
+    {
+      "id": "F2",
+      "text": "The implementation hardcodes an empty result where the accepted export contract requires all rows.",
+      "source": "lane-1/review.md:11"
+    }
+  ]
+}

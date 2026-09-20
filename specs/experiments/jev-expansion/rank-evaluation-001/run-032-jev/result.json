@@ -1,0 +1,31 @@
+{
+  "case_id": "rank-bom",
+  "arm": "jev",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 715,
+    "output_tokens": 58
+  },
+  "gold_top_ids": [
+    "C3"
+  ],
+  "state_sha256": "bd1f3078ffb2aeb4a9e8c41c4c6d9d79f98d3de184846cf8578c78e127ae80c2",
+  "status": "completed",
+  "ranked_candidate_ids": [
+    "C3",
+    "C2",
+    "C1"
+  ],
+  "source_preserved": true,
+  "top1_correct": true,
+  "elapsed_seconds": 0.7550805420614779
+}

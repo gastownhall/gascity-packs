@@ -1,0 +1,71 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "findings",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-20T22:54:59.898493+00:00",
+  "route": "llm",
+  "usage": {
+    "input_tokens": 896,
+    "output_tokens": 151
+  },
+  "mode": "assist",
+  "threshold": 0.9,
+  "state_sha256": "f33f7b79a997fae37edfeaee370f68a4f50eed90aae44f535810dea0c73698f1",
+  "status": "completed",
+  "model": "jev-1.13.0",
+  "decision": {
+    "answers": {
+      "finding_0": {
+        "type": "choice",
+        "choice": "required_fix",
+        "confidence": 0.69,
+        "probabilities": {
+          "required_fix": 0.77,
+          "unclear": 0.04,
+          "residual_risk": 0.0,
+          "missing_evidence": 0.19
+        }
+      },
+      "pair_0_1": {
+        "type": "choice",
+        "choice": "different",
+        "confidence": 1.0,
+        "probabilities": {
+          "unclear": 0.0,
+          "different": 1.0,
+          "same": 0.0
+        }
+      },
+      "finding_1": {
+        "type": "choice",
+        "choice": "required_fix",
+        "confidence": 0.9,
+        "probabilities": {
+          "required_fix": 0.92,
+          "unclear": 0.01,
+          "residual_risk": 0.0,
+          "missing_evidence": 0.07
+        }
+      }
+    },
+    "fallback_questions": [
+      "finding_0"
+    ],
+    "route": "llm",
+    "findings": [
+      {
+        "id": "F1",
+        "text": "parser.py drops invalid-input errors; return a nonzero exit.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "parser.py reads the full upload without its required size limit; reject oversized uploads.",
+        "source": "lane-1/review.md:11"
+      }
+    ],
+    "possible_duplicate_pairs": []
+  },
+  "elapsed_seconds": 0.31464166613295674
+}

@@ -1,0 +1,77 @@
+{
+  "checks": [
+    {
+      "task": "kind",
+      "mode": "auto",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "task": "kind",
+      "mode": "off",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "task": "kind",
+      "mode": "assist",
+      "status": "failed",
+      "returncode": 1
+    },
+    {
+      "task": "findings",
+      "mode": "auto",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "task": "findings",
+      "mode": "off",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "task": "findings",
+      "mode": "assist",
+      "status": "failed",
+      "returncode": 1
+    },
+    {
+      "task": "failure",
+      "mode": "auto",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "task": "failure",
+      "mode": "off",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "task": "failure",
+      "mode": "assist",
+      "status": "failed",
+      "returncode": 1
+    },
+    {
+      "task": "duplicates",
+      "mode": "auto",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "task": "duplicates",
+      "mode": "off",
+      "status": "skipped",
+      "returncode": 0
+    },
+    {
+      "task": "duplicates",
+      "mode": "assist",
+      "status": "failed",
+      "returncode": 1
+    }
+  ],
+  "passed": true
+}

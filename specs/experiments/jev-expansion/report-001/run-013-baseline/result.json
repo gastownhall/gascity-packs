@@ -1,0 +1,45 @@
+{
+  "case_id": "duplicates-insufficient",
+  "task": "duplicates",
+  "arm": "baseline",
+  "pipeline": "report",
+  "started_at": "2026-09-20T22:55:40.499822+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 321,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2069,
+      "totalTokens": 4865
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 321,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2069,
+        "webSearchRequests": 0,
+        "costUSD": 0.0299615,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 253,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "raw_answers": null,
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "7f638ac7b94daff9fbcd99f5de1542be66f6b02d4c80bb2895d4181949d82e42",
+  "status": "completed",
+  "answers": {
+    "candidate_0": "unclear"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 12.822703042067587
+}

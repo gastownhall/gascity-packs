@@ -28,3 +28,6 @@ __pycache__/
 
 # Full task transcripts are preserved locally; commit only their hashes and usage.
 /specs/experiments/jev-evidence-routing/**/raw-transcripts/
+
+# Expanded Jev benchmarks retain fixture contents in state/proof artifacts.
+/specs/experiments/jev-expansion/**/fixture/

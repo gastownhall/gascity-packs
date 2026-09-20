@@ -1,0 +1,35 @@
+{
+  "case_id": "failure-no-output",
+  "task": "failure",
+  "arm": "jev",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:47:51.867977+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 529,
+    "output_tokens": 52
+  },
+  "raw_answers": {
+    "failure": "missing_evidence"
+  },
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "9b8378d4a4635e471041056c58234d5ac6e5960019e7e965bd4fe7939c1ac078",
+  "status": "completed",
+  "answers": {
+    "failure": "missing_evidence"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 0.6343172090128064
+}

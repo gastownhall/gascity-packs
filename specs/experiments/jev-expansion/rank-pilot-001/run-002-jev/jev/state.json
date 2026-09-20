@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "Empty config crash",
+    "body": "Loading an empty config panics."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Dark theme",
+      "body": "Add a dark theme."
+    },
+    {
+      "id": "C2",
+      "title": "Zero-byte config panic",
+      "body": "Loading a zero-byte config panics."
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "findings": [
+    {
+      "id": "F1",
+      "text": "parser.py drops invalid-input errors; return a nonzero exit.",
+      "source": "lane-0/review.md:10"
+    },
+    {
+      "id": "F2",
+      "text": "parser.py reads the full upload without its required size limit; reject oversized uploads.",
+      "source": "lane-1/review.md:11"
+    }
+  ]
+}

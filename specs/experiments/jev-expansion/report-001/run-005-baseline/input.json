@@ -1,0 +1,5 @@
+{
+  "command": "./check.sh",
+  "output": "zsh: permission denied: ./check.sh",
+  "context": "The executable bit is absent on the external fixture script; no product code ran."
+}

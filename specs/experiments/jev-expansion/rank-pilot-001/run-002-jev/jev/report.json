@@ -1,0 +1,37 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "route": "investigate_ranked_candidates",
+  "usage": {
+    "input_tokens": 553,
+    "output_tokens": 40
+  },
+  "started_at": "2026-09-20T23:04:50.989495+00:00",
+  "state_sha256": "f462e504a6e8fde7784d8f2a7ca9306a2822ebbfeb8cfaa053d46fd9faf3a279",
+  "status": "completed",
+  "decision": {
+    "ranked_candidate_ids": [
+      "C2",
+      "C1"
+    ],
+    "scores": {
+      "C1": 0.02,
+      "C2": 0.91
+    },
+    "candidates": [
+      {
+        "id": "C1",
+        "title": "Dark theme",
+        "body": "Add a dark theme."
+      },
+      {
+        "id": "C2",
+        "title": "Zero-byte config panic",
+        "body": "Loading a zero-byte config panics."
+      }
+    ],
+    "requires_investigation": true
+  },
+  "model": "jev-1.13.0",
+  "elapsed_seconds": 0.28724062512628734
+}

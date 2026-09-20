@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "Config rejects Unicode",
+    "body": "A valid config with Unicode project names is rejected."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Unicode docs",
+      "body": "Document Unicode project naming."
+    },
+    {
+      "id": "C2",
+      "title": "Unicode config rejected",
+      "body": "Valid non-ASCII project names are rejected when loading config."
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "case_id": "failure-behavior",
+  "task": "failure",
+  "arm": "jev",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:49:45.622905+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 540,
+    "output_tokens": 49
+  },
+  "raw_answers": {
+    "failure": "product"
+  },
+  "fallback_questions": [],
+  "jev_failed": false,
+  "state_sha256": "410bf8e1b1b365f56dc7d75a53c3dde78345c1199cc1a5f830c0272f4e180118",
+  "status": "completed",
+  "answers": {
+    "failure": "product"
+  },
+  "correct": 1,
+  "questions": 1,
+  "quality_pass": true,
+  "elapsed_seconds": 0.8340733340010047
+}

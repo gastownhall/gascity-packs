@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "Something broke",
+    "body": "No affected command, expected behavior or observed result is supplied."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "It is broken too",
+      "body": "No details supplied."
+    },
+    {
+      "id": "C2",
+      "title": "Maybe a problem",
+      "body": "No diagnosis or reproduction steps."
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "route": "investigate_ranked_candidates",
+  "usage": {
+    "input_tokens": 734,
+    "output_tokens": 58
+  },
+  "started_at": "2026-09-20T23:07:21.163957+00:00",
+  "state_sha256": "236fdcdc5cc3da30f7ba20da54763d9a886f608c4f1a32d578001916d169230b",
+  "status": "completed",
+  "decision": {
+    "ranked_candidate_ids": [
+      "C2",
+      "C1",
+      "C3"
+    ],
+    "scores": {
+      "C1": 0.24,
+      "C2": 0.96,
+      "C3": 0.07
+    },
+    "candidates": [
+      {
+        "id": "C1",
+        "title": "Daily job skipped in spring",
+        "body": "At the spring DST transition, 02:30 does not exist and the daily job is skipped."
+      },
+      {
+        "id": "C2",
+        "title": "Autumn repeated hour duplicates a run",
+        "body": "A scheduled daily 01:30 run executes twice during the fall clock rollback."
+      },
+      {
+        "id": "C3",
+        "title": "UTC display",
+        "body": "Show UTC timestamps in the audit UI."
+      }
+    ],
+    "requires_investigation": true
+  },
+  "model": "jev-1.13.0",
+  "elapsed_seconds": 0.20140179200097919
+}

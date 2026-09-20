@@ -1,0 +1,42 @@
+{
+  "case_id": "rank-pilot-export",
+  "arm": "baseline",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 172,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2182,
+      "totalTokens": 4829
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 172,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2182,
+        "webSearchRequests": 0,
+        "costUSD": 0.0273665,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 148,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "gold_top_ids": [
+    "C1"
+  ],
+  "state_sha256": "cb16b82a30f6be89129da9c0cc2160afc54ddac874ad1efe880f6205dfd1ad7a",
+  "status": "completed",
+  "ranked_candidate_ids": [
+    "C1",
+    "C2"
+  ],
+  "source_preserved": true,
+  "top1_correct": true,
+  "elapsed_seconds": 7.184457332827151
+}

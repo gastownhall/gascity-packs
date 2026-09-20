@@ -1,0 +1,31 @@
+{
+  "kind": {
+    "default": "off",
+    "reasons": [
+      "report: no measured Claude token reduction"
+    ],
+    "scope": "Observed benchmark gate only; does not prove universal quality or full-workflow speed."
+  },
+  "findings": {
+    "default": "off",
+    "reasons": [
+      "decision: observed expected-answer regression",
+      "report: no measured Claude token reduction",
+      "report: no measured time reduction"
+    ],
+    "scope": "Observed benchmark gate only; does not prove universal quality or full-workflow speed."
+  },
+  "failure": {
+    "default": "off",
+    "reasons": [
+      "decision: observed expected-answer regression",
+      "report: no measured time reduction"
+    ],
+    "scope": "Observed benchmark gate only; does not prove universal quality or full-workflow speed."
+  },
+  "duplicates": {
+    "default": "auto",
+    "reasons": [],
+    "scope": "Observed benchmark gate only; does not prove universal quality or full-workflow speed."
+  }
+}

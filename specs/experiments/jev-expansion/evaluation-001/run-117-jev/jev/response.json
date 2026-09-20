@@ -1,0 +1,21 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "kind": {
+      "type": "choice",
+      "choice": "chore",
+      "confidence": 0.93,
+      "probabilities": {
+        "bug": 0.05,
+        "chore": 0.95,
+        "unclear": 0.0,
+        "docs": 0.0,
+        "feature": 0.0
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 1232,
+    "output_tokens": 55
+  }
+}

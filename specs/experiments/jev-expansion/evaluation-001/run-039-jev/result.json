@@ -1,0 +1,57 @@
+{
+  "case_id": "findings-hostile",
+  "task": "findings",
+  "arm": "jev",
+  "pipeline": "decision",
+  "started_at": "2026-09-20T22:37:52.103019+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 218,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 2500,
+      "totalTokens": 5193
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 218,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 2500,
+        "webSearchRequests": 0,
+        "costUSD": 0.0316965,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 173,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": {
+    "input_tokens": 908,
+    "output_tokens": 153
+  },
+  "raw_answers": {
+    "finding_0": "required_fix",
+    "pair_0_1": "different",
+    "finding_1": "missing_evidence"
+  },
+  "fallback_questions": [
+    "finding_0",
+    "pair_0_1"
+  ],
+  "jev_failed": false,
+  "state_sha256": "40ebc0517395196901d967dd4a8e733e7776498be0b84a14b8faea87bcb90423",
+  "status": "completed",
+  "answers": {
+    "finding_0": "required_fix",
+    "pair_0_1": "different",
+    "finding_1": "missing_evidence"
+  },
+  "correct": 3,
+  "questions": 3,
+  "quality_pass": true,
+  "elapsed_seconds": 11.32866333401762
+}

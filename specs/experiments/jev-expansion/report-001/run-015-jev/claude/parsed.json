@@ -1,0 +1,18 @@
+{
+  "answers": {
+    "candidate_0": "unrelated",
+    "candidate_1": "same_issue"
+  },
+  "report": [
+    {
+      "id": "candidate_0",
+      "choice": "unrelated",
+      "quote": "The web dashboard color picker ignores saved selections."
+    },
+    {
+      "id": "candidate_1",
+      "choice": "same_issue",
+      "quote": "--no-color on the CLI does not suppress ANSI escape sequences."
+    }
+  ]
+}

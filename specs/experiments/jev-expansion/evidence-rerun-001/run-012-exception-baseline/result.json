@@ -1,0 +1,43 @@
+{
+  "case_id": "exception",
+  "arm": "baseline",
+  "started_at": "2026-09-20T23:01:02.439952+00:00",
+  "expected": "supported",
+  "scope": "evidence-assessment",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 29,
+      "cacheReadInputTokens": 4547,
+      "cacheCreationInputTokens": 2716,
+      "totalTokens": 7294
+    },
+    "models": {
+      "claude-sonnet-5": {
+        "inputTokens": 2,
+        "outputTokens": 29,
+        "cacheReadInputTokens": 4547,
+        "cacheCreationInputTokens": 2716,
+        "webSearchRequests": 0,
+        "costUSD": 0.0120674,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "status": "completed",
+  "predicted": [
+    {
+      "id": "AC-1",
+      "choice": "supported"
+    }
+  ],
+  "correct": true,
+  "false_support": false,
+  "elapsed_seconds": 11.050561083015054
+}

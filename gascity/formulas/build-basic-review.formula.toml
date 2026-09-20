@@ -27,6 +27,23 @@ default = "jev-1.13.0"
 description = "Minimum confidence for advisory evidence routing."
 default = "0.85"
 
+[vars.jev_findings_mode]
+description = "Finding classification and pair matching: off, auto (when configured), or assist."
+default = "off"
+
+[vars.jev_failure_mode]
+description = "Failure investigation routing: off, auto (when configured), or assist."
+default = "off"
+
+[vars.jev_decision_model]
+description = "Pinned Jev model for bounded workflow decisions."
+default = "jev-1.13.0"
+
+[vars.jev_decision_threshold]
+description = "Confidence cutoff for decisions; pair matching has a 0.95 floor."
+default = "0.90"
+
+
 [[template]]
 id = "{target}.setup-build-basic-review"
 title = "Prepare build-basic starter review"

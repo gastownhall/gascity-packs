@@ -1,0 +1,72 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "findings",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-20T22:26:41.780825+00:00",
+  "route": "llm",
+  "usage": {
+    "input_tokens": 895,
+    "output_tokens": 153
+  },
+  "mode": "assist",
+  "threshold": 0.9,
+  "state_sha256": "b14cb37a3c416ae92ba548eced59ea997263f85b39d8af732859fd17208b4fc6",
+  "status": "completed",
+  "model": "jev-1.13.0",
+  "decision": {
+    "answers": {
+      "finding_0": {
+        "type": "choice",
+        "choice": "required_fix",
+        "confidence": 0.8,
+        "probabilities": {
+          "missing_evidence": 0.14,
+          "unclear": 0.01,
+          "residual_risk": 0.0,
+          "required_fix": 0.85
+        }
+      },
+      "pair_0_1": {
+        "type": "choice",
+        "choice": "different",
+        "confidence": 0.82,
+        "probabilities": {
+          "unclear": 0.0,
+          "same": 0.12,
+          "different": 0.88
+        }
+      },
+      "finding_1": {
+        "type": "choice",
+        "choice": "missing_evidence",
+        "confidence": 0.99,
+        "probabilities": {
+          "missing_evidence": 1.0,
+          "unclear": 0.0,
+          "residual_risk": 0.0,
+          "required_fix": 0.0
+        }
+      }
+    },
+    "fallback_questions": [
+      "finding_0",
+      "pair_0_1"
+    ],
+    "route": "llm",
+    "findings": [
+      {
+        "id": "F1",
+        "text": "The parser returns success on malformed input, violating the specified nonzero exit contract.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "The malformed-input case has no executed test or saved proof.",
+        "source": "lane-1/review.md:11"
+      }
+    ],
+    "possible_duplicate_pairs": []
+  },
+  "elapsed_seconds": 0.31202066596597433
+}

@@ -1,0 +1,10 @@
+{
+  "baseline": "6e005f4",
+  "command_unchanged": true,
+  "command_sha256": "ed0757c6bddd97dd62e8218fa64657c85cb47b80f8b5162185210f5e201f84ea",
+  "test_functions_unchanged": [
+    "test_city_claim_command_bounds_ambiguous_hook_failures_without_drain_ack",
+    "test_city_claim_command_preserves_unreadable_claim_after_bounded_retries"
+  ],
+  "prior_baseline_failure_artifact": "../jev-evidence-routing/kind-contract-001/baseline-timeout-check.txt"
+}
