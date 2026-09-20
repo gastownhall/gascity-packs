@@ -1,0 +1,44 @@
+{
+  "at": "2026-09-20T00:43:48.730325+00:00",
+  "status": "aborted",
+  "reason": "Confirmed Gas City Darwin orphan scanner reaped shared tmux server, terminating unrelated workers in this fixture. Stop before applying a local runtime fix.",
+  "pid": 8391,
+  "elapsed_at_interrupt_ps": "20:41",
+  "valid_comparison": false,
+  "scope": "full-build-basic",
+  "arm": "baseline",
+  "terminal_exit": 130,
+  "report_reconstructed_from_retained_artifacts": true,
+  "otel_usage": {
+    "status": "observed",
+    "request_count": 16,
+    "models": [
+      "claude-haiku-4-5-20251001",
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 9242,
+      "output_tokens": 1567,
+      "cache_read_tokens": 563286,
+      "cache_creation_tokens": 61025,
+      "total_tokens": 635120
+    },
+    "coverage": "Observed OTLP records; collector error counter was lost when SIGINT interrupted report finalization. Totals are recorded consumption, not verified complete usage."
+  },
+  "llm_usage": {
+    "status": "observed",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 11,
+    "models": [
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 22,
+      "output_tokens": 1495,
+      "cache_read_input_tokens": 505509,
+      "cache_creation_input_tokens": 61005
+    }
+  },
+  "quality": "Incomplete: prepare step passed, no implementation or completed review",
+  "captured_at": "2026-09-20T00:45:50.863122+00:00"
+}

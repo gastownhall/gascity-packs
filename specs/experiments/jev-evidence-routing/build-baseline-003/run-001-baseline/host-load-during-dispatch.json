@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-20T00:31:44.159212+00:00",
+  "uptime": {
+    "exit": 0,
+    "stdout": "17:31  3 users, load averages: 21.38 16.27 14.94\n",
+    "stderr": ""
+  },
+  "vm_stat": {
+    "exit": 0,
+    "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     4540.\nPages active:                                 500829.\nPages inactive:                               548559.\nPages speculative:                              9081.\nPages throttled:                                   0.\nPages wired down:                             240721.\nPages purgeable:                                3170.\n\"Translation faults\":                    30321493533.\nPages copy-on-write:                       617130068.\nPages zero filled:                        4134841409.\nPages reactivated:                          27207886.\nPages purged:                               13044677.\nFile-backed pages:                            343806.\nAnonymous pages:                              714663.\nPages stored in compressor:                  1750874.\nPages occupied by compressor:                 745997.\nDecompressions:                          15467366831.\nCompressions:                            15538737559.\nPageins:                                   445813382.\nPageouts:                                    2368938.\nSwapins:                                     2617602.\nSwapouts:                                    3341758.\n",
+    "stderr": ""
+  },
+  "cpu_count": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "sysctl: sysctl fmt -1 1024 1: Operation not permitted\n"
+  }
+}

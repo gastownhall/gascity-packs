@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/opt/homebrew/bin/gc",
+    "--city",
+    "/private/tmp/gcja-79_ojx3b/w/city",
+    "trace",
+    "show",
+    "--since",
+    "1h",
+    "--json"
+  ],
+  "exit": 0,
+  "stderr": ""
+}

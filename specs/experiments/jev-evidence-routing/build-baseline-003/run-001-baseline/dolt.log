@@ -1,0 +1,23 @@
+gc scope watchdog: supervising dolt sql-server pid 8749 (config /tmp/gcja-79_ojx3b/w/city/.gc/runtime/packs/dolt/dolt-config.yaml, poll interval 30s)
+Starting server with Config HP="127.0.0.1:52176"|T="15000"|R="false"|L="warning"
+time="2026-09-19T17:24:08-07:00" level=warning msg="secure_file_priv is set to \"\", which is insecure."
+time="2026-09-19T17:24:08-07:00" level=warning msg="Any user with GRANT FILE privileges will be able to read any file which the sql-server process can read."
+time="2026-09-19T17:24:08-07:00" level=warning msg="Please consider restarting the server with secure_file_priv set to a safe (or non-existent) directory."
+time="2026-09-19T17:24:14-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:24:14.854261 -0700 PDT m=+6.491672709" connectionID=14 error="database not found: hq" queryTime="2026-09-19 17:24:14.86101 -0700 PDT m=+6.498421292"
+time="2026-09-19T17:24:15-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:24:15.768501 -0700 PDT m=+7.405895334" connectionDb=hq connectionID=17 error="table not found: config" queryTime="2026-09-19 17:24:15.775916 -0700 PDT m=+7.413310501"
+time="2026-09-19T17:24:17-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:24:17.057329 -0700 PDT m=+8.694699542" connectionDb=hq connectionID=21 error="table not found: issues" queryTime="2026-09-19 17:24:17.064283 -0700 PDT m=+8.701652584"
+time="2026-09-19T17:24:17-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:24:17.390249 -0700 PDT m=+9.027612876" connectionDb=hq connectionID=25 error="table not found: issues" queryTime="2026-09-19 17:24:17.517943 -0700 PDT m=+9.155304251"
+time="2026-09-19T17:25:11-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:25:11.439408 -0700 PDT m=+63.075759251" connectionID=97 error="database not found: fi" queryTime="2026-09-19 17:25:11.449761 -0700 PDT m=+63.086111126"
+time="2026-09-19T17:25:13-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:25:13.177605 -0700 PDT m=+64.813923334" connectionDb=fi connectionID=100 error="table not found: config" queryTime="2026-09-19 17:25:13.19753 -0700 PDT m=+64.833848042"
+time="2026-09-19T17:25:15-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:25:15.141653 -0700 PDT m=+66.777934084" connectionDb=fi connectionID=104 error="table not found: issues" queryTime="2026-09-19 17:25:15.162956 -0700 PDT m=+66.799236667"
+time="2026-09-19T17:25:15-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:25:15.50033 -0700 PDT m=+67.136604959" connectionDb=fi connectionID=108 error="table not found: issues" queryTime="2026-09-19 17:25:15.664052 -0700 PDT m=+67.300324084"
+
+
+time="2026-09-19T17:41:06-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:41:01.97887 -0700 PDT m=+1013.647057876" connectionDb=hq connectionID=4968 error="serialization failure: this transaction conflicts with a committed transaction from another client, try restarting transaction." queryTime="2026-09-19 17:41:06.646052 -0700 PDT m=+1018.314202751"
+time="2026-09-19T17:43:44-07:00" level=warning msg="client connection went away while a query was executing" connectionID=5833 error=EOF
+time="2026-09-19T17:44:09-07:00" level=warning msg="client connection went away while a query was executing" connectionID=5907 error=EOF
+time="2026-09-19T17:44:11-07:00" level=warning msg="client connection went away while a query was executing" connectionID=5873 error=EOF
+time="2026-09-19T17:44:13-07:00" level=warning msg="client connection went away while a query was executing" connectionID=5863 error=EOF
+time="2026-09-19T17:44:47-07:00" level=error msg="Error reading packet from client 5968 (127.0.0.1:50089): read tcp 127.0.0.1:52176->127.0.0.1:50089: use of closed network connection\nio.ReadFull(header size) failed"
+time="2026-09-19T17:44:47-07:00" level=error msg="Error reading packet from client 5959 (127.0.0.1:50076): read tcp 127.0.0.1:52176->127.0.0.1:50076: use of closed network connection\nio.ReadFull(header size) failed"
+gc scope watchdog: dolt sql-server pid 8749 exited cleanly

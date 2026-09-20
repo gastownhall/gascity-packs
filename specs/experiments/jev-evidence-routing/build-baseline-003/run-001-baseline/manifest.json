@@ -1,0 +1,29 @@
+{
+  "argv": [
+    "scripts/jev_build_ab.py",
+    "--arms",
+    "baseline",
+    "--repetitions",
+    "1",
+    "--dispatch-timeout",
+    "600",
+    "--timeout",
+    "3600",
+    "--bd-bin",
+    "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/build/bin/bd",
+    "--out",
+    "specs/experiments/jev-evidence-routing/build-baseline-003"
+  ],
+  "versions": {
+    "gc": "1.4.2",
+    "bd": "bd version 1.3.0-jev-preflight (local-regression)",
+    "claude": "2.1.278 (Claude Code)",
+    "bash": "GNU bash, version 5.3.20(1)-release (aarch64-apple-darwin25.6.0)\nCopyright (C) 2025 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n\nThis is free software; you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law."
+  },
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "arm": "baseline",
+  "core_source": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/runtime-sources/gascity-1.4.2",
+  "pack_git_head": "c679a4c57a9505da6af4e84b299a2a3f843e6ab2",
+  "pack_diff": "diff --git a/gascity/tests/test_jev_build_ab.py b/gascity/tests/test_jev_build_ab.py\nindex 0444c70..5491bf0 100644\n--- a/gascity/tests/test_jev_build_ab.py\n+++ b/gascity/tests/test_jev_build_ab.py\n@@ -89,3 +89,15 @@ def test_workspace_socket_path_fits_even_with_deep_artifact_directory(tmp_path):\n         result=build.new_runtime_workspace(SimpleNamespace(source=tmp_path,roles_source=tmp_path),'unit')\n         stack.callback(build.shutil.rmtree,result.root.parent)\n         assert len(str(result.gc_home/'supervisor.sock').encode())<100\n+\n+\n+def test_default_claude_login_does_not_set_config_override(tmp_path):\n+    workspace=SimpleNamespace(gc_home=tmp_path/'h')\n+    result=build.configure_experiment_env({'CLAUDE_CONFIG_DIR':str(tmp_path/'scratch')},workspace,real_home=Path('/Users/example'))\n+    assert 'CLAUDE_CONFIG_DIR' not in result\n+\n+\n+def test_explicit_claude_profile_is_preserved(tmp_path):\n+    workspace=SimpleNamespace(gc_home=tmp_path/'h')\n+    result=build.configure_experiment_env({},workspace,real_home=Path('/Users/example'),claude_config_dir='/profiles/benchmark')\n+    assert result['CLAUDE_CONFIG_DIR']=='/profiles/benchmark'\n"
+}

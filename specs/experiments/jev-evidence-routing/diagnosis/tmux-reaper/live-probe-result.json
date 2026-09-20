@@ -1,0 +1,29 @@
+{
+  "socket": "jev-reaper-probe-c50eae989f",
+  "signals_to_scanned_processes": false,
+  "server_pid": 45238,
+  "red": {
+    "exit": 0,
+    "seconds": 1.3051166250370443,
+    "rows": [
+      {
+        "SessionID": "jev-reaper-probe-c50eae989f-retired",
+        "City": "/private/tmp/jev-reaper-probe-c50eae989f",
+        "Epoch": 0,
+        "PID": 45238,
+        "ProviderName": "",
+        "IsTracked": false
+      }
+    ],
+    "stderr": ""
+  },
+  "green": {
+    "exit": 0,
+    "seconds": 0.6075333750341088,
+    "rows": [],
+    "stderr": ""
+  },
+  "peer_survived": true,
+  "status": "passed",
+  "cleanup_exit": 0
+}

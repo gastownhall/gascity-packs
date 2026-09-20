@@ -1,0 +1,6 @@
+{
+  "rule": "Original fixture tests must remain unchanged; require workflow completion, original tests, independent hidden checks, and artifact validation. Apply equally to both arms.",
+  "original_test_sha256": {
+    "tests/test_slugger.py": "148afb6a5de401b3930b293c5e5d5d093bf25f16c36f2886ed1bd01351ed164c"
+  }
+}

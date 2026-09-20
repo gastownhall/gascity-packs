@@ -1,0 +1,11 @@
+{
+  "harness_exit": 130,
+  "experiment_pids_absent": [
+    8391,
+    8749,
+    9236
+  ],
+  "original_supervisor_pid_alive": 23099,
+  "empty_experiment_tmux_server_removed": true,
+  "tmux_socket": "jev-gcja-79_ojx3b-run-001-baseline"
+}

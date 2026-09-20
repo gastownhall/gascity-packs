@@ -1,0 +1,48 @@
+[
+  {
+    "name": "red-probe",
+    "command": [
+      "go",
+      "build",
+      "-p",
+      "2",
+      "-overlay",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/red-overlay.json",
+      "-o",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/scan-red",
+      "./cmd/jev-scan-probe"
+    ],
+    "exit": 0,
+    "seconds": 7.665120166959241
+  },
+  {
+    "name": "green-probe",
+    "command": [
+      "go",
+      "build",
+      "-p",
+      "2",
+      "-o",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/scan-green",
+      "./cmd/jev-scan-probe"
+    ],
+    "exit": 0,
+    "seconds": 5.028528833063319
+  },
+  {
+    "name": "patched-gc",
+    "command": [
+      "go",
+      "build",
+      "-p",
+      "2",
+      "-ldflags",
+      "-s -w -X main.version=1.4.2-jev-tmux -X main.commit=local-regression",
+      "-o",
+      "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc",
+      "./cmd/gc"
+    ],
+    "exit": 1,
+    "seconds": 247.65880883298814
+  }
+]

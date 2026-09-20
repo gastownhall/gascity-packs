@@ -1,0 +1,7 @@
+=== RUN   TestDarwinScannerExcludesSharedTmuxServer
+    scan_darwin_infrastructure_test.go:21: want only live Claude worker PID19630; got [{SessionID:retired City:/tmp/city Epoch:0 PID:19620 ProviderName: IsTracked:false} {SessionID:active City:/tmp/city Epoch:0 PID:19630 ProviderName: IsTracked:false}]
+    scan_darwin_infrastructure_test.go:22: shared tmux server must never be an agent root
+--- FAIL: TestDarwinScannerExcludesSharedTmuxServer (0.48s)
+FAIL
+FAIL	github.com/gastownhall/gascity/internal/runtime/proctable	0.782s
+FAIL

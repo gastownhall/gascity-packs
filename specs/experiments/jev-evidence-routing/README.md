@@ -1,6 +1,6 @@
 # Jev evidence routing experiments
 
-Status: implementation and baseline pilots complete; approved full-build Claude baseline running. Paired Jev evaluation awaits its credential.
+Status: implementation and baseline pilots complete; approved full-build Claude attempts recorded; a macOS runtime defect is locally fixed and verified. Paired Jev evaluation awaits its credential.
 See [measured results and limitations](RESULTS.md).
 
 ## Objective

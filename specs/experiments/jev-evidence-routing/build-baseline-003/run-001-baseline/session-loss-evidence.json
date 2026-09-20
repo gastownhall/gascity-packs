@@ -1,0 +1,294 @@
+{
+  "observation": "Controller logged reaped process-table orphan pid=19620 session=jg7or0b-6hr. Process observer identifies PID19620 as the shared tmux server. Other sessions then become runtime-missing.",
+  "source_finding": "Darwin ScanBySessionID checks whether the parent is tmux but does not exclude the current tmux process; ps inline parser also reads GC_SESSION_ID from tmux -e argv.",
+  "events": [
+    {
+      "at": "2026-09-19T17:31:19.050398-07:00",
+      "event": "bead.created",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:19.160582-07:00",
+      "event": "bead.created",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:19.529931-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:22.708716-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:25.939133-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:26.267237-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:27.224937-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:27.513303-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:27.995164-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "creating",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:28.619176-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "creating",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:42.698958-07:00",
+      "event": "bead.created",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:42.774253-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:50.395179-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:31:55.822304-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "active",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:32:00.423076-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "active",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:32:03.809391-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "awake",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:32:08.320877-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "awake",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:32:08.853486-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "start-pending",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:32:09.074684-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "creating",
+      "reason": null
+    },
+    {
+      "at": "2026-09-19T17:32:11.976623-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "awake",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:32:13.405543-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "active",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:32:25.826852-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "awake",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:32:37.695489-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "awake",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:32:42.720974-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "awake",
+      "reason": "creation_complete"
+    },
+    {
+      "at": "2026-09-19T17:33:14.911581-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-6hr",
+      "status": "open",
+      "state": "draining",
+      "reason": "drain-ack-stop-pending"
+    },
+    {
+      "at": "2026-09-19T17:33:37.214892-07:00",
+      "event": "bead.closed",
+      "session": "jg7or0b-6hr",
+      "status": "closed",
+      "state": "drained",
+      "reason": "session drained: pool slot retired by reconciler"
+    },
+    {
+      "at": "2026-09-19T17:34:36.860066-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "asleep",
+      "reason": "runtime-missing"
+    },
+    {
+      "at": "2026-09-19T17:34:37.138959-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "asleep",
+      "reason": "runtime-missing"
+    },
+    {
+      "at": "2026-09-19T17:34:37.431907-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-fjk",
+      "status": "open",
+      "state": "asleep",
+      "reason": "runtime-missing"
+    },
+    {
+      "at": "2026-09-19T17:34:38.920721-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "asleep",
+      "reason": "runtime-missing"
+    },
+    {
+      "at": "2026-09-19T17:34:39.575998-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "asleep",
+      "reason": "runtime-missing"
+    },
+    {
+      "at": "2026-09-19T17:34:40.298974-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "asleep",
+      "reason": "runtime-missing"
+    },
+    {
+      "at": "2026-09-19T17:35:03.916461-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "asleep",
+      "reason": "runtime-missing"
+    },
+    {
+      "at": "2026-09-19T17:35:04.065805-07:00",
+      "event": "bead.updated",
+      "session": "jg7or0b-2h9",
+      "status": "open",
+      "state": "asleep",
+      "reason": "runtime-missing"
+    },
+    {
+      "at": "2026-09-19T17:35:12.221002-07:00",
+      "event": "bead.closed",
+      "session": "jg7or0b-2h9",
+      "status": "closed",
+      "state": "gc_swept",
+      "reason": "session swept: no assigned work in any rig"
+    },
+    {
+      "at": "2026-09-19T17:35:19.005064-07:00",
+      "event": "bead.closed",
+      "session": "jg7or0b-fjk",
+      "status": "closed",
+      "state": "runtime-missing",
+      "reason": "session terminated: runtime-missing"
+    }
+  ]
+}

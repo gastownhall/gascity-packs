@@ -126,7 +126,7 @@ complete comparable coverage; transcript totals alone are insufficient.
 | --- | --- | --- |
 | [Baseline 001](build-baseline-001/run-001-baseline/result.json) | Setup passed in 301.066 s; dispatch exceeded the old 120 s deadline before observed model calls. | Failed startup; not a build-speed measurement. |
 | [Baseline 002](build-baseline-002/run-001-baseline/result.json) | Dispatch succeeded with a longer deadline. Produced requirements, then exceeded the 1,200 s workflow limit. Total elapsed 1,780.015 s. | Diagnostic recovery with manual authentication/trust interventions; exclude from A/B estimates. |
-| Baseline 003 | Fresh run with corrected authentication, automatic fixture trust, explicit low effort, unique city name, and 3,600 s workflow limit. | Running; no quality or speed result yet. |
+| [Baseline 003](build-baseline-003/run-001-baseline/result.json) | Started workers, then the macOS orphan reaper killed their shared tmux server. Aborted at 20m41s after confirming the defect. | 16 observed requests, 635,120 processed tokens; no completed build. |
 
 The authentication failure was caused by the harness explicitly setting
 `CLAUDE_CONFIG_DIR` to `~/.claude`. Although that is the usual data directory,
@@ -151,6 +151,8 @@ effort in that run was unverified; the clean run explicitly sets low effort in
 both CLI arguments and worker environment. Its
 [assessment](build-baseline-002/run-001-baseline/assessment.json) records these
 limitations separately from the raw result.
+
+See the [confirmed tmux-reaper diagnosis and real-process regression](diagnosis/tmux-reaper/README.md). A fresh full baseline with the local runtime fix remains pending.
 
 ## Validation
 
@@ -206,7 +208,7 @@ Verify the pinned Jev model with a real preflight and retain the resolved model.
 A fallback-only full build is a treatment failure, not a successful Jev result.
 Automatic approval review rejected a Claude probe outside safe mode because it
 could include workspace instructions/configuration. The user subsequently approved the Claude run. The approved telemetry probe
-matched CLI token counters exactly; clean baseline 003 is running after two
+matched CLI token counters exactly; baseline 003 exposed a separate macOS tmux-reaper defect after two
 retained failed/diagnostic attempts. The Jev
 credential remains missing.
 

@@ -1,0 +1,36 @@
+=== RUN   TestDescendantAliveMatchesDeepDescendant
+--- PASS: TestDescendantAliveMatchesDeepDescendant (0.00s)
+=== RUN   TestDescendantAliveRootItselfMatches
+--- PASS: TestDescendantAliveRootItselfMatches (0.00s)
+=== RUN   TestDescendantAliveNoMatch
+--- PASS: TestDescendantAliveNoMatch (0.00s)
+=== RUN   TestDescendantAliveEmptyInputs
+--- PASS: TestDescendantAliveEmptyInputs (0.00s)
+=== RUN   TestDescendantAliveIgnoresCycles
+--- PASS: TestDescendantAliveIgnoresCycles (0.00s)
+=== RUN   TestKillByPIDRefusesLowPIDs
+--- PASS: TestKillByPIDRefusesLowPIDs (0.00s)
+=== RUN   TestKillByPIDAlreadyGoneIsSuccess
+--- PASS: TestKillByPIDAlreadyGoneIsSuccess (0.06s)
+=== RUN   TestSignalPIDGroupThenFallback
+--- PASS: TestSignalPIDGroupThenFallback (0.00s)
+=== RUN   TestSignalPIDGroupSuccessSkipsFallback
+--- PASS: TestSignalPIDGroupSuccessSkipsFallback (0.00s)
+=== RUN   TestKillByPIDConfirmedDeadBeforeReturn
+=== RUN   TestKillByPIDConfirmedDeadBeforeReturn/survives_SIGKILL_->_error
+=== RUN   TestKillByPIDConfirmedDeadBeforeReturn/dies_after_SIGKILL_->_nil
+=== RUN   TestKillByPIDConfirmedDeadBeforeReturn/exits_during_SIGTERM_grace_->_no_SIGKILL
+--- PASS: TestKillByPIDConfirmedDeadBeforeReturn (0.05s)
+    --- PASS: TestKillByPIDConfirmedDeadBeforeReturn/survives_SIGKILL_->_error (0.01s)
+    --- PASS: TestKillByPIDConfirmedDeadBeforeReturn/dies_after_SIGKILL_->_nil (0.03s)
+    --- PASS: TestKillByPIDConfirmedDeadBeforeReturn/exits_during_SIGTERM_grace_->_no_SIGKILL (0.00s)
+=== RUN   TestWaitUntilRespectsZeroTimeout
+--- PASS: TestWaitUntilRespectsZeroTimeout (0.00s)
+=== RUN   TestDarwinPSCommandIgnoresInlineTmuxEnv
+--- PASS: TestDarwinPSCommandIgnoresInlineTmuxEnv (0.00s)
+=== RUN   TestDarwinPSCommandStillIdentifiesTmuxExecutable
+--- PASS: TestDarwinPSCommandStillIdentifiesTmuxExecutable (0.00s)
+=== RUN   TestDarwinScannerExcludesSharedTmuxServer
+--- PASS: TestDarwinScannerExcludesSharedTmuxServer (0.43s)
+PASS
+ok  	github.com/gastownhall/gascity/internal/runtime/proctable	0.977s
