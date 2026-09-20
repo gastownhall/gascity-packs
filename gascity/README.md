@@ -1056,3 +1056,13 @@ See [the evidence contract](assets/jev-evidence.md) for bundle creation, failure
 behavior, and immutable decision artifacts. Live efficacy has not yet been
 established; [the experiment ledger](../specs/experiments/jev-evidence-routing/README.md)
 tracks the evaluation. Generative-model experiments use subscription CLIs.
+
+## Experimental Jev kind triage
+
+`github-issue-triage --var jev_kind_mode=assist` optionally uses Jev for the
+primary kind decision (bug, feature, docs, chore), falling back to ordinary LLM
+triage on uncertainty or failure. Priority, complexity, reproduction, and
+approval decisions retain their existing policies. Default mode is `off`.
+The standalone helper also accepts PR snapshots for maintainer-city adapters;
+it never applies GitHub labels. See [the kind contract](assets/jev-kind.md)
+for label mappings and [backtesting](../specs/experiments/jev-evidence-routing/KIND-TRIAGE.md).

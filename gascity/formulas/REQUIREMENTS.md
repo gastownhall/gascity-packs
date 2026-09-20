@@ -187,7 +187,7 @@ this ledger against the `FORMULAS` constant and formula directory.
 
 | ID | Formula | Type | Required behavior | Evidence |
 | --- | --- | --- | --- | --- |
-| GC-BF-019 | `github-issue-triage-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, snapshots issue state, keys triage by issue-body hash, validates triage report schema, gates sensitive output, and creates or updates the sticky triage comment. | `github-issue-triage-base.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-019 | `github-issue-triage-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, snapshots issue state, keys triage by issue-body hash, optionally assists the kind decision with Jev (off by default), validates triage report schema, gates sensitive output, and creates or updates the sticky triage comment. | `github-issue-triage-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-020 | `github-issue-triage` | Cataloged public adapter | Extends `github-issue-triage-base` without changing the base adapter stack. | `github-issue-triage.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-021 | `github-issue-fix-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, runs/reuses triage, gates fix eligibility, passes and validates planning/decomposition/implementation/review/fix selectors plus modes, optionally publishes PRs, and owns sticky issue-fix status. | `github-issue-fix-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-022 | `github-issue-fix` | Cataloged public adapter | Extends `github-issue-fix-base` without changing the base issue-fix graph. | `github-issue-fix.formula.toml`; `../tests/test_formula_assets.py` |
@@ -222,3 +222,9 @@ this ledger against the `FORMULAS` constant and formula directory.
   All three lanes, synthesis, fixes, and existing check contracts remain.
   Jev reports are advisory artifacts; failures and low confidence require
   ordinary LLM review, and every attempt is retained separately.
+
+- `github-issue-triage-base` exposes `jev_kind_mode`, `jev_kind_model`,
+  `jev_kind_threshold`, and `jev_kind_labels_path`. Kind mode defaults to `off`.
+  Assistance belongs inside the existing report step after the reuse no-op;
+  it preserves the graph, source metadata, report schema, priority policy and
+  publication gates. The standalone helper is reusable by issue/PR adapters.

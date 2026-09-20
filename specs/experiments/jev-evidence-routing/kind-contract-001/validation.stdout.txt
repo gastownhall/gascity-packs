@@ -1,0 +1,2 @@
+{"status": "validated_only", "report": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/kind-contract-001/validation/case-0001/report.json"}
+{"status": "validated_only", "cases": 1, "agreement": null, "elapsed_seconds": 0.012617083033546805, "measured_usage_cases": 0, "observed_tokens": null, "total_tokens_known": false, "live_baseline_measured": false, "llm_fallback_measured": false}

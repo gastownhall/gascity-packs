@@ -1,0 +1,13 @@
+{
+  "base_revision": "6e005f4425314133897f1685b10b52395d2d3fbb",
+  "command": [
+    "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+    "-m",
+    "pytest",
+    "/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/jev-kind-baseline-qg858txr/gascity/tests/test_formula_assets.py",
+    "-q",
+    "-k",
+    "bounds_ambiguous_hook_failures_without_drain_ack or preserves_unreadable_claim_after_bounded_retries"
+  ],
+  "returncode": 1
+}

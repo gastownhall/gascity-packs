@@ -1,0 +1,28 @@
+[
+  {
+    "id": "smoke-crash",
+    "reference": "bug",
+    "schema": "gc.kind-assessment.v1",
+    "advisory": true,
+    "started_at": "2026-09-20T03:48:49.851895+00:00",
+    "question_version": "gc.kind-question.v1",
+    "requested_model": "jev-1.13.0",
+    "threshold": 0.85,
+    "usage": null,
+    "decision": {
+      "route": "llm_kind",
+      "label": null,
+      "choice": null
+    },
+    "labels": {
+      "bug": "kind/bug",
+      "feature": "kind/feature",
+      "docs": "kind/docs",
+      "chore": "kind/chore"
+    },
+    "state_sha256": "5c71b41d50d301280c46085e67888bed700a3e35df5ae7eca4e60a197b437d4d",
+    "request_sha256": "0ed561bef241672a22a87131801ffe2ea78351752085d0dd55480202bf21a91e",
+    "status": "validated_only",
+    "elapsed_seconds": 0.005274957977235317
+  }
+]

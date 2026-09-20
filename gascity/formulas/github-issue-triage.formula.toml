@@ -12,6 +12,7 @@ Launch inputs:
 - post_mode: {{post_mode}}
 - triage_rubric_path: {{triage_rubric_path}} (optional Markdown rubric/prompt
   for report behavior; empty uses the base rubric)
+- jev_kind_mode: {{jev_kind_mode}} (off or assist; kind classification only)
 """
 formula = "github-issue-triage"
 extends = ["github-issue-triage-base"]

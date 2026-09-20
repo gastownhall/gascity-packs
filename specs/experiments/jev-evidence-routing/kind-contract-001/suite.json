@@ -1,0 +1,21 @@
+{
+  "schema": "gc.kind-backtest.v1",
+  "reference_model": "synthetic-fixture-not-a-model",
+  "reference_effort": "none",
+  "reference_provenance": "Handwritten software smoke fixture; not Julian data or a model-quality evaluation.",
+  "split": "pilot",
+  "cases": [
+    {
+      "id": "smoke-crash",
+      "reference": "bug",
+      "snapshot": {
+        "title": "Crash on startup",
+        "body": "Launching the app exits unexpectedly.",
+        "labels": [
+          "kind/docs"
+        ],
+        "reference": "bug"
+      }
+    }
+  ]
+}

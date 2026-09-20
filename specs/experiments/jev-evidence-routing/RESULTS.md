@@ -314,3 +314,23 @@ remain alongside successful classification calls; they are not discarded.
 Disposable runtime cities, copied packs, and nested fixture Git repositories
 stay local and are excluded from Git. Materialized source/proof state and suite
 files preserve the focused experiment inputs without committing nested repos.
+
+## Kind-triage extension
+
+Julian's maintainer-city experience, relayed by Chris, motivates testing kind
+classification separately from evidence review. The reported 96% is agreement
+with the prior Opus Max classifier; sample size and raw data are unavailable.
+Priority and initial adopt-pr complexity reportedly had mixed results and are
+not enabled for automatic replacement.
+
+The branch now has opt-in kind assistance for issue triage, a reusable helper
+for issue/PR snapshots, and an auditable historical backtest runner. See
+[KIND-TRIAGE.md](KIND-TRIAGE.md) for the contract, metrics and experiment plan.
+No live kind inference, replicated agreement score, or paired kind savings is
+claimed. Jev access and Julian's exact reference dataset/configuration remain
+necessary for that comparison.
+
+Kind software validation: 71 relevant tests and 176 subtests passed, plus real
+CLI validation-only and missing-key failure checks. Two broader claim-command
+timeouts reproduce on the prior commit; details and retained artifacts are in
+[the kind validation record](KIND-TRIAGE.md#recorded-software-validation).

@@ -51,3 +51,10 @@ record their source paths and SHA-256 hashes.
 - Claude CLI reports a logged-in Claude Max subscription.
 - No TypeSafe/Jev credential found by title searches of Dashlane passwords
   and secure notes. No API requests to Jev have been made.
+
+## Kind triage
+
+A separate [kind-triage protocol](KIND-TRIAGE.md) tracks support for Julian's
+maintainer-city approach. Its historical backtest uses frozen reference kinds;
+priority and adopt-pr complexity are not automatic replacement candidates.
+Keep these results separate from evidence review and full-build cohorts.

@@ -876,3 +876,15 @@ record inputs/responses/usage/timing, and route uncertainty to ordinary review.
 Jev MUST NOT independently approve a review, publish work, execute model-selected
 commands, or change the mandatory review lanes. Failures MUST be recorded and
 explicitly fall back to ordinary review. Derived methodologies are unaffected.
+
+### Experimental kind classification
+
+`github-issue-triage` MAY use `jev_kind_mode=assist`; default MUST be `off`.
+This MAY replace only the primary-kind decision under the supported rubric.
+Low confidence, ambiguity, invalid output, configuration/rubric mismatch, or
+service failure MUST use ordinary LLM kind triage and preserve the reason.
+Priority, complexity, reproduction, report schema and human gates retain their
+existing policy. No GitHub label-write authority is granted. The helper MUST
+exclude existing labels and reference decisions from model state, retain
+immutable decision artifacts and explicit label mappings, and distinguish
+historical model agreement from independently adjudicated accuracy.

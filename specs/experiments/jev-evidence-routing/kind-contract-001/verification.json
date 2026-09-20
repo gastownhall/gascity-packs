@@ -1,0 +1,30 @@
+{
+  "at": "2026-09-20T03:48:50.560592+00:00",
+  "live_model_calls": 0,
+  "status": "passed",
+  "checks": [
+    {
+      "command": [
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/scripts/jev_kind_backtest.py",
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/kind-contract-001/suite.json",
+        "--out",
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/kind-contract-001/validation",
+        "--validate-only"
+      ],
+      "returncode": 0,
+      "expected_returncode": 0
+    },
+    {
+      "command": [
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/scripts/jev_kind_backtest.py",
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/kind-contract-001/suite.json",
+        "--out",
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/kind-contract-001/missing-key"
+      ],
+      "returncode": 1,
+      "expected_returncode": 1
+    }
+  ]
+}

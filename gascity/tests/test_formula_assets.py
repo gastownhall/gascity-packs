@@ -3720,7 +3720,7 @@ class FormulaAssetTests(unittest.TestCase):
     def test_github_adapter_formulas_are_targetless_url_adapters(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         expected = {
-            "github-issue-triage": ("github_issue_url", {"artifact_root", "post_mode", "triage_rubric_path"}),
+            "github-issue-triage": ("github_issue_url", {"artifact_root", "post_mode", "triage_rubric_path", "jev_kind_mode", "jev_kind_model", "jev_kind_threshold", "jev_kind_labels_path"}),
             "github-pr-review": (
                 "github_pr_url",
                 {
@@ -4067,6 +4067,16 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("Optional rubric/prompt override path", text)
         self.assertIn("report behavior, not the metadata protocol", text)
         self.assertIn("must not override", text)
+        self.assertIn("gc.github-issue-triage-report.v1", text)
+
+    def test_github_issue_triage_kind_is_opt_in_and_separate_from_verdict(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        data = resolve_formula(root, "github-issue-triage")
+        self.assertEqual(data["vars"]["jev_kind_mode"]["default"], "off")
+        text = effective_formula_text(root, "github-issue-triage")
+        self.assertIn("{{jev_kind_mode}}", text)
+        self.assertIn("assets/jev-kind.md", text)
+        self.assertIn("priority", text)
         self.assertIn("gc.github-issue-triage-report.v1", text)
 
     def test_github_issue_triage_human_gate_uses_runtime_metadata_in_step_body(self) -> None:

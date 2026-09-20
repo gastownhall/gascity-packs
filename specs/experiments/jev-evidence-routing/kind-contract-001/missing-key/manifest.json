@@ -1,0 +1,24 @@
+{
+  "started_at": "2026-09-20T03:48:50.462548+00:00",
+  "suite_sha256": "685800f6752182ecd4a0c3e98eea8340e0ec76b47f80e414796c00eec1a1b63f",
+  "sources": {
+    "jev_kind_backtest.py": "f0a5545243343d37d0d49f7905cb50609d07dabc734ec6d6671769594cb98f82",
+    "jev_kind.py": "f942e6b9c6a0e7b437a1f2e220e562abfde7a547aded3ad4e29d8935c4fed2f3",
+    "jev_evidence.py": "6ebe4c1e57920899270762f02ac5fadb4b3703fae1864019d038032b4a00eeee"
+  },
+  "question_version": "gc.kind-question.v1",
+  "model": "jev-1.13.0",
+  "threshold": 0.85,
+  "labels": {
+    "bug": "kind/bug",
+    "feature": "kind/feature",
+    "docs": "kind/docs",
+    "chore": "kind/chore"
+  },
+  "validate_only": false,
+  "reference_model": "synthetic-fixture-not-a-model",
+  "reference_effort": "none",
+  "reference_provenance": "Handwritten software smoke fixture; not Julian data or a model-quality evaluation.",
+  "split": "pilot",
+  "scope": "kind classifier only; historical reference; no live baseline or fallback"
+}

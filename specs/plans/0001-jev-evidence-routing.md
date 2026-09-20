@@ -24,3 +24,13 @@ regression, but the remaining workflow and observed latch routing still need
 validation. No full build has passed. Live Jev still requires its credential. Step 7 has an interim measured report at
 [RESULTS.md](../experiments/jev-evidence-routing/RESULTS.md). No A/B conclusion
 is supported yet.
+
+## Added scope: maintainer-city kind triage
+
+Support Julian's kind-only use case before extending Jev to priority or adopt-pr
+complexity. The reported 96% is agreement against Opus Max, with raw data and
+configuration still needed. Kind helper, opt-in issue-triage instructions and
+historical backtest runner are implemented; see
+[the kind protocol](../experiments/jev-evidence-routing/KIND-TRIAGE.md).
+Live replication, a paired subscription Claude/fallback runner for kinds,
+independent adjudication, and end-to-end measurements remain outstanding.

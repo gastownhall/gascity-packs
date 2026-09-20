@@ -42,6 +42,17 @@ Behavior customization:
   and note the conflict in the report.
 - If the path is empty, use the base rubric below.
 
+Optional kind classification (after the reuse no-op and rubric checks above):
+
+- Mode: {{jev_kind_mode}}. With `off`, continue ordinary triage. With `assist`,
+  read `{{pack_root}}/assets/jev-kind.md` and follow its workflow integration
+  steps using the existing snapshot and triage directory. Model:
+  {{jev_kind_model}}; confidence threshold: {{jev_kind_threshold}}; label map:
+  {{jev_kind_labels_path}} (empty uses the default). Record an invalid mode as
+  a configuration error and use ordinary triage.
+- This optional decision supplies kind only. Continue the full investigation,
+  verdict, priority, and human-gate policy below.
+
 Investigate the issue and optional repro evidence. Write the report with schema
 `gc.github-issue-triage-report.v1`, then validate it with
 `{{pack_root}}/assets/scripts/github_reports.py validate-triage --repo <gc.github.repo> --issue-number <gc.github.number> --body-hash <gc.github.body_hash>`.
