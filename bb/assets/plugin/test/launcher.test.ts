@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fixture } from "./fixture.js";
 import { createLauncherHostHandlers } from "../src/launcher-host.js";
+import { launcherContract } from "../src/launcher-contract.js";
 
 test("launcher validates the exact mapped agent and existing workspace before launch", async () => {
   const f = await fixture();
@@ -12,8 +13,22 @@ test("launcher validates the exact mapped agent and existing workspace before la
     const agent = catalog.agents.find(a => a.name === "web/review.reviewer")!;
     assert.ok(agent);
     assert.equal(agent.workspacePath, await (await import("node:fs/promises")).realpath(f.cwd));
-    assert.deepEqual(await host.validate({ projectId: "project-web", model: agent.id, workspacePath: f.cwd }, context), { model: agent.id, workspacePath: agent.workspacePath });
+    assert.deepEqual(await host.validate({ projectId: "project-web", model: agent.id, workspacePath: f.cwd }, context), { model: agent.id, workspacePath: agent.workspacePath, reasoningLevel: "none" });
     await assert.rejects(host.validate({ projectId: null, model: agent.id, workspacePath: f.cwd }, context), /unavailable|outside/);
+    assert.equal(f.calls.filter(c => c.method === "POST").length, 0);
+  } finally { await f.close(); }
+});
+
+test("launcher offers native agent reasoning levels and revalidates the chosen level before launch", async () => {
+  const f = await fixture();
+  try {
+    const host = createLauncherHostHandlers(async () => f.config);
+    const context = { signal: new AbortController().signal };
+    const catalog = await host.catalog({ projectId: "project-web" }, context);
+    const agent = catalog.agents.find(a => a.name === "web/review.reviewer")!;
+    assert.deepEqual(agent.reasoningLevels, ["none", "low", "medium", "high", "xhigh"]);
+    assert.deepEqual(await host.validate({ projectId: "project-web", model: agent.id, workspacePath: f.cwd, reasoningLevel: "medium" }, context), { model: agent.id, workspacePath: agent.workspacePath, reasoningLevel: "medium" });
+    await assert.rejects(host.validate({ projectId: "project-web", model: agent.id, workspacePath: f.cwd, reasoningLevel: "max" }, context), /reasoning|effort/i);
     assert.equal(f.calls.filter(c => c.method === "POST").length, 0);
   } finally { await f.close(); }
 });
@@ -24,18 +39,22 @@ test("server launch pins explicit Gas City selection and revalidates on the chos
   const calls: any[] = [];
   const bb: any = {
     rpc: { register(_contract: unknown, value: unknown) { handlers = value; } },
-    hosts: { experimental_client: () => ({ async call(method: string, input: any, options: any) { calls.push({ method, input, options }); return { model: input.model, workspacePath: "/existing/rig" }; } }) },
+    hosts: { experimental_client: () => ({ async call(method: string, input: any, options: any) { calls.push({ method, input, options }); return { model: input.model, workspacePath: "/existing/rig", reasoningLevel: input.reasoningLevel }; } }) },
     sdk: { hosts: { list: async () => [{ id: "host-a", name: "A", status: "connected", maxPermissionMode: "full" }] }, projects: { list: async () => [{ id: "project-web", name: "Web", kind: "standard" }] }, threads: { spawn: async (args: unknown) => { spawned = args; return { id: "thread-created" }; } } },
     onDispose() {},
   };
   registerLauncher(bb);
-  assert.deepEqual(await handlers.launch({ hostId: "host-a", projectId: "project-web", model: "exact-agent", workspacePath: "/existing/rig", prompt: "Review this" }), { threadId: "thread-created" });
+  assert.deepEqual(await handlers.launch({ hostId: "host-a", projectId: "project-web", model: "exact-agent", workspacePath: "/existing/rig", reasoningLevel: "medium", prompt: "Review this" }), { threadId: "thread-created" });
   assert.equal(calls[0].options.hostId, "host-a");
-  assert.deepEqual(calls[0].input, { projectId: "project-web", model: "exact-agent", workspacePath: "/existing/rig" });
+  assert.deepEqual(calls[0].input, { projectId: "project-web", model: "exact-agent", workspacePath: "/existing/rig", reasoningLevel: "medium" });
   assert.equal(spawned.providerId, "gas-city");
   assert.equal(spawned.model, "exact-agent");
+  assert.equal(spawned.reasoningLevel, "medium");
   assert.deepEqual(spawned.executionInputSources, { providerId: "explicit", model: "explicit", permissionMode: "explicit", reasoningLevel: "explicit" });
   assert.deepEqual(spawned.environment, { type: "host", hostId: "host-a", workspace: { type: "unmanaged", path: "/existing/rig" } });
+  const defaultSelection = launcherContract.launch.input.parse({ hostId: "host-a", projectId: "project-web", model: "exact-agent", workspacePath: "/existing/rig", prompt: "Review this" });
+  assert.deepEqual(await handlers.launch(defaultSelection), { threadId: "thread-created" });
+  assert.equal(spawned.reasoningLevel, "none");
   spawned = undefined;
   const failure = await handlers.launch({ hostId: "missing", projectId: "project-web", model: "exact-agent", workspacePath: "/existing/rig", prompt: "Review this" });
   assert.equal(failure.uncertain, false);

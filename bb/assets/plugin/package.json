@@ -5,8 +5,8 @@
   "type": "module",
   "engines": {
     "node": ">=22",
-    "bb": ">=0.42.1 <0.43",
-    "bbPluginSdk": ">=0.4.47 <0.5"
+    "bb": ">=0.43.3 <0.44",
+    "bbPluginSdk": ">=0.4.104 <0.5"
   },
   "bb": {
     "name": "Gas City",
@@ -27,7 +27,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@get-bb/plugin-sdk": "0.4.47",
+    "@get-bb/plugin-sdk": "0.4.104",
     "zod": "4.3.6"
   },
   "devDependencies": {

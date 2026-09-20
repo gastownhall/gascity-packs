@@ -18,6 +18,7 @@ export async function fixture() {
   const events: any[] = [];
   const held = new Set<ServerResponse>();
   const faults = { dropSubmitReply: false, dropCreateReply: false, workDir: "", freshHistoryFallback: false };
+  const providers = ["claude", "codex"].map(name => ({ name, options_schema: [{ key: "effort", type: "select", choices: ["", "low", "medium", "high", "xhigh", ...(name === "claude" ? ["max"] : [])].map(value => ({ value, label: value || "Default" })) }] }));
   let seq = 0;
   const server = createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -28,6 +29,7 @@ export async function fixture() {
     const sse = (event: string, value: unknown, id = "1") => res.write(`event: ${event}\nid: ${id}\ndata: ${JSON.stringify(value)}\n\n`);
     if (path === "/health") return json({ status: "ok", version: "1.4.0" });
     if (path === "/v0/cities") return json({ items: [{ name: "alpha", running: true }, { name: "beta", running: true }, { name: "off", running: false }], total: 3 });
+    if (path.endsWith("/providers/public")) return json({ items: providers, total: providers.length });
     if (path.endsWith("/config")) return json({ workspace: { name: path.includes("alpha") ? "alpha" : "beta", suspended: false }, rigs: [{ name: "web", path: cwd }, { name: "api", path: cwd }], agents: [
       { name: "gc.mayor", dir: "", is_pool: true, scope: "city", provider: "claude" },
       { name: "review.reviewer", dir: "web", is_pool: true, scope: "rig", provider: "codex" },
@@ -97,7 +99,7 @@ export async function fixture() {
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = server.address() as { port: number };
   const config: Config = { version: 1, workspacePolicy: "require-match", connections: [{ id: "local", url: `http://127.0.0.1:${address.port}` }], bindings: [{ projectId: "project-web", connection: "local", city: "alpha", rig: "web", paths: [cwd] }] };
-  return { cwd, calls, config, sessions, faults, async close() { for (const res of held) res.end(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(cwd, { recursive: true, force: true }); } };
+  return { cwd, calls, config, sessions, faults, providers, async close() { for (const res of held) res.end(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(cwd, { recursive: true, force: true }); } };
 }
 export async function until(predicate: () => boolean, timeout = 3000) {
   const end = Date.now() + timeout;

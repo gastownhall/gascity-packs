@@ -2,14 +2,26 @@
 
 ## Objective
 
-Finish the remaining work identified in [the assessment](../research/bb-production-readiness-2026-09-06.md) against released BB 0.42.1 (SDK 0.4.47) and GC 1.4.1. Retain GC 1.4.0 compatibility where verified. Build the dedicated Gas City launcher with existing BB extension APIs. Native BB Model picker changes and the explicitly listed richer v1 exclusions remain outside this pack change.
+Finish the remaining provider work and Hillsboro installation using BB 0.43.3
+(SDK 0.4.104), GC 1.4.2 plus verified required runtime corrections, and the
+available Claude and Kimi routes through Manifold. This advances the original
+[assessment](../research/bb-production-readiness-2026-09-06.md), which targeted
+BB 0.42.1 and GC 1.4.1. Retain historical compatibility results with their exact
+versions. Native BB frontend changes and the listed richer v1 exclusions remain
+outside this pack change.
+
+The user's current Hillsboro goal can use Kimi through Claude's Anthropic
+adapter; this does not certify GC's native Kimi CLI, unavailable Codex capacity,
+stock-GC CI, or the separate macOS desktop/publication gates. Preserve those
+outstanding requirements rather than marking them passed. Current evidence:
+[Hillsboro qualification](../research/bb-hillsboro-verification-2026-09-19.md).
 
 ## Work and verification
 
 - [x] Correct repeated approval handling, busy-turn steering errors, and stale workspace discovery, with regression tests.
 - [x] Enforce durable ownership and safely reconcile uncertain creation/submission and crashed operations; test active/recovery races without blind resubmission.
 - [x] Add a host/project/agent/workspace launcher that keeps exact selections, refreshes and reports errors, validates at execution, and uses BB's native styling.
-- [x] Enforce matching workspaces for coding; make conversation-only mismatch an explicit supported choice.
+- [x] Enforce matching workspaces for project work; support personal global conversations in GC's own directory and explicit conversation-only project work.
 - [x] Stage and validate upgrades before activation, retain previous installations, and exercise rollback failures while preserving config and journals.
 - [x] Improve diagnostics and update user setup/recovery docs and compatibility declarations.
 - [ ] Verify actual BB/GC installation and UI with isolated state: global/rig agents, two turns, tools, approval/denial/repetition, busy follow-up, interrupt/release, restart/resume, failures/recovery, and mismatched workspaces.
@@ -25,11 +37,49 @@ All running test services, cities, threads, installations, logs and generated ou
 Initial implementation base: `b8b255256d7fc218e3a6854d5b2069c515c5c17f`.
 Initial working tree: only the untracked assessment under `specs/research/`.
 
+## Full end-to-end gate
+
+The full-product runner now declares 40 required cases and drives the released
+BB UI, including personal and mapped-project conversations, all six reasoning
+choices, fresh trust, manual permissions, visible errors, and process/transport
+faults. The earlier conversation smoke runner remains a narrower gate. The
+complete revised matrix has not passed; diagnostic subsets and supplemental
+proofs do not turn an incomplete run into a release certification.
+
+Complete the gate in a retained, task-owned BB/GC environment. Pin the pack
+artifact hash, released BB build, GC commit and binary hash, and both runtime
+versions. Verify those identities through the running services before cases
+execute. Test the exact GC PR build separately from unchanged GC 1.4 releases;
+a development-build pass cannot certify stock compatibility. Start each test
+environment once; replace or interrupt processes only in cases that explicitly
+exercise that behavior. Keep normal user BB and GC state outside every test.
+
+| Required behavior | Action and evidence |
+| --- | --- |
+| Fresh install and upgrade | Install the packaged artifact into a fresh BB store, discover the provider through BB, then upgrade an isolated prior installation while preserving its settings, receipts, and conversation. |
+| Native chat and launcher | Drive the rendered BB UI from New thread through a reply for personal/global, mapped project/global, and mapped project/rig paths with Claude and Codex. Include the normal configured mayor, not only the acceptance role. Assert exact selections and actual GC execution directory. |
+| Reasoning | Exercise Agent default and each advertised choice; confirm the UI selection reaches GC creation and remains consistent on subsequent turns and resume. Reject unsupported changes visibly before another request is submitted. |
+| Actual work | Require streamed text, complete multiline input including BB context, follow-up memory, a real tool-created artifact in the GC directory, and correlated successful completion. Read GC's structured transcript independently of BB. |
+| Trust and permissions | Cover a fresh untrusted workspace, approve once, deny, repeated identical approval, and interruption at an approval through BB's UI. Assert the permitted command ran once and the denied command did not run. Include a workspace with underscores. |
+| Lifecycle | Exercise busy follow-up, interrupt, idle release/restore, native agent suspension/resume, BB host/server interruption, and controlled GC supervisor replacement. Assert preserved conversation identity and no duplicate user turn. |
+| Ambiguous outcomes | Interrupt real create/submit responses after GC accepts them; disconnect during streaming and interrupt a bridge while delivery is uncertain. The fault mechanism may drop transport, but must not fabricate provider replies. Assert retained receipts, visible uncertainty, and explicit recovery without blind resubmission. |
+| Error presentation | Exercise real provider/startup failures and supported timeout paths; errors must be visible in BB and must not count as successful assistant answers. Missing credentials or unavailable inference leave the required gate incomplete. |
+
+Run the browser journeys against the actual released BB frontend on Linux CI
+and the macOS desktop integration. Reuse the same scenario assertions where
+possible. A run produces a per-case pass/fail/blocked ledger tied to artifact
+identities, screenshots or traces, BB events, GC request/session identities,
+and proof-artifact hashes. Retain full private evidence locally and upload
+only explicitly scrubbed reports. Skipped, blocked, timed-out, or unexecuted
+required cases cannot produce an overall pass. Require the aggregate gate in
+branch protection; keep stock-runtime compatibility failures visible until
+the fixes ship in a supported GC release or compatibility is otherwise proved.
+
 ## Execution log
 
 - Started parallel lifecycle/recovery, launcher/discovery, and installer work.
 - Installed locked pack dependencies in the active checkout.
-- Preparing isolated BB 0.42.1 runtime under `/var/folders/6k/xzgngnms6jg4_z2l40y0_9vh0000gn/T/bb-gc-production-99l42_do`; GC 1.4.1 binary was previously downloaded and checksum-verified under `/var/folders/6k/xzgngnms6jg4_z2l40y0_9vh0000gn/T/gc141-bb-review-949mwtrw/gc`.
+- Prepared isolated BB 0.42.1 runtime under `/var/folders/6k/xzgngnms6jg4_z2l40y0_9vh0000gn/T/bb-gc-production-99l42_do`; GC 1.4.1 binary was previously downloaded and checksum-verified under `/var/folders/6k/xzgngnms6jg4_z2l40y0_9vh0000gn/T/gc141-bb-review-949mwtrw/gc`.
 
 - Implemented lifecycle ownership/recovery, staged installer, project launcher,
   matching-workspace default and diagnostics. Final local checks: 31 provider
@@ -169,3 +219,170 @@ Initial working tree: only the untracked assessment under `specs/research/`.
   Neither GC nor BB is restarted. Latest GC `59382ce25` CI passes the changed
   packages but remains red on the unchanged expired-waiver ledger and the
   separate missing watchdog command. Release gates remain unchecked.
+
+- September 7 reasoning follow-up: corrected the pack's `none`-only provider
+  capability and empty model ladders, exposed native effort choices in both
+  pickers, and forwarded creation-time `options.effort`. Persisted selections
+  prevent later turns/resumes from silently changing effort; older receipts
+  retain Agent default. All 51 provider tests and TypeScript checks pass.
+  Installed source matches the local branch. In normal BB 0.42.1, the rendered
+  mayor picker retains Medium and Claude additionally offers Max.
+- Actual isolated BB thread creation with Medium returns HTTP 201. Browser
+  launcher submission renders the fixture reply and retains Medium; the HTTP
+  fixture records exactly one creation with the effort override and one submit.
+  A subsequent High selection fails visibly without another GC request. These
+  are BB artifact checks against simulated GC, not model-backed acceptance.
+  Evidence: `/var/tmp/bb-reasoning-artifact-nrcs0atr/verification.md`.
+- Separately, retained live development GC creates fresh session `gc-4338` in
+  `/private/var/tmp/gc-effort-live-xnsil8xh/workspace` and reports effort High in
+  both effective options and persisted template overrides, replacing default
+  Extra High. No prompt or credential copy was needed; existing files were
+  preserved. Evidence: `/var/tmp/gc-effort-live-xnsil8xh/evidence/persistence-result.json`.
+  Neither GC supervisor nor normal BB was restarted. Only isolated BB needed
+  Node26 because its Node22 installation had a missing library. Its data and
+  prior logs were preserved, and its original connection config was restored.
+  The broader model-backed and release gates above remain open.
+
+- September 7 personal-thread failure: the user's ordinary native-picker
+  conversation failed because BB mandates its own personal workspace while
+  GC's global mayor uses the city directory. The earlier prepared-workspace
+  checks missed this route, and the suggested unmanaged environment was not
+  available to a personal thread. Personal global conversations now retain
+  GC's execution directory, announce the separate file/diff views before
+  submission, and append explicit workspace context after BB's instructions.
+  Project workspace validation remains enforced. Five added regressions cover
+  the personal path, project/rig boundaries, missing GC directory, and retry
+  without duplicate creation or submission. All 56 tests and typechecking
+  pass. Installed normal BB source: `install-R7kKKV`.
+- Read-only inspection of the original failed thread found no journaled GC
+  turn and no submitted `hello?` in its native history. Its already-running
+  Codex session had completed initialization, but stock GC 1.4.0 still reported
+  activity `unknown`. The workspace fix alone does not establish a working
+  conversation. A local stock-1.4 runtime backport passed six GC package suites,
+  real tmux input checks, and independent review. It changes runtime/history
+  handling without changing stock supervisor startup, config, or builtin packs.
+- Preserved 83,982 filesystem entries before replacing the normal supervisor;
+  retained its original log separately to avoid startup log truncation. Both
+  existing mayor PIDs and session identities survived. Normal BB stayed running.
+  Explicit retry of the original failed turn completed with Medium reasoning:
+  "Here. I’m initialized in `/Users/csells/chris-city` and ready." Verified the
+  rendered BB reply, completed receipt, exactly one successful BB turn, and
+  the full 1,397-byte forwarded prompt in GC's independent transcript.
+  Local GC build: `1.4.0-local-runtime-fixes`, SHA-256
+  `21ca91add48ee9a032b8ca1956e3c4a700624411567beb4aee82ba5214872d1d`.
+  Evidence: `/var/tmp/bb-personal-workspace-fix-OQXhUk/repair-result.json`.
+- Changed the existing live acceptance global case to use unbound
+  `proj_personal` and BB's separately provisioned personal workspace; rig
+  cases retain exact project/workspace checks. All full-prompt, tool, memory,
+  and three-turn/resume assertions remain required. Thirty-one guard tests
+  pass. This updated live CI matrix has not yet run; the repaired user turn
+  proves this local Codex path, not the remaining Claude or release gates.
+
+- Full-product gate implementation now covers an independently declared
+  required matrix, the actual released browser and isolated macOS desktop,
+  real permission decisions, process/transport faults, and retained installation
+  changes. Diagnostic subsets cannot produce an overall pass. The candidate
+  CI jobs remain separate from stock GC compatibility, and raw evidence stays
+  private. The complete matrix has not passed.
+- Native mapped-project testing exposed missing rig choices before BB creates
+  its workspace and missing project identity at provider startup. The pack now
+  exposes configured mapped rigs in that catalog and resolves the project from
+  the actual execution directory. Two regressions fail before the correction;
+  all 58 provider tests and typechecking pass afterward.
+- Retained Claude run `claude-673-core-02` passed eight cases: personal chat,
+  mapped rig chat, release/restore, agent resume, approve once, repeated
+  approval, underscore workspace, and mismatched-workspace rejection. It failed
+  denial because the test incorrectly demanded an assistant reply after native
+  rejection; that assertion now checks the actual denied tool and later memory.
+  The other failures exposed Claude's unrecognized tool-interruption marker
+  and the approval form's distinct Cancel control. All original evidence is
+  retained under `/var/tmp/bb-full-e2e-u9mbwfem`.
+- GC candidate `99bfa67c392f1007aefef79d3ebd61628383548c` includes focused fixes
+  for nested Codex completion errors, uncertain fast-submit confirmation,
+  explicitly requested singleton startup, and the exact Claude interruption
+  markers. The controlled replacement preserved all 44 existing native pane
+  PIDs; the original stuck interrupted transcript now reports idle without a
+  resend. Required hooks and affected-package regressions pass. The broader
+  fast suite passed nine of ten jobs; its remaining job failed in unchanged
+  packman heartbeat and exec cancellation tests. The latter passed on a focused
+  rerun; the former still fails. This is not a green full-suite claim.
+- Fresh Codex provider-error testing exposed first-launch hook materialization
+  changing the configuration fingerprint and draining the new session before
+  a prompt could be submitted. No provider error was certified by that run.
+  The ordering correction and remaining live cases are still in progress.
+
+- September 19–20 Hillsboro qualification remains IN PROGRESS. Completion-11
+  pins BB 0.43.3, SDK 0.4.104, Claude CLI 2.1.270, and GC
+  `4f41f8285070d3509dae94cd97509eb562f2f068`. Automated checks pass:
+  193 Python checks without skips against raw released GC 1.4.2 and 29
+  browser/desktop guards. The plugin is identical to completion-8, preserving
+  its 61 provider tests, TypeScript, and CLI build checks. Critical lost-submit-response, streaming-disconnect, and
+  interruption cases passed. Completion-7 also passed lost-create-response and
+  uncertain-delivery bridge recovery with the same exact plugin and GC hashes.
+  Completion-7's full run stopped after three passing chat cases to pin the
+  final CLI advice correction. The complete snapshot-8 matrix finished with
+  37 passes, three failures, zero blocked, and zero unexecuted cases.
+- Completion-4 retains 22 passing Kimi cases, 13 failures, and five unexecuted
+  cases. Its independent native diagnostic subset retains nine passes and two
+  failures. Later denial supplements on both routes prove the rejected tool
+  did not run and the same conversation could continue; they do not rewrite
+  those failed ledgers. Completion-5 stopped after one passing case when a GC
+  interruption-marker defect required a new pinned binary.
+- Completion-7 includes the GC interruption correction and explicit BB
+  `provider.error` rendering; its plugin is unchanged from completion-5/6.
+  Earlier correlated failed-turn settlement did not prove a visible error row.
+  The fresh native invalid-token diagnostic now passes actual rendered-error
+  proof, one failed completion, one create/submit, and no retry. A separate
+  bridge-crash diagnostic exposed an assertion comparing JSON-escaped text;
+  completion-7 fixes that guard without changing the plugin and passed the
+  subsequent bridge-recovery diagnostic. The original critical ledger remains
+  three passes, one failure, and 36 unexecuted cases; the separate recovery
+  ledger has two passes and 38 unexecuted cases. Stock-GC
+  Claude/Codex CI, macOS desktop,
+  complete live acceptance, and publication gates remain open; current artifact
+  hashes and retained evidence are in the
+  [Hillsboro report](../research/bb-hillsboro-verification-2026-09-19.md).
+
+- Completion-8 changes only the CLI bind confirmation from completion-7:
+  allow ordinary catalog refresh for up to ten minutes; `gc bb agents` always
+  discovers afresh. It no longer incorrectly promises immediate refresh after
+  restarting BB. The reviewed deployment proposal is prepared but not activated.
+  A passing full run, original compatibility gates, and publication remain pending.
+
+- Completion-9 corrects two harness causes behind snapshot-8's three failures:
+  a disappearing process during BB host restart (with a dependent server
+  restart failure), and the busy composer's appended queue shortcut plus Linux
+  Ctrl/Enter mapping. Ownership checks remain strict, with an actual Linux
+  zombie-child regression. All four focused cases passed: personal chat, both
+  BB restarts, and busy follow-up. The full snapshot-9 matrix then finished
+  with 39 passes, one GC binary replacement failure, zero blocked, and zero
+  unexecuted cases. That remaining failure exposed a race with the fixture
+  service manager's automatic controller restart; the manager-aware correction
+  is recorded in the snapshot-10 entry below. The deployment proposal remains unactivated,
+  all original ledgers are retained, and overall qualification remains pending.
+
+- Completion-10 changes only the lifecycle case module and its tests from
+  snapshot-9. The manager-aware correction passed independent review, all 36
+  Linux lifecycle guards, and the full 192-check Python suite without skips.
+  The plugin, browser harness, and GC binary remain unchanged. Targeted personal
+  conversation, GC controller restart, and binary replacement all passed;
+  37 omitted cases remain unexecuted in that subset. The full matrix finished
+  with 39 passes and one failure in approval interruption: Kimi requested an
+  unprompted startup directory listing, and the provider failed closed before
+  submitting the BB task. The requested tool never ran. The original failure
+  and pending native operation are preserved, without approval or resend.
+  Scrubbed ledgers: [full run](../research/bb-hillsboro-evidence-2026-09-19/completion10-summary.json)
+  and [focused lifecycle](../research/bb-hillsboro-evidence-2026-09-19/completion10-gc-lifecycle-summary.json).
+
+- Completion-11 changes only three test files: the shared startup prompt now
+  explicitly requires `Ready.` without tools or workspace inspection, and the
+  approval-wait guard captures an already-failed turn immediately, with a
+  regression test. All 193 Python checks pass on Hillsboro without skips.
+  The provider and GC artifacts are unchanged; the GC [source patch](../research/bb-hillsboro-evidence-2026-09-19/gc-1.4.2-bb-runtime-4f41f8285070.patch)
+  remains available. The new focused approval-interruption fixture passed,
+  leaving 39 cases unexecuted ([scrubbed summary](../research/bb-hillsboro-evidence-2026-09-19/completion11-approval-interrupt-summary.json)).
+  A fresh full matrix is running. The corresponding deployment proposal at
+  `/tmp/bb-gascity-deployment-review-ppt6o__j` has 14 proposed files and 121
+  artifact pins; its review checks are finishing, and it has not been
+  activated. Full acceptance, original compatibility gates, and publication
+  remain pending.

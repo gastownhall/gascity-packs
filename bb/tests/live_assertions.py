@@ -56,6 +56,7 @@ def verify_prompt_frame(frame, turn, prompt):
     messages = frame.get("structured_messages")
     if not isinstance(messages, list):
         raise AcceptanceFailure("GC structured transcript has no message list")
+    matches = []
     for message in messages:
         if (message.get("role") != "user" or not message.get("id")
                 or message["id"] in baseline or message.get("status") == "superseded"):
@@ -65,9 +66,13 @@ def verify_prompt_frame(frame, turn, prompt):
             text = "\n".join(block.get("text", "") for block in message.get("blocks", [])
                              if block.get("type") == "text")
         if isinstance(text, str) and prompt in text and hashlib.sha256(text.encode()).hexdigest() == turn.get("messageDigest"):
-            return {"forwarded_prompt_sha256": turn["messageDigest"],
+            matches.append({"forwarded_prompt_sha256": turn["messageDigest"],
                     "forwarded_prompt_bytes": len(text.encode()),
-                    "gc_user_message_id": message["id"]}
+                    "gc_user_message_id": message["id"]})
+    if len(matches) > 1:
+        raise AcceptanceFailure("GC must contain exactly one delivery of the forwarded prompt")
+    if matches:
+        return matches[0]
     raise AcceptanceFailure("GC transcript lacks a new user entry preserving the complete forwarded prompt")
 
 
@@ -79,11 +84,84 @@ def verify_resume_identity(before, after):
             raise AcceptanceFailure("Agent resume changed a conversation or transcript identity")
 
 
+def decode_identity(value, prefix):
+    if not isinstance(value, str) or not value.startswith(prefix):
+        raise AcceptanceFailure("Unexpected encoded GC identity")
+    encoded = value[len(prefix):]
+    return json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+
+
+def verify_global_agent_config(target, config):
+    """The personal route still requires a live, explicitly configured global agent."""
+    agent = target.get("agent")
+    if target.get("v") != 1 or not isinstance(agent, str) or not agent or "/" in agent:
+        raise AcceptanceFailure("Personal conversations require an exact global agent")
+    matches = [item for item in config.get("agents", []) if item.get("name") == agent
+               and not item.get("dir") and item.get("scope") != "rig" and not item.get("suspended")]
+    if (config.get("workspace") or {}).get("suspended") or len(matches) != 1:
+        raise AcceptanceFailure("GC config does not expose the selected active global agent")
+
+
+def verify_reviewed_lost_create(receipt, evidence, *, project, workspace):
+    """Bind a dropped create ACK to its captured bytes and reviewed alias lookup.
+
+    Only the lost-create fault case supplies this evidence. It never invents a
+    receipt ACK: the bridge recovered the original session by deterministic alias.
+    """
+    if not isinstance(evidence, dict) or evidence.get("kind") != "reviewed-lost-create":
+        raise AcceptanceFailure("Missing explicit reviewed lost-create evidence")
+    before, session, record = (evidence.get(key) for key in ("before_receipt", "session", "intercepted"))
+    if not all(isinstance(value, dict) for value in (before, session, record)):
+        raise AcceptanceFailure("Incomplete reviewed lost-create evidence")
+    alias = "bb-" + hashlib.sha256(receipt["threadId"].encode()).hexdigest()[:24]
+    if (receipt.get("create") or receipt.get("alias") != alias
+            or any(before.get(key) != receipt.get(key) for key in ("threadId", "target", "alias"))
+            or any(before.get(key) for key in ("create", "sessionId", "turn"))):
+        raise AcceptanceFailure("Reviewed lost-create evidence changed original thread, target or alias")
+    target = receipt["target"]
+    if (session.get("id") != receipt["sessionId"] or session.get("alias") != alias
+            or session.get("template") != target["agent"]
+            or Path(session.get("work_dir") or "/").resolve() != workspace):
+        raise AcceptanceFailure("Reviewed lost-create evidence identifies another alias, session or target")
+    accepted = record.get("accepted")
+    if (record.get("method") != "POST" or record.get("operation") != "create"
+            or record.get("path") != "/v0/city/" + urllib.parse.quote(target["city"], safe="") + "/sessions"
+            or record.get("fault") != "accepted-response-drop" or not record.get("finished_at")
+            or type(record.get("upstream_status")) is not int or not 200 <= record["upstream_status"] < 300
+            or not isinstance(accepted, dict) or accepted.get("status") != "accepted"
+            or not isinstance(accepted.get("request_id"), str) or not accepted["request_id"]
+            or accepted.get("event_cursor") is None):
+        raise AcceptanceFailure("Reviewed lost-create evidence lacks an intercepted accepted request/cursor")
+    bodies = {}
+    for operation in ("request", "response"):
+        text = evidence.get(operation + "_body")
+        if (not isinstance(text, str) or record.get(operation + "_bytes") != len(text.encode())
+                or record.get(operation + "_sha256") != hashlib.sha256(text.encode()).hexdigest()):
+            raise AcceptanceFailure("Reviewed lost-create capture bytes do not match the intercepted request")
+        try:
+            bodies[operation] = json.loads(text)
+        except ValueError as error:
+            raise AcceptanceFailure("Reviewed lost-create capture is not JSON") from error
+    request = bodies["request"]
+    if (not isinstance(request, dict) or request.get("kind") != "agent"
+            or request.get("name") != target["agent"] or request.get("alias") != alias
+            or request.get("project_id") != project or bodies["response"] != accepted):
+        raise AcceptanceFailure("Reviewed lost-create capture does not bind this target and accepted identity")
+    return {"gc_create_request_id": accepted["request_id"], "gc_create_event_cursor": accepted["event_cursor"],
+            "gc_create_evidence": "reviewed-lost-create"}
+
+
 class LiveAssertions:
     def __init__(self, *, bb_bin, host, project, model, workspace, artifacts,
                  timeout=240, env=None, existing_thread_id=None, exercise_resume=False):
         self.bb_bin = str(bb_bin)
         self.host, self.project, self.model = host, project, model
+        self.personal_conversation = project == "proj_personal"
+        if self.personal_conversation:
+            target = decode_identity(model, "gc1_")
+            agent = target.get("agent")
+            if target.get("v") != 1 or not isinstance(agent, str) or not agent or "/" in agent:
+                raise AcceptanceFailure("Personal conversations require an exact global agent")
         self.workspace = Path(workspace).resolve(strict=True)
         if not self.workspace.is_dir():
             raise AcceptanceFailure("Workspace must be an existing directory")
@@ -137,13 +215,50 @@ class LiveAssertions:
         thread, environment = state.get("thread", {}), state.get("environment") or {}
         if thread.get("providerId") != "gas-city" or thread.get("projectId") != self.project:
             raise AcceptanceFailure("BB selected a different provider or project")
-        if environment.get("hostId") != self.host or environment.get("managed") is not False:
-            raise AcceptanceFailure("BB selected a different host or managed workspace")
-        if Path(environment.get("path") or "/").resolve() != self.workspace:
-            raise AcceptanceFailure("BB selected a different workspace")
-        self.report["assertions"].append("exact-provider-project-host-workspace")
+        if environment.get("hostId") != self.host:
+            raise AcceptanceFailure("BB selected a different host")
+        if self.personal_conversation:
+            if environment.get("managed") is not False and not (
+                    environment.get("managed") is True and environment.get("workspaceProvisionType") == "personal"):
+                raise AcceptanceFailure("BB did not provision its own personal workspace")
+        elif environment.get("managed") is not False:
+            raise AcceptanceFailure("BB selected a managed project workspace")
+        bb_workspace = Path(environment.get("path") or "/").resolve()
+        if self.personal_conversation:
+            data_dir, environment_id = self.env.get("BB_DATA_DIR"), environment.get("id")
+            def component(value):
+                return (isinstance(value, str) and bool(value) and value not in {".", ".."}
+                        and Path(value).name == value)
+            if (not data_dir or not Path(data_dir).is_absolute() or not component(environment_id)
+                    or not Path(environment.get("path") or "/").is_absolute()):
+                raise AcceptanceFailure("Cannot verify BB's isolated personal workspace")
+            data_root = Path(data_dir).resolve()
+            provider = environment.get("environmentProviderId")
+            instance = environment.get("environmentProviderInstanceKey")
+            if provider is not None or instance is not None:
+                # BB 0.43 provisions one plugin-owned directory per thread.
+                if (provider != "personal-workspace" or not component(self.thread_id)
+                        or instance != self.thread_id or environment.get("managed") is not True
+                        or environment.get("workspaceProvisionType") != "personal"):
+                    raise AcceptanceFailure("BB personal workspace does not identify this thread's provider instance")
+                personal_workspace = (data_root / "plugins/environment-personal-workspace/host-data/workspaces"
+                                      / self.thread_id).resolve()
+            else:
+                # Older BB stores have no environment-provider identity and
+                # retain their directory under the environment ID instead.
+                if environment.get("workspaceProvisionType") not in {None, "personal"}:
+                    raise AcceptanceFailure("BB did not provision its own personal workspace")
+                personal_workspace = (data_root / "personal-workspaces" / environment_id).resolve()
+            if (not personal_workspace.is_relative_to(data_root) or personal_workspace == data_root
+                    or bb_workspace != personal_workspace or bb_workspace == self.workspace):
+                raise AcceptanceFailure("BB must select its own personal workspace, separate from GC")
+            self.report["assertions"].append("personal-global-separate-bb-workspace")
+        else:
+            if bb_workspace != self.workspace:
+                raise AcceptanceFailure("BB selected a different workspace")
+            self.report["assertions"].append("exact-provider-project-host-workspace")
 
-    def verify_gc_prompt(self, prompt, provider_id):
+    def verify_gc_prompt(self, prompt, provider_id, *, reviewed_creation=None):
         config_file, state_home = self.env.get("GC_BB_CONFIG"), self.env.get("XDG_STATE_HOME")
         if not config_file or not state_home or not Path(config_file).is_absolute() or not Path(state_home).is_absolute():
             raise AcceptanceFailure("Independent GC verification requires explicit isolated config and state paths")
@@ -152,14 +267,8 @@ class LiveAssertions:
         receipt = json.loads(receipt_path.read_text())
         config = json.loads(Path(config_file).read_text())
 
-        def decode(value, prefix):
-            if not value.startswith(prefix):
-                raise AcceptanceFailure("Unexpected encoded GC identity")
-            encoded = value[len(prefix):]
-            return json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
-
-        target = decode(self.model, "gc1_")
-        remote = decode(provider_id, "gcs1_")
+        target = decode_identity(self.model, "gc1_")
+        remote = decode_identity(provider_id, "gcs1_")
         if (target.get("v") != 1 or remote.get("v") != 1 or receipt.get("threadId") != self.thread_id
                 or receipt.get("target") != target or remote.get("target") != target
                 or not receipt.get("sessionId") or remote.get("sessionId") != receipt["sessionId"]):
@@ -173,7 +282,14 @@ class LiveAssertions:
             allowed_requests.add("initial-" + self.thread_id)
         if turn.get("state") != "completed" or turn.get("clientRequestId") not in allowed_requests:
             raise AcceptanceFailure("GC receipt is not completed for the matching BB request")
-        for operation in (receipt.get("create") or {}, turn):
+        creation_evidence = {}
+        if reviewed_creation is not None:
+            if len(self.report["turns"]) != 1:
+                raise AcceptanceFailure("Reviewed lost-create evidence is only valid for the first recovered turn")
+            creation_evidence = verify_reviewed_lost_create(receipt, reviewed_creation,
+                                                          project=self.project, workspace=self.workspace)
+        operations = (turn,) if creation_evidence else (receipt.get("create") or {}, turn)
+        for operation in operations:
             if not operation.get("request_id") or operation.get("event_cursor") is None:
                 raise AcceptanceFailure("GC receipt lacks durable create or submit acceptance identities")
         if turn.get("digest") != hashlib.sha256(prompt.encode()).hexdigest() or not turn.get("messageDigest"):
@@ -181,8 +297,13 @@ class LiveAssertions:
         connections = [connection for connection in config.get("connections", [])
                        if connection.get("id") == target.get("connection")]
         bindings = [binding for binding in config.get("bindings", []) if binding.get("projectId") == self.project]
-        if (len(connections) != 1 or len(bindings) != 1 or bindings[0].get("connection") != target.get("connection")
-                or bindings[0].get("city") != target.get("city")):
+        if len(connections) != 1:
+            raise AcceptanceFailure("GC config no longer identifies the exact target connection")
+        if self.personal_conversation:
+            if bindings:
+                raise AcceptanceFailure("Personal acceptance must exercise an unbound global conversation")
+        elif (len(bindings) != 1 or bindings[0].get("connection") != target.get("connection")
+              or bindings[0].get("city") != target.get("city")):
             raise AcceptanceFailure("GC config no longer maps the exact BB project and target")
         url = urllib.parse.urlsplit(connections[0]["url"])
         if (url.scheme != "http" or url.hostname not in {"127.0.0.1", "localhost", "::1"}
@@ -197,15 +318,15 @@ class LiveAssertions:
         headers = {"Accept": "application/json"}
         if self.env.get("GC_BB_AUTH_TOKEN"):
             headers["Authorization"] = "Bearer " + self.env["GC_BB_AUTH_TOKEN"]
-        endpoint = (connections[0]["url"].rstrip("/") + "/v0/city/" + urllib.parse.quote(target["city"], safe="")
-                    + "/session/" + urllib.parse.quote(receipt["sessionId"], safe=""))
+        city_endpoint = connections[0]["url"].rstrip("/") + "/v0/city/" + urllib.parse.quote(target["city"], safe="")
+        endpoint = city_endpoint + "/session/" + urllib.parse.quote(receipt["sessionId"], safe="")
 
-        def fetch(suffix, label, method="GET"):
+        def fetch(suffix, label, method="GET", *, city_resource=False):
             try:
                 request_headers = dict(headers)
                 if method != "GET":
                     request_headers.update({"X-GC-Request": "bb-provider", "Content-Type": "application/json"})
-                request = urllib.request.Request(endpoint + suffix, headers=request_headers,
+                request = urllib.request.Request((city_endpoint if city_resource else endpoint) + suffix, headers=request_headers,
                                                  method=method, data=b"{}" if method != "GET" else None)
                 with opener.open(request, timeout=20) as response:
                     raw = response.read(8 * 1024 * 1024 + 1)
@@ -218,13 +339,18 @@ class LiveAssertions:
                 stream.write(raw)
             return json.loads(raw)
 
+        if self.personal_conversation:
+            verify_global_agent_config(target, fetch("/config", "city-config", city_resource=True))
         session = fetch("", "session")
         if (session.get("id") != receipt["sessionId"] or session.get("template") != target["agent"]
                 or Path(session.get("work_dir") or "/").resolve() != self.workspace):
             raise AcceptanceFailure("GC session endpoint does not match the receipt target and workspace")
+        if creation_evidence and session.get("alias") != receipt["alias"]:
+            raise AcceptanceFailure("GC live session alias changed since reviewed lost-create recovery")
         frame = fetch("/transcript?format=structured", "transcript")
         evidence = verify_prompt_frame(frame, turn, prompt)
         evidence["gc_submit_request_id"] = turn["request_id"]
+        evidence.update(creation_evidence)
         self.report["turns"][-1].update(evidence)
         self.report["assertions"].append(f"turn-{len(self.report['turns'])}-independent-full-forwarded-prompt")
         # This closure is bound only after independently validating the exact
@@ -239,18 +365,18 @@ class LiveAssertions:
         if tail.get("activity") != "idle" or tail.get("degraded") or tail.get("open_tool_call_ids") or tail.get("pending_interaction_ids"):
             raise AcceptanceFailure("Refusing to suspend an agent without reliable idle history")
         self.gc_fetch("/suspend", "suspend-result", "POST")
-        # Wait for the controller's canonical asleep projection. Immediate
-        # send after the legacy suspended response can miss reconciliation bugs.
+        # Explicit suspension reports suspended; some controllers project asleep.
+        # Both require independent evidence that the runtime actually stopped.
         deadline, poll = time.monotonic() + 30, 0
         while True:
             state = self.gc_fetch("", f"suspend-state-{poll}")
-            if state.get("state") == "asleep" and state.get("running") is False:
+            if state.get("state") in {"suspended", "asleep"} and state.get("running") is False:
                 break
             if time.monotonic() >= deadline:
-                raise AcceptanceFailure("Controller did not settle the suspended agent as asleep")
+                raise AcceptanceFailure("Controller did not settle the suspended agent as stopped")
             time.sleep(1)
             poll += 1
-        self.report["assertions"].append("agent-suspended-and-controller-reconciled")
+        self.report["assertions"].append("agent-suspended-and-runtime-stopped")
         after_seq = max((row["seq"] for row in self.events()), default=0)
         expected = f"RESUMED_{nonce} {memory}"
         prompt = ("Without tools, end your final answer with a standalone line containing "
@@ -375,9 +501,10 @@ class LiveAssertions:
                 self.report["reused_thread"] = True
             else:
                 self.progress("spawning exact GC agent through BB")
+                environment_args = [] if self.personal_conversation else ["--environment", str(self.workspace)]
                 spawned = self.command("thread", "spawn", "--project", self.project,
                                        "--host", self.host, "--provider", "gas-city", "--model", self.model,
-                                       "--environment", str(self.workspace), "--permission-mode", "full",
+                                       *environment_args, "--permission-mode", "full",
                                        "--reasoning-level", "none", "--service-tier", "default",
                                        "--prompt", first, "--json")
                 self.thread_id = spawned.get("id")

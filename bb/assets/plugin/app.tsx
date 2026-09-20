@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { definePluginApp, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginRpcResult } from "@get-bb/plugin-sdk/app";
 import type { launcherContract, LaunchCatalog } from "./src/launcher-contract.js";
+import { reasoningLabel, type ReasoningLevel } from "./src/reasoning.js";
 
 type Choices = PluginRpcResult<typeof launcherContract.choices>;
 
@@ -13,6 +14,7 @@ export function GasCityLauncher() {
   const [hostId, setHostId] = useState("");
   const [project, setProject] = useState("");
   const [model, setModel] = useState("");
+  const [reasoningLevel, setReasoningLevel] = useState<ReasoningLevel>("none");
   const [workspacePath, setWorkspacePath] = useState("");
   const [prompt, setPrompt] = useState("");
   const [catalog, setCatalog] = useState<LaunchCatalog>();
@@ -42,16 +44,19 @@ export function GasCityLauncher() {
     return () => { generation.current++; };
   }, [rpc, hostId, project, revision]);
   const selected = catalog?.agents.find(a => a.id === model);
+  useEffect(() => {
+    if (selected) setReasoningLevel(level => selected.reasoningLevels.includes(level) ? level : "none");
+  }, [selected]);
   const groups = [...new Set(catalog?.agents.map(a => a.group) ?? [])];
   const hostAvailable = choices?.hosts.some(h => h.id === hostId && h.connected);
   const projectAvailable = choices?.projects.some(p => project === "globals" ? p.personal : p.id === project);
-  const canLaunch = selected && hostAvailable && projectAvailable && workspacePath.trim() && prompt.trim() && catalog?.workspacePolicy === "require-match" && !loading && !starting && !uncertain;
-  function changeScope(change: () => void) { generation.current++; setCatalog(undefined); setModel(""); setWorkspacePath(""); change(); }
+  const canLaunch = selected && selected.reasoningLevels.includes(reasoningLevel) && hostAvailable && projectAvailable && workspacePath.trim() && prompt.trim() && catalog?.workspacePolicy === "require-match" && !loading && !starting && !uncertain;
+  function changeScope(change: () => void) { generation.current++; setCatalog(undefined); setModel(""); setReasoningLevel("none"); setWorkspacePath(""); change(); }
   async function launch() {
     if (!canLaunch) return;
     setStarting(true); setError("");
     try {
-      const result = await rpc.call("launch", { hostId, projectId: project === "globals" ? null : project, model, workspacePath: workspacePath.trim(), prompt });
+      const result = await rpc.call("launch", { hostId, projectId: project === "globals" ? null : project, model, workspacePath: workspacePath.trim(), reasoningLevel, prompt });
       if (mounted.current) {
         if ("threadId" in result) navigate.toThread(result.threadId);
         else {
@@ -106,11 +111,14 @@ export function GasCityLauncher() {
             {choices?.projects.map(p => <option key={p.id} value={p.personal ? "globals" : p.id}>{p.personal ? "Global agents · Personal" : p.name}</option>)}
           </select></label>
         </div>
-        <label>Agent<select aria-label="Agent" value={model} disabled={!catalog || starting || uncertain} onChange={e => { setModel(e.target.value); setWorkspacePath(catalog?.agents.find(a => a.id === e.target.value)?.workspacePath ?? ""); }}>
+        <label>Agent<select aria-label="Agent" value={model} disabled={!catalog || starting || uncertain} onChange={e => { setModel(e.target.value); setReasoningLevel("none"); setWorkspacePath(catalog?.agents.find(a => a.id === e.target.value)?.workspacePath ?? ""); }}>
           <option value="">{loading ? "Loading agents…" : "Choose an exact agent"}</option>
           {model && !selected && <option value={model}>Selected agent unavailable · choose again</option>}
           {groups.map(group => <optgroup key={group} label={group}>{catalog?.agents.filter(a => a.group === group).map(a => <option key={a.id} value={a.id}>{a.name} · {a.provider}</option>)}</optgroup>)}
         </select><span className="gc-note">{selected ? `${selected.group} · ${selected.provider}` : catalog && !catalog.agents.length ? "No active agents in this scope. Check the host configuration below." : "Project agents are grouped with their city’s global agents."}</span></label>
+        <label>Reasoning<select aria-label="Reasoning" value={reasoningLevel} disabled={!selected || starting || uncertain} onChange={e => setReasoningLevel(e.target.value as ReasoningLevel)}>
+          {(selected?.reasoningLevels ?? ["none" as const]).map(level => <option key={level} value={level}>{reasoningLabel(level)}</option>)}
+        </select><span className="gc-note">Agent default uses the agent’s configured reasoning. This choice applies when the conversation is created; start a new conversation to change it.</span></label>
         <label>Existing workspace<input aria-label="Existing workspace" value={workspacePath} placeholder="/absolute/path/on/selected/host" disabled={!selected || starting || uncertain} onChange={e => setWorkspacePath(e.target.value)} />
           <span className="gc-note">The suggested city or rig path may differ from the agent’s configured workspace. BB adopts this directory as an unmanaged workspace. Gas City’s actual session directory must match before your prompt is sent.</span>
           {selected?.unavailableReason && <span className="gc-note">{selected.unavailableReason} Enter an existing path on this host.</span>}

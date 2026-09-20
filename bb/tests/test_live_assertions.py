@@ -1,12 +1,16 @@
 """Unit checks for acceptance guards; these do not run or certify a model."""
 
+import base64
 import copy
 import hashlib
+import io
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from live_assertions import AcceptanceFailure, LiveAssertions, safe_provider_failure, verify_prompt_frame, verify_resume_identity
+from live_assertions import AcceptanceFailure, LiveAssertions, safe_provider_failure, verify_prompt_frame, verify_resume_identity, verify_global_agent_config
 
 
 def completed_events():
@@ -23,6 +27,216 @@ def completed_events():
         {"seq": 5, "type": "turn/completed", "scope": scope,
          "data": {"status": "completed", "providerThreadId": "test-gc-session"}},
     ]
+
+
+
+def agent_model(agent="global", city="test-city"):
+    target = {"v": 1, "connection": "local", "city": city, "agent": agent}
+    return "gc1_" + base64.urlsafe_b64encode(json.dumps(target).encode()).decode().rstrip("=")
+
+
+class PersonalWorkspaceGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.workspace = self.root / "gc-workspace"
+        self.workspace.mkdir()
+        self.data = self.root / "bb-data"
+        self.personal = self.data / "personal-workspaces" / "env_test"
+        self.personal.mkdir(parents=True)
+
+    def harness(self, project="proj_personal", agent="global"):
+        return LiveAssertions(bb_bin="unused", host="test-host", project=project,
+                              model=agent_model(agent), workspace=self.workspace,
+                              artifacts=self.root / "evidence", env={"BB_DATA_DIR": str(self.data)})
+
+    def destination(self, harness, path=None):
+        return {"thread": {"providerId": "gas-city", "projectId": harness.project},
+                "environment": {"id": "env_test", "hostId": "test-host", "managed": False,
+                                "path": str(path or self.personal)}}
+
+    def test_personal_global_requires_separate_bb_owned_directory(self):
+        harness = self.harness()
+        with patch.object(harness, "command", return_value=self.destination(harness)):
+            harness.verify_destination()
+        self.assertIn("personal-global-separate-bb-workspace", harness.report["assertions"])
+        for bad in (self.workspace, self.root, self.data / "other"):
+            with self.subTest(path=bad), patch.object(harness, "command", return_value=self.destination(harness, bad)):
+                with self.assertRaisesRegex(AcceptanceFailure, "personal workspace"):
+                    harness.verify_destination()
+
+    def test_personal_rig_cannot_bypass_project_binding(self):
+        with self.assertRaisesRegex(AcceptanceFailure, "global agent"):
+            self.harness(agent="sample/rig")
+
+    def test_native_personal_workspace_is_managed_by_bb(self):
+        harness = self.harness()
+        destination = self.destination(harness)
+        destination["environment"].update(managed=True, workspaceProvisionType="personal")
+        with patch.object(harness, "command", return_value=destination):
+            harness.verify_destination()
+        destination["environment"]["workspaceProvisionType"] = "worktree"
+        with patch.object(harness, "command", return_value=destination):
+            with self.assertRaisesRegex(AcceptanceFailure, "personal workspace"):
+                harness.verify_destination()
+
+    def test_plugin_personal_workspace_requires_exact_thread_instance_and_owned_path(self):
+        harness = self.harness()
+        harness.thread_id = "thread_test"
+        path = self.data / "plugins/environment-personal-workspace/host-data/workspaces/thread_test"
+        path.mkdir(parents=True)
+        destination = self.destination(harness, path)
+        destination["environment"].update(managed=True, workspaceProvisionType="personal",
+            environmentProviderId="personal-workspace", environmentProviderInstanceKey=harness.thread_id)
+        with patch.object(harness, "command", return_value=destination):
+            harness.verify_destination()
+        for changed in ({"environmentProviderInstanceKey": "another_thread"},
+                        {"environmentProviderId": "different-provider"}, {"managed": False},
+                        {"workspaceProvisionType": "worktree"}, {"path": str(self.personal)},
+                        {"path": "relative/personal-workspace"}):
+            invalid = {**destination, "environment": {**destination["environment"], **changed}}
+            with self.subTest(changed=changed), patch.object(harness, "command", return_value=invalid):
+                with self.assertRaises(AcceptanceFailure): harness.verify_destination()
+
+    def test_personal_workspace_cannot_escape_through_symlinks_or_thread_identity(self):
+        harness = self.harness()
+        harness.thread_id = "thread_test"
+        path = self.data / "plugins/environment-personal-workspace/host-data/workspaces/thread_test"
+        path.parent.mkdir(parents=True)
+        outside = self.root / "outside"
+        outside.mkdir()
+        path.symlink_to(outside, target_is_directory=True)
+        destination = self.destination(harness, path)
+        destination["environment"].update(managed=True, workspaceProvisionType="personal",
+            environmentProviderId="personal-workspace", environmentProviderInstanceKey=harness.thread_id)
+        with patch.object(harness, "command", return_value=destination):
+            with self.assertRaises(AcceptanceFailure): harness.verify_destination()
+        for thread in ("..", ".", "../outside", "/absolute"):
+            harness.thread_id = thread
+            destination["environment"]["environmentProviderInstanceKey"] = thread
+            with self.subTest(thread=thread), patch.object(harness, "command", return_value=destination):
+                with self.assertRaises(AcceptanceFailure): harness.verify_destination()
+
+    def test_legacy_layout_cannot_hide_plugin_identity_or_escape_its_data_directory(self):
+        harness = self.harness()
+        destination = self.destination(harness)
+        destination["environment"]["environmentProviderInstanceKey"] = "thread_test"
+        with patch.object(harness, "command", return_value=destination):
+            with self.assertRaises(AcceptanceFailure): harness.verify_destination()
+        destination["environment"].pop("environmentProviderInstanceKey")
+        outside = self.root / "outside"
+        outside.mkdir()
+        self.personal.rename(self.personal.with_name("saved-personal"))
+        self.personal.symlink_to(outside, target_is_directory=True)
+        with patch.object(harness, "command", return_value=destination):
+            with self.assertRaises(AcceptanceFailure): harness.verify_destination()
+
+    def test_project_workspace_still_must_match_gc(self):
+        harness = self.harness(project="project-sample", agent="sample/rig")
+        with patch.object(harness, "command", return_value=self.destination(harness)):
+            with self.assertRaisesRegex(AcceptanceFailure, "different workspace"):
+                harness.verify_destination()
+        with patch.object(harness, "command", return_value=self.destination(harness, self.workspace)):
+            harness.verify_destination()
+
+    def test_personal_spawn_lets_bb_choose_its_workspace(self):
+        harness = self.harness()
+        calls = []
+        def command(*args):
+            calls.append(args)
+            return {"id": "test-thread"} if args[1] == "spawn" else self.destination(harness)
+        with patch.object(harness, "command", side_effect=command), \
+                patch.object(harness, "await_turn", side_effect=AcceptanceFailure("stop before model work")), \
+                patch.object(harness, "progress"):
+            with self.assertRaisesRegex(AcceptanceFailure, "stop before model work"):
+                harness.run()
+        spawn = calls[0]
+        self.assertEqual(spawn[spawn.index("--project") + 1], "proj_personal")
+        self.assertNotIn("--environment", spawn)
+
+    def test_project_spawn_keeps_explicit_workspace(self):
+        harness = self.harness(project="project-sample", agent="sample/rig")
+        calls = []
+        def command(*args):
+            calls.append(args)
+            return {"id": "test-thread"} if args[1] == "spawn" else self.destination(harness, self.workspace)
+        with patch.object(harness, "command", side_effect=command), \
+                patch.object(harness, "await_turn", side_effect=AcceptanceFailure("stop before model work")), \
+                patch.object(harness, "progress"):
+            with self.assertRaisesRegex(AcceptanceFailure, "stop before model work"):
+                harness.run()
+        self.assertEqual(calls[0][calls[0].index("--environment") + 1], str(self.workspace))
+
+class PersonalTargetConfigTests(unittest.TestCase):
+    def test_personal_agent_must_exist_as_active_global_in_exact_city_config(self):
+        target = {"v": 1, "connection": "local", "city": "test-city", "agent": "global"}
+        valid = {"workspace": {}, "agents": [{"name": "global"}]}
+        verify_global_agent_config(target, valid)
+        for config in (
+                {"agents": []},
+                {"agents": [{"name": "different"}]},
+                {"agents": [{"name": "global", "dir": "sample"}]},
+                {"agents": [{"name": "global", "scope": "rig"}]},
+                {"agents": [{"name": "global", "suspended": True}]},
+                {"workspace": {"suspended": True}, "agents": [{"name": "global"}]},
+                {"agents": [{"name": "global"}, {"name": "global"}]}):
+            with self.subTest(config=config), self.assertRaisesRegex(AcceptanceFailure, "active global agent"):
+                verify_global_agent_config(target, config)
+
+    def harness(self, root, project="proj_personal", agent="global"):
+        workspace = root / "gc-workspace"
+        workspace.mkdir()
+        state = root / "state"
+        receipts = state / "gascity/bb/sessions"
+        receipts.mkdir(parents=True)
+        config = root / "bb.json"
+        config.write_text(json.dumps({"connections": [{"id": "local", "url": "http://127.0.0.1:12345"}], "bindings": []}))
+        harness = LiveAssertions(bb_bin="unused", host="test-host", project=project,
+                                 model=agent_model(agent), workspace=workspace, artifacts=root / "evidence",
+                                 env={"GC_BB_CONFIG": str(config), "XDG_STATE_HOME": str(state)})
+        harness.thread_id = "test-thread"
+        harness.report["turns"] = [{"client_request_id": "test-request"}]
+        target = {"v": 1, "connection": "local", "city": "test-city", "agent": agent}
+        prompt = "Reply TEST_MARKER"
+        turn = {"state": "completed", "clientRequestId": "test-request", "request_id": "gc-submit",
+                "event_cursor": "2", "digest": hashlib.sha256(prompt.encode()).hexdigest(),
+                "messageDigest": hashlib.sha256(prompt.encode()).hexdigest(), "baselineMessageIds": []}
+        receipt = {"threadId": harness.thread_id, "target": target, "sessionId": "gc-session",
+                   "create": {"request_id": "gc-create", "event_cursor": "1"}, "turn": turn}
+        (receipts / (hashlib.sha256(harness.thread_id.encode()).hexdigest() + ".json")).write_text(json.dumps(receipt))
+        provider_id = "gcs1_" + base64.urlsafe_b64encode(json.dumps({"v": 1, "target": target,
+                                                                   "sessionId": "gc-session"}).encode()).decode().rstrip("=")
+        return harness, prompt, provider_id
+
+    def test_personal_receipt_bypasses_binding_only_after_live_global_config_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            harness, prompt, provider_id = self.harness(Path(tmp).resolve())
+            requests = []
+            def respond(request, timeout):
+                requests.append(request.full_url)
+                if request.full_url.endswith("/config"):
+                    data = {"agents": [{"name": "global"}]}
+                elif "/transcript?" in request.full_url:
+                    data = {"schema_version": "session.structured.v1", "history": {"tail_state": {"activity": "idle"}},
+                            "structured_messages": [{"id": "new-user", "role": "user", "user_prompt": {"text": prompt}}]}
+                else:
+                    data = {"id": "gc-session", "template": "global", "work_dir": str(harness.workspace)}
+                return io.BytesIO(json.dumps(data).encode())
+            with patch("live_assertions.urllib.request.build_opener") as build_opener:
+                build_opener.return_value.open.side_effect = respond
+                harness.verify_gc_prompt(prompt, provider_id)
+            self.assertEqual(requests[0], "http://127.0.0.1:12345/v0/city/test-city/config")
+            self.assertEqual(len(requests), 3)
+            self.assertIn("turn-1-independent-full-forwarded-prompt", harness.report["assertions"])
+
+    def test_unbound_mapped_project_cannot_pass_independent_gc_verification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            harness, prompt, provider_id = self.harness(Path(tmp).resolve(), project="project-sample", agent="sample/rig")
+            with patch("live_assertions.urllib.request.build_opener") as build_opener:
+                with self.assertRaisesRegex(AcceptanceFailure, "exact BB project"):
+                    harness.verify_gc_prompt(prompt, provider_id)
+                build_opener.assert_not_called()
 
 
 class ResumeIdentityTests(unittest.TestCase):
@@ -194,6 +408,13 @@ class IndependentTranscriptGuardTests(unittest.TestCase):
     def test_matching_old_prompt_cannot_pass(self):
         self.frame["structured_messages"][0]["id"] = "earlier-user"
         with self.assertRaisesRegex(AcceptanceFailure, "new user entry"):
+            verify_prompt_frame(self.frame, self.turn, self.prompt)
+
+    def test_duplicate_delivery_cannot_pass(self):
+        duplicate = copy.deepcopy(self.frame["structured_messages"][0])
+        duplicate["id"] = "duplicate-user"
+        self.frame["structured_messages"].append(duplicate)
+        with self.assertRaisesRegex(AcceptanceFailure, "exactly one"):
             verify_prompt_frame(self.frame, self.turn, self.prompt)
 
     def test_unknown_activity_and_degraded_history_cannot_pass(self):

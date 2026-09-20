@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { registerLauncher } from "./src/launcher-server.js";
+import { REASONING_LEVELS, reasoningLabel, reasoningDescription } from "./src/reasoning.js";
 
 export default function plugin(bb: BbPluginApi) {
   registerLauncher(bb);
@@ -12,10 +13,11 @@ export default function plugin(bb: BbPluginApi) {
     },
     maintenance: { health: true, usage: false, installation: false },
     capabilities: {
-      permissionModes: ["full"], reasoningLevels: ["none"], fork: "none",
+      permissionModes: ["full"], reasoningLevels: REASONING_LEVELS, fork: "none",
       supportsNativeUserQuestion: true, supportsManualCompaction: false,
       supportsThreadArchive: false, supportsThreadRename: false, supportsServiceTier: false,
     },
+    reasoningLevels: REASONING_LEVELS.map(id => ({ id, label: reasoningLabel(id), description: reasoningDescription(id) })),
     composerActions: [], models: { scope: "workspace", fallback: [] },
     env: { passthrough: ["GC_BB_CONFIG", "GC_BB_AUTH_TOKEN", "XDG_CONFIG_HOME", "XDG_STATE_HOME"] },
     deriveProviderOptions(context) {

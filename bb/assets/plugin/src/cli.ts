@@ -49,7 +49,7 @@ async function main() {
     const binding = { projectId: values.project, connection: connection.id, city: values.city, rig: values.rig, paths: await Promise.all(values.path.map(p => realpath(p))) };
     config.bindings = [...config.bindings.filter(b => b.projectId !== binding.projectId), binding];
     await saveConfig(config);
-    console.log(`Mapped ${binding.projectId} to ${binding.city}/${binding.rig} on ${binding.connection}. BB may cache this catalog for 10 minutes; restart the BB server for an immediate refresh. gc bb agents always discovers afresh.`);
+    console.log(`Mapped ${binding.projectId} to ${binding.city}/${binding.rig} on ${binding.connection}. Allow up to 10 minutes for BB's ordinary catalog refresh. gc bb agents always discovers afresh.`);
     return;
   }
   if (command === "agents") {

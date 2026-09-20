@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { launcherContract, launcherHostContract } from "./launcher-contract.js";
+import type { ReasoningLevel } from "./reasoning.js";
 
 export function registerLauncher(bb: BbPluginApi) {
   const lifetime = new AbortController();
@@ -27,18 +28,18 @@ export function registerLauncher(bb: BbPluginApi) {
       await validateScope(hostId, projectId);
       return host.call("catalog", { projectId }, { hostId, signal: signal() });
     },
-    async launch({ hostId, projectId, model, workspacePath, prompt }) {
-      let checked: { model: string; workspacePath: string }, project;
+    async launch({ hostId, projectId, model, workspacePath, reasoningLevel, prompt }) {
+      let checked: { model: string; workspacePath: string; reasoningLevel: ReasoningLevel }, project;
       try {
         project = await validateScope(hostId, projectId);
-        checked = await host.call("validate", { projectId, model, workspacePath }, { hostId, signal: signal() });
+        checked = await host.call("validate", { projectId, model, workspacePath, reasoningLevel }, { hostId, signal: signal() });
       } catch (error) {
         return { error: (error as Error).message, uncertain: false };
       }
       try {
         const thread = await bb.sdk.threads.spawn({
           projectId: project.id, providerId: "gas-city", model: checked.model,
-          input: [{ type: "text", text: prompt, mentions: [] }], permissionMode: "full", reasoningLevel: "none",
+          input: [{ type: "text", text: prompt, mentions: [] }], permissionMode: "full", reasoningLevel: checked.reasoningLevel,
           executionInputSources: { providerId: "explicit", model: "explicit", permissionMode: "explicit", reasoningLevel: "explicit" },
           environment: { type: "host", hostId, workspace: { type: "unmanaged", path: checked.workspacePath } },
         });

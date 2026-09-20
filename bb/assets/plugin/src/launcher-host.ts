@@ -4,6 +4,7 @@ import { readConfig, type Config } from "./config.js";
 import { discover, targetId } from "./catalog.js";
 import { GasCityClient } from "./client.js";
 import type { LaunchCatalog } from "./launcher-contract.js";
+import { validateReasoning, type ReasoningLevel } from "./reasoning.js";
 
 // All filesystem checks execute on the selected BB host, never the server.
 export function createLauncherHostHandlers(loadConfig: () => Promise<Config> = readConfig) {
@@ -37,22 +38,23 @@ export function createLauncherHostHandlers(loadConfig: () => Promise<Config> = r
         workspacePath = null;
         unavailableReason = `Workspace unavailable on this BB host: ${(error as Error).message}`;
       }
-      result.agents.push({ id: targetId(agent), name: agent.agent, group: `${agent.connection} · ${agent.city} · ${agent.rig || "Global"}`, provider: agent.provider, workspacePath, unavailableReason });
+      result.agents.push({ id: targetId(agent), name: agent.agent, group: `${agent.connection} · ${agent.city} · ${agent.rig || "Global"}`, provider: agent.provider, reasoningLevels: agent.reasoningLevels, workspacePath, unavailableReason });
     }
     context.signal.throwIfAborted();
     return result;
   }
   return {
     catalog,
-    async validate(input: { projectId: string | null; model: string; workspacePath: string }, context: { signal: AbortSignal }) {
+    async validate(input: { projectId: string | null; model: string; workspacePath: string; reasoningLevel?: ReasoningLevel }, context: { signal: AbortSignal }) {
       const fresh = await catalog({ projectId: input.projectId }, context);
       if (fresh.workspacePolicy !== "require-match") throw new Error("Enable require-match on this host before coding: gc bb connect --workspace-policy require-match (include your connection URL).");
       const agent = fresh.agents.find(a => a.id === input.model);
       if (!agent) throw new Error("The selected Gas City agent is unavailable or outside this project. Refresh and choose again.");
+      const reasoningLevel = validateReasoning(input.reasoningLevel, agent.reasoningLevels);
       if (!isAbsolute(input.workspacePath)) throw new Error("Choose an absolute existing workspace path on the selected host.");
       const workspacePath = await realpath(input.workspacePath);
       if (!(await stat(workspacePath)).isDirectory()) throw new Error("The selected workspace is not a directory.");
-      return { model: agent.id, workspacePath };
+      return { model: agent.id, workspacePath, reasoningLevel };
     },
   };
 }

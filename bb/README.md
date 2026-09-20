@@ -2,7 +2,8 @@
 
 Experimental **0.1.0**, staged on `feat/bb-provider-gascity-1.4`. This pack
 connects unmodified [BB](https://github.com/get-bb/bb) to configured agents in
-**Gas City 1.4.0–1.4.1** through BB's public provider bridge and GC's HTTP session API.
+**Gas City 1.4** through BB's public provider bridge and GC's HTTP session API.
+Current qualification targets **BB 0.43.3**, **SDK 0.4.104**, and **GC 1.4.2**.
 It is not yet a registry release.
 
 Open **Gas City** in BB’s sidebar. Select a connected host, a standard BB
@@ -17,13 +18,19 @@ bead work is assigned; BB preserves that configured behavior. The
 [conversation test role](./tests/conversation-agent-prompt.md) provides a minimal
 example suitable for an agent's `prompt.md`.
 
-**Release status:** the pack is still a release candidate. Live testing found
+**Release status:** the pack is still a release candidate; the complete live
+product matrix has not passed. GC 1.4.2 trust handling, native session identity,
+approval menus, and API-error projection have source fixes under verification. A stock GC 1.4.2
+end-to-end pass has not been established.
+
+Historical GC 1.4.0/1.4.1 compatibility checks remain visible. Live testing found
 that GC 1.4.1 reports Codex transcript activity as `unknown`, so the bridge cannot
 verify completion for that runtime. It fails visibly rather than treating an
 assistant message as proof of completion. Current Claude approval menus also
 require GC fixes: the released runtime's hardcoded denial key can select a
 broader permission mode. Do not use this candidate for Claude approvals on
-unchanged GC 1.4.0/1.4.1. See [verification](./docs/verification.md)
+unchanged GC 1.4.0–1.4.2. The incorrect denial mapping was reproduced with
+Claude 2.1.270 on GC 1.4.2 without sending a response. See [verification](./docs/verification.md)
 for the tested versions, results, and remaining gates.
 
 ## Capabilities
@@ -47,21 +54,44 @@ Qualified identities distinguish identically named agents across cities, rigs,
 and connections.
 
 The dedicated launcher refreshes discovery directly on the selected host,
-using the explicit project ID. BB’s native **Model** picker remains available,
-but receives only a working directory and may cache selections. Use the Gas City
-launcher for project selection. Personal projects cannot adopt unmanaged
-workspaces in BB 0.42.1; choose a standard project even for a global agent.
+using the explicit project ID. BB’s native **Model** picker lists global agents
+and configured mapped rigs before a new thread has a workspace. Choose a bound
+project and **Project checkout** for rig work; creation and restore validate the
+binding from the actual execution directory. Once a workspace exists, the
+picker narrows its choices to that scope. Personal threads keep BB's own workspace and
+can converse with global agents in their GC directory. Choose a standard
+project and matching workspace when BB's file and diff views should describe
+the agent's checkout.
+
+BB 0.43.3 caches the native picker's catalog for up to ten minutes. Newly added
+GC agents can appear immediately in the Gas City launcher while the native
+picker still shows its previous list; reloading the plugin does not clear that
+BB cache. Wait for the ordinary refresh before selecting a new agent there.
 
 ## Prerequisites and topology
 
-- Gas City **1.4.0 or 1.4.1**, with a running supervisor and configured agents that can
+- Gas City **1.4.2**, with a running supervisor and configured agents that can
   create sessions and produce a reliable structured transcript.
-- BB **0.42.1**, using `@get-bb/plugin-sdk` **0.4.47**.
-  The plugin declares SDK compatibility `>=0.4.47 <0.5`.
+- BB **0.43.3**, using `@get-bb/plugin-sdk` **0.4.104**.
+  The plugin declares BB compatibility `>=0.43.3 <0.44` and SDK compatibility
+  `>=0.4.104 <0.5`; live qualification is still pending.
 - Node.js **22+**, npm, and the BB CLI.
 - For the initial setup below, the BB server, BB execution host, Gas City, and
   pack checkout are on the same machine and run as the same operator. This
   also makes working-directory checks meaningful.
+
+Current Claude qualification uses **Claude CLI 2.1.270**. Set
+`session_id_flag = "--session-id"` on its GC provider so GC supplies the native
+conversation identity at launch. Include the actual private transcript roots
+in `[daemon].observe_paths`, retaining existing entries. For native Manifold
+launches, the Claude projects path must match the launch configuration's
+`session_root`; acceptance tests use separate homes and transcript roots.
+
+Hillsboro qualification covers Manifold's Claude route and **Kimi for Coding**
+through the stock Claude CLI's Anthropic protocol. Both use GC's Claude adapter.
+Native Kimi CLI integration and the original Codex acceptance gate remain
+separate from that model-route coverage. See [verification](./docs/verification.md)
+for current evidence and unresolved gates.
 
 The adapter runs inside BB's host-side provider infrastructure. There is no
 new HTTP service, ACP server, or background process started by importing this
@@ -91,7 +121,10 @@ none of these installation steps.
 
 Open the **Gas City** sidebar launcher after binding a standard project below.
 For explicit conversation-only use, select the **Gas City** provider in BB’s
-native picker and choose a qualified global agent.
+native picker and choose a qualified global agent. With no project selected,
+the agent uses its existing GC directory. BB's personal workspace remains
+separate; the conversation shows the GC directory and explains that BB's file
+and diff views do not track it.
 Select **Full access**: this is the bridge's supported BB permission mode;
 the agent's existing Gas City permission policy still applies. GC tmux
 approval requests are shown as explicit BB questions offering **Approve once**
@@ -146,8 +179,11 @@ agent into BB's newly created worktree.
 - `conversation` (explicit opt-in) allows different directories and posts a visible
   notice in the conversation. BB file and diff views do not automatically
   describe changes made in GC's different checkout.
-- `require-match` (default) blocks prompt submission unless the real BB and GC working
-  directories match. Use a matching unmanaged BB environment for coding.
+- `require-match` (default) blocks project prompt submission unless the real BB
+  and GC working directories match. Use a matching unmanaged BB environment
+  for project work. Personal conversations with global agents use the GC-owned
+  directory and display the same workspace notice; BB requires these threads
+  to keep its separate personal workspace.
 
 Set the policy while configuring a connection:
 
@@ -252,6 +288,16 @@ when reinstalling; they prevent duplicate submission.
 
 ## Deliberate limits
 
+- The native BB picker and Gas City launcher expose reasoning levels from the
+  configured provider's `options_schema` in GC's `/providers/public` response.
+  **Agent default** inherits the agent's
+  configured effort; an explicit level is sent as `options.effort` at session
+  creation. GC 1.4 cannot change effort on an existing session. Keep its original
+  selection for subsequent turns, or create a new BB thread to change it.
+  GC validates the effective agent options at creation. Its public catalog does
+  not reflect agent/workspace `start_command` overrides or every custom provider
+  inheritance case, so those configurations may omit supported levels or offer
+  levels GC rejects. Use Agent default for custom commands.
 - Agent choices are configured, expanded templates. GC 1.4's config endpoint
   does not enumerate every dormant named conversation. Generic rig templates
   without a resolved `dir` are skipped with a warning; import roles at rig
@@ -260,14 +306,14 @@ when reinstalling; they prevent duplicate submission.
   active turn or submitting twice. Queue through BB or wait for completion.
   Text input only. Inline attachments, BB
   dynamic tools/skills injection, agent switching, fork, rename, archive,
-  manual compaction, and model/reasoning/tier overrides are not implemented.
+  manual compaction, and model/tier overrides are not implemented.
 - Only the verified GC tmux approval interaction is translated. Other
   interactions require responding in GC and recovering the BB thread.
 - GC tools and text appear in BB. Full fidelity usage, specialized tool UI,
   arbitrary named-session attachment, remote checkout adoption, and automatic
   mid-turn reconnect recovery are later stages.
 - This is a branch for integration testing. The automated gates below do not
-  establish live BB UI or model-backed runtime compatibility.
+  yet have a complete passing live product matrix.
 
 ## Development and checks
 
@@ -278,7 +324,7 @@ npm run typecheck
 npm run build
 npm test
 cd ../../..
-GC_TEST_BIN=/absolute/path/to/gc-1.4.1 \
+GC_TEST_BIN=/absolute/path/to/gc-1.4.2 \
   python3 -m unittest discover -s bb/tests -v
 ```
 
@@ -288,16 +334,24 @@ async creation, prompt delivery, replay, tool deltas, resume, interrupt,
 release, checkout mismatch, lost responses, and explicit approvals.
 The Python checks use the **actual released GC binary** for pack lint,
 resolved configuration, command discovery, and executable entrypoints.
-The dedicated workflow pins GC 1.4.0 and 1.4.1 with verified download checksums,
-and builds the server, host and frontend with released BB 0.42.1. Installer
+The dedicated workflow pins GC 1.4.0, 1.4.1, and 1.4.2 with verified download checksums,
+and builds the server, host and frontend with released BB 0.43.3. Installer
 tests exercise failed builds, registration rollback and retained data.
 
 `BB end-to-end acceptance` additionally requires actual Claude and Codex
-conversations through released BB and both GC versions, for global and rig
+conversations through released BB and each GC version in the matrix, for global and rig
 agents: two verified completions, retained context, a tool event and its file
 output, followed by agent suspension and a third turn proving the same provider
 conversation and memory without tools. Missing inference credentials fail the check. See
 [live CI setup and reproduction](./docs/verification.md#ci-acceptance).
+
+`bb/tests/full_e2e.py` adds the rendered New thread and launcher journeys,
+every advertised reasoning level, real permissions, queueing, interruption,
+process recovery, lost responses, installation changes, and visible failures.
+Its required-case ledger cannot pass with missing or failed cases. Run it
+against the same retained installation while diagnosing failures; on macOS
+the gate also requires the isolated released desktop app. See
+[the full product gate](./docs/verification.md#full-product-gate).
 
 The layout follows this repository's pack pattern: schema-2 `pack.toml`,
 documented `commands/*/run.sh`, a `doctor` check, and adapter code under

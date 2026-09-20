@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { bindingFor, type Config, type Binding } from "./config.js";
 import { GasCityClient } from "./client.js";
+import { providerReasoning, reasoningDescription, type PublicProvider, type ReasoningLevel } from "./reasoning.js";
 
 const identity = z.string().min(1).max(500);
 const targetSchema = z.object({ v: z.literal(1), connection: identity, city: identity, agent: identity }).strict();
 export type Target = z.infer<typeof targetSchema>;
-export interface Agent extends Target { rig: string; displayName: string; provider: string; isPool: boolean }
+export interface Agent extends Target { rig: string; displayName: string; provider: string; isPool: boolean; reasoningLevels: ReasoningLevel[] }
 export const targetId = (target: Target) => `gc1_${Buffer.from(JSON.stringify(targetSchema.parse({ v: target.v, connection: target.connection, city: target.city, agent: target.agent }))).toString("base64url")}`;
 export function parseTarget(value: unknown): Target {
   if (typeof value !== "string" || !/^gc1_[A-Za-z0-9_-]+$/.test(value) || value.length > 3000) throw new Error("Choose an exact Gas City agent ID from gc bb agents; model names and aliases are not agent IDs.");
@@ -17,7 +18,7 @@ export function inScope(target: Target, binding?: Binding): boolean {
   const rig = target.agent.includes("/") ? target.agent.slice(0, target.agent.indexOf("/")) : "";
   return binding ? target.connection === binding.connection && target.city === binding.city && (!rig || rig === binding.rig) : !rig;
 }
-export async function discover(config: Config, context: { projectId?: string | null; cwd?: string } = {}, makeClient = (id: Config["connections"][number]) => new GasCityClient(id)) {
+export async function discover(config: Config, context: { projectId?: string | null; cwd?: string; includeMappedRigs?: boolean } = {}, makeClient = (id: Config["connections"][number]) => new GasCityClient(id)) {
   const agents: Agent[] = [], warnings: string[] = [];
   const binding = await bindingFor(config, context, warning => warnings.push(warning));
   for (const connection of config.connections.filter(c => !binding || c.id === binding.connection)) {
@@ -30,14 +31,17 @@ export async function discover(config: Config, context: { projectId?: string | n
         const cfg = await client.get(client.city(city.name, "/config"));
         if (cfg.workspace?.suspended) continue;
         if (binding && !cfg.rigs?.some((r: any) => r.name === binding.rig && !r.suspended)) throw new Error(`Mapped rig ${binding.rig} is absent or suspended`);
+        const providers = await client.get<{ items: PublicProvider[] }>(client.city(city.name, "/providers/public"));
         for (const a of cfg.agents ?? []) {
           if (a.suspended) continue;
           if (a.scope === "rig" && !a.dir) { warnings.push(`${city.name}: generic rig template ${a.name} needs an expanded rig import in v1`); continue; }
           const rig = a.dir ?? "";
           if (rig && !cfg.rigs?.some((r: any) => r.name === rig && !r.suspended)) continue;
           const target: Target = { v: 1, connection: connection.id, city: city.name, agent: rig ? `${rig}/${a.name}` : a.name };
-          if (!inScope(target, binding)) continue;
-          agents.push({ ...target, rig, displayName: `${city.name} · ${rig || "Global"} · ${a.name} [${connection.id}]`, provider: a.provider || cfg.workspace?.provider || "configured", isPool: a.is_pool === true });
+          if (!inScope(target, binding) && !(context.includeMappedRigs && !binding && config.bindings.some(b => inScope(target, b)))) continue;
+          const provider = a.provider || cfg.workspace?.provider || "configured";
+          const spec = providers.items.find(p => p.name === provider);
+          agents.push({ ...target, rig, displayName: `${city.name} · ${rig || "Global"} · ${a.name} [${connection.id}]`, provider, isPool: a.is_pool === true, reasoningLevels: providerReasoning(spec) });
         }
       }
     } catch (error) {
@@ -52,7 +56,7 @@ export async function discover(config: Config, context: { projectId?: string | n
 export const modelRow = (agent: Agent, index: number) => ({
   id: targetId(agent), model: targetId(agent), displayName: agent.displayName,
   description: `Gas City agent ${agent.agent}; configured runtime ${agent.provider}`,
-  supportedReasoningEfforts: [], defaultReasoningEffort: "none" as const, isDefault: index === 0,
+  supportedReasoningEfforts: agent.reasoningLevels.map(reasoningEffort => ({ reasoningEffort, description: reasoningDescription(reasoningEffort) })), defaultReasoningEffort: "none" as const, isDefault: index === 0,
 });
 export async function validateTarget(config: Config, target: Target, projectId?: string | null): Promise<Agent> {
   const catalog = await discover(config, { projectId: projectId ?? null });

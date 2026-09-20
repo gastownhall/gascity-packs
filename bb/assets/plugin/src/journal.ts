@@ -4,9 +4,11 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { atomicJson } from "./config.js";
 import type { Target } from "./catalog.js";
+import type { ReasoningLevel } from "./reasoning.js";
 
 export interface Receipt {
   target: Target;
+  reasoningLevel?: ReasoningLevel;
   threadId?: string;
   alias?: string;
   sessionId?: string;

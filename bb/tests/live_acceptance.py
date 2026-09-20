@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -21,16 +22,27 @@ import threading
 import time
 
 from codex_hook_trust import trust_config, write_provider_commands
+from native_claude_acceptance import prepare_native_claude, native_memory_provenance
+from runtime_artifact import runtime_artifact, require_claude_session_id
 
 PACK = Path(__file__).resolve().parents[1]
 CORE_COMMITS = {
     "1.4.0": "a7297c511d637a3609947386f3389d76ddb2f23b",
     "1.4.1": "58ef17e3bd685fd5cf7f21286277b208d3324590",
+    "1.4.2": "d4582166367aa687c1b62b296247ba0fb0a7e094",
 }
 
 
 class GateError(Exception):
     pass
+
+
+def acceptance_agents(rows):
+    selected = [row for row in rows if (row.get("agent"), row.get("rig") or "")
+                in {("global", ""), ("sample/rig", "sample")}]
+    if len(selected) != 2 or len({row["agent"] for row in selected}) != 2:
+        raise GateError("Prepared catalog must contain the exact global and sample/rig acceptance agents")
+    return selected
 
 
 def claude_failure_diagnostics(root, scope_report):
@@ -142,9 +154,25 @@ def main():
     parser.add_argument("--report-dir", required=True, type=Path,
                         help="New evidence directory; upload only summary.json and global/rig report.json, never private/ captures")
     parser.add_argument("--timeout", type=int, default=240, help="Seconds per model turn")
+    parser.add_argument("--prepare-only", action="store_true",
+                        help="Prepare one isolated installation, write environment.json, and retain its services for the full E2E runner")
+    parser.add_argument("--claude-native-config", type=Path,
+                        help="Authorized native Manifold launch configuration; generated homes and transcripts remain isolated")
+    parser.add_argument("--runtime-raw-bin", type=Path,
+                        help="Pinned stock runtime executable for intentional authentication failure tests")
+    parser.add_argument("--gc-commit", help="Exact source commit of a development GC build")
+    parser.add_argument("--model-route", help="Stable route label recorded with the evidence, e.g. manifold-moonshot-kimi")
     args = parser.parse_args()
     if args.timeout < 1:
         parser.error("--timeout must be positive")
+    if args.claude_native_config and args.runtime != "claude":
+        parser.error("--claude-native-config requires --runtime claude")
+    if args.claude_native_config and not args.runtime_raw_bin:
+        parser.error("--claude-native-config requires --runtime-raw-bin for authentication failure isolation")
+    if args.gc_development_base and not args.gc_commit:
+        parser.error("--gc-development-base requires --gc-commit for exact source identity")
+    if args.gc_commit and not re.fullmatch(r"[0-9a-f]{40}", args.gc_commit):
+        parser.error("--gc-commit must be a complete source commit")
     args.report_dir = args.report_dir.resolve()
     args.report_dir.mkdir(parents=True, exist_ok=False)
     os.umask(0o077)
@@ -178,6 +206,7 @@ def main():
         "BB_SERVER_URL": f"http://127.0.0.1:{bb_port}", "BB_SERVER_BIND_HOST": "127.0.0.1",
         "CLAUDE_CONFIG_DIR": str(root / "claude-config"),
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CODEX_HOME": str(root / "codex-config"),
         "PATH": os.pathsep.join([str(Path(args.gc_bin).absolute().parent),
                                   str(Path(args.bb_bin).absolute().parent), os.environ["PATH"]]),
@@ -185,10 +214,12 @@ def main():
     commands = {"gc": str(Path(args.gc_bin).absolute()),
                 "bb": str(Path(args.bb_bin).absolute()),
                 "app": str(Path(args.bb_app_bin).absolute())}
+    if args.claude_native_config:
+        env["MANIFOLD_CLAUDE_LAUNCH_CONFIG"] = str(prepare_native_claude(root, args.claude_native_config))
     report = {"runtime": args.runtime, "status": "failed", "stages": [], "scopes": [],
               "commit": os.environ.get("GITHUB_SHA"), "coverage": "three-turn-tool-and-agent-resume",
               "verificationMode": "development" if args.gc_development_base else "release"}
-    started_gc = started_bb = False
+    started_gc = started_bb = prepared = False
     app_process = None
     command_count = 0
 
@@ -227,7 +258,7 @@ def main():
 
     try:
         progress("Checking credentials and exact installed versions")
-        if args.runtime == "claude" and not any(env.get(k) for k in
+        if args.runtime == "claude" and not args.claude_native_config and not any(env.get(k) for k in
                 ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")):
             raise GateError("Missing Claude inference credentials; this gate cannot pass without inference")
         if args.runtime == "codex":
@@ -244,7 +275,7 @@ def main():
         gc_version = run("gc", "version").stdout.strip().split()[0]
         core_release = args.gc_development_base or gc_version
         if core_release not in CORE_COMMITS:
-            raise GateError("Live acceptance requires released GC 1.4.0 or 1.4.1")
+            raise GateError("Live acceptance requires a declared released GC core version")
         if args.gc_development_base:
             if not gc_version.startswith(args.gc_development_base + "-"):
                 raise GateError("Development GC must carry an explicit prerelease version based on --gc-development-base")
@@ -255,6 +286,10 @@ def main():
         report["versions"] = {"gc": gc_version,
                               "bb": run("bb", "--version").stdout.strip(),
                               args.runtime: run(args.runtime, "--version").stdout.strip()}
+        raw_runtime = runtime_artifact(args.runtime_raw_bin or shutil.which(args.runtime, path=env["PATH"]),
+            report["versions"][args.runtime], lambda *argv: run(*argv).stdout)
+        launch_runtime = runtime_artifact(shutil.which(args.runtime, path=env["PATH"]),
+            report["versions"][args.runtime], lambda *argv: run(*argv).stdout)
         workspaces = {scope: workspace_root / scope for scope in ("global", "rig")}
         for workspace in workspaces.values():
             workspace.mkdir()
@@ -270,7 +305,14 @@ def main():
                 stream.write(f'[projects.{json.dumps(str(workspace))}]\ntrust_level = "trusted"\n')
             if args.runtime == "codex":
                 stream.write(trust_config(workspaces.values(), report["versions"]["codex"]))
-        runtime_command = ""
+        # GC starts an interactive shell, which may replace PATH. Pin the
+        # executable whose version we checked, including an authorized wrapper.
+        runtime_binary = shutil.which(args.runtime, path=env["PATH"])
+        runtime_command = (f'command = {json.dumps(runtime_binary)}\n'
+                           f'resume_command = {json.dumps(shlex.quote(runtime_binary) + " --resume {{.SessionKey}}")}\n')
+        if args.runtime == "claude":
+            require_claude_session_id(raw_runtime["path"], lambda *argv: run(*argv).stdout)
+            runtime_command += 'session_id_flag = "--session-id"\n'
         if args.runtime == "codex":
             runtime_command = write_provider_commands(root, shutil.which("codex", path=env["PATH"]),
                                                       env["CODEX_HOME"], workspaces.values())
@@ -306,7 +348,10 @@ def main():
                 f'name = "{scope}"\nprovider = "{args.runtime}"\n'
                 f'work_dir = {json.dumps(str(workspace))}\nmin_active_sessions = 0\nmax_active_sessions = 2\n'
                 f'[env]\nCLAUDE_CONFIG_DIR = {json.dumps(env["CLAUDE_CONFIG_DIR"])}\n'
-                f'CODEX_HOME = {json.dumps(env["CODEX_HOME"])}\n')
+                'CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1"\n'
+                f'CODEX_HOME = {json.dumps(env["CODEX_HOME"])}\n' +
+                (f'MANIFOLD_CLAUDE_LAUNCH_CONFIG = {json.dumps(env["MANIFOLD_CLAUDE_LAUNCH_CONFIG"])}\n'
+                 if args.claude_native_config else ''))
         progress("Starting disposable GC supervisor and released BB server/host")
         run("gc", "import", "install", timeout=180)
         started_gc = True  # cleanup also handles a partial start
@@ -339,8 +384,40 @@ def main():
         run("gc", "bb", "connect", "--id", "local", "--url", f"http://127.0.0.1:{gc_port}")
         run("gc", "bb", "bind", "--project", project, "--city", city_name,
             "--rig", "sample", "--path", workspace_root)
-        catalog = json.loads(run("gc", "bb", "agents", "--project", project, "--json").stdout)
+        if args.prepare_only:
+            native_projects = {}
+            for scope, workspace in workspaces.items():
+                native_projects[scope] = json.loads(run("bb", "project", "create", "--name", f"Native {scope}",
+                    "--root", workspace, "--host", host, "--json").stdout)["id"]
+                run("gc", "bb", "bind", "--project", native_projects[scope], "--city", city_name,
+                    "--rig", "sample", "--path", workspace)
+            catalog = json.loads(run("gc", "bb", "agents", "--project", project, "--json").stdout)
+            save_new(root / "environment-env.json", env)
+            save_new(root / ".bb-full-e2e-owned.json", {"version": 1, "root": str(root)})
+            save_new(args.report_dir / "environment.json", {
+                "version": 1, "root": str(root), "envFile": str(root / "environment-env.json"),
+                "city": str(city), "cityName": city_name, "gcUrl": f"http://127.0.0.1:{gc_port}",
+                "bbUrl": env["BB_SERVER_URL"], "hostId": host, "projectId": project,
+                "nativeProjects": native_projects, "workspaces": {k: str(v) for k, v in workspaces.items()},
+                "agents": acceptance_agents(catalog["agents"]), "commands": commands, "runtime": args.runtime,
+                "versions": report["versions"], "gcBinarySha256": report["gcBinarySha256"],
+                "runtimeArtifact": raw_runtime,
+                "runtimeLaunchArtifact": launch_runtime,
+                **({"nativeMemoryIsolation": native_memory_provenance(env["MANIFOLD_CLAUDE_LAUNCH_CONFIG"])}
+                   if args.claude_native_config else {}),
+                "gcCommit": args.gc_commit or CORE_COMMITS[core_release],
+                **({"modelRoute": args.model_route} if args.model_route else {}),
+                "verificationMode": report["verificationMode"], "appPid": app_process.pid,
+            })
+            prepared = True
+            report["status"] = "prepared"
+            progress("Isolated installation prepared; retaining services for browser and failure cases")
+            return 0
         for scope, workspace in workspaces.items():
+            # Native New thread uses BB's personal directory for global agents;
+            # rig coding remains an explicitly mapped project/workspace.
+            scope_project = "proj_personal" if scope == "global" else project
+            catalog = json.loads(run("gc", "bb", "agents", "--project", scope_project, "--json").stdout)
             progress(f"Running real {scope} agent: full prompt, three completions, tool artifact, agent resume")
             name = "sample/rig" if scope == "rig" else "global"
             targets = [agent for agent in catalog["agents"] if agent["agent"] == name]
@@ -348,11 +425,12 @@ def main():
                 raise GateError(f"Expected one exact {scope} agent in the discovered catalog")
             result = subprocess.run([
                 sys.executable, str(PACK / "tests/live_assertions.py"),
-                "--bb-bin", commands["bb"], "--host", host, "--project", project,
+                "--bb-bin", commands["bb"], "--host", host, "--project", scope_project,
                 "--model", targets[0]["id"], "--workspace", str(workspace),
                 "--artifacts", str(args.report_dir / scope), "--timeout", str(args.timeout), "--exercise-resume",
             ], env=env, cwd=root, timeout=args.timeout * 3 + 210)
-            scope_result = {"scope": scope, "status": "passed" if result.returncode == 0 else "failed"}
+            scope_result = {"scope": scope, "projectMode": "personal" if scope == "global" else "mapped",
+                            "status": "passed" if result.returncode == 0 else "failed"}
             if args.runtime == "claude" and result.returncode != 0:
                 try:
                     scope_report = json.loads((args.report_dir / scope / "report.json").read_text())
@@ -369,35 +447,39 @@ def main():
         report["failure"] = str(error) if isinstance(error, GateError) else type(error).__name__
         print(f'[{args.runtime}] FAIL: {report["failure"]}', flush=True)
     finally:
-        progress("Stopping only the disposable services; preserving private state")
-        if started_gc:
-            try:
-                panes = run("tmux", "-L", city_name, "list-panes", "-a", "-F", "#{pane_id}", check=False)
-                if panes.returncode == 0:
-                    for pane in panes.stdout.splitlines():
-                        run("tmux", "-L", city_name, "capture-pane", "-p", "-t", pane, "-S", "-", check=False)
-            except (GateError, OSError):
-                report["status"] = "failed"
-                report.setdefault("cleanupFailures", []).append("Could not capture disposable tmux evidence")
-        for started, program, argv in (
-            (started_bb, "app", ["stop"]),
-            (started_gc, "gc", ["stop", "--timeout", "30s"]),
-            (started_gc, "gc", ["supervisor", "stop", "--wait", "--wait-timeout", "30s"]),
-        ):
-            if started:
+        if prepared:
+            save_new(args.report_dir / "summary.json", report)
+            print(f'[{args.runtime}] PREPARED; environment: {args.report_dir / "environment.json"}', flush=True)
+        else:
+            progress("Stopping only the disposable services; preserving private state")
+            if started_gc:
                 try:
-                    run(program, *argv, timeout=45)
-                except (GateError, OSError) as error:
+                    panes = run("tmux", "-L", city_name, "list-panes", "-a", "-F", "#{pane_id}", check=False)
+                    if panes.returncode == 0:
+                        for pane in panes.stdout.splitlines():
+                            run("tmux", "-L", city_name, "capture-pane", "-p", "-t", pane, "-S", "-", check=False)
+                except (GateError, OSError):
                     report["status"] = "failed"
-                    report.setdefault("cleanupFailures", []).append(str(error))
-        if app_process:
-            try:
-                app_process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                report["status"] = "failed"
-                report.setdefault("cleanupFailures", []).append("BB launcher did not exit after stop")
-        save_new(args.report_dir / "summary.json", report)
-        print(f'[{args.runtime}] {report["status"].upper()}; report: {args.report_dir}; private state: {root}', flush=True)
+                    report.setdefault("cleanupFailures", []).append("Could not capture disposable tmux evidence")
+            for started, program, argv in (
+                (started_bb, "app", ["stop"]),
+                (started_gc, "gc", ["stop", "--timeout", "30s"]),
+                (started_gc, "gc", ["supervisor", "stop", "--wait", "--wait-timeout", "30s"]),
+            ):
+                if started:
+                    try:
+                        run(program, *argv, timeout=45)
+                    except (GateError, OSError) as error:
+                        report["status"] = "failed"
+                        report.setdefault("cleanupFailures", []).append(str(error))
+            if app_process:
+                try:
+                    app_process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    report["status"] = "failed"
+                    report.setdefault("cleanupFailures", []).append("BB launcher did not exit after stop")
+            save_new(args.report_dir / "summary.json", report)
+            print(f'[{args.runtime}] {report["status"].upper()}; report: {args.report_dir}; private state: {root}', flush=True)
     return 0 if report["status"] == "passed" else 1
 
 

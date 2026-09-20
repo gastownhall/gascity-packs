@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "status": "incomplete",
+  "artifacts": {
+    "gc_commit": "4f41f8285070d3509dae94cd97509eb562f2f068",
+    "gc_binary_sha256": "ab81653e1542c5422e1ac1405e3eddef781fdce6eae283b18670b4f01cccfdad",
+    "gc_version": "1.4.2-bb-runtime.4f41f8285070",
+    "pack_sha256": "b17e84154ec378a97826c0eacc8f11ebd7f09a8d5b7b3e309e853564eb16039f",
+    "bb_version": "0.43.3",
+    "runtime": "claude",
+    "runtime_version": "2.1.270",
+    "verification_mode": "development",
+    "model_route": "manifold-moonshot-kimi"
+  },
+  "required_cases": [
+    "installation.fresh",
+    "installation.upgrade_rollback",
+    "native.personal",
+    "native.project_global",
+    "native.project_rig",
+    "native.configured_agent",
+    "launcher.global",
+    "launcher.rig",
+    "provider.switch",
+    "reasoning.immutable",
+    "trust.fresh",
+    "workspace.underscores",
+    "workspace.mismatch",
+    "approvals.approve",
+    "approvals.deny",
+    "approvals.repeated",
+    "approvals.interrupt",
+    "lifecycle.busy_followup",
+    "lifecycle.interrupt",
+    "lifecycle.release_resume",
+    "lifecycle.agent_resume",
+    "lifecycle.bridge_idle_crash",
+    "lifecycle.bridge_busy_crash",
+    "lifecycle.bb_host_restart",
+    "lifecycle.bb_server_restart",
+    "lifecycle.gc_controller_restart",
+    "lifecycle.gc_binary_replacement",
+    "fault.create_response",
+    "fault.submit_response",
+    "fault.stream_disconnect",
+    "fault.bridge_uncertain_delivery",
+    "error.provider",
+    "error.startup",
+    "error.timeout",
+    "reasoning.none",
+    "reasoning.low",
+    "reasoning.medium",
+    "reasoning.high",
+    "reasoning.xhigh",
+    "reasoning.max"
+  ],
+  "counts": {
+    "passed": 1,
+    "failed": 0,
+    "blocked": 0,
+    "not_run": 39
+  },
+  "cases": [
+    {
+      "id": "installation.fresh",
+      "status": "not_run"
+    },
+    {
+      "id": "installation.upgrade_rollback",
+      "status": "not_run"
+    },
+    {
+      "id": "native.personal",
+      "status": "not_run"
+    },
+    {
+      "id": "native.project_global",
+      "status": "not_run"
+    },
+    {
+      "id": "native.project_rig",
+      "status": "not_run"
+    },
+    {
+      "id": "native.configured_agent",
+      "status": "not_run"
+    },
+    {
+      "id": "launcher.global",
+      "status": "not_run"
+    },
+    {
+      "id": "launcher.rig",
+      "status": "not_run"
+    },
+    {
+      "id": "provider.switch",
+      "status": "not_run"
+    },
+    {
+      "id": "reasoning.immutable",
+      "status": "not_run"
+    },
+    {
+      "id": "trust.fresh",
+      "status": "not_run"
+    },
+    {
+      "id": "workspace.underscores",
+      "status": "not_run"
+    },
+    {
+      "id": "workspace.mismatch",
+      "status": "not_run"
+    },
+    {
+      "id": "approvals.approve",
+      "status": "not_run"
+    },
+    {
+      "id": "approvals.deny",
+      "status": "not_run"
+    },
+    {
+      "id": "approvals.repeated",
+      "status": "not_run"
+    },
+    {
+      "id": "approvals.interrupt",
+      "status": "passed",
+      "assertions": [
+        "case-contract-verified"
+      ],
+      "evidence": [
+        {
+          "sha256": "4760e5f9f02a7ee1d0b9d8213926c9e090834968c6942c4fd75125a62ff67372",
+          "bytes": 144
+        },
+        {
+          "sha256": "f5fa3d5b5c4f0d2f41050f1077f468599b5eab74e6836e47bef3fc3220d20768",
+          "bytes": 193847
+        },
+        {
+          "sha256": "db3ab898c61c96b56fa13f94a77abe82d50f533d35062d36406d9362ab80685c",
+          "bytes": 35636
+        },
+        {
+          "sha256": "f428af050d195f81130fb64c60b0503ad12e7481c6fb093ade71da768ade70aa",
+          "bytes": 228953
+        },
+        {
+          "sha256": "631c902ff5e3120f8056f9839f02b4314bfd9b93d559fc8c7fc6db6bea86aa60",
+          "bytes": 1053
+        }
+      ]
+    },
+    {
+      "id": "lifecycle.busy_followup",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.interrupt",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.release_resume",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.agent_resume",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.bridge_idle_crash",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.bridge_busy_crash",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.bb_host_restart",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.bb_server_restart",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.gc_controller_restart",
+      "status": "not_run"
+    },
+    {
+      "id": "lifecycle.gc_binary_replacement",
+      "status": "not_run"
+    },
+    {
+      "id": "fault.create_response",
+      "status": "not_run"
+    },
+    {
+      "id": "fault.submit_response",
+      "status": "not_run"
+    },
+    {
+      "id": "fault.stream_disconnect",
+      "status": "not_run"
+    },
+    {
+      "id": "fault.bridge_uncertain_delivery",
+      "status": "not_run"
+    },
+    {
+      "id": "error.provider",
+      "status": "not_run"
+    },
+    {
+      "id": "error.startup",
+      "status": "not_run"
+    },
+    {
+      "id": "error.timeout",
+      "status": "not_run"
+    },
+    {
+      "id": "reasoning.none",
+      "status": "not_run"
+    },
+    {
+      "id": "reasoning.low",
+      "status": "not_run"
+    },
+    {
+      "id": "reasoning.medium",
+      "status": "not_run"
+    },
+    {
+      "id": "reasoning.high",
+      "status": "not_run"
+    },
+    {
+      "id": "reasoning.xhigh",
+      "status": "not_run"
+    },
+    {
+      "id": "reasoning.max",
+      "status": "not_run"
+    }
+  ]
+}

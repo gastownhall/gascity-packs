@@ -9,12 +9,13 @@ import {
   type ThreadDelta, type BridgeExecutionOptions, type PromptInput,
 } from "@get-bb/plugin-sdk/provider-bridge";
 import { z } from "zod";
-import { readConfig, statePath, type Config, type Connection } from "./config.js";
+import { bindingFor, readConfig, statePath, type Config, type Connection } from "./config.js";
 import { discover, modelRow, parseTarget, targetId, validateTarget, type Target } from "./catalog.js";
 import { GasCityClient } from "./client.js";
 import { Journal, type Receipt, type Lease } from "./journal.js";
 import { resolveCreation, sessionAlias } from "./recovery.js";
 import { Transcript, type Frame, type TurnOutcome } from "./transcript.js";
+import { requireSameReasoning, validateReasoning, type ReasoningLevel } from "./reasoning.js";
 
 const remoteIdentity = z.object({ v: z.literal(1), target: z.object({ v: z.literal(1), connection: z.string(), city: z.string(), agent: z.string() }), sessionId: z.string().min(1) }).strict();
 const encodeRemote = (target: Target, sessionId: string) => `gcs1_${Buffer.from(JSON.stringify({ v: 1, target, sessionId })).toString("base64url")}`;
@@ -23,9 +24,9 @@ function decodeRemote(value: string) {
   return remoteIdentity.parse(JSON.parse(Buffer.from(value.slice(5), "base64url").toString("utf8")));
 }
 interface LiveSession {
-  threadId: string; providerThreadId: string; target: Target; sessionId: string;
+  threadId: string; providerThreadId: string; target: Target; sessionId: string; reasoningLevel: ReasoningLevel;
   lease: Lease; submission?: Promise<void>; observation?: Promise<void>;
-  cwd: string; client: GasCityClient; projectId: string | null; warning?: string;
+  cwd: string; client: GasCityClient; projectId: string | null; warning?: string; workspaceContext?: string;
   controller?: AbortController; completion?: Promise<void>; busy: boolean; stopping: boolean; turnOpen: boolean; delivery: "none" | "sending" | "confirmed"; pending: Map<string, AbortController>;
 }
 interface Dependencies {
@@ -49,7 +50,12 @@ export class GasCityProvider {
   }
   private sendResult(id: string | number, result: unknown) { this.deps.send({ jsonrpc: "2.0", id, result }); }
   private emit(session: LiveSession, deltas: ThreadDelta[]) {
-    if (deltas.length) this.deps.send({ jsonrpc: "2.0", method: "thread/delta", params: { threadId: session.threadId, deltas } });
+    // A failed boundary settles state but BB renders errors from provider.error.
+    // Keep both in the same batch and let only the boundary settle the turn.
+    const visible = deltas.flatMap((delta): ThreadDelta[] => delta.kind === "turn.boundary" && delta.status === "failed" && delta.error
+      ? [{ kind: "provider.error", message: delta.error.message, willRetry: false, settlesTurn: false }, delta]
+      : [delta]);
+    if (visible.length) this.deps.send({ jsonrpc: "2.0", method: "thread/delta", params: { threadId: session.threadId, deltas: visible } });
   }
   handleLine(line: string): void {
     let message: any;
@@ -72,7 +78,7 @@ export class GasCityProvider {
   }
   private checkOptions(options: BridgeExecutionOptions, expected?: Target) {
     if (options.permissionMode !== "full") throw new Error("Gas City owns agent permissions. Select BB Full access; GC's configured permission prompts still require a response.");
-    if (options.promptMode || (options.reasoningLevel && options.reasoningLevel !== "none") || (options.serviceTier && options.serviceTier !== "default")) throw new Error("Configure plan/model/reasoning/tier in the Gas City agent; this bridge does not override them.");
+    if (options.promptMode || (options.serviceTier && options.serviceTier !== "default")) throw new Error("Configure plan/model/tier in the Gas City agent; this bridge does not override them.");
     const target = parseTarget(options.model);
     if (expected && targetId(target) !== targetId(expected)) throw new Error("An existing Gas City conversation cannot switch agents. Create a new BB thread.");
     return target;
@@ -89,7 +95,9 @@ export class GasCityProvider {
     }
     if (method === "model/list") {
       const { cwd } = modelListParamsSchema.parse(input);
-      const catalog = await discover(await this.loadConfig(), { cwd }, this.makeClient);
+      // BB asks for the New thread catalog before it has an environment/cwd.
+      // Offer configured mapped rigs there; creation validates the actual cwd.
+      const catalog = await discover(await this.loadConfig(), { cwd, includeMappedRigs: !cwd }, this.makeClient);
       for (const warning of catalog.warnings) process.stderr.write(`[gas-city] ${warning}\n`);
       return { models: catalog.agents.map(modelRow), selectedOnlyModels: [] };
     }
@@ -111,24 +119,26 @@ export class GasCityProvider {
       return this.owned(args.threadId, async lease => {
         const config = await this.loadConfig();
         const target = this.checkOptions(args.options);
-        const projectId = String(args.options.providerOptions?.projectId ?? "proj_personal");
-        await validateTarget(config, target, projectId);
+        const projectId = String(args.options.providerOptions?.projectId ?? (await bindingFor(config, { cwd: args.cwd }))?.projectId ?? "proj_personal");
+        const agent = await validateTarget(config, target, projectId);
         const connection = config.connections.find(c => c.id === target.connection)!;
         const client = this.makeClient(connection);
         let receipt = await this.journal.get(args.threadId);
         if (receipt && targetId(receipt.target) !== targetId(target)) throw new Error("This BB thread already has a different Gas City target");
+        if (receipt) requireSameReasoning(args.options.reasoningLevel, receipt.reasoningLevel);
         if (!receipt) {
-          receipt = { target, threadId: args.threadId, alias: sessionAlias(args.threadId) };
+          const reasoningLevel = validateReasoning(args.options.reasoningLevel, agent.reasoningLevels);
+          receipt = { target, threadId: args.threadId, alias: sessionAlias(args.threadId), reasoningLevel };
           await this.journal.put(args.threadId, receipt);
           const alias = receipt.alias;
-          receipt.create = await client.post(client.city(target.city, "/sessions"), { kind: "agent", name: target.agent, alias, title: `BB · ${target.agent}`, project_id: projectId });
+          receipt.create = await client.post(client.city(target.city, "/sessions"), { kind: "agent", name: target.agent, alias, title: `BB · ${target.agent}`, project_id: projectId, ...(reasoningLevel === "none" ? {} : { options: { effort: reasoningLevel } }) });
           await this.journal.put(args.threadId, receipt);
         }
         if (!receipt.sessionId) {
           receipt.sessionId = await resolveCreation(client, args.threadId, receipt);
           await this.journal.put(args.threadId, receipt);
         }
-        const session = await this.open(config, args.threadId, target, receipt.sessionId!, args.cwd, projectId, lease);
+        const session = await this.open(config, args.threadId, target, receipt.sessionId!, args.cwd, projectId, lease, receipt.reasoningLevel ?? "none");
         if (args.input?.length) await this.submit(session, args.input, args.options);
         return { providerThreadId: session.providerThreadId, sessionRestorable: true };
       });
@@ -140,8 +150,11 @@ export class GasCityProvider {
       return this.owned(args.threadId, async lease => {
       const receipt = await this.journal.get(args.threadId);
       if (!receipt || receipt.sessionId !== remote.sessionId || targetId(receipt.target) !== targetId(remote.target)) throw new Error("This host has no ownership receipt for that Gas City conversation; restore the original host journal.");
+      requireSameReasoning(args.options.reasoningLevel, receipt.reasoningLevel);
       if (receipt.turn && !["completed", "failed"].includes(receipt.turn.state)) throw new Error("A remote turn was interrupted or its delivery is uncertain. Inspect it in Gas City, then run gc bb recover --thread <BB-thread-id> after it is idle. No prompt has been resent.");
-      const session = await this.open(await this.loadConfig(), args.threadId, remote.target, remote.sessionId, args.cwd, String(args.options.providerOptions?.projectId ?? "proj_personal"), lease);
+      const config = await this.loadConfig();
+      const projectId = String(args.options.providerOptions?.projectId ?? (await bindingFor(config, { cwd: args.cwd }))?.projectId ?? "proj_personal");
+      const session = await this.open(config, args.threadId, remote.target, remote.sessionId, args.cwd, projectId, lease, receipt.reasoningLevel ?? "none");
       return { providerThreadId: session.providerThreadId, sessionRestorable: true };
       });
     }
@@ -149,6 +162,7 @@ export class GasCityProvider {
       const args = turnStartParamsSchema.parse(input);
       const session = this.live(args.threadId, args.providerThreadId);
       this.checkOptions(args.options, session.target);
+      requireSameReasoning(args.options.reasoningLevel, session.reasoningLevel);
       await this.submit(session, args.input, args.options, args.clientRequestId);
       return {};
     }
@@ -202,20 +216,22 @@ export class GasCityProvider {
     }
     throw Object.assign(new Error(`Unsupported bridge method: ${method}`), { code: BRIDGE_JSON_RPC_ERRORS.METHOD_NOT_FOUND });
   }
-  private async open(config: Config, threadId: string, target: Target, sessionId: string, cwd: string, projectId: string, lease: Lease) {
+  private async open(config: Config, threadId: string, target: Target, sessionId: string, cwd: string, projectId: string, lease: Lease, reasoningLevel: ReasoningLevel) {
     if (this.sessions.get(threadId)?.busy) throw new Error("This BB thread already has an active Gas City turn");
     const connection = config.connections.find(c => c.id === target.connection);
     if (!connection) throw new Error(`Gas City connection ${target.connection} is no longer configured`);
     const client = this.makeClient(connection);
     const remote = await client.get(client.session(target.city, sessionId));
     if (remote.template !== target.agent || remote.state === "closed") throw new Error("Gas City session template changed or the session is closed");
-    let warning: string | undefined;
+    let warning: string | undefined, workspaceContext: string | undefined;
     if (!remote.work_dir && config.workspacePolicy === "require-match") throw new Error("Gas City did not report its session working directory; cannot verify workspace ownership before sending a prompt.");
     if (remote.work_dir && await realpath(cwd) !== await realpath(remote.work_dir)) {
-      if (config.workspacePolicy === "require-match") throw new Error(`GC works in ${remote.work_dir}; BB works in ${cwd}. Select a matching unmanaged environment before running.`);
+      const personalConversation = projectId === "proj_personal" && !target.agent.includes("/");
+      if (config.workspacePolicy === "require-match" && !personalConversation) throw new Error(`GC works in ${remote.work_dir}; BB works in ${cwd}. Select a matching unmanaged environment before running.`);
       warning = `Gas City works in ${remote.work_dir}. This BB thread uses ${cwd}; its file and diff views are not synchronized with the agent's checkout.`;
+      workspaceContext = `Your execution workspace is ${remote.work_dir}, owned by Gas City. BB stores this conversation in a separate directory, ${cwd}. Any BB instructions describing that directory refer to BB's interface; use your Gas City workspace for execution.`;
     }
-    const session: LiveSession = { threadId, target, sessionId, lease, cwd, projectId, client, providerThreadId: encodeRemote(target, sessionId), warning, busy: false, stopping: false, turnOpen: false, delivery: "none", pending: new Map() };
+    const session: LiveSession = { threadId, target, sessionId, lease, cwd, projectId, client, reasoningLevel, providerThreadId: encodeRemote(target, sessionId), warning, workspaceContext, busy: false, stopping: false, turnOpen: false, delivery: "none", pending: new Map() };
     this.sessions.set(threadId, session);
     this.deps.send({ jsonrpc: "2.0", method: "thread/identity", params: { threadId, providerThreadId: session.providerThreadId } });
     this.emit(session, [{ kind: "session.reset" }]);
@@ -227,12 +243,12 @@ export class GasCityProvider {
     if (!text.trim()) throw new Error("A nonempty prompt is required");
     return text;
   }
-  private async waitForInitialReady(session: LiveSession, snapshot: Frame, signal: AbortSignal): Promise<Frame> {
+  private async waitForReady(session: LiveSession, snapshot: Frame, signal: AbortSignal): Promise<Frame> {
     const ready = (frame: Frame) => {
       // A terminal fallback can describe a running process before its startup
       // prompt has finished. It is not evidence that input can be consumed.
       new Transcript(frame, undefined, true);
-      if (frame.history.tail_state.pending_interaction_ids?.length) throw new Error("The new Gas City session needs a response; resolve it there before sending a prompt. No prompt was sent.");
+      if (frame.history.tail_state.pending_interaction_ids?.length) throw new Error("The Gas City session needs a response; resolve it there before sending a prompt. No prompt was sent.");
       return !frame.history.tail_state.degraded && frame.history.tail_state.activity === "idle" && !frame.history.tail_state.open_tool_call_ids?.length;
     };
     if (ready(snapshot)) return snapshot;
@@ -241,13 +257,13 @@ export class GasCityProvider {
     const notReady = () => new Error(`Gas City did not publish a reliable idle transcript within 150 seconds. Open session ${session.sessionId} in Gas City to finish startup or review runtime prompts before sending input; no prompt was sent.`);
     try {
       const pending = await session.client.get(session.client.session(session.target.city, session.sessionId, "/pending"), combined);
-      if (pending.pending) throw new Error("The new Gas City session needs a response; resolve it there before sending a prompt. No prompt was sent.");
+      if (pending.pending) throw new Error("The Gas City session needs a response; resolve it there before sending a prompt. No prompt was sent.");
       const cursor = snapshot.history.cursor.resume_token;
       const path = session.client.session(session.target.city, session.sessionId, `/stream?format=structured&after_cursor=${encodeURIComponent(cursor)}`);
       for await (const event of session.client.events(path, combined, cursor)) {
         signal.throwIfAborted();
         if (deadline.aborted) throw notReady();
-        if (event.event === "pending") throw new Error("The new Gas City session needs a response; resolve it there before sending a prompt. No prompt was sent.");
+        if (event.event === "pending") throw new Error("The Gas City session needs a response; resolve it there before sending a prompt. No prompt was sent.");
         if (event.event === "structured") {
           const frame = JSON.parse(event.data) as Frame;
           if (ready(frame)) {
@@ -283,15 +299,24 @@ export class GasCityProvider {
       controller.signal.throwIfAborted();
       if (receipt.turn?.clientRequestId === operationId) throw new Error("That BB prompt is already journaled; it has not been resent");
       if (receipt.turn && !["completed", "failed"].includes(receipt.turn.state)) throw new Error("The previous prompt has uncertain delivery. Inspect the remote session before retrying.");
-      const message = options.instructions ? `BB session context (supplements your Gas City agent configuration):\n${options.instructions}\n\nUser request:\n${prompt}` : prompt;
+      const context = [options.instructions, session.workspaceContext].filter(Boolean).join("\n\n");
+      const message = context ? `BB session context (supplements your Gas City agent configuration):\n${context}\n\nUser request:\n${prompt}` : prompt;
       // BB gives turn/start 30 seconds. Accept the logical turn now; GC
       // readiness and durable delivery proceed under its cancellable lifecycle.
       session.turnOpen = true;
       this.emit(session, [...(requestId ? [{ kind: "input.accepted" as const, clientRequestId: requestId }] : []), { kind: "turn.open" }]);
+      if (session.warning) {
+        const key = { providerItemId: `gc-workspace-${randomUUID()}` };
+        this.emit(session, [{ kind: "item.open", key, item: { type: "agentMessage", text: session.warning } }, { kind: "item.textClose", key, channel: "agentMessage", text: session.warning }]);
+        session.warning = undefined;
+      }
       acknowledged();
       let snapshot = await session.client.get<Frame>(session.client.session(session.target.city, session.sessionId, "/transcript?format=structured"), controller.signal);
       controller.signal.throwIfAborted();
-      if (!receipt.turn) snapshot = await this.waitForInitialReady(session, snapshot, controller.signal);
+      // A sleeping agent can temporarily expose terminal fallback history while
+      // GC wakes its existing runtime. Preserve the prior receipt and wait for
+      // native history before recording or submitting this new prompt.
+      if (!receipt.turn || snapshot.history?.tail_state?.degraded) snapshot = await this.waitForReady(session, snapshot, controller.signal);
       controller.signal.throwIfAborted();
       const transcript = new Transcript(snapshot, message);
       if (snapshot.history.tail_state.activity !== "idle" || snapshot.history.tail_state.pending_interaction_ids?.length || snapshot.history.tail_state.open_tool_call_ids?.length) throw new Error("The Gas City session is busy or needs a response; resolve it there before starting a BB turn");
@@ -306,11 +331,6 @@ export class GasCityProvider {
       controller.signal.throwIfAborted();
       if (result.session_id !== session.sessionId) throw new Error("Gas City submitted to an unexpected session");
       session.delivery = "confirmed";
-      if (session.warning) {
-        const key = { providerItemId: `gc-workspace-${randomUUID()}` };
-        this.emit(session, [{ kind: "item.open", key, item: { type: "agentMessage", text: session.warning } }, { kind: "item.textClose", key, channel: "agentMessage", text: session.warning }]);
-        session.warning = undefined;
-      }
       session.observation = this.observe(session, transcript, snapshot.history.cursor.resume_token).catch(error => this.failTurn(session, error, controller));
     } catch (error) {
       if (session.turnOpen) await this.failTurn(session, error as Error, controller);

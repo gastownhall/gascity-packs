@@ -2,6 +2,12 @@ name: BB provider (Gas City 1.4)
 
 on:
   workflow_dispatch:
+    inputs:
+      gc_commit:
+        description: Exact GC 1.4.2-based candidate commit for the separate development E2E matrix
+        required: false
+        type: string
+        default: 4f41f8285070d3509dae94cd97509eb562f2f068
   pull_request:
     paths: ["bb/**", "registry.toml", ".github/workflows/bb-provider.yml"]
   push:
@@ -23,6 +29,8 @@ jobs:
             sha256: f6bd0bfaf2acc141642227629394dd3279761df4e1800235551af24d98b9cae0
           - gc: "1.4.1"
             sha256: 8d8c8b511db3fc44931445aab5cb9f212509c0867105c880d6c3d0e6e5d33e42
+          - gc: "1.4.2"
+            sha256: e67216ec7ea8a09677fd74f90286ef2069655994fac8a7681a7c43c62d08ede4
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -40,9 +48,14 @@ jobs:
           npm run typecheck
           npm run build
           npm test
-      - name: Build every plugin entry with released BB 0.42.1
+      - name: Check browser completion assertions
+        working-directory: bb/tests
         run: |
-          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.42.1
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test browser_driver.test.mjs desktop_attach.test.mjs
+      - name: Build every plugin entry with released BB 0.43.3
+        run: |
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
           "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" plugin build bb/assets/plugin
       - name: Fetch and verify released Gas City
         env:
@@ -71,12 +84,14 @@ jobs:
       fail-fast: false
       matrix:
         runtime: [claude, codex]
-        gc: ["1.4.0", "1.4.1"]
+        gc: ["1.4.0", "1.4.1", "1.4.2"]
         include:
           - gc: "1.4.0"
             sha256: f6bd0bfaf2acc141642227629394dd3279761df4e1800235551af24d98b9cae0
           - gc: "1.4.1"
             sha256: 8d8c8b511db3fc44931445aab5cb9f212509c0867105c880d6c3d0e6e5d33e42
+          - gc: "1.4.2"
+            sha256: e67216ec7ea8a09677fd74f90286ef2069655994fac8a7681a7c43c62d08ede4
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -105,7 +120,7 @@ jobs:
         env:
           RUNTIME: ${{ matrix.runtime }}
         run: |
-          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.42.1
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
           if [ "$RUNTIME" = claude ]; then
             npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @anthropic-ai/claude-code@2.1.263
           else
@@ -167,16 +182,147 @@ jobs:
             ${{ runner.temp }}/bb-live-reports/rig/report.json
           if-no-files-found: warn
 
+  candidate-e2e:
+    name: Full browser E2E ${{ matrix.runtime }} (GC candidate, Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [claude, codex]
+    env:
+      GC_CANDIDATE_COMMIT: ${{ inputs.gc_commit || '4f41f8285070d3509dae94cd97509eb562f2f068' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Require an immutable GC candidate identity
+        shell: bash
+        run: |
+          [[ "$GC_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'gc_commit must be a complete lowercase 40-character commit SHA'; exit 1; }
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gastownhall/gascity
+          ref: ${{ env.GC_CANDIDATE_COMMIT }}
+          path: .e2e-gc-candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: .e2e-gc-candidate/go.mod
+          cache-dependency-path: .e2e-gc-candidate/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: bb/tests/package-lock.json
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Require real runtime credentials
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          CLAUDE_KEY: ${{ secrets.BB_CLAUDE_API_KEY }}
+          CLAUDE_TOKEN: ${{ secrets.MANIFOLD_AUTH_TOKEN }}
+          CODEX_KEY: ${{ secrets.BB_CODEX_API_KEY }}
+        run: |
+          if [ "$RUNTIME" = claude ]; then
+            test -n "$CLAUDE_KEY" || test -n "$CLAUDE_TOKEN" || { echo 'Missing BB_CLAUDE_API_KEY or MANIFOLD_AUTH_TOKEN; full Claude E2E cannot pass'; exit 1; }
+          else
+            test -n "$CODEX_KEY" || { echo 'Missing BB_CODEX_API_KEY; full Codex E2E cannot pass'; exit 1; }
+          fi
+      - name: Install native build and runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libicu-dev tmux jq
+      - name: Build the exact GC candidate with identifiable version metadata
+        working-directory: .e2e-gc-candidate
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GC_CANDIDATE_COMMIT"
+          git merge-base --is-ancestor d4582166367aa687c1b62b296247ba0fb0a7e094 HEAD
+          make build BUILD_DIR="$RUNNER_TEMP/gc-candidate" VERSION="1.4.2-bb-runtime.${GC_CANDIDATE_COMMIT:0:12}"
+          "$RUNNER_TEMP/gc-candidate/gc" version
+          sha256sum "$RUNNER_TEMP/gc-candidate/gc"
+      - name: Install the pinned browser and rendered BB test driver
+        working-directory: bb/tests
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install playwright install --with-deps chromium
+          node --test browser_driver.test.mjs desktop_attach.test.mjs
+      - name: Install released BB and runtime
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
+          if [ "$RUNTIME" = claude ]; then
+            npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @anthropic-ai/claude-code@2.1.270
+          else
+            npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @openai/codex@0.153.4
+          fi
+          echo "$RUNNER_TEMP/runtime/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Run the full required browser and model matrix in one retained installation
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api
+          ANTHROPIC_API_KEY: ${{ matrix.runtime == 'claude' && secrets.BB_CLAUDE_API_KEY || '' }}
+          ANTHROPIC_AUTH_TOKEN: ${{ matrix.runtime == 'claude' && secrets.MANIFOLD_AUTH_TOKEN || '' }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_HAIKU_MODEL }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SONNET_MODEL }}
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_OPUS_MODEL }}
+          CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SUBAGENT_MODEL }}
+          OPENAI_API_KEY: ${{ matrix.runtime == 'codex' && secrets.BB_CODEX_API_KEY || '' }}
+        run: |
+          if [ "$RUNTIME" = claude ]; then
+            if [ -n "$ANTHROPIC_API_KEY" ]; then
+              # Keep direct Anthropic credentials off the Manifold endpoint.
+              unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN
+              unset ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL
+              unset ANTHROPIC_DEFAULT_OPUS_MODEL CLAUDE_CODE_SUBAGENT_MODEL
+            else
+              test -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" || { echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL resolved empty'; exit 1; }
+              test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo 'ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty'; exit 1; }
+              test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo 'ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty'; exit 1; }
+              test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo 'CLAUDE_CODE_SUBAGENT_MODEL resolved empty'; exit 1; }
+            fi
+          fi
+          python3 -u bb/tests/full_e2e.py \
+            --runtime "$RUNTIME" \
+            --gc-bin "$RUNNER_TEMP/gc-candidate/gc" \
+            --gc-commit "$GC_CANDIDATE_COMMIT" \
+            --gc-development-base 1.4.2 \
+            --bb-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" \
+            --bb-app-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb-app" \
+            --report-dir "$RUNNER_TEMP/bb-full-e2e-reports"
+      - name: Require a complete passing candidate ledger
+        run: |
+          jq --exit-status '
+            .status == "passed" and
+            .artifacts.verification_mode == "development" and
+            .artifacts.gc_commit == env.GC_CANDIDATE_COMMIT and
+            .counts.not_run == 0 and .counts.blocked == 0 and .counts.failed == 0
+          ' "$RUNNER_TEMP/bb-full-e2e-reports/summary.json"
+      - name: Upload only the scrubbed candidate summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bb-full-candidate-${{ matrix.runtime }}-${{ env.GC_CANDIDATE_COMMIT }}
+          # GC candidate results cannot certify stock releases or the macOS
+          # desktop. Screenshots, traces, prompts and raw state remain private.
+          path: ${{ runner.temp }}/bb-full-e2e-reports/summary.json
+          if-no-files-found: error
+
   acceptance:
     name: BB end-to-end acceptance
     if: always()
-    needs: [compatibility, live-conversations]
+    needs: [compatibility, live-conversations, candidate-e2e]
     runs-on: ubuntu-latest
     steps:
-      - name: Require every build and live runtime matrix entry to pass
+      - name: Require every build, stock runtime and candidate browser matrix entry to pass
         env:
           COMPATIBILITY: ${{ needs.compatibility.result }}
           LIVE: ${{ needs.live-conversations.result }}
+          CANDIDATE: ${{ needs.candidate-e2e.result }}
         run: |
           test "$COMPATIBILITY" = success
           test "$LIVE" = success
+          test "$CANDIDATE" = success
+      - name: State the verified platform scope
+        run: |
+          echo 'This required check covers Linux browser and runtime acceptance. Stock-release and GC-candidate results remain separate. A passing Linux check does not certify the macOS BB desktop; its full run requires separate local evidence against the same artifact identities.' >> "$GITHUB_STEP_SUMMARY"

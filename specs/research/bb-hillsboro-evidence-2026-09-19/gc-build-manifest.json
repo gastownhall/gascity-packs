@@ -1,0 +1,18 @@
+{
+  "version": "1.4.2-bb-runtime.4f41f8285070",
+  "base_commit": "d4582166367aa687c1b62b296247ba0fb0a7e094",
+  "source_commit": "4f41f8285070d3509dae94cd97509eb562f2f068",
+  "sha256": "ab81653e1542c5422e1ac1405e3eddef781fdce6eae283b18670b4f01cccfdad",
+  "built_at": "2026-09-20T00:25:36Z",
+  "commits": [
+    "4f41f8285070d3509dae94cd97509eb562f2f068 Limit tool interruption marker to standalone native message",
+    "7a170539bc75e8d68ea7ea0d9200b3cf540b937d Recognize Claude tool-use interruption as idle",
+    "d66ac779f2c4ded70745730c492023052b84b3c1 Find Claude transcripts in underscore-normalized project directories",
+    "7a41e82542f5931853c24858e985911e7fb02232 fix(tmux): cancel Claude approvals before confirming idle",
+    "1f5e8f4f8378a30fa57571be2d4120369e251240 fix(tmux): bind Claude approval responses to visible menu choices",
+    "0917d33c95e59b32088226e500512df0372f36ed Preserve allocated session identity across launch preparation",
+    "6c99f71f4358fe4e8ea237e2290147ed560d9027 Preserve provider conversation when intentionally suspending sessions",
+    "b708bf13240f229767357ab614e44bb07fbb955a Classify explicit Claude API failures as provider errors",
+    "55de04390f449f126d022c4ed861c03e0ab9a90a Fix Claude workspace trust selection during startup"
+  ]
+}

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { experimental_assembleCapturedThreadEvents, experimental_runBridgeConformance, experimental_formatConformanceReport } from "@get-bb/plugin-sdk/provider-bridge/testing";
 import { GasCityProvider } from "../src/provider.js";
@@ -9,6 +10,21 @@ import { targetId } from "../src/catalog.js";
 import { fixture, frame, options, until } from "./fixture.js";
 
 const target = { v: 1 as const, connection: "local", city: "alpha", agent: "gc.mayor" };
+
+function assertVisibleProviderFailure(messages: any[], expected: RegExp) {
+  const events: any[] = experimental_assembleCapturedThreadEvents(messages, "gas-city");
+  const errors = events.filter(event => event.type === "provider/error");
+  const completed = events.filter(event => event.type === "turn/completed");
+  assert.equal(errors.length, 1, "Failure must emit the SDK error event rendered by BB");
+  assert.match(errors[0].message, expected);
+  assert.equal(errors[0].willRetry, false);
+  assert.equal(completed.length, 1, "Error disclosure must not complete a turn twice");
+  assert.equal(completed[0].status, "failed");
+  assert.equal(completed[0].error.message, errors[0].message);
+  assert.deepEqual(errors[0].scope, completed[0].scope);
+  assert.equal(errors[0].scope.kind, "turn");
+}
+
 
 test("async create, first prompt once, transcript replay, completed resume, and release", async () => {
   const f = await fixture();
@@ -255,6 +271,7 @@ test("lost submit response is journaled and never automatically resent", async (
     const turn = { threadId: "uncertain", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "Hello" }], clientRequestId: "creq_23456789ad", options: execution };
     await provider.dispatch("turn/start", turn);
     await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary" && d.status === "failed" && /fetch failed/.test(d.error.message)));
+    assertVisibleProviderFailure(messages, /fetch failed.*Remote execution may continue/);
     assert.equal((await journal.get("uncertain"))?.turn?.state, "submitting");
     await assert.rejects(provider.dispatch("turn/start", turn), /already journaled/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
@@ -289,12 +306,13 @@ test("interrupt before GC confirms delivery closes the BB turn but preserves unc
   } finally { await provider.close(); await f.close(); }
 });
 
-test("checkout mismatch blocks before any prompt and initial-input start submits once", async () => {
+test("mapped project checkout mismatch blocks before any prompt and initial-input start submits once", async () => {
   const f = await fixture(); const output: any[] = [];
   const provider = new GasCityProvider({ send: m => output.push(m), config: async () => f.config, journal: new Journal(join(f.cwd, "journal")) });
   try {
-    const execution = { ...options, model: targetId(target) };
-    f.faults.workDir = "/tmp";
+    const execution = { ...options, model: targetId(target), providerOptions: { projectId: "project-web" } };
+    const otherCheckout = join(f.cwd, "other-checkout"); await mkdir(otherCheckout);
+    f.faults.workDir = otherCheckout;
     await assert.rejects(provider.dispatch("thread/start", { threadId: "mismatch", cwd: f.cwd, instructionMode: "append", options: execution, input: [{ type: "text", text: "Hello" }] }), /Select a matching unmanaged/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
     f.faults.workDir = "";
@@ -368,6 +386,76 @@ test("first input waits through startup and records the full baseline after a su
     assert.deepEqual((await journal.get("fresh"))?.turn?.baselineMessageIds, ["startup-user", "startup-answer"]);
   } finally { finish(); await provider.close(); await f.close(); }
 });
+
+for (const outcome of ["ready", "interrupt", "deadline"] as const) {
+  test(`a completed conversation waits through degraded wake history: ${outcome}`, async () => {
+    const f = await fixture(); const messages: any[] = [];
+    const journal = new Journal(join(f.cwd, "journal"));
+    const deadline = new AbortController();
+    let waking = false, waiting = false;
+    let finish!: () => void;
+    const resumed = new Promise<void>(resolve => { finish = resolve; });
+    class WakeClient extends GasCityClient {
+      override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
+        if (waking && path.includes("/transcript?")) {
+          const fallback = frame("s1", [], "in_turn");
+          fallback.history.transcript_stream_id = "fallback:s1";
+          fallback.history.tail_state.degraded = true;
+          return fallback as T;
+        }
+        return super.get<T>(path, signal);
+      }
+      override async *events(path: string, signal: AbortSignal, resume?: string) {
+        if (waking && path.includes("/stream?format=structured")) {
+          waiting = true;
+          await Promise.race([resumed, new Promise<void>(resolve => {
+            if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true });
+          })]);
+          if (signal.aborted) return;
+          waking = false;
+          const remote = [...f.sessions.values()][0]!;
+          yield { event: "structured", data: JSON.stringify(frame(remote.id, remote.messages.slice(-1), "idle", "upsert")) };
+          return;
+        }
+        yield* super.events(path, signal, resume);
+      }
+    }
+    const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config,
+      client: c => new WakeClient(c), journal, readinessDeadline: () => deadline.signal });
+    try {
+      const execution = { ...options, model: targetId(target) };
+      const start: any = await provider.dispatch("thread/start", { threadId: "waking", cwd: f.cwd, instructionMode: "append", options: execution });
+      await provider.dispatch("turn/start", { threadId: "waking", providerThreadId: start.providerThreadId,
+        input: [{ type: "text", text: "First turn" }], clientRequestId: "creq_23456789aj", options: execution });
+      await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary"));
+      const previous = await journal.get("waking");
+      const previousIds = [...f.sessions.values()][0]!.messages.map((m: any) => m.id);
+      await provider.dispatch("thread/stop", { threadId: "waking", providerThreadId: start.providerThreadId, intent: "release", activeTurnId: null });
+      waking = true;
+      await provider.dispatch("thread/resume", { threadId: "waking", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution });
+      messages.length = 0;
+      await provider.dispatch("turn/start", { threadId: "waking", providerThreadId: start.providerThreadId,
+        input: [{ type: "text", text: "Entire resumed\nprompt" }], clientRequestId: "creq_23456789ak", options: execution });
+      await until(() => waiting || messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary"));
+      assert.equal(waiting, true, "degraded wake history must enter readiness observation instead of rejecting the turn");
+      assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
+      assert.deepEqual(await journal.get("waking"), previous, "waiting must retain the completed turn receipt");
+      if (outcome === "ready") finish();
+      else if (outcome === "deadline") deadline.abort();
+      else await provider.dispatch("thread/stop", { threadId: "waking", providerThreadId: start.providerThreadId, intent: "interrupt", activeTurnId: null });
+      await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary"));
+      const boundaries = messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.boundary");
+      assert.deepEqual(boundaries.map(d => d.status), [outcome === "ready" ? "completed" : outcome === "interrupt" ? "interrupted" : "failed"]);
+      const submissions = f.calls.filter(c => c.path.endsWith("/submit"));
+      assert.equal(submissions.length, outcome === "ready" ? 2 : 1);
+      assert.equal(f.calls.filter(c => c.path.endsWith("/sessions") && c.method === "POST").length, 1);
+      if (outcome === "ready") {
+        assert.equal(submissions[1]!.body.message, "Entire resumed\nprompt");
+        assert.deepEqual((await journal.get("waking"))?.turn?.baselineMessageIds, previousIds);
+      } else assert.deepEqual(await journal.get("waking"), previous);
+    } finally { finish(); deadline.abort(); await provider.close(); await f.close(); }
+  });
+}
 
 for (const failure of ["pending", "deadline", "interrupt", "release"] as const) {
   test(`first-input readiness ${failure} sends no prompt and leaves no uncertain turn`, async () => {
@@ -541,6 +629,7 @@ test("a correlated native provider failure settles failed and permits a manual n
     const boundary = messages.flatMap(m => m.params?.deltas ?? []).find(d => d.kind === "turn.boundary");
     assert.equal(boundary.status, "failed");
     assert.match(boundary.error.message, /Provider authentication failed/);
+    assertVisibleProviderFailure(messages, /Provider authentication failed/);
     assert.equal((await journal.get("native-failure"))?.turn?.state, "failed");
     assert.equal((await journal.get("native-failure"))?.turn?.clientRequestId, "creq_23456789ab");
     await turn("creq_23456789ac");

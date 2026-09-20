@@ -1,13 +1,56 @@
 # Verification and release status
 
-The pack remains a release candidate. Fixture, CLI, installation and launcher
-checks pass. Earlier real Claude and Codex conversations passed locally with the GC
-corrections in [draft PR #6106](https://github.com/gastownhall/gascity/pull/6106).
-The final-pack check passes Codex but is blocked by native Claude rate limits;
-acceptance against unchanged released GC still fails. No registry release has
-been published for this hardening change.
+The pack remains a release candidate. Current Hillsboro qualification uses
+BB 0.43.3, SDK 0.4.104, Claude CLI 2.1.270, and a patched GC 1.4.2 candidate.
+The complete live matrix has not passed. No registry release has been published.
 
-## Versions exercised
+Completion-11 passes 193 Python checks without skips against released GC 1.4.2.
+The unchanged browser driver retains 29 passing browser/desktop guards.
+Its plugin is identical to completion-8, whose
+61 provider tests, TypeScript, and CLI build pass. The GC candidate remains
+`4f41f8285070d3509dae94cd97509eb562f2f068`.
+
+The complete snapshot-8 matrix finished with 37 passes and three failures.
+Those failures exposed a process-exit race with a dependent restart failure,
+and a browser queue-control mismatch. Snapshot-9 corrects those harness paths,
+including a real Linux zombie-child regression. Its four focused restart/queue
+cases passed. The full snapshot-9 matrix then finished with 39 passes and one
+failure in GC binary replacement: the harness raced the fixture's service
+manager. Snapshot-10's manager-aware harness correction passed independent review and
+36 Linux lifecycle guards. Its targeted GC lifecycle run passed all three
+selected cases, leaving 37 unexecuted. Its full matrix finished with 39 passes
+and one failure: Kimi requested a directory listing during startup before the
+approval-interruption task could be submitted. The provider correctly failed
+closed, and the requested task's tool did not run. Snapshot-11 changes only
+three test files: explicit tool-free startup instructions and an approval-wait
+guard with its regression test. A focused new approval-interruption fixture
+passed, leaving 39 cases unexecuted in that subset. A fresh full matrix is
+running. No overall pass or deployment is claimed.
+
+The scrubbed [full snapshot-10 ledger](../../specs/research/bb-hillsboro-evidence-2026-09-19/completion10-summary.json)
+and [targeted lifecycle ledger](../../specs/research/bb-hillsboro-evidence-2026-09-19/completion10-gc-lifecycle-summary.json)
+retain those results. The separate [snapshot-11 approval-interruption proof](../../specs/research/bb-hillsboro-evidence-2026-09-19/completion11-approval-interrupt-summary.json)
+retains its incomplete aggregate status. The candidate's [source patch](../../specs/research/bb-hillsboro-evidence-2026-09-19/gc-1.4.2-bb-runtime-4f41f8285070.patch)
+records the GC changes; it does not certify unchanged released GC.
+
+The retained completion-4 Kimi ledger has 22 passes, 13 failures, and five
+unexecuted cases. Its passes include personal and mapped-project conversations,
+tools, full-prompt correlation, BB release/restore, agent resume, and all six
+reasoning choices. Native diagnostics have nine passes and two failures;
+separate denial supplements passed on both routes without rewriting those
+failed ledgers. Native Claude's earlier tool follow-up was refused upstream and
+was not retried. The pack now emits visible `provider.error` events as well as
+failed turn settlement. A fresh native invalid-token diagnostic passed with a
+rendered error, one failed completion, and no retry.
+See the [current Hillsboro report](../../specs/research/bb-hillsboro-verification-2026-09-19.md)
+for pinned artifacts, evidence, and remaining work.
+
+The sections below preserve the earlier qualification history. Their BB
+0.42.1 / GC 1.4.0–1.4.1 results do not certify the current installation or the
+unchanged GC 1.4.2 release. Earlier real Claude and Codex conversations used
+the GC corrections in [draft PR #6106](https://github.com/gastownhall/gascity/pull/6106).
+
+## Earlier versions exercised
 
 - Gas City 1.4.0 and 1.4.1: actual CLI pack loading, lint and command contracts.
 - BB 0.42.1: actual server/host/frontend build, installation, upgrade,
@@ -201,7 +244,61 @@ those three explicitly named reports.
 For an explicit GC development build, add `--gc-development-base 1.4.1` and
 use a binary reporting a prerelease version such as `1.4.1-bb-live.1`.
 Reports identify this as development validation and record the binary hash;
-it does not certify the unchanged released binaries. CI never sets this flag.
+it does not certify the unchanged released binaries. The separate GC candidate
+CI job uses this flag; the stock release jobs do not.
+
+## Full product gate
+
+The conversation gate above is only part of product acceptance. The full gate
+drives the released BB frontend, checks GC's native history independently, and
+requires every case in `bb/tests/e2e_matrix.py`. A diagnostic subset always
+leaves the overall report incomplete. Missing credentials, timeouts, skipped
+cases and absent implementations cannot count as passes.
+
+Install the locked browser driver dependencies once:
+
+```sh
+npm ci --prefix bb/tests --ignore-scripts
+```
+
+For an already prepared, marked scratch installation, reuse its manifest:
+
+```sh
+python3 -u bb/tests/full_e2e.py \
+  --environment-manifest /absolute/path/to/environment.json \
+  --report-dir /absolute/path/to/new-full-report-directory \
+  --channel chrome
+```
+
+The manifest identifies the isolated BB store, GC home, plugin state, host,
+projects, configured agents, credential environment file and exact binaries.
+The runner verifies installed pack source, BB/runtime versions, GC commit and
+binary hash before executing. It retains all state and private evidence.
+Do not construct a manifest pointing at normal user services or data.
+
+For first-time CI preparation, pass `--runtime`, `--gc-bin`, `--gc-commit`,
+`--bb-bin` and `--bb-app-bin` instead of a manifest, with the credentials
+described above. Development builds also need `--gc-development-base`.
+This prepares one isolated installation and retains it for the matrix. Linux
+CI installs Playwright's pinned Chromium; local `--channel chrome` uses Chrome.
+Only explicit lifecycle cases replace verified test processes. Fresh-install
+coverage creates a separate BB store while reusing the same GC controller.
+
+On macOS, `desktop.native` is required. Prepare a copy of the released app with
+`desktop_app.py`, attach it with `desktop_attach.mjs`, and set `desktopSpec` in
+the manifest to the resulting `desktop.json`. The helper gives the copy its
+own profile, cache and bundle identity, verifies the production app archive,
+and attaches to the isolated BB endpoint. It never launches the user's app
+profile. The desktop journey uses the same completion and native-history
+assertions as the browser.
+
+Run both Claude and Codex manifests against the candidate being reviewed.
+Keep `summary.json` and its artifact identities with the validation result;
+raw screenshots, traces, event streams, credentials and command captures under
+`private/` stay local. The CI candidate jobs upload only their scrubbed
+summary and require an entirely passing ledger. Branch protection must
+separately require the aggregate check. A candidate pass does not certify an
+unchanged GC release or imply that branch protection is configured.
 
 ## Reproduce the browser check
 
