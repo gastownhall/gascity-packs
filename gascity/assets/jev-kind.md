@@ -78,4 +78,5 @@ freeze it before held-out evaluation, and inspect both agreement and coverage.
 High confidence is not proof of correctness.
 
 See [the kind experiment protocol](../../specs/experiments/jev-evidence-routing/KIND-TRIAGE.md)
-for historical backtesting and the limits of Julian's reported 96% agreement.
+for historical backtesting, and [the paired results](../../specs/experiments/jev-evidence-routing/KIND-RESULTS.md)
+for our measured kind agreement, fallback coverage, token use and latency.

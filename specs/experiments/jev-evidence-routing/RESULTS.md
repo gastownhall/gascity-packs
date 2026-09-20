@@ -69,7 +69,7 @@ ordinary review lanes and their proof work. These results demonstrate potential
 for offloading this bounded decision; they do not establish token savings,
 quality preservation, or end-to-end speedup for the complete Gas City pack.
 The previous full-build runtime failures still need resolution and matched runs.
-Kind triage also needs its own paired dataset; Julian's 96% remains unreplicated.
+A separate real-data kind comparison is now complete; see [KIND-RESULTS.md](KIND-RESULTS.md).
 
 Artifacts: [pilot](pilot-paired-001/summary.json),
 [held-out](heldout-paired-001/summary.json),
@@ -377,8 +377,7 @@ matched CLI token counters exactly; baseline 003 exposed a separate macOS tmux-r
 retained failed/diagnostic attempts. Jev access is now verified.
 
 Remaining work: working full-build execution and complete token telemetry;
-paired full-build measurements; kind-specific paired evaluation and Julian
-reference-data replication. The generative baseline evaluated here is Claude. Codex or another
+paired full-build measurements; broader and repeated kind-triage evaluation. The generative baseline evaluated here is Claude. Codex or another
 subscription-backed CLI needs its own adapter and separately reported cohort.
 
 ## Audit trail
@@ -402,11 +401,13 @@ Priority and initial adopt-pr complexity reportedly had mixed results and are
 not enabled for automatic replacement.
 
 The branch now has opt-in kind assistance for issue triage, a reusable helper
-for issue/PR snapshots, and an auditable historical backtest runner. See
-[KIND-TRIAGE.md](KIND-TRIAGE.md) for the contract, metrics and experiment plan.
-One synthetic live kind preflight succeeded after access was supplied. It does
-not replicate the agreement score or measure paired kind savings. Julian's
-exact reference dataset/configuration remain necessary for that comparison.
+for issue/PR snapshots, an auditable historical backtest runner, and a paired
+subscription Claude/fallback runner. See [KIND-TRIAGE.md](KIND-TRIAGE.md) for the
+contract. Our own 32-item real-data evaluation is complete: raw Jev/Opus
+agreement 31/32 (96.9%), final agreement 32/32 after seven fresh fallbacks,
+77.9% fewer Claude tokens, and 71.2% less classification time. These measurements
+are separate from evidence review and full-build experiments. See
+[KIND-RESULTS.md](KIND-RESULTS.md) for the dataset, raw evidence and limitations.
 
 Kind software validation: 71 relevant tests and 176 subtests passed, plus real
 CLI validation-only and missing-key failure checks. Two broader claim-command

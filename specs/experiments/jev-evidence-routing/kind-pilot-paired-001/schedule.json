@@ -1,0 +1,34 @@
+[
+  {
+    "id": "gascity-6426",
+    "arm": "baseline"
+  },
+  {
+    "id": "gascity-6426",
+    "arm": "jev"
+  },
+  {
+    "id": "gascity-6319",
+    "arm": "jev"
+  },
+  {
+    "id": "gascity-6319",
+    "arm": "baseline"
+  },
+  {
+    "id": "gascity-6435",
+    "arm": "baseline"
+  },
+  {
+    "id": "gascity-6435",
+    "arm": "jev"
+  },
+  {
+    "id": "gascity-6419",
+    "arm": "jev"
+  },
+  {
+    "id": "gascity-6419",
+    "arm": "baseline"
+  }
+]

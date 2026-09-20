@@ -28,9 +28,10 @@ results do not establish full-pack savings or speedup.
 ## Added scope: maintainer-city kind triage
 
 Support Julian's kind-only use case before extending Jev to priority or adopt-pr
-complexity. The reported 96% is agreement against Opus Max, with raw data and
-configuration still needed. Kind helper, opt-in issue-triage instructions and
-historical backtest runner are implemented; see
-[the kind protocol](../experiments/jev-evidence-routing/KIND-TRIAGE.md).
-Live replication, a paired subscription Claude/fallback runner for kinds,
-independent adjudication, and end-to-end measurements remain outstanding.
+complexity. The kind helper, opt-in issue-triage instructions, historical
+backtest and paired subscription Claude/fallback runner are implemented.
+Our own real-data comparison is complete: 31/32 raw Jev/Opus agreement and 32/32
+final agreement with seven fallbacks. See [kind results](../experiments/jev-evidence-routing/KIND-RESULTS.md)
+and [the protocol](../experiments/jev-evidence-routing/KIND-TRIAGE.md).
+Broader samples, repeated measurements, independent adjudication and full
+workflow measurements remain outstanding.

@@ -1,0 +1,409 @@
+[
+  {
+    "number": 6419,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6419",
+    "title": "test(release): macOS smoke for released artifacts \u2014 brew core install + bd store interop",
+    "body": "## What\n\nAdds a macOS release smoke for **released** gc artifacts \u2014 Homebrew core (bottled) install plus a bd **store interop** check \u2014 and the operator-facing procedure doc so release captains can run it before tagging.\n\nWasteland bounty: **w-ac31f2e263** (competing submission).\n\n## Why\n\nThe existing `homebrew-tap-smoke.yml` validates the *first-party tap* on a macOS runner: tap install, `brew test`, `gc version`. That floor is exactly one version-string deep \u2014 and it let the v1.4.1 regression class ship:\n\n- Bottled gc 1.4.1 embedded bd 1.2.2 while the formula depends on current beads\n- On any store created/migrated by a current bd CLI (schema v66), every native store path fails: `gc mail count`, nudge delivery, session wake\n- `gc version` \u2014 the only thing the tap smoke checks \u2014 passed throughout\n\nWe hit this in production (10-rig city, shared dolt server) and filed the details as #6393 (hold-label churn, maintainer-confirmed: fixes real but unreleased) and #6416 (`gc hook --claim` starvation behind the work-query probe on a serialized shared dolt server).\n\n## The check\n\n`macos-release-smoke.yml` (daily + dispatch, `macos-latest`):\n\n1. `brew install gascity` \u2014 the bottled **core** artifact, not the tap\n2. `gc version` \u2014 the existing floor\n3. **Store interop** (the new floor): `bd init` \u2192 `gc bd list` \u2192 `gc mail count` in a temp dir. Proves the released binary's embedded bd can read a store at the current CLI's schema version. Schema skew here = the v1.4.1 class = red, with a `::error` annotation naming the likely cause and both version strings.\n\n`engdocs/MACOS_RELEASE_SMOKE.md` documents the full release-captain procedure: brew core, goreleaser darwin artifact, the version-contains check (`git tag --contains <embedded bd>`), and a triage table mapping symptoms to #6393/#6416.\n\n## Scope notes\n\n- No product code touched \u2014 one workflow + one doc.\n- The goreleaser-artifact half of the bounty is documented in the procedure (needs release credentials we don't assume in CI); the CI lane covers the artifact users actually install by default (Homebrew core).\n- Tested the interop steps against a real v1.4.1 install before writing the workflow: bottled gc + current bd + migrated store reproduced the failure; a HEAD build with embedded bd \u2265 1.3.0 passes all three steps.\n",
+    "created_at": "2026-09-16T15:20:26Z",
+    "updated_at": "2026-09-16T21:13:33Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6411,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6411",
+    "title": "fix(ci): raise cmd-gc-productmetrics-testhook's timeout to fit the runner it actually gets",
+    "body": "## Summary\n- Fixes #6396: `cmd-gc-productmetrics-testhook`'s `timeout-minutes: 5` was budgeting compile time, not test time -- its own timing artifact shows six tests taking 0.87s total against a 4m37 job on main, because `runner-policy` resolves `runner_32vcpu` to plain `ubuntu-latest` (4 vCPU) for every non-maintainer login, and any `go.sum` change colds the `actions/setup-go` cache and pushes the job over budget -- a hard cancellation with no failing test in the log.\n- The issue proposed two fixes: (1) give the job a warm build cache, or (2) size the timeout for the runner it actually gets. Went with (2) only -- `.github/actions/setup-gascity-ubuntu` doesn't configure anything Go-cache-specific beyond what `actions/setup-go` already does inline in this job (both call the identical pinned `actions/setup-go` action); the \"warm cache\" effect the issue observed looks more like cache-population timing across jobs in the same workflow run, which isn't verifiable or safely restructurable without live GitHub Actions runner behavior to test against.\n- Raised `timeout-minutes` to 12 -- safe, minimal, directly fixes the reported false-cancellation, and is explicitly endorsed by the issue itself as a valid stopgap.\n\n## Test plan\n- Not a Go change -- validated the YAML parses and confirmed no other docs reference the old 5-minute figure.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-09-16T12:45:15Z",
+    "updated_at": "2026-09-20T02:42:06Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6408,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6408",
+    "title": "perf(gc): probe bd context once per TTL instead of once per store open (cr-uavzft)",
+    "body": "Every gc CLI call opens several stores, and each open ran the beads storage\npreflight, which unconditionally forked 'bd <scope> context --json' to ask what\nbackend the process was about to open (cr-m3g3od measured 4 children for one\n'gc bd show'). The answer - backend, dolt_mode, bd_version, schema_version - is\nprocess-static inside any window the call lives in, so read it once per\n(city, scope) and reuse it.\n\nOnly a success is recorded and the entry is aged by a TTL, so a bd that is\nunreachable, uninstalled, or mid-upgrade still fails the preflight closed on\nevery later check, and a long-lived controller re-probes instead of carrying a\nboot-time answer forever. The per-entry mutex is held across the probe, so\nconcurrent opens of one scope collapse into a single spawn.\n\nSame shape gc already uses for the city-scoped storage routes\n(cli_storage_routes.go), and consistent with its position on this probe in a\npoll path (api_state_conditional_writes.go: 'a status poll must not shell out\nto bd').\n\nBead: cr-uavzft\n(cherry picked from commit 4d18e29d55adb25a4e6a4ee03e4d5a1b6841d198)\n\nStaged and tested in the westlands estate (bead cr-uavzft); tests green on the estate builders.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_01BBBFPiLczFKntbLK2E9g58",
+    "created_at": "2026-09-16T12:37:52Z",
+    "updated_at": "2026-09-16T13:22:21Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6399,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6399",
+    "title": "fix(security): pin container grpc and bd Thrift versions",
+    "body": "Summary:\n- raise the rebuilt gh and Dolt grpc floor to 1.83.2\n- force rebuilt bd to grpc 1.83.2 and Thrift 0.24.0, with embedded-module assertions\n- remove only the obsolete grpc waivers and bd Thrift waiver path\n- add the immutable release-gate record for ga-kkktn4\n\nReview:\n- ga-htipw0: PASS on exact source 96b3ec3f450ed1883e27570244fb14a096541af0\n- scope preserves the outside-contributor fixes from PR #6389 and leaves kubectl/Dolt Thrift follow-up out of this round\n\nTest plan:\n- full local 40-job union: 38 jobs passed, 2 raw external bd schema-bootstrap failures attributed to pre-existing ga-e2z1zb; all 8 diff-owned executions passed\n- fresh base, agent, and controller images built successfully\n- extracted bd embeds grpc v1.83.2 and Thrift v0.24.0\n- pinned Trivy 0.70.0: zero HIGH/CRITICAL findings in all three images and zero config misconfigurations\n- vet, build, candidate lint/format, policy, docs, boundary, dependency, event-isolation, and DoltLite checks passed; pre-push fast suite 10/10 passed\n\nRefs ga-kkktn4, ga-rl1l10, ga-htipw0.",
+    "created_at": "2026-09-16T03:44:57Z",
+    "updated_at": "2026-09-16T06:04:36Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/ready-to-merge"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6396,
+    "html_url": "https://github.com/gastownhall/gascity/issues/6396",
+    "title": "cmd-gc-productmetrics-testhook runs at 92-95% of its 5-minute budget on main; its six tests take 0.87s and the rest is compile",
+    "body": "## Symptom\n\n`cmd-gc-productmetrics-testhook` runs at 92\u201395% of its `timeout-minutes: 5` budget on `main`, so it fails as a cancellation (\"The operation was canceled\") on whichever PR happens to add a few seconds. It is a required-path job, so that reads as a red gate with no failing test in the log.\n\nMeasured across runs on 2026-09-16 (UTC):\n\n| branch | duration |\n|---|---|\n| `main` @ `9700d9a48` | 4m37 |\n| a branch with no `go.mod` change | 4m44 |\n| a branch that changed `go.sum` | **5m05 \u2192 killed** |\n\n## Root cause\n\nThe budget is buying compile time, not test time, on a runner the budget was not sized for.\n\nFrom the job's own timing artifact (`timing-cmd-gc-productmetrics-testhook-attempt-1`, run 35040648087, `main` @ `9700d9a48`):\n\n- `cmd/gc` package unit: **0.869 s**\n- every test in it: sub-second; six tests, **0.87 s total**\n\nagainst a 4m37 job. The remainder is `go build` of `cmd/gc` under `-tags productmetrics_testhook`.\n\nThe job requests `runs-on: ${{ needs.runner-policy.outputs.runner_32vcpu }}` (`.github/workflows/ci.yml:626`), but `runner-policy` resolves that to `ubuntu-latest` for every login outside the maintainer list \u2014 the same artifact's runner block reports `\"cpu_count\": 4`. So most runs compile `cmd/gc` on four cores inside a five-minute wall.\n\nThe `go.sum` sensitivity follows: `actions/setup-go`'s cache key includes `go.sum`, so any dependency change makes that build cold, and cold is what goes over.\n\n## Reproduction\n\nOpen a PR that changes `go.sum` at all, on a fork or from a non-maintainer login, and watch `cmd/gc product metrics testhook`. Or read the timing artifact of any recent `main` run and compare the summed test durations against the job duration.\n\n## Environment\n\n`main` @ `9700d9a48`, `ubuntu-latest` (4 vCPU), `actions/setup-go@4a36011`, Go per `go.mod`.\n\n## Proposed fixes, either\n\n1. **Give the job a warm build cache.** It is the only `cmd/gc`-building job with no warm step before it; the surrounding jobs go through `setup-gascity-ubuntu`. That attacks the 4m23 rather than the wall.\n2. **Size the budget for the runner the job actually gets** \u2014 10\u201312 minutes gives real margin at 4 vCPU.\n\n(1) is the better fix; (2) is the one-line stopgap. A gate at 95% of budget reports on runner speed rather than on the code.\n",
+    "created_at": "2026-09-16T03:10:04Z",
+    "updated_at": "2026-09-16T03:29:00Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 6392,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6392",
+    "title": "execgrace: report cooperative cancellation outcome",
+    "body": "## What changed\n\n`execgrace.Apply` now returns a typed, concurrency-safe result that preserves the existing delivered/not-delivered contract while exposing which cancellation path ran:\n\n- process-group interrupt\n- leader-only interrupt fallback\n- direct force-kill fallback\n- no delivery\n\nThe runtime exec provider keeps its existing cancellation precedence through `Delivered()`. Unix and Windows signal behavior is unchanged; this adds classification and deterministic coverage for the fallback branches.\n\n## Validation\n\nThe changed tests pass in both selecting tiers. The full local CI union, all four worker profiles in phase 1 and phase 2, acceptance A, the minimum-supported bd contract, generated-artifact freshness, build, vet, and static policy checks were run. Five unrelated environmental failures from the full union are preserved and causally attributed in the release-gate record.\n\n[Release-gate evidence](https://github.com/gastownhall/gascity/blob/deploy/ga-7wzlna-gate/release-gates/ga-bz8hvm-execgrace-cancel-outcome-gate.md)",
+    "created_at": "2026-09-16T00:58:33Z",
+    "updated_at": "2026-09-16T01:54:24Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6389,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6389",
+    "title": "fix(security): update grpc past GO-2026-6348",
+    "body": "## Problem\n\nThe repository-wide `govulncheck` gate began failing on otherwise unrelated PRs, including #6385, because `google.golang.org/grpc@v1.83.0` reaches GO-2026-6348. The advisory fixes that reachable HTTP/2 fragmentation OOM in v1.83.1. A second imported-package advisory, CVE-2026-84445 / GO-2026-6443, requires v1.83.2 on the 1.83 line.\n\n## Fix\n\n- raise the Gas City module from grpc v1.83.0 to v1.83.2;\n- raise the agent image's source-built `bd` override to the same security floor;\n- remove the now-obsolete `bd` and `gc` paths from both grpc Trivy waivers while retaining the still-vulnerable `gh` and `dolt` paths;\n- update the existing security-policy tests so the module, container build, and waiver set remain locked together.\n\nNo application code changes.\n\n## Verification\n\n- RED: the same `govulncheck v1.7.0` invocation reported one reachable vulnerability, GO-2026-6348, on grpc v1.83.0.\n- GREEN: `go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 -show verbose ./...` reports zero reachable or imported-package vulnerabilities on v1.83.2.\n- `go mod verify`\n- `go test -count=1 ./scripts`\n- `go test -count=1 ./internal/warmup ./internal/events ./internal/runtime/t3bridge`\n- `go vet ./...`\n- repository pre-commit hook passed (lint, generated references, vet).\n\nThis is intentionally separate from #6385 so that reaper fix remains a two-file, single-purpose patch.\n",
+    "created_at": "2026-09-15T23:22:35Z",
+    "updated_at": "2026-09-16T01:20:01Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6388,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6388",
+    "title": "Fail CI when Go package discovery yields no packages",
+    "body": "## What this changes\n\nThe macOS unit-test target and Linux non-`cmd/gc` coverage target now fail during Make evaluation when `go list` cannot produce a package set. This prevents a Go toolchain mismatch from turning either required lane into a green run that executed zero packages.\n\nThe compose-action policy checks also verify that CI resolves the Go version from `go.mod`, keeping setup and package discovery on the same toolchain version.\n\n## Review notes\n\n- The existing workflow jobs and required-check topology are unchanged.\n- `test-mac` and `test-cover-noncmdgc` share the new fail-loud package-list behavior.\n- Resource-census allowances increase only for the new subprocess-backed policy tests.\n- The herdr XDG socket-path test is explicitly skipped on non-Linux platforms where its runtime assumptions do not apply.\n\n## Test plan\n\n- [x] Run the complete 40-job local CI-equivalent suite; all four raw failures were independently reproduced/tracked as pre-existing, and every diff-owned test passed.\n- [x] Run `make test-ci-policy`, `make build`, `go vet ./...`, and `make check-hooks`.\n- [x] Run `make test-cover-noncmdgc` and confirm packages execute with coverage output.\n- [x] Run `make test-mac` and confirm the package list expands and tests execute on the local host.\n- [x] Release gate: [`release-gates/ga-ft1tmx-ci-package-list-fail-loud-gate.md`](release-gates/ga-ft1tmx-ci-package-list-fail-loud-gate.md)",
+    "created_at": "2026-09-15T22:55:36Z",
+    "updated_at": "2026-09-16T01:33:29Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6386,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6386",
+    "title": "test(graph): wait on the teardown tail, not the workflow root (ga-pva49c)",
+    "body": "## What\n\n`TestGraphWorkflowSuccessPath` used `waitForBeadClosed(workflowID)` as the barrier for three assertions about the worktree cleanup's effects: the convoy's `work_dir` being unset (`:77`), the worktree directory being removed (`:85`), and `.cleanup-worktree` appearing in the step report (`:99`). A closed workflow root does not imply any of those have happened, so the test raced the controller and went flaky under full-suite load.\n\nBoth graph workflow tests now wait on the teardown's own close via a new `waitForWorkflowTeardown` helper before asserting its effects.\n\n## Why the root is not a barrier\n\nTeardown-scoped work is post-settlement **by contract**, established in #5271 (bead ga-99u0u) and enforced in two places:\n\n- `graphSinkStepIDs` (`internal/formula/graph.go`) omits `gc.scope_role=teardown` steps from `workflow-finalize`'s sinks. Sinking them deadlocks settlement \u2014 a teardown's pass condition can wait on the root outcome only finalize produces.\n- `processWorkflowFinalize` (`internal/dispatch/runtime.go`) closes the root, then exempts the teardown tail from its terminal subtree sweep (`molecule.TeardownTailExclusion`) so cleanup stays executable afterwards instead of being skip-closed, which would leak the worktree.\n\nCompiling `mol-scoped-work` shows the consequence directly:\n\n```\nworkflow-finalize          <-blocks- body\nworkflow-finalize          <-blocks- submit-scope-check\ncleanup-worktree.attempt.1 <-blocks- body\ncleanup-worktree           <-blocks- body\n```\n\n`cleanup-worktree` and `workflow-finalize` are concurrent successors of the body scope with **no edge between them**. Whichever the controller reaches first wins.\n\nThe compile test's `assertBefore(\"\u2026cleanup-worktree\", \"\u2026workflow-finalize\")` compares slice indices in the emitted recipe, not dependency edges, so it never pinned an ordering \u2014 which is why this looked guarded and was not.\n\nThe integration test was last touched 2026-06-17; the contract changed 2026-08-14 (`517b605302`) and the test was never updated. Both observed failures postdate it: ga-lwnqu9 (2026-09-04, the report assertion) and ga-qhr85l (2026-09-15, `work_dir`).\n\n## Why the retry control is the barrier\n\n`waitForWorkflowTeardown` waits on the cleanup step's **retry control**, not its attempt. The control closes only once the teardown has converged, so it stays correct when `attempt.1` fails transiently and `attempt.2` does the real work. The `.cleanup-worktree` ref suffix matches only that control \u2014 `.cleanup-worktree.attempt.1` and `.cleanup-worktree.spec` do not end in it. The worker writes the report line, clears `work_dir` and removes the directory *before* closing the attempt, so a closed control means all three effects are durable.\n\n## Regression guard\n\n`TestGraphWorkflowRootClosesWithoutTeardown` (in-memory, ~10ms, no subprocess or sleep, so no resource-census growth) pins the contract at the dispatch layer: with the teardown withheld from the worker, the root still closes `pass`, the teardown tail is still open, and the convoy still carries `work_dir`.\n\nVerified non-vacuous \u2014 removing the teardown-sink exclusion from `graphSinkStepIDs` fails it with the root stuck `in_progress`, which is exactly the #5271 deadlock.\n\n**No production change**: the settlement contract is deliberate and this PR does not touch it.\n\n## Validation\n\n| Gate | Result |\n| --- | --- |\n| `TestGraphWorkflowSuccessPath` (tags=integration) | PASS (167.70s) |\n| `TestGraphWorkflowFailureRunsCleanup` (tags=integration) | PASS (78.73s) |\n| `TestGraphWorkflowRootClosesWithoutTeardown` | PASS (~10ms) |\n| `make test` | PASS |\n| `go vet ./...` (and `-tags integration`) | clean |\n| `./internal/testpolicy/...` (resource census) | PASS |\n\nCloses ga-pva49c. Evidence for gate tracker ga-xjh1p4.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-09-15T22:23:52Z",
+    "updated_at": "2026-09-15T23:15:06Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6379,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6379",
+    "title": "fix(test): commit the transient-once budget only against a landed failure (ga-njhh8e)",
+    "body": "## What\n\nFixes the recurring `TestRetryManagedPooledWorkerRecoversClaimedAttemptAfterCrash`\nmissing-retry-attempt flake tracked by **ga-j88sfp**, which has blocked or\nescalated four release gates in eight days (09-08, 09-11, 09-13, 09-15), each on\na candidate with no path overlap.\n\nInvestigation bead: ga-njhh8e.\n\n## Root cause \u2014 the test harness, not the production retry path\n\n`should_fail_transient_once` in `test/agents/graph-dispatch.sh` consumed its\none-shot budget **at decision time**: it wrote the marker as a side effect of\ndeciding to inject.\n\n`close_with_result` deliberately swallows every `bd` error (its own comment says\nso, and the rationale is sound: a transient `bd` error would otherwise kill the\nworker mid-loop under `set -e`). So when the failing close did not land, the\nattempt bead stayed open with the budget already spent. The next pass over that\nbead saw the marker, declined to inject, fell through to the normal path, and\nclosed the attempt `gc.outcome=pass`. `classifyRetryAttempt` then reads a clean\npass, correctly schedules no retry, and the workflow finalizes pass with only\n`.attempt.1`.\n\nThat is exactly the observed shape in all four sightings: `.attempt.1` present,\n`.attempt.2` absent, workflow pass.\n\n**The production side is correct throughout.** Given an attempt closed pass with\nno failure metadata, `internal/dispatch/retry.go:416` declining to retry is the\nright behavior. Real retries are not being lost. The harness was mislabeling a\nfailed attempt as a passing one. The `transient-once` pattern has no production\nanalogue \u2014 it exists only under `test/`.\n\n## Fix\n\nSplit the decision from the commit:\n\n- `should_fail_transient_once` is now a pure predicate with no side effect.\n- `commit_transient_once` writes the marker, and the main loop calls it only\n  after reading back `status=closed outcome=fail`.\n\nA dropped close now leaves the budget owed so the next pass re-injects; a landed\nclose still spends it exactly once.\n\n## Diagnostics\n\nThe missing-attempt assertion now dumps workflow state. A real gate failure\npreviously carried only the step list \u2014 the entire `ga-3r36gw` recovery log is\n592 bytes, one assertion line, no worker trace. That ambiguity (a lost injection\nand a controller that declined to retry look identical) is why this stayed\nunrooted across four sightings. The new `transient-once-uncommitted` trace line\nnames a dropped close directly.\n\n## Evidence\n\n- Regression test `TestGraphDispatchTransientOnceBudgetSurvivesLostClose`\n  extracts the real shell functions and pins all three properties: budget\n  survives a close that never landed, budget is spent once the close lands,\n  unselected refs are never injected.\n- Verified RED against the pre-fix source and GREEN after: two decisions with no\n  landed close leave the injection owed under the fix, and lose it before it.\n- Alternative hypothesis disproved: \"the attempt-1 outcome is recorded pass\n  before the transient injection takes effect\" is structurally impossible \u2014\n  `should_fail_transient_once` is consulted *before* any pass-close path in the\n  same loop iteration and `continue`s past it. The only route to `.attempt.1`\n  closing pass is a previously-consumed marker.\n\n## Scope\n\nCovers **ga-j88sfp** only. Two other open trackers on the same test are distinct\nconditions and are explicitly **not** addressed here:\n\n- **ga-oc46fi** \u2014 `.attempt.2` did materialize; the trace lacked the success\n  entry. Different phase.\n- **ga-tot0gw** \u2014 `gc init` colliding with an incompatible active supervisor.\n  Environmental.\n\n## Census\n\nThe new test executes the real shell functions through one `bash` subprocess \u2014\nthe same idiom the sibling `TestGraphDispatchHookFallbackForNamedWorker` already\nuses in this file \u2014 so the all-source subprocess census grows by one call (file\ncount unchanged; the file already spawns). Pinned in the three places the\nmanifest header requires to move together: the Go `bootstrapPolicy`,\n`test-resources.toml`, and the generated `TESTING.md` row.\n\n## Testing\n\n- `TestGraphDispatchTransientOnceBudgetSurvivesLostClose` passes (3 subtests).\n- Pre-existing `TestGraphDispatchHookFallbackForNamedWorker` still passes.\n- `go vet -tags integration ./test/integration/` clean.\n- `shellcheck -S warning` on the script reports only a pre-existing SC2034 at\n  line 453, outside this diff.\n- Full pre-push suite green.\n\n**Not verified locally:** the live integration test cannot run in this\nenvironment \u2014 it fails at `bd init` on the pending Dolt schema migration\n(ga-3jtbpm). Confirmed environmental by running it at clean `origin/main` in a\nscratch worktree: identical failure, same point. CI exercises it properly.\n",
+    "created_at": "2026-09-15T20:47:13Z",
+    "updated_at": "2026-09-17T02:58:36Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "needs-review-formulas",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6369,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6369",
+    "title": "fix: patch GitPython and util-linux CVEs in gc-mcp-mail",
+    "body": "## What this changes\n\nThe `gc-mcp-mail` image now installs GitPython 3.1.62, above the 3.1.59 security floor for the 2026 config-injection and repository-parsing advisories. The hash-pinned requirements lock is regenerated so image builds remain reproducible.\n\nThe image also moves to the current Python 3.12 slim-trixie digest, carrying the patched Debian util-linux packages and clearing the mount TOCTOU findings that kept Container Scan red.\n\n## Review notes\n\n- This fixes the published `gc-mcp-mail` image only; the Ubuntu-based agent and controller images are unaffected by these Debian-specific findings.\n- No vulnerability waiver is added or widened.\n- Regression tests lock both the patched GitPython resolution and the base-image digest, and reject the prior vulnerable digest.\n\n## Test plan\n\n- [x] Full local unit, process, and integration sweep (39/40 jobs green; the one failure is a pre-existing Beads schema-initialization race, attributed in the gate record)\n- [x] `go vet ./...` and changed-path lint/static policy gates\n- [x] Diff-owned mail-image security tests pass by name\n- [ ] Container Scan / Dockerfile config\n- [ ] Container Scan / Image vulnerabilities\n- [x] Release gate: [`release-gates/ga-bhtjim-container-scan-cve-fixes-gate.md`](release-gates/ga-bhtjim-container-scan-cve-fixes-gate.md)",
+    "created_at": "2026-09-15T16:07:32Z",
+    "updated_at": "2026-09-15T17:08:46Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6325,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6325",
+    "title": "fix(worktree): stop TestManagedDryRunDoesNotPublishProvenance flaking on transient git lock files",
+    "body": "## What\n\n`TestManagedDryRunDoesNotPublishProvenance` byte-compares a `snapshotTree` walk of a test repo's common git dir before and after a dry-run, to prove the dry-run touched nothing. Git's own background maintenance can create and remove `objects/maintenance.lock` inside that window, independent of anything the code under test did \u2014 either direction (appearing or disappearing between the two walks) fails the assertion.\n\nFixes #6175.\n\n## Fix\n\nBoth of the following, since they're complementary, not competing:\n\n- `initTestRepo` (the package-local wrapper, not the shared `testutil.InitGitRepo`) now sets `maintenance.auto=false` and `gc.auto=0` on every test repo, so no background maintenance runs against fixture repos in this package at all \u2014 root cause, and it protects every other `snapshotTree`-based purity assertion in the package, not just this one test.\n- `snapshotTree` itself now filters `*.lock` files out of its walk \u2014 a second, belt-and-braces layer in case some other lock-taking git operation ever runs against a fixture repo.\n\n**New test proves the filter, not just the theory:** `TestSnapshotTreeExcludesLockFiles` seeds a durable file plus a transient lock file inside an already-existing `objects/` dir (matching a real git repo's shape, not a synthetic new directory) and asserts the lock file never shows up in a before/after diff. Verified it actually catches the regression: temporarily disabled the filter and confirmed the test fails with exactly the shape #6175 describes, then restored.\n\n## Testing\n\n`go build -tags gms_pure_go ./internal/worktree/...` clean. Full `internal/worktree` package suite passes (including the new test and the originally-flaky test). `gofmt -l` on the touched file is empty.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\n",
+    "created_at": "2026-09-13T01:15:36Z",
+    "updated_at": "2026-09-13T01:25:40Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6303,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6303",
+    "title": "fix(tmuxtest): escalate past a failed kill-server when reaping orphan servers (post-merge remediation for #6296)",
+    "body": "Post-merge review remediation for #6296.\n\n## Why this is a follow-up PR and not a revert\n\n#6296 squash-merged as `a1deacc6` while the remediation for its pre-merge\nreview's `request_changes` findings was still being written. The remediation\ncommit `1ecde94d` was authored 89 seconds *after* the merge and never reached\nthe branch \u2014 `git log --all --find-object` finds the landed\n`test/tmuxtest/orphan_sweep.go` blob (`cd3ff9c9`) in exactly one commit, the\nmerge itself. That blob matches neither the gated tree nor the authored\nremediation, so this was not a merge-queue race against an already-pushed\napproved head.\n\nThe post-merge review of the landed range re-raised those findings\n(decision `request_changes`, quality score 791/1000 against a 850 threshold).\nThis PR carries the remediation onto `main`. The merge is not undone.\n\n## Findings addressed\n\n| ID | Severity | Category | Resolution |\n|---|---|---|---|\n| NF-1 | **major** | Error Handling & Resilience | Fixed |\n| NF-2 | **major** | Release Safety | Fixed (addendum, not SHA rewrite \u2014 see below) |\n| NF-3 | minor | Security Surface | Fixed; optional increment declined with recorded reason |\n| NF-4 | minor | Contract & Interface Fidelity | Fixed |\n| NF-5 | minor | Resource Lifecycle & Cleanup | Fixed + regression lock |\n| NF-6 | minor | Debuggability & Operability | Fixed |\n| NF-7 | minor | Test Evidence Quality | Fixed |\n| NF-8 | nit | Architectural Consistency | Fixed |\n| NF-9 | nit | Resource Lifecycle & Cleanup | Fixed |\n| NF-10 | nit | Architectural Consistency | Fixed |\n\n### NF-1 \u2014 the fail-open kill (the defect that matters)\n\n`killTmuxServersUnder` returned as soon as `tmux kill-server` failed:\n\n```go\nif _, err := exec.CommandContext(killCtx, \"tmux\", \"-S\", path, \"kill-server\").CombinedOutput(); err != nil {\n    return nil // skips the exit poll, the SIGKILL, and every diagnostic\n}\n```\n\nThe caller unlinks the socket either way, so the failure arm was precisely the\none that could leave a server running, socketless, and undiscoverable \u2014 the\n`ga-t33q83` symptom the sweep exists to prevent. `reapServerAtSocket` now\nescalates on every arm and names each outcome on `diagnostics`.\n\n### NF-2 \u2014 the release gate record\n\n`release-gates/ga-47b6fl-tmux-orphan-sweep-gate.md` presents a PASS whose\nreviewed SHA is not what landed. **Both cited SHAs are real and accurately\nname the 2026-09-11 run**, verified first-hand: `1dacc4f3d6` exists and its\n`test/tmuxtest` tree is identical to the gated `62cc46d8cc`'s; `41edfbef91` is\non `main`. They are left unchanged and an addendum records that the gate's\nPASS does not extend to the merged head.\n\nRewriting them to the merged head would assert that the 40-job local CI union,\nits preserved logs, and its five failure attributions were collected against\ncontent they never saw. The finding's intent \u2014 a reader must not believe the\nlanded state was gated \u2014 is satisfied without falsifying an audit record.\n\n### NF-3 \u2014 authenticating the signal target\n\nThe SIGKILL target is now re-attributed before it is signaled: same PID, same\nstart time (`pidutil.AliveWithStartTime`), still `argv[0]` basename `tmux`\n(`pidutil.AliveWithCmdline`), never this process. The PID comes from an IPC\npeer discovered under a shared socket root and may be up to\n`killTmuxServerWait` stale by the time the signal lands, so bare liveness was\nenough to kill a recycled PID's innocent new owner.\n\n**Not applied \u2014 NF-3's optional increment** (veto the SIGKILL when no\nstart-time token is available). `pidutil.StartTime` reads `/proc`, so it fails\nfor *every* PID on darwin; the veto would delete the escalation entirely on\nmacOS hosts, where an orphaned server is just as able to outlive\n`kill-server`. The token is one of two independent gates, and the other keeps\nnarrowing the target on Linux when the token is missing. The reasoning is\nrecorded on `reapServerAtSocket`.\n\n### NF-5 \u2014 the one finding the authored remediation did not fix\n\nThe sweep regression test's cleanup issued an unbounded `exec.Command`\n`kill-server` against a server the sweep under test may have left wedged,\nhanging the whole package until the outer `go test` timeout with no output\n(every call site passes `io.Discard`). It now routes through the bounded\n`killTmuxServerAtSocket`, falling back to a direct PID kill of the exact\nserver this test spawned and verified \u2014 never a bare or default-socket\n`kill-server`.\n\n`TestEveryKillServerCallIsBounded` (new) parses this package's sources and\npins the rule so the shape cannot return. It is AST-based rather than a grep\nso the `\"tmux kill-server\"` string literal in `orphan_sweep_reaper_test.go` is\nnot a false positive, and it fails if it finds zero `.go` files so the scan\ncannot go vacuous.\n\n### NF-4 / NF-6 / NF-7 / NF-8 / NF-9 / NF-10\n\n- **NF-4** \u2014 `SweepOrphanPIDPrefixedDirs` and `NewSocketParentDir` now\n  document that they signal processes, not just remove directories.\n- **NF-6** \u2014 every reap outcome (unreapable socket, self-PID refusal, failed\n  `kill-server`, graceful exit, no-longer-tmux, failed SIGKILL, successful\n  SIGKILL) is named on `diagnostics`, so a survivor stays attributable from\n  run logs instead of gate-log forensics.\n- **NF-7** \u2014 `TestReapServerAtSocketEscalation` drives all eight escalation\n  paths through a fake host, including the load-bearing *\"kill-server failed,\n  server survives\"* row that no fixture can produce on demand.\n  `TestIsTmuxArgv` covers the argv gate.\n- **NF-8 / NF-10** \u2014 the monolithic `killTmuxServersUnder` is split behind the\n  `tmuxServerReaper` seam (the shape\n  `internal/runtime/proctable/kill_unix.go` already uses to test its own\n  confirmed-dead-before-return guarantee), and `killTestSocketPath` becomes\n  `killTmuxServerAtSocket`, which reports *why* a shutdown failed instead of\n  discarding the error.\n- **NF-9** \u2014 a socket reporting this process as its own tmux server is refused\n  rather than signaled.\n\n## Resource census ledger\n\nThe NF-5 fix *removes* an `exec.Command` tmux call, so\n`TestRepositoryLedgerMatchesCensusAndDocumentation` reported the baselines as\nstale-high (\"lower the checked baseline to bank the improvement\"). All four\nsynchronized surfaces drop exactly one subprocess/tmux call \u2014 `census.go`,\n`census_test.go`, `test/test-resources.toml`, and `TESTING.md`. File counts\nare unchanged: the two new test files use no resources.\n\n## Test evidence\n\nAll green with `-count=1`, no unexpected skips:\n\n- `TestReapServerAtSocketEscalation` (8 rows), `TestIsTmuxArgv` (6 rows)\n- `TestEveryKillServerCallIsBounded`\n- `TestSweepOrphanPIDPrefixedDirsKillsLiveTmuxServerBeforeRemoval` \u2014 the\n  real-tmux end-to-end case; **ran, did not skip**\n- `internal/testpolicy/resourcecensus` \u2014 full package\n- `gofmt -l` empty, `go vet` clean, pre-commit lint `0 issues`\n\n**Mutation-probed** \u2014 both load-bearing fixes are pinned by a test that\nactually fails without them:\n\n| Mutant | Expected | Observed |\n|---|---|---|\n| Restore the NF-1 fail-open `return` | NF-1 row RED | `FAIL TestReapServerAtSocketEscalation/kill-server_failed,_server_survives` |\n| Restore the NF-5 unbounded call | NF-5 lock RED | `FAIL TestEveryKillServerCallIsBounded` at `orphan_sweep_tmux_test.go:75:7` |\n| Clean tree (control) | green | `ok` |\n\nThe NF-5 mutant had to be applied on disk rather than through `go test\n-overlay`: the lock reads the package's sources with `os.ReadDir` at run time,\nand `-overlay` only redirects what the *compiler* sees, so an overlay mutant\nsilently passes against the real unmutated file.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\n",
+    "created_at": "2026-09-12T10:01:58Z",
+    "updated_at": "2026-09-19T08:55:18Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/reviewing",
+      "status/ready-to-merge"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6296,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6296",
+    "title": "Reap orphaned tmux servers before removing test socket directories",
+    "body": "## What this changes\n\nThe test harness now shuts down tmux servers found inside stale, PID-scoped socket directories before removing those directories. This prevents abandoned test servers from retaining deleted binaries, memory, and temporary working directories after their parent test process is gone.\n\nCleanup targets each discovered Unix socket explicitly. It requests a graceful tmux shutdown, waits for the server process to exit, and uses a bounded exact-PID fallback only when needed.\n\n## Review notes\n\n- This changes test infrastructure only; Gas City runtime behavior is unchanged.\n- The sweep runs only for directories whose owning PID is no longer alive and never addresses the default tmux server.\n- Test-resource census values and their documentation are updated together for the new subprocess call sites.\n\n## Test plan\n\n- [x] Run the real-tmux regression test and verify the server process exits before directory removal.\n- [x] Run the documented 40-job local CI-equivalent suite; verify every diff-owned test passes and audit unrelated host failures in the gate checklist.\n- [x] Run policy, affected lint/format, full build, and `go vet ./...` checks.\n- [x] Release gate: [`release-gates/ga-47b6fl-tmux-orphan-sweep-gate.md`](release-gates/ga-47b6fl-tmux-orphan-sweep-gate.md)",
+    "created_at": "2026-09-12T02:37:32Z",
+    "updated_at": "2026-09-13T01:35:49Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/merge-queued",
+      "status/review-failed"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6278,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6278",
+    "title": "Prove SSH production constructor conformance",
+    "body": "## What this changes\n\nThe production SSH runtime constructor now has an executable full-provider contract instead of a time-bounded waiver. The proof covers lifecycle, discovery, metadata, observation, nudge, and interrupt behavior through the same `ssh.NewSeamBacked` constructor used by the runtime registry.\n\nThe test replaces only the far-end SSH client with a test-owned executable. It still exercises the production shell runner while avoiding network access, passwordless localhost, user SSH configuration, and real `known_hosts` writes. Production runtime behavior is unchanged.\n\n## Review notes\n\n- The new test is integration-tagged and uses a per-subtest fixture so repeated factory calls share one isolated tmux server without contaminating other SSH tests.\n- `TMUX` is explicitly cleared and restored because it takes precedence over `TMUX_TMPDIR` during socket resolution.\n- The provider ledger and its generated `TESTING.md` row move only `runtime.builtin.ssh` from waived to proved; the focused fake-runner tests remain intact.\n\n## Test plan\n\n- [x] Run `TestSSHConformance` through the production constructor and verify all contract cases execute with no skips.\n- [x] Run the complete integration-tagged SSH package to verify the fixture does not contaminate the existing real-localhost tests.\n- [x] Run the provider-ledger package and verify its generated documentation remains synchronized.\n- [x] Run the documented 40-job local full suite, build, vet, formatting, and policy lanes.\n- [x] Release gate: [`release-gates/ssh-production-constructor-conformance-gate.md`](release-gates/ssh-production-constructor-conformance-gate.md)",
+    "created_at": "2026-09-11T16:55:20Z",
+    "updated_at": "2026-09-12T19:14:19Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6266,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6266",
+    "title": "fix(testpolicy): rebase pin test-owned HOME for cmd/gc real-bd tests onto current main (ga-ujjbiw)",
+    "body": "## Summary\n\nDeploy-gate remediation for **ga-ujjbiw** (needs-deploy: pin test-owned HOME for cmd/gc real-bd tests \u2014 SHA 84e17578d7, from:ga-us7c35, from:ga-5gmul1).\n\nReviewer-approved commit `70624a8da8f7bc9f890d7395c534cc0c974b3c92` failed deploy-gate **criterion 6** (branch diverges cleanly from main): it conflicted with current `origin/main` in the resource-census ledger triad (`internal/testpolicy/resourcecensus/census.go`, `test/test-resources.toml`, `TESTING.md`) because both sides had independently bumped the same baseline rows.\n\nThis PR is the isolated deploy branch (`deploy/ga-ujjbiw-gate`, cut per the bead's own instructions \u2014 **not** `builder/ga-hk84x0`, which is provenance-only) carrying:\n\n- The 4 originally-reviewed feature commits, unchanged (confirmed byte-identical to the ga-5gmul1-reviewed content via diff against the 4 diff-owned test files \u2014 `path_helpers_test.go`, `build_desired_state_test.go`, `pool_test.go`, `main_test.go`).\n- A rebase-conflict-resolution commit that re-applies this branch's own baseline delta on top of origin/main's current ledger values (rather than reapplying the stale diff), then regenerates `TESTING.md` via `TestRepositoryLedgerMatchesCensusAndDocumentation -update` for authoritative accuracy.\n\n## Verification\n\n- `go build ./...` clean\n- `go vet ./...` clean\n- `TestRepositoryLedgerMatchesCensusAndDocumentation` PASS\n- All 4 diff-owned `cmd/gc` tests PASS\n- Local fast test suite (`scripts/test-local-parallel fast`, run automatically by the pre-push hook) \u2014 all jobs PASS\n- `origin/main` confirmed an ancestor of this branch's tip (clean divergence, criterion 6 resolved)\n\n## Gate status\n\nCriteria 1, 2, 4, 5, 7: PASS (unchanged from prior reviewer PASS on ga-5gmul1). Criterion 6: was FAIL, now resolved by this rebase. Criterion 3 (tests): verified green per above.\n\nPer bead instructions, routing this as a merge-request to mayor/mpr \u2014 merge authority is operator/mayor/mpr only; no rig agent runs `gh pr merge`.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-09-11T09:49:29Z",
+    "updated_at": "2026-09-16T00:50:30Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6213,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6213",
+    "title": "fix(dolt): make leaked test store reapable via beads_test prefix (ga-szv0ge)",
+    "body": "## Summary\n- `TestInitBeadsForDirWithExecutorTreatsAlreadyInitializedRecoveryAsSuccess` exercises the real `finalizeCanonicalBdScopeInit` store-open path (independent of its fake `execute` callback), which leaks a real dolt store/process. Confirmed live: several already-orphaned `dolt sql-server` processes rooted at this test's temp dirs were found running with their `--config` path already deleted out from under them.\n- `finalizeCanonicalBdScopeInit` never exposes the opened store handle back to the caller, so a `t.Cleanup`-based fix isn't available without changing that function's signature (out of scope per this bead's ruling \u2014 production-path behavior of `finalizeCanonicalBdScopeInit` is untouched).\n- Fix is naming-based instead: override the test's `doltDatabase` to `beads_test_gsp` (was `gsp`, which collides with real gascity-packs rig naming \u2014 `defaultScopeDoltDatabase` names rig-scoped databases after their prefix), and add `\"beads_test\"` to `defaultStaleDatabasePrefixes` so any leaked database is identifiable and reapable by the drop planner even though the process/config-path reaper (`dolt_cleanup_reaper.go`) doesn't independently rely on the database name.\n- Also fixes `TestDefaultStaleDatabasePrefixes_MirrorsBeadsCleanDatabases`, a golden-list test pinning the exact contents of `defaultStaleDatabasePrefixes` that wasn't covered by the `-run` filter used during initial verification and would otherwise have gone red on merge. Added a direct regression test (`TestPlanDoltDrops_RecognizesGCSideTestScopeOverrideMarker`) proving the exact override name `beads_test_gsp` is classified as a drop candidate and does not collide with the `beads_team`/`beads_tenant`/`beads_tmp_prod` negative fixtures.\n\n## Test plan\n- [x] `go build ./cmd/gc/...`\n- [x] `go vet ./cmd/gc/...` and full-repo `go vet ./...` (via pre-commit hook)\n- [x] `lint-changed` via `.githooks/pre-commit` \u2014 0 issues\n- [x] Targeted: `TestInitBeadsForDirWithExecutorTreatsAlreadyInitializedRecoveryAsSuccess` PASS\n- [x] Targeted: all `TestPlanDoltDrops_*`, `TestDefaultStaleDatabasePrefixes_MirrorsBeadsCleanDatabases`, `TestValidDoltDatabaseIdentifierBoundaries` PASS (no regressions to existing false-positive-safety assertions)\n- [x] Full fast suite via pre-push hook (`unit-core` + all 6 `unit-cmd-gc-*-of-6` shards) \u2014 all passed",
+    "created_at": "2026-09-09T17:34:53Z",
+    "updated_at": "2026-09-12T12:16:51Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6198,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6198",
+    "title": "test: pin LC_ALL/LANG=C.UTF-8 in hermetic test env for deterministic git messages",
+    "body": "## Summary\n\n- Pins `LANG=C.UTF-8` and `LC_ALL=C.UTF-8` in all four hermetic test-environment locations so `git` always emits English messages, fixing assertion failures on non-English build hosts (e.g. a German-locale Debian host with translated git message catalogs installed).\n- Keeps the four env locations in lockstep, as required by the repo's _Hermetic Git test config is mirrored_ rule (Makefile `TEST_ENV` + the three nested `env -i` wrappers in `scripts/test-{go-test,integration}-shard` and `scripts/test-local-parallel`).\n\n### Why it's needed\nThe `env -i` test wrappers previously forwarded the host `LANG` (only defaulting to `C.UTF-8` when unset) and never set `LC_ALL`. On a non-English host, git emitted localized error text, breaking tests that assert on English substrings:\n\n- `internal/doctor` \u2014 `TestBeadsRoleCheck_Fix_PreservesReadFailureContext` (`\"bad config line 1\"` vs `\"Ung\u00fcltige Konfigurationszeile 1\"`)\n- `internal/packman` \u2014 `TestDefaultRunGitBlocksDisallowedTransport` (`\"not allowed\"` vs `\"nicht erlaubt\"`)\n\n`debian/rules` already sets `LANG=C LC_ALL=C` for `make test`, but `TEST_ENV`'s `env -i` allowlist dropped `LC_ALL` and re-forwarded the host `LANG`, and the parallel runner / shard wrappers forwarded the host `LANG` directly \u2014 so the intended C locale never reached the git subprocess. `C.UTF-8` forces English git messages while preserving UTF-8 byte semantics.\n\n## Testing\n\n- [x] `bash -n` syntax-checked `scripts/test-go-test-shard`, `scripts/test-integration-shard`, `scripts/test-local-parallel`; reviewed the Makefile `TEST_ENV` block.\n- [ ] `make check`\n- [ ] `make check-docs` if docs, navigation, or links changed _(no docs changed)_\n- [ ] `make test-integration` if runtime, controller, or workflow behavior changed _(test-runner env only; no runtime change)_\n\n## Checklist\n\n- [x] Linked an issue, or explained why one is not needed \u2014 no tracker issue existed for this; the failing assertions were reproduced directly on a non-English build host.\n- [x] Added or updated tests for behavior changes \u2014 this **is** the fix for two existing tests that fail under a non-C locale; no new test added (pinning the hermetic env is the corrective measure).\n- [x] Updated docs for user-facing changes \u2014 no user-facing change.\n- [x] Called out breaking changes or migration notes \u2014 none.",
+    "created_at": "2026-09-09T11:29:37Z",
+    "updated_at": "2026-09-12T13:19:17Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6108,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6108",
+    "title": "test(cmd/gc): raise canned leak-guard PIDs above pid_max",
+    "body": "## Summary\n\n`TestRequireNoLeakedDoltAfter_MultipleLeaksReportedSorted` feeds canned fake PIDs (`50001`/`50002`) through `requireNoLeakedDoltAfterWith`, which asserts exactly **one** aggregated `Errorf`. The cleanup then reaps the leaked PIDs via `reapDoltLeakPIDsWithKiller`, whose waiter polls `processStillAlive` (`kill -0`) until each PID exits or a 5 s deadline elapses (added in #5402).\n\nOn a shared host those low canned PIDs can collide with real processes owned by another user/namespace: `ps` cannot see them, but `kill -0` returns success, so `processStillAlive` reports them alive forever. The reaper times out twice and emits two extra `test leaked dolt cleanup failed: pid N still alive after SIGKILL \u2026` errors, taking the test from the expected 1 `Errorf` to 3 and failing the single-aggregation assertion.\n\n## Fix\n\nMove the canned PIDs to `5000001`/`5000002`, above Linux's default `/proc/sys/kernel/pid_max` (`4194304`), so they can never collide with a live host process. The test's sorting/aggregation guarantees are unchanged; only the fixture PIDs and the matching `strings.Index` literals move.\n\n## Why not the other low canned PIDs in the file?\n\nSibling tests using `1000`/`1001`/`9999`/etc. either route through `requireNoLeakedDoltAfterWithFilterAndKiller` with tolerant assertions (`strings.Contains`, not an exact error count) or exercise the enumerator/filter/snapshot logic without the production-waiter reap, so they do not flake on phantom aliveness. This change is surgical to the one test whose `len(inner.errors) != 1` assertion is broken by the collision.\n\n## Testing\n\n- Targeted test reproduced red before the change (3 errors instead of 1 on a host where PIDs 50001/50002 are live in another namespace).\n- After: `go test -run TestRequireNoLeakedDoltAfter_MultipleLeaksReportedSorted ./cmd/gc/` passes **5 consecutive runs**.\n- Full leak-helper + reaper suite green: `go test -run 'TestRequireNoLeakedDoltAfter|TestReapDoltLeakPIDs' ./cmd/gc/`.\n- `go vet ./cmd/gc/` clean.",
+    "created_at": "2026-09-07T14:10:37Z",
+    "updated_at": "2026-09-12T21:25:56Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6065,
+    "html_url": "https://github.com/gastownhall/gascity/issues/6065",
+    "title": "profile gate's copy-on-write property is unasserted",
+    "body": "`suppressPresetModelEffortForProfile` in `internal/config/resolve.go` rebuilds\n`OptionDefaults` rather than deleting in place, precisely so a gated resolve\ncannot reach back into the built-in registry map. Commit `73afee22e`\n(\"fix(config): rebuild option_defaults in the profile gate instead of deleting\nin place\") and the function's own comment (`internal/config/resolve.go:465-470`)\ncall out the hazard:\n\n> Deleting in place would reach back into the recorded chain layer (visible in\n> provider provenance) and, worse, into the built-in spec itself the day anyone\n> memoizes `BuiltinProviders()`.\n\nNo test asserts it. The invariant regresses silently the day someone memoizes\n`BuiltinProviders()`.\n\n**Fix shape:** after a gated `ResolveProviderChain`, assert\n`BuiltinProviders()[\"codex\"].OptionDefaults` still contains `model` and\n`effort`.\n\nNon-blocking. Follow-up from #5446; deliberately kept separate from #6064,\nwhich is scoped to the providers-API divergence.",
+    "created_at": "2026-09-05T21:19:15Z",
+    "updated_at": "2026-09-13T02:24:28Z",
+    "labels": [
+      "priority/p3",
+      "kind/chore"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 6061,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6061",
+    "title": "fix(residency): re-key the infra_class_migrate baseline row the s4/s8 squashes left disagreeing",
+    "body": "## What\n\n`main` is red on the residency boundary guard. This re-keys one baseline\nrow. No Go code changes.\n\n## The failure\n\nOn `origin/main` at `fc7a23a292` (verified on an untouched export),\n`./scripts/check-residency-boundary.sh` exits 1 with a matched grow/shrink\npair on a single file:\n\n```\nRESIDENCY-BOUNDARY: cmd/gc/infra_class_migrate.go infraBindingIDPrefix d:ReservedClassPrefix: 1 sites, baseline 0 \u2014 a NEW store-enumeration site. Consume internal/storeref (Plan/ResolveOwner/Union) or annotate the line with `// residency:allow <reason>`.\nRESIDENCY-BOUNDARY: cmd/gc/infra_class_migrate.go openInfraDestination d:ReservedClassPrefix: 0 sites, baseline 1 \u2014 the baseline must SHRINK in the same commit that retires a site. Follow the regeneration procedure in the header of scripts/residency-boundary-baseline.txt; do NOT redirect --emit-baseline over that file, it emits this half' rows only.\n```\n\nAfter this PR:\n\n```\n$ ./scripts/check-residency-boundary.sh; echo $?\n0\n$ ./scripts/check-residency-boundary.sh --self-test; echo $?\n0\n```\n\n## Why it broke: two squashes, one minute apart\n\nNeither PR added a blind reader. The census key the guard pins is\n`(path, function, pattern)`, so moving a call between functions **in the\nsame file** re-keys the row even when the call itself is untouched \u2014 and\nthe guard reports that as a simultaneous grow and shrink.\n\n- **#5643 (s4, squash `7746bbe5ab`, merged 15:27Z)** stopped allowlisting\n  `cmd/gc/infra_class_migrate.go` and pinned its single\n  `config.ReservedClassPrefix` call in the baseline, attributed to\n  `openInfraDestination` \u2014 the function that held it on that PR's base.\n- **#5597 (s8, squash `fc7a23a292`, merged 15:28Z, one minute later)** had\n  already extracted that call into a new helper, `infraBindingIDPrefix`,\n  on **its** base.\n\nEach PR was green against the base it was tested on. The merged result is\ns4's baseline row describing a function layout s8 had replaced. Nothing in\neither change is wrong; the two squashes simply disagree about where the\ncall lives.\n\n## The fix\n\nThe file still makes exactly one hit, in exactly one function\n(`infraBindingIDPrefix`, `cmd/gc/infra_class_migrate.go:594`), so the fix\nis the baseline row, not the code:\n\n```diff\n-cmd/gc/infra_class_migrate.go\topenInfraDestination\td:ReservedClassPrefix\t1\n+cmd/gc/infra_class_migrate.go\tinfraBindingIDPrefix\td:ReservedClassPrefix\t1\n```\n\nThat is the **entire** diff: 114 rows before, 114 after, no other row\nmoves and none drops, so the shrink-only ratchet is not loosened. The\nheader prose that pins these rows \u2014 \"Six rows, six hits\" across\n`residency_topology.go`, `infra_class_migrate.go` and `cmd_storage.go` \u2014\nstill counts correctly (4 + 1 + 1), and no header block names the\nfunction by spelling, so no prose changes with the row.\n\nRegenerated by the documented three-emitter splice in the baseline's own\nheader, not by redirecting `--emit-baseline` over the file (which would\nhave dropped the two AST halves and the hand-written header): the shell\nhalf with its four `# PARTIAL:` warning lines dropped, plus both\n`RESIDENCY_BASELINE_EMIT=1 go test ./scripts` emitters filtered with\n`awk -F'\\t' 'NF==4'` to strip the harness chatter, concatenated and put\nthrough one `LC_ALL=C sort`.\n\n## Gates\n\n| command | exit |\n| --- | --- |\n| `./scripts/check-residency-boundary.sh` | 0 |\n| `./scripts/check-residency-boundary.sh --self-test` | 0 |\n| `go test ./scripts/... -count=1` (AST ratchet) | 0 \u2014 `ok` |\n| `go build ./...` | 0 |\n| `go vet ./...` | 0 |\n| `make check-docs` | 0 |\n| `make test-fast-parallel` | 0 \u2014 `All fast jobs passed` |\n\nRefs ga-j4p3y\n",
+    "created_at": "2026-09-05T18:53:52Z",
+    "updated_at": "2026-09-05T21:43:26Z",
+    "labels": [
+      "priority/p1",
+      "kind/chore",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6047,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6047",
+    "title": "fix(metrics): census Dolt handoff commands",
+    "body": "The command census changes and original author attribution are included in PR #6042, pushed at ef166ea3f0994114aa048538a68e2618c33d7ac1. This separate child PR is closed as absorbed. Command/resource census and local fast/process gates passed; the parent tracks remaining CI fixture repairs.",
+    "created_at": "2026-09-05T09:15:11Z",
+    "updated_at": "2026-09-09T01:54:10Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6004,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6004",
+    "title": "test(beads): gate proxied sidecars by backend",
+    "body": "Follow-up for ga-p9iuv.20.4.2. Adds the missing fail-closed contract assertion: a valid-looking proxied sidecar is ignored when metadata backend is non-Dolt, so stale dolt_mode cannot route a non-Dolt scope to an external endpoint.\n\nFocused verification: `go test ./internal/beads/contract -run TestResolveDoltConnectionTargetIgnoresProxiedSidecarForNonDoltBackend -count=1`.\n\nThe full local fast hook was attempted but unrelated cmd/gc shards failed in the pre-existing broad branch; the focused package passed.\n\nRefs ga-p9iuv.20.4.2",
+    "created_at": "2026-09-04T11:43:44Z",
+    "updated_at": "2026-09-19T07:47:09Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6002,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6002",
+    "title": "test(beads-pack): guard ambient Dolt socket clearing",
+    "body": "Protects the proxy-init and DoltLite helpers against an inherited BEADS_DOLT_SERVER_SOCKET overriding their explicit backend selection. The test requires an unset statement before a recognized bd invocation and rejects reassignment.\n\nRecovered the stronger existing regression guard onto the active #6011 dependency. Validation: focused race test, an actual shell invocation with a fake BD_BIN proving the variable is unset in both helpers, repository pre-commit lint/vet/codegen, and all pre-push fast shards. Sol and independent Astra approved fc025ad465738dba40ab3036671defed9e1e3fab.\n",
+    "created_at": "2026-09-04T10:34:44Z",
+    "updated_at": "2026-09-19T07:50:10Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore",
+      "status/merge-ready"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 6000,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6000",
+    "title": "feat(beads): default managed scopes to proxied Dolt",
+    "body": "Flips the default Dolt mode for **freshly created managed scopes** to Beads'\n`proxied-server` path, adds an external Unix-socket front door for proxied\nDolt, and moves the `bd` pin to `v1.3.0-rc.1`. The original scope of this\nbranch \u2014 deterministic external Unix-socket front-door outage/recovery\ncoverage plus a direct/proxy parity matrix that asserts no managed Dolt\nruntime is created \u2014 is retained.\n\nRetitled from `test(beads): harden external proxy topology outage/reconnect`:\nthe branch carries production-path changes that a `test(...)` scope hides from\nreviewers and from changelog/release-note tooling.\n\n## Production-path changes\n\n### 1. Proxied-server is the default for new managed scopes\n\n`desiredCityDoltConfigState` / `desiredRigDoltConfigState` now select\n`dolt_mode=proxied-server` for a fresh managed scope. An explicit external\nhost/port endpoint still selects direct `server` mode.\n\n**Existing scopes are not migrated.** `resolveDesired*EndpointState` resolves\npersisted authoritative scope state before these constructors run, so an\nalready-initialized workspace keeps the mode it recorded\n(`TestResolveDesiredCityEndpointStatePreservesAuthoritativeDoltMode`).\nConverting an existing scope is an explicit, journalled operator step \u2014 see\n`engdocs/contributors/beads-proxy-migration.md`.\n\n### 2. The `bd` pin moves to the `v1.3.0-rc.1` prerelease\n\n`deps.env:BD_VERSION`, the `go.mod` beads library pin, and\n`contrib/k8s/Dockerfile.agent:BD_VERSION` all move `v1.1.0` \u2192 `v1.3.0-rc.1`.\n\nGitHub marks `v1.3.0-rc.1` a **prerelease**. Pointing the installable default\nat a prerelease is a deliberate exception to the published-release bar this pin\notherwise holds, taken because the RC is the first main-cut tag carrying the\nper-subcommand flags this branch depends on. Move `BD_VERSION` to the first\nnon-prerelease release cut from beads `main` once one exists. The caveat is\nrecorded at `deps.env:29-33`.\n\n### 3. Migration ordering requirement (v53 \u2192 v66 schema)\n\n`BD_VERSION` and the `go.mod` library pin **must move together**. gc both links\nbeads as a library and shells out to `bd`, so a lagging half locks the other\nout: after the v53 \u2192 v66 schema migration an older co-resident `bd` refuses the\nstore under the forward schema-skew guard.\n\nOrdering for a shared, no-remote Dolt sql-server (this repo's shape):\n\n1. Upgrade **every** `bd` client to `v1.3.0-rc.1` first. bd >= 1.3.0\n   deliberately refuses to auto-apply pending migrations here, because\n   migrating would lock out every co-resident client still on the old schema.\n2. Only then run `bd migrate schema` **once**, from a designated migrator.\n3. Do not work around a pending-migration refusal with `bd dolt pull` or an\n   ad-hoc `BD_ALLOW_REMOTE_MIGRATE=1`.\n\nThis is the axis a `test(...)` title would not have prompted anyone to plan.\n\n### 4. Unix-socket front door for external proxied Dolt\n\nDolt connection targets are socket-aware end to end: an external socket\nendpoint is carried through config resolution and projected into child `bd`\nprocesses, and the managed-Dolt socket handle is pooled.\n\n## Test coverage\n\nDeterministic external Unix-socket front-door outage/recovery coverage,\nassertions that an external socket creates no managed Dolt runtime, and a\ndirect-vs-proxied front-door parity matrix across `proxied-managed`,\n`proxied-external-host`, and `proxied-external-socket`.\n\n<!-- mpr:issue-refs v1 -->\n---\n\ud83d\udd17 **Maintainer cross-reference** \u2014 added by the gascity maintainers, no action needed from you:\n- Related to #5348 \u2014 moves the bd CLI pin and the linked beads library pin off v1.1.0 to v1.3.0-rc.1 together and documents the required v53\u2192v66 migration ordering, which removes the specific pinned-version contradiction described in that issue; it does not add a pre-bootstrap schema-compatibility check and does not stop managed scopes from picking up an ambient bd from PATH, so the underlying skew path is still open\n\n<sub>Linked for triage visibility \u2014 not auto-closing. If this looks off, just delete this block.</sub>\n<!-- /mpr:issue-refs -->",
+    "created_at": "2026-09-04T10:09:06Z",
+    "updated_at": "2026-09-19T07:47:06Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5989,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5989",
+    "title": "chore(github): stop automatic csells review requests",
+    "body": "## Summary\n\n- Remove the title-triggered workflow that automatically requested `csells` as a reviewer for `docs:` pull requests.\n- Keep GitHub's normal direct-mention and explicit-reviewer-request behavior unchanged.\n\nThe docs CODEOWNERS entries were already removed by #5683. The remaining workflow was the last repository-owned automatic per-user review request.\n\n## Verification\n\n- `actionlint .github/workflows/*.yml .github/workflows/*.yaml`\n- `git diff --check`\n- Repository auto-review policy scan: no `@csells` CODEOWNERS entry or `requestReviewers` workflow remains.\n",
+    "created_at": "2026-09-04T02:06:57Z",
+    "updated_at": "2026-09-04T03:24:08Z",
+    "labels": [
+      "priority/p3",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5966,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5966",
+    "title": "test(gc): characterise the desired-state freeze on a store-unavailable scope",
+    "body": "Part of the split of the closed #3324 into independently reviewable pieces. Wave two. Based on `main`; stands alone.\n\n## Why this exists\n\nA scope whose bead store is unreachable reports zero ready work. Nothing in the reconciler distinguishes that from a genuinely empty queue, so the failure mode is a silent flatten to zero demand: the pool drains on a store outage, and the work is rediscovered a tick later, after the seats are gone.\n\nThe machinery that prevents this **already exists on `main`** \u2014 `defaultScaleCheckCounts` marks a template partial when its store read fails, and `retainScaleCheckPartialPoolDesired` freezes a partial template's desired count at the number of currently-running sessions. What did not exist was a test saying so, which makes it exactly the kind of behaviour a refactor removes without anything going red.\n\nThis is a characterisation PR: no production change beyond the typed sentinel the tests are expressed in.\n\n## What it does\n\nTwo tests in a new `cmd/gc/build_desired_state_unavailable_test.go`:\n\n**Scope quarantine.** A store that fails `Ready` with the typed unavailable error marks *its own* template partial and surfaces a diagnostic, while a healthy sibling scope still counts its work normally. The invariant is that one scope's outage does not stall the fleet \u2014 and equally, that the unavailable scope does not silently vanish from the error list.\n\n**The freeze, with its negative.** Retention freezes the unavailable scope at its running-session count. The same zero-count input *without* the partial marking still drains to nothing. The negative half is the point: it shows the partial signal is what arms the freeze, so the test cannot pass by accident on an implementation that retains everything unconditionally.\n\n## Verified to bite\n\nBoth were confirmed red against deliberate breakage before being proposed:\n\n- making `markScaleCheckPartialTemplate` a no-op fails the quarantine test;\n- short-circuiting the retention guard fails the freeze test.\n\nBoth restored green.\n\n## Carried helper\n\n`internal/beads.ErrStoreUnavailable` is the typed sentinel the tests express \"unavailable\" in, and it does not exist on `main` yet. The identical 8-line declaration is also carried by **#5949** (bd admission semaphore) and by the `gc hook` exit-2 PR \u2014 same file, same text, no semantic divergence. Whichever lands first, the others' copies drop out. Flagging it so it does not read as a real conflict. Nothing else here depends on those PRs.\n\n## What it does NOT do\n\n- No production behaviour change. `build_desired_state.go` is untouched.\n- Does not make anything *return* `ErrStoreUnavailable` in production \u2014 the store layer that does is a separate piece. These tests inject a fake store that returns it, which is what lets them pin the reconciler's reaction independently of who produces the signal.\n- Does not cover the API/dashboard projection of a degraded scope.\n\n## Verification\n\n- `go build ./...`, `go vet ./cmd/gc/ ./internal/beads/`, `gofmt -l` \u2014 clean\n- `GC_FAST_UNIT=0 go test ./cmd/gc/ -run 'TestDefaultScaleCheckCountsStoreUnavailableQuarantinesOneScope|TestRetainScaleCheckPartialPoolDesiredFreezesUnavailableScope' -v` \u2014 2 tests, both pass\n- pre-push gauntlet (`test-local-parallel fast`, all 6 `cmd/gc` shards + core) \u2014 all jobs passed\n",
+    "created_at": "2026-09-03T10:44:31Z",
+    "updated_at": "2026-09-03T11:48:43Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5961,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5961",
+    "title": "test(resilience): injectable jitter seam for deterministic breaker backoff",
+    "body": "Part of the twelve-way split of the closed #3324.\n\n## Why this exists\n\n`Breaker` already carries an injectable `jitter` field, but `Registry` \u2014 the\nonly public way to obtain a breaker \u2014 has no way to reach it. Every consumer\nof a registry-owned breaker therefore gets a uniform draw from `(0, cap]` for\nits open-state deadline, which makes any test that asserts on a backoff\ndeadline time-dependent. `Registry.SetJitterForTest` pins the jitter function\non the registry and on every breaker it has already handed out, exactly the\nway `SetOnStateChange` already reaches both.\n\n## What it does not do\n\nNothing about the default. An unpinned registry keeps full jitter; a test\nguards that, because silently losing full jitter would remove the\nthundering-herd protection the backoff exists for. No production caller is\nadded \u2014 the consumers that motivate this seam (the bd chokepoint breaker and\nits timeout classification) are separate PRs in the same split.\n\n## Stacking\n\nNone. This applies to current `origin/main` on its own.\n\n## Extraction fidelity\n\n`internal/resilience/registry.go` is taken verbatim from the fork:\n`git diff fork/main -- internal/resilience/registry.go` is empty.\n\n`internal/resilience/registry_jitter_test.go` is new and written for this PR \u2014\nthe fork has no test for this seam because its only callers are `cmd/gc` tests\nthat live in later slices. Flagging that explicitly so it is not mistaken for\nextracted code.\n\n## Verification\n\n```\ngofmt -l internal/resilience/                      clean\ngo vet ./internal/resilience/                      clean\ngolangci-lint run ./internal/resilience/...        0 issues\ngo test ./internal/resilience/ -count=1 -v         31 PASS, 0 FAIL, 0 SKIP (0s)\ngo test ./internal/resilience/ -race -count=1      ok (1.0s)\n```\n\nBoth new guards were checked by breaking what they guard:\n\n- deleting `b.jitter = r.jitter` from `Registry.Breaker` \u2192\n  `TestRegistrySetJitterForTestPinsNewBreakers` fails\n  (`open backoff = 254.137761ms, want exactly 1s`)\n- deleting the existing-breaker loop from `SetJitterForTest` \u2192\n  `TestRegistrySetJitterForTestPinsExistingBreakers` fails\n  (`open backoff = 1.794389616s, want exactly 2s`)\n",
+    "created_at": "2026-09-03T10:22:05Z",
+    "updated_at": "2026-09-03T11:49:03Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5944,
+    "html_url": "https://github.com/gastownhall/gascity/issues/5944",
+    "title": "internal/api/dashboardspa/dist has non-deterministic content hashes across CI/build runs, causing repeated rename/rename conflicts",
+    "body": "## Summary\n\n`internal/api/dashboardspa/dist` (the committed, CI-enforced dashboard bundle regenerated by `make dashboard-build`) appears to get different Vite content-hashed filenames across separate builds of the same source, even with zero dashboard-source changes in between. This has caused the same rename/rename conflict to recur repeatedly on unrelated PRs whose branch happens to rebuild `dist/` at a different point than `main`'s own copy.\n\n## What we observed\n\nWhile preparing #5854 (a small, generated-artifacts-only PR \u2014 the API-schema-regen half of the #4878 split), the branch went `CONFLICTING` a second time after already having been rebuilt and pushed clean once. Investigating:\n\n- Every file in `dist/` showed as a `rename/rename` conflict against `main`.\n- The *other* generated artifacts this PR touches (`docs/reference/schema/openapi.json`/`.txt`, both generated API clients, `internal/api/huma_types_sessions.go`) were byte-identical between this branch's merge-base and current `main` \u2014 no drift there.\n- Only `dist/`'s content-hashed filenames had moved on `main` in the interim, despite no dashboard source change landing between those two points.\n\nThis is the second time this exact shape has shown up (see also #4878's original diff-size investigation and the #5854/#4878 split it produced) \u2014 earlier investigation in that thread confirmed `make dashboard-build` is deterministic *within* one local environment (4 repeated builds, zero drift, same machine) but *not* across environments/runs, consistent with Vite/Rollup's content-hashing being sensitive to something that varies between build invocations (dependency resolution order, environment, or similar) rather than the source input itself.\n\n## Why this matters\n\nAny PR that legitimately needs to touch `dist/` (a real dashboard source change) is effectively racing `main`'s own build non-determinism: rebase, rebuild, push \u2014 and by the time it's reviewed, `main` may have rebuilt `dist/` again on its own (via CI or another merge) with different hashes for functionally identical output, producing a spurious full-tree conflict on next rebase. This isn't something a contributor can fix from their own branch; it needs someone with visibility into the actual CI build environment to look at whether the Vite/Rollup build can be made to produce stable content hashes for identical source (e.g. pinned dependency resolution, a fixed build seed/mode, or a lockstep regen step that only CI runs).\n\n## Not filing as a \"fix this\" \u2014 filing as a build-pipeline observation\n\nWe don't have visibility into what specifically varies between builds (this repo's Node/Vite toolchain, or how CI triggers `dashboard-build`), so this is reported as an observed pattern with the evidence above, not a diagnosed root cause. Happy to help verify a hypothesis if a maintainer has a theory about what's actually varying.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-09-03T05:51:45Z",
+    "updated_at": "2026-09-03T07:46:29Z",
+    "labels": [
+      "priority/p2",
+      "kind/chore"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 5942,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5942",
+    "title": "fix(test): leak-guard reap probes an injected liveness, not the real process table",
+    "body": "## Bug\n\n`TestRequireNoLeakedDoltAfter_MultipleLeaksReportedSorted` fabricated PIDs\n50001/50002 and drove the leak guard with the no-op killer\n`ignoreProcessSignal` \u2014 but the guard's reap hardcoded the **real** liveness\nprober `processStillAlive` (`syscall.Kill(pid, 0)`). The killer and the prober\nare two halves of one reaper; splitting them meant the guard signalled nothing\nwhile still polling the real process table for pids it had invented.\n\nWhen a fabricated pid names a live process on the host, the reap therefore\nspins its full 5s deadline and appends a `cleanup failed` `Errorf` per pid,\nbreaking the \"exactly one aggregated Errorf\" assertion:\n\n```\n--- FAIL: TestRequireNoLeakedDoltAfter_MultipleLeaksReportedSorted (5.09s)\n    dolt_leak_helper_test.go:211: multiple leaks must be aggregated into one Errorf, got 3\n      ... pid 50001 still alive after SIGKILL and 5s wait (leak-guard reap timed out)\n      ... pid 50002 still alive after SIGKILL and 5s wait (leak-guard reap timed out)\n```\n\nThis is not flaky \u2014 it stays red for as long as the pid range is occupied. On\nthe reporting host `/proc/50001` and `/proc/50002` were both live `dolt`\nchildren of one sql-server, so `make test-fast-parallel` failed deterministically\nand blocked every push. Previously seen on CI as run 32587221748 (cmd/gc shard\n12 of 12).\n\n## Fix\n\nInject the whole reaper instead of just its killer, so the two halves cannot\nbe mismatched by construction:\n\n- `requireNoLeakedDoltAfterWithFilterAndKiller(..., killFn)` becomes\n  `requireNoLeakedDoltAfterWithFilterAndReaper(..., reap func([]int) []error)`.\n  The guard's only use of `killFn` was to hand it to the reaper, so there is\n  no longer a seam that accepts one half alone.\n- Production (`requireNoLeakedDoltAfterForPaths`) passes `reapDoltLeakPIDs`,\n  which pairs `killProcess` with `processStillAlive` at the production\n  poll/deadline bounds \u2014 identical behaviour to before.\n- Scripted-pid guards pass `scriptedDoltLeakReaper(fakeKiller)`, which pairs\n  the fake killer with the new `processNeverAlive`. No test path consults the\n  real process table for a fabricated pid any more.\n- `reapDoltLeakPIDsWithKiller` and `reapDoltLeakProcessesWithKiller` are gone:\n  both were \"injectable killer + hardcoded real prober\", the exact shape of\n  this bug, and every remaining caller passed the real `killProcess`.\n\nDefense in depth: fabricated pids now come from `unallocatablePIDs(t, n)`,\nwhich reads `/proc/sys/kernel/pid_max` and returns `pid_max+1 \u2026`. The kernel\nnever allocates above that ceiling, so collision is impossible by\nconstruction. With the probe injected a collision no longer changes any\noutcome; this guards a future call site that re-pairs a fake killer with the\nreal prober.\n\nControl kept: `TestRequireNoLeakedDoltAfterReportsStillAlivePIDAsCleanupFailure`\ndrives the guard with a probe that reports the pid alive after SIGKILL and\npins that the aggregation still emits one leak `Errorf` **plus** a separate\ncleanup-failure `Errorf` naming the pid \u2014 so swapping in `processNeverAlive`\ncannot silence a genuine reap failure.\n\n## RED \u2192 GREEN\n\nBefore, on a host where 50001/50002 are live:\n\n```\n--- FAIL: TestRequireNoLeakedDoltAfter_MultipleLeaksReportedSorted (5.09s)\n    dolt_leak_helper_test.go:211: multiple leaks must be aggregated into one Errorf, got 3\n```\n\nAfter: `--- PASS ... (0.25s)` \u2014 a 5.09s stall becomes 0.25s.\n\n`go test ./cmd/gc -run 'DoltLeak|LeakedDolt|RequireNoLeaked' -count=1 -v` \u2192\n**19 `--- PASS`, 0 FAIL, 0 SKIP.**\n\nBoth new probes are load-bearing, verified by mutation:\n\n| Mutation | Result |\n| --- | --- |\n| `processNeverAlive` \u2192 `return true` | `MultipleLeaksReportedSorted` fails with the original text: `multiple leaks must be aggregated into one Errorf, got 3` + `still alive after SIGKILL` |\n| control's `neverDies` \u2192 `return false` | control fails with `expected one aggregated leak Errorf plus one cleanup-failure Errorf, got 1` |\n\nThe two mutations fail differently, so neither test is vacuous.\n\n## Gates\n\n| Gate | Result |\n| --- | --- |\n| `go build ./cmd/gc` | pass |\n| `go vet ./cmd/gc` | pass |\n| `gofmt -l cmd/gc/` | clean |\n| `golangci-lint run ./cmd/gc/...` | 0 issues |\n| `./scripts/check-residency-boundary.sh` | pass (exit 0) |\n| `make test-fast-parallel` | pass (green via the pre-push hook: all 10 jobs, `unit-core` + all 6 `unit-cmd-gc` shards) |\n\nOne earlier `make test-fast-parallel` run failed on\n`internal/productmetrics/TestRecordOnceKeepsStoredEventWhenSpawnWindowExpires`,\na package this branch does not touch (`git diff origin/main...HEAD` is three\n`cmd/gc/*_test.go` files). It passes 5/5 in isolation and passed on the\npre-push rerun; it is a wall-clock `defaultRecordDecisionBudget` flake under\n16-way parallelism. Filed separately as `ga-2rlkv`.\n\nRefs ga-ay6x1\n",
+    "created_at": "2026-09-03T05:23:35Z",
+    "updated_at": "2026-09-07T23:23:38Z",
+    "labels": [
+      "priority/p1",
+      "kind/chore"
+    ],
+    "source_type": "pr"
+  }
+]

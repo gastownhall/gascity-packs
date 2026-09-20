@@ -1,0 +1,408 @@
+[
+  {
+    "number": 6319,
+    "html_url": "https://github.com/gastownhall/gascity/pull/6319",
+    "title": "docs(herdr): pin a herdr version, and say what the controller does not do yet",
+    "body": "## What this changes\n\n`docs/reference/herdr-provider.md` told readers the provider is \"verified against\nherdr 0.7.1+\". The plus sign is the problem: 0.7.1 is the oldest release with a\nrecorded end-to-end validation, not a floor above which the surface is known to\nhold. Nothing on the page said the surface had moved, and it has moved twice.\n\nThe page now makes the pinning argument from what actually happened:\n\n- 0.7.4 and 0.7.5 altered commands the original adapter depended on.\n- 0.8.0 renamed the code herdr returns for a pane with no named agent. That is\n  the code the adapter reads to decide whether to paste a nudge instead of\n  submitting it through the agent. Under the new spelling it stopped recognising\n  that case, so the original failure went back to the caller and the paste never\n  happened. Delivery reported an error rather than going quiet, but nothing in the\n  build or the default suite went red, because the tests that drive a real binary\n  are opt-in. The regression had to be noticed in the field.\n\nSo: pin a version in any shared environment, read herdr's own release list rather\nthan a version named in our docs, and after an upgrade run `make test-herdr-live`\nand put a session through a full work cycle.\n\nThe page no longer names a current herdr release. A reference page cannot keep\nthat true, and an out-of-date \"current version\" reads as authoritative.\n\n## The one known coverage gap\n\n0.8.0 made herdr's agent registry detection-based, so the live journey that drives\nthe session-event stream waives itself when the installed herdr reports 0.8 or\nlater rather than asserting against a registry it no longer matches\n([#5808](https://github.com/gastownhall/gascity/issues/5808)). That waiver reads\nthe version, not the registry: a herdr whose version cannot be read or parsed runs\nthe journey, and on 0.8 its registry assertions then fail. The other real-herdr\njourneys (provider lifecycle, pane binding, activity, and the runtime conformance\nsuite) do run on 0.8; the kind-launch journey needs an installed `claude` binary as\nwell and skips without one. 0.7.1 remains the version the recorded end-to-end\nvalidation ran against.\n\nThat distinction matters to a reader deciding whether to pilot this. \"Not covered\non 0.8\" would tell them to stay on 0.7; one waived journey out of seven tells them\nwhat to watch instead.\n\n## What is not wired yet\n\nA new section, with one entry: the controller does not consume herdr's\nsession-event stream. herdr pushes session events and the provider implements\n`runtime.SessionEventProvider`, but the only consumer today is the provider's own\nactivity reporting. The reconciler discovers session state on its periodic pass,\nso a session that goes away is noticed on the next pass rather than when the event\narrives.\n\nThat costs latency rather than correctness, because each pass reads live state\nrather than trusting an event. The delay is bounded by the reconcile interval only\nwhile the controller keeps up; ticks run one at a time, so a busy controller\nstretches it.\n\n## Claims that came out of earlier drafts\n\nFour statements were removed or corrected because they did not survive checking\nagainst the code. Recording them here so they do not come back:\n\n- That no error appeared when the 0.8.0 fallback broke. `deliverNudge` returns the\n  original error; what was missing was anything making it fail a build.\n- That the warm-reuse claim nudge bypasses session-store routing. It does not. The\n  reconciler unwraps its typed session store (`session_reconciler.go`,\n  `store := sessStore.Store`) and threads that down to the nudge, so both the read\n  and the marker write already reach a relocated sessions backend.\n- That the controller's added latency is the patrol interval. Ticks are serial, so\n  the interval bounds it only while the controller keeps up.\n- That the live journeys are waived on 0.8 and later. One of seven is, and that\n  waiver is keyed to the version string rather than to the registry it is about.\n\nStartup-prompt redelivery across a continuation-epoch bump was also dropped from\nthis page: it is a test-coverage gap rather than a behavior gap, and belongs with\nthe tests. Store-maintenance notifications repeating per interval is real and has\nnothing to do with herdr.\n\n## Test plan\n\nDocs-only, one file, no Go changes.\n\n```\ngo build ./... && go vet ./...\ngo test ./test/docsync/ ./internal/testpolicy/...\nmake check-docs\n```\n\nAll green at this head. Every version-behavior claim on the page is cited to the\nadapter code or to the test that covers it; the live-journey counts were derived\nby listing the callers of the live gate and of the detection-based-registry skip.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_01CPcPXz8AxpyCCoDcK7Bu5W\n\n<!-- mpr:issue-refs v1 -->\n---\n\ud83d\udd17 **Maintainer cross-reference** \u2014 added by the gascity maintainers, no action needed from you:\n- Related to #5273 \u2014 rewrites the \"verified against herdr 0.7.1+\" line that the filed issue called out, so the page now records which herdr releases changed the CLI surface and tells readers to pin a version and re-run the live suite after upgrading; it is docs-only and does not touch the `--no-focus` flag handling the issue reports, nor add the version check or `gc doctor` gate suggested there\n\n<sub>Linked for triage visibility \u2014 not auto-closing. If this looks off, just delete this block.</sub>\n<!-- /mpr:issue-refs -->",
+    "created_at": "2026-09-12T19:45:26Z",
+    "updated_at": "2026-09-13T16:29:16Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5847,
+    "html_url": "https://github.com/gastownhall/gascity/issues/5847",
+    "title": "docs: gc-start-walkthrough and understanding-packs still put `path` under `[[rigs]]` in city.toml, which a schema-2 city now rejects",
+    "body": "## Symptom\n\nFollowing `docs/troubleshooting/gc-start-walkthrough.mdx:243` (which says city.toml \"is now the sole source of truth for rig locations\") or `docs/guides/understanding-packs.md:134-136`, a reader writes\n\n```toml\n[[rigs]]\nname = \"demo\"\npath = \"rigs/demo\"\n```\n\ninto city.toml. On a schema-2 city every `gc` command then fails:\n\n```\npre-1.0 site-binding fields are no longer supported:\n  - \u2026/city.toml:6: unsupported pre-1.0 rig.path for rig \"demo\"; move it to .gc/site.toml (run `gc doctor --fix` if this is the root city.toml; otherwise add the binding manually and remove rig.path from the fragment)\nsee https://docs.gascityhall.com/guides/shareable-packs for migration details\n```\n\n## Root cause\n\nThe two passages predate the site-binding split. `internal/config/site_binding.go:142` (`LegacySiteBindingSurfaceError`, enabled by `compose.go:218-229` whenever the sibling `pack.toml` has `schema >= 2`) rejects `rig.path` outright; the location now lives in `.gc/site.toml`. The path-less `[[rigs]]` form used elsewhere in the docs is still accepted.\n\n## Reproduction\n\nVerified today on `main` (c374d5247): a scratch city with `[pack] name = \"x\"` / `schema = 2` in pack.toml and the block above in city.toml \u2014 `gc config show --city <dir>` prints the error verbatim. The same city without `path` loads (with the usual missing-import warnings).\n\n## Fix candidates\n\n1. Rewrite the two passages to the `.gc/site.toml` binding form and drop the \"sole source of truth\" sentence in the walkthrough. Docs only.\n2. Same, plus delete `FormatConfig` in `test/acceptance/helpers/city.go:451`, which still emits the old shape and has no callers (dead code, so it breaks nothing today).\n\n## Adjacent / out of scope\n\n#1096 (PackV2 docs and implementation disagree) is the general version of this; this is one concrete instance with a verified error string. The quickstart itself is clean \u2014 it contains no TOML.",
+    "created_at": "2026-09-01T12:26:56Z",
+    "updated_at": "2026-09-01T13:21:02Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 5782,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5782",
+    "title": "docs: propose Beads bootstrap compatibility gate",
+    "body": "## Summary\n\n- Add a proposed bootstrap-compatibility companion design to the accepted Beads\u2013Dolt contract redesign.\n- Document the affected developer cohorts across packaged installs, source builds, upgrades, direct Beads use, automation, and local or external Dolt topologies.\n- Propose one narrow invariant: before managed `bd init`, attest the selected initializer and prove its main-schema migration ceiling does not exceed the Beads reader linked into `gc`.\n- Distinguish this gate from the existing cross-version contract-test proposal, `BD_BIN` pinning, release alignment, and Beads' shared-store migration consent work.\n\n## Why\n\nIssue #5348 reproduces a managed bootstrap where external `bd` creates schema v65 while Gas City's linked reader supports only v59. The existing Beads\u2013Dolt design already establishes store identity, configuration authority, and lifecycle ownership; this proposal preserves that work and specifies the missing pre-bootstrap compatibility proof and no-publication regression.\n\nThis is a proposed design only. It does not change runtime behavior, add a configuration source, or impose one Beads version on independent projects.\n\nRefs #5348.\n\n## Testing\n\n- [x] `make check-docs`\n- [ ] `make check` (not run; documentation-only change)\n- [ ] `make test-integration` (not applicable; no runtime behavior changed)\n\n## Checklist\n\n- [x] Linked an issue.\n- [x] Added the proposal to the design index.\n- [x] Identified alternatives, open maintainer decisions, and explicit non-goals.\n- [x] Verified linked issue and PR states before publication.\n",
+    "created_at": "2026-08-30T21:53:22Z",
+    "updated_at": "2026-09-15T20:59:48Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5680,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5680",
+    "title": "docs: define the Gas City identity separator contract",
+    "body": "## What this changes\n\nGas City now has an authoritative reference for how qualified Agent identities become tmux-safe session names: `/` encodes as `--`, while `.` encodes as `__`. The new page is linked from the specifications index and documentation navigation, and the source implementation points maintainers back to the written contract.\n\nThe contract also documents the current Beads comparison behavior and its version boundary. This is a documentation and contract-test change only; it does not alter runtime identity handling or update the Beads dependency.\n\n## Review notes\n\n- Review `docs/reference/specs/identity-separator-contract-v1.md` for the two-axis encoding, worked examples, and the distinction between Gas City minting identities and Beads comparing them.\n- The Beads section deliberately calls out that Gas City's pinned Beads version predates the cited upstream canonicalizer; that caveat should remain until the dependency advances and the behavior is re-verified.\n- `internal/agent/session_name.go` changes only its explanatory comment. The two new tests protect the document's presence, source link, and required contract terms.\n\n## Test plan\n\n- [x] Run `make test-local-full-parallel` with the rootless Podman test environment; confirm both new contract tests execute and pass.\n- [x] Run `make test-ci-policy` and `make check-docs`.\n- [x] Run `go build ./...` and `go vet ./...`.\n- [x] Review the [release gate](release-gates/ga-x0q15u-identity-separator-contract-gate.md), including attribution for unrelated fleet failures.",
+    "created_at": "2026-08-26T22:10:34Z",
+    "updated_at": "2026-08-27T12:21:43Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5356,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5356",
+    "title": "docs: recover unmatched PM plan artifacts",
+    "body": "## Summary\n\n- Recover 175 internal PM plan artifacts plus the Gas City local-only beads guidance from the preserved PM recovery branch.\n- Recover the bbolt operator guide and navigation as a separate commit so reviewers can drop or defer that public-doc slice independently.\n- Preserve the approved 178-path net delta on a fresh branch based directly on `origin/main`: 176 added, 2 modified, 0 deleted.\n\n## Provenance\n\n- Recovery source retained at `recovered-pm-20260817-1337` (`dd6f4dd7aec9`).\n- Before cleanup, all 178 staged blobs matched the preserved recovery branch.\n- Cleanup was limited to inherited trailing whitespace in 18 plan files and current public-doc terminology.\n\n## Review risk / hold\n\nThe public bbolt guide describes implementation that is not present on current `origin/main`; commit `c52f08ecbe` should be dropped or deferred unless the corresponding implementation is restored. The contributor-plan recovery is isolated in `18a2fb52e3`.\n\nPer the mayor ruling recorded on `ga-bccsbs`, keep this PR held until security alerts 313\u2013316 are cleared.\n\n## Verification\n\n- `git diff --check`\n- `make check-docs`\n- Full pre-push fast gate passed with `LOCAL_TEST_JOBS=1` after the parallel form twice hit a live herdr pane-allocation race; no tests were skipped.",
+    "created_at": "2026-08-17T14:15:31Z",
+    "updated_at": "2026-09-13T09:50:21Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/reviewing"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5350,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5350",
+    "title": "docs(deps): record why the bd pin cannot move to a newer-numbered release",
+    "body": "## Summary\n\n`deps.env` has long carried an instruction to promote `BD_VERSION` off `v1.1.0` \"the day\" beads publishes a release with the `--if-assignee`/`--if-status` conditional-write flags. beads has since shipped `v1.2.1` and `v1.2.2`, both dated after those flags landed in [beads#5008](https://github.com/gastownhall/beads/pull/5008), so the pin looked promotable. It isn't. The reason is one the old comment couldn't have anticipated: a beads tag's number doesn't order its capabilities.\n\nbeads cuts stable hotfixes off the `v1.1.0` line, which branched three weeks before the flags landed. That line is linear, it never merged to main, and both `v1.1.2` and the newest **stable** release `v1.2.2` sit on it. Neither one carries `--if-assignee` at all. `v1.2.1` is the first release that clears beads#5008 and it does carry both flags, but GitHub marks it a prerelease, so it doesn't meet the published bar this pin holds the installable default to.\n\nSo the pin stays where it is, and this change records why. It rewrites the `BD_VERSION` rationale in `deps.env`, names the two conditions that gate the next attempt, and sweeps the now-falsified \"no published release has the flags\" claim out of the five other places that asserted it: the `BD_PREV_VERSION` floor note, three comments across `internal/beads`, and the integration test's skip-and-fatal message. That last one is the one to look at, since it's the only site a human reads at runtime. **Comments and messages only: every pinned value is byte-identical to main.**\n\n```mermaid\ngitGraph\n   commit id: \"v1.1.0 base\"\n   branch hotfix-line\n   commit id: \"v1.1.2 (no flags)\"\n   commit id: \"v1.2.2 (no flags, STABLE)\"\n   checkout main\n   commit id: \"beads#5008 flags\"\n   commit id: \"v1.2.1 (flags, PRERELEASE)\"\n   commit id: \"main\"\n```\n\n## Risk\n\nThere's none to CI behaviour. No pinned version, SHA, or workflow `BD_VERSION` block moves, so every job installs exactly the bd it installed before. If CI goes red here, it won't be from this diff.\n\n<details> <summary>Verification, and the two conditions that gate promotion</summary>\n\n### How each claim was checked\n\nCapability was measured against the published tarballs rather than inferred from version numbers, which is the same method the original comment used for `v1.1.2`:\n\n| Release | Published | GitHub state | `bd update --help` names `--if-assignee` |\n|---|---|---|---|\n| `v1.1.2` | 2026-07-26 | stable | no |\n| `v1.2.1` | 2026-08-11 | prerelease | **yes**, with the exit-13 semantics |\n| `v1.2.2` | 2026-08-15 | stable | no |\n\nAncestry, via the compare API against `gastownhall/beads`:\n\n- The hotfix line is linear and rooted before the flags: [`8e4e59d39`](https://github.com/gastownhall/beads/commit/8e4e59d39f3459a43cf21a3236a13eca4dd874f7) (2026-07-04) \u2192 +4 \u2192 `v1.1.2` \u2192 +7 \u2192 `v1.2.2`.\n- Neither `v1.1.2` nor `v1.2.2` is an ancestor of beads `main`; each holds commits main does not.\n- `v1.2.1` **is** an ancestor of beads `main` (main is 9 commits ahead, `v1.2.1` behind by none), and [`6e8af8bf8`](https://github.com/gastownhall/beads/commit/6e8af8bf8) is an ancestor of `v1.2.1`.\n\n### Two conditions gate the next attempt\n\n1. beads publishes a non-prerelease release cut from main, and its per-platform tarball SHAs go into `.github/scripts/install-bd-archive.sh`.\n2. The fresh managed-Dolt bootstrap fix in [#5294](https://github.com/gastownhall/gascity/pull/5294) lands first. bd 1.2 added a legacy-workspace guard that refuses a pre-existing `.beads/dolt` carrying no version witness, so a fresh city under a 1.2 pin fails init until the witness is written for a proven-fresh database. That PR is open as of this writing.\n\nUntil both hold, the only flag-capable bd CI can obtain stays the source-built `BD_CURRENT_REF` cell, which is where the `ReleaseIfCurrent` CAS contract already runs.\n\n### Every site the claim appeared in\n\n| File | Site | Action |\n|---|---|---|\n| `deps.env` | `BD_VERSION` rationale | rewritten |\n| `deps.env` | `BD_PREV_VERSION` floor note | corrected |\n| `internal/beads/bdstore_conditional_release.go` | package comment | corrected |\n| `internal/beads/bdstore.go` | `ReleaseIfCurrent` doc comment | corrected |\n| `internal/beads/bdstore_conditional_release_integration_test.go` | test doc comment | corrected |\n| `internal/beads/bdstore_conditional_release_integration_test.go` | skip and fatal message | corrected, runtime-visible |\n\nThree further sites were checked and deliberately left alone, each re-verified as still true: the `.github/workflows/ci.yml` comment saying `BD_VERSION` \"is a published release that predates it\"; `bdstore_test.go`; and the graduation test, which is about `--if-revision`, a different flag absent from both `v1.2.1` and `v1.2.2`.\n\n### Checks run\n\n- `sh -n deps.env`, and sourcing it to confirm `BD_VERSION` and `BD_PREV_VERSION` read back unchanged.\n- `diff` of the non-comment lines against `origin/main`: identical.\n- `gofmt -l`, `go build ./internal/beads/...`, `go vet ./internal/beads/...`: all clean, before and after the round-1 sweep.\n- Test packages under `internal/beads` compile; nothing asserts on any string touched.\n- `git diff --check`: clean.\n\n</details>\n\n---\n> Generated by the operator's software factory.\n> \u2022 City: `city` \u00b7 Agent: `local-core.builder-4`\n> \u2022 On behalf of: @austinborn\n",
+    "created_at": "2026-08-17T10:10:01Z",
+    "updated_at": "2026-09-02T18:52:36Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5306,
+    "html_url": "https://github.com/gastownhall/gascity/issues/5306",
+    "title": "AGENTS.md is written from one downstream fork's perspective",
+    "body": "The \"Current integration mission\" section in `AGENTS.md` is written from the perspective of one specific downstream fork \u2014 its mission, its local directory paths, and its remote naming \u2014 and none of that carries over to anyone else's fork or to this repo.\n\nThat raises a question that changes what actually needs fixing: is the intent that nobody works directly in `gastownhall/gascity`, and that all real work happens in forks that get integrated here? I'm assuming so, and if that's right I'm honestly fine with `AGENTS.md` being written from a downstream fork's point of view. But three things still don't hold up even under that assumption.\n\n**It assumes I named the remote `upstream`.** The feature archaeology block runs `git fetch upstream`, `git diff upstream/main...HEAD`, `git range-diff upstream/main...HEAD`. That only works if I added `gastownhall/gascity` as a remote and happened to call it `upstream`. A fresh fork clone just has `origin`, and nothing in the doc says to add it. Either say so up front, or don't depend on the name.\n\n**It has paths from someone's machine.** `/data/projects/gascity` and `/data/projects/t3code` aren't going to exist for anyone else.\n\n**It states what the fork is for.** \"This fork is integrating Gas City + T3 Code + a DoltLite-backed beads store.\" If everyone's working in a fork, every fork exists for its own reason \u2014 mine has nothing to do with T3 Code. Same with \"Do not bury T3 Code or DoltLite assumptions in generic SDK paths,\" and \"This fork has repeatedly lost working code during branch churn,\" which is one fork's history, not mine.\n\nThe rest of the section is good and I'd keep it: the archaeology workflow, \"treat archived plans and audits as evidence, not gospel,\" and keeping backend-specific behavior behind the runtime/config/beads boundaries. That all applies to any fork. It just shouldn't be tied to one fork's mission.\n\nFor context, the section came in whole with a963419a1 (#2474), so I suspect it was never re-scoped rather than being deliberate.\n\nIf the fork-only assumption is right, this looks like a small edit \u2014 drop the specific mission and the local paths, and name the remote the git commands expect. Happy to send a PR. If it's not right, the section probably needs a bigger rethink, since read from inside this repo it's just false.\n\nI searched for existing issues on this (`AGENTS.md`, \"this fork\", \"integration mission\", \"T3 Code\") and didn't find anything.\n",
+    "created_at": "2026-08-15T17:29:15Z",
+    "updated_at": "2026-08-15T17:59:54Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 5303,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5303",
+    "title": "docs: update bd priority output examples",
+    "body": "## What this changes\n\nUpdates the Gas City tutorials and internal beads-topology reference to match\ncurrent `bd` output. Priority now appears as `P2` instead of the obsolete\n`\u25cf P2`, while status glyphs such as `\u25cb` for open and `\u25cf` for blocked remain\nunchanged.\n\nThe frozen tutorial copies are updated alongside the published pages so the\ndocumentation examples and their acceptance fixtures stay synchronized.\n\n## Review notes\n\n- The change is limited to three documentation pages and two frozen tutorial copies.\n- No commands, configuration, generated reference content, or runtime behavior change.\n- Review the distinction between the removed priority prefix and the preserved status glyphs.\n\n## Test plan\n\n- [x] `make check-docs`\n- [x] `make test`\n- [x] Repository scan confirms no stale `\u25cf P0` through `\u25cf P4` examples remain under `docs/` or `test/`\n- [x] Release gate: [`release-gates/ga-h2vm5j-bd-output-priority-glyph-gate.md`](release-gates/ga-h2vm5j-bd-output-priority-glyph-gate.md)\n",
+    "created_at": "2026-08-15T16:35:42Z",
+    "updated_at": "2026-08-28T14:18:55Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/ready-to-merge"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 5261,
+    "html_url": "https://github.com/gastownhall/gascity/pull/5261",
+    "title": "docs(session): clarify primed_at as delivery-attempted, not consumed (#5236)",
+    "body": "Fixes #5236.\n\n## What's misleading\n\n`primed_at` is stamped when delivery was *selected and runtime start succeeded* \u2014 but several doc comments described this as \"confirmed delivered\" / \"actually delivers,\" which reads as proof the agent consumed the prompt. It isn't proof of that: the issue's own qualifying incident had a worker holding `primed_at` while its trigger bead stayed open/unassigned until a manual nudge forced the claim.\n\n## Fix \u2014 comment/doc-string only, zero behavior or schema change\n\n- `internal/session/lifecycle_transition.go` \u2014 `PrimedAtMetadataKey`'s doc said \"confirmed delivered\" with no caveat; added that \"confirmed\" means transport succeeded, not consumption, and pointed at trigger-bead assignment as the real work-started signal.\n- `cmd/gc/prompt_delivery.go` \u2014 `promptDeliveryResult`/`Delivered` docs said \"actually delivered it,\" but `promptDelivery()` does no I/O at all (pure routing decision, per its own existing doc) \u2014 clarified `Delivered` means \"a mechanism was selected.\"\n- `cmd/gc/session_lifecycle_parallel.go` \u2014 `promptDelivered` field doc said \"actually delivers the rendered startup prompt\" (one of the issue's own evidence citations) \u2014 same fix.\n\n**Deliberately left `session_level_converge.go` untouched**, even though it also uses \"CONFIRMED\" language for `primedAt`: that's the S19 Stage-1 migration module (\"nothing reads the action list yet ... until Stage 3 wires the act loop\"), and its terminology is already precisely scoped within its own durable-world/runtime-world framework \u2014 it separately tracks `primedEnv` as \"delivered this runtime but may not yet be durably recorded,\" meaning it already distinguishes the two states this issue wants clarified. Touching an in-progress migration module's carefully-established vocabulary without Stage 3/4 context felt like the wrong call. `internal/runtime/herdr/provider.go` (the issue's other evidence citation) was already correctly worded \u2014 no change needed there either.\n\n## Verification\n\n`go test ./internal/session/... -run 'Primed|Priming|Prompt'` and `go test ./cmd/gc/... -run 'PromptDelivery|Primed|Priming'` both green (comment-only, no regressions); gofmt clean; `go vet` clean on changed + dependent packages; `go build ./...` clean.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-08-14T02:48:01Z",
+    "updated_at": "2026-08-30T05:51:41Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 4905,
+    "html_url": "https://github.com/gastownhall/gascity/pull/4905",
+    "title": "docs(dispatch): work-formula selection guide + v2 --on semantics; fix digest-generate mislisting",
+    "body": "## Summary\n\nDocumentation-only update to the `core` pack's `gc-dispatch` skill, closing two\ngaps surfaced by the gas-city formula-adoption audit (gci-7x4):\n\n1. **Variant-selection guidance** \u2014 a new *\"Choosing a work formula\"* decision\n   guide (isolation \u00d7 handoff table) covering `mol-do-work` vs `mol-scoped-work`\n   vs `mol-polecat-work`, plus the `mol-polecat-commit` / `mol-polecat-report`\n   siblings. Also documents `mol-scoped-work`, which the skill did not list at\n   all.\n2. **v2 `--on` / `-f` semantics** \u2014 the dispatch sections described the v1\n   model (\"creates a molecule wisp on the bead\"). Updated to the v2 contract:\n   a formula declaring `formula_compiler = \">=2.0.0\"` starts a **workflow**\n   (workflow-root + auto-convoy + work bead) whose step DAG and handoff\n   metadata persist as beads; v1 formulas still instantiate a wisp. Adds the\n   rule that convoy-referencing formulas (those using `{{convoy_id}}` or a\n   drain step) must launch onto a convoy \u2014 which `--on` provides.\n3. **digest-generate mislisting** \u2014 `mol-digest-generate` was listed among the\n   patrols \"auto-poured by agent startup prompts.\" It is not: it is driven by\n   the `digest-generate` order on a 24h cooldown. Removed from the patrol list\n   and corrected inline.\n\n## Why\n\nUnder bare-bead dispatch the handoff contract lives only in the agent's prompt;\na pool recycle between push and reassign strands the branch (happened twice in\ngas-city). The v2-workflow durability point is now documented where dispatchers\nchoose a formula, so the isolation/handoff/recycle trade-off is explicit.\n\n## Scope\n\nSingle file: `internal/bootstrap/packs/core/skills/gc-dispatch/SKILL.md`.\nNo code, formula, or behavior changes \u2014 the described semantics are the current\n`gc sling` contract (verified against `gc sling --help` and the formula\n`[requires]` blocks at this tree).\n\nSource: gas-city bead gci-dqe (audit parent gci-7x4).\n",
+    "created_at": "2026-08-02T03:24:17Z",
+    "updated_at": "2026-08-17T03:22:38Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 4810,
+    "html_url": "https://github.com/gastownhall/gascity/pull/4810",
+    "title": "docs(dispatch): state the real base_branch resolution order",
+    "body": "docs(dispatch): state the real base_branch resolution order (ga-7mh5)\n\nThe gc-dispatch skill described a three-tier base_branch order that\nomitted the default_branch tiers entirely and ended at \"the rig repo's\ndefault branch\" \u2014 which reads as the origin/HEAD probe. An agent that\ncross-checks that sentence with\n`git symbolic-ref refs/remotes/origin/HEAD` can conclude the wrong base\nand hand-rebase work that was already based correctly.\n\nThe resolver itself is not defective: SlingFormulaTargetBranch already\nplaces a rig's recorded default_branch (tiers 2-3) ahead of the\norigin/HEAD probe (tier 4). The documentation is what misled readers.\n\nThis updates the skill to state all four tiers, names default_branch as\nthe knob for a repo whose mainline differs from origin/HEAD, shows the\ncity.toml stanza, and tells the reader to confirm with\n`gc rig list --json` instead of inferring from origin/HEAD (tier 4 only).\n\nThe accompanying tests close a real gap rather than restating the\nresolver tests: buildSlingFormulaVars \u2014 the wiring that decides whether\nbase_branch is injected at all \u2014 had no coverage. If that injection stops\nfiring, the var falls through to the formula's own \"main\" default and\nevery polecat branch is cut from the wrong branch silently, because an\nabsent var is indistinguishable from an authored default at render time.\n\nSource: dc8327db3 (ga-7mh5), adapted for upstream (soften fork/ROE\nframing to generic \"repo whose mainline differs from origin/HEAD\").\n\n",
+    "created_at": "2026-07-29T04:33:58Z",
+    "updated_at": "2026-08-16T18:46:48Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs",
+      "status/merge-queued",
+      "status/review-failed"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 4490,
+    "html_url": "https://github.com/gastownhall/gascity/pull/4490",
+    "title": "docs(core-skills): fix five doc defects reported in #4488",
+    "body": "Fixes #4488.\n\nFive documentation defects in `internal/bootstrap/packs/core/skills/`, all re-verified against the running binary immediately before this PR (`go version -m $(which gc)`: `vcs.revision=730c9b2e0a99e29dc9aefc1ec58b14d8da1b36ef`, `vcs.modified=false`).\n\n1. **Dangerous, in gc-dispatch/SKILL.md** \u2014 `gc convoy check`/`gc convoy autoclose` descriptions were inverted. `check` takes no id and is an unscoped city-wide auto-close mutation; `autoclose` is the scoped one requiring `<bead-id>`. A reader who copies the doc's `gc convoy check <id>` gets an argument error, and the doc's own `autoclose` line (no id) models \"fix\" as dropping the argument \u2014 which yields the unscoped sweep under the name that reads as a safe check. Swapped the descriptions, fixed the arg placeholders, and marked `check` as mutating.\n2. **gc-work/SKILL.md** \u2014 documented a claim path (`gc hook show <agent>`, `gc agent claim <agent> <id>`) whose subcommands don't exist. Replaced with the real `gc hook --claim` path, and fixed two more dead flags in the same section (`--label`/`--note` \u2192 `--add-label`/`--append-notes`), plus a race caveat on `bd update --claim`.\n3. **Four more dead flags/commands**: `gc dashboard --port` (no such flag \u2014 replaced examples with real ones: `--no-open`, `serve`), `gc order check <name>` (takes no name), and a `gc skills dashboard` reference (top-level command is `skill`, not `skills`, and no `dashboard` subcommand exists under it either \u2014 pointed at the gc-dashboard skill by name instead).\n4. **gc-dashboard/SKILL.md self-contradiction** \u2014 the per-city `[api]` port section didn't note that supervisor mode overrides it, which contradicted the \"per-city `[api]` ports are ignored\" statement later in the same file. Added the precedence note where the config is first introduced.\n5. **gc-mail/SKILL.md** \u2014 `archive`/`delete` were presented as routine operations with no indication that both permanently delete the underlying bead (they're the same operation under two names; there's no reversible \"put this away\" path). Added an explicit warning and pointed at `mark-read` as the non-destructive alternative.\n\nAlso documented three formulas that ship in the core pack but were missing from gc-dispatch/SKILL.md's formula catalogue (`mol-prompt-synth`, `mol-review-quorum`, `mol-scoped-work`) \u2014 a smaller sixth item from the same issue.\n\n**Verification**: `go test ./internal/bootstrap/packs/core/... ./internal/config/... ./internal/doctor/... ./internal/materialize/... ./internal/validation/...` all pass.\n\nNot in scope for this PR: `gc mail delete --help`'s own description text (in `cmd/gc/cmd_mail.go`) also undersells what the command does \u2014 the issue's \"sharper half\" \u2014 but that's a code change, not a skill-doc fix; flagging it here in case a maintainer wants it as a follow-up.\n\n<!-- mpr:issue-refs v1 -->\n---\n\ud83d\udd17 **Maintainer cross-reference** \u2014 added by the gascity maintainers, no action needed from you:\n- Related to #4422 \u2014 documents in the gc-mail skill that `archive` and `delete` are the same operation and both irrecoverably destroy the message's underlying bead, and points readers at `mark-read` as a non-destructive alternative; this is a docs-only change \u2014 the destructive behavior itself, and the absence of a safe drain verb inside the `gc mail` namespace, are untouched\n\n<sub>Linked for triage visibility \u2014 not auto-closing. If this looks off, just delete this block.</sub>\n<!-- /mpr:issue-refs -->",
+    "created_at": "2026-07-20T22:02:24Z",
+    "updated_at": "2026-07-25T23:38:57Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 4488,
+    "html_url": "https://github.com/gastownhall/gascity/issues/4488",
+    "title": "Five documentation defects in the core skill pack, one of them dangerous",
+    "body": "We run a multi-agent Gas City where agents read the core skills as their operating manual, so\nthese surfaced as behaviour rather than as reading. Reporting them as one batch since they share a\ncause. Everything below was re-measured against the running binary immediately before filing; where\na claim did not survive that re-measurement we dropped it rather than send it (notes at the end).\n\nPROVENANCE, cited by revision rather than version string because ours is a source build:\n    go version -m $(which gc)\n      mod          github.com/gastownhall/gascity v1.1.1-0.20260720161128-730c9b2e0a99\n      vcs.revision 730c9b2e0a99e29dc9aefc1ec58b14d8da1b36ef\n      vcs.modified false\nSkill files are from the same tree, at internal/bootstrap/packs/core/skills/.\n\n--------------------------------------------------------------------------------\n1. DANGEROUS \u2014 a destructive command is documented as a read-only check, and the pair is inverted\n\ngc-dispatch/SKILL.md, lines :166 and :168 (line :167 between them is `gc convoy stranded`,\nomitted here only for brevity):\n    :166  gc convoy check <id>        # Check if all beads done\n    :168  gc convoy autoclose         # Close convoys where all beads done\n\nBoth lines are backwards. Measured:\n    gc convoy check --help\n      \"Scan open convoys and auto-close any where all child issues are resolved. ... the convoy is\n       automatically closed and an event is recorded.\"\n      Usage: gc convoy check [flags]          <- takes NO id; it is a CITY-WIDE MUTATION\n    gc convoy autoclose --help\n      \"Auto-close completed convoys for a closed bead\"\n      Usage: gc convoy autoclose <bead-id>    <- REQUIRES the id; this is the scoped one\n\nSo the command documented as a per-convoy read-only \"check\" is an unscoped sweep that closes every\neligible convoy in the city, and the command documented as the sweep is the scoped one.\n\nTHE REALISTIC PATH TO HARM is not copying the doc verbatim \u2014 `gc convoy check <id>` errors on the\nunexpected argument, which is a doc defect accidentally preventing a behavioural one. It is a reader\nwho hits that error and \"fixes\" it by DROPPING the argument, which the adjacent autoclose line\nexplicitly models. That yields the city-wide sweep, described in the same table as a check.\n\nSuggested minimum: swap the two descriptions, remove `<id>` from the check line, add `<bead-id>` to\nautoclose, and mark check as mutating.\n\n--------------------------------------------------------------------------------\n2. gc-work documents a claim path whose subcommands do not exist\n\ngc-work/SKILL.md:64-65:\n    gc hook show <agent>                   # Show what's on an agent's hook\n    gc agent claim <agent> <id>            # Put a bead on an agent's hook\n\nNeither `gc hook show` nor `gc agent claim` is a real subcommand.\n\nON THE TEST USED, because two obvious tests give two different wrong answers and we got burned by\nboth before settling: `gc <parent> <sub> --help` EXITS 0 for a nonexistent subcommand and prints the\nPARENT's help, so exit status proves nothing (`gc hook show --help` prints `gc hook`'s help, with\n`show` swallowed as the positional agent argument). Grepping the parent's \"Available Commands\" has\nthe opposite failure \u2014 it misses HIDDEN commands, and reported the real `gc convoy autoclose` as\nabsent. The test that discriminates both ways is whether `<parent> <sub> --help` emits a Usage line\nNAMING `<parent> <sub>`:\n    gc hook show      -> no        gc convoy check     -> yes\n    gc agent claim    -> no        gc convoy autoclose -> yes (hidden, still detected)\n    controls: fresh nonsense tokens under each parent -> no\nThis discriminator was independently hardened before we sent this: hidden commands were enumerated\nfrom source (91 `Hidden: true` sites at this revision) and the test run against seven real hidden\nparent+sub pairs \u2014 all detected \u2014 plus five fresh negative controls, all rejected. Zero false\nabsents. LIMIT WORTH STATING: it is validated for TWO-LEVEL parent+sub only; three-level probes\nreturned 0 for real and fake alike, so it is not validated there. No claim in this report is\nthree-level.\n\nSame section also recommends `bd update --claim`. That flag DOES exist, so this is a\nrecommendation rather than a defect \u2014 but in a multi-agent city it races, and we forbid it in our own\nconventions in favour of the atomic `gc hook --claim`. Worth a caveat in the skill if upstream agrees.\n\n--------------------------------------------------------------------------------\n3. Flags and commands that no longer exist\n\nEach verified against the running binaries:\n    bd --dir                  no such flag; the real one is -C/--directory (\"Change to this\n                              directory before running the command (like git -C)\")\n    bd update --label         no such flag (--add-label)\n    bd update --note          no such flag (--append-notes)\n    gc dashboard --port       no such flag\n    gc order check <name>     takes no name; Usage: gc order check [flags]\n    gc skills ...             top-level command is `skill`, not `skills`\n                              (referenced at gc-city/SKILL.md:64, \"See `gc skills dashboard`\")\n\n--------------------------------------------------------------------------------\n4. gc-dashboard contradicts itself about per-city [api] ports\n\nNot a flat error \u2014 the file disagrees with itself, which is why we report it as an inconsistency\nrather than a correction:\n    :23-24  presents an [api] / port = 9443 configuration premise\n    :39     states that in this mode, per-city [api] ports are IGNORED\n    :47     `gc dashboard --port 3000   # Same, custom dashboard port` (and see 3: no such flag)\nA reader following :23-24 configures something :39 says has no effect.\n\n--------------------------------------------------------------------------------\n5. gc-mail presents two destructive operations as routine \u2014 AND `gc mail delete --help` misdescribes\n   what the command does, in the reassuring direction\n\ngc-mail/SKILL.md:33,36 list them among ordinary operations with nothing indicating they destroy\ncontent irrecoverably:\n    gc mail archive <id>                   # Archive a message\n    gc mail delete <id>                    # Delete a message\n\"Archive\" in particular reads as reversible filing to anyone who has used email.\n\nTHE SHARPER HALF IS IN THE COMMAND'S OWN HELP, not the skill:\n    gc mail delete --help\n      \"Delete one or more messages BY CLOSING THE BEADS. Same effect as archive but with different\n       user intent.\"\nThat description is not accurate. In internal/mail/beadmail/beadmail.go:\n    :507-508   // Delete is an alias for Archive.\n               func (p *Provider) Delete(id string) error { ... }\n    :345-372   func (p *Provider) Archive(id string) error \u2014 BOTH branches call p.store.Delete(id)\n               (the already-closed path at :357 and the normal path at :365)\n    :825       your own comment: \"Provider.Archive/Provider.Delete mean eager delete\"\nSo the operation the help calls \"closing the beads\" DELETES the bead. The distinction matters\nbecause a CLOSED bead stays readable and a DELETED one does not \u2014 and the reader most likely to be\nmisled is the careful one, who checks --help before running something destructive.\nSuggested minimum: correct the delete help text to say it removes the bead, and add a warning line\nto both skill entries. If a non-destructive \"put this away\" path exists, pointing at it from both\nwould be worth more than either fix alone.\n\n--------------------------------------------------------------------------------\n6. Three core formulas ship undocumented in the core skill that catalogues formulas\n\ngc-dispatch/SKILL.md catalogues 12 formulas. These three ship in the same core pack and are absent\nfrom it:\n    internal/bootstrap/packs/core/formulas/mol-prompt-synth.toml\n    internal/bootstrap/packs/core/formulas/mol-review-quorum.toml\n    internal/bootstrap/packs/core/formulas/mol-scoped-work.toml\n\nWHAT WE ARE NOT CLAIMING, because we checked and it did not hold: our first draft said \"8 of the 12\ndocumented formulas are not installed, including the one the skill calls the Production default\".\nThat is true of OUR city and is not your defect \u2014 all 8 exist in the pack; we simply have not\ninstalled them. We dropped that claim rather than send it. Only the three above are a documentation\ngap.\n\n--------------------------------------------------------------------------------\nWHY THESE SURFACED TOGETHER\n\nOur agents' skill directory symlinked into a pack checkout several weeks older than the one\n`gc skill list` reported, so two different copies were live at once and agents read the older. We\nhave re-materialised our sink and that half is ours, not yours. But re-reading the CURRENT checkout\nis how we found that all six items above are still present in it \u2014 these are not stale-cache\nartifacts.",
+    "created_at": "2026-07-20T21:51:42Z",
+    "updated_at": "2026-07-25T23:38:56Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 4413,
+    "html_url": "https://github.com/gastownhall/gascity/pull/4413",
+    "title": "docs: make TESTING.md the canonical test-authoring policy",
+    "body": "## Summary\n\n- makes `TESTING.md` the normative source for test placement, design, timing, and review\n- defines the one-risk/one-smallest-owner loop, testability refactors, conformance obligations, event-driven waits, failure-edge selection, E2E admission, and flake policy\n- sets the protected PR feedback objective while clearly separating policy targets from enforcement that exists today\n- corrects stale inventories, examples, provider interfaces, CI cadence claims, and test-double descriptions\n\n## Current enforcement\n\nThe document now distinguishes checked resource/runtime ledgers from work still owned by `ga-80po0c.4` (workflow timing) and `ga-80po0c.6` (executable E2E manifest). It also calls out current Playwright retry, coarse integration routing, live-inference cadence, and production-store conformance gaps instead of presenting them as solved.\n\n## Validation\n\n- `go test -count=1 ./test/docsync`\n- `go test -count=1 ./internal/testpolicy/resourcecensus -run ^TestRepositoryLedgerMatchesCensusAndDocumentation$`\n- `go test -count=1 ./internal/testutil/providerledger`\n- `git diff --check`\n- repository pre-push fast suite: 8/8 shards passed\n\n## Review\n\nThree delegated reviewers covered semantic usability, speed/failure policy, and repository accuracy/enforceability. Their concrete findings were incorporated before commit.\n\nTracking bead: `ga-yfgl4b`.",
+    "created_at": "2026-07-18T20:54:43Z",
+    "updated_at": "2026-07-19T07:59:48Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 4338,
+    "html_url": "https://github.com/gastownhall/gascity/pull/4338",
+    "title": "docs(contributors): document hold/blocked label conventions",
+    "body": "## What this changes\n\nThis adds a contributor reference for the project's canonical hold/blocked label taxonomy. It documents when to use dependency edges, blocked status, or the structured `hold:<value>` state, and narrows the canonical hold values to `hold:mayor` and `hold:external`.\n\nThe contributor index now links to the new guide, and `AGENTS.md` points future agents to the rule before inventing another hold-family label.\n\n## Review notes\n\n- Docs-only change under `engdocs/contributors/` plus one `AGENTS.md` pointer.\n- No Go code, runtime behavior, SDK primitive, or role-specific branching changes.\n- The document explicitly frames `hold:mayor` and `hold:external` as project data conventions, not SDK behavior.\n\n## Test plan\n\n- [x] `make check-docs`\n- [x] `go vet ./...`\n- [x] `HOME=/home/jaword make test-fast-parallel`\n- [x] Release gate: [`release-gates/ga-y8xzok-hold-blocked-label-taxonomy-gate.md`](release-gates/ga-y8xzok-hold-blocked-label-taxonomy-gate.md)\n",
+    "created_at": "2026-07-16T10:17:08Z",
+    "updated_at": "2026-07-19T02:46:53Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3883,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3883",
+    "title": "docs: clarify gc session kill continuity; point context-inject advice at gc handoff",
+    "body": "## The juicy parts\n\nThe current `gc session kill` help calls it a way to unstick a session \"without losing its conversation history.\" Gas City does not promise that \u2014 bead continuity survives (hooks, assignments, lifecycle all still point at the same bead), but provider conversation resume is attempted at best, not guaranteed. A user who reads the help as a guarantee reaches for `kill` in cases where they should not.\n\nThe second half is not purely cosmetic: the advisory and urgent context-usage tiers are injected into running agents, and today they tell an agent at high context to run `gc session reset`. `gc handoff` is the better default there \u2014 it writes the continuation note first, and it degrades sensibly for attended sessions the controller cannot restart. So this changes what agents are told to do near the recycle threshold, which is worth a look even though the diff is text.\n\n## Summary\n\nTwo tiny, adjacent doc/UX touch-ups:\n\n1. `gc session kill` help: clarify what continuity is actually guaranteed \u2014 bead/work continuity always survives; provider *conversation* resume is not guaranteed. The current \"without losing its conversation history\" wording over-promises.\n2. `context_inject` advisory/urgent tiers: recommend `gc handoff` instead of `gc session reset`. Handoff is attended-safe and self-mails a continuation note, which is the better default when a session is running low on context.\n\n## Motivation\n\nThe kill-continuity wording predates the current lifecycle behavior and reads as a stronger promise than the system makes; #3858 recently poked the controller on `gc session kill` to revive named sessions promptly, but didn't touch the help text. And since both `gc handoff` (`cmd_handoff.go`) and `gc session reset` exist, the context-inject nudge currently points agents at `reset` when `handoff` is the safer, continuity-preserving path for the advisory/urgent case.\n\nBoth are low-risk and align with the existing command model rather than adding anything.\n\n## What changed\n\n- `cmd/gc/cmd_session.go` + `docs/reference/cli.md`: kill-continuity wording.\n- `cmd/gc/context_inject.go`: advisory/urgent tiers reference `gc handoff`.\n- Test updates for both.\n\n## Testing\n\n- `go build ./...`; `go test ./cmd/gc/ -run 'Kill|ContextInject'` passes locally.\n\n## Open questions / happy to adjust\n\n- Split into two PRs (docs vs the context-inject copy) if you'd rather keep them separate?\n- If the `handoff`-over-`reset` guidance conflicts with any intended positioning of `gc session reset`, we'll defer to your framing.\n\n## References\n\n#3858.\n\n",
+    "created_at": "2026-07-02T21:33:04Z",
+    "updated_at": "2026-09-16T08:44:47Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3879,
+    "html_url": "https://github.com/gastownhall/gascity/issues/3879",
+    "title": "Back-merge release/v1.3.0 CHANGELOG sections (1.3.1\u20131.3.3) into main",
+    "body": "main's CHANGELOG.md ends at `## [1.3.0]` \u2014 the 1.3.1, 1.3.2, and 1.3.3 release sections (and the repaired bottom compare links from the v1.3.3 release commit, 55acb4812) exist only on `release/v1.3.0`. The underlying fixes are already on main (the hotfixes were cherry-picked FROM main or merged back earlier); only the release documentation is missing.\n\nFollow the existing precedent (`Back-merge v1.2.1 into main` #2932 / `merge/release-v1.3.0-into-main`) or cherry-pick the changelog hunks from the release commits: dad20e66b (1.3.1), 81e97df64 (1.3.2), 55acb4812 (1.3.3).\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-07-02T20:56:48Z",
+    "updated_at": "2026-07-08T23:26:30Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 3864,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3864",
+    "title": "docs: document concrete claim identity convention",
+    "body": "## What this changes\n\nThis documents the claim identity convention for pack authors: Tier-1 recovery and claim commands should use the concrete running session identity (`${GC_ALIAS:-$GC_TEMPLATE}`), while Tier-2 and Tier-3 discovery should continue to use the shared template route.\n\nThe main addition lives beside the existing prompt-template tier table, with a short cross-reference from the session identity design note. That keeps the rule close to the place pack authors already look when writing prompt claim loops.\n\n## Review notes\n\n- This PR is docs-only in the Gas City repo: `engdocs/architecture/prompt-templates.md` and `engdocs/design/session-model-unification.md`.\n- The related prompt-template changes are in the local-only `gc-management` repo, which has no remote and cannot have a GitHub PR. The merge authority has to handle that local merge separately.\n- No Go code, config schema, generated docs, OpenAPI, or dashboard files change here.\n\n## Test plan\n\n- [x] `make check-docs`\n- [x] Local pack-branch acceptance checks: remaining bare `$GC_TEMPLATE` matches are only Tier-2 `bd ready --assignee` lines; 37 concrete-identity replacements present\n- [x] Local pack-branch TOML parse check for `packs/actual/deployer/formulas/mol-deployer-gate.formula.toml`\n- [x] Release gate: [`release-gates/concrete-identity-claims-gate.md`](release-gates/concrete-identity-claims-gate.md)\n",
+    "created_at": "2026-07-01T23:02:08Z",
+    "updated_at": "2026-07-25T22:20:59Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/ready-to-merge"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3662,
+    "html_url": "https://github.com/gastownhall/gascity/issues/3662",
+    "title": "docs: https://github.com/gastownhall/gascity/blob/main/docs/index.mdx",
+    "body": "### Before you continue\n\n- [x] I searched existing issues and did not find a duplicate.\n\n### Affected page or file\n\nhttps://github.com/gastownhall/gascity/blob/main/docs/index.mdx\n\n### What is wrong or missing?\n\nAll the links on github redirect to 404's. It makes me think that you are not supposed to read the docs on github. \n\n### What would make this better?\n\nI would like to be able to follow the links to read each section alongside my agent. \n\n### Additional context\n\n_No response_",
+    "created_at": "2026-06-22T21:08:38Z",
+    "updated_at": "2026-07-08T23:27:08Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 3539,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3539",
+    "title": "docs: simplify the user docs \u2014 six primitives, trimmed guides, diagrams, consistent titles",
+    "body": "## What this does\n\nA comprehensive pass over the Mintlify user docs (`docs/`): align them with the\ncurrent code and the pinned-`[imports]` pack model, rebalance walls of prose into\ndiagrams / tables / accordions, cut redundancy, and make titles consistent. The\nbranch also carries the formulas-v2 documentation and the six-primitive user\nmodel.\n\n## Highlights\n\n**Model & orientation**\n- `how-gas-city-works.md` is the single orientation page for the six primitives\n  (Agent, Bead, Formula, Rig, Pack, Event); other pages link to it instead of\n  re-deriving the model.\n- Terminology settled: **orchestrator** (not \"controller\") and **platform** (not\n  \"SDK\") in concept prose; v2 framed as the value, v1 as a supported peer.\n- Aligned with #3344: built-in packs compose via pinned `[imports]`, not the\n  retired `.gc/system/packs` includes \u2014 and two pages that still claimed the old\n  model are fixed.\n\n**Simplification \u2014 remove redundancy, not teaching**\n- Guides trimmed via dedup-by-link, prose\u2192table, and accordions for deep/optional\n  detail. Big cuts where a page restated a sibling (registry-showcase \u221221%,\n  shareable-packs \u221213%); near-zero where the length is earned teaching\n  (understanding-formulas). Every page stands alone.\n\n**Pictures**\n- Five new Excalidraw diagrams + one reuse, each replacing or anchoring a\n  relationship the prose asserted without a picture.\n\n**Reference**\n- `exec-beads-provider.md` rewritten from a stale design doc into a reference for\n  the *shipped* provider (the 13 Store subcommands the exec provider actually\n  invokes).\n- Every checkable claim fact-checked against the code and `gascity-packs`.\n\n**Titles** \u2014 normalized per Di\u00e1taxis: How-to pages use imperative verbs,\ntroubleshooting is verb-based, reference is noun phrases; \"Coming from Coding\nAgents\" pairs with \"Coming from Gas Town\".\n\n**Skill** \u2014 committed `.claude/skills/gascity-docs/` capturing the docs house\nstyle plus the simplification process (the loss-check / fact-check guardrails).\n\n## Verification\n- docsync (nav\u2194file + local links), link/anchor/orphan, and TOML-fence checks\n  pass; generated reference regenerated from source; diagrams rendered and\n  eyeballed (sources == rendered, no orphans).\n- Fact-checked all narrative docs vs current code + packs (598/610 correct; the\n  rest fixed).\n- Loss-checked vs `main@head`: no important detail dropped \u2014 the alarming flags\n  were verified intentional cuts or false positives.\n\n## Scope\nDocs-only, except a one-line `config.go` comment (wisp GC fields) and the\nregenerated reference (`cli.md` / `config.md` / `schema/*`) it implies. Current\nwith `main`.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\n",
+    "created_at": "2026-06-16T05:53:27Z",
+    "updated_at": "2026-06-16T16:55:00Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3425,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3425",
+    "title": "docs(tutorials): use relative .md links for GitHub + Mintlify",
+    "body": "## Summary\n\nCross-tutorial links in `docs/tutorials/` used absolute extensionless Mintlify URLs like `/tutorials/02-agents`. Those work on the deployed docs site but 404 in GitHub's markdown renderer and in IDE previews, where the `.md` files are viewed directly.\n\nThis PR switches them to relative `.md` links (`02-agents.md`) so the same links work in both contexts.\n\n## Why it works in both viewers\n\n**GitHub renderer.** Relative `.md` paths resolve against the current file's directory. `02-agents.md` from `docs/tutorials/01-cities-and-rigs.md` resolves to `docs/tutorials/02-agents.md`, which is the file we want.\n\n**Mintlify.** Mintlify's own docs say \"Relative paths and paths with extensions do not work in production\" by default \u2014 but `docs/docs.json` already declares explicit redirects for every tutorial:\n\n```json\n{ \"source\": \"/tutorials/01-cities-and-rigs.md\", \"destination\": \"/tutorials/01-cities-and-rigs\" }\n```\n\n(one per tutorial 01\u201307). Mintlify renders the link `02-agents.md` verbatim as `href=\"02-agents.md\"`. The browser resolves it against the current page `/tutorials/01-cities-and-rigs` \u2192 `/tutorials/01-cities-and-rigs.md`, hits the 307 redirect \u2192 lands on `/tutorials/02-agents` with a 200.\n\n## Verification\n\nRan `./mint.sh dev` locally and walked every `.md` link end-to-end with `curl -L`:\n\n- All 20 body cross-tutorial links followed the redirect chain to 200 on the canonical extensionless URL.\n- All 7 index-table links followed the redirect chain to 200.\n\n## Caveats\n\n- Production link integrity depends on Mintlify hosting honoring the `redirects` block in `docs.json` (which it does \u2014 `mint dev` is parity).\n- Removing any of those redirects later silently breaks every `.md` link in the tutorials. `test/docsync/TestLocalMarkdownLinks` is permissive about extension form in Mintlify trees, so it would not catch that regression.\n\n## Test plan\n\n- [ ] `make check-docs` passes\n- [ ] Spot-check on the deployed docs site that a cross-tutorial link (e.g. Tutorial 01 \u2192 02) still navigates correctly\n- [ ] Open `docs/tutorials/01-cities-and-rigs.md` on GitHub and confirm the link to Tutorial 02 lands on `docs/tutorials/02-agents.md`\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-06-12T17:43:08Z",
+    "updated_at": "2026-06-14T14:55:37Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3269,
+    "html_url": "https://github.com/gastownhall/gascity/issues/3269",
+    "title": "feat: Packs Tutorial",
+    "body": "### Before you continue\n\n- [x] I searched existing issues and did not find a duplicate.\n- [x] I can explain the user problem this solves, not just the implementation I prefer.\n\n### Problem to solve\n\nPacks are an increasingly central part of Gas City, yet we don't yet have a dedicated tutorial for it in the tutorial set. \n\nWe need one. That tutorial should cover (in no particular order).\n\n- Quick framing of what a pack is and why you should care\n- Quick framing of what a pack registry is and why you should care\n- Finding packs (search/list/show)\n- Importing a found pack\n- Pack versioning\n- Writing your own pack\n- Customizing a pack\n- (Re)publishing a pack\n\nThe OrchV3 work will change the details of the last three in ways we haven't quite landed yet, so it's premature to write this but it should be done as part of the OrchV3 wave.\n\n### Proposed change\n\nWrite the tutorial\n\n### Alternatives considered\n\nNot having a tutorial. This is the current state of affairs but isn't tenable long term\n\n### Scope and impact\n\nPeople will have a better time using and creating packs.",
+    "created_at": "2026-06-09T14:38:33Z",
+    "updated_at": "2026-06-09T21:33:48Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "issue"
+  },
+  {
+    "number": 3259,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3259",
+    "title": "docs: add OrchV3 requirements crosswalk",
+    "body": "## Summary\\n\\nAdds a sanitized OrchV3 requirements crosswalk that maps #1709 requirements against the current formula authoring/runtime direction and identifies which items are covered, partial, open, or deferred.\\n\\nThe note deliberately uses product/runtime terms only: formula authoring model, formula runtime semantics, package/import contract, run/event/state model, and host/runtime integration.\\n\\n## Notes\\n\\n- Docs-only.\\n- Intended as a breadcrumb from #2503 so the crosswalk is not lost.\\n- Does not change implementation behavior.\\n\\n## Validation\\n\\n- Disclosure scan: no internal implementation codename or private repo reference in the new note.\\n",
+    "created_at": "2026-06-09T02:02:45Z",
+    "updated_at": "2026-07-08T23:25:14Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3247,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3247",
+    "title": "docs(agents): automation must open PRs to upstream, never merge to fork main",
+    "body": "Mirrors `CONTRIBUTING.md`'s existing human guidance (\"Never open a PR from your fork's `main` branch; use a dedicated branch per PR\") as an explicit directive for **automation** (refinery / polecats), which had no matching rule and was merging changes directly to the fork's `main`.\n\nAdds a short \"Automation must never merge to the fork's `main`\" section to `AGENTS.md`: every change ships as a PR to `upstream` from a dedicated branch off `upstream/main`.\n",
+    "created_at": "2026-06-08T18:46:37Z",
+    "updated_at": "2026-06-08T19:01:26Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3246,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3246",
+    "title": "docs(agents): add polekitten/polecat worker-routing section",
+    "body": "Propagates the polekitten/polecat size-based routing convention to\nAGENTS.md \u2014 mirror of cashmaster commit 75e956f.\n\n\n",
+    "created_at": "2026-06-08T18:43:38Z",
+    "updated_at": "2026-06-08T19:01:26Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3181,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3181",
+    "title": "Add docstring to gcDoltSkip function",
+    "body": "## \u95ee\u9898\u80cc\u666f\n\u51fd\u6570 `gcDoltSkip` \u7f3a\u5c11\u6587\u6863\u6ce8\u91ca\uff0c\u8fd9\u964d\u4f4e\u4e86\u4ee3\u7801\u7684\u53ef\u8bfb\u6027\u548c\u53ef\u7ef4\u62a4\u6027\u3002\u5728\u5f00\u6e90\u9879\u76ee\u4e2d\uff0c\u826f\u597d\u7684\u6587\u6863\u6709\u52a9\u4e8e\u5176\u4ed6\u8d21\u732e\u8005\u5feb\u901f\u7406\u89e3\u4ee3\u7801\u610f\u56fe\u3002\n\n## \u4fee\u6539\u5185\u5bb9\n\u6dfb\u52a0\u4e86\u6587\u6863\u6ce8\u91ca `// gcDoltSkip checks if the GC_DOLT environment variable is set to 'skip'.`\uff0c\u660e\u786e\u63cf\u8ff0\u4e86\u51fd\u6570\u7684\u884c\u4e3a\uff0c\u5373\u68c0\u67e5\u73af\u5883\u53d8\u91cf `GC_DOLT` \u662f\u5426\u88ab\u8bbe\u7f6e\u4e3a 'skip'\u3002\u8fd9\u9075\u5faa\u4e86Go\u8bed\u8a00\u7684\u6587\u6863\u6ce8\u91ca\u89c4\u8303\u3002\n\n## \u9a8c\u8bc1\u65b9\u5f0f\n- \u786e\u8ba4\u4ee3\u7801\u5728\u672c\u5730\u7f16\u8bd1\u901a\u8fc7\uff0c\u6ca1\u6709\u8bed\u6cd5\u9519\u8bef\u3002\n- \u8fd0\u884c\u73b0\u6709\u6d4b\u8bd5\uff08\u5982\u679c\u9002\u7528\uff09\u4ee5\u786e\u4fdd\u51fd\u6570\u884c\u4e3a\u672a\u6539\u53d8\u3002\n- \u68c0\u67e5\u6ce8\u91ca\u7684\u6e05\u6670\u5ea6\u548c\u51c6\u786e\u6027\uff0c\u4ee5\u7b26\u5408\u4ed3\u5e93\u7684\u4ee3\u7801\u98ce\u683c\u3002",
+    "created_at": "2026-06-07T01:28:12Z",
+    "updated_at": "2026-09-13T03:22:16Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs",
+      "status/ready-to-merge"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3179,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3179",
+    "title": "docs(engdocs): add canonical drain fan-out guide (ga-paqwas.1)",
+    "body": "## What this changes\n\nAdds `engdocs/drain-fanout.md` as the canonical guide for formula authors choosing fan-out mechanisms. New `graph.v2` formulas should use `drain`; existing `gc.output_json` callers are documented as legacy and grandfathered.\n\nThe guide includes a quick decision table, the `drain` field reference, a minimal TOML example, migration guidance for `gc.output_json`, FAQ entries, and links to the relevant implementation files.\n\n## Review notes\n\n- Documentation-only change; no runtime behavior changes.\n- The `gc validate` warning/link is follow-on work and is not implemented in this PR.\n- The drain field table mirrors `DrainSpec` and `DrainItemSpec` in `internal/formula/types.go`.\n\n## Test plan\n\n- [x] `go test ./test/docsync/...`\n- [x] `make test`\n- [x] `go vet ./...`\n- [x] Release gate: [`release-gates/ga-28f110-drain-fanout-guide-gate.md`](release-gates/ga-28f110-drain-fanout-guide-gate.md)",
+    "created_at": "2026-06-07T01:05:45Z",
+    "updated_at": "2026-06-07T01:52:51Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3164,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3164",
+    "title": "docs(plans): repair docsync references in events-jsonl and pg-auth plans (ga-jvfvny)",
+    "body": "## Summary\n\n- `events-jsonl-rotation.md`: convert `../../issues/ga-9hf7` and `../../issues/ga-b6y1` broken local links to plain-text bead IDs \u2014 the `issues/` directory doesn't exist on disk so `TestLocalMarkdownLinks` was failing\n- `pg-auth-slice2-pgauth-resolver.md`: replace two `internal/doltauth` path references with descriptive text to clear the `TestNoKnownStaleDocReferences` ban on `internal/dolt`\n- `pg-auth-slice3-bd-env-wiring.md`: same fix for the one `internal/doltauth` reference\n\nAll three changes preserve the original plan intent; no implementation requirements were added or removed.\n\n**Resolves:** ga-jvfvny\n\n## Test plan\n\n- [x] `go test ./test/docsync` passes on this branch\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-06-06T21:59:24Z",
+    "updated_at": "2026-06-06T22:20:06Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3150,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3150",
+    "title": "fix(docs): repoint dead engdocs links in managed-city-endpoints runbook",
+    "body": "## Summary\n\n- Two links in `docs/runbooks/managed-city-endpoints.md` (lines 10 and 267) pointed to `../../engdocs/design/beads-dolt-contract-redesign.md`, which is not published by Mintlify and 404s on docs.gascityhall.com\n- Repointed both to the GitHub source URL (`github.com/gastownhall/gascity/blob/main/engdocs/design/beads-dolt-contract-redesign.md`), consistent with the Code reference links already in the same file\n\nFixes ga-5ilm45. Surfaced by the mpr docs-render gate (gm-mk95b).\n\n## Test plan\n\n- [ ] Pre-commit `docsync` test passed\n- [ ] Verify `npx mint broken-links` reports no 404s for this page after merge\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/claude-code)",
+    "created_at": "2026-06-06T17:50:15Z",
+    "updated_at": "2026-06-07T13:27:43Z",
+    "labels": [
+      "priority/p2",
+      "kind/docs",
+      "status/merge-queued"
+    ],
+    "source_type": "pr"
+  },
+  {
+    "number": 3149,
+    "html_url": "https://github.com/gastownhall/gascity/pull/3149",
+    "title": "docs(coordstore): preserve R2.1b adapter sweep methodology",
+    "body": "## What\n\nLands **only** `docs/coordination-store/round2/R2.1b-adapter-sweep.md` \u2014 the\nR2.1b coordination-store adapter-sweep methodology (6-backend comparison, FR\ncoverage matrix, real-world latency scorecard) \u2014 to `main`.\n\n## Why\n\nThe harness + 6 adapters from #2524 already exist on `main` under\n`internal/benchmarks/coordstore`; the methodology doc was the only piece\nmissing. Preserving it here lets **#2524 close as superseded** without losing\nthe methodology, which keeps live value while epic `ga-aec8q` (right-size off\nDolt) stays open.\n\nThe benchmark *code* is slated for separate removal under `ga-xflp2c`; this doc\nis the durable record of what that sweep measured and concluded.\n\n## Scope\n\n- Doc-only. No code changes. `git diff --stat` = 1 file, +157.\n- Supersedes the doc portion of #2524.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+    "created_at": "2026-06-06T16:18:20Z",
+    "updated_at": "2026-06-08T14:29:21Z",
+    "labels": [
+      "priority/p3",
+      "kind/docs"
+    ],
+    "source_type": "pr"
+  }
+]

@@ -1,0 +1,207 @@
+{
+  "scope": "Real title/body kind triage; agreement, not ground-truth accuracy or full workflow",
+  "cohort": "kind-pilot-paired-001",
+  "model": "opus",
+  "effort": "max",
+  "jev_model": "jev-1.13.0",
+  "cases": 4,
+  "arms": {
+    "baseline": {
+      "planned": 4,
+      "finished": 4,
+      "completed": 4,
+      "failed": 0,
+      "missing": 0,
+      "repository_label_matches": 4,
+      "llm_usage_unknown": 0,
+      "llm_tokens": {
+        "inputTokens": 8,
+        "outputTokens": 227,
+        "cacheReadInputTokens": 7419,
+        "cacheCreationInputTokens": 13135,
+        "totalTokens": 20789
+      },
+      "jev_usage_unknown": 0,
+      "jev_tokens": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "elapsed_seconds": 48.519506917800754,
+      "median_seconds": 11.257326479419135,
+      "fallbacks": 0
+    },
+    "jev": {
+      "planned": 4,
+      "finished": 4,
+      "completed": 4,
+      "failed": 0,
+      "missing": 0,
+      "repository_label_matches": 4,
+      "llm_usage_unknown": 0,
+      "llm_tokens": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "totalTokens": 0
+      },
+      "jev_usage_unknown": 0,
+      "jev_tokens": {
+        "input_tokens": 5330,
+        "output_tokens": 217
+      },
+      "elapsed_seconds": 0.6791950846090913,
+      "median_seconds": 0.1527513334294781,
+      "fallbacks": 0
+    }
+  },
+  "pairs_complete": 4,
+  "raw_agreement": 4,
+  "final_agreement": 4,
+  "routed_without_claude": 4,
+  "routed_agreement": 4,
+  "per_repository_kind": {
+    "bug": {
+      "cases": 1,
+      "raw_agreement": 1,
+      "final_agreement": 1,
+      "fallbacks": 0,
+      "claude_repository_matches": 1,
+      "raw_jev_repository_matches": 1
+    },
+    "feature": {
+      "cases": 1,
+      "raw_agreement": 1,
+      "final_agreement": 1,
+      "fallbacks": 0,
+      "claude_repository_matches": 1,
+      "raw_jev_repository_matches": 1
+    },
+    "docs": {
+      "cases": 1,
+      "raw_agreement": 1,
+      "final_agreement": 1,
+      "fallbacks": 0,
+      "claude_repository_matches": 1,
+      "raw_jev_repository_matches": 1
+    },
+    "chore": {
+      "cases": 1,
+      "raw_agreement": 1,
+      "final_agreement": 1,
+      "fallbacks": 0,
+      "claude_repository_matches": 1,
+      "raw_jev_repository_matches": 1
+    }
+  },
+  "confusion_claude_to_raw_jev": {
+    "bug": {
+      "bug": 1,
+      "feature": 0,
+      "docs": 0,
+      "chore": 0,
+      "unclear": 0,
+      "failed": 0
+    },
+    "feature": {
+      "bug": 0,
+      "feature": 1,
+      "docs": 0,
+      "chore": 0,
+      "unclear": 0,
+      "failed": 0
+    },
+    "docs": {
+      "bug": 0,
+      "feature": 0,
+      "docs": 1,
+      "chore": 0,
+      "unclear": 0,
+      "failed": 0
+    },
+    "chore": {
+      "bug": 0,
+      "feature": 0,
+      "docs": 0,
+      "chore": 1,
+      "unclear": 0,
+      "failed": 0
+    },
+    "unclear": {
+      "bug": 0,
+      "feature": 0,
+      "docs": 0,
+      "chore": 0,
+      "unclear": 0,
+      "failed": 0
+    }
+  },
+  "llm_token_reduction_fraction": 1.0,
+  "elapsed_reduction_fraction": 0.9860016078531105,
+  "pairs": [
+    {
+      "id": "gascity-6426",
+      "url": "https://github.com/gastownhall/gascity/issues/6426",
+      "source_type": "issue",
+      "repository_kind": "feature",
+      "claude_kind": "feature",
+      "raw_jev_kind": "feature",
+      "confidence": 1.0,
+      "fallback": false,
+      "final_jev_arm_kind": "feature",
+      "complete": true,
+      "raw_agreement": true,
+      "final_agreement": true,
+      "baseline_seconds": 15.829642334021628,
+      "jev_arm_seconds": 0.25721533386968076
+    },
+    {
+      "id": "gascity-6319",
+      "url": "https://github.com/gastownhall/gascity/pull/6319",
+      "source_type": "pr",
+      "repository_kind": "docs",
+      "claude_kind": "docs",
+      "raw_jev_kind": "docs",
+      "confidence": 1.0,
+      "fallback": false,
+      "final_jev_arm_kind": "docs",
+      "complete": true,
+      "raw_agreement": true,
+      "final_agreement": true,
+      "baseline_seconds": 11.644426041981205,
+      "jev_arm_seconds": 0.13573199999518692
+    },
+    {
+      "id": "gascity-6435",
+      "url": "https://github.com/gastownhall/gascity/issues/6435",
+      "source_type": "issue",
+      "repository_kind": "bug",
+      "claude_kind": "bug",
+      "raw_jev_kind": "bug",
+      "confidence": 1.0,
+      "fallback": false,
+      "final_jev_arm_kind": "bug",
+      "complete": true,
+      "raw_agreement": true,
+      "final_agreement": true,
+      "baseline_seconds": 10.870226916857064,
+      "jev_arm_seconds": 0.1697706668637693
+    },
+    {
+      "id": "gascity-6419",
+      "url": "https://github.com/gastownhall/gascity/pull/6419",
+      "source_type": "pr",
+      "repository_kind": "chore",
+      "claude_kind": "chore",
+      "raw_jev_kind": "chore",
+      "confidence": 1.0,
+      "fallback": false,
+      "final_jev_arm_kind": "chore",
+      "complete": true,
+      "raw_agreement": true,
+      "final_agreement": true,
+      "baseline_seconds": 10.175211624940857,
+      "jev_arm_seconds": 0.1164770838804543
+    }
+  ]
+}

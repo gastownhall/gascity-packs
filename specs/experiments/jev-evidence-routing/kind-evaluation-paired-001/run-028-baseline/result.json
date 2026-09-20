@@ -1,0 +1,37 @@
+{
+  "case_id": "gascity-6386",
+  "arm": "baseline",
+  "started_at": "2026-09-20T20:45:09.926641+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 228,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 3092,
+      "totalTokens": 5795
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 228,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 3092,
+        "webSearchRequests": 0,
+        "costUSD": 0.037866500000000004,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 216,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "fallback": false,
+  "choice": "chore",
+  "raw_choice": null,
+  "state_sha256": "8419277cb1b2dc3bc1ab8e7bf819ac17fc19af670841eb18a7f01ab961280147",
+  "status": "completed",
+  "elapsed_seconds": 17.114922000095248
+}

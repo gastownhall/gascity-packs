@@ -1,0 +1,16 @@
+[1/8] gascity-6426 baseline starting
+[1/8] completed; choice=feature; fallback=False; 15.83s
+[2/8] gascity-6426 jev starting
+[2/8] completed; choice=feature; fallback=False; 0.26s
+[3/8] gascity-6319 jev starting
+[3/8] completed; choice=docs; fallback=False; 0.14s
+[4/8] gascity-6319 baseline starting
+[4/8] completed; choice=docs; fallback=False; 11.64s
+[5/8] gascity-6435 baseline starting
+[5/8] completed; choice=bug; fallback=False; 10.87s
+[6/8] gascity-6435 jev starting
+[6/8] completed; choice=bug; fallback=False; 0.17s
+[7/8] gascity-6419 jev starting
+[7/8] completed; choice=chore; fallback=False; 0.12s
+[8/8] gascity-6419 baseline starting
+[8/8] completed; choice=chore; fallback=False; 10.18s

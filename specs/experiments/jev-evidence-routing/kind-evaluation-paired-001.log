@@ -1,0 +1,128 @@
+[1/64] gascity-6408 baseline starting
+[1/64] completed; choice=chore; fallback=False; 11.58s
+[2/64] gascity-6408 jev starting
+[2/64] completed; choice=chore; fallback=False; 0.35s
+[3/64] gascity-5261 jev starting
+[3/64] completed; choice=docs; fallback=False; 0.13s
+[4/64] gascity-5261 baseline starting
+[4/64] completed; choice=docs; fallback=False; 10.45s
+[5/64] gascity-6327 baseline starting
+[5/64] completed; choice=feature; fallback=False; 9.65s
+[6/64] gascity-6327 jev starting
+[6/64] completed; choice=feature; fallback=False; 0.13s
+[7/64] gascity-6396 jev starting
+[7/64] completed; choice=chore; fallback=False; 0.16s
+[8/64] gascity-6396 baseline starting
+[8/64] completed; choice=chore; fallback=False; 13.29s
+[9/64] gascity-6413 baseline starting
+[9/64] completed; choice=bug; fallback=False; 12.66s
+[10/64] gascity-6413 jev starting
+[10/64] completed; choice=bug; fallback=False; 0.18s
+[11/64] gascity-5680 jev starting
+[11/64] completed; choice=docs; fallback=False; 0.13s
+[12/64] gascity-5680 baseline starting
+[12/64] completed; choice=docs; fallback=False; 13.44s
+[13/64] gascity-6376 baseline starting
+[13/64] completed; choice=feature; fallback=False; 11.09s
+[14/64] gascity-6376 jev starting
+[14/64] completed; choice=feature; fallback=True; 14.81s
+[15/64] gascity-6417 jev starting
+[15/64] completed; choice=bug; fallback=False; 0.25s
+[16/64] gascity-6417 baseline starting
+[16/64] completed; choice=bug; fallback=False; 10.20s
+[17/64] gascity-5782 baseline starting
+[17/64] completed; choice=docs; fallback=False; 10.96s
+[18/64] gascity-5782 jev starting
+[18/64] completed; choice=docs; fallback=False; 0.16s
+[19/64] gascity-5303 jev starting
+[19/64] completed; choice=docs; fallback=False; 0.14s
+[20/64] gascity-5303 baseline starting
+[20/64] completed; choice=docs; fallback=False; 10.61s
+[21/64] gascity-6392 baseline starting
+[21/64] completed; choice=feature; fallback=False; 10.87s
+[22/64] gascity-6392 jev starting
+[22/64] completed; choice=feature; fallback=False; 0.21s
+[23/64] gascity-5847 jev starting
+[23/64] completed; choice=docs; fallback=False; 0.25s
+[24/64] gascity-5847 baseline starting
+[24/64] completed; choice=docs; fallback=False; 12.28s
+[25/64] gascity-5356 baseline starting
+[25/64] completed; choice=docs; fallback=False; 9.75s
+[26/64] gascity-5356 jev starting
+[26/64] completed; choice=docs; fallback=False; 0.23s
+[27/64] gascity-6386 jev starting
+[27/64] completed; choice=chore; fallback=True; 15.94s
+[28/64] gascity-6386 baseline starting
+[28/64] completed; choice=chore; fallback=False; 17.11s
+[29/64] gascity-6429 baseline starting
+[29/64] completed; choice=bug; fallback=False; 11.35s
+[30/64] gascity-6429 jev starting
+[30/64] completed; choice=bug; fallback=False; 0.20s
+[31/64] gascity-6407 jev starting
+[31/64] completed; choice=feature; fallback=False; 0.14s
+[32/64] gascity-6407 baseline starting
+[32/64] completed; choice=feature; fallback=False; 11.36s
+[33/64] gascity-6416 baseline starting
+[33/64] completed; choice=bug; fallback=False; 10.92s
+[34/64] gascity-6416 jev starting
+[34/64] completed; choice=bug; fallback=False; 0.16s
+[35/64] gascity-6415 jev starting
+[35/64] completed; choice=bug; fallback=False; 0.14s
+[36/64] gascity-6415 baseline starting
+[36/64] completed; choice=bug; fallback=False; 12.52s
+[37/64] gascity-5350 baseline starting
+[37/64] completed; choice=docs; fallback=False; 14.84s
+[38/64] gascity-5350 jev starting
+[38/64] completed; choice=docs; fallback=False; 0.14s
+[39/64] gascity-6352 jev starting
+[39/64] completed; choice=feature; fallback=False; 0.13s
+[40/64] gascity-6352 baseline starting
+[40/64] completed; choice=feature; fallback=False; 9.90s
+[41/64] gascity-6427 baseline starting
+[41/64] completed; choice=bug; fallback=False; 9.14s
+[42/64] gascity-6427 jev starting
+[42/64] completed; choice=bug; fallback=False; 0.10s
+[43/64] gascity-6411 jev starting
+[43/64] completed; choice=chore; fallback=False; 0.15s
+[44/64] gascity-6411 baseline starting
+[44/64] completed; choice=chore; fallback=False; 9.14s
+[45/64] gascity-6321 baseline starting
+[45/64] completed; choice=feature; fallback=False; 14.04s
+[46/64] gascity-6321 jev starting
+[46/64] completed; choice=feature; fallback=True; 13.26s
+[47/64] gascity-6425 jev starting
+[47/64] completed; choice=bug; fallback=False; 0.17s
+[48/64] gascity-6425 baseline starting
+[48/64] completed; choice=bug; fallback=False; 12.54s
+[49/64] gascity-5306 baseline starting
+[49/64] completed; choice=docs; fallback=False; 7.78s
+[50/64] gascity-5306 jev starting
+[50/64] completed; choice=docs; fallback=False; 0.20s
+[51/64] gascity-6389 jev starting
+[51/64] completed; choice=chore; fallback=True; 16.04s
+[52/64] gascity-6389 baseline starting
+[52/64] completed; choice=chore; fallback=False; 13.59s
+[53/64] gascity-6399 baseline starting
+[53/64] completed; choice=chore; fallback=False; 10.25s
+[54/64] gascity-6399 jev starting
+[54/64] completed; choice=chore; fallback=True; 12.32s
+[55/64] gascity-6423 jev starting
+[55/64] completed; choice=feature; fallback=True; 11.09s
+[56/64] gascity-6423 baseline starting
+[56/64] completed; choice=feature; fallback=False; 9.62s
+[57/64] gascity-6368 baseline starting
+[57/64] completed; choice=feature; fallback=False; 10.82s
+[58/64] gascity-6368 jev starting
+[58/64] completed; choice=feature; fallback=False; 0.16s
+[59/64] gascity-6388 jev starting
+[59/64] completed; choice=chore; fallback=False; 0.16s
+[60/64] gascity-6388 baseline starting
+[60/64] completed; choice=chore; fallback=False; 10.11s
+[61/64] gascity-6418 baseline starting
+[61/64] completed; choice=bug; fallback=False; 13.43s
+[62/64] gascity-6418 jev starting
+[62/64] completed; choice=bug; fallback=False; 0.24s
+[63/64] gascity-6405 jev starting
+[63/64] completed; choice=feature; fallback=True; 17.11s
+[64/64] gascity-6405 baseline starting
+[64/64] completed; choice=feature; fallback=False; 9.14s

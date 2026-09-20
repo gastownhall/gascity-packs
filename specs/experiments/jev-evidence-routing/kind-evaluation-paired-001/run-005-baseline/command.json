@@ -1,0 +1,14 @@
+[
+  "claude",
+  "-p",
+  "--safe-mode",
+  "--tools",
+  "",
+  "--no-session-persistence",
+  "--model",
+  "claude-opus-5",
+  "--effort",
+  "max",
+  "--output-format",
+  "json"
+]

@@ -1,0 +1,56 @@
+{
+  "case_id": "gascity-6399",
+  "arm": "jev",
+  "started_at": "2026-09-20T20:48:25.346590+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 327,
+      "cacheReadInputTokens": 2473,
+      "cacheCreationInputTokens": 1974,
+      "totalTokens": 4776
+    },
+    "models": {
+      "claude-opus-5": {
+        "inputTokens": 2,
+        "outputTokens": 327,
+        "cacheReadInputTokens": 2473,
+        "cacheCreationInputTokens": 1974,
+        "webSearchRequests": 0,
+        "costUSD": 0.0291615,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 315,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": {
+    "input_tokens": 834,
+    "output_tokens": 55
+  },
+  "fallback": true,
+  "choice": "chore",
+  "raw_choice": "chore",
+  "state_sha256": "9265bfa24abcd3aaa97c630c53ee95bc7fb5d642edea059dd672e60627bd340e",
+  "confidence": 0.76,
+  "jev_model": "jev-1.13.0",
+  "decision": {
+    "type": "choice",
+    "choice": "chore",
+    "confidence": 0.76,
+    "probabilities": {
+      "chore": 0.81,
+      "feature": 0.0,
+      "unclear": 0.0,
+      "docs": 0.0,
+      "bug": 0.19
+    },
+    "route": "llm_kind",
+    "label": null
+  },
+  "status": "completed",
+  "elapsed_seconds": 12.320222374983132
+}

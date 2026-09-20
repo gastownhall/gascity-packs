@@ -1,0 +1,41 @@
+{
+  "case_id": "gascity-5356",
+  "arm": "jev",
+  "started_at": "2026-09-20T20:44:53.743871+00:00",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 807,
+    "output_tokens": 54
+  },
+  "fallback": false,
+  "choice": "docs",
+  "raw_choice": "docs",
+  "state_sha256": "d40346d85d0eaba76bab42ed1e7a0384fc67811cc5e1f3fb2fe94c19db209c94",
+  "confidence": 0.99,
+  "jev_model": "jev-1.13.0",
+  "decision": {
+    "type": "choice",
+    "choice": "docs",
+    "confidence": 0.99,
+    "probabilities": {
+      "bug": 0.01,
+      "unclear": 0.0,
+      "feature": 0.0,
+      "docs": 0.99,
+      "chore": 0.0
+    },
+    "route": "use_kind",
+    "label": "kind/docs"
+  },
+  "status": "completed",
+  "elapsed_seconds": 0.23319454188458622
+}

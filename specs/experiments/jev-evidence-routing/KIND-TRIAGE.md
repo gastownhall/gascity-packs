@@ -15,12 +15,14 @@ complexity remain outside automatic Jev replacement. The implementation uses
 the public Gas City policy; Julian's exact maintainer-city implementation was
 not available. Repository-specific label mapping is explicit.
 
-Current measurement status: one live synthetic kind preflight succeeded with
-Jev 1.13.0; its response contract, usage and timing are recorded in
-[live-jev-preflight-001](live-jev-preflight-001/report.json). This is an access
-check, not a replication of 96% or measured kind savings. Offline contract
-checks and synthetic routing tests establish software behavior only. The full-build
-failures in [RESULTS.md](RESULTS.md) remain unresolved as comparative evidence.
+Current measurement status: the paired test on our own frozen real Gas City
+items is complete. Raw Jev matched Opus 5 at maximum effort on 31/32 evaluation
+items (96.9%). Seven fresh Claude fallbacks brought final agreement to 32/32,
+with 77.9% fewer Claude tokens and 71.2% less classification time. See
+[KIND-RESULTS.md](KIND-RESULTS.md) for data, boundary cases and limitations.
+This tests the kind-only use case without requiring Julian's original dataset.
+The full-build failures in [RESULTS.md](RESULTS.md) remain unresolved as
+comparative full-workflow evidence.
 
 ## Historical backtest
 
@@ -88,30 +90,29 @@ mix next to every percentage.
 
 ## Paired subscription experiment
 
-Historical agreement is the first check, not the A/B outcome. The next live
-experiment should prioritize kind triage before another expensive full build:
+The paired runner `scripts/jev_kind_ab.py` now implements the live comparison:
 
-1. Freeze the kind rubric and matching inputs. Record exact Claude model and
-   effort from the original Opus run; “Max” may refer to a setting or plan, so
-   preserve the actual configuration instead of guessing.
-2. Baseline: classify kind with the logged-in Claude subscription CLI. Treatment:
-   Jev first, then the same Claude kind classifier only for fallback cases.
-   Preserve all prompts, outputs, per-model input/output/cache counters,
-   versions, errors and timing. Never switch generative work to paid API keys.
-3. Alternate order per matched case, repeat in fresh sessions, and include Jev,
-   fallback, failure and retry time/tokens. Record machine load and cache state.
-   Compare classifier time separately from complete issue-triage execution.
-4. Compare adjudicated quality, agreement, per-kind errors, coverage, all LLM
-   token categories, Jev tokens and paired elapsed times. Count subscription
-   consumption, not CLI dollar estimates as actual charges.
-5. Only then assess the full workflow with the same snapshots and public-write
-   behavior disabled in an isolated fixture. Label writes require their own
-   explicit authorization; neither this helper nor this experiment performs them.
+1. Freeze the kind rubric and matching title/body inputs before inference.
+   Resolve the Opus alias in a separate pilot and pin the observed version for
+   evaluation, with the effort setting recorded explicitly.
+2. Baseline: classify with the logged-in Claude subscription CLI. Treatment:
+   Jev first, then a fresh call to the same Claude classifier for low confidence
+   or unclear decisions. Preserve raw Jev output separately from final output.
+3. Alternate arm order per case, preserve all input/output/cache usage, and
+   include fallback time and tokens. Stop on failure and retain artifacts.
+4. Compare raw agreement, final agreement, coverage, repository-label matches,
+   Claude tokens, Jev tokens, and complete classification time. Model agreement
+   is distinct from independently adjudicated accuracy.
 
-The existing evidence A/B harness classifies evidence, not kinds. This kind
-backtest runner evaluates historical references and does not yet implement the
-paired Claude/fallback runner described above. Do not present its output as a
-completed A/B test or an end-to-end speed result.
+The [completed experiment](KIND-RESULTS.md) contains four pilot pairs and 32
+separate evaluation pairs. Each case ran once per arm; there was no tuning on
+the evaluation set. Frozen protocol, source hashes, raw responses and token
+reconciliation are retained. Full triage execution and repeated measurements
+remain separate work; this runner does not make GitHub writes.
+
+The historical backtest runner above still measures only Jev against archived
+references. Use the paired runner when measuring live Claude and fallback
+usage and latency.
 
 ## Recorded software validation
 

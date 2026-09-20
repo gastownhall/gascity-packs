@@ -62,4 +62,7 @@ record their source paths and SHA-256 hashes.
 A separate [kind-triage protocol](KIND-TRIAGE.md) tracks support for Julian's
 maintainer-city approach. Its historical backtest uses frozen reference kinds;
 priority and adopt-pr complexity are not automatic replacement candidates.
+The [paired real-data evaluation](KIND-RESULTS.md) is complete: 31/32 raw
+agreement with Opus 5 at maximum effort, 32/32 final agreement after seven
+fallbacks, 77.9% fewer Claude tokens and 71.2% less classification time.
 Keep these results separate from evidence review and full-build cohorts.
