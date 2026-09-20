@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-20T03:03:21.156147+00:00",
+  "task_processes_exited": [
+    24632,
+    25676,
+    25677,
+    26428,
+    36532
+  ],
+  "named_tmux_socket": "jev-gcja-4r1pdmmv-run-001-baseline",
+  "empty_tmux_server_stopped": true,
+  "preexisting_supervisor_retained": 23099,
+  "native_run_exit": 1,
+  "process_observer_finished": true,
+  "read_only_transcript_inspector_cancelled_native_exit": 130
+}

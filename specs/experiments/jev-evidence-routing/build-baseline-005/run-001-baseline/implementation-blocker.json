@@ -1,0 +1,97 @@
+{
+  "at": "2026-09-20T02:57:39.993264+00:00",
+  "beads": {
+    "fi-np7": {
+      "id": "fi-np7",
+      "title": "do-work",
+      "status": "closed",
+      "issue_type": "task",
+      "created_at": "2026-09-20T02:45:52Z",
+      "assignee": "gc__implementation-worker-jg4r0b-p7v",
+      "description": "Full lifecycle implementation formula for one implementation convoy or a core\ndrain-unit convoy of size one.\n\nLaunch inputs:\n- input_convoy: fi-m09\n- context_path:  (empty means no extra context bundle)\n- implementation_target: gc.implementation-worker\n- summary_path:  (empty means use the default item summary path)\n",
+      "metadata": {
+        "gc.drain_control_id": "fi-amw",
+        "gc.drain_count": "1",
+        "gc.drain_index": "0",
+        "gc.drain_member_access": "exclusive",
+        "gc.drain_member_id": "fi-aua",
+        "gc.formula_contract": "graph.v2",
+        "gc.formula_name": "do-work",
+        "gc.formula_source": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/gascity/formulas/do-work.formula.toml",
+        "gc.graphv2_root_key": "graphv2-root:fi-m09:do-work:18ffc27f4e6f2bbb:drain=fi-amw:fi-aua",
+        "gc.graphv2_vars.v1": "{\"artifact_root\":\".gc/inference-gate/build-basic\",\"binding_name\":\"gc\",\"binding_prefix\":\"gc.\",\"code_review_formula\":\"review\",\"context_path\":\"\",\"decomposition_formula\":\"decomposition-base\",\"decomposition_path\":\"\",\"drain_policy\":\"separate\",\"implementation_formula\":\"implement\",\"implementation_item_formula\":\"do-work-item\",\"implementation_target\":\"gc.implementation-worker\",\"interaction_mode\":\"headless\",\"jev_mode\":\"off\",\"jev_model\":\"jev-1.13.0\",\"jev_threshold\":\"0.85\",\"max_iterations\":\"2\",\"open_pr\":\"false\",\"plan_path\":\"\",\"planning_formula\":\"planning-base\",\"push\":\"false\",\"requirements_path\":\"\",\"review_fix_formula\":\"fix-loop-base\",\"review_mode\":\"agent\",\"rig_name\":\"fixture\",\"summary_path\":\"\"}",
+        "gc.input_convoy_id": "fi-m09",
+        "gc.item_root_key": "drain-item-root:fi-amw:0:fi-aua",
+        "gc.kind": "workflow",
+        "gc.root_store_ref": "rig:fixture",
+        "gc.routed_to": "fixture/gc.implementation-worker",
+        "gc.session_id": "jg4r0b-p7v",
+        "gc.session_name": "gc__run-operator-jg4r0b-btj",
+        "gc.var.artifact_root": ".gc/inference-gate/build-basic",
+        "gc.var.binding_name": "gc",
+        "gc.var.binding_prefix": "gc.",
+        "gc.var.code_review_formula": "review",
+        "gc.var.convoy_id": "fi-m09",
+        "gc.var.decomposition_formula": "decomposition-base",
+        "gc.var.drain_policy": "separate",
+        "gc.var.implementation_formula": "implement",
+        "gc.var.implementation_item_formula": "do-work-item",
+        "gc.var.implementation_target": "gc.implementation-worker",
+        "gc.var.interaction_mode": "headless",
+        "gc.var.issue": "fi-aua",
+        "gc.var.jev_mode": "off",
+        "gc.var.jev_model": "jev-1.13.0",
+        "gc.var.jev_threshold": "0.85",
+        "gc.var.max_iterations": "2",
+        "gc.var.open_pr": "false",
+        "gc.var.planning_formula": "planning-base",
+        "gc.var.push": "false",
+        "gc.var.review_fix_formula": "fix-loop-base",
+        "gc.var.review_mode": "agent",
+        "gc.var.rig_name": "fixture",
+        "gc.work_branch": "main",
+        "gc.work_dir": "/private/tmp/gcja-4r1pdmmv/w/fixture"
+      },
+      "dependencies": [
+        {
+          "issue_id": "fi-np7",
+          "depends_on_id": "fi-c5r",
+          "type": "tracks"
+        }
+      ]
+    },
+    "fi-2qf": {
+      "id": "fi-2qf",
+      "title": "Prepare item worktree",
+      "status": "closed",
+      "issue_type": "task",
+      "created_at": "2026-09-20T02:45:53Z",
+      "assignee": "gc__run-operator-jg4r0b-btj",
+      "description": "\nResolve and publish the isolated worktree for this item. This is infrastructure\nsetup only. Do not edit source files in the launcher checkout.\n\n1. Read current step bead metadata and get `gc.root_bead_id`; hard-fail if it is\n   missing. Read that do-work root with `gc bd show <root-bead-id> --json`. If\n   `gc bd show --json` returns a one-element list, unwrap the first element before\n   reading metadata.\n2. Resolve `<source-anchor-id>` from the do-work root:\n   - read root metadata `gc.input_convoy_id`; hard-fail if it is missing\n   - verify `gc.input_convoy_id` matches rendered runtime convoy `fi-m09`\n   - read that input convoy with `gc bd show <input-convoy-id> --json`; unwrap a\n     one-element list response before reading metadata\n   - if input convoy metadata has `gc.synthetic_kind=drain-unit-convoy`, use\n     input convoy metadata `gc.drain_member_id`\n   - do not use the synthetic drain-unit convoy id as `<source-anchor-id>`;\n     hard-fail if the selected source anchor id equals the synthetic input convoy id\n   - otherwise use `<input-convoy-id>` as the source anchor\n   - if root metadata also has `gc.drain_member_id`, it must match the selected\n     drain member\n3. Validate context path , files ownership, and verification\n   policy for the resolved source anchor.\n4. Create or reuse a deterministic git worktree at\n   `$(pwd)/worktrees/<source-anchor-id>`, based on the up-to-date remote\n   default branch \u2014 never the launcher's local `HEAD`, which may be behind\n   `origin`. If the path is missing:\n   - Resolve the remote default branch (do not hardcode `main`). Read the\n     local ref first, and only touch the network if it is missing:\n\n     ```sh\n     DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')\n     if [ -z \"$DEFAULT_BRANCH\" ]; then\n       git remote set-head origin --auto >/dev/null 2>&1 || true\n       DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')\n     fi\n     ```\n\n     `refs/remotes/origin/HEAD` is written by `git clone` and refreshed by\n     `git remote set-head origin --auto`. It is NOT written by `git init` plus\n     `git fetch`, which is how `actions/checkout` and several of our own\n     checkouts are built, so the refresh branch is load-bearing rather than\n     defensive. The fetch on the next line still guarantees the base is\n     current, so a stale ref costs nothing.\n\n     If it is still empty, fail closed \u2014 do not fall back to local `HEAD`.\n   - Fetch it so the base is current:\n     `git fetch --prune origin \"$DEFAULT_BRANCH\"`.\n   - Create the worktree detached at the freshly fetched tip:\n     `git worktree add \"$WORKTREE\" --detach \"origin/$DEFAULT_BRANCH\"`.\n   If the path exists but is not the worktree for this repository, fail closed.\n5. Persist the absolute path on the source anchor with\n   `gc bd update <source-anchor-id> --set-metadata work_dir=<absolute worktree path>`.\n   For synthetic drain-unit convoys, never persist `work_dir` on the synthetic drain-unit convoy; the original drain member/source anchor is authoritative.\n   Verify the source anchor now has `work_dir` before closing this step with\n   `gc.outcome=pass`.\n",
+      "metadata": {
+        "gc.continuation_group": "pool-workflow",
+        "gc.failure_class": "missing-remote",
+        "gc.failure_reason": "No git remote named origin is configured in this repository, so refs/remotes/origin/HEAD cannot be resolved and git remote set-head origin --auto has nothing to operate on. Per step 4 instructions, must fail closed rather than fall back to local HEAD.",
+        "gc.outcome": "fail",
+        "gc.root_bead_id": "fi-np7",
+        "gc.root_store_ref": "rig:fixture",
+        "gc.routed_to": "fixture/gc.run-operator",
+        "gc.run_target": "gc.run-operator",
+        "gc.session_affinity": "require",
+        "gc.session_id": "jg4r0b-btj",
+        "gc.session_name": "gc__run-operator-jg4r0b-btj",
+        "gc.step_ref": "do-work.prepare-worktree",
+        "gc.work_branch": "main",
+        "gc.work_dir": "/private/tmp/gcja-4r1pdmmv/w/fixture"
+      },
+      "dependencies": [
+        {
+          "issue_id": "fi-2qf",
+          "depends_on_id": "fi-np7",
+          "type": "tracks"
+        }
+      ]
+    }
+  },
+  "finding": "prepare-worktree failed closed because fresh fixture lacks origin/HEAD. Separate observation: implementation worker received and closed do-work workflow latch fi-np7 without implementing slugify; root-task routing merits further investigation, not established by origin failure."
+}

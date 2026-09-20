@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-20T03:02:17.108821+00:00",
+  "status": "failed",
+  "observed_requests": 142,
+  "observed_tokens": {
+    "input_tokens": 28758,
+    "output_tokens": 27455,
+    "cache_read_tokens": 7396339,
+    "cache_creation_tokens": 237090,
+    "total_tokens": 7689642
+  },
+  "raw_events_match_terminal_totals": true,
+  "transcripts_archived": 11,
+  "load_average": [
+    11.4345703125,
+    18.02490234375,
+    21.57177734375
+  ]
+}

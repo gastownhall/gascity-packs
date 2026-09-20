@@ -157,29 +157,6 @@ def check_gate_python(env, workspace):
         'stdout':result.stdout,'stderr':result.stderr}
 
 
-def prepare_local_origin(workspace, env):
-    """Provide the remote default branch required by do-work's worktree stage."""
-    rig = workspace.rig_dir
-    def git(*arguments):
-        return gate.run_checked(['git', *arguments], cwd=rig, env=env,
-                                timeout=60).strip()
-    if 'origin' in git('remote').splitlines():
-        raise ValueError('Fresh experiment fixture unexpectedly has an origin remote')
-    origin = workspace.root/'fixture-origin.git'
-    if origin.exists():
-        raise ValueError('Refusing to reuse an existing experiment origin')
-    git('clone', '--bare', '--no-hardlinks', str(rig), str(origin))
-    git('remote', 'add', 'origin', str(origin))
-    git('fetch', 'origin')
-    git('remote', 'set-head', 'origin', '--auto')
-    branch = git('symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
-    head, remote_head = git('rev-parse', 'HEAD'), git('rev-parse', 'origin/HEAD')
-    if not branch.startswith('origin/') or remote_head != head:
-        raise ValueError('Experiment origin does not resolve to the initial fixture commit')
-    return {'status':'passed', 'remote':str(origin), 'default_branch':branch,
-            'initial_head':head, 'remote_head':remote_head, 'network_remote':False}
-
-
 def run(args, arm, out):
     out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
@@ -250,7 +227,6 @@ def run(args, arm, out):
         try:
             gate.initialize_city(args.gc_bin, workspace, pack_spec=pack, gates=['build-basic'], env=env,
                 seed_claude_state=False, init_timeout=args.setup_timeout)
-            save(out/'fixture-origin-preflight.json', prepare_local_origin(workspace, env))
             report['setup_seconds'] = time.monotonic() - started
             if args.setup_only:
                 report['status'] = 'setup_only'

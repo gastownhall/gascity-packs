@@ -150,3 +150,25 @@ def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch):
         assert events==['stop','collector_close']
     finally:
         build.shutil.rmtree(workspace.root.parent)
+
+
+def test_local_origin_supports_workflow_default_branch_and_worktree(tmp_path):
+    import os
+    import subprocess
+    env={**os.environ,'GIT_CONFIG_GLOBAL':os.devnull,'GIT_CONFIG_NOSYSTEM':'1'}
+    rig=tmp_path/'fixture'; rig.mkdir()
+    def git(*args):
+        return subprocess.check_output(['git','-C',str(rig),*args],env=env,text=True).strip()
+    git('init','-b','release-line')
+    (rig/'fixture.txt').write_text('original fixture\n')
+    git('add','.')
+    git('-c','user.name=Experiment','-c','user.email=experiment@example.invalid','commit','-m','fixture')
+    original=git('rev-parse','HEAD')
+    result=build.prepare_local_origin(SimpleNamespace(root=tmp_path,rig_dir=rig),env)
+    assert result['default_branch']=='origin/release-line'
+    assert git('rev-parse','origin/HEAD')==original
+    assert Path(git('remote','get-url','origin')).is_relative_to(tmp_path)
+    worktree=tmp_path/'implementation'
+    git('fetch','--prune','origin','release-line')
+    git('worktree','add',str(worktree),'--detach',result['default_branch'])
+    assert (worktree/'fixture.txt').read_text()=='original fixture\n'

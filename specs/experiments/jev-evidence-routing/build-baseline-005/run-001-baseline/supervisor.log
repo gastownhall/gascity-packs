@@ -1,0 +1,1800 @@
+gc supervisor: started: previous_exit=crash
+gc supervisor: workspace-service startup cleanup is not available on darwin; after a non-graceful supervisor exit, stale workspace-service processes may keep sockets bound. Registered workspace-service roots: /tmp/gcja-4r1pdmmv/w/city/.gc/services. Stop stale processes whose environment includes GC_SERVICE_STATE_ROOT under those roots, then restart those cities.
+gc supervisor: WARNING: API binding to ephemeral port 56411 -- set port = 8372 in ~/.gc/supervisor.toml
+Supervisor API listening on http://127.0.0.1:56411
+Dashboard:  http://127.0.0.1:56411/
+Supervisor started.
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline': starting_bead_store took 1m20.77s
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline': checking_bead_store_health took 5.89s
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline': projecting_mcp took 5.83s
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline': creating_session_provider took 1.75s
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline': building_city_runtime took 2.13s
+2026/09/19 18:55:51 caching-store: priming ...
+2026/09/19 18:55:51 beads cache: stagger=16261ms agent=
+2026/09/19 18:55:53 caching-store: priming ...
+2026/09/19 18:55:53 beads cache: stagger=16261ms agent=
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline': opening_controller_state took 5.05s
+2026/09/19 18:56:21 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=629ms cadence=default
+2026/09/19 18:56:23 beads cache: reconciled rig=jg4r0b beads=0 adds=0 updates=0 removes=0 took=198ms cadence=default
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline': running_pool_on_boot took 44.57s
+Launching city 'jev-gcja-4r1pdmmv-run-001-baseline' (/tmp/gcja-4r1pdmmv/w/city)
+adoption barrier: listing running sessions partially failed: tmux server unreachable: no tmux server running
+gc supervisor: adoption barrier: 0 session(s) failed bead creation
+gc supervisor: startup phase=adoption-barrier elapsed=48ms
+gc supervisor: startup phase=config-reload elapsed=470ms
+2026/09/19 18:56:40 api: GET /v0/cities 200 21.264ms [memory] req_id=a30db2424184eb9f
+2026/09/19 18:56:40 api: GET /v0/cities 200 358µs [memory] req_id=0ae8309ef7c7949b
+2026/09/19 18:56:41 api: GET /v0/cities 200 138µs [memory] req_id=a70304ea1dd8bfa9
+2026/09/19 18:56:41 api: GET /v0/cities 200 322µs [memory] req_id=1240829221ee97c9
+2026/09/19 18:56:41 api: GET /v0/cities 200 167µs [memory] req_id=b66762678c113221
+2026/09/19 18:56:41 api: GET /v0/cities 200 124µs [memory] req_id=1fb54c2922505874
+2026/09/19 18:56:41 api: GET /v0/cities 200 215µs [memory] req_id=10afcc2dc376fb44
+2026/09/19 18:56:41 api: GET /v0/cities 200 165µs [memory] req_id=b6107679e2291a10
+2026/09/19 18:56:41 api: GET /v0/cities 200 472µs [memory] req_id=fa6469e53a02ba52
+[mysql] 2026/09/19 18:56:41 packets.go:58 unexpected EOF
+2026/09/19 18:56:41 api: GET /v0/cities 200 6.153ms [memory] req_id=2f10d8880f8e0f01
+2026/09/19 18:56:41 api: GET /v0/cities 200 435µs [memory] req_id=242998d5e1131c72
+2026/09/19 18:56:42 api: GET /v0/cities 200 328µs [memory] req_id=20a8e48e4f0c6ed3
+2026/09/19 18:56:42 api: GET /v0/cities 200 309µs [memory] req_id=884f645523abb357
+2026/09/19 18:56:42 api: GET /v0/cities 200 5.136ms [memory] req_id=d6c2f7d62039e3c7
+2026/09/19 18:56:42 api: GET /v0/cities 200 56µs [memory] req_id=049060e7b97e54c1
+2026/09/19 18:56:42 api: GET /v0/cities 200 144µs [memory] req_id=8e8e0c7c8a4623e2
+2026/09/19 18:56:42 api: GET /v0/cities 200 168µs [memory] req_id=6362bfc918d49b79
+2026/09/19 18:56:42 api: GET /v0/cities 200 246µs [memory] req_id=2a2035ae8d8b08f1
+2026/09/19 18:56:42 api: GET /v0/cities 200 17.458ms [memory] req_id=d16ccd3f9760275e
+2026/09/19 18:56:42 api: GET /v0/cities 200 3.666ms [memory] req_id=ca6cd880ceb2d3bf
+2026/09/19 18:56:43 api: GET /v0/cities 200 132µs [memory] req_id=c7df8532b4a02554
+2026/09/19 18:56:43 api: GET /v0/cities 200 72µs [memory] req_id=8b5f580ca13018a3
+2026/09/19 18:56:43 api: GET /v0/cities 200 11.718ms [memory] req_id=56a5633d3fbd529a
+2026/09/19 18:56:43 api: GET /v0/cities 200 119µs [memory] req_id=e10a1cf3d6ff8df8
+2026/09/19 18:56:43 api: GET /v0/cities 200 163µs [memory] req_id=47add54d51bf8651
+2026/09/19 18:56:43 api: GET /v0/cities 200 215µs [memory] req_id=2d23b68c92526a12
+2026/09/19 18:56:43 api: GET /v0/cities 200 230µs [memory] req_id=adb57a5d42390cc5
+2026/09/19 18:56:43 api: GET /v0/cities 200 3.22ms [memory] req_id=90388f29ebdd276c
+2026/09/19 18:56:44 api: GET /v0/cities 200 601µs [memory] req_id=936eedd1b4912e7e
+2026/09/19 18:56:44 api: GET /v0/cities 200 153µs [memory] req_id=c703f60a1ba561dd
+2026/09/19 18:56:44 api: GET /v0/cities 200 202µs [memory] req_id=49be4525d451d29d
+2026/09/19 18:56:44 api: GET /v0/cities 200 6.525ms [memory] req_id=66f05bd4376e84b6
+2026/09/19 18:56:44 api: GET /v0/cities 200 109µs [memory] req_id=474a4716b76590dd
+2026/09/19 18:56:44 api: GET /v0/cities 200 2.267ms [memory] req_id=33d54c7fcfd5722c
+2026/09/19 18:56:44 api: GET /v0/cities 200 9.546ms [memory] req_id=07fe9d4d4b49a4e0
+2026/09/19 18:56:44 api: GET /v0/cities 200 551µs [memory] req_id=f52d11cb34ea7569
+2026/09/19 18:56:44 api: GET /v0/cities 200 16.287ms [memory] req_id=0d52db9529e6d342
+2026/09/19 18:56:45 api: GET /v0/cities 200 152µs [memory] req_id=48eeb590a39451a9
+gc supervisor: startup phase=startup-orders elapsed=4.337s
+gc supervisor: startup phase=startup-route-recovery elapsed=2ms
+2026/09/19 18:56:45 api: GET /v0/cities 200 401µs [memory] req_id=3206076d2d76d286
+2026/09/19 18:56:45 api: GET /v0/cities 200 15.807ms [memory] req_id=2dea18730d8632b1
+2026/09/19 18:56:45 api: GET /v0/cities 200 247µs [memory] req_id=827ffbffe621c325
+2026/09/19 18:56:45 api: GET /v0/cities 200 910µs [memory] req_id=2189f6fa36d6c465
+2026/09/19 18:56:45 api: GET /v0/cities 200 146µs [memory] req_id=d926c0b5e0298b03
+2026/09/19 18:56:45 api: GET /v0/cities 200 1.199ms [memory] req_id=2389308749deac47
+2026/09/19 18:56:46 api: GET /v0/cities 200 203µs [memory] req_id=d5629902309d2027
+2026/09/19 18:56:46 api: GET /v0/cities 200 168µs [memory] req_id=dcf097ecb6e67da5
+2026/09/19 18:56:46 api: GET /v0/cities 200 2.096ms [memory] req_id=1855063218687585
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 18:56:46 api: GET /v0/cities 200 193µs [memory] req_id=58764fa2d93017ec
+2026/09/19 18:56:46 api: GET /v0/cities 200 130µs [memory] req_id=0f8c528c1b40229c
+2026/09/19 18:56:46 api: GET /v0/cities 200 173µs [memory] req_id=829bad9ff71367bf
+2026/09/19 18:56:46 api: GET /v0/cities 200 574µs [memory] req_id=3a2ef630e127b6fb
+2026/09/19 18:56:46 api: GET /v0/cities 200 105µs [memory] req_id=e153103651969ce0
+2026/09/19 18:56:46 api: GET /v0/cities 200 162µs [memory] req_id=7113c3439c31cfff
+2026/09/19 18:56:47 api: GET /v0/cities 200 361µs [memory] req_id=142dde936cfea9fb
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+2026/09/19 18:56:47 api: GET /v0/cities 200 582µs [memory] req_id=1422661b292ec5f1
+2026/09/19 18:56:47 api: GET /v0/cities 200 386µs [memory] req_id=90b28c53df88e7d5
+2026/09/19 18:56:47 api: GET /v0/cities 200 3.329ms [memory] req_id=b51f26c3812f2570
+2026/09/19 18:56:47 api: GET /v0/cities 200 1.187ms [memory] req_id=0a5074c7971273d9
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 18:56:47 api: GET /v0/cities 200 918µs [memory] req_id=f765186bca0ab1d1
+2026/09/19 18:56:47 api: GET /v0/cities 200 625µs [memory] req_id=4e013077147c0ad8
+2026/09/19 18:56:47 api: GET /v0/cities 200 195µs [memory] req_id=20484e5b10440447
+gc supervisor: startup phase=startup elapsed=2.742s
+gc supervisor: startup phase=convergence-startup elapsed=3ms
+gc supervisor: startup ready elapsed=7.614s
+City started.
+2026/09/19 18:56:47 api: GET /v0/cities 200 180µs [memory] req_id=0ccf5d1b407ac9d8
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 18:57:02 api: GET /health 200 65.171ms [memory] req_id=5c968051db49b717
+2026/09/19 18:57:06 api: GET /v0/cities 200 4.18ms [memory] req_id=6597c20b1dcca413
+2026/09/19 18:57:09 api: GET /v0/cities 200 12.925ms [memory] req_id=942badfd60bfe3f6
+2026/09/19 18:57:22 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=229ms cadence=default
+2026/09/19 18:57:24 beads cache: reconciled rig=jg4r0b beads=1 adds=1 updates=0 removes=6 took=635ms cadence=default
+Config reloaded: 19 agents, 1 rigs (rev f226f67579d0)
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000003 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 18:58:19 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 18:58:22 packets.go:58 unexpected EOF
+2026/09/19 18:58:23 beads cache: reconciled rig=fi beads=2 adds=0 updates=1 removes=0 took=794ms cadence=default
+[mysql] 2026/09/19 18:58:24 packets.go:58 unexpected EOF
+2026/09/19 18:58:24 beads cache: reconciled rig=jg4r0b beads=8 adds=7 updates=0 removes=0 took=507ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000005 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 18:58:34 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 35.415ms [memory] req_id=670ae92d6be01e3b
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000007 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 18:58:42 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 18:58:42 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000008 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 18:58:59 packets.go:58 read tcp 127.0.0.1:57875->127.0.0.1:19023: read: connection reset by peer
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000010 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000012 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 18:59:23 beads cache: reconciled rig=fi beads=2 adds=0 updates=0 removes=0 took=164ms cadence=default
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+2026/09/19 18:59:26 beads cache: reconciled rig=jg4r0b beads=5 adds=4 updates=0 removes=5 took=637ms cadence=default
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000014 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000014 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000018 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000019 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000020 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000021 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 19:00:12 api: GET /api/health 200 9.994ms [memory] req_id=ac9c2e864da5f608
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000021 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 19:00:23 beads cache: reconciled rig=fi beads=40 adds=38 updates=0 removes=0 took=260ms cadence=default
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 19:00:27 beads cache: reconciled rig=jg4r0b beads=3 adds=2 updates=0 removes=2 took=170ms cadence=default
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:00:40 tmux state cache: refresh failed in 58.060458ms: runtime unavailable: liveness observation failed: no tmux server running
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session reconciler: provider-health registry unavailable for ""; treating as green
+session lifecycle: op=start wave=0 session=core__control-dispatcher-jg4r0b-bf5 template=fixture/core.control-dispatcher outcome=start_enqueued duration=0s
+session lifecycle: op=start wave=0 session=gc__run-operator-jg4r0b-1uy template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+session lifecycle: op=start wave=0 candidates=2 duration=1.525s
+2026/09/19 19:00:43 tmux state cache: refresh failed in 54.282ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 19:00:43 tmux state cache: refresh failed in 42.875875ms: runtime unavailable: liveness observation failed: no tmux server running
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000024 durable
+2026/09/19 19:00:43 tmux state cache: refresh failed in 29.329084ms: runtime unavailable: liveness observation failed: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 19:00:44 packets.go:58 unexpected EOF
+2026/09/19 19:00:44 session: scanning for orphaned runtimes for jg4r0b-bf5 (failing closed): tmux list running: tmux server unreachable: no tmux server running
+2026/09/19 19:00:44 session: scanning for orphaned runtimes for jg4r0b-1uy (failing closed): tmux list running: tmux server unreachable: no tmux server running
+Woke session 'fixture/core.control-dispatcher'
+session lifecycle: op=start wave=0 session=core__control-dispatcher-jg4r0b-bf5 template=fixture/core.control-dispatcher outcome=success duration=1.532s phases=[start_call=1.532s commit_refresh=15ms]
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:00:55 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 72.706ms [memory] req_id=6387633404193f0d
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000025 durable
+Woke session 'fixture/gc.run-operator-1'
+session lifecycle: op=start wave=0 session=gc__run-operator-jg4r0b-1uy template=fixture/gc.run-operator outcome=success duration=16.824s phases=[start_call=16.824s commit_refresh=3ms]
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000026 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000026 durable
+2026/09/19 19:01:16 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 34.259ms [memory] req_id=94a7e8f1d109536c
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 19:01:24 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=117ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+2026/09/19 19:01:27 beads cache: reconciled rig=jg4r0b beads=5 adds=1 updates=1 removes=1 took=198ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000027 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000028 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:01:49 packets.go:58 unexpected EOF
+2026/09/19 19:01:50 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:02:08 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000031 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000031 durable
+2026/09/19 19:02:24 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=224ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000032 durable
+2026/09/19 19:02:28 beads cache: reconciled rig=jg4r0b beads=6 adds=3 updates=0 removes=3 took=346ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000032 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000033 durable
+[mysql] 2026/09/19 19:02:43 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000033 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000034 durable
+[mysql] 2026/09/19 19:02:58 packets.go:58 read tcp 127.0.0.1:59645->127.0.0.1:19023: read: connection reset by peer
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:03:07 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:03:08 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000035 durable
+[mysql] 2026/09/19 19:03:19 packets.go:58 read tcp 127.0.0.1:59526->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:03:19 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+[mysql] 2026/09/19 19:03:23 packets.go:58 unexpected EOF
+2026/09/19 19:03:25 beads cache: reconciled rig=fi beads=40 adds=0 updates=4 removes=0 took=95ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:03:29 beads cache: reconciled rig=jg4r0b beads=4 adds=1 updates=0 removes=2 took=610ms cadence=default
+Skipping drain for 'gc__run-operator-jg4r0b-1uy': live assigned work found
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000036 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000037 durable
+[mysql] 2026/09/19 19:03:45 packets.go:58 read tcp 127.0.0.1:59953->127.0.0.1:19023: read: connection reset by peer
+assignedWorkBeads: 5 beads found
+  fi-0j7 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=in_progress
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:03:51 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 128.273ms [memory] req_id=9ec46fb8450d8e26
+assignedWorkBeads: 5 beads found
+  fi-0j7 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=in_progress
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+[mysql] 2026/09/19 19:04:03 packets.go:58 unexpected EOF
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000038 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:04:25 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:04:25 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=103ms cadence=default
+2026/09/19 19:04:30 beads cache: reconciled rig=jg4r0b beads=8 adds=3 updates=0 removes=5 took=550ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:04:36 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:04:39 packets.go:58 read tcp 127.0.0.1:60389->127.0.0.1:19023: read: connection reset by peer
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000041 durable
+[mysql] 2026/09/19 19:04:47 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:04:47 packets.go:58 read tcp 127.0.0.1:60536->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:04:47 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:04:47 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:04:47 packets.go:58 read tcp 127.0.0.1:60535->127.0.0.1:19023: read: connection reset by peer
+2026/09/19 19:04:47 [circuit-breaker] 127.0.0.1:19023/hq: closed → open (tripped after 5 failures in 226ms)
+warning: defer-wake sweep skipped: begin write tx: invalid connection (circuit breaker tripped)
+2026/09/19 19:04:47 collectAssignedWorkBeads: Ready(assignee="jg4r0b-bf5"): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/19 19:04:47 collectAssignedWorkBeads: Ready(assignee="core__control-dispatcher-jg4r0b-bf5"): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/19 19:04:47 collectAssignedWorkBeads: Ready(assignee="fixture/core.control-dispatcher"): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+assignedWorkBeads: PARTIAL — store query failed, drain decisions suppressed
+assignedWorkBeads: 5 beads found
+  fi-0j7 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=in_progress
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000042 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:05:06 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:05:22 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000043 durable
+2026/09/19 19:05:26 beads cache: reconciled rig=fi beads=40 adds=0 updates=1 removes=0 took=73ms cadence=default
+2026/09/19 19:05:31 beads cache: reconciled rig=jg4r0b beads=8 adds=2 updates=0 removes=1 took=435ms cadence=default
+assignedWorkBeads: 5 beads found
+  fi-0j7 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=in_progress
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+[mysql] 2026/09/19 19:05:34 packets.go:58 unexpected EOF
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__requirements-planner-jg4r0b-2qm template=fixture/gc.requirements-planner outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000044 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+[mysql] 2026/09/19 19:05:47 packets.go:58 read tcp 127.0.0.1:61103->127.0.0.1:19023: read: connection reset by peer
+2026/09/19 19:05:58 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:06:04 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 59.885ms [memory] req_id=ad66c05a73971cf1
+2026/09/19 19:06:07 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+Woke session 'fixture/gc.requirements-planner-1'
+session lifecycle: op=start wave=0 session=gc__requirements-planner-jg4r0b-2qm template=fixture/gc.requirements-planner outcome=success duration=25.549s phases=[start_call=25.549s commit_refresh=1ms]
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000046 durable
+2026/09/19 19:06:26 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=417ms cadence=default
+[mysql] 2026/09/19 19:06:28 packets.go:58 read tcp 127.0.0.1:61099->127.0.0.1:19023: read: connection reset by peer
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+2026/09/19 19:06:31 beads cache: reconciled rig=jg4r0b beads=10 adds=3 updates=0 removes=3 took=390ms cadence=default
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:06:36 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000046 durable
+[mysql] 2026/09/19 19:06:44 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:06:44 packets.go:58 unexpected EOF
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:06:54 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:06:55 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 112.408ms [memory] req_id=c29320bff013d382
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000048 durable
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:07:22 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:07:23 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000048 durable
+2026/09/19 19:07:27 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=401ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000049 durable
+[mysql] 2026/09/19 19:07:32 packets.go:58 unexpected EOF
+2026/09/19 19:07:33 beads cache: reconciled rig=jg4r0b beads=14 adds=5 updates=0 removes=3 took=1.093s cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:07:37 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:07:45 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:07:54 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:07:54 packets.go:58 unexpected EOF
+assignedWorkBeads: 4 beads found
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000050 durable
+2026/09/19 19:08:28 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=443ms cadence=default
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+2026/09/19 19:08:34 beads cache: reconciled rig=jg4r0b beads=16 adds=5 updates=0 removes=3 took=531ms cadence=default
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:08:39 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+2026/09/19 19:08:40 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 111.289ms [memory] req_id=501781acee8e2b7a
+session lifecycle: op=start wave=0 session=gc__run-operator-jg4r0b-1uy template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000051 durable
+[mysql] 2026/09/19 19:08:57 packets.go:58 unexpected EOF
+2026/09/19 19:09:17 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:09:17 packets.go:58 read tcp 127.0.0.1:62931->127.0.0.1:19023: read: connection reset by peer
+assignedWorkBeads: 5 beads found
+  fi-d16 assignee=gc__requirements-planner-jg4r0b-2qm routed=fixture/gc.requirements-planner status=in_progress
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+[mysql] 2026/09/19 19:09:26 packets.go:58 unexpected EOF
+2026/09/19 19:09:27 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 136.399ms [memory] req_id=07b788fca8cf3855
+2026/09/19 19:09:29 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=128ms cadence=default
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:09:38 beads cache: reconciled rig=jg4r0b beads=14 adds=3 updates=0 removes=2 took=1.232s cadence=default
+2026/09/19 19:09:41 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+Woke session 'fixture/gc.run-operator-1'
+session lifecycle: op=start wave=0 session=gc__run-operator-jg4r0b-1uy template=fixture/gc.run-operator outcome=success duration=59.128s phases=[start_call=59.128s commit_refresh=34ms]
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000052 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000053 durable
+assignedWorkBeads: 5 beads found
+  fi-d16 assignee=gc__requirements-planner-jg4r0b-2qm routed=fixture/gc.requirements-planner status=in_progress
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:10:20 packets.go:58 unexpected EOF
+2026/09/19 19:10:20 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process args snapshot: signal: killed
+2026/09/19 19:10:26 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process args snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000053 durable
+2026/09/19 19:10:29 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=374ms cadence=default
+2026/09/19 19:10:39 beads cache: reconciled rig=jg4r0b beads=16 adds=2 updates=0 removes=2 took=157ms cadence=default
+[mysql] 2026/09/19 19:10:41 packets.go:58 unexpected EOF
+assignedWorkBeads: 5 beads found
+  fi-d16 assignee=gc__requirements-planner-jg4r0b-2qm routed=fixture/gc.requirements-planner status=in_progress
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:10:50 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:10:55 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:10:59 packets.go:58 unexpected EOF
+assignedWorkBeads: 5 beads found
+  fi-d16 assignee=gc__requirements-planner-jg4r0b-2qm routed=fixture/gc.requirements-planner status=in_progress
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:11:09 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+gc supervisor: order tracking sweep watchdog closed 2 stale tracking bead(s)
+2026/09/19 19:11:24 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:11:31 beads cache: reconciled rig=fi beads=39 adds=0 updates=1 removes=0 took=342ms cadence=default
+2026/09/19 19:11:34 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 105.64ms [memory] req_id=ea5a8bf79140720e
+2026/09/19 19:11:39 beads cache: reconciled rig=jg4r0b beads=15 adds=4 updates=0 removes=5 took=400ms cadence=default
+assignedWorkBeads: 5 beads found
+  fi-d16 assignee=gc__requirements-planner-jg4r0b-2qm routed=fixture/gc.requirements-planner status=in_progress
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000058 durable
+[mysql] 2026/09/19 19:11:57 packets.go:58 unexpected EOF
+assignedWorkBeads: 5 beads found
+  fi-d16 assignee=gc__requirements-planner-jg4r0b-2qm routed=fixture/gc.requirements-planner status=in_progress
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+[mysql] 2026/09/19 19:12:01 packets.go:58 unexpected EOF
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+assignedWorkBeads: 5 beads found
+  fi-d16 assignee=gc__requirements-planner-jg4r0b-2qm routed=fixture/gc.requirements-planner status=in_progress
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:12:23 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:12:31 beads cache: reconciled rig=fi beads=38 adds=0 updates=0 removes=1 took=157ms cadence=default
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+[mysql] 2026/09/19 19:12:35 packets.go:58 unexpected EOF
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+2026/09/19 19:12:38 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 74.625ms [memory] req_id=5357916b9c7394c3
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:12:40 beads cache: reconciled rig=jg4r0b beads=15 adds=3 updates=0 removes=3 took=242ms cadence=default
+Draining session 'gc__requirements-planner-jg4r0b-2qm': orphaned
+[mysql] 2026/09/19 19:12:58 packets.go:58 read tcp 127.0.0.1:64168->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:13:00 packets.go:58 read tcp 127.0.0.1:65044->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:13:00 packets.go:58 unexpected EOF
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:13:10 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:13:11 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:13:11 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000061 durable
+2026/09/19 19:13:15 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 84.382ms [memory] req_id=c80f34e48a9b66c3
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+2026/09/19 19:13:27 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 47.007ms [memory] req_id=751d87476ff1f7d9
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+2026/09/19 19:13:31 beads cache: reconciled rig=fi beads=39 adds=1 updates=1 removes=0 took=41ms cadence=default
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__requirements-planner-jg4r0b-egl template=fixture/gc.requirements-planner outcome=start_enqueued duration=0s
+2026/09/19 19:13:41 beads cache: reconciled rig=jg4r0b beads=20 adds=6 updates=0 removes=4 took=376ms cadence=default
+[mysql] 2026/09/19 19:13:41 packets.go:58 unexpected EOF
+2026/09/19 19:13:42 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+assignedWorkBeads: 4 beads found
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+2026/09/19 19:13:47 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 141.269ms [memory] req_id=ca2defe00f47d2c5
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+Woke session 'fixture/gc.requirements-planner-1'
+session lifecycle: op=start wave=0 session=gc__requirements-planner-jg4r0b-egl template=fixture/gc.requirements-planner outcome=success duration=16.66s phases=[start_call=16.66s]
+2026/09/19 19:13:51 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:13:54 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000063 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000064 durable
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000064 durable
+assignedWorkBeads: 4 beads found
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:14:31 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=57ms cadence=default
+[mysql] 2026/09/19 19:14:37 packets.go:58 unexpected EOF
+assignedWorkBeads: 4 beads found
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+2026/09/19 19:14:41 beads cache: reconciled rig=jg4r0b beads=19 adds=2 updates=0 removes=0 took=105ms cadence=default
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000067 durable
+assignedWorkBeads: 4 beads found
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+[mysql] 2026/09/19 19:14:58 packets.go:58 unexpected EOF
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000067 durable
+assignedWorkBeads: 4 beads found
+  fi-tgr assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-hop assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-r88 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+  fi-888 assignee=gc__run-operator-jg4r0b-1uy routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000068 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+2026/09/19 19:15:32 beads cache: reconciled rig=fi beads=39 adds=0 updates=1 removes=0 took=58ms cadence=default
+assignedWorkBeads: 1 beads found
+  fi-do8 assignee=gc__requirements-planner-jg4r0b-egl routed=fixture/gc.requirements-planner status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:15:42 beads cache: reconciled rig=jg4r0b beads=17 adds=2 updates=0 removes=7 took=276ms cadence=default
+[mysql] 2026/09/19 19:15:42 packets.go:58 unexpected EOF
+2026/09/19 19:15:44 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 45.248ms [memory] req_id=945547222ddf4c11
+assignedWorkBeads: 1 beads found
+  fi-do8 assignee=gc__requirements-planner-jg4r0b-egl routed=fixture/gc.requirements-planner status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:15:57 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 59.072ms [memory] req_id=b490123db96a598d
+2026/09/19 19:15:59 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:16:12 packets.go:58 read tcp 127.0.0.1:50324->127.0.0.1:19023: read: connection reset by peer
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000072 durable
+[mysql] 2026/09/19 19:16:20 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-do8 assignee=gc__requirements-planner-jg4r0b-egl routed=fixture/gc.requirements-planner status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:16:32 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=45ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:16:44 beads cache: reconciled rig=jg4r0b beads=19 adds=4 updates=0 removes=1 took=337ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:16:48 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:16:48 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000075 durable
+assignedWorkBeads: 1 beads found
+  fi-do8 assignee=gc__requirements-planner-jg4r0b-egl routed=fixture/gc.requirements-planner status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:17:04 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 57.807ms [memory] req_id=7ec84fef6066cce6
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000076 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:17:14 packets.go:58 read tcp 127.0.0.1:51439->127.0.0.1:19023: read: connection reset by peer
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:17:26 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:17:29 packets.go:58 unexpected EOF
+2026/09/19 19:17:32 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=191ms cadence=default
+[mysql] 2026/09/19 19:17:36 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:17:36 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-do8 assignee=gc__requirements-planner-jg4r0b-egl routed=fixture/gc.requirements-planner status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:17:45 beads cache: reconciled rig=jg4r0b beads=19 adds=4 updates=0 removes=4 took=192ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:17:50 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:18:04 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:18:05 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+[mysql] 2026/09/19 19:18:05 packets.go:58 unexpected EOF
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:18:07 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 44.158ms [memory] req_id=6330ed6d0683bd62
+2026/09/19 19:18:10 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 45.26ms [memory] req_id=138336392c5cdf59
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:18:18 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 44.316ms [memory] req_id=238c8a6717ef7c88
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+2026/09/19 19:18:32 beads cache: reconciled rig=fi beads=37 adds=0 updates=0 removes=1 took=88ms cadence=default
+session lifecycle: op=start wave=0 session=gc__design-author-jg4r0b-lpb template=fixture/gc.design-author outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000084 durable
+[mysql] 2026/09/19 19:18:37 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:18:37 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:18:41 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 44.021ms [memory] req_id=3e3cef9f5ad9f8ae
+Woke session 'fixture/gc.design-author-1'
+session lifecycle: op=start wave=0 session=gc__design-author-jg4r0b-lpb template=fixture/gc.design-author outcome=success duration=9.261s phases=[start_call=9.261s]
+2026/09/19 19:18:45 beads cache: reconciled rig=jg4r0b beads=16 adds=0 updates=0 removes=2 took=104ms cadence=default
+[mysql] 2026/09/19 19:18:46 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:18:57 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000086 durable
+2026/09/19 19:19:00 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 184.342ms [memory] req_id=a06888125c53b56e
+poolDesired: fixture/gc.design-author = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000088 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:19:24 packets.go:58 unexpected EOF
+2026/09/19 19:19:32 beads cache: reconciled rig=fi beads=37 adds=0 updates=0 removes=0 took=85ms cadence=default
+[mysql] 2026/09/19 19:19:34 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+[mysql] 2026/09/19 19:19:35 packets.go:58 unexpected EOF
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:19:46 beads cache: reconciled rig=jg4r0b beads=20 adds=4 updates=0 removes=3 took=236ms cadence=default
+poolDesired: fixture/gc.design-author = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:19:49 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000090 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000091 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:20:23 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000092 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+[mysql] 2026/09/19 19:20:33 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000093 durable
+2026/09/19 19:20:33 beads cache: reconciled rig=fi beads=37 adds=0 updates=1 removes=0 took=660ms cadence=default
+2026/09/19 19:20:35 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000093 durable
+[mysql] 2026/09/19 19:20:46 packets.go:58 unexpected EOF
+2026/09/19 19:20:47 beads cache: reconciled rig=jg4r0b beads=19 adds=3 updates=0 removes=2 took=896ms cadence=default
+[mysql] 2026/09/19 19:20:52 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-947 assignee=gc__design-author-jg4r0b-lpb routed=fixture/gc.design-author status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.design-author = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:21:01 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:21:02 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 133.677ms [memory] req_id=1353bb998564e9a9
+2026/09/19 19:21:04 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 26.824ms [memory] req_id=06a5620146b866a2
+assignedWorkBeads: 1 beads found
+  fi-947 assignee=gc__design-author-jg4r0b-lpb routed=fixture/gc.design-author status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:21:26 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:21:34 beads cache: reconciled rig=fi beads=37 adds=0 updates=0 removes=0 took=112ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000096 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:21:45 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:21:48 beads cache: reconciled rig=jg4r0b beads=21 adds=2 updates=0 removes=1 took=843ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000097 durable
+[mysql] 2026/09/19 19:22:07 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-947 assignee=gc__design-author-jg4r0b-lpb routed=fixture/gc.design-author status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.design-author = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:22:21 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process args snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000097 durable
+2026/09/19 19:22:34 beads cache: reconciled rig=fi beads=37 adds=0 updates=0 removes=0 took=390ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.design-author = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:22:44 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process args snapshot: signal: killed
+2026/09/19 19:22:53 beads cache: reconciled rig=jg4r0b beads=22 adds=5 updates=0 removes=4 took=3.393s cadence=default
+2026/09/19 19:22:58 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+2026/09/19 19:23:06 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 113.735ms [memory] req_id=4910c777f4c6de6e
+assignedWorkBeads: 1 beads found
+  fi-947 assignee=gc__design-author-jg4r0b-lpb routed=fixture/gc.design-author status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.design-author = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:23:19 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000099 durable
+2026/09/19 19:23:35 beads cache: reconciled rig=fi beads=36 adds=0 updates=0 removes=1 took=488ms cadence=default
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+[mysql] 2026/09/19 19:23:54 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:23:54 packets.go:58 unexpected EOF
+2026/09/19 19:23:57 beads cache: reconciled rig=jg4r0b beads=21 adds=2 updates=0 removes=3 took=2.976s cadence=default
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:24:20 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:24:21 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 282.45ms [memory] req_id=0210f18f14b44f2a
+[mysql] 2026/09/19 19:24:22 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:24:22 packets.go:58 read tcp 127.0.0.1:55561->127.0.0.1:19023: read: connection reset by peer
+Draining session 'gc__design-author-jg4r0b-lpb': orphaned
+[mysql] 2026/09/19 19:24:28 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000100 durable
+2026/09/19 19:24:35 beads cache: reconciled rig=fi beads=36 adds=0 updates=0 removes=0 took=103ms cadence=default
+2026/09/19 19:24:37 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 144.237ms [memory] req_id=30bc191d87489511
+assignedWorkBeads: 0 beads (rigStores=1)
+[mysql] 2026/09/19 19:24:53 packets.go:58 read tcp 127.0.0.1:55812->127.0.0.1:19023: read: connection reset by peer
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:24:59 beads cache: reconciled rig=jg4r0b beads=21 adds=4 updates=0 removes=3 took=1.117s cadence=default
+2026/09/19 19:25:06 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:25:31 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:25:33 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 19:25:36 beads cache: reconciled rig=fi beads=35 adds=0 updates=0 removes=1 took=501ms cadence=default
+2026/09/19 19:25:41 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 230.511ms [memory] req_id=d1526b49a5ebb2b3
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__review-synthesizer-jg4r0b-nug template=fixture/gc.review-synthesizer outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000102 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+2026/09/19 19:26:00 beads cache: reconciled rig=jg4r0b beads=18 adds=0 updates=0 removes=4 took=643ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000103 durable
+2026/09/19 19:26:11 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:26:19 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:26:20 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 176.524ms [memory] req_id=e2726b4ad63636e4
+[mysql] 2026/09/19 19:26:20 packets.go:58 read tcp 127.0.0.1:56475->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:26:21 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:26:21 packets.go:58 unexpected EOF
+2026/09/19 19:26:25 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000103 durable
+Woke session 'fixture/gc.review-synthesizer-1'
+session lifecycle: op=start wave=0 session=gc__review-synthesizer-jg4r0b-nug template=fixture/gc.review-synthesizer outcome=success duration=43.137s phases=[start_call=43.137s commit_refresh=3ms]
+2026/09/19 19:26:38 beads cache: reconciled rig=fi beads=35 adds=0 updates=0 removes=0 took=321ms cadence=default
+[mysql] 2026/09/19 19:26:53 packets.go:58 read tcp 127.0.0.1:56705->127.0.0.1:19023: i/o timeout
+2026/09/19 19:26:53 gc: order dispatch: creating tracking bead for dolt-health: creating order run for "dolt-health": write commit result indeterminate after connection loss (not retried to avoid double-apply): commit write tx: invalid connection: write commit result indeterminate
+gc: order dispatch: creating tracking bead for dolt-health: creating order run for "dolt-health": write commit result indeterminate after connection loss (not retried to avoid double-apply): commit write tx: invalid connection: write commit result indeterminate
+2026/09/19 19:26:58 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 103.074ms [memory] req_id=53fce23c51bfc8ab
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000104 durable
+2026/09/19 19:27:01 beads cache: reconciled rig=jg4r0b beads=21 adds=3 updates=0 removes=3 took=978ms cadence=default
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000104 durable
+2026/09/19 19:27:13 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 290.596ms [memory] req_id=91adbcb3af4a6359
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+[mysql] 2026/09/19 19:27:20 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:27:21 packets.go:58 read tcp 127.0.0.1:56876->127.0.0.1:19023: read: connection reset by peer
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000105 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:27:35 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:27:38 packets.go:58 unexpected EOF
+2026/09/19 19:27:39 beads cache: reconciled rig=fi beads=35 adds=0 updates=0 removes=0 took=888ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000106 durable
+[mysql] 2026/09/19 19:27:58 packets.go:58 read tcp 127.0.0.1:57216->127.0.0.1:19023: read: connection reset by peer
+assignedWorkBeads: 0 beads (rigStores=1)
+[mysql] 2026/09/19 19:28:00 packets.go:58 read tcp 127.0.0.1:57092->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:28:01 packets.go:58 unexpected EOF
+2026/09/19 19:28:03 beads cache: reconciled rig=jg4r0b beads=23 adds=3 updates=0 removes=1 took=1.162s cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000106 durable
+[mysql] 2026/09/19 19:28:10 packets.go:58 unexpected EOF
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000107 durable
+2026/09/19 19:28:40 beads cache: reconciled rig=fi beads=35 adds=0 updates=0 removes=0 took=656ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000108 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 19:28:54 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000108 durable
+2026/09/19 19:29:06 beads cache: reconciled rig=jg4r0b beads=20 adds=3 updates=0 removes=2 took=349ms cadence=default
+[mysql] 2026/09/19 19:29:10 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000109 durable
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+2026/09/19 19:29:20 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000109 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000110 durable
+2026/09/19 19:29:41 beads cache: reconciled rig=fi beads=35 adds=0 updates=0 removes=0 took=328ms cadence=default
+[mysql] 2026/09/19 19:29:48 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000111 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:30:09 beads cache: reconciled rig=jg4r0b beads=20 adds=3 updates=0 removes=4 took=2.082s cadence=default
+assignedWorkBeads: 2 beads found
+  fi-1uu assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=in_progress
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000113 durable
+2026/09/19 19:30:42 beads cache: reconciled rig=fi beads=35 adds=0 updates=0 removes=0 took=277ms cadence=default
+assignedWorkBeads: 2 beads found
+  fi-1uu assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=in_progress
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:30:58 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 195.104ms [memory] req_id=eaefb7d05bbbdeb2
+2026/09/19 19:31:03 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000114 durable
+2026/09/19 19:31:11 beads cache: reconciled rig=jg4r0b beads=19 adds=1 updates=0 removes=4 took=1.255s cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000115 durable
+[mysql] 2026/09/19 19:31:18 packets.go:58 unexpected EOF
+assignedWorkBeads: 2 beads found
+  fi-1uu assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=in_progress
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000115 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000116 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:31:34 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000116 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000117 durable
+2026/09/19 19:31:43 beads cache: reconciled rig=fi beads=35 adds=0 updates=0 removes=0 took=151ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000117 durable
+[mysql] 2026/09/19 19:31:56 packets.go:58 read tcp 127.0.0.1:59013->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:31:57 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000118 durable
+[mysql] 2026/09/19 19:32:02 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:32:02 packets.go:58 read tcp 127.0.0.1:59071->127.0.0.1:19023: read: connection reset by peer
+assignedWorkBeads: 2 beads found
+  fi-1uu assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=in_progress
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000118 durable
+2026/09/19 19:32:12 beads cache: reconciled rig=jg4r0b beads=21 adds=4 updates=0 removes=2 took=350ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000119 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000120 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:32:40 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000120 durable
+2026/09/19 19:32:43 beads cache: reconciled rig=fi beads=34 adds=0 updates=0 removes=1 took=744ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000121 durable
+[mysql] 2026/09/19 19:33:00 packets.go:58 read tcp 127.0.0.1:59513->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:33:00 packets.go:58 read tcp 127.0.0.1:59524->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:33:00 packets.go:58 read tcp 127.0.0.1:59520->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:33:00 packets.go:58 read tcp 127.0.0.1:59521->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:33:00 packets.go:58 read tcp 127.0.0.1:59511->127.0.0.1:19023: read: connection reset by peer
+assignedWorkBeads: 1 beads found
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+2026/09/19 19:33:17 beads cache: reconciled rig=jg4r0b beads=21 adds=3 updates=0 removes=4 took=4.127s cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__task-decomposer-jg4r0b-013 template=fixture/gc.task-decomposer outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000121 durable
+2026/09/19 19:33:32 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 155.384ms [memory] req_id=b358499b4eb0284d
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000122 durable
+[mysql] 2026/09/19 19:33:44 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+2026/09/19 19:33:45 beads cache: reconciled rig=fi beads=34 adds=0 updates=0 removes=0 took=84ms cadence=default
+2026/09/19 19:33:49 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 174.087ms [memory] req_id=baacb365aacea13a
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+Woke session 'fixture/gc.task-decomposer-1'
+session lifecycle: op=start wave=0 session=gc__task-decomposer-jg4r0b-013 template=fixture/gc.task-decomposer outcome=success duration=25.958s phases=[start_call=25.958s commit_refresh=2ms]
+2026/09/19 19:33:53 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:33:56 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process args snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000122 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000123 durable
+2026/09/19 19:34:19 beads cache: reconciled rig=jg4r0b beads=22 adds=3 updates=0 removes=3 took=1.496s cadence=default
+assignedWorkBeads: 1 beads found
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.task-decomposer = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000123 durable
+2026/09/19 19:34:37 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 274.752ms [memory] req_id=bda149b1a8f422f6
+[mysql] 2026/09/19 19:34:37 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:34:38 packets.go:58 read tcp 127.0.0.1:60153->127.0.0.1:19023: read: connection reset by peer
+2026/09/19 19:34:46 beads cache: reconciled rig=fi beads=34 adds=0 updates=0 removes=0 took=274ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000125 durable
+[mysql] 2026/09/19 19:35:09 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:35:09 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.task-decomposer = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+scaleCheck: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:35:22 beads cache: reconciled rig=jg4r0b beads=22 adds=4 updates=0 removes=3 took=1.838s cadence=default
+2026/09/19 19:35:33 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+2026/09/19 19:35:47 beads cache: reconciled rig=fi beads=34 adds=0 updates=0 removes=0 took=479ms cadence=default
+[mysql] 2026/09/19 19:35:52 packets.go:58 unexpected EOF
+2026/09/19 19:35:53 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+assignedWorkBeads: 1 beads found
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+2026/09/19 19:36:02 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 122.791ms [memory] req_id=3517b52df5e5f556
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000126 durable
+2026/09/19 19:36:19 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 102.864ms [memory] req_id=2c1624fb36af2229
+assignedWorkBeads: 1 beads found
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+2026/09/19 19:36:27 beads cache: reconciled rig=jg4r0b beads=23 adds=4 updates=0 removes=2 took=523ms cadence=default
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.task-decomposer = 1
+2026/09/19 19:36:30 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 72.215ms [memory] req_id=aba462cfc3f2b37f
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:36:47 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000128 durable
+2026/09/19 19:36:48 beads cache: reconciled rig=fi beads=34 adds=0 updates=1 removes=0 took=894ms cadence=default
+assignedWorkBeads: 2 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+[mysql] 2026/09/19 19:37:01 packets.go:58 unexpected EOF
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:37:07 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 192.406ms [memory] req_id=0577a40d25c041c1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000129 durable
+[mysql] 2026/09/19 19:37:25 packets.go:58 unexpected EOF
+assignedWorkBeads: 2 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+2026/09/19 19:37:28 beads cache: reconciled rig=jg4r0b beads=22 adds=2 updates=0 removes=3 took=953ms cadence=default
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:37:40 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000131 durable
+2026/09/19 19:37:48 beads cache: reconciled rig=fi beads=34 adds=0 updates=0 removes=0 took=127ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:37:52 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000132 durable
+assignedWorkBeads: 2 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+  fi-59u assignee=gc__review-synthesizer-jg4r0b-nug routed=fixture/gc.review-synthesizer status=open
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.review-synthesizer = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:38:19 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000132 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+2026/09/19 19:38:31 beads cache: reconciled rig=jg4r0b beads=18 adds=1 updates=0 removes=5 took=1.246s cadence=default
+[mysql] 2026/09/19 19:38:34 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:38:34 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:38:35 packets.go:58 read tcp 127.0.0.1:61323->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:38:35 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:38:36 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000133 durable
+2026/09/19 19:38:45 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 102.905ms [memory] req_id=00630b900cd084fd
+2026/09/19 19:38:49 beads cache: reconciled rig=fi beads=35 adds=1 updates=0 removes=0 took=136ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:38:56 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 297.912ms [memory] req_id=1674908ac239d40f
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000134 durable
+[mysql] 2026/09/19 19:39:08 packets.go:58 unexpected EOF
+poolDesired: fixture/gc.task-decomposer = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000135 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000136 durable
+assignedWorkBeads: 1 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+[mysql] 2026/09/19 19:39:28 packets.go:58 unexpected EOF
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.task-decomposer = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:39:33 beads cache: reconciled rig=jg4r0b beads=21 adds=2 updates=0 removes=2 took=1.321s cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000137 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:39:40 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000137 durable
+2026/09/19 19:39:50 beads cache: reconciled rig=fi beads=36 adds=0 updates=0 removes=0 took=260ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000138 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:39:57 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:39:58 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000138 durable
+[mysql] 2026/09/19 19:40:09 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.task-decomposer = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000139 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000140 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:40:35 beads cache: reconciled rig=jg4r0b beads=23 adds=4 updates=0 removes=1 took=1.137s cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000140 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000141 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:40:46 packets.go:58 unexpected EOF
+2026/09/19 19:40:47 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000141 durable
+2026/09/19 19:40:51 beads cache: reconciled rig=fi beads=36 adds=0 updates=1 removes=0 took=155ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000142 durable
+assignedWorkBeads: 1 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000142 durable
+2026/09/19 19:41:10 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 125.433ms [memory] req_id=dcd417160b6840c8
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+[mysql] 2026/09/19 19:41:21 packets.go:58 read tcp 127.0.0.1:63284->127.0.0.1:19023: read: connection reset by peer
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000143 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:41:36 packets.go:58 unexpected EOF
+2026/09/19 19:41:38 beads cache: reconciled rig=jg4r0b beads=21 adds=2 updates=0 removes=3 took=1.814s cadence=default
+2026/09/19 19:41:40 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 332.414ms [memory] req_id=e23fc56db03ac9e2
+[mysql] 2026/09/19 19:41:41 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:41:41 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000144 durable
+2026/09/19 19:41:52 beads cache: reconciled rig=fi beads=36 adds=0 updates=0 removes=0 took=600ms cadence=default
+assignedWorkBeads: 1 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000144 durable
+[mysql] 2026/09/19 19:42:05 packets.go:58 read tcp 127.0.0.1:63599->127.0.0.1:19023: read: connection reset by peer
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:42:27 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000147 durable
+2026/09/19 19:42:39 beads cache: reconciled rig=jg4r0b beads=20 adds=3 updates=0 removes=285 took=213ms cadence=default
+[mysql] 2026/09/19 19:42:45 packets.go:58 read tcp 127.0.0.1:64000->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:42:46 packets.go:58 unexpected EOF
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:42:49 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000148 durable
+2026/09/19 19:42:52 beads cache: reconciled rig=fi beads=36 adds=0 updates=1 removes=0 took=102ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000149 durable
+assignedWorkBeads: 1 beads found
+  fi-xk8 assignee=gc__task-decomposer-jg4r0b-013 routed=fixture/gc.task-decomposer status=in_progress
+2026/09/19 19:43:13 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 318.562ms [memory] req_id=1a1fe3b83cd7dae9
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.task-decomposer = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000149 durable
+2026/09/19 19:43:32 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 19:43:40 beads cache: reconciled rig=jg4r0b beads=22 adds=4 updates=0 removes=3 took=267ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:43:44 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 92.437ms [memory] req_id=cf0fc787ccff1262
+Draining session 'gc__task-decomposer-jg4r0b-013': orphaned
+2026/09/19 19:43:53 beads cache: reconciled rig=fi beads=35 adds=0 updates=0 removes=0 took=351ms cadence=default
+2026/09/19 19:44:00 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 182.359ms [memory] req_id=02cfd0892b559f9b
+[mysql] 2026/09/19 19:44:06 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000152 durable
+2026/09/19 19:44:37 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 61.238ms [memory] req_id=ffe46095611b461c
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:44:43 beads cache: reconciled rig=jg4r0b beads=21 adds=3 updates=0 removes=3 took=357ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000152 durable
+2026/09/19 19:44:53 beads cache: reconciled rig=fi beads=34 adds=0 updates=0 removes=0 took=140ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000153 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:45:07 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000153 durable
+2026/09/19 19:45:12 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 385.48ms [memory] req_id=dff7d6f3a6e301b4
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:45:29 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000154 durable
+2026/09/19 19:45:35 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 72.71ms [memory] req_id=98594c966059d272
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000155 durable
+[mysql] 2026/09/19 19:45:40 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:45:45 beads cache: reconciled rig=jg4r0b beads=23 adds=5 updates=0 removes=3 took=818ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000155 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+2026/09/19 19:45:54 beads cache: reconciled rig=fi beads=35 adds=1 updates=0 removes=0 took=370ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000157 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:46:34 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 241.075ms [memory] req_id=bd61f5434a2c26fe
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__implementation-worker-jg4r0b-p7v template=fixture/gc.implementation-worker outcome=start_enqueued duration=0s
+session lifecycle: op=start wave=0 session=gc__run-operator-jg4r0b-btj template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+session lifecycle: op=start wave=0 candidates=2 duration=3.182s
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000157 durable
+2026/09/19 19:46:46 beads cache: reconciled rig=jg4r0b beads=22 adds=1 updates=0 removes=1 took=363ms cadence=default
+2026/09/19 19:46:55 beads cache: reconciled rig=fi beads=42 adds=0 updates=1 removes=0 took=988ms cadence=default
+2026/09/19 19:47:00 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process args snapshot: signal: killed
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+2026/09/19 19:47:13 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:47:18 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:47:23 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+Woke session 'fixture/gc.implementation-worker-1'
+session lifecycle: op=start wave=0 session=gc__implementation-worker-jg4r0b-p7v template=fixture/gc.implementation-worker outcome=success duration=38.692s phases=[start_call=38.691s commit_refresh=2ms]
+Woke session 'fixture/gc.run-operator-1'
+session lifecycle: op=start wave=0 session=gc__run-operator-jg4r0b-btj template=fixture/gc.run-operator outcome=success duration=39.34s phases=[start_call=39.34s commit_refresh=2ms]
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000158 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+2026/09/19 19:47:49 beads cache: reconciled rig=jg4r0b beads=20 adds=0 updates=0 removes=4 took=1.978s cadence=default
+2026/09/19 19:47:56 beads cache: reconciled rig=fi beads=42 adds=0 updates=0 removes=0 took=528ms cadence=default
+[mysql] 2026/09/19 19:48:10 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:48:10 packets.go:58 read tcp 127.0.0.1:49706->127.0.0.1:19023: read: connection reset by peer
+assignedWorkBeads: 0 beads (rigStores=1)
+[mysql] 2026/09/19 19:48:23 packets.go:58 unexpected EOF
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:48:27 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:48:33 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:48:34 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+2026/09/19 19:48:38 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000159 durable
+[mysql] 2026/09/19 19:48:43 packets.go:58 unexpected EOF
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+2026/09/19 19:48:50 beads cache: reconciled rig=jg4r0b beads=20 adds=0 updates=0 removes=4 took=889ms cadence=default
+2026/09/19 19:48:57 beads cache: reconciled rig=fi beads=42 adds=0 updates=0 removes=0 took=693ms cadence=default
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:49:13 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 133.514ms [memory] req_id=20e2def8602525f8
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000160 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000161 durable
+[mysql] 2026/09/19 19:49:27 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 19:49:35 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 203.369ms [memory] req_id=15e5af5e68d31536
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000161 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000162 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:49:51 beads cache: reconciled rig=jg4r0b beads=22 adds=3 updates=0 removes=1 took=368ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000162 durable
+2026/09/19 19:49:59 beads cache: reconciled rig=fi beads=42 adds=0 updates=0 removes=0 took=860ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000163 durable
+[mysql] 2026/09/19 19:50:11 packets.go:58 read tcp 127.0.0.1:50993->127.0.0.1:19023: read: connection reset by peer
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:50:29 packets.go:58 unexpected EOF
+Skipping drain for 'gc__run-operator-jg4r0b-btj': live assigned work found
+[mysql] 2026/09/19 19:50:50 packets.go:58 unexpected EOF
+assignedWorkBeads: 3 beads found
+  fi-2qf assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=in_progress
+  fi-np7 assignee=gc__implementation-worker-jg4r0b-p7v routed=fixture/gc.implementation-worker status=in_progress
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+2026/09/19 19:50:53 beads cache: reconciled rig=jg4r0b beads=23 adds=4 updates=0 removes=4 took=1.529s cadence=default
+2026/09/19 19:50:57 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 229.7ms [memory] req_id=22f956d70960998a
+namedWorkReady: 3 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:51:01 beads cache: reconciled rig=fi beads=42 adds=0 updates=0 removes=0 took=1.245s cadence=default
+2026/09/19 19:51:02 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000164 durable
+assignedWorkBeads: 3 beads found
+  fi-np7 assignee=gc__implementation-worker-jg4r0b-p7v routed=fixture/gc.implementation-worker status=in_progress
+  fi-2qf assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=in_progress
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+namedWorkReady: 3 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000165 durable
+[mysql] 2026/09/19 19:51:28 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:51:28 packets.go:58 read tcp 127.0.0.1:51564->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:51:31 packets.go:58 unexpected EOF
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:51:35 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000166 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000167 durable
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:51:56 beads cache: reconciled rig=jg4r0b beads=23 adds=2 updates=0 removes=3 took=1.976s cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000168 durable
+2026/09/19 19:52:02 beads cache: reconciled rig=fi beads=41 adds=0 updates=0 removes=1 took=850ms cadence=default
+assignedWorkBeads: 3 beads found
+  fi-np7 assignee=gc__implementation-worker-jg4r0b-p7v routed=fixture/gc.implementation-worker status=in_progress
+  fi-2qf assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=in_progress
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+namedWorkReady: 3 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000168 durable
+[mysql] 2026/09/19 19:52:26 packets.go:58 read tcp 127.0.0.1:52035->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:52:26 packets.go:58 unexpected EOF
+assignedWorkBeads: 2 beads found
+  fi-2qf assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=in_progress
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000169 durable
+[mysql] 2026/09/19 19:52:52 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:52:52 packets.go:58 unexpected EOF
+2026/09/19 19:52:56 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 112.474ms [memory] req_id=3099291df9c8cb2e
+2026/09/19 19:52:59 beads cache: reconciled rig=jg4r0b beads=23 adds=3 updates=0 removes=6 took=837ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000170 durable
+[mysql] 2026/09/19 19:53:02 packets.go:58 unexpected EOF
+2026/09/19 19:53:06 beads cache: reconciled rig=fi beads=39 adds=0 updates=1 removes=2 took=4.476s cadence=default
+2026/09/19 19:53:10 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 386.326ms [memory] req_id=9d8bd622c6bd56c2
+assignedWorkBeads: 1 beads found
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 2
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__implementation-worker-jg4r0b-dj2 template=fixture/gc.implementation-worker outcome=start_enqueued duration=0s
+session lifecycle: op=start wave=0 session=gc__run-operator-jg4r0b-2l7 template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+session lifecycle: op=start wave=0 candidates=2 duration=4.018s
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000170 durable
+[mysql] 2026/09/19 19:53:43 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 19:53:44 packets.go:58 unexpected EOF
+2026/09/19 19:53:55 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 19:53:56 packets.go:58 unexpected EOF
+assignedWorkBeads: 1 beads found
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+2026/09/19 19:54:00 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 536.376ms [memory] req_id=fe2ec00798e13bc7
+2026/09/19 19:54:00 beads cache: reconciled rig=jg4r0b beads=27 adds=4 updates=0 removes=1 took=1.12s cadence=default
+Woke session 'fixture/gc.implementation-worker-1'
+session lifecycle: op=start wave=0 session=gc__implementation-worker-jg4r0b-dj2 template=fixture/gc.implementation-worker outcome=success duration=27.038s phases=[start_call=27.038s commit_refresh=9ms]
+Woke session 'fixture/gc.run-operator-2'
+session lifecycle: op=start wave=0 session=gc__run-operator-jg4r0b-2l7 template=fixture/gc.run-operator outcome=success duration=27.207s phases=[start_call=27.207s commit_refresh=2ms]
+[mysql] 2026/09/19 19:54:06 packets.go:58 read tcp 127.0.0.1:52930->127.0.0.1:19023: read: connection reset by peer
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+2026/09/19 19:54:07 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=216ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 2
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000171 durable
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000172 durable
+assignedWorkBeads: 1 beads found
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 2
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 19:54:48 packets.go:58 unexpected EOF
+2026/09/19 19:54:48 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000172 durable
+2026/09/19 19:55:01 beads cache: reconciled rig=jg4r0b beads=26 adds=2 updates=0 removes=0 took=579ms cadence=default
+2026/09/19 19:55:08 beads cache: reconciled rig=fi beads=39 adds=0 updates=1 removes=0 took=459ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000173 durable
+assignedWorkBeads: 2 beads found
+  fi-tgr assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=in_progress
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+2026/09/19 19:55:26 api: GET /v0/city/jev-gcja-4r1pdmmv-run-001-baseline/events 200 174.717ms [memory] req_id=b4175d07ac728ead
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+[mysql] 2026/09/19 19:55:38 packets.go:58 unexpected EOF
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+2026/09/19 19:55:45 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+Draining session 'gc__run-operator-jg4r0b-2l7': no-wake-reason
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000173 durable
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+2026/09/19 19:56:04 beads cache: reconciled rig=jg4r0b beads=25 adds=0 updates=0 removes=3 took=1.833s cadence=default
+2026/09/19 19:56:09 beads cache: reconciled rig=fi beads=39 adds=0 updates=1 removes=0 took=984ms cadence=default
+assignedWorkBeads: 2 beads found
+  fi-tgr assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=in_progress
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+namedWorkReady: 2 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/gc.implementation-worker = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 19:56:49 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 19:56:54 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000174 durable
+[mysql] 2026/09/19 19:57:05 packets.go:58 read tcp 127.0.0.1:54029->127.0.0.1:19023: read: connection reset by peer
+2026/09/19 19:57:06 beads cache: reconciled rig=jg4r0b beads=26 adds=1 updates=0 removes=2 took=1.184s cadence=default
+2026/09/19 19:57:10 beads cache: reconciled rig=fi beads=39 adds=0 updates=1 removes=0 took=1.075s cadence=default
+2026/09/19 19:58:07 beads cache: reconciled rig=jg4r0b beads=25 adds=1 updates=0 removes=1 took=502ms cadence=default
+2026/09/19 19:58:11 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=465ms cadence=default
+2026/09/19 19:59:08 beads cache: reconciled rig=jg4r0b beads=22 adds=0 updates=0 removes=3 took=977ms cadence=default
+Config reloaded: 19 agents, 1 rigs (rev 6523f83b7e85)
+2026/09/19 19:59:12 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=461ms cadence=default
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000175 durable
+[mysql] 2026/09/19 19:59:27 packets.go:58 read tcp 127.0.0.1:55330->127.0.0.1:19023: read: connection reset by peer
+[mysql] 2026/09/19 19:59:28 packets.go:58 unexpected EOF
+assignedWorkBeads: 3 beads found
+  fi-6cw assignee=gc__implementation-worker-jg4r0b-dj2 routed=fixture/gc.implementation-worker status=in_progress
+  fi-tgr assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=in_progress
+  fi-250 assignee=gc__run-operator-jg4r0b-btj routed=fixture/gc.run-operator status=open
+namedWorkReady: 3 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.implementation-worker = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-gcja-4r1pdmmv-run-001-baseline-26428-1789869349953314000-000175 durable
+[mysql] 2026/09/19 19:59:52 packets.go:58 unexpected EOF
+2026/09/19 20:00:09 beads cache: reconciled rig=jg4r0b beads=21 adds=0 updates=0 removes=1 took=762ms cadence=default
+2026/09/19 20:00:12 beads cache: reconciled rig=fi beads=38 adds=0 updates=0 removes=1 took=396ms cadence=default
+Unregistered city 'jev-gcja-4r1pdmmv-run-001-baseline', stopping...
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline' did not exit within 5s after cancel; forcing shutdown
+[mysql] 2026/09/19 20:00:56 packets.go:58 unexpected EOF
+Config reloaded: 19 agents, 1 rigs (rev ae5a7042f187)
+session lifecycle: op=stop wave=0 session=core__control-dispatcher-jg4r0b-bf5 template=fixture/core.control-dispatcher outcome=success duration=6.424s
+Stopped agent 'core__control-dispatcher-jg4r0b-bf5'
+session lifecycle: op=stop wave=0 session=gc__implementation-worker-jg4r0b-dj2 template=fixture/gc.implementation-worker outcome=success duration=11.492s
+Stopped agent 'gc__implementation-worker-jg4r0b-dj2'
+session lifecycle: op=stop wave=0 session=gc__run-operator-jg4r0b-btj template=fixture/gc.run-operator outcome=success duration=9.154s
+Stopped agent 'gc__run-operator-jg4r0b-btj'
+session lifecycle: op=stop wave=0 candidates=3 duration=11.504s
+gc supervisor: city 'jev-gcja-4r1pdmmv-run-001-baseline': no pending request_id for city.unregister completion event (path=/tmp/gcja-4r1pdmmv/w/city)
+City 'jev-gcja-4r1pdmmv-run-001-baseline' stopped.
+2026/09/19 20:01:16 api: GET /v0/cities 200 9.185ms [memory] req_id=57be74f63aabb1fa
+gc supervisor: shutdown requested: source=socket_stop signal="" client="" mode=destructive
+Supervisor stopped.

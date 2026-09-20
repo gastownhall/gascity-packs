@@ -127,6 +127,8 @@ complete comparable coverage; transcript totals alone are insufficient.
 | [Baseline 001](build-baseline-001/run-001-baseline/result.json) | Setup passed in 301.066 s; dispatch exceeded the old 120 s deadline before observed model calls. | Failed startup; not a build-speed measurement. |
 | [Baseline 002](build-baseline-002/run-001-baseline/result.json) | Dispatch succeeded with a longer deadline. Produced requirements, then exceeded the 1,200 s workflow limit. Total elapsed 1,780.015 s. | Diagnostic recovery with manual authentication/trust interventions; exclude from A/B estimates. |
 | [Baseline 003](build-baseline-003/run-001-baseline/result.json) | Started workers, then the macOS orphan reaper killed their shared tmux server. Aborted at 20m41s after confirming the defect. | 16 observed requests, 635,120 processed tokens; no completed build. |
+| [Baseline 004](build-baseline-004/run-001-baseline/result.json) | Aborted at 38m44s after three missing-PyYAML gate failures. | 47 observed requests, 2,323,078 processed tokens; implementation unchanged. |
+| [Baseline 005](build-baseline-005/run-001-baseline/result.json) | Requirements, plan and decomposition gates passed. Worktree preparation failed without an origin remote; workflow exceeded its 3,600 s limit. Total elapsed 4,166.829 s. | 142 observed requests, 7,689,642 processed tokens; all three original tests and independent hidden checks fail, implementation unchanged. |
 
 The authentication failure was caused by the harness explicitly setting
 `CLAUDE_CONFIG_DIR` to `~/.claude`. Although that is the usual data directory,
@@ -173,6 +175,69 @@ the wrong work. An earlier check of artifact fidelity to the original work item
 is a candidate follow-up experiment. No Jev call has tested that hypothesis;
 structural artifact validity is not sufficient output-quality evidence.
 
+## Baseline 005 terminal findings
+
+This run used the verified local Beads and macOS tmux patches plus the private
+Python toolchain. Setup took 305.099 s. The controller rejected the missing
+requirements coverage table, accepted its repair on attempt two, and passed the
+plan and decomposition gates. This verifies the Python dependency repair in the
+live workflow. No shared-tmux-server reaping was observed.
+
+The implementation stage exposed a further **harness precondition failure**:
+the fixture was created with `git init` and had no `origin`, while the workflow
+requires `origin/HEAD` for its detached worktree. It correctly failed closed with
+`missing-remote`. The next-run harness now provisions a local bare origin and
+verifies its default branch before model dispatch. A real Git regression passes
+with a non-main branch, fetch, and detached worktree creation. See the
+[origin diagnosis](diagnosis/fixture-origin/README.md). This repair was not applied
+to the running experiment, and the remaining full workflow has not been verified.
+
+A separate observation is preserved: a worker claimed and closed a `do-work`
+workflow latch without implementing the task. Its routing cause is not isolated;
+the origin fix does not establish that this behavior is corrected.
+
+The later [implementation summary](build-baseline-005/run-001-baseline/produced-artifacts/implementation-summary.md)
+correctly marked the work blocked, observed the unchanged stub, and recorded
+three failing tests despite the earlier drain pass. The workflow did not reach
+a successful final result; the evidence does not show a false final approval.
+
+The initial requirements described slugify, unlike baseline 004, but omitted the
+explicit unchanged-test constraint and did not clearly preserve ASCII-only scope.
+The later plan specified ASCII handling. It also contained a placeholder upstream
+hash that passed structural validation and was not flagged by the review's closing
+reason. The independent [hash audit](build-baseline-005/run-001-baseline/artifact-hash-audit.json)
+confirms this mismatch; decomposition's own hashes match. Semantic task fidelity
+and deterministic provenance checks are distinct from schema validity.
+
+Observed token breakdown, including Sonnet and auxiliary Haiku calls:
+
+| Counter | Tokens |
+| --- | ---: |
+| Uncached input | 28,758 |
+| Output | 27,455 |
+| Cache reads | 7,396,339 |
+| Cache creation | 237,090 |
+| Total | 7,689,642 |
+
+The collector reported zero parse/collection errors, and retained raw event totals
+match the terminal report. Eleven task transcripts were archived locally with
+SHA-256 manifests. All three unchanged fixture tests failed with NotImplementedError;
+the four predefined hidden checks also failed. No alternative implementation was
+found under the fixture. These are failed-run measurements, not a speed result for
+a completed build. The 69m27s total includes setup, dispatch, timeout diagnostics
+and shutdown; the workflow wait itself was capped at one hour.
+
+Host load was uncontrolled (about 19.5 at model start and 24–25 later on ten logical
+CPUs). Logs also show slow-storage and process-snapshot failures. Read-only monitoring
+and small harness checks ran concurrently. Timing cannot establish a Jev benefit.
+Only this run's processes and empty named tmux server were stopped; the pre-existing
+global supervisor remained running. No user database was migrated.
+
+See the [terminal audit](build-baseline-005/run-001-baseline/terminal-audit.json),
+[independent quality checks](build-baseline-005/run-001-baseline/independent-quality.json),
+and [five-run CSV index](build-run-index-005.csv). Regenerate a new index with
+`python3 summarize-build-runs.py /new/output.csv`; existing snapshots are not overwritten.
+
 ## Validation
 
 - [27 new helper, accounting and cleanup tests pass](final-jev-validation.log).
@@ -183,7 +248,7 @@ structural artifact validity is not sufficient output-quality evidence.
 - The 17 skipped integration tests were rerun against `/opt/homebrew/bin/gc`
   1.4.2 and all passed; see [integration log](integration-validation.log).
 - `gc lint gascity` and Python compilation pass.
-- Subscription-profile, native-startup, telemetry, gate-toolchain and interrupt-finalization regression tests: **17 passed**. See [gate repair validation](diagnosis/gate-python/harness-green.log).
+- Subscription-profile, native-startup, telemetry, gate-toolchain, interrupt-finalization and local-origin regression tests: **18 passed**. See [latest harness validation](diagnosis/fixture-origin/green.log).
 - Previous startup-fix and telemetry validation: **122 passed**.
   [Validation log](final-startup-fix-validation.log).
 

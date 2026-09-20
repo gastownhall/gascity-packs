@@ -1,0 +1,41 @@
+{
+  "at": "2026-09-20T02:46:00.294059+00:00",
+  "scope": "Post-generation deterministic audit; not fed to worker or used as original primary benchmark oracle",
+  "artifacts": [
+    {
+      "artifact": "decomposition.md",
+      "file_sha256": "5ae75089c1d6063a2834d15933108b4df199f7b2b68b4d769a3c721f6aa27e6a",
+      "upstream_file_hash_checks": [
+        {
+          "path": "/private/tmp/gcja-4r1pdmmv/w/fixture/.gc/inference-gate/build-basic/requirements.md",
+          "declared": "sha256:d67670c54705737e46d63f1bd75d163cf14ff1be14fd9398a2f1308410fab7b2",
+          "actual": "sha256:d67670c54705737e46d63f1bd75d163cf14ff1be14fd9398a2f1308410fab7b2",
+          "matches": true
+        },
+        {
+          "path": "/private/tmp/gcja-4r1pdmmv/w/fixture/.gc/inference-gate/build-basic/implementation-plan.md",
+          "declared": "sha256:fbab39e5272af6cbe164837ba2ead8a7b1a31b5192b9f2b9f71470c2c0ef8595",
+          "actual": "sha256:fbab39e5272af6cbe164837ba2ead8a7b1a31b5192b9f2b9f71470c2c0ef8595",
+          "matches": true
+        }
+      ]
+    },
+    {
+      "artifact": "implementation-plan.md",
+      "file_sha256": "fbab39e5272af6cbe164837ba2ead8a7b1a31b5192b9f2b9f71470c2c0ef8595",
+      "upstream_file_hash_checks": [
+        {
+          "path": "/private/tmp/gcja-4r1pdmmv/w/fixture/.gc/inference-gate/build-basic/requirements.md",
+          "declared": "sha256:0000000000000000000000000000000000000000000000000000000000000",
+          "actual": "sha256:d67670c54705737e46d63f1bd75d163cf14ff1be14fd9398a2f1308410fab7b2",
+          "matches": false
+        }
+      ]
+    },
+    {
+      "artifact": "requirements.md",
+      "file_sha256": "d67670c54705737e46d63f1bd75d163cf14ff1be14fd9398a2f1308410fab7b2",
+      "upstream_file_hash_checks": []
+    }
+  ]
+}

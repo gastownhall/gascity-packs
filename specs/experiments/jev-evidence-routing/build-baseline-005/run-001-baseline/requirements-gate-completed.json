@@ -1,0 +1,53 @@
+{
+  "id": "fi-czn",
+  "title": "Generate requirements",
+  "status": "closed",
+  "issue_type": "task",
+  "created_at": "2026-09-20T01:59:40Z",
+  "description": "Use the built-in Gas City guided starter factory requirements flow.\n\nCreate the requirements artifact at the path recorded on the workflow root bead\nas `gc.build.requirements_path` (fallback `gc.var.requirements_path`). The\nartifact must be Markdown with YAML front matter, not JSON. Its front matter\nmust declare `schema: gc.build.requirements.v1`, the workflow id/formula, the\nmethodology pack/name, the producer formula/stage/attempt, `status`, and\n`trace` with upstream and coverage entries. Include a Markdown coverage table\nwhose ID/status pairs exactly match `trace.coverage`.\nThe validator only recognizes a Markdown table with an `ID` column and a\n`Status` column. Use this shape:\n\n| ID | Status |\n| --- | --- |\n| REQ-001 | covered |\n\nUse mapping objects for front matter; do not use scalar shortcuts such as\n`workflow: build-basic`. The top-level YAML shape must be:\n\n- `schema: gc.build.requirements.v1`\n- `workflow: {id: <workflow-root-id>, formula: build-basic}`\n- `methodology: {pack: gascity, name: build-basic}`\n- `producer: {formula: build-basic, stage: requirements, attempt: <positive integer>}`\n- `status: approved` or another schema-allowed status\n- `trace: {upstream: [...], coverage: [...]}`\n\nTrace front matter must use the validator shape exactly:\n\n- `trace.upstream[]` entries must include `path` and `hash`; do not use\n  `id`/`title`/`type` entries as the upstream shape.\n- For bead inputs, use `path: beads/<bead-id>` and `hash: bead:<bead-id>`.\n  For file or artifact inputs, use a repo-relative or artifact-relative path\n  and a scheme-qualified hash such as `sha256:<digest>` or `git:<revision>`.\n- If an upstream entry lists `ids`, every listed id must appear exactly once in\n  `trace.coverage` and in the Markdown coverage table with the same status.\n- Coverage statuses are not artifact statuses. Use `covered` for satisfied\n  requirements; do not use `approved` in `trace.coverage[].status` or the\n  Markdown coverage table.\n\nUse the same expectations as the `generate-requirements` stage in the GitHub\nissue fix workflow. Preserve the input target, normalize the artifact path, and\nmake the acceptance criteria specific enough for plan review.\n\nKeep the artifact approachable for a first factory run. Include the required\nschema sections:\n\n- Problem Statement\n- W6H\n- User Stories\n- Technical Stories\n- Behavior Requirements\n- Example Mapping\n- Acceptance Criteria\n- Out Of Scope\n- Open Questions\n\nWithin those sections, make the goal, constraints, acceptance criteria,\nnon-goals, and open questions explicit.\n\nIf `interaction_mode` is interactive or the user is present, ask only the\nminimum question needed to unblock the artifact. If the workflow is autonomous\nor headless, record unresolved ambiguity in open questions instead of blocking\nwithout a clear need.\n\nRecord the requirements path on the workflow root bead before closing. Use\n`gc bd update \"<workflow-root-id>\" --set-metadata \"gc.build.requirements_path=<absolute path>\"`.\nDo not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON\nobject.\nBefore closing this step, set the claimed step outcome with\n`gc bd update \"<claimed-step-id>\" --set-metadata \"gc.outcome=pass\"`, then close\nwith `gc bd close \"<claimed-step-id>\" --reason \"<concise reason>\"`. Do not pass\n`--metadata` or `--set-metadata` to `gc bd close`.\n\nArtifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.requirements_path` (fallback `gc.var.requirements_path`) against schema `gc.build.requirements.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.\n",
+  "metadata": {
+    "gc.attempt_log": "[{\"action\":\"fail\",\"attempt\":\"1\",\"outcome\":\"fail\",\"reason\":\"build-artifact-check: schema=gc.build.requirements.v1 path=/private/tmp/gcja-4r1pdmmv/w/fixture/.gc/inference-gate/build-basic/requirements.md failed validation\\nerror: markdown coverage matrix is missing\\n\"},{\"action\":\"close\",\"attempt\":\"2\",\"outcome\":\"pass\"}]",
+    "gc.build.artifact_path_keys": "gc.build.requirements_path,gc.var.requirements_path",
+    "gc.build.artifact_schema": "gc.build.requirements.v1",
+    "gc.check_mode": "exec",
+    "gc.check_path": ".gc/scripts/checks/build-artifact-valid.sh",
+    "gc.check_timeout": "5m",
+    "gc.control_epoch": "2",
+    "gc.controller_error": "",
+    "gc.controller_error_class": "",
+    "gc.controller_retryable": "",
+    "gc.execution_rig_context": "fixture",
+    "gc.execution_routed_to": "fixture/gc.requirements-planner",
+    "gc.kind": "ralph",
+    "gc.max_attempts": "3",
+    "gc.outcome": "pass",
+    "gc.root_bead_id": "fi-vtt",
+    "gc.root_store_ref": "rig:fixture",
+    "gc.routed_to": "fixture/core.control-dispatcher",
+    "gc.run_target": "gc.requirements-planner",
+    "gc.step_id": "requirements",
+    "gc.step_ref": "build-basic.requirements"
+  },
+  "dependencies": [
+    {
+      "issue_id": "fi-czn",
+      "depends_on_id": "fi-0j7",
+      "type": "blocks"
+    },
+    {
+      "issue_id": "fi-czn",
+      "depends_on_id": "fi-d16",
+      "type": "blocks"
+    },
+    {
+      "issue_id": "fi-czn",
+      "depends_on_id": "fi-do8",
+      "type": "blocks"
+    },
+    {
+      "issue_id": "fi-czn",
+      "depends_on_id": "fi-vtt",
+      "type": "tracks"
+    }
+  ]
+}

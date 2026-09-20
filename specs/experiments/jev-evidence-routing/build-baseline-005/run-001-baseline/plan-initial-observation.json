@@ -1,0 +1,6 @@
+{
+  "at": "2026-09-20T02:22:39.966022+00:00",
+  "sha256": "fbab39e5272af6cbe164837ba2ead8a7b1a31b5192b9f2b9f71470c2c0ef8595",
+  "actual_requirements_sha256": "d67670c54705737e46d63f1bd75d163cf14ff1be14fd9398a2f1308410fab7b2",
+  "finding": "Plan specifies ASCII regex implementation. Its first observed upstream hash is an all-zero placeholder, not the requirements file digest. Artifact may still be under construction; do not call it final."
+}

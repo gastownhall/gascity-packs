@@ -16,7 +16,11 @@ that question is pending; do not fabricate Jev results or substitute a mock.
 ## Checkpoint
 
 Steps 1–4 complete. Step 5 has two baseline-only pilots; live Jev and held-out
-evaluation remain pending. Step 6 is blocked by fresh shared-database migrations
-on gc 1.4.2 / bd 1.3.0. Step 7 has an interim measured report at
+evaluation remain pending. Step 6 reached approved Claude Max execution. The Beads forced-init preflight
+and macOS tmux-reaper failures have local verified patches. The gate Python
+repair passed live validation in baseline 005, which later failed on a missing
+fixture origin and timed out. The local-origin repair passes a real Git worktree
+regression, but the remaining workflow and observed latch routing still need
+validation. No full build has passed. Live Jev still requires its credential. Step 7 has an interim measured report at
 [RESULTS.md](../experiments/jev-evidence-routing/RESULTS.md). No A/B conclusion
 is supported yet.

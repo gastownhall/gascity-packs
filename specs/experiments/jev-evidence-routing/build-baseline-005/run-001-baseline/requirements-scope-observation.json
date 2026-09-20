@@ -1,0 +1,5 @@
+{
+  "at": "2026-09-20T02:12:04.902969+00:00",
+  "sha256": "5bf5c6ddfe8aa40a25fdd9f72a3a2b56c174f459d29f37ddb1a850fc122499d9",
+  "finding": "Requirements address slugify and the three fixture cases. They omit the explicit unchanged-test constraint and do not clearly preserve ASCII-only scope. Structural validation has not yet been observed. No causal attribution to Jev or Python repair."
+}

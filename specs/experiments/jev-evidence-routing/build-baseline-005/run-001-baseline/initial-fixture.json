@@ -1,0 +1,19 @@
+{
+  "runtime": "/private/tmp/gcja-4r1pdmmv/w",
+  "files": {
+    "pyproject.toml": "0f792d73d83e29f0fb703a46db10647879b1415b0de84941d5c746117996609f",
+    "slugger.py": "9d7ea153a02d2847d334f0d7eb66f111ba6faaeff63018b99d1d9b0660576cf9",
+    "tests/test_slugger.py": "148afb6a5de401b3930b293c5e5d5d093bf25f16c36f2886ed1bd01351ed164c",
+    ".gc/scripts/validate_build_artifact.py": "36b154d484d228389ea0a8865689399ce05867f4259b93ab90dd5f1d3ed3967d",
+    ".gc/scripts/checks/gap-analysis-approved.sh": "4701cd1fb1157a8d23b10ddb1d7776efa762d5f2ec0bd867cdccf43a4de65889",
+    ".gc/scripts/checks/design-review-approved.sh": "88d2182c3d33a77dacccf9ef6129058b952af0c3d4b4828948ca7a4a726a7d23",
+    ".gc/scripts/checks/build-artifact-valid.sh": "09a24c6af996637e9b741bbdb678bf16874aa67200d01cf669d2433809567e7e",
+    ".gc/scripts/checks/implementation-review-approved.sh": "d93d7a67036908de65d7deab1c94b39e35ffe651e8b0b91bf9c3c4d3c4bd3578",
+    "schemas/build/requirements.v1.yaml": "09310e8466377a22c153a6cbf93287eec699a11092c2bc26f96bd6440aac01c5",
+    "schemas/build/plan.v1.yaml": "91b4c39a92c73bd9ea2c853793087870aa19872bd6e0d75be5aa2ba65e807327",
+    "schemas/build/implementation-summary.v1.yaml": "ab3c877a9555854a462116c2d3551b12fe3794eb8f29772de058a4cf5efa2197",
+    "schemas/build/review.v1.yaml": "4e9773e44a271204b743d429d0751e3c71a32bb66597c47da0c9c34edc5ac454",
+    "schemas/build/final-report.v1.yaml": "6ebc3e474032a5e21450b911f550ff7aa6cee882b35b63ce177125a1636bf6bf",
+    "schemas/build/decomposition.v1.yaml": "ef10d410d17e06c869afe3b08bcf49f9276cdee7ba3f250e063d742bf131415d"
+  }
+}

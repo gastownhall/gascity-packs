@@ -1,0 +1,26 @@
+gc scope watchdog: supervising dolt sql-server pid 25677 (config /tmp/gcja-4r1pdmmv/w/city/.gc/runtime/packs/dolt/dolt-config.yaml, poll interval 30s)
+Starting server with Config HP="127.0.0.1:19023"|T="15000"|R="false"|L="warning"
+time="2026-09-19T18:53:07-07:00" level=warning msg="secure_file_priv is set to \"\", which is insecure."
+time="2026-09-19T18:53:07-07:00" level=warning msg="Any user with GRANT FILE privileges will be able to read any file which the sql-server process can read."
+time="2026-09-19T18:53:07-07:00" level=warning msg="Please consider restarting the server with secure_file_priv set to a safe (or non-existent) directory."
+time="2026-09-19T18:53:16-07:00" level=warning msg="error running query" connectTime="2026-09-19 18:53:16.564005 -0700 PDT m=+9.219645168" connectionID=14 error="database not found: hq" queryTime="2026-09-19 18:53:16.575304 -0700 PDT m=+9.230944751"
+time="2026-09-19T18:53:17-07:00" level=warning msg="error running query" connectTime="2026-09-19 18:53:17.723898 -0700 PDT m=+10.379523084" connectionDb=hq connectionID=17 error="table not found: config" queryTime="2026-09-19 18:53:17.75573 -0700 PDT m=+10.411355626"
+time="2026-09-19T18:53:19-07:00" level=warning msg="error running query" connectTime="2026-09-19 18:53:19.697909 -0700 PDT m=+12.353509459" connectionDb=hq connectionID=21 error="table not found: issues" queryTime="2026-09-19 18:53:19.756677 -0700 PDT m=+12.412277043"
+time="2026-09-19T18:53:20-07:00" level=warning msg="error running query" connectTime="2026-09-19 18:53:20.188356 -0700 PDT m=+12.843949793" connectionDb=hq connectionID=25 error="table not found: issues" queryTime="2026-09-19 18:53:20.387259 -0700 PDT m=+13.042851084"
+time="2026-09-19T18:54:40-07:00" level=warning msg="error running query" connectTime="2026-09-19 18:54:40.383345 -0700 PDT m=+93.037917168" connectionID=97 error="database not found: fi" queryTime="2026-09-19 18:54:40.391611 -0700 PDT m=+93.046182668"
+time="2026-09-19T18:54:41-07:00" level=warning msg="error running query" connectTime="2026-09-19 18:54:41.602399 -0700 PDT m=+94.256955334" connectionDb=fi connectionID=100 error="table not found: config" queryTime="2026-09-19 18:54:41.651347 -0700 PDT m=+94.305903459"
+time="2026-09-19T18:54:43-07:00" level=warning msg="error running query" connectTime="2026-09-19 18:54:43.656335 -0700 PDT m=+96.310865834" connectionDb=fi connectionID=104 error="table not found: issues" queryTime="2026-09-19 18:54:43.715896 -0700 PDT m=+96.370425876"
+time="2026-09-19T18:54:44-07:00" level=warning msg="error running query" connectTime="2026-09-19 18:54:44.227502 -0700 PDT m=+96.882025001" connectionDb=fi connectionID=108 error="table not found: issues" queryTime="2026-09-19 18:54:44.477807 -0700 PDT m=+97.132327293"
+
+
+time="2026-09-19T19:14:34-07:00" level=warning msg="client connection went away while a query was executing" connectionID=7946 error=EOF
+time="2026-09-19T19:23:00-07:00" level=warning msg="client connection went away while a query was executing" connectionID=12731 error=EOF
+time="2026-09-19T19:26:53-07:00" level=warning msg="client connection went away while a query was executing" connectionID=13771 error=EOF
+time="2026-09-19T19:26:53-07:00" level=warning msg="error running query" connectTime="2026-09-19 19:26:34.599857 -0700 PDT m=+2007.289615959" connectionDb=hq connectionID=13771 error="context canceled" queryTime="2026-09-19 19:26:53.704782 -0700 PDT m=+2026.394534251"
+time="2026-09-19T19:33:20-07:00" level=warning msg="client connection went away while a query was executing" connectionID=16331 error=EOF
+time="2026-09-19T19:37:24-07:00" level=warning msg="client connection went away while a query was executing" connectionID=17979 error=EOF
+time="2026-09-19T19:37:24-07:00" level=warning msg="error running query" connectTime="2026-09-19 19:37:24.183427 -0700 PDT m=+2656.890919668" connectionID=17979 error="connection was closed"
+time="2026-09-19T19:47:32-07:00" level=warning msg="error running query" connectTime="2026-09-19 19:47:24.030376 -0700 PDT m=+3256.740328418" connectionDb=hq connectionID=21764 error="serialization failure: this transaction conflicts with a committed transaction from another client, try restarting transaction." queryTime="2026-09-19 19:47:32.924223 -0700 PDT m=+3265.634211584"
+time="2026-09-19T19:55:06-07:00" level=warning msg="client connection went away while a query was executing" connectionID=25008 error=EOF
+time="2026-09-19T20:01:15-07:00" level=error msg="Error reading packet from client 27163 (127.0.0.1:56147): read tcp 127.0.0.1:19023->127.0.0.1:56147: use of closed network connection\nio.ReadFull(header size) failed"
+gc scope watchdog: dolt sql-server pid 25677 exited cleanly

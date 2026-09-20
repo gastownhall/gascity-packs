@@ -1,0 +1,82 @@
+{
+  "retention": "All jsonl files under project directories matching this unique runtime; compressed copies excluded from Git, hashes retained.",
+  "files": [
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/59bd0830-804e-45cc-8c4c-ec77327b09cb.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/59bd0830-804e-45cc-8c4c-ec77327b09cb.jsonl.gz",
+      "source_sha256": "e4bf62ff72de8f92139155590be91d9d2687a4421f787ed28d4dc073c3618241",
+      "archive_sha256": "67cb3017661585eccfcb5fcf9e1c579457d4f1d0acd176063f1f1f37de43afb3",
+      "bytes": 299901
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/b43245a1-0b8a-4814-88e7-1895bc735715.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/b43245a1-0b8a-4814-88e7-1895bc735715.jsonl.gz",
+      "source_sha256": "af292f33da7db222c4b8d130c9697a75ee4cca99e042411d5d7ba20532672b4f",
+      "archive_sha256": "289f7486908dec3b5957c658c6c50563323f5ae4c8280f8fb8c4c2b61bcb9743",
+      "bytes": 343522
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/32c8884b-f103-44dc-b2e9-0365e209724e.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/32c8884b-f103-44dc-b2e9-0365e209724e.jsonl.gz",
+      "source_sha256": "d8d6a32a54c5faec6f7433984d86074c1218bdbc51ab75dae30607bc112a86af",
+      "archive_sha256": "46353cc10571958d50c61b06840265fbce61ad770127a57e0a2296f2f0f1cc80",
+      "bytes": 409548
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/cc3bf274-2505-4f5b-aeaf-f15e5ee064c9.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/cc3bf274-2505-4f5b-aeaf-f15e5ee064c9.jsonl.gz",
+      "source_sha256": "2cc21d3495ff6db1b14ea9b6cfb7ca769002c718d874951f7af00a01fa97c12b",
+      "archive_sha256": "845aa16bd835f187a6cebc1d354d8a799840c760e2fcc51eb89469fd64b5dfa6",
+      "bytes": 562108
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/008348fa-1016-425f-ba70-84b6d3744e53.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/008348fa-1016-425f-ba70-84b6d3744e53.jsonl.gz",
+      "source_sha256": "319a60bb64efc26474c4dc16662f14147f6644d83f4e8a40ee86b79e3927ad77",
+      "archive_sha256": "7af734e7295050c9b91f884af5f71fcb9a4bc2dc0d7b54beeb01ab84b64e0f6d",
+      "bytes": 375871
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/5c76dc7d-d2b9-40b9-9e06-224a2270be0c.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/5c76dc7d-d2b9-40b9-9e06-224a2270be0c.jsonl.gz",
+      "source_sha256": "5f7c6d6cb8e07b00bdf6ca34810e85f00d2943b7bef563ff57f7e36fedf12d16",
+      "archive_sha256": "801b6c67a8417d1e0943488028ee98f627a86ea03d38bceae4b8cc41c6b3ee16",
+      "bytes": 330645
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/bb4630b6-8a62-4fa9-9e58-be92cd7d7f79.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/bb4630b6-8a62-4fa9-9e58-be92cd7d7f79.jsonl.gz",
+      "source_sha256": "2720604cab0182ea9ef826fb773de828dac1eae5d72c61f87595e70521eafcd9",
+      "archive_sha256": "b23dc2660472e94aeceb917a3813d3791e51b3cdd58dec3e33f9ed7239b62354",
+      "bytes": 348587
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/30ae9506-283a-4142-b3e1-a5d687f04bdf.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/30ae9506-283a-4142-b3e1-a5d687f04bdf.jsonl.gz",
+      "source_sha256": "a7b63cdd1ba9a7906d7a47d02efbd1c3f7ed861c6d5614f141d6349d925a6411",
+      "archive_sha256": "d746d1edcbacb50757548e04a11eb062c10481ee2f83c5eb6f61431b4f182b19",
+      "bytes": 90929
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/9eac045f-ed1a-4b9d-a3ac-186f2e788ace.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/9eac045f-ed1a-4b9d-a3ac-186f2e788ace.jsonl.gz",
+      "source_sha256": "c911cfc1586b3a225510a58fd2be7988e5c9dde31aacaeb53e77f5799f28de27",
+      "archive_sha256": "cb5040e0fe9c2e541fc9e027c58d9d4579fb8f6cf28b6d820044e0813f509167",
+      "bytes": 351966
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/a8582110-e292-40e8-b694-cbffbeb35d64.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/a8582110-e292-40e8-b694-cbffbeb35d64.jsonl.gz",
+      "source_sha256": "be398ff002754750db92d8ac3446b49251c45a7de9c0e48cb85c5be6d8a7686b",
+      "archive_sha256": "db490cf1ca128e0096a5d9d0d10d45cbb739842741ed72e9905dacf0125b9b7b",
+      "bytes": 260797
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-4r1pdmmv-w-fixture/4ba0de7f-d1ee-4eb5-bbe6-2303a9947b10.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-4r1pdmmv-w-fixture/4ba0de7f-d1ee-4eb5-bbe6-2303a9947b10.jsonl.gz",
+      "source_sha256": "2ff060fe032da02fd37ebc3c6d351aaf517d9e3fbbc3d30a2868961fe73113a1",
+      "archive_sha256": "4e8dc56e0e5ce19a716a7f5264750bc9c0e82f7a4d3fb1319e9fc3d9ea18b3e7",
+      "bytes": 372751
+    }
+  ]
+}

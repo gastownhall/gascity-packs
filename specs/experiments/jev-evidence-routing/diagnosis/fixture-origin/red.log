@@ -1,0 +1,26 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_local_origin_supports_workflow_default_branch_and_worktree ________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-25/test_local_origin_supports_wor0')
+
+    def test_local_origin_supports_workflow_default_branch_and_worktree(tmp_path):
+        import os
+        import subprocess
+        env={**os.environ,'GIT_CONFIG_GLOBAL':os.devnull,'GIT_CONFIG_NOSYSTEM':'1'}
+        rig=tmp_path/'fixture'; rig.mkdir()
+        def git(*args):
+            return subprocess.check_output(['git','-C',str(rig),*args],env=env,text=True).strip()
+        git('init','-b','release-line')
+        (rig/'fixture.txt').write_text('original fixture\n')
+        git('add','.')
+        git('-c','user.name=Experiment','-c','user.email=experiment@example.invalid','commit','-m','fixture')
+        original=git('rev-parse','HEAD')
+>       result=build.prepare_local_origin(SimpleNamespace(root=tmp_path,rig_dir=rig),env)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'jev_build_ab' has no attribute 'prepare_local_origin'
+
+gascity/tests/test_jev_build_ab.py:167: AttributeError
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_build_ab.py::test_local_origin_supports_workflow_default_branch_and_worktree
+1 failed, 11 deselected in 5.36s

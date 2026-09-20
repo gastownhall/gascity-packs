@@ -35,3 +35,12 @@ runs retain the normal terminal report.
 This validates the dependency fix, not end-to-end workflow success. Baseline
 004's requirements also drifted from the original slugify task; that independent
 quality failure is retained and has not been changed in the next baseline.
+
+## Live workflow verification
+
+Baseline 005 reached the actual requirements gate. The controller imported
+PyYAML successfully and rejected a missing Markdown coverage table, then
+started an ordinary repair attempt. See
+[live gate result](../../build-baseline-005/run-001-baseline/live-gate-validation.json).
+This verifies the environment fix beyond the SDK probe; it does not certify
+artifact quality or a completed build.

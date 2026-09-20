@@ -1,6 +1,6 @@
 # Jev evidence routing experiments
 
-Status: implementation and baseline pilots complete; approved full-build Claude attempts recorded; a macOS runtime defect is locally fixed and verified. Paired Jev evaluation awaits its credential.
+Status: implementation and baseline pilots complete; approved full-build Claude attempts recorded; runtime repairs are verified, and baseline 005 timed out with an unchanged implementation. The newly corrected local-origin precondition still needs another full-workflow validation. Paired Jev evaluation awaits its credential.
 See [measured results and limitations](RESULTS.md).
 
 ## Objective
@@ -38,7 +38,7 @@ paid generative-model API endpoints. Jev access requires its credential; generat
 
 See `ledger.jsonl` for append-only setup and experiment events. Run artifacts
 will be linked from the results document when available. No credentials may
-appear in any experiment artifact. Full task transcripts are also
+appear in any experiment artifact. Usage-bearing task transcripts (all matching task JSONL files for baseline 005) are also
 archived locally under ignored `raw-transcripts/` directories; committed manifests
 record their source paths and SHA-256 hashes.
 

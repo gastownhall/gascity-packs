@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-20T02:13:59.062090+00:00",
+  "control": "fi-czn",
+  "status": "open",
+  "attempt_log": [
+    {
+      "action": "fail",
+      "attempt": "1",
+      "outcome": "fail",
+      "reason": "build-artifact-check: schema=gc.build.requirements.v1 path=/private/tmp/gcja-4r1pdmmv/w/fixture/.gc/inference-gate/build-basic/requirements.md failed validation\nerror: markdown coverage matrix is missing\n"
+    }
+  ],
+  "finding": "Live controller executed artifact validator past PyYAML import; rejected actual missing Markdown coverage matrix. Gate environment fix validated in the workflow; artifact still requires repair."
+}

@@ -1,0 +1,41 @@
+[
+  {
+    "seq": 302,
+    "type": "bead.closed",
+    "ts": "2026-09-19T19:05:56.569013-07:00",
+    "actor": "cache-reconcile",
+    "subject": "fi-0j7",
+    "payload": {
+      "id": "fi-0j7",
+      "title": "Prepare build context",
+      "status": "closed",
+      "issue_type": "task",
+      "created_at": "2026-09-20T01:59:39Z",
+      "assignee": "gc__run-operator-jg4r0b-1uy",
+      "description": "# External Prompt Required\n\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\n\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\n\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\n\n- Resolved prompt file: `/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/gascity/assets/workflows/build-base/prepare.md`\n- Original formula description_file: `../assets/workflows/build-base/prepare.md`\n- Prompt file size: 4823 bytes\n\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\n\n## Formula Variables\n\nUse these resolved formula values when interpreting `{{...}}` placeholders in the prompt file:\n\n```bash\nartifact_root=\".gc/inference-gate/build-basic\"\ncode_review_formula=\"review\"\ncontext_path=\"\"\ndecomposition_formula=\"decomposition-base\"\ndecomposition_path=\"\"\ndrain_policy=\"separate\"\nimplementation_formula=\"implement\"\nimplementation_item_formula=\"do-work-item\"\nimplementation_target=\"gc.implementation-worker\"\ninteraction_mode=\"headless\"\nmax_iterations=\"2\"\nopen_pr=\"false\"\nplan_path=\"\"\nplanning_formula=\"planning-base\"\npush=\"false\"\nrequirements_path=\"\"\nreview_fix_formula=\"fix-loop-base\"\nreview_mode=\"agent\"\n```\n",
+      "metadata": {
+        "gc.continuation_group": "pool-workflow",
+        "gc.outcome": "pass",
+        "gc.root_bead_id": "fi-vtt",
+        "gc.root_store_ref": "rig:fixture",
+        "gc.routed_to": "fixture/gc.run-operator",
+        "gc.run_target": "gc.run-operator",
+        "gc.session_affinity": "require",
+        "gc.session_id": "jg4r0b-1uy",
+        "gc.session_name": "gc__run-operator-jg4r0b-1uy",
+        "gc.step_ref": "build-basic.prepare",
+        "gc.work_branch": "main",
+        "gc.work_dir": "/private/tmp/gcja-4r1pdmmv/w/fixture"
+      },
+      "dependencies": [
+        {
+          "issue_id": "fi-0j7",
+          "depends_on_id": "fi-vtt",
+          "type": "tracks"
+        }
+      ]
+    },
+    "run_id": "fi-vtt",
+    "session_id": "jg4r0b-1uy"
+  }
+]

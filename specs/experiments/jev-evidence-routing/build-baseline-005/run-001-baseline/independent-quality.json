@@ -1,0 +1,17 @@
+{
+  "scope": "Independent checks after terminal workflow failure; original test hash pinned before dispatch",
+  "directory": "/private/tmp/gcja-4r1pdmmv/w/fixture",
+  "pytest_exit": 1,
+  "original_tests_unchanged": true,
+  "hidden_exit": 1,
+  "implementation_changed": false,
+  "candidates": [
+    {
+      "directory": "/private/tmp/gcja-4r1pdmmv/w/fixture",
+      "pytest_exit": 1,
+      "original_tests_unchanged": true,
+      "hidden_exit": 1,
+      "implementation_changed": false
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import slugger; cases=[('  Hello, World!  ','hello-world'),('a---b___c','a-b-c'),('123 ABC','123-abc'),('!@#','')]; assert all(slugger.slugify(x)==y for x,y in cases)
+                                                                                                                               ^^^
+  File "<string>", line 1, in <genexpr>
+    import slugger; cases=[('  Hello, World!  ','hello-world'),('a---b___c','a-b-c'),('123 ABC','123-abc'),('!@#','')]; assert all(slugger.slugify(x)==y for x,y in cases)
+                                                                                                                                   ~~~~~~~~~~~~~~~^^^
+  File "/private/tmp/gcja-4r1pdmmv/w/fixture/slugger.py", line 6, in slugify
+    raise NotImplementedError("slugify is intentionally missing")
+NotImplementedError: slugify is intentionally missing

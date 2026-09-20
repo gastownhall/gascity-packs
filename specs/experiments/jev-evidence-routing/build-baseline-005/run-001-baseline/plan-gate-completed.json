@@ -1,0 +1,48 @@
+{
+  "id": "fi-1cd",
+  "title": "Write implementation plan",
+  "status": "closed",
+  "issue_type": "task",
+  "created_at": "2026-09-20T01:59:40Z",
+  "description": "Use the built-in Gas City design authoring flow.\n\nCreate the implementation plan at the path recorded on the workflow root bead\nas `gc.build.plan_path` (fallback `gc.var.plan_path`). The artifact must be\nMarkdown with YAML front matter, not JSON. Its front matter must declare\n`schema: gc.build.plan.v1`, the workflow id/formula, the methodology pack/name,\nthe producer formula/stage/attempt, `status`, and `trace` with upstream and\ncoverage entries. Include a Markdown coverage table whose ID/status pairs\nexactly match `trace.coverage`.\nThe validator only recognizes a Markdown table with an `ID` column and a\n`Status` column. Use this shape:\n\n| ID | Status |\n| --- | --- |\n| REQ-001 | covered |\n\nUse mapping objects for front matter; do not use scalar shortcuts such as\n`workflow: build-basic`. The top-level YAML shape must be:\n\n- `schema: gc.build.plan.v1`\n- `workflow: {id: <workflow-root-id>, formula: build-basic}`\n- `methodology: {pack: gascity, name: build-basic}`\n- `producer: {formula: build-basic, stage: plan, attempt: <positive integer>}`\n- `status: approved` or another schema-allowed status\n- `trace: {upstream: [...], coverage: [...]}`\n\nTrace front matter must use the validator shape exactly:\n\n- `trace.upstream[]` entries must include `path` and `hash`; do not use\n  `id`/`title`/`type` entries as the upstream shape.\n- For the requirements artifact, use its recorded path and a scheme-qualified\n  hash such as `sha256:<digest>` or `git:<revision>`.\n- If an upstream entry lists `ids`, every listed id must appear exactly once in\n  `trace.coverage` and in the Markdown coverage table with the same status.\n- Coverage statuses are not artifact statuses. Use `covered` for satisfied\n  requirements; do not use `approved` in `trace.coverage[].status` or the\n  Markdown coverage table.\n\nGround the plan in the generated requirements and repository conventions.\nInclude the required schema sections:\n\n- Summary\n- Current System\n- Proposed Implementation\n- Non-Goals\n- Verification\n\nRecord the implementation plan path on the workflow root bead before closing.\nUse `gc bd update \"<workflow-root-id>\" --set-metadata \"gc.build.plan_path=<absolute path>\"`.\nDo not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON\nobject.\nBefore closing this step, set the claimed step outcome with\n`gc bd update \"<claimed-step-id>\" --set-metadata \"gc.outcome=pass\"`, then close\nwith `gc bd close \"<claimed-step-id>\" --reason \"<concise reason>\"`. Do not pass\n`--metadata` or `--set-metadata` to `gc bd close`.\n\nArtifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.plan_path` (fallback `gc.var.plan_path`) against schema `gc.build.plan.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.\n",
+  "metadata": {
+    "gc.attempt_log": "[{\"action\":\"close\",\"attempt\":\"1\",\"outcome\":\"pass\"}]",
+    "gc.build.artifact_path_keys": "gc.build.plan_path,gc.var.plan_path",
+    "gc.build.artifact_schema": "gc.build.plan.v1",
+    "gc.check_mode": "exec",
+    "gc.check_path": ".gc/scripts/checks/build-artifact-valid.sh",
+    "gc.check_timeout": "5m",
+    "gc.control_epoch": "1",
+    "gc.controller_error": "",
+    "gc.controller_error_class": "",
+    "gc.controller_retryable": "",
+    "gc.execution_rig_context": "fixture",
+    "gc.execution_routed_to": "fixture/gc.design-author",
+    "gc.kind": "ralph",
+    "gc.max_attempts": "3",
+    "gc.outcome": "pass",
+    "gc.root_bead_id": "fi-vtt",
+    "gc.root_store_ref": "rig:fixture",
+    "gc.routed_to": "fixture/core.control-dispatcher",
+    "gc.run_target": "gc.design-author",
+    "gc.step_id": "plan",
+    "gc.step_ref": "build-basic.plan"
+  },
+  "dependencies": [
+    {
+      "issue_id": "fi-1cd",
+      "depends_on_id": "fi-947",
+      "type": "blocks"
+    },
+    {
+      "issue_id": "fi-1cd",
+      "depends_on_id": "fi-czn",
+      "type": "blocks"
+    },
+    {
+      "issue_id": "fi-1cd",
+      "depends_on_id": "fi-vtt",
+      "type": "tracks"
+    }
+  ]
+}
