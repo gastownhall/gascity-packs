@@ -1,0 +1,14 @@
+[
+  "claude",
+  "-p",
+  "--safe-mode",
+  "--tools",
+  "",
+  "--no-session-persistence",
+  "--model",
+  "claude-sonnet-5",
+  "--effort",
+  "low",
+  "--output-format",
+  "json"
+]

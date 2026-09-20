@@ -1,0 +1,24 @@
+[1/12] run-001-positive-baseline starting
+[1/12] completed; elapsed=12.12s; correct=True
+[2/12] run-002-positive-jev starting
+[2/12] completed; elapsed=1.34s; correct=True
+[3/12] run-003-wrong-result-jev starting
+[3/12] completed; elapsed=0.99s; correct=True
+[4/12] run-004-wrong-result-baseline starting
+[4/12] completed; elapsed=10.94s; correct=True
+[5/12] run-005-untested-negative-baseline starting
+[5/12] completed; elapsed=12.25s; correct=True
+[6/12] run-006-untested-negative-jev starting
+[6/12] completed; elapsed=1.53s; correct=True
+[7/12] run-007-positive-jev starting
+[7/12] completed; elapsed=1.15s; correct=True
+[8/12] run-008-positive-baseline starting
+[8/12] completed; elapsed=11.62s; correct=True
+[9/12] run-009-wrong-result-baseline starting
+[9/12] completed; elapsed=13.94s; correct=True
+[10/12] run-010-wrong-result-jev starting
+[10/12] completed; elapsed=1.26s; correct=True
+[11/12] run-011-untested-negative-jev starting
+[11/12] completed; elapsed=1.04s; correct=True
+[12/12] run-012-untested-negative-baseline starting
+[12/12] completed; elapsed=9.49s; correct=True

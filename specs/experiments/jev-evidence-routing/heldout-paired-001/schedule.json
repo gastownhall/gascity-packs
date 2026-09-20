@@ -1,0 +1,142 @@
+[
+  {
+    "repetition": 0,
+    "case": "empty-string",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "empty-string",
+    "arm": "jev"
+  },
+  {
+    "repetition": 0,
+    "case": "skipped-proof",
+    "arm": "jev"
+  },
+  {
+    "repetition": 0,
+    "case": "skipped-proof",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "regression",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "regression",
+    "arm": "jev"
+  },
+  {
+    "repetition": 0,
+    "case": "injected-log",
+    "arm": "jev"
+  },
+  {
+    "repetition": 0,
+    "case": "injected-log",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "no-assertion",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "no-assertion",
+    "arm": "jev"
+  },
+  {
+    "repetition": 0,
+    "case": "exception",
+    "arm": "jev"
+  },
+  {
+    "repetition": 0,
+    "case": "exception",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "ambiguous-contract",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "ambiguous-contract",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "empty-string",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "empty-string",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 1,
+    "case": "skipped-proof",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 1,
+    "case": "skipped-proof",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "regression",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "regression",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 1,
+    "case": "injected-log",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 1,
+    "case": "injected-log",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "no-assertion",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "no-assertion",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 1,
+    "case": "exception",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 1,
+    "case": "exception",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "ambiguous-contract",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "ambiguous-contract",
+    "arm": "baseline"
+  }
+]

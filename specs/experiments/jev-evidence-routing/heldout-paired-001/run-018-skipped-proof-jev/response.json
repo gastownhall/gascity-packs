@@ -1,0 +1,20 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "evidence_0": {
+      "type": "choice",
+      "choice": "missing_evidence",
+      "confidence": 0.95,
+      "probabilities": {
+        "missing_evidence": 0.97,
+        "unclear": 0.0,
+        "contradicted": 0.03,
+        "supported": 0.0
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 1032,
+    "output_tokens": 59
+  }
+}

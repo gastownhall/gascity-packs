@@ -1,0 +1,31 @@
+{
+  "schema": "gc.evidence-bundle.v1",
+  "worktree": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/heldout-paired-001/run-011-exception-jev/fixture",
+  "head": "8ff0824d0f2bd68f4a4871519b2fe031f1149133",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Reject string input with TypeError.",
+      "claim": "The string rejection behavior is tested and passes.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "25be2a45a33257af1cb7995a32daae3b2ae3685e2b4b2c29cd30997a860f009c"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "44e125359b7fda6eec274fd129238e3a0495d2e8743e2d79424d0b6fe332cf17"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "28a0a5c459c5a75646342350eeb32e56c5e5c55bf773a917640f767138a73f5c",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "8ff0824d0f2bd68f4a4871519b2fe031f1149133"
+        }
+      ]
+    }
+  ]
+}

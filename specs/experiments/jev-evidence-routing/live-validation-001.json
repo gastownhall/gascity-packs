@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-20T20:31:20.183227+00:00",
+  "artifact_files_scanned": 548,
+  "credential_in_artifacts": false,
+  "model_usage_reconciled": true,
+  "source_copies_match": true,
+  "completed_evidence_attempts": 40,
+  "jev_evidence_calls": 20,
+  "claude_baseline_calls": 20,
+  "claude_fallback_calls": 2,
+  "kind_preflight_calls": 1
+}

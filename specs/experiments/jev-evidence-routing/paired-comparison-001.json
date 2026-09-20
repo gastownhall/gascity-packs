@@ -1,0 +1,312 @@
+[
+  {
+    "scope": "evidence classification including fixture/proof setup, not full build",
+    "cohort": "pilot-paired-001",
+    "split": "pilot",
+    "arms": {
+      "baseline": {
+        "attempts": 6,
+        "unique_cases": 3,
+        "completed": 6,
+        "correct": 6,
+        "false_support": 0,
+        "fallbacks": 0,
+        "raw_jev_correct": null,
+        "llm_usage_unknown": 0,
+        "known_llm_tokens": {
+          "inputTokens": 12,
+          "outputTokens": 186,
+          "cacheReadInputTokens": 26132,
+          "cacheCreationInputTokens": 14239
+        },
+        "known_llm_total_tokens": 40569,
+        "jev_usage_unknown": 0,
+        "known_jev_tokens": {
+          "input_tokens": 0,
+          "output_tokens": 0
+        },
+        "elapsed_seconds": 70.35188304074109,
+        "mean_elapsed_seconds": 11.725313840123514
+      },
+      "jev": {
+        "attempts": 6,
+        "unique_cases": 3,
+        "completed": 6,
+        "correct": 6,
+        "false_support": 0,
+        "fallbacks": 0,
+        "raw_jev_correct": 6,
+        "llm_usage_unknown": 0,
+        "known_llm_tokens": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        },
+        "known_llm_total_tokens": 0,
+        "jev_usage_unknown": 0,
+        "known_jev_tokens": {
+          "input_tokens": 6418,
+          "output_tokens": 348
+        },
+        "elapsed_seconds": 7.311762291006744,
+        "mean_elapsed_seconds": 1.218627048501124
+      }
+    },
+    "pairs": [
+      {
+        "case": "positive",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 10.77724675112404
+      },
+      {
+        "case": "untested-negative",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 10.724706665845588
+      },
+      {
+        "case": "wrong-result",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 9.950404624687508
+      },
+      {
+        "case": "positive",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 10.467380000045523
+      },
+      {
+        "case": "untested-negative",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 8.448155249934644
+      },
+      {
+        "case": "wrong-result",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 12.67222745809704
+      }
+    ],
+    "llm_token_reduction_fraction": 1.0,
+    "elapsed_reduction_fraction": 0.8960687052715779,
+    "total_elapsed_ratio_baseline_to_jev": 9.621741003160327,
+    "comparison_valid": true,
+    "configuration": {
+      "question_version": "gc.evidence-question.v2",
+      "model": "claude-sonnet-5",
+      "jev_model": "jev-1.13.0",
+      "threshold": 0.85,
+      "helper_sha256": "6ebe4c1e57920899270762f02ac5fadb4b3703fae1864019d038032b4a00eeee",
+      "harness_sha256": "f5967dd64faab57eb1bb59ffa3fc95e62fc93cbdb69a00ab58b51cba7a1bdd23",
+      "suite_sha256": "044ef422163410e84160d9bd5e883cd335d885ccf2f1b680280d248717bb39dd",
+      "versions": {
+        "gc": "1.4.2",
+        "bd": "bd version 1.3.0 (Homebrew)",
+        "claude": "2.1.278 (Claude Code)"
+      }
+    }
+  },
+  {
+    "scope": "evidence classification including fixture/proof setup, not full build",
+    "cohort": "heldout-paired-001",
+    "split": "heldout",
+    "arms": {
+      "baseline": {
+        "attempts": 14,
+        "unique_cases": 7,
+        "completed": 14,
+        "correct": 14,
+        "false_support": 0,
+        "fallbacks": 0,
+        "raw_jev_correct": null,
+        "llm_usage_unknown": 0,
+        "known_llm_tokens": {
+          "inputTokens": 28,
+          "outputTokens": 701,
+          "cacheReadInputTokens": 63658,
+          "cacheCreationInputTokens": 30708
+        },
+        "known_llm_total_tokens": 95095,
+        "jev_usage_unknown": 0,
+        "known_jev_tokens": {
+          "input_tokens": 0,
+          "output_tokens": 0
+        },
+        "elapsed_seconds": 166.1445947943721,
+        "mean_elapsed_seconds": 11.867471056740865
+      },
+      "jev": {
+        "attempts": 14,
+        "unique_cases": 7,
+        "completed": 14,
+        "correct": 14,
+        "false_support": 0,
+        "fallbacks": 2,
+        "raw_jev_correct": 12,
+        "llm_usage_unknown": 0,
+        "known_llm_tokens": {
+          "inputTokens": 4,
+          "outputTokens": 177,
+          "cacheReadInputTokens": 9094,
+          "cacheCreationInputTokens": 4307
+        },
+        "known_llm_total_tokens": 13582,
+        "jev_usage_unknown": 0,
+        "known_jev_tokens": {
+          "input_tokens": 14742,
+          "output_tokens": 811
+        },
+        "elapsed_seconds": 40.43789829220623,
+        "mean_elapsed_seconds": 2.8884213065861593
+      }
+    },
+    "pairs": [
+      {
+        "case": "ambiguous-contract",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": -0.49861524999141693
+      },
+      {
+        "case": "empty-string",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 11.875400041928515
+      },
+      {
+        "case": "exception",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 8.666806126013398
+      },
+      {
+        "case": "injected-log",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 11.431056624976918
+      },
+      {
+        "case": "no-assertion",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 13.015390374930575
+      },
+      {
+        "case": "regression",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 10.098314083181322
+      },
+      {
+        "case": "skipped-proof",
+        "repetition": 0,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 9.485865624854341
+      },
+      {
+        "case": "ambiguous-contract",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": -2.996778581989929
+      },
+      {
+        "case": "empty-string",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 10.10097875003703
+      },
+      {
+        "case": "exception",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 9.479454583954066
+      },
+      {
+        "case": "injected-log",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 14.436387083027512
+      },
+      {
+        "case": "no-assertion",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 13.507758583175018
+      },
+      {
+        "case": "regression",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 7.864367375150323
+      },
+      {
+        "case": "skipped-proof",
+        "repetition": 1,
+        "both_completed": true,
+        "baseline_correct": true,
+        "jev_correct": true,
+        "seconds_saved": 9.240311082918197
+      }
+    ],
+    "llm_token_reduction_fraction": 0.8571744045428256,
+    "elapsed_reduction_fraction": 0.7566102084617681,
+    "total_elapsed_ratio_baseline_to_jev": 4.108635755345224,
+    "comparison_valid": true,
+    "configuration": {
+      "question_version": "gc.evidence-question.v2",
+      "model": "claude-sonnet-5",
+      "jev_model": "jev-1.13.0",
+      "threshold": 0.85,
+      "helper_sha256": "6ebe4c1e57920899270762f02ac5fadb4b3703fae1864019d038032b4a00eeee",
+      "harness_sha256": "f5967dd64faab57eb1bb59ffa3fc95e62fc93cbdb69a00ab58b51cba7a1bdd23",
+      "suite_sha256": "044ef422163410e84160d9bd5e883cd335d885ccf2f1b680280d248717bb39dd",
+      "versions": {
+        "gc": "1.4.2",
+        "bd": "bd version 1.3.0 (Homebrew)",
+        "claude": "2.1.278 (Claude Code)"
+      }
+    }
+  }
+]

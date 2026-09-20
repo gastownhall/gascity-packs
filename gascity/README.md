@@ -1053,9 +1053,9 @@ gathering and defect investigation. Existing review lanes and approval gates
 remain authoritative. Worker environments need `TYPESAFE_API_KEY`.
 
 See [the evidence contract](assets/jev-evidence.md) for bundle creation, failure
-behavior, and immutable decision artifacts. Live efficacy has not yet been
-established; [the experiment ledger](../specs/experiments/jev-evidence-routing/README.md)
-tracks the evaluation. Generative-model experiments use subscription CLIs.
+behavior, and immutable decision artifacts.
+[Paired synthetic classification results](../specs/experiments/jev-evidence-routing/RESULTS.md)
+are available; complete Gas City workflow benefit remains unmeasured. Generative-model experiments use subscription CLIs.
 
 ## Experimental Jev kind triage
 

@@ -1,0 +1,41 @@
+{
+  "at": "2026-09-20T20:04:08.692433+00:00",
+  "status": "awaiting_credential",
+  "live_jev_calls": 0,
+  "secure_file_exists": false,
+  "process_has_key": false,
+  "base_revision": "5a29fcb1852b9d02d09c1b25a73243eeca9d89c7",
+  "sources": {
+    "scripts/jev_ab.py": "f5967dd64faab57eb1bb59ffa3fc95e62fc93cbdb69a00ab58b51cba7a1bdd23",
+    "gascity/assets/scripts/jev_evidence.py": "6ebe4c1e57920899270762f02ac5fadb4b3703fae1864019d038032b4a00eeee",
+    "gascity/assets/scripts/jev_kind.py": "f942e6b9c6a0e7b437a1f2e220e562abfde7a547aded3ad4e29d8935c4fed2f3",
+    "specs/experiments/jev-evidence-routing/cases.json": "044ef422163410e84160d9bd5e883cd335d885ccf2f1b680280d248717bb39dd",
+    ".agents/skills/typesafe-ai/SKILL.md": "71ea90d7906c6554c4f4c460ef7361b2d26f59116ccdae986dc6d997b9389f52"
+  },
+  "requested_model": "jev-1.13.0",
+  "claude_model": "claude-sonnet-5",
+  "claude_effort": "low",
+  "threshold": 0.85,
+  "planned_pilot": {
+    "cases": 3,
+    "repetitions": 2,
+    "arms": [
+      "baseline",
+      "jev"
+    ],
+    "attempts": 12
+  },
+  "planned_heldout": {
+    "cases": 7,
+    "repetitions": 2,
+    "arms": [
+      "baseline",
+      "jev"
+    ],
+    "attempts": 28
+  },
+  "order": "counterbalanced; frozen existing rubric",
+  "preflight": "one kind decision with full request/response/usage; require successful response contract before cohort",
+  "kind_backtest": "awaits Julian reference data; synthetic checks are not replication",
+  "full_build": "not run until focused pilot evaluated; previous full builds did not succeed"
+}

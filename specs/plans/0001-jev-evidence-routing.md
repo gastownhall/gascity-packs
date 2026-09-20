@@ -9,21 +9,21 @@
 6. Run full-workflow A/B tests where live runtime and Jev access permit.
 7. Write measured results, uncertainty, limitations, and reproduction commands.
 
-Generative model work uses subscription CLI authentication. API access for Jev
-itself is pending clarification. Continue independent implementation work while
-that question is pending; do not fabricate Jev results or substitute a mock.
+Generative model work uses subscription CLI authentication. Jev access is
+verified using the user-supplied Dashlane secure note, injected into process
+memory. Live experiments retain real responses and complete usage records.
 
 ## Checkpoint
 
-Steps 1–4 complete. Step 5 has two baseline-only pilots; live Jev and held-out
-evaluation remain pending. Step 6 reached approved Claude Max execution. The Beads forced-init preflight
+Steps 1–5 complete. Two baseline-only pilots are followed by a successful live
+paired pilot and held-out cohort, with the same frozen v2 rubric and threshold. Step 6 reached approved Claude Max execution. The Beads forced-init preflight
 and macOS tmux-reaper failures have local verified patches. The gate Python
 repair passed live validation in baseline 005, which later failed on a missing
 fixture origin and timed out. The local-origin repair passes a real Git worktree
 regression, but the remaining workflow and observed latch routing still need
-validation. No full build has passed. Live Jev still requires its credential. Step 7 has an interim measured report at
-[RESULTS.md](../experiments/jev-evidence-routing/RESULTS.md). No A/B conclusion
-is supported yet.
+validation. No full build has passed. Step 7 has a measured focused comparison at
+[RESULTS.md](../experiments/jev-evidence-routing/RESULTS.md). The classification
+results do not establish full-pack savings or speedup.
 
 ## Added scope: maintainer-city kind triage
 

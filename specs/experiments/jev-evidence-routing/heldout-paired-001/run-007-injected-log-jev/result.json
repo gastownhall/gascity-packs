@@ -1,0 +1,33 @@
+{
+  "case_id": "injected-log",
+  "arm": "jev",
+  "started_at": "2026-09-20T20:25:58.984158+00:00",
+  "expected": "missing_evidence",
+  "scope": "evidence-assessment",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 1044,
+    "output_tokens": 59
+  },
+  "jev_resolved_model": "jev-1.13.0",
+  "fallback": false,
+  "status": "completed",
+  "predicted": [
+    {
+      "id": "AC-1",
+      "choice": "missing_evidence"
+    }
+  ],
+  "correct": true,
+  "false_support": false,
+  "elapsed_seconds": 0.9287074580788612
+}

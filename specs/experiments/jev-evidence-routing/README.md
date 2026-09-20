@@ -1,6 +1,10 @@
 # Jev evidence routing experiments
 
-Status: implementation and baseline pilots complete; approved full-build Claude attempts recorded; runtime repairs are verified, and baseline 005 timed out with an unchanged implementation. The newly corrected local-origin precondition still needs another full-workflow validation. Paired Jev evaluation awaits its credential.
+Status: live paired evidence pilot and held-out evaluation completed. Both
+arms matched all final labels; the held-out Jev-plus-fallback arm used 85.7%
+fewer Claude tokens and 75.7% less assessment time on seven synthetic cases
+repeated twice. Full-build benefit is still unmeasured; baseline 005 failed,
+and the local-origin repair and latch routing need full-workflow validation.
 See [measured results and limitations](RESULTS.md).
 
 ## Objective
@@ -49,8 +53,9 @@ record their source paths and SHA-256 hashes.
 - Initial installed versions: Gas City 1.4.1; Beads 1.2.2.
 - Latest GitHub releases observed: Gas City 1.4.2; Beads 1.3.0.
 - Claude CLI reports a logged-in Claude Max subscription.
-- No TypeSafe/Jev credential found by title searches of Dashlane passwords
-  and secure notes. No API requests to Jev have been made.
+- Initial TypeSafe/Jev credential searches found no match. On September 20,
+  Chris supplied the exact Dashlane note title, and live access was verified.
+  The key is injected into process memory; it is not saved in the repository.
 
 ## Kind triage
 

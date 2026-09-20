@@ -1,9 +1,87 @@
 # Jev evidence assistance: experiment checkpoint
 
-Recorded 2026-09-19. **No measured A/B benefit is established.** The optional pack
-integration and experiment harnesses are implemented, but live Jev access and
-full-workflow validation remain unresolved. No Jev inference has
-been performed. Held-out cases remain unevaluated.
+Updated 2026-09-20. Live paired evidence-classification tests now show lower
+Claude token use and elapsed time on the small frozen synthetic suite, with
+matching final labels. Complete Gas City workflow benefit remains unmeasured.
+See the live results below; earlier baseline and runtime failures are preserved.
+
+## Live paired results — September 20, 2026
+
+The exact Dashlane note supplied by Chris unlocked Jev access. Credentials were
+injected into process memory and never persisted in experiment artifacts.
+A [live kind preflight](live-jev-preflight-001/report.json) verified Jev 1.13.0:
+487 input tokens, 54 output tokens, 0.348 seconds, and a valid `bug` decision
+for one synthetic issue. This verifies access and response handling only.
+
+The evidence experiment then ran both arms in counterbalanced order, using the
+existing v2 rubric and 0.85 threshold without changes between pilot and held-out
+runs. Models: subscription Claude Sonnet 5 at low effort; Jev 1.13.0. Runtime:
+Claude CLI 2.1.278, Gas City 1.4.2, Beads 1.3.0. Every attempt completed, and all
+model usage counters were present. Source copies, hashes, inputs, raw outputs,
+CLI commands, proof logs and timings are retained per attempt.
+
+| Cohort / arm | Final correct | Claude tokens | Jev input / output tokens | Total assessment time |
+| --- | ---: | ---: | ---: | ---: |
+| pilot / Claude only | 6/6 | 40,569 | 0 / 0 | 70.35 s |
+| pilot / Jev + Claude fallback | 6/6 | 0 | 6,418 / 348 | 7.31 s |
+| heldout / Claude only | 14/14 | 95,095 | 0 / 0 | 166.14 s |
+| heldout / Jev + Claude fallback | 14/14 | 13,582 | 14,742 / 811 | 40.44 s |
+
+Pilot: three unique cases, two repetitions per arm. Held-out: seven unique
+cases, two repetitions per arm. Repetitions are not independent new test cases.
+
+On held-out cases, Jev plus fallback used **85.7% fewer Claude tokens** and
+**75.7% less total assessment time** (4.11x ratio of summed elapsed times), with
+14/14 correct final labels in each arm. There were no false `supported` results
+among the ten non-supported held-out assessments per arm. These small synthetic
+samples do not establish a general accuracy or safety guarantee.
+
+Jev's **raw** held-out choices matched 12/14. On both ambiguous-contract repeats
+it selected `missing_evidence` with confidence 0.04. The 0.85 cutoff routed those
+two decisions to Claude, which returned the expected `unclear`. All twelve
+other decisions stayed above threshold and needed no Claude call. Retain this
+distinction: the treatment result belongs to Jev **plus fallback**, not Jev alone.
+
+Held-out Claude token breakdown (all reported models):
+
+| Counter | Claude-only arm | Jev + fallback arm |
+| --- | ---: | ---: |
+| Uncached input | 28 | 4 |
+| Output | 701 | 177 |
+| Cache reads | 63,658 | 9,094 |
+| Cache creation | 30,708 | 4,307 |
+
+Processed Claude tokens include cache reads and writes; CLI dollar estimates
+are not actual subscription charges. Jev tokens are reported separately because
+it uses a different model/tokenizer. Do not interpret the Claude-token reduction
+as a reduction in all computation or as free Jev usage.
+
+Timing spans fixture creation, actual proof execution, inference, fallback when
+needed, and response validation. The Claude path starts a fresh CLI process
+with no tools for each classification. Its startup and prompt overhead are
+included. Existing Gas City sessions may amortize that overhead. Host load,
+network and shared prompt caches are uncontrolled; order was counterbalanced.
+No full-build runtime ran concurrently with these focused cohorts.
+
+**Scope limit:** the focused treatment replaces a classification call with Jev
+unless it falls back. The pack integration remains advisory and retains the
+ordinary review lanes and their proof work. These results demonstrate potential
+for offloading this bounded decision; they do not establish token savings,
+quality preservation, or end-to-end speedup for the complete Gas City pack.
+The previous full-build runtime failures still need resolution and matched runs.
+Kind triage also needs its own paired dataset; Julian's 96% remains unreplicated.
+
+Artifacts: [pilot](pilot-paired-001/summary.json),
+[held-out](heldout-paired-001/summary.json),
+[paired metrics and per-case deltas](paired-comparison-001.json).
+Regenerate the metrics into a **new** output file:
+
+```sh
+python3 specs/experiments/jev-evidence-routing/summarize-paired.py \
+  specs/experiments/jev-evidence-routing/pilot-paired-001 \
+  specs/experiments/jev-evidence-routing/heldout-paired-001 \
+  --out /absolute/new/paired-comparison.json
+```
 
 ## What changed
 
@@ -287,20 +365,20 @@ python scripts/jev_build_ab.py --arms both --repetitions 2 --timeout 3600 \
   --out /absolute/new/build-directory
 ```
 
-Live Jev requires `TYPESAFE_API_KEY` supplied privately. No key was found in the
-available vault, and the secure-entry request timed out. Generative model work
-continues through subscription CLIs.
+Live Jev uses `TYPESAFE_API_KEY` injected privately from the exact Dashlane
+secure note supplied by Chris. Earlier searches and secure-entry requests did
+not supply a key; live access was verified on September 20. Generative model
+work continues through subscription CLIs.
 Verify the pinned Jev model with a real preflight and retain the resolved model.
 A fallback-only full build is a treatment failure, not a successful Jev result.
 Automatic approval review rejected a Claude probe outside safe mode because it
 could include workspace instructions/configuration. The user subsequently approved the Claude run. The approved telemetry probe
 matched CLI token counters exactly; baseline 003 exposed a separate macOS tmux-reaper defect after two
-retained failed/diagnostic attempts. The Jev
-credential remains missing.
+retained failed/diagnostic attempts. Jev access is now verified.
 
-Remaining work: live paired pilot; frozen held-out evaluation; working full-build
-execution and complete token telemetry; paired full-build measurements; final
-comparative report. This checkpoint evaluates Claude only. Codex or another
+Remaining work: working full-build execution and complete token telemetry;
+paired full-build measurements; kind-specific paired evaluation and Julian
+reference-data replication. The generative baseline evaluated here is Claude. Codex or another
 subscription-backed CLI needs its own adapter and separately reported cohort.
 
 ## Audit trail
@@ -326,9 +404,9 @@ not enabled for automatic replacement.
 The branch now has opt-in kind assistance for issue triage, a reusable helper
 for issue/PR snapshots, and an auditable historical backtest runner. See
 [KIND-TRIAGE.md](KIND-TRIAGE.md) for the contract, metrics and experiment plan.
-No live kind inference, replicated agreement score, or paired kind savings is
-claimed. Jev access and Julian's exact reference dataset/configuration remain
-necessary for that comparison.
+One synthetic live kind preflight succeeded after access was supplied. It does
+not replicate the agreement score or measure paired kind savings. Julian's
+exact reference dataset/configuration remain necessary for that comparison.
 
 Kind software validation: 71 relevant tests and 176 subtests passed, plus real
 CLI validation-only and missing-key failure checks. Two broader claim-command

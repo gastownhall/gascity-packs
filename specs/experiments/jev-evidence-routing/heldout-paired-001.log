@@ -1,0 +1,56 @@
+[1/28] run-001-empty-string-baseline starting
+[1/28] completed; elapsed=12.82s; correct=True
+[2/28] run-002-empty-string-jev starting
+[2/28] completed; elapsed=0.95s; correct=True
+[3/28] run-003-skipped-proof-jev starting
+[3/28] completed; elapsed=0.91s; correct=True
+[4/28] run-004-skipped-proof-baseline starting
+[4/28] completed; elapsed=10.40s; correct=True
+[5/28] run-005-regression-baseline starting
+[5/28] completed; elapsed=11.38s; correct=True
+[6/28] run-006-regression-jev starting
+[6/28] completed; elapsed=1.28s; correct=True
+[7/28] run-007-injected-log-jev starting
+[7/28] completed; elapsed=0.93s; correct=True
+[8/28] run-008-injected-log-baseline starting
+[8/28] completed; elapsed=12.36s; correct=True
+[9/28] run-009-no-assertion-baseline starting
+[9/28] completed; elapsed=14.37s; correct=True
+[10/28] run-010-no-assertion-jev starting
+[10/28] completed; elapsed=1.36s; correct=True
+[11/28] run-011-exception-jev starting
+[11/28] completed; elapsed=1.25s; correct=True
+[12/28] run-012-exception-baseline starting
+[12/28] completed; elapsed=9.91s; correct=True
+[13/28] run-013-ambiguous-contract-baseline starting
+[13/28] completed; elapsed=11.72s; correct=True
+[14/28] run-014-ambiguous-contract-jev starting
+[14/28] completed; elapsed=12.22s; correct=True
+[15/28] run-015-empty-string-jev starting
+[15/28] completed; elapsed=0.93s; correct=True
+[16/28] run-016-empty-string-baseline starting
+[16/28] completed; elapsed=11.03s; correct=True
+[17/28] run-017-skipped-proof-baseline starting
+[17/28] completed; elapsed=10.53s; correct=True
+[18/28] run-018-skipped-proof-jev starting
+[18/28] completed; elapsed=1.29s; correct=True
+[19/28] run-019-regression-jev starting
+[19/28] completed; elapsed=1.38s; correct=True
+[20/28] run-020-regression-baseline starting
+[20/28] completed; elapsed=9.25s; correct=True
+[21/28] run-021-injected-log-baseline starting
+[21/28] completed; elapsed=15.87s; correct=True
+[22/28] run-022-injected-log-jev starting
+[22/28] completed; elapsed=1.44s; correct=True
+[23/28] run-023-no-assertion-jev starting
+[23/28] completed; elapsed=1.08s; correct=True
+[24/28] run-024-no-assertion-baseline starting
+[24/28] completed; elapsed=14.58s; correct=True
+[25/28] run-025-exception-baseline starting
+[25/28] completed; elapsed=10.82s; correct=True
+[26/28] run-026-exception-jev starting
+[26/28] completed; elapsed=1.34s; correct=True
+[27/28] run-027-ambiguous-contract-jev starting
+[27/28] completed; elapsed=14.09s; correct=True
+[28/28] run-028-ambiguous-contract-baseline starting
+[28/28] completed; elapsed=11.09s; correct=True

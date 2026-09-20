@@ -1,0 +1,31 @@
+{
+  "schema": "gc.evidence-bundle.v1",
+  "worktree": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/pilot-paired-001/run-009-wrong-result-baseline/fixture",
+  "head": "9abcf53ee83643a4e60807161520bce01620c7f0",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Double a positive integer.",
+      "claim": "The implementation doubles a positive integer and its proof passes.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "bc8041a96faa034467110c5a115ac80d7c4633be03fb16c78602d06e5eeb4f4e"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "af6f5f834a8a1ecfcacb33582307ba20b8600bbe4ef9c28f060476d6ed3c8a80"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "435ac9e784b3c620c33d264d26f18d1dce0a754b68bae87e6b21a3c1b7dff1e0",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 1,
+          "head": "9abcf53ee83643a4e60807161520bce01620c7f0"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "case_id": "no-assertion",
+  "arm": "baseline",
+  "started_at": "2026-09-20T20:26:12.281380+00:00",
+  "expected": "missing_evidence",
+  "scope": "evidence-assessment",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 33,
+      "cacheReadInputTokens": 4547,
+      "cacheCreationInputTokens": 2114,
+      "totalTokens": 6696
+    },
+    "models": {
+      "claude-sonnet-5": {
+        "inputTokens": 2,
+        "outputTokens": 33,
+        "cacheReadInputTokens": 4547,
+        "cacheCreationInputTokens": 2114,
+        "webSearchRequests": 0,
+        "costUSD": 0.0096994,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "status": "completed",
+  "predicted": [
+    {
+      "id": "AC-1",
+      "choice": "missing_evidence"
+    }
+  ],
+  "correct": true,
+  "false_support": false,
+  "elapsed_seconds": 14.373798416927457
+}

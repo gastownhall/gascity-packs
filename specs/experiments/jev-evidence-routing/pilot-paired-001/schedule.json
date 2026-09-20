@@ -1,0 +1,62 @@
+[
+  {
+    "repetition": 0,
+    "case": "positive",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "positive",
+    "arm": "jev"
+  },
+  {
+    "repetition": 0,
+    "case": "wrong-result",
+    "arm": "jev"
+  },
+  {
+    "repetition": 0,
+    "case": "wrong-result",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "untested-negative",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "case": "untested-negative",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "positive",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "positive",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 1,
+    "case": "wrong-result",
+    "arm": "baseline"
+  },
+  {
+    "repetition": 1,
+    "case": "wrong-result",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "untested-negative",
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "case": "untested-negative",
+    "arm": "baseline"
+  }
+]

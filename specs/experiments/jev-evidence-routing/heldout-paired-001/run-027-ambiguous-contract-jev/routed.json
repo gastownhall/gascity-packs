@@ -1,0 +1,15 @@
+[
+  {
+    "id": "AC-1",
+    "type": "choice",
+    "choice": "supported",
+    "confidence": 0.18,
+    "probabilities": {
+      "supported": 0.39,
+      "unclear": 0.28,
+      "missing_evidence": 0.24,
+      "contradicted": 0.09
+    },
+    "route": "llm_review"
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "case_id": "wrong-result",
+  "arm": "jev",
+  "started_at": "2026-09-20T20:24:28.205531+00:00",
+  "expected": "contradicted",
+  "scope": "evidence-assessment",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "totalTokens": 0
+    },
+    "models": {}
+  },
+  "jev_usage": {
+    "input_tokens": 1170,
+    "output_tokens": 59
+  },
+  "jev_resolved_model": "jev-1.13.0",
+  "fallback": false,
+  "status": "completed",
+  "predicted": [
+    {
+      "id": "AC-1",
+      "choice": "contradicted"
+    }
+  ],
+  "correct": true,
+  "false_support": false,
+  "elapsed_seconds": 1.2632520839106292
+}

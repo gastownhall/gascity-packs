@@ -1,0 +1,37 @@
+{
+  "schema": "gc.kind-assessment.v1",
+  "advisory": true,
+  "started_at": "2026-09-20T20:22:34.633503+00:00",
+  "question_version": "gc.kind-question.v1",
+  "requested_model": "jev-1.13.0",
+  "threshold": 0.85,
+  "usage": {
+    "input_tokens": 487,
+    "output_tokens": 54
+  },
+  "decision": {
+    "type": "choice",
+    "choice": "bug",
+    "confidence": 1.0,
+    "probabilities": {
+      "feature": 0.0,
+      "chore": 0.0,
+      "bug": 1.0,
+      "unclear": 0.0,
+      "docs": 0.0
+    },
+    "route": "use_kind",
+    "label": "kind/bug"
+  },
+  "labels": {
+    "bug": "kind/bug",
+    "feature": "kind/feature",
+    "docs": "kind/docs",
+    "chore": "kind/chore"
+  },
+  "state_sha256": "5c71b41d50d301280c46085e67888bed700a3e35df5ae7eca4e60a197b437d4d",
+  "request_sha256": "0ed561bef241672a22a87131801ffe2ea78351752085d0dd55480202bf21a91e",
+  "model": "jev-1.13.0",
+  "status": "completed",
+  "elapsed_seconds": 0.3478401671163738
+}

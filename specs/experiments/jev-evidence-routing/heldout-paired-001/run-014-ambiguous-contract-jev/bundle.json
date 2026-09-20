@@ -1,0 +1,31 @@
+{
+  "schema": "gc.evidence-bundle.v1",
+  "worktree": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-evidence-routing/heldout-paired-001/run-014-ambiguous-contract-jev/fixture",
+  "head": "a40708f7222daced8fd5dd4c562af7b8d9d1bff3",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Return the appropriate half of the value according to the external rounding policy.",
+      "claim": "The implementation follows the external rounding policy.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "112831b9348a2b7a11b098f88478a017f5dcfb36853fc1d9e67c703fe508ba5b"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "7aebe739a4627ac45695ad6210b111598beb3b31c1281a635fe7df572e494652"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "28a0a5c459c5a75646342350eeb32e56c5e5c55bf773a917640f767138a73f5c",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "a40708f7222daced8fd5dd4c562af7b8d9d1bff3"
+        }
+      ]
+    }
+  ]
+}

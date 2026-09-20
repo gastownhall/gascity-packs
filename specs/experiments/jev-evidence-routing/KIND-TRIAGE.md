@@ -15,9 +15,11 @@ complexity remain outside automatic Jev replacement. The implementation uses
 the public Gas City policy; Julian's exact maintainer-city implementation was
 not available. Repository-specific label mapping is explicit.
 
-Current measurement status: no live Jev kind calls, no local replication of
-96%, and no measured kind token savings or speedup. Offline contract checks
-and synthetic routing tests establish software behavior only. The full-build
+Current measurement status: one live synthetic kind preflight succeeded with
+Jev 1.13.0; its response contract, usage and timing are recorded in
+[live-jev-preflight-001](live-jev-preflight-001/report.json). This is an access
+check, not a replication of 96% or measured kind savings. Offline contract
+checks and synthetic routing tests establish software behavior only. The full-build
 failures in [RESULTS.md](RESULTS.md) remain unresolved as comparative evidence.
 
 ## Historical backtest

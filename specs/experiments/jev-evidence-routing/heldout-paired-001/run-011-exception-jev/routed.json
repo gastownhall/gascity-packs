@@ -1,0 +1,15 @@
+[
+  {
+    "id": "AC-1",
+    "type": "choice",
+    "choice": "supported",
+    "confidence": 1.0,
+    "probabilities": {
+      "missing_evidence": 0.0,
+      "supported": 1.0,
+      "unclear": 0.0,
+      "contradicted": 0.0
+    },
+    "route": "reviewer_check"
+  }
+]

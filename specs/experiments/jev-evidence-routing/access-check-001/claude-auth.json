@@ -1,0 +1,10 @@
+{
+  "status": "completed",
+  "returncode": 0,
+  "loggedIn": true,
+  "authMethod": "claude.ai",
+  "apiProvider": "firstParty",
+  "subscriptionType": "max",
+  "elapsed_seconds": 1.7428888340946287,
+  "prior_sandbox_attempt": "timed out after 30 seconds; no model request"
+}

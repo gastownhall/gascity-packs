@@ -1,0 +1,43 @@
+{
+  "case_id": "regression",
+  "arm": "baseline",
+  "started_at": "2026-09-20T20:27:28.344916+00:00",
+  "expected": "contradicted",
+  "scope": "evidence-assessment",
+  "llm_usage": {
+    "totals": {
+      "inputTokens": 2,
+      "outputTokens": 31,
+      "cacheReadInputTokens": 4547,
+      "cacheCreationInputTokens": 2428,
+      "totalTokens": 7008
+    },
+    "models": {
+      "claude-sonnet-5": {
+        "inputTokens": 2,
+        "outputTokens": 31,
+        "cacheReadInputTokens": 4547,
+        "cacheCreationInputTokens": 2428,
+        "webSearchRequests": 0,
+        "costUSD": 0.0109354,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "jev_usage": null,
+  "status": "completed",
+  "predicted": [
+    {
+      "id": "AC-1",
+      "choice": "contradicted"
+    }
+  ],
+  "correct": true,
+  "false_support": false,
+  "elapsed_seconds": 9.248703791992739
+}

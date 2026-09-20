@@ -1,0 +1,15 @@
+[
+  {
+    "id": "AC-1",
+    "type": "choice",
+    "choice": "contradicted",
+    "confidence": 1.0,
+    "probabilities": {
+      "unclear": 0.0,
+      "missing_evidence": 0.0,
+      "supported": 0.0,
+      "contradicted": 1.0
+    },
+    "route": "inspect_implementation"
+  }
+]

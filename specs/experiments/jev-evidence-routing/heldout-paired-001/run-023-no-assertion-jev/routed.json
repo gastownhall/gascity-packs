@@ -1,0 +1,15 @@
+[
+  {
+    "id": "AC-1",
+    "type": "choice",
+    "choice": "missing_evidence",
+    "confidence": 0.91,
+    "probabilities": {
+      "missing_evidence": 0.9400000000000001,
+      "unclear": 0.0,
+      "contradicted": 0.06,
+      "supported": 0.0
+    },
+    "route": "run_proof"
+  }
+]
