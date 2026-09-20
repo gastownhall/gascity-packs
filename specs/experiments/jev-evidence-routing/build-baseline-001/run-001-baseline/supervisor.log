@@ -1,0 +1,174 @@
+gc supervisor: started: previous_exit=crash
+gc supervisor: workspace-service startup cleanup is not available on darwin; after a non-graceful supervisor exit, stale workspace-service processes may keep sockets bound. Registered workspace-service roots: /tmp/gcja-9c9m6klx/w/city/.gc/services. Stop stale processes whose environment includes GC_SERVICE_STATE_ROOT under those roots, then restart those cities.
+gc supervisor: WARNING: API binding to ephemeral port 59003 -- set port = 8372 in ~/.gc/supervisor.toml
+Supervisor API listening on http://127.0.0.1:59003
+Dashboard:  http://127.0.0.1:59003/
+Supervisor started.
+gc supervisor: city 'jev-ab-run-001-baseline': starting_bead_store took 1m21.15s
+gc supervisor: city 'jev-ab-run-001-baseline': checking_bead_store_health took 5.52s
+gc supervisor: city 'jev-ab-run-001-baseline': projecting_mcp took 6.06s
+gc supervisor: city 'jev-ab-run-001-baseline': creating_session_provider took 2.56s
+gc supervisor: city 'jev-ab-run-001-baseline': building_city_runtime took 1.93s
+2026/09/19 16:42:41 caching-store: priming ...
+2026/09/19 16:42:41 beads cache: stagger=16261ms agent=
+2026/09/19 16:42:42 caching-store: priming ...
+2026/09/19 16:42:42 beads cache: stagger=16261ms agent=
+gc supervisor: city 'jev-ab-run-001-baseline': opening_controller_state took 3.35s
+2026/09/19 16:43:11 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=260ms cadence=default
+2026/09/19 16:43:13 beads cache: reconciled rig=jar0b beads=0 adds=0 updates=0 removes=0 took=133ms cadence=default
+gc supervisor: city 'jev-ab-run-001-baseline': running_pool_on_boot took 1m4.08s
+Launching city 'jev-ab-run-001-baseline' (/tmp/gcja-9c9m6klx/w/city)
+adoption barrier: listing running sessions partially failed: tmux server unreachable: no tmux server running
+gc supervisor: adoption barrier: 0 session(s) failed bead creation
+gc supervisor: startup phase=adoption-barrier elapsed=48ms
+2026/09/19 16:43:47 api: GET /v0/cities 200 750µs [memory] req_id=71bd2411e12fa6b6
+gc supervisor: startup phase=config-reload elapsed=382ms
+2026/09/19 16:43:48 api: GET /v0/cities 200 521µs [memory] req_id=1a17bad51c5b1b35
+2026/09/19 16:43:48 api: GET /v0/cities 200 113µs [memory] req_id=4e5e4dda9f97fa55
+2026/09/19 16:43:48 api: GET /v0/cities 200 202µs [memory] req_id=0bef62473428a223
+2026/09/19 16:43:48 api: GET /v0/cities 200 174µs [memory] req_id=28b4e8999ddba10c
+2026/09/19 16:43:48 api: GET /v0/cities 200 243µs [memory] req_id=022780952eeaa2e2
+2026/09/19 16:43:48 api: GET /v0/cities 200 460µs [memory] req_id=fef670fbecdbe8f0
+2026/09/19 16:43:48 api: GET /v0/cities 200 1.143ms [memory] req_id=2d97cc69eb8412ec
+2026/09/19 16:43:48 api: GET /v0/cities 200 437µs [memory] req_id=714e7d1cb3fadba7
+2026/09/19 16:43:48 api: GET /v0/cities 200 189µs [memory] req_id=97f1681b547e807c
+2026/09/19 16:43:49 api: GET /v0/cities 200 548µs [memory] req_id=29cb1dd6c8b7cee4
+2026/09/19 16:43:49 api: GET /v0/cities 200 196µs [memory] req_id=6692d7f960d48f0d
+2026/09/19 16:43:49 api: GET /v0/cities 200 104µs [memory] req_id=951cdded3b0612ad
+2026/09/19 16:43:49 api: GET /v0/cities 200 149µs [memory] req_id=89d8a558164bc987
+2026/09/19 16:43:49 api: GET /v0/cities 200 655µs [memory] req_id=76d481c7913c9aee
+2026/09/19 16:43:49 api: GET /v0/cities 200 346µs [memory] req_id=5c457a4257b97dcd
+2026/09/19 16:43:49 api: GET /v0/cities 200 405µs [memory] req_id=980d646f38dcaba5
+2026/09/19 16:43:49 api: GET /v0/cities 200 2.077ms [memory] req_id=4090e48de0b707fa
+2026/09/19 16:43:49 api: GET /v0/cities 200 887µs [memory] req_id=0482f915ea212b8f
+2026/09/19 16:43:50 api: GET /v0/cities 200 188µs [memory] req_id=7455ab0833fd8197
+2026/09/19 16:43:50 api: GET /v0/cities 200 151µs [memory] req_id=e94ff5e9edb6c2fb
+2026/09/19 16:43:50 api: GET /v0/cities 200 179µs [memory] req_id=08e1e63f99160978
+2026/09/19 16:43:50 api: GET /v0/cities 200 478µs [memory] req_id=79bf7c623871deac
+2026/09/19 16:43:50 api: GET /v0/cities 200 723µs [memory] req_id=fc0ae6151827e322
+2026/09/19 16:43:50 api: GET /v0/cities 200 67µs [memory] req_id=8a7cd45ce27ff1ed
+2026/09/19 16:43:50 api: GET /v0/cities 200 388µs [memory] req_id=8aca89c4d221508b
+2026/09/19 16:43:50 api: GET /v0/cities 200 577µs [memory] req_id=42a01f54acc10599
+2026/09/19 16:43:50 api: GET /v0/cities 200 338µs [memory] req_id=d5031701f0510189
+2026/09/19 16:43:51 api: GET /v0/cities 200 399µs [memory] req_id=2b05d1f395b1f6ff
+2026/09/19 16:43:51 api: GET /v0/cities 200 3.375ms [memory] req_id=26623bdfdc81c4e6
+gc supervisor: startup phase=startup-orders elapsed=3.228s
+gc supervisor: startup phase=startup-route-recovery elapsed=0s
+2026/09/19 16:43:51 api: GET /v0/cities 200 172µs [memory] req_id=b1057a06a447b9a5
+2026/09/19 16:43:51 api: GET /v0/cities 200 5.176ms [memory] req_id=01cb5e0bc4c3dfcf
+2026/09/19 16:43:51 api: GET /v0/cities 200 121µs [memory] req_id=a0f727c474739c9c
+2026/09/19 16:43:51 api: GET /v0/cities 200 677µs [memory] req_id=3605bda481041ada
+2026/09/19 16:43:51 api: GET /v0/cities 200 3.974ms [memory] req_id=33060ad8d41d959e
+2026/09/19 16:43:51 api: GET /v0/cities 200 2.863ms [memory] req_id=997a758a727c019e
+2026/09/19 16:43:52 api: GET /v0/cities 200 217µs [memory] req_id=f1782ab0f662e8f7
+2026/09/19 16:43:52 api: GET /v0/cities 200 441µs [memory] req_id=fd2a9142c7b98d45
+2026/09/19 16:43:52 api: GET /v0/cities 200 133µs [memory] req_id=d13660dbb6556a2b
+trace: slow_storage_degraded: jev-ab-run-001-baseline-55972-1789861359877254000-000001 durable
+2026/09/19 16:43:52 api: GET /v0/cities 200 2.361ms [memory] req_id=89d9d86bcb8298e5
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 16:43:52 api: GET /v0/cities 200 400µs [memory] req_id=bc52238403a5528b
+2026/09/19 16:43:52 api: GET /v0/cities 200 224µs [memory] req_id=170c3a35f9bcbf24
+2026/09/19 16:43:52 api: GET /v0/cities 200 99µs [memory] req_id=0c614728b74b5824
+2026/09/19 16:43:52 api: GET /v0/cities 200 164µs [memory] req_id=d4c7d753e339154a
+2026/09/19 16:43:52 api: GET /v0/cities 200 2.922ms [memory] req_id=782d188f8980c34c
+2026/09/19 16:43:53 api: GET /v0/cities 200 168µs [memory] req_id=7f6ec984ec60adbc
+2026/09/19 16:43:53 api: GET /v0/cities 200 4.211ms [memory] req_id=f81e05e21ce566c8
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+2026/09/19 16:43:53 api: GET /v0/cities 200 127µs [memory] req_id=1bc67d433077637c
+2026/09/19 16:43:53 api: GET /v0/cities 200 966µs [memory] req_id=3213bd68fdb31d2c
+2026/09/19 16:43:53 api: GET /v0/cities 200 308µs [memory] req_id=09a4bbdbc350eac1
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 16:43:53 api: GET /v0/cities 200 68µs [memory] req_id=c25f138209cfa9a8
+2026/09/19 16:43:53 api: GET /v0/cities 200 116µs [memory] req_id=99b44d332e4d65f2
+2026/09/19 16:43:53 api: GET /v0/cities 200 5.625ms [memory] req_id=a07765dc4ae2e33e
+gc supervisor: startup phase=startup elapsed=2.769s
+gc supervisor: startup phase=convergence-startup elapsed=0s
+gc supervisor: startup ready elapsed=6.43s
+City started.
+2026/09/19 16:43:54 api: GET /v0/cities 200 4.253ms [memory] req_id=3c9eb5b4ddfffa15
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 16:44:03 api: GET /health 200 1.879ms [memory] req_id=cc9c1394b3c05c74
+2026/09/19 16:44:07 api: GET /v0/cities 200 1.759ms [memory] req_id=7a2e12bc7d5b348b
+2026/09/19 16:44:09 api: GET /v0/cities 200 771µs [memory] req_id=8004c96bf7c225dd
+2026/09/19 16:44:11 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=75ms cadence=default
+2026/09/19 16:44:13 beads cache: reconciled rig=jar0b beads=2 adds=2 updates=0 removes=0 took=460ms cadence=default
+Config reloaded: 19 agents, 1 rigs (rev cd031429fa53)
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 16:44:57 packets.go:58 read tcp 127.0.0.1:60064->127.0.0.1:57867: read: connection reset by peer
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 16:45:11 beads cache: reconciled rig=fi beads=2 adds=1 updates=0 removes=0 took=90ms cadence=default
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 16:45:14 beads cache: reconciled rig=jar0b beads=8 adds=8 updates=0 removes=0 took=267ms cadence=default
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-ab-run-001-baseline-55972-1789861359877254000-000008 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 16:45:41 packets.go:58 unexpected EOF
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 16:46:05 packets.go:58 read tcp 127.0.0.1:60611->127.0.0.1:57867: read: connection reset by peer
+[mysql] 2026/09/19 16:46:06 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 16:46:06 packets.go:58 read tcp 127.0.0.1:60614->127.0.0.1:57867: read: connection reset by peer
+Unregistered city 'jev-ab-run-001-baseline', stopping...
+2026/09/19 16:46:11 gc: order exec reaper failed: context canceled
+gc: order exec reaper failed: context canceled
+2026/09/19 16:46:11 gc: order exec order-tracking-sweep failed: context canceled
+gc: order exec order-tracking-sweep failed: context canceled
+2026/09/19 16:46:12 gc: order dispatch: checking open work for cascade-nudge-on-blocker-close: open-work gate for cascade-nudge-on-blocker-close aborted: context canceled
+gc: order dispatch: checking open work for cascade-nudge-on-blocker-close: open-work gate for cascade-nudge-on-blocker-close aborted: context canceled
+2026/09/19 16:46:12 gc: order dispatch: checking open work for cross-rig-deps: open-work gate for cross-rig-deps aborted: context canceled
+gc: order dispatch: checking open work for cross-rig-deps: open-work gate for cross-rig-deps aborted: context canceled
+2026/09/19 16:46:12 gc: order dispatch: checking open work for gate-sweep: open-work gate for gate-sweep aborted: context canceled
+gc: order dispatch: checking open work for gate-sweep: open-work gate for gate-sweep aborted: context canceled
+gc supervisor: shutdown session listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+gc supervisor: force shutdown late async-start listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+2026/09/19 16:46:12 gc: order exec beads-health failed: context canceled
+gc: order exec beads-health failed: context canceled
+gc supervisor: city 'jev-ab-run-001-baseline': no pending request_id for city.unregister completion event (path=/tmp/gcja-9c9m6klx/w/city)
+City 'jev-ab-run-001-baseline' stopped.
+2026/09/19 16:46:16 api: GET /v0/cities 200 372µs [memory] req_id=7f76096a9e7778d5
+gc supervisor: shutdown requested: source=socket_stop signal="" client="" mode=destructive
+Supervisor stopped.

@@ -1,0 +1,28 @@
+.......FF                                                                [100%]
+=================================== FAILURES ===================================
+____________ test_default_claude_login_does_not_set_config_override ____________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-18/test_default_claude_login_does0')
+
+    def test_default_claude_login_does_not_set_config_override(tmp_path):
+        workspace=SimpleNamespace(gc_home=tmp_path/'h')
+        result=build.configure_experiment_env({'CLAUDE_CONFIG_DIR':str(tmp_path/'scratch')},workspace,real_home=Path('/Users/example'))
+>       assert 'CLAUDE_CONFIG_DIR' not in result
+E       AssertionError: assert 'CLAUDE_CONFIG_DIR' not in {'CLAUDE_CONFIG_DIR': '/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-18/test_defaul.../private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-18/test_default_claude_login_does0/h'}
+
+gascity/tests/test_jev_build_ab.py:97: AssertionError
+__________________ test_explicit_claude_profile_is_preserved ___________________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-18/test_explicit_claude_profile_i0')
+
+    def test_explicit_claude_profile_is_preserved(tmp_path):
+        workspace=SimpleNamespace(gc_home=tmp_path/'h')
+>       result=build.configure_experiment_env({},workspace,real_home=Path('/Users/example'),claude_config_dir='/profiles/benchmark')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: configure_experiment_env() got an unexpected keyword argument 'claude_config_dir'
+
+gascity/tests/test_jev_build_ab.py:102: TypeError
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_build_ab.py::test_default_claude_login_does_not_set_config_override
+FAILED gascity/tests/test_jev_build_ab.py::test_explicit_claude_profile_is_preserved
+2 failed, 7 passed in 0.43s

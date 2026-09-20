@@ -1,6 +1,6 @@
 # Jev evidence routing experiments
 
-Status: implementation and baseline pilots complete; paired Jev and full-build evaluation blocked.
+Status: implementation and baseline pilots complete; approved full-build Claude baseline running. Paired Jev evaluation awaits its credential.
 See [measured results and limitations](RESULTS.md).
 
 ## Objective
@@ -8,7 +8,7 @@ See [measured results and limitations](RESULTS.md).
 Compare the Gas City pack with and without optional Jev evidence checking on
 LLM token consumption, independently measured output quality, and elapsed time.
 Use subscription-authenticated Claude/Codex CLIs for generative model work, not
-paid generative-model API endpoints. Jev access is pending user clarification.
+paid generative-model API endpoints. Jev access requires its credential; generative Claude runs use the existing subscription.
 
 ## Reproducibility contract
 

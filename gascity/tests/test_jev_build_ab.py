@@ -89,3 +89,15 @@ def test_workspace_socket_path_fits_even_with_deep_artifact_directory(tmp_path):
         result=build.new_runtime_workspace(SimpleNamespace(source=tmp_path,roles_source=tmp_path),'unit')
         stack.callback(build.shutil.rmtree,result.root.parent)
         assert len(str(result.gc_home/'supervisor.sock').encode())<100
+
+
+def test_default_claude_login_does_not_set_config_override(tmp_path):
+    workspace=SimpleNamespace(gc_home=tmp_path/'h')
+    result=build.configure_experiment_env({'CLAUDE_CONFIG_DIR':str(tmp_path/'scratch')},workspace,real_home=Path('/Users/example'))
+    assert 'CLAUDE_CONFIG_DIR' not in result
+
+
+def test_explicit_claude_profile_is_preserved(tmp_path):
+    workspace=SimpleNamespace(gc_home=tmp_path/'h')
+    result=build.configure_experiment_env({},workspace,real_home=Path('/Users/example'),claude_config_dir='/profiles/benchmark')
+    assert result['CLAUDE_CONFIG_DIR']=='/profiles/benchmark'

@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-20T00:00:47.035503+00:00",
+  "intervention": "Clear experiment-only CLAUDE_CONFIG_DIR override and restart blocked operator",
+  "evidence": "auth-environment-probe.json",
+  "purpose": "Use existing Claude Max login without copying credentials",
+  "classification": "Diagnostic recovery; elapsed time is not a clean benchmark sample",
+  "model_events_before_intervention": 0
+}

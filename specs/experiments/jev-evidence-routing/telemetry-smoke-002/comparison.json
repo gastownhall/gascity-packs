@@ -1,0 +1,21 @@
+{
+  "cli_models": [
+    "claude-sonnet-5"
+  ],
+  "cli_totals": {
+    "input_tokens": 2,
+    "output_tokens": 4,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 39467,
+    "total_tokens": 39473
+  },
+  "event_totals": {
+    "input_tokens": 2,
+    "output_tokens": 4,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 39467,
+    "total_tokens": 39473
+  },
+  "exact_match": true,
+  "auxiliary_model_observed": false
+}

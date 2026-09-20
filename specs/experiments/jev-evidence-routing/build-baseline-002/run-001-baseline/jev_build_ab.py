@@ -31,9 +31,6 @@ spec.loader.exec_module(gate)
 usage_spec = importlib.util.spec_from_file_location('jev_claude_usage', ROOT/'scripts/jev_claude_usage.py')
 usage = importlib.util.module_from_spec(usage_spec)
 usage_spec.loader.exec_module(usage)
-startup_spec = importlib.util.spec_from_file_location('jev_claude_startup', ROOT/'scripts/jev_claude_startup.py')
-startup = importlib.util.module_from_spec(startup_spec)
-startup_spec.loader.exec_module(startup)
 
 
 def save(path, data):
@@ -97,17 +94,12 @@ def stop_disposable_dolt(city):
     return {'status': 'termination_requested' if signalled else 'no_leftover_server', 'pids': signalled}
 
 
-def configure_experiment_env(env, workspace, *, real_home, claude_config_dir=None):
+def configure_experiment_env(env, workspace, *, real_home):
     env = dict(env)
     env['HOME'] = str(real_home)
     env['GIT_CONFIG_GLOBAL'] = str(workspace.gc_home/'gitconfig')
     env['DOLT_ROOT_PATH'] = str(workspace.gc_home)
     env.pop('BD_ALLOW_REMOTE_MIGRATE', None)
-    # An explicit default directory changes Claude's config/auth namespace.
-    if claude_config_dir:
-        env['CLAUDE_CONFIG_DIR'] = str(claude_config_dir)
-    else:
-        env.pop('CLAUDE_CONFIG_DIR', None)
     return env
 
 
@@ -115,7 +107,7 @@ def new_runtime_workspace(pack, name):
     # macOS sockaddr_un cannot hold paths under the artifact directory.
     root = Path(tempfile.mkdtemp(prefix='gcja-', dir='/tmp'))/'w'
     workspace = gate.write_gate_workspace(root, pack_source=pack.source,
-        roles_source=pack.roles_source, city_name='jev-'+root.parent.name+'-'+name, rig_name='fixture')
+        roles_source=pack.roles_source, city_name='jev-ab-'+name, rig_name='fixture')
     if len(str(workspace.gc_home/'supervisor.sock').encode()) >= 100:
         raise ValueError('Runtime path is too long for a portable Unix socket')
     return workspace
@@ -134,34 +126,18 @@ def run(args, arm, out):
     env = gate.build_gate_env(args.gc_bin, workspace, bd_bin=args.bd_bin)
     # Isolate the controller's state. Workers use the existing subscription login.
     real_home = Path.home()
-    custom_claude = os.environ.get('CLAUDE_CONFIG_DIR') or None
-    real_claude = Path(custom_claude or real_home/'.claude').expanduser().resolve()
-    env = configure_experiment_env(env, workspace, real_home=real_home,
-        claude_config_dir=real_claude if custom_claude else None)
-    env['CLAUDE_CODE_EFFORT_LEVEL'] = 'low'
+    real_claude = Path(os.environ.get('CLAUDE_CONFIG_DIR', real_home/'.claude')).resolve()
+    env = configure_experiment_env(env, workspace, real_home=real_home)
+    env['CLAUDE_CONFIG_DIR'] = str(real_claude)
     env['PATH'] = str(Path(sys.executable).parent) + os.pathsep + env['PATH']
     for key in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OLLAMA_API_KEY',
-                'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY',
-                'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'):
+                'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY'):
         env.pop(key, None)
     if arm == 'jev' and not args.setup_only:
         env['TYPESAFE_API_KEY'] = os.environ['TYPESAFE_API_KEY']
-    if not args.setup_only:
-        auth = subprocess.run(['claude','auth','status','--json'],env=env,capture_output=True,text=True,timeout=60)
-        status = json.loads(auth.stdout)
-        safe_status = {k:status.get(k) for k in ('loggedIn','authMethod','apiProvider','subscriptionType')}
-        save(out/'subscription-preflight.json',safe_status)
-        if auth.returncode or not status.get('loggedIn') or status.get('authMethod') != 'claude.ai':
-            raise ValueError('Claude subscription login unavailable in worker environment')
-        startup_collector = usage.Collector(out/'startup-usage.jsonl')
-        try:
-            startup_result = startup.prepare({**env, **startup_collector.env},workspace.rig_dir,args.model)
-            save(out/'startup-preflight.json',startup_result)
-        finally:
-            save(out/'startup-usage-summary.json',startup_collector.close())
     config = workspace.city_dir/'city.toml'
     text = config.read_text().replace('HOME = '+gate.toml_string(workspace.gc_home),
-        'HOME = '+gate.toml_string(real_home)+'\nCLAUDE_CODE_EFFORT_LEVEL = "low"'+(('\nCLAUDE_CONFIG_DIR = '+gate.toml_string(real_claude)) if custom_claude else ''))
+        'HOME = '+gate.toml_string(real_home)+'\nCLAUDE_CONFIG_DIR = '+gate.toml_string(real_claude))
     text = text.replace('base = "builtin:claude"', 'base = "builtin:claude"\nargs_append = '+
         json.dumps(['--model', args.model, '--effort', 'low', '--setting-sources', 'project,local']))
     config.write_text(text)
@@ -173,7 +149,7 @@ def run(args, arm, out):
          'pack_diff': subprocess.check_output(['git','diff','--','gascity'],cwd=ROOT,text=True)})
     (out/'jev_build_ab.py').write_bytes(Path(__file__).read_bytes())
     save(out/'source-hashes.json', {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-        for p in [Path(__file__), ROOT/'scripts/gascity_pack_inference_gate.py', ROOT/'scripts/jev_claude_usage.py', ROOT/'scripts/jev_claude_startup.py',
+        for p in [Path(__file__), ROOT/'scripts/gascity_pack_inference_gate.py', ROOT/'scripts/jev_claude_usage.py',
                   *sorted((ROOT/'gascity').rglob('*'))] if p.is_file() and '__pycache__' not in p.parts})
     # Snapshot all current pack assets, including untracked new files.
     shutil.copytree(ROOT/'gascity', out/'pack-snapshot', ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache'))
@@ -278,8 +254,7 @@ def main():
         except Exception as e:
             result={'status':'failed','arm':a,'scope':'full-build-basic','error':f'{type(e).__name__}: {e}'}
             save(args.out/(name+'-setup-failure.json'),result)
-        error_summary = result.get('error','').splitlines()[0][:500] if result.get('error') else ''
-        print(f'[{i}/{len(schedule)}] {result["status"]}: {error_summary}',flush=True)
+        print(f'[{i}/{len(schedule)}] {result["status"]}: {result.get("error", "")}',flush=True)
         if result['status']=='failed':sys.exit(1)
 
 

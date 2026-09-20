@@ -1,0 +1,6 @@
+{
+  "command": "gc config show on stopped retained fixture",
+  "seconds": 1.7264814160298556,
+  "exit": 0,
+  "stderr": "gc config show: warning: agent \"core.control-dispatcher\": max_active_sessions=1 creates a canonical singleton that drains when scale_check returns 0; declare [[named_session]] only if you need a session that survives empty-demand windows\ngc config show: warning: agent \"fixture/core.control-dispatcher\": max_active_sessions=1 creates a canonical singleton that drains when scale_check returns 0; declare [[named_session]] only if you need a session that survives empty-demand windows\n"
+}

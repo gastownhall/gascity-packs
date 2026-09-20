@@ -1,0 +1,30 @@
+{
+  "arm": "baseline",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-19T23:38:59.823316+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "failed",
+  "setup_seconds": 301.06647608289495,
+  "error": "TimeoutExpired: Command '['/opt/homebrew/bin/gc', '--city', '/private/tmp/gcja-9c9m6klx/w/city', '--rig', 'fixture', 'sling', 'gc.run-operator', '--stdin', '--force', '--on', 'build-basic', '--title', 'gascity pack inference gate: build-basic', '--nudge', '--json', '--var', 'artifact_root=.gc/inference-gate/build-basic', '--var', 'interaction_mode=headless', '--var', 'review_mode=agent', '--var', 'drain_policy=separate', '--var', 'push=false', '--var', 'open_pr=false', '--var', 'max_iterations=2', '--var', 'jev_mode=off', '--var', 'jev_model=jev-1.13.0', '--var', 'jev_threshold=0.85']' timed out after 120 seconds",
+  "cleanup": {
+    "status": "no_leftover_server",
+    "pids": []
+  },
+  "otel_usage": {
+    "status": "missing",
+    "request_count": 0,
+    "models": [],
+    "totals": null,
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "elapsed_seconds": 438.80359670799226,
+  "llm_usage": {
+    "status": "missing",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 0,
+    "models": [],
+    "totals": null
+  }
+}

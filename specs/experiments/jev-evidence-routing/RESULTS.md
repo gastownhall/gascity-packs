@@ -90,7 +90,7 @@ reinitialization, and preservation of an existing issue. See
 executable remains unchanged.
 
 
-No full `build-basic` run reached model dispatch. Each setup attempt has its own
+The initial setup attempts did not reach model dispatch. Each attempt has its own
 manifest, raw log and result. Setup durations are not build-speed results.
 The [patched setup](build-setup-patched-001/run-001-baseline/run.log) completed
 city initialization, import install/check, configuration loading and the
@@ -107,16 +107,50 @@ or a Jev comparison.
 
 The exact migration error asks for a Dolt commit at the current schema before
 migration. These are newly created experimental databases; no user database was
-migrated or repaired. The local read-only-preflight patch now passes setup; model execution and
-full-build validation still remain. All four leftover disposable Dolt servers were
+migrated or repaired. The local read-only-preflight patch now passes setup. Subsequent runs reached
+model execution, as recorded below; a completed full build remains unvalidated. All four leftover disposable Dolt servers were
 identified by their unique configuration paths and stopped; their data remain
 local. The user's global supervisor and unrelated Dolt servers were retained.
 
 Full-workflow token collection retains deduplicated assistant transcript
-records and a filtered local Claude OTLP receiver. A main-request smoke test
-matched CLI counters exactly; auxiliary coverage is still unverified. See
+records and a filtered local Claude OTLP receiver. Two smoke tests
+matched CLI counters exactly. The approved normal-mode probe recorded 39,473
+processed tokens; the full diagnostic run also captured Haiku auxiliary requests
+for session titles and prompt suggestions. See
 [fix validation](diagnosis/fix-validation/README.md). Missing telemetry remains unknown. Full token-saving claims require
 complete comparable coverage; transcript totals alone are insufficient.
+
+## Approved Claude execution and startup corrections
+
+| Attempt | Outcome | Comparison validity |
+| --- | --- | --- |
+| [Baseline 001](build-baseline-001/run-001-baseline/result.json) | Setup passed in 301.066 s; dispatch exceeded the old 120 s deadline before observed model calls. | Failed startup; not a build-speed measurement. |
+| [Baseline 002](build-baseline-002/run-001-baseline/result.json) | Dispatch succeeded with a longer deadline. Produced requirements, then exceeded the 1,200 s workflow limit. Total elapsed 1,780.015 s. | Diagnostic recovery with manual authentication/trust interventions; exclude from A/B estimates. |
+| Baseline 003 | Fresh run with corrected authentication, automatic fixture trust, explicit low effort, unique city name, and 3,600 s workflow limit. | Running; no quality or speed result yet. |
+
+The authentication failure was caused by the harness explicitly setting
+`CLAUDE_CONFIG_DIR` to `~/.claude`. Although that is the usual data directory,
+setting it changes the configuration/authentication namespace. The exact worker
+environment reported logged out with that override and logged into Claude Max
+when it was unset. No credential was copied or changed. The harness now preserves
+the default unset state, while retaining a custom profile if explicitly supplied.
+See [authentication probes](build-baseline-002/run-001-baseline/auth-environment-probe.json).
+
+New fixture folders also required Claude's native trust prompt. The harness now
+prepares only its own disposable fixture through an isolated tmux session before
+Gas City starts workers. A [fresh-folder verification](native-startup-001/) reached
+the subscription prompt in 10.288 s. The clean baseline's startup took 4.458 s.
+No model events were observed during these startup checks; absent usage remains
+unknown rather than a measured zero. Startup time is included in total elapsed time.
+
+Baseline 002 recorded **24 model requests and 1,258,960 processed tokens**:
+4,890 uncached input, 10,072 output, 1,188,712 cache-read, and 55,286 cache-creation.
+These include observed Sonnet and Haiku calls and are diagnostic consumption,
+not evidence that the task was completed or that Jev saves tokens. The effective
+effort in that run was unverified; the clean run explicitly sets low effort in
+both CLI arguments and worker environment. Its
+[assessment](build-baseline-002/run-001-baseline/assessment.json) records these
+limitations separately from the raw result.
 
 ## Validation
 
@@ -128,7 +162,8 @@ complete comparable coverage; transcript totals alone are insufficient.
 - The 17 skipped integration tests were rerun against `/opt/homebrew/bin/gc`
   1.4.2 and all passed; see [integration log](integration-validation.log).
 - `gc lint gascity` and Python compilation pass.
-- Final startup-fix and telemetry validation: **122 passed**.
+- New subscription-profile, native-startup, and telemetry regression tests: **15 passed**.
+- Previous startup-fix and telemetry validation: **122 passed**.
   [Validation log](final-startup-fix-validation.log).
 
 Unit tests use synthetic responses to verify error handling and routing. These
@@ -170,9 +205,10 @@ continues through subscription CLIs.
 Verify the pinned Jev model with a real preflight and retain the resolved model.
 A fallback-only full build is a treatment failure, not a successful Jev result.
 Automatic approval review rejected a Claude probe outside safe mode because it
-could include workspace instructions/configuration. Approval for the full
-experiment’s Claude runs has been requested and remains pending; it is separate
-from the missing Jev credential.
+could include workspace instructions/configuration. The user subsequently approved the Claude run. The approved telemetry probe
+matched CLI token counters exactly; clean baseline 003 is running after two
+retained failed/diagnostic attempts. The Jev
+credential remains missing.
 
 Remaining work: live paired pilot; frozen held-out evaluation; working full-build
 execution and complete token telemetry; paired full-build measurements; final

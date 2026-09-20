@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-19T23:54:20.513022+00:00",
+  "git_head_before_model": "6570643f1432a7d42b4d93aea6784c60010fa139",
+  "fixture_files": {
+    "slugger.py": "9d7ea153a02d2847d334f0d7eb66f111ba6faaeff63018b99d1d9b0660576cf9",
+    "tests/test_slugger.py": "148afb6a5de401b3930b293c5e5d5d093bf25f16c36f2886ed1bd01351ed164c"
+  },
+  "additional_constraint_check": "Require tests/test_slugger.py to retain its initial SHA256; apply to every arm.",
+  "registered_before_model": true
+}

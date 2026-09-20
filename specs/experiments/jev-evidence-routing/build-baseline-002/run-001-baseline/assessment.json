@@ -1,0 +1,29 @@
+{
+  "classification": "diagnostic_recovery",
+  "valid_comparison": false,
+  "reasons": [
+    "Authentication and trust interventions during run",
+    "Effective effort not verified",
+    "Workflow timed out before implementation and review"
+  ],
+  "status": "failed",
+  "observed_tokens": {
+    "status": "observed",
+    "request_count": 24,
+    "models": [
+      "claude-haiku-4-5-20251001",
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 4890,
+      "output_tokens": 10072,
+      "cache_read_tokens": 1188712,
+      "cache_creation_tokens": 55286,
+      "total_tokens": 1258960
+    },
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "elapsed_seconds": 1780.0146979170386,
+  "quality": "Requirements artifact only; implementation not completed"
+}

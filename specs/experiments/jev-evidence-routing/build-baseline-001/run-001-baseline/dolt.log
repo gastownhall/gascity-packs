@@ -1,0 +1,16 @@
+gc scope watchdog: supervising dolt sql-server pid 54218 (config /tmp/gcja-9c9m6klx/w/city/.gc/runtime/packs/dolt/dolt-config.yaml, poll interval 30s)
+Starting server with Config HP="127.0.0.1:57867"|T="15000"|R="false"|L="warning"
+time="2026-09-19T16:39:51-07:00" level=warning msg="secure_file_priv is set to \"\", which is insecure."
+time="2026-09-19T16:39:51-07:00" level=warning msg="Any user with GRANT FILE privileges will be able to read any file which the sql-server process can read."
+time="2026-09-19T16:39:51-07:00" level=warning msg="Please consider restarting the server with secure_file_priv set to a safe (or non-existent) directory."
+time="2026-09-19T16:40:01-07:00" level=warning msg="error running query" connectTime="2026-09-19 16:40:01.510659 -0700 PDT m=+10.611589460" connectionID=14 error="database not found: hq" queryTime="2026-09-19 16:40:01.546437 -0700 PDT m=+10.647366835"
+time="2026-09-19T16:40:03-07:00" level=warning msg="error running query" connectTime="2026-09-19 16:40:03.771734 -0700 PDT m=+12.872636251" connectionDb=hq connectionID=17 error="table not found: config" queryTime="2026-09-19 16:40:03.829059 -0700 PDT m=+12.929960751"
+time="2026-09-19T16:40:08-07:00" level=warning msg="error running query" connectTime="2026-09-19 16:40:08.714251 -0700 PDT m=+17.815092293" connectionDb=hq connectionID=21 error="table not found: issues" queryTime="2026-09-19 16:40:08.7543 -0700 PDT m=+17.855140126"
+time="2026-09-19T16:40:09-07:00" level=warning msg="error running query" connectTime="2026-09-19 16:40:09.264245 -0700 PDT m=+18.365079251" connectionDb=hq connectionID=25 error="table not found: issues" queryTime="2026-09-19 16:40:09.579868 -0700 PDT m=+18.680697918"
+time="2026-09-19T16:41:26-07:00" level=warning msg="error running query" connectTime="2026-09-19 16:41:26.037259 -0700 PDT m=+95.137150585" connectionID=97 error="database not found: fi" queryTime="2026-09-19 16:41:26.059098 -0700 PDT m=+95.158988751"
+time="2026-09-19T16:41:28-07:00" level=warning msg="error running query" connectTime="2026-09-19 16:41:28.073591 -0700 PDT m=+97.173457085" connectionDb=fi connectionID=100 error="table not found: config" queryTime="2026-09-19 16:41:28.12564 -0700 PDT m=+97.225505126"
+time="2026-09-19T16:41:30-07:00" level=warning msg="error running query" connectTime="2026-09-19 16:41:30.260281 -0700 PDT m=+99.360120418" connectionDb=fi connectionID=104 error="table not found: issues" queryTime="2026-09-19 16:41:30.310555 -0700 PDT m=+99.410393835"
+time="2026-09-19T16:41:30-07:00" level=warning msg="error running query" connectTime="2026-09-19 16:41:30.592405 -0700 PDT m=+99.692240251" connectionDb=fi connectionID=108 error="table not found: issues" queryTime="2026-09-19 16:41:30.8737 -0700 PDT m=+99.973531751"
+
+
+gc scope watchdog: dolt sql-server pid 54218 exited cleanly

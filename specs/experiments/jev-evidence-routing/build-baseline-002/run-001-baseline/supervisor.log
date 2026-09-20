@@ -1,0 +1,954 @@
+gc supervisor: started: previous_exit=crash
+gc supervisor: workspace-service startup cleanup is not available on darwin; after a non-graceful supervisor exit, stale workspace-service processes may keep sockets bound. Registered workspace-service roots: /tmp/gcja-31m1slrq/w/city/.gc/services. Stop stale processes whose environment includes GC_SERVICE_STATE_ROOT under those roots, then restart those cities.
+gc supervisor: WARNING: API binding to ephemeral port 60957 -- set port = 8372 in ~/.gc/supervisor.toml
+Supervisor API listening on http://127.0.0.1:60957
+Dashboard:  http://127.0.0.1:60957/
+Supervisor started.
+gc supervisor: city 'jev-ab-run-001-baseline': starting_bead_store took 1m33.83s
+gc supervisor: city 'jev-ab-run-001-baseline': checking_bead_store_health took 5.83s
+gc supervisor: city 'jev-ab-run-001-baseline': projecting_mcp took 5.4s
+gc supervisor: city 'jev-ab-run-001-baseline': creating_session_provider took 2.33s
+gc supervisor: city 'jev-ab-run-001-baseline': building_city_runtime took 2.75s
+2026/09/19 16:52:35 caching-store: priming ...
+2026/09/19 16:52:35 beads cache: stagger=16261ms agent=
+2026/09/19 16:52:37 caching-store: priming ...
+2026/09/19 16:52:37 beads cache: stagger=16261ms agent=
+gc supervisor: city 'jev-ab-run-001-baseline': opening_controller_state took 3.9s
+2026/09/19 16:53:05 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=39ms cadence=default
+2026/09/19 16:53:07 beads cache: reconciled rig=jar0b beads=0 adds=0 updates=0 removes=0 took=67ms cadence=default
+gc supervisor: city 'jev-ab-run-001-baseline': running_pool_on_boot took 1m7.23s
+Launching city 'jev-ab-run-001-baseline' (/tmp/gcja-31m1slrq/w/city)
+adoption barrier: listing running sessions partially failed: tmux server unreachable: no tmux server running
+gc supervisor: adoption barrier: 0 session(s) failed bead creation
+gc supervisor: startup phase=adoption-barrier elapsed=62ms
+2026/09/19 16:53:45 api: GET /v0/cities 200 2.887ms [memory] req_id=5618d323be16edd6
+gc supervisor: startup phase=config-reload elapsed=478ms
+2026/09/19 16:53:45 api: GET /v0/cities 200 196µs [memory] req_id=ff10311a9dd8d654
+2026/09/19 16:53:45 api: GET /v0/cities 200 67µs [memory] req_id=a5059ac974402c30
+2026/09/19 16:53:45 api: GET /v0/cities 200 151µs [memory] req_id=748f4026888c9da3
+2026/09/19 16:53:46 api: GET /v0/cities 200 4.304ms [memory] req_id=b9c785d68e96fee3
+2026/09/19 16:53:46 api: GET /v0/cities 200 154µs [memory] req_id=be0afacced2e7328
+2026/09/19 16:53:46 api: GET /v0/cities 200 510µs [memory] req_id=23025f1dbdc70764
+2026/09/19 16:53:46 api: GET /v0/cities 200 90µs [memory] req_id=6fbb6dfa0edc7997
+2026/09/19 16:53:46 api: GET /v0/cities 200 210µs [memory] req_id=14d657fe03edb0e4
+2026/09/19 16:53:46 api: GET /v0/cities 200 118µs [memory] req_id=8335d5f8f5e87fda
+2026/09/19 16:53:46 api: GET /v0/cities 200 65µs [memory] req_id=9407e1afb01776fc
+2026/09/19 16:53:46 api: GET /v0/cities 200 313µs [memory] req_id=eaf4291294e04bbb
+2026/09/19 16:53:46 api: GET /v0/cities 200 131µs [memory] req_id=6748be4246d1a6d9
+2026/09/19 16:53:47 api: GET /v0/cities 200 79µs [memory] req_id=620f5ba6e036de2f
+2026/09/19 16:53:47 api: GET /v0/cities 200 5.96ms [memory] req_id=174e505c89d43bf3
+2026/09/19 16:53:47 api: GET /v0/cities 200 139µs [memory] req_id=c79ab6b1ab7c9eef
+2026/09/19 16:53:47 api: GET /v0/cities 200 1.317ms [memory] req_id=3855a81a03291502
+2026/09/19 16:53:47 api: GET /v0/cities 200 175µs [memory] req_id=d5c2fea8bc539208
+2026/09/19 16:53:47 api: GET /v0/cities 200 663µs [memory] req_id=6c128d60cfbb2e4f
+2026/09/19 16:53:47 api: GET /v0/cities 200 159µs [memory] req_id=80a30e549aa20931
+2026/09/19 16:53:47 api: GET /v0/cities 200 4.554ms [memory] req_id=f9a50de9f8184fce
+2026/09/19 16:53:48 api: GET /v0/cities 200 122µs [memory] req_id=f9a367989c1aa68d
+2026/09/19 16:53:48 api: GET /v0/cities 200 388µs [memory] req_id=08c0b5065769d8e9
+2026/09/19 16:53:48 api: GET /v0/cities 200 229µs [memory] req_id=3e3b58ddabb8153d
+2026/09/19 16:53:48 api: GET /v0/cities 200 203µs [memory] req_id=e5d99b562f3e0cbd
+2026/09/19 16:53:48 api: GET /v0/cities 200 1.531ms [memory] req_id=3da47528ff7ca976
+2026/09/19 16:53:48 api: GET /v0/cities 200 112µs [memory] req_id=c09684b428601964
+2026/09/19 16:53:48 api: GET /v0/cities 200 8.751ms [memory] req_id=21f8cbfaf1b1bd6c
+2026/09/19 16:53:48 api: GET /v0/cities 200 1.327ms [memory] req_id=c7472e153ff9fece
+2026/09/19 16:53:49 api: GET /v0/cities 200 555µs [memory] req_id=3ed6f5c16a17a888
+2026/09/19 16:53:49 api: GET /v0/cities 200 284µs [memory] req_id=dda38ded6d51b4dc
+2026/09/19 16:53:49 api: GET /v0/cities 200 362µs [memory] req_id=c20ac9179317066b
+2026/09/19 16:53:49 api: GET /v0/cities 200 353µs [memory] req_id=f767e032717c1375
+2026/09/19 16:53:49 api: GET /v0/cities 200 224µs [memory] req_id=635e57183ab3628c
+2026/09/19 16:53:49 api: GET /v0/cities 200 282µs [memory] req_id=69a7b00a29d8f900
+2026/09/19 16:53:49 api: GET /v0/cities 200 1.279ms [memory] req_id=83660894051a04b1
+2026/09/19 16:53:50 api: GET /v0/cities 200 170µs [memory] req_id=d020a8d24d784f71
+2026/09/19 16:53:50 api: GET /v0/cities 200 1.534ms [memory] req_id=6bcc38343e2edac8
+2026/09/19 16:53:50 api: GET /v0/cities 200 157µs [memory] req_id=48bb67adeeb20691
+2026/09/19 16:53:50 api: GET /v0/cities 200 165µs [memory] req_id=95e790adf8829c5b
+2026/09/19 16:53:50 api: GET /v0/cities 200 183µs [memory] req_id=9b13efcd95d49dd4
+2026/09/19 16:53:50 api: GET /v0/cities 200 149µs [memory] req_id=c1d830367d119a25
+2026/09/19 16:53:51 api: GET /v0/cities 200 261µs [memory] req_id=7d7ecedc195bbc4d
+2026/09/19 16:53:51 api: GET /v0/cities 200 4.442ms [memory] req_id=eeda2e53a579c345
+2026/09/19 16:53:51 api: GET /v0/cities 200 131µs [memory] req_id=5d1e8a6427eaae5b
+2026/09/19 16:53:51 api: GET /v0/cities 200 216µs [memory] req_id=7c35da6b46deb6fb
+2026/09/19 16:53:51 api: GET /v0/cities 200 853µs [memory] req_id=282db4272c0a2c75
+2026/09/19 16:53:51 api: GET /v0/cities 200 542µs [memory] req_id=c3fe51ebc3fa4e4f
+2026/09/19 16:53:51 api: GET /v0/cities 200 164µs [memory] req_id=a1e7fcc3a3c9b683
+2026/09/19 16:53:52 api: GET /v0/cities 200 5.922ms [memory] req_id=8716a6fc04cf5065
+2026/09/19 16:53:52 api: GET /v0/cities 200 4.86ms [memory] req_id=43c41c847613313b
+2026/09/19 16:53:52 api: GET /v0/cities 200 115µs [memory] req_id=dbb6da70b73d2ce3
+2026/09/19 16:53:52 api: GET /v0/cities 200 14.182ms [memory] req_id=55413b71d83f04fe
+2026/09/19 16:53:52 api: GET /v0/cities 200 10.948ms [memory] req_id=b65868bcdd38501f
+2026/09/19 16:53:52 api: GET /v0/cities 200 114µs [memory] req_id=25707d5629b4fc2c
+2026/09/19 16:53:52 api: GET /v0/cities 200 452µs [memory] req_id=0b64909e6439ab8f
+2026/09/19 16:53:53 api: GET /v0/cities 200 71µs [memory] req_id=ca62fa3f14cfadb8
+2026/09/19 16:53:53 api: GET /v0/cities 200 445µs [memory] req_id=916958b6236b12f5
+2026/09/19 16:53:53 api: GET /v0/cities 200 1.168ms [memory] req_id=3dde43451034efc8
+2026/09/19 16:53:53 api: GET /v0/cities 200 1.673ms [memory] req_id=cfe14759a10a9e9a
+2026/09/19 16:53:53 api: GET /v0/cities 200 114µs [memory] req_id=bbe53595445578fa
+2026/09/19 16:53:53 api: GET /v0/cities 200 374µs [memory] req_id=a3729c2d9a1a0f93
+2026/09/19 16:53:54 api: GET /v0/cities 200 29.809ms [memory] req_id=85c20673a7bc3c62
+2026/09/19 16:53:54 api: GET /v0/cities 200 740µs [memory] req_id=dd3d15318d69b8b0
+2026/09/19 16:53:54 api: GET /v0/cities 200 289µs [memory] req_id=50035b8d48fb7bdd
+2026/09/19 16:53:54 api: GET /v0/cities 200 159µs [memory] req_id=0941f147ddb08fdc
+2026/09/19 16:53:54 api: GET /v0/cities 200 364µs [memory] req_id=6723980425e4b5c3
+2026/09/19 16:53:55 api: GET /v0/cities 200 5.527ms [memory] req_id=d94785b77325c434
+2026/09/19 16:53:55 api: GET /v0/cities 200 221µs [memory] req_id=ca6213d33af2ca94
+2026/09/19 16:53:55 api: GET /v0/cities 200 298µs [memory] req_id=ded91343b29f04d6
+2026/09/19 16:53:55 api: GET /v0/cities 200 367µs [memory] req_id=55b5ada3ef1ec61f
+2026/09/19 16:53:55 api: GET /v0/cities 200 5.802ms [memory] req_id=696556ac02671f3f
+2026/09/19 16:53:56 api: GET /v0/cities 200 7.521ms [memory] req_id=abeebe6fe2c955cb
+2026/09/19 16:53:56 api: GET /v0/cities 200 6.716ms [memory] req_id=3666e9af76f8d6b5
+2026/09/19 16:53:56 api: GET /v0/cities 200 249µs [memory] req_id=20c4cb8040891eda
+2026/09/19 16:53:56 api: GET /v0/cities 200 160µs [memory] req_id=b4834e480aaee2bd
+2026/09/19 16:53:56 api: GET /v0/cities 200 4.139ms [memory] req_id=e9ed27fd4718fe8b
+2026/09/19 16:53:56 api: GET /v0/cities 200 303µs [memory] req_id=50805a5a8b0da90f
+2026/09/19 16:53:57 api: GET /v0/cities 200 684µs [memory] req_id=77e7f3b3d74a586f
+2026/09/19 16:53:57 api: GET /v0/cities 200 172µs [memory] req_id=f8374e8bff6bf9d5
+2026/09/19 16:53:57 api: GET /v0/cities 200 186µs [memory] req_id=9f181eca1a1703ff
+2026/09/19 16:53:57 api: GET /v0/cities 200 327µs [memory] req_id=5dc4d2a9085c0dab
+2026/09/19 16:53:57 api: GET /v0/cities 200 275µs [memory] req_id=4efa90bf47a3fae5
+2026/09/19 16:53:57 api: GET /v0/cities 200 291µs [memory] req_id=e0e98140df56a19c
+2026/09/19 16:53:57 api: GET /v0/cities 200 761µs [memory] req_id=3386bd327207838f
+2026/09/19 16:53:58 api: GET /v0/cities 200 22.799ms [memory] req_id=03ca2bd369d8664a
+2026/09/19 16:53:58 api: GET /v0/cities 200 224µs [memory] req_id=9e29487e63dc90c2
+2026/09/19 16:53:58 api: GET /v0/cities 200 152µs [memory] req_id=c68afa0b6e9a3157
+2026/09/19 16:53:59 api: GET /v0/cities 200 116µs [memory] req_id=58faaf06d6738bf1
+2026/09/19 16:53:59 api: GET /v0/cities 200 15.569ms [memory] req_id=ea95ad917dc336b3
+2026/09/19 16:53:59 api: GET /v0/cities 200 308µs [memory] req_id=fa488492a01acd8f
+2026/09/19 16:53:59 api: GET /v0/cities 200 844µs [memory] req_id=a821a37537a7cc4b
+2026/09/19 16:53:59 api: GET /v0/cities 200 3.139ms [memory] req_id=55b563f976e94468
+2026/09/19 16:53:59 api: GET /v0/cities 200 104µs [memory] req_id=6ef25c4865332a8d
+2026/09/19 16:53:59 api: GET /v0/cities 200 105µs [memory] req_id=4ea33209b269726f
+2026/09/19 16:53:59 api: GET /v0/cities 200 440µs [memory] req_id=91634e35cd17a975
+2026/09/19 16:54:00 api: GET /v0/cities 200 1.015ms [memory] req_id=df4c687b0539e80f
+2026/09/19 16:54:00 api: GET /v0/cities 200 688µs [memory] req_id=e3eedda2e462c851
+2026/09/19 16:54:00 api: GET /v0/cities 200 144µs [memory] req_id=d614fe8e06ccc8b6
+2026/09/19 16:54:00 api: GET /v0/cities 200 299µs [memory] req_id=7165f44975576bb7
+2026/09/19 16:54:00 api: GET /v0/cities 200 2.075ms [memory] req_id=cbdfe12ec362068a
+2026/09/19 16:54:01 api: GET /v0/cities 200 6.616ms [memory] req_id=4cb3b63ebf5992bf
+2026/09/19 16:54:01 api: GET /v0/cities 200 148µs [memory] req_id=d67f569e6b280f5b
+2026/09/19 16:54:01 api: GET /v0/cities 200 2.854ms [memory] req_id=5e64aea325125e32
+2026/09/19 16:54:01 api: GET /v0/cities 200 93.645ms [memory] req_id=90f64cb41d4b9af4
+2026/09/19 16:54:01 api: GET /v0/cities 200 64µs [memory] req_id=d7e44a546f6193de
+2026/09/19 16:54:01 api: GET /v0/cities 200 393µs [memory] req_id=50f6d679fccf5aab
+gc supervisor: startup phase=startup-orders elapsed=16.177s
+gc supervisor: startup phase=startup-route-recovery elapsed=0s
+2026/09/19 16:54:01 api: GET /v0/cities 200 8.954ms [memory] req_id=c4a70778dafe05e6
+2026/09/19 16:54:02 api: GET /v0/cities 200 327µs [memory] req_id=0848875adc484c74
+2026/09/19 16:54:02 api: GET /v0/cities 200 9.373ms [memory] req_id=371e9800f46a2ccb
+2026/09/19 16:54:02 api: GET /v0/cities 200 105µs [memory] req_id=7633b45e252b4e76
+2026/09/19 16:54:02 api: GET /v0/cities 200 127µs [memory] req_id=4243d939ce0cdde5
+2026/09/19 16:54:02 api: GET /v0/cities 200 118µs [memory] req_id=381b507d1249b971
+2026/09/19 16:54:02 api: GET /v0/cities 200 424µs [memory] req_id=eb9b1b088d445550
+2026/09/19 16:54:02 api: GET /v0/cities 200 401µs [memory] req_id=df1ad9b85ad372ec
+2026/09/19 16:54:02 api: GET /v0/cities 200 5.104ms [memory] req_id=27968527775b3700
+2026/09/19 16:54:03 api: GET /v0/cities 200 48.13ms [memory] req_id=4ed67d6821204a97
+2026/09/19 16:54:03 api: GET /v0/cities 200 5.453ms [memory] req_id=1123d42c64a6e267
+2026/09/19 16:54:03 api: GET /v0/cities 200 3.265ms [memory] req_id=43a16aa9916a26a2
+2026/09/19 16:54:03 api: GET /v0/cities 200 126µs [memory] req_id=8fa17627f02c790b
+2026/09/19 16:54:03 api: GET /v0/cities 200 93µs [memory] req_id=6698181d312ecd49
+2026/09/19 16:54:03 api: GET /v0/cities 200 228µs [memory] req_id=aad3eb24f1faec58
+2026/09/19 16:54:03 api: GET /v0/cities 200 107µs [memory] req_id=77f933f99f8f0dd0
+2026/09/19 16:54:04 api: GET /v0/cities 200 425µs [memory] req_id=62b8fd3379b1c4de
+2026/09/19 16:54:04 api: GET /v0/cities 200 577µs [memory] req_id=8cc804247440cc7a
+2026/09/19 16:54:04 api: GET /v0/cities 200 3.002ms [memory] req_id=f0f6634cfe58d7f3
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000001 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 16:54:04 api: GET /v0/cities 200 8.718ms [memory] req_id=315953f750c37eae
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 16:54:04 api: GET /v0/cities 200 757µs [memory] req_id=6bd04303f22ca4d3
+2026/09/19 16:54:05 api: GET /v0/cities 200 285µs [memory] req_id=f6d0563822e2b354
+[mysql] 2026/09/19 16:54:05 packets.go:58 unexpected EOF
+2026/09/19 16:54:05 api: GET /v0/cities 200 122µs [memory] req_id=6a552009fc2cbbdc
+2026/09/19 16:54:05 api: GET /v0/cities 200 337µs [memory] req_id=706718a68ef92645
+2026/09/19 16:54:05 api: GET /v0/cities 200 97µs [memory] req_id=f23f2505dcbdbbcc
+2026/09/19 16:54:05 api: GET /v0/cities 200 104µs [memory] req_id=e9fd1daa8ba06604
+2026/09/19 16:54:05 api: GET /v0/cities 200 191µs [memory] req_id=4744d8ef8b89933d
+2026/09/19 16:54:06 api: GET /v0/cities 200 131µs [memory] req_id=02f144c8cba4c69a
+2026/09/19 16:54:06 api: GET /v0/cities 200 168µs [memory] req_id=082aacf98c52ede9
+2026/09/19 16:54:06 api: GET /v0/cities 200 555µs [memory] req_id=79f4aaf3988a4293
+2026/09/19 16:54:06 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=1.035s cadence=default
+2026/09/19 16:54:06 api: GET /v0/cities 200 264µs [memory] req_id=7ab0eb5821b996d5
+2026/09/19 16:54:06 api: GET /v0/cities 200 8.65ms [memory] req_id=cd0c6798c9b31b31
+2026/09/19 16:54:06 api: GET /v0/cities 200 307µs [memory] req_id=2ee9b16689e4f9c3
+2026/09/19 16:54:07 api: GET /v0/cities 200 15.481ms [memory] req_id=6ce5cc181f68e54c
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+2026/09/19 16:54:07 api: GET /v0/cities 200 437µs [memory] req_id=f2350ae382ee9b71
+2026/09/19 16:54:07 api: GET /v0/cities 200 93µs [memory] req_id=b6d7b308422efe50
+2026/09/19 16:54:07 beads cache: reconciled rig=jar0b beads=4 adds=4 updates=0 removes=0 took=182ms cadence=default
+2026/09/19 16:54:07 api: GET /v0/cities 200 369µs [memory] req_id=fb2baa1c15fe9bf6
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 16:54:07 api: GET /v0/cities 200 322µs [memory] req_id=6c1e5abfeed78b8e
+2026/09/19 16:54:07 api: GET /v0/cities 200 87µs [memory] req_id=2d1ae2b393f5060c
+2026/09/19 16:54:07 api: GET /v0/cities 200 126µs [memory] req_id=1151274a30bc1d48
+2026/09/19 16:54:08 api: GET /v0/cities 200 101µs [memory] req_id=4d31ff028759d49d
+2026/09/19 16:54:08 api: GET /v0/cities 200 198µs [memory] req_id=e02bee593e6a1061
+gc supervisor: startup phase=startup elapsed=6.478s
+gc supervisor: startup phase=convergence-startup elapsed=5ms
+gc supervisor: startup ready elapsed=23.209s
+City started.
+2026/09/19 16:54:08 api: GET /v0/cities 200 170µs [memory] req_id=5834a9ae381b3648
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 16:54:21 api: GET /health 200 7.51ms [memory] req_id=e9db9811d827711b
+2026/09/19 16:54:25 api: GET /v0/cities 200 1.059ms [memory] req_id=b751834bff42278c
+2026/09/19 16:54:27 api: GET /v0/cities 200 2.808ms [memory] req_id=ae7e11a58cf6f698
+[mysql] 2026/09/19 16:54:36 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 16:54:37 packets.go:58 read tcp 127.0.0.1:61720->127.0.0.1:14288: read: connection reset by peer
+2026/09/19 16:55:07 beads cache: reconciled rig=fi beads=2 adds=2 updates=0 removes=0 took=501ms cadence=default
+2026/09/19 16:55:08 beads cache: reconciled rig=jar0b beads=1 adds=0 updates=0 removes=0 took=59ms cadence=default
+Config reloaded: 19 agents, 1 rigs (rev 59a0db7374ed)
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 16:55:38 packets.go:58 unexpected EOF
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 16:55:46 api: GET /v0/city/jev-ab-run-001-baseline/events 200 4.897ms [memory] req_id=dd3007c7450889bf
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 16:55:55 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 16:55:55 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 16:56:07 beads cache: reconciled rig=fi beads=2 adds=0 updates=0 removes=0 took=97ms cadence=default
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 16:56:09 beads cache: reconciled rig=jar0b beads=6 adds=3 updates=0 removes=3 took=827ms cadence=default
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000013 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000021 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 16:57:07 packets.go:58 unexpected EOF
+2026/09/19 16:57:08 beads cache: reconciled rig=fi beads=40 adds=38 updates=0 removes=0 took=942ms cadence=default
+2026/09/19 16:57:10 beads cache: reconciled rig=jar0b beads=4 adds=3 updates=0 removes=3 took=560ms cadence=default
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/19 16:57:11 api: GET /api/health 200 1.383ms [memory] req_id=3d80e15b1463e4b8
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 16:57:26 tmux state cache: refresh failed in 38.886959ms: runtime unavailable: liveness observation failed: no tmux server running
+session reconciler: provider-health registry unavailable for ""; treating as green
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=core__control-dispatcher-jar0b-kwp template=fixture/core.control-dispatcher outcome=start_enqueued duration=0s
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-lsa template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+session lifecycle: op=start wave=0 candidates=2 duration=1.1s
+2026/09/19 16:57:29 tmux state cache: refresh failed in 47.7495ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 16:57:29 tmux state cache: refresh failed in 34.717541ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 16:57:29 tmux state cache: refresh failed in 30.133875ms: runtime unavailable: liveness observation failed: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 16:57:29 session: scanning for orphaned runtimes for jar0b-lsa (failing closed): tmux list running: tmux server unreachable: no tmux server running
+2026/09/19 16:57:29 session: scanning for orphaned runtimes for jar0b-kwp (failing closed): tmux list running: tmux server unreachable: no tmux server running
+Woke session 'fixture/core.control-dispatcher'
+session lifecycle: op=start wave=0 session=core__control-dispatcher-jar0b-kwp template=fixture/core.control-dispatcher outcome=success duration=1.221s phases=[start_call=1.22s]
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 16:57:37 api: GET /v0/city/jev-ab-run-001-baseline/events 200 39.783ms [memory] req_id=5362cdb7ff4bfe2c
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 16:57:54 api: GET /v0/city/jev-ab-run-001-baseline/events 200 66.792ms [memory] req_id=6f7fe2b385f4f2c9
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 16:58:09 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=328ms cadence=default
+2026/09/19 16:58:11 beads cache: reconciled rig=jar0b beads=5 adds=2 updates=0 removes=1 took=280ms cadence=default
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000032 durable
+2026/09/19 16:58:38 api: GET /v0/city/jev-ab-run-001-baseline/events 200 47.956ms [memory] req_id=e98bb2c2d49f5f59
+Woke session 'fixture/gc.run-operator-1'
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-lsa template=fixture/gc.run-operator outcome=success duration=1m13.622s phases=[start_call=1m13.622s]
+[mysql] 2026/09/19 16:58:49 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 16:58:49 packets.go:58 read tcp 127.0.0.1:63437->127.0.0.1:14288: read: connection reset by peer
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 16:58:53 api: GET /v0/city/jev-ab-run-001-baseline/events 200 45.449ms [memory] req_id=5a4e6780180cfb77
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 16:59:09 packets.go:58 unexpected EOF
+2026/09/19 16:59:09 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=584ms cadence=default
+2026/09/19 16:59:13 beads cache: reconciled rig=jar0b beads=5 adds=2 updates=0 removes=2 took=616ms cadence=default
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 16:59:55 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000041 durable
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000042 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:00:10 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=211ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 17:00:13 packets.go:58 unexpected EOF
+2026/09/19 17:00:14 beads cache: reconciled rig=jar0b beads=6 adds=3 updates=0 removes=3 took=1.309s cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000044 durable
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000045 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 17:01:04 packets.go:58 read tcp 127.0.0.1:64364->127.0.0.1:14288: read: connection reset by peer
+2026/09/19 17:01:11 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=478ms cadence=default
+2026/09/19 17:01:15 beads cache: reconciled rig=jar0b beads=5 adds=1 updates=0 removes=1 took=703ms cadence=default
+Config reloaded: 19 agents, 1 rigs (rev d8e4027dac2e)
+2026/09/19 17:02:12 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=335ms cadence=default
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 17:02:16 beads cache: reconciled rig=jar0b beads=7 adds=4 updates=1 removes=0 took=577ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:03:12 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=274ms cadence=default
+Config reloaded: 19 agents, 1 rigs (rev e4d312fa029a)
+2026/09/19 17:03:17 beads cache: reconciled rig=jar0b beads=3 adds=0 updates=0 removes=0 took=238ms cadence=default
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000049 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 17:03:27 api: GET /v0/city/jev-ab-run-001-baseline/events 200 39.279ms [memory] req_id=09b4e798f3dd47ba
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-bzm template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000049 durable
+[mysql] 2026/09/19 17:03:42 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 17:03:45 api: GET /v0/city/jev-ab-run-001-baseline/events 200 53.601ms [memory] req_id=1366530a72481310
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+session reconciler: starting gc__run-operator-jar0b-bzm: resuming session: session died during startup: session "gc__run-operator-jar0b-bzm"; diagnostic written to /tmp/gcja-31m1slrq/w/city/.gc/sessions/gc__run-operator-jar0b-bzm/start-stderr.log; last pane output:\n────────────────────────────────────────────────────────────────────────────────\n Accessing workspace:\n\n /private/tmp/gcja-31m1slrq/w/fixture\n\n Quick safety check: Is this a project you created or one you trust? (Like your\n own code, a well-known open source project, or work from your team). If not,\n take a moment to review what's in this folder first.\n\n Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n^[[?2026;2$y^[[?1;2;4c\n\n\n\n\n\nPane is dead (status 1, Sat Sep 19 17:03:47 2026)
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-bzm template=fixture/gc.run-operator outcome=provider_error duration=13.392s phases=[start_call=13.392s] err=resuming session: session died during startup: session "gc__run-operator-jar0b-bzm"; diagnostic written to /tmp/gcja-31m1slrq/w/city/.gc/sessions/gc__run-operator-jar0b-bzm/start-stderr.log; last pane output:\n────────────────────────────────────────────────────────────────────────────────\n Accessing workspace:\n\n /private/tmp/gcja-31m1slrq/w/fixture\n\n Quick safety check: Is this a project you created or one you trust? (Like your\n own code, a well-known open source project, or work from your team). If not,\n take a moment to review what's in this folder first.\n\n Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n^[[?2026;2$y^[[?1;2;4c\n\n\n\n\n\nPane is dead (status 1, Sat Sep 19 17:03:47 2026)
+[mysql] 2026/09/19 17:04:00 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 17:04:00 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-fwq template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+2026/09/19 17:04:13 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=411ms cadence=default
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000051 durable
+2026/09/19 17:04:14 api: GET /v0/city/jev-ab-run-001-baseline/events 200 24.009ms [memory] req_id=a6f67a98126e5053
+2026/09/19 17:04:18 beads cache: reconciled rig=jar0b beads=6 adds=2 updates=1 removes=4 took=793ms cadence=default
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 17:04:27 api: GET /v0/city/jev-ab-run-001-baseline/events 200 56.27ms [memory] req_id=fc54adb42d2f65e7
+[mysql] 2026/09/19 17:04:28 packets.go:58 read tcp 127.0.0.1:49198->127.0.0.1:14288: read: connection reset by peer
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+session reconciler: starting gc__run-operator-jar0b-fwq: resuming session: session died during startup: session "gc__run-operator-jar0b-fwq"; diagnostic written to /tmp/gcja-31m1slrq/w/city/.gc/sessions/gc__run-operator-jar0b-fwq/start-stderr.log; last pane output:\n────────────────────────────────────────────────────────────────────────────────\n Accessing workspace:\n\n /private/tmp/gcja-31m1slrq/w/fixture\n\n Quick safety check: Is this a project you created or one you trust? (Like your\n own code, a well-known open source project, or work from your team). If not,\n take a moment to review what's in this folder first.\n\n Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n\n\n\n\n\n\nPane is dead (status 1, Sat Sep 19 17:04:27 2026)
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-fwq template=fixture/gc.run-operator outcome=provider_error duration=16.53s phases=[start_call=16.53s] err=resuming session: session died during startup: session "gc__run-operator-jar0b-fwq"; diagnostic written to /tmp/gcja-31m1slrq/w/city/.gc/sessions/gc__run-operator-jar0b-fwq/start-stderr.log; last pane output:\n────────────────────────────────────────────────────────────────────────────────\n Accessing workspace:\n\n /private/tmp/gcja-31m1slrq/w/fixture\n\n Quick safety check: Is this a project you created or one you trust? (Like your\n own code, a well-known open source project, or work from your team). If not,\n take a moment to review what's in this folder first.\n\n Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n\n\n\n\n\n\nPane is dead (status 1, Sat Sep 19 17:04:27 2026)
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-lsa template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+[mysql] 2026/09/19 17:04:43 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:04:47 tmux state cache: refresh failed in 91.994541ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:47 tmux state cache: refresh failed in 147.53ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:48 tmux state cache: refresh failed in 45.538458ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:48 tmux state cache: refresh failed in 37.85ms: runtime unavailable: liveness observation failed: no tmux server running
+session reconciler: starting gc__run-operator-jar0b-lsa: resuming session: session died during startup: session "gc__run-operator-jar0b-lsa"; diagnostic written to /tmp/gcja-31m1slrq/w/city/.gc/sessions/gc__run-operator-jar0b-lsa/start-stderr.log; last pane output:\n────────────────────────────────────────────────────────────────────────────────\n Accessing workspace:\n\n /private/tmp/gcja-31m1slrq/w/fixture\n\n Quick safety check: Is this a project you created or one you trust? (Like your\n own code, a well-known open source project, or work from your team). If not,\n take a moment to review what's in this folder first.\n\n Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n^[[?2026;2$y^[[?1;2;4c\n\n\n\n\n\nPane is dead (status 1, Sat Sep 19 17:04:45 2026)
+2026/09/19 17:04:48 tmux state cache: refresh failed in 33.773917ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:48 tmux state cache: refresh failed in 31.173583ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:48 tmux state cache: refresh failed in 28.547375ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:48 tmux state cache: refresh failed in 23.885208ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:48 tmux state cache: refresh failed in 33.690708ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:49 tmux state cache: refresh failed in 98.5035ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:04:49 tmux state cache: refresh failed in 98.30525ms: runtime unavailable: liveness observation failed: no tmux server running
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-lsa template=fixture/gc.run-operator outcome=provider_error duration=13.302s phases=[start_call=13.302s] err=resuming session: session died during startup: session "gc__run-operator-jar0b-lsa"; diagnostic written to /tmp/gcja-31m1slrq/w/city/.gc/sessions/gc__run-operator-jar0b-lsa/start-stderr.log; last pane output:\n────────────────────────────────────────────────────────────────────────────────\n Accessing workspace:\n\n /private/tmp/gcja-31m1slrq/w/fixture\n\n Quick safety check: Is this a project you created or one you trust? (Like your\n own code, a well-known open source project, or work from your team). If not,\n take a moment to review what's in this folder first.\n\n Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n^[[?2026;2$y^[[?1;2;4c\n\n\n\n\n\nPane is dead (status 1, Sat Sep 19 17:04:45 2026)
+[mysql] 2026/09/19 17:04:55 packets.go:58 unexpected EOF
+2026/09/19 17:04:57 tmux state cache: refresh failed in 67.505667ms: runtime unavailable: liveness observation failed: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 17:05:14 api: GET /v0/city/jev-ab-run-001-baseline/events 200 159.51ms [memory] req_id=0e70efb8ca556a4f
+2026/09/19 17:05:15 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=1.07s cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+2026/09/19 17:05:19 beads cache: reconciled rig=jar0b beads=9 adds=4 updates=0 removes=4 took=663ms cadence=default
+2026/09/19 17:05:21 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+session reconciler: provider-health registry unavailable for ""; treating as green
+session lifecycle: op=start wave=0 session=core__control-dispatcher-jar0b-11u template=fixture/core.control-dispatcher outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000054 durable
+Woke session 'fixture/core.control-dispatcher'
+session lifecycle: op=start wave=0 session=core__control-dispatcher-jar0b-11u template=fixture/core.control-dispatcher outcome=success duration=1.548s phases=[start_call=1.548s]
+[mysql] 2026/09/19 17:05:34 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-arv template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000055 durable
+[mysql] 2026/09/19 17:06:03 packets.go:58 read tcp 127.0.0.1:49814->127.0.0.1:14288: read: connection reset by peer
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 17:06:07 api: GET /v0/city/jev-ab-run-001-baseline/events 200 24.293ms [memory] req_id=3b4b8b80b4d191d7
+Woke session 'fixture/gc.run-operator-1'
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-arv template=fixture/gc.run-operator outcome=success duration=22.11s phases=[start_call=22.11s commit_refresh=5ms]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:06:15 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=219ms cadence=default
+2026/09/19 17:06:20 beads cache: reconciled rig=jar0b beads=8 adds=1 updates=1 removes=1 took=126ms cadence=default
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+session reconciler: cleaned dead runtime session gc__run-operator-jar0b-arv
+[mysql] 2026/09/19 17:06:32 packets.go:58 unexpected EOF
+2026/09/19 17:06:32 api: GET /v0/city/jev-ab-run-001-baseline/events 200 72.772ms [memory] req_id=e868eece8d920e81
+assignedWorkBeads: 0 beads (rigStores=1)
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-3st template=fixture/gc.run-operator outcome=start_enqueued duration=0s
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000057 durable
+[mysql] 2026/09/19 17:07:02 packets.go:58 unexpected EOF
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 17:07:12 api: GET /v0/city/jev-ab-run-001-baseline/events 200 78.767ms [memory] req_id=3f1ee397d785019e
+[mysql] 2026/09/19 17:07:12 packets.go:58 unexpected EOF
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+[mysql] 2026/09/19 17:07:12 packets.go:58 read tcp 127.0.0.1:50448->127.0.0.1:14288: read: connection reset by peer
+[mysql] 2026/09/19 17:07:13 packets.go:58 unexpected EOF
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:07:16 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=137ms cadence=default
+2026/09/19 17:07:21 beads cache: reconciled rig=jar0b beads=7 adds=2 updates=0 removes=2 took=589ms cadence=default
+Woke session 'fixture/gc.run-operator-1'
+session lifecycle: op=start wave=0 session=gc__run-operator-jar0b-3st template=fixture/gc.run-operator outcome=success duration=37.78s phases=[start_call=37.78s]
+2026/09/19 17:07:27 api: GET /v0/city/jev-ab-run-001-baseline/events 200 77.843ms [memory] req_id=485c3591601daf56
+assignedWorkBeads: 0 beads (rigStores=1)
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+2026/09/19 17:07:40 api: GET /v0/city/jev-ab-run-001-baseline/events 200 142.342ms [memory] req_id=84bac3e33dd87f7c
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:07:43 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000059 durable
+[mysql] 2026/09/19 17:07:51 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000060 durable
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000060 durable
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000061 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/19 17:08:16 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=234ms cadence=default
+2026/09/19 17:08:22 beads cache: reconciled rig=jar0b beads=8 adds=1 updates=1 removes=1 took=643ms cadence=default
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000061 durable
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000062 durable
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000062 durable
+assignedWorkBeads: 0 beads (rigStores=1)
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000063 durable
+[mysql] 2026/09/19 17:09:17 packets.go:58 unexpected EOF
+2026/09/19 17:09:18 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=957ms cadence=default
+2026/09/19 17:09:23 beads cache: reconciled rig=jar0b beads=8 adds=1 updates=0 removes=1 took=472ms cadence=default
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 17:09:38 packets.go:58 read tcp 127.0.0.1:51422->127.0.0.1:14288: read: connection reset by peer
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+assignedWorkBeads: 1 beads found
+  fi-69e assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+2026/09/19 17:10:02 api: GET /v0/city/jev-ab-run-001-baseline/events 200 72.312ms [memory] req_id=b63e4ba4c75cacd8
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:10:10 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+2026/09/19 17:10:16 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 17:10:18 packets.go:58 unexpected EOF
+2026/09/19 17:10:19 beads cache: reconciled rig=fi beads=40 adds=0 updates=3 removes=0 took=910ms cadence=default
+2026/09/19 17:10:25 beads cache: reconciled rig=jar0b beads=8 adds=0 updates=0 removes=0 took=851ms cadence=default
+[mysql] 2026/09/19 17:10:35 packets.go:58 unexpected EOF
+assignedWorkBeads: 4 beads found
+  fi-69e assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=in_progress
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:10:50 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 17:10:55 packets.go:58 read tcp 127.0.0.1:51662->127.0.0.1:14288: read: connection reset by peer
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:11:19 beads cache: reconciled rig=fi beads=40 adds=0 updates=0 removes=0 took=78ms cadence=default
+assignedWorkBeads: 5 beads found
+  fi-69e assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=in_progress
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-l47 assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:11:26 beads cache: reconciled rig=jar0b beads=11 adds=5 updates=0 removes=4 took=175ms cadence=default
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:11:43 api: GET /v0/city/jev-ab-run-001-baseline/events 200 19.03ms [memory] req_id=8b0d50697de05262
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:11:54 gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+gc: order exec cascade-nudge-on-blocker-close failed: context deadline exceeded
+assignedWorkBeads: 5 beads found
+  fi-69e assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=in_progress
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-l47 assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 17:12:19 packets.go:58 unexpected EOF
+2026/09/19 17:12:20 beads cache: reconciled rig=fi beads=40 adds=0 updates=1 removes=0 took=656ms cadence=default
+2026/09/19 17:12:27 beads cache: reconciled rig=jar0b beads=11 adds=3 updates=0 removes=0 took=108ms cadence=default
+[mysql] 2026/09/19 17:12:30 packets.go:58 unexpected EOF
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 17:12:45 packets.go:58 unexpected EOF
+assignedWorkBeads: 5 beads found
+  fi-69e assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=in_progress
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-l47 assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+namedWorkReady: 5 assigned beads, 0 named specs, ready=map[]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+[mysql] 2026/09/19 17:13:15 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 17:13:16 packets.go:58 read tcp 127.0.0.1:53218->127.0.0.1:14288: read: connection reset by peer
+[mysql] 2026/09/19 17:13:16 packets.go:58 unexpected EOF
+2026/09/19 17:13:20 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=1 took=138ms cadence=default
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000077 durable
+assignedWorkBeads: 4 beads found
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-l47 assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+2026/09/19 17:13:28 beads cache: reconciled rig=jar0b beads=13 adds=4 updates=0 removes=3 took=748ms cadence=default
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+session reconciler: provider-health registry unavailable for "claude"; treating as green
+session lifecycle: op=start wave=0 session=gc__requirements-planner-jar0b-4he template=fixture/gc.requirements-planner outcome=start_enqueued duration=0s
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+assignedWorkBeads: 4 beads found
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-l47 assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+Woke session 'fixture/gc.requirements-planner-1'
+session lifecycle: op=start wave=0 session=gc__requirements-planner-jar0b-4he template=fixture/gc.requirements-planner outcome=success duration=13.366s phases=[start_call=13.366s]
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+2026/09/19 17:13:51 api: GET /v0/city/jev-ab-run-001-baseline/events 200 65.432ms [memory] req_id=36b584fb6d556fd9
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:14:05 api: GET /v0/city/jev-ab-run-001-baseline/events 200 83.393ms [memory] req_id=47758ff0692a32d5
+assignedWorkBeads: 4 beads found
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-l47 assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:14:17 api: GET /v0/city/jev-ab-run-001-baseline/events 200 84.087ms [memory] req_id=8cc9aba8841dc79f
+2026/09/19 17:14:21 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=182ms cadence=default
+[mysql] 2026/09/19 17:14:28 packets.go:58 unexpected EOF
+2026/09/19 17:14:29 beads cache: reconciled rig=jar0b beads=13 adds=2 updates=0 removes=1 took=746ms cadence=default
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+assignedWorkBeads: 4 beads found
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-l47 assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:15:05 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+2026/09/19 17:15:21 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=39ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:15:25 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process args snapshot: signal: killed
+2026/09/19 17:15:30 beads cache: reconciled rig=jar0b beads=12 adds=1 updates=0 removes=3 took=624ms cadence=default
+assignedWorkBeads: 4 beads found
+  fi-t5w assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-tps assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-3uq assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+  fi-l47 assignee=gc__run-operator-jar0b-3st routed=fixture/gc.run-operator status=open
+namedWorkReady: 4 assigned beads, 0 named specs, ready=map[]
+session beads: alias "fixture/gc.run-operator-1" for fixture/gc.run-operator-1 unavailable: session alias already exists: "fixture/gc.run-operator-1" already belongs to jar0b-lsa
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.run-operator = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:15:55 tmux state cache: process snapshot degraded, retaining tmux session liveness: fetching Darwin process command snapshot: signal: killed
+[mysql] 2026/09/19 17:15:56 packets.go:58 read tcp 127.0.0.1:54860->127.0.0.1:14288: read: connection reset by peer
+Skipping drain for 'gc__requirements-planner-jar0b-4he': live assigned work found
+trace: slow_storage_degraded: jev-ab-run-001-baseline-64899-1789861953712084000-000084 durable
+[mysql] 2026/09/19 17:16:21 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 17:16:21 packets.go:58 unexpected EOF
+2026/09/19 17:16:22 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=1.32s cadence=default
+2026/09/19 17:16:31 beads cache: reconciled rig=jar0b beads=10 adds=0 updates=0 removes=5 took=771ms cadence=default
+Config reloaded: 19 agents, 1 rigs (rev fe170324b48e)
+gc supervisor: order tracking sweep watchdog closed 1 stale tracking bead(s)
+assignedWorkBeads: 1 beads found
+  fi-dkb assignee=gc__requirements-planner-jar0b-4he routed=fixture/gc.requirements-planner status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+2026/09/19 17:17:23 beads cache: reconciled rig=fi beads=39 adds=0 updates=0 removes=0 took=274ms cadence=default
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:17:31 beads cache: reconciled rig=jar0b beads=11 adds=3 updates=0 removes=2 took=145ms cadence=default
+2026/09/19 17:17:35 api: GET /v0/city/jev-ab-run-001-baseline/events 200 64.111ms [memory] req_id=5d406f18836cf9df
+session reconciler: reaped process-table orphan pid=83403 session=jar0b-lsa
+session reconciler: swept 1 process-table orphan runtime(s)
+assignedWorkBeads: 1 beads found
+  fi-dkb assignee=gc__requirements-planner-jar0b-4he routed=fixture/gc.requirements-planner status=in_progress
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:17:43 tmux state cache: refresh failed in 44.041917ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:43 tmux state cache: refresh failed in 43.98575ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:43 tmux state cache: refresh failed in 40.187083ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:43 tmux state cache: refresh failed in 26.203292ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:44 tmux state cache: refresh failed in 52.014ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:44 tmux state cache: refresh failed in 66.221708ms: runtime unavailable: liveness observation failed: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/19 17:17:45 api: GET /v0/city/jev-ab-run-001-baseline/events 200 27.858ms [memory] req_id=ed67cf9daa303623
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+[mysql] 2026/09/19 17:17:48 packets.go:58 unexpected EOF
+[mysql] 2026/09/19 17:17:49 packets.go:58 read tcp 127.0.0.1:55808->127.0.0.1:14288: read: connection reset by peer
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:17:49 tmux state cache: refresh failed in 32.630709ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:49 tmux state cache: refresh failed in 33.117333ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:49 tmux state cache: refresh failed in 36.039ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:49 tmux state cache: refresh failed in 33.412083ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:50 tmux state cache: refresh failed in 30.097625ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:50 tmux state cache: refresh failed in 31.609042ms: runtime unavailable: liveness observation failed: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+poolDesired: fixture/gc.requirements-planner = 1
+poolDesired: fixture/core.control-dispatcher = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:17:57 tmux state cache: refresh failed in 50.477458ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:57 tmux state cache: refresh failed in 62.235542ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:57 tmux state cache: refresh failed in 102.861166ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:57 tmux state cache: refresh failed in 105.188042ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:58 tmux state cache: refresh failed in 67.1255ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:17:58 tmux state cache: refresh failed in 29.89175ms: runtime unavailable: liveness observation failed: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:18:03 tmux state cache: refresh failed in 29.43575ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:03 tmux state cache: refresh failed in 27.838875ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:03 tmux state cache: refresh failed in 30.141875ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:03 tmux state cache: refresh failed in 30.735875ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:03 tmux state cache: refresh failed in 71.076041ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:04 tmux state cache: refresh failed in 87.73575ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:04 tmux state cache: refresh failed in 51.05725ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:04 tmux state cache: refresh failed in 42.609666ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:04 tmux state cache: refresh failed in 45.444875ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:04 tmux state cache: refresh failed in 29.711ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:04 tmux state cache: refresh failed in 45.104666ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:05 tmux state cache: refresh failed in 37.932167ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:06 tmux state cache: refresh failed in 31.55575ms: runtime unavailable: liveness observation failed: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 1 beads found
+  fi-dkb assignee=gc__requirements-planner-jar0b-4he routed=fixture/gc.requirements-planner status=in_progress
+Unregistered city 'jev-ab-run-001-baseline', stopping...
+2026/09/19 17:18:12 gc: order exec nudge-on-route failed: context canceled
+gc: order exec nudge-on-route failed: context canceled
+2026/09/19 17:18:12 gc: order exec cascade-nudge-on-blocker-close failed: context canceled
+gc: order exec cascade-nudge-on-blocker-close failed: context canceled
+2026/09/19 17:18:12 gc: order exec orphan-sweep failed: context canceled
+gc: order exec orphan-sweep failed: context canceled
+2026/09/19 17:18:12 gc: order exec dolt-health failed: context canceled
+gc: order exec dolt-health failed: context canceled
+[mysql] 2026/09/19 17:18:12 packets.go:58 read tcp 127.0.0.1:56228->127.0.0.1:14288: read: connection reset by peer
+namedWorkReady: 1 assigned beads, 0 named specs, ready=map[]
+session reconciler: reaping stale extmsg bindings: context canceled
+session reconciler: reaping stale extmsg participants: context canceled
+2026/09/19 17:18:16 tmux state cache: refresh failed in 39.252333ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:16 tmux state cache: refresh failed in 34.988ms: runtime unavailable: liveness observation failed: no tmux server running
+poolDesired: fixture/core.control-dispatcher = 1
+poolDesired: fixture/gc.requirements-planner = 1
+scaleCheck: fixture/core.control-dispatcher = 1
+2026/09/19 17:18:17 tmux state cache: refresh failed in 29.539916ms: runtime unavailable: liveness observation failed: no tmux server running
+2026/09/19 17:18:17 tmux state cache: refresh failed in 33.845083ms: runtime unavailable: liveness observation failed: no tmux server running
+gc supervisor: shutdown session listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+gc supervisor: force shutdown late async-start listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+gc supervisor: city 'jev-ab-run-001-baseline': no pending request_id for city.unregister completion event (path=/tmp/gcja-31m1slrq/w/city)
+City 'jev-ab-run-001-baseline' stopped.
+2026/09/19 17:18:22 api: GET /v0/cities 200 3.379ms [memory] req_id=290e4da939b95029
+gc supervisor: shutdown requested: source=socket_stop signal="" client="" mode=destructive
+Supervisor stopped.

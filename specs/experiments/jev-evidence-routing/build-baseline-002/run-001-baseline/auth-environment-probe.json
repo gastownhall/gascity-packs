@@ -1,0 +1,26 @@
+[
+  {
+    "variant": "unset",
+    "exit": 0,
+    "loggedIn": true,
+    "authMethod": "claude.ai",
+    "apiProvider": "firstParty",
+    "subscriptionType": "max"
+  },
+  {
+    "variant": "explicit_default",
+    "exit": 1,
+    "loggedIn": false,
+    "authMethod": "none",
+    "apiProvider": "firstParty",
+    "subscriptionType": null
+  },
+  {
+    "variant": "empty",
+    "exit": 0,
+    "loggedIn": true,
+    "authMethod": "claude.ai",
+    "apiProvider": "firstParty",
+    "subscriptionType": "max"
+  }
+]

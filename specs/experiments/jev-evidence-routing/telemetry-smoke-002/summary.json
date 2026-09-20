@@ -1,0 +1,15 @@
+{
+  "status": "observed",
+  "request_count": 1,
+  "models": [
+    "claude-sonnet-5"
+  ],
+  "totals": {
+    "input_tokens": 2,
+    "output_tokens": 4,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 39467,
+    "total_tokens": 39473
+  },
+  "collector_errors": 0
+}
