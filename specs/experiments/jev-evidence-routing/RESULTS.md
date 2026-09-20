@@ -152,7 +152,26 @@ both CLI arguments and worker environment. Its
 [assessment](build-baseline-002/run-001-baseline/assessment.json) records these
 limitations separately from the raw result.
 
-See the [confirmed tmux-reaper diagnosis and real-process regression](diagnosis/tmux-reaper/README.md). A fresh full baseline with the local runtime fix remains pending.
+See the [confirmed tmux-reaper diagnosis and real-process regression](diagnosis/tmux-reaper/README.md). Baseline 004 used the local runtime fix and showed no observed shared-server reaping. It was aborted after 38m44s when the requirements gate exhausted three retries because its restricted PATH selected Python without PyYAML. Its 47 observed requests processed 2,323,078 tokens. Original tests remained unchanged and failed; no implementation was produced. These diagnostic totals are not a completed-build comparison. See [terminal record](build-baseline-004/run-001-baseline/result.json) and [gate-environment diagnosis](diagnosis/gate-python/README.md).
+
+### Task fidelity observed in baseline 004
+
+The requirements producer marked its step passed, but its three
+criteria describe the existence, schema and coverage table of a requirements
+artifact. They omit `slugify`, its behavior and the unchanged-test constraint.
+The original task is present in source bead `fi-ddp`; the workflow root links
+its input convoy while its own description describes the formula. See
+[input lineage](build-baseline-004/run-001-baseline/input-lineage-observation.json)
+and the [unaltered initial artifact](build-baseline-004/run-001-baseline/requirements-initial.md).
+The downstream validator subsequently requested a repair because its Python
+environment could not import PyYAML; structural validation has not passed.
+The stopped run underwent independent evaluation: the original tests are unchanged, the implementation remains a stub, and pytest fails.
+
+This exposes a limitation of the current Jev hypothesis: checking evidence
+against criteria that have already drifted from the user's task may validate
+the wrong work. An earlier check of artifact fidelity to the original work item
+is a candidate follow-up experiment. No Jev call has tested that hypothesis;
+structural artifact validity is not sufficient output-quality evidence.
 
 ## Validation
 
@@ -164,7 +183,7 @@ See the [confirmed tmux-reaper diagnosis and real-process regression](diagnosis/
 - The 17 skipped integration tests were rerun against `/opt/homebrew/bin/gc`
   1.4.2 and all passed; see [integration log](integration-validation.log).
 - `gc lint gascity` and Python compilation pass.
-- New subscription-profile, native-startup, and telemetry regression tests: **15 passed**.
+- Subscription-profile, native-startup, telemetry, gate-toolchain and interrupt-finalization regression tests: **17 passed**. See [gate repair validation](diagnosis/gate-python/harness-green.log).
 - Previous startup-fix and telemetry validation: **122 passed**.
   [Validation log](final-startup-fix-validation.log).
 
@@ -197,7 +216,9 @@ python scripts/jev_ab.py --split heldout --arms both --repetitions 3 \
 python scripts/jev_build_ab.py --arms baseline --repetitions 1 --setup-only \
   --bd-bin /absolute/path/to/patched/bd \
   --out /absolute/new/build-preflight-directory
-python scripts/jev_build_ab.py --arms both --repetitions 2 \
+python scripts/jev_build_ab.py --arms both --repetitions 2 --timeout 3600 \
+  --gc-bin /absolute/path/to/patched/gc \
+  --bd-bin /absolute/path/to/patched/bd \
   --out /absolute/new/build-directory
 ```
 

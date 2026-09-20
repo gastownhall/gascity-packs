@@ -1,0 +1,31 @@
+{
+  "argv": [
+    "scripts/jev_build_ab.py",
+    "--arms",
+    "baseline",
+    "--repetitions",
+    "1",
+    "--dispatch-timeout",
+    "600",
+    "--timeout",
+    "3600",
+    "--gc-bin",
+    "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc",
+    "--bd-bin",
+    "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/build/bin/bd",
+    "--out",
+    "specs/experiments/jev-evidence-routing/build-baseline-004"
+  ],
+  "versions": {
+    "gc": "1.4.2-jev-tmux",
+    "bd": "bd version 1.3.0-jev-preflight (local-regression)",
+    "claude": "2.1.278 (Claude Code)",
+    "bash": "GNU bash, version 5.3.20(1)-release (aarch64-apple-darwin25.6.0)\nCopyright (C) 2025 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n\nThis is free software; you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law."
+  },
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "arm": "baseline",
+  "core_source": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/runtime-sources/gascity-1.4.2",
+  "pack_git_head": "de27a3db92ff03477e05812f3a266e1f12deabb9",
+  "pack_diff": ""
+}

@@ -1,0 +1,19 @@
+{
+  "retention": "Local compressed copies excluded from Git; hashes retained in the experiment record.",
+  "files": [
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-31m1slrq-w-fixture/c64d9581-4c30-469e-953e-636dd7097807.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-31m1slrq-w-fixture--c64d9581-4c30-469e-953e-636dd7097807.jsonl.gz",
+      "source_sha256": "0e64a9cdb048dd2b119ed408e45d3ecd0cf0f5edc0c4a112845610ab1e584100",
+      "archive_sha256": "37adfa5909fd4c91375d971bb05e72e34aa0d8d56b5676ede2b7733d6aacf103",
+      "bytes": 372789
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-31m1slrq-w-fixture/858b569e-d1fe-4893-9b6a-530c3d5e479e.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-31m1slrq-w-fixture--858b569e-d1fe-4893-9b6a-530c3d5e479e.jsonl.gz",
+      "source_sha256": "f1634a0e95281ad86f156133408634c034324bb03b61bd1a84ee17d9782002c5",
+      "archive_sha256": "3d3f1b774ce46da1552c4a2d102cae2e11df1e501e59a4e524451a90ed0628f2",
+      "bytes": 408104
+    }
+  ]
+}

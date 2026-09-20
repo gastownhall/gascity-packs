@@ -1,0 +1,56 @@
+..........F......                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_interrupt_retains_terminal_report_and_cleanup ______________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-23/test_interrupt_retains_termina0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10738c160>
+
+    def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch):
+        events=[]
+        workspace=build.new_runtime_workspace(build.gate.PACK_SPECS['gascity'],'interrupt-test')
+        monkeypatch.setattr(build,'new_runtime_workspace',lambda *a:workspace)
+        real_output=build.subprocess.check_output
+        def output(cmd,**kw):
+            return real_output(cmd,**kw) if cmd[0]=='git' else 'test-version\n'
+        monkeypatch.setattr(build.subprocess,'check_output',output)
+        def interrupt(*a,**kw):raise KeyboardInterrupt()
+        monkeypatch.setattr(build.gate,'initialize_city',interrupt)
+        monkeypatch.setattr(build.gate,'stop_city',lambda *a,**kw:events.append('stop'))
+        monkeypatch.setattr(build,'stop_disposable_dolt',lambda *a:{'status':'not_started'})
+        monkeypatch.setattr(build,'transcript_usage',lambda *a:{'status':'missing'})
+        class Collector:
+            env={}
+            def __init__(self,*a):pass
+            def close(self):events.append('collector_close');return {'status':'missing'}
+        monkeypatch.setattr(build.usage,'Collector',Collector)
+        args=SimpleNamespace(gc_bin='/bin/true',bd_bin='/bin/true',model='unused',
+            jev_model='unused',setup_only=True,setup_timeout=1)
+        try:
+>           try:result=build.run(args,'baseline',tmp_path/'run')
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+gascity/tests/test_jev_build_ab.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/jev_build_ab.py:179: in run
+    env = install_gate_toolchain(env,workspace,python_bin=sys.executable,bd_bin=args.bd_bin)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'PATH': '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin:/private/tmp/gcja-8obwx4l3/w/gc-home/bin:/...tudio/bin', 'TMPDIR': '/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', ...}
+workspace = GateWorkspace(root=PosixPath('/private/tmp/gcja-8obwx4l3/w'), city_dir=PosixPath('/private/tmp/gcja-8obwx4l3/w/city'),...Path('/private/tmp/gcja-8obwx4l3/w/gc-home/.claude'), city_name='jev-gcja-8obwx4l3-interrupt-test', rig_name='fixture')
+python_bin = '/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python'
+bd_bin = '/bin/true'
+
+    def install_gate_toolchain(env, workspace, *, python_bin, bd_bin):
+        """Keep the selected Python available in the SDK's restricted gate PATH."""
+        directory = workspace.gc_home/'bin'
+        directory.mkdir(parents=True, exist_ok=True)
+        bd_target = shutil.which(bd_bin, path=env.get('PATH'))
+        if not bd_target:
+>           raise ValueError(f'Beads executable not found: {bd_bin}')
+E           ValueError: Beads executable not found: /bin/true
+
+scripts/jev_build_ab.py:131: ValueError
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_build_ab.py::test_interrupt_retains_terminal_report_and_cleanup
+1 failed, 16 passed in 1.76s

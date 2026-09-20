@@ -47,3 +47,8 @@ Source baseline is Gas City v1.4.2. The local build uses the matching source
 plus only this scanner patch. A successful scanner probe is not yet a successful
 complete Gas City build. The next experiment must use a fresh city and record
 the patched binary identity for both arms.
+
+The local binary built successfully as `1.4.2-jev-tmux`; its SHA-256 and exact
+compiler flags are in [build metadata](build-icu-result.json). Validation covers
+the affected scanner package and real tmux boundary; the full upstream CI suite
+has not been run. Baseline 004 uses this experimental binary.

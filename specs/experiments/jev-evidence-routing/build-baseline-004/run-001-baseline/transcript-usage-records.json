@@ -1,0 +1,2649 @@
+[
+  {
+    "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/67f5c9c0-d034-4f7a-868c-8e7cd45ef53d.jsonl",
+    "records": [
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDnzKYxRj16DfqZ9yddd",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 16192,
+          "cache_read_input_tokens": 31314,
+          "output_tokens": 104,
+          "output_tokens_details": {
+            "thinking_tokens": 23
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 16192,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 104,
+              "cache_read_input_tokens": 31314,
+              "cache_creation_input_tokens": 16192,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 16192
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDnzKYxRj16DfqZ9yddd",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 16192,
+          "cache_read_input_tokens": 31314,
+          "output_tokens": 104,
+          "output_tokens_details": {
+            "thinking_tokens": 23
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 16192,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 104,
+              "cache_read_input_tokens": 31314,
+              "cache_creation_input_tokens": 16192,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 16192
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDo6nXMdz9RJmp2B1jo7",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2700,
+          "cache_read_input_tokens": 47506,
+          "output_tokens": 155,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2700,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 155,
+              "cache_read_input_tokens": 47506,
+              "cache_creation_input_tokens": 2700,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2700
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDo6nXMdz9RJmp2B1jo7",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2700,
+          "cache_read_input_tokens": 47506,
+          "output_tokens": 155,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2700,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 155,
+              "cache_read_input_tokens": 47506,
+              "cache_creation_input_tokens": 2700,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2700
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDo79fLdxQ9n5HsuJFH6",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2165,
+          "cache_read_input_tokens": 50206,
+          "output_tokens": 168,
+          "output_tokens_details": {
+            "thinking_tokens": 77
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2165,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 168,
+              "cache_read_input_tokens": 50206,
+              "cache_creation_input_tokens": 2165,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2165
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDo79fLdxQ9n5HsuJFH6",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2165,
+          "cache_read_input_tokens": 50206,
+          "output_tokens": 168,
+          "output_tokens_details": {
+            "thinking_tokens": 77
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2165,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 168,
+              "cache_read_input_tokens": 50206,
+              "cache_creation_input_tokens": 2165,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2165
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDo7qLJ2T1UUrGVGv6e5",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1134,
+          "cache_read_input_tokens": 52371,
+          "output_tokens": 1298,
+          "output_tokens_details": {
+            "thinking_tokens": 511
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1134,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 1298,
+              "cache_read_input_tokens": 52371,
+              "cache_creation_input_tokens": 1134,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1134
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDo7qLJ2T1UUrGVGv6e5",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1134,
+          "cache_read_input_tokens": 52371,
+          "output_tokens": 1298,
+          "output_tokens_details": {
+            "thinking_tokens": 511
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1134,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 1298,
+              "cache_read_input_tokens": 52371,
+              "cache_creation_input_tokens": 1134,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1134
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDo9jHUTZJU1Dj82CN98",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1374,
+          "cache_read_input_tokens": 53505,
+          "output_tokens": 130,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1374,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 130,
+              "cache_read_input_tokens": 53505,
+              "cache_creation_input_tokens": 1374,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1374
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDo9jHUTZJU1Dj82CN98",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1374,
+          "cache_read_input_tokens": 53505,
+          "output_tokens": 130,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1374,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 130,
+              "cache_read_input_tokens": 53505,
+              "cache_creation_input_tokens": 1374,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1374
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDoB8C9rr1AEtQvEnJ33",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 198,
+          "cache_read_input_tokens": 54879,
+          "output_tokens": 128,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 198,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 128,
+              "cache_read_input_tokens": 54879,
+              "cache_creation_input_tokens": 198,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 198
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDoCqCWEghb3Zjeiq53g",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 283,
+          "cache_read_input_tokens": 55077,
+          "output_tokens": 142,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 283,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 142,
+              "cache_read_input_tokens": 55077,
+              "cache_creation_input_tokens": 283,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 283
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "67f5c9c0-d034-4f7a-868c-8e7cd45ef53d",
+        "message_id": "msg_011CfDoCqCWEghb3Zjeiq53g",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 283,
+          "cache_read_input_tokens": 55077,
+          "output_tokens": 142,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 283,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 142,
+              "cache_read_input_tokens": 55077,
+              "cache_creation_input_tokens": 283,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 283
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      }
+    ]
+  },
+  {
+    "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/fb5084bf-5c87-4dd2-b10f-90f14a6f2c43.jsonl",
+    "records": [
+      {
+        "session_id": "fb5084bf-5c87-4dd2-b10f-90f14a6f2c43",
+        "message_id": "msg_011CfDqDQkqNAm6THYHfeUmh",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 9215,
+          "cache_read_input_tokens": 38219,
+          "output_tokens": 52,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 9215,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 52,
+              "cache_read_input_tokens": 38219,
+              "cache_creation_input_tokens": 9215,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 9215
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      }
+    ]
+  },
+  {
+    "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/1b086ada-259b-4e4a-8c41-6aadf5af6c69.jsonl",
+    "records": [
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpRbx1Kodmn9z6uv4bK",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 9228,
+          "cache_read_input_tokens": 38219,
+          "output_tokens": 100,
+          "output_tokens_details": {
+            "thinking_tokens": 19
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 9228,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 100,
+              "cache_read_input_tokens": 38219,
+              "cache_creation_input_tokens": 9228,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 9228
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpRbx1Kodmn9z6uv4bK",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 9228,
+          "cache_read_input_tokens": 38219,
+          "output_tokens": 100,
+          "output_tokens_details": {
+            "thinking_tokens": 19
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 9228,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 100,
+              "cache_read_input_tokens": 38219,
+              "cache_creation_input_tokens": 9228,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 9228
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpYC8F2JYwqRLPfZGe6",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 797,
+          "cache_read_input_tokens": 47447,
+          "output_tokens": 133,
+          "output_tokens_details": {
+            "thinking_tokens": 26
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 797,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 133,
+              "cache_read_input_tokens": 47447,
+              "cache_creation_input_tokens": 797,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 797
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpYC8F2JYwqRLPfZGe6",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 797,
+          "cache_read_input_tokens": 47447,
+          "output_tokens": 133,
+          "output_tokens_details": {
+            "thinking_tokens": 26
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 797,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 133,
+              "cache_read_input_tokens": 47447,
+              "cache_creation_input_tokens": 797,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 797
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpZESBBYfZcT3Rk6fsr",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 932,
+          "cache_read_input_tokens": 48244,
+          "output_tokens": 130,
+          "output_tokens_details": {
+            "thinking_tokens": 16
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 932,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 130,
+              "cache_read_input_tokens": 48244,
+              "cache_creation_input_tokens": 932,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 932
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpZESBBYfZcT3Rk6fsr",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 932,
+          "cache_read_input_tokens": 48244,
+          "output_tokens": 130,
+          "output_tokens_details": {
+            "thinking_tokens": 16
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 932,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 130,
+              "cache_read_input_tokens": 48244,
+              "cache_creation_input_tokens": 932,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 932
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpbZi6jHWcqC7NmZeiE",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 232,
+          "cache_read_input_tokens": 49176,
+          "output_tokens": 99,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 232,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 99,
+              "cache_read_input_tokens": 49176,
+              "cache_creation_input_tokens": 232,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 232
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpdCBMQ4QQYyeRB3CzS",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1187,
+          "cache_read_input_tokens": 49408,
+          "output_tokens": 92,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1187,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 92,
+              "cache_read_input_tokens": 49408,
+              "cache_creation_input_tokens": 1187,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1187
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpedBXjYEqSSXwNW4SW",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 705,
+          "cache_read_input_tokens": 50595,
+          "output_tokens": 193,
+          "output_tokens_details": {
+            "thinking_tokens": 66
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 705,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 193,
+              "cache_read_input_tokens": 50595,
+              "cache_creation_input_tokens": 705,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 705
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpedBXjYEqSSXwNW4SW",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 705,
+          "cache_read_input_tokens": 50595,
+          "output_tokens": 193,
+          "output_tokens_details": {
+            "thinking_tokens": 66
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 705,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 193,
+              "cache_read_input_tokens": 50595,
+              "cache_creation_input_tokens": 705,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 705
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpfsNMGGvE3WFGhRXkJ",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2939,
+          "cache_read_input_tokens": 51300,
+          "output_tokens": 198,
+          "output_tokens_details": {
+            "thinking_tokens": 106
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2939,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 198,
+              "cache_read_input_tokens": 51300,
+              "cache_creation_input_tokens": 2939,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2939
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpfsNMGGvE3WFGhRXkJ",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2939,
+          "cache_read_input_tokens": 51300,
+          "output_tokens": 198,
+          "output_tokens_details": {
+            "thinking_tokens": 106
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2939,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 198,
+              "cache_read_input_tokens": 51300,
+              "cache_creation_input_tokens": 2939,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2939
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDphtAmojbW3hikxkSgv",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2749,
+          "cache_read_input_tokens": 54239,
+          "output_tokens": 323,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2749,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 323,
+              "cache_read_input_tokens": 54239,
+              "cache_creation_input_tokens": 2749,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2749
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDphtAmojbW3hikxkSgv",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2749,
+          "cache_read_input_tokens": 54239,
+          "output_tokens": 323,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2749,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 323,
+              "cache_read_input_tokens": 54239,
+              "cache_creation_input_tokens": 2749,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2749
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpj24K46f8cb35PDdmH",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3748,
+          "cache_read_input_tokens": 56988,
+          "output_tokens": 353,
+          "output_tokens_details": {
+            "thinking_tokens": 189
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3748,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 353,
+              "cache_read_input_tokens": 56988,
+              "cache_creation_input_tokens": 3748,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 3748
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpj24K46f8cb35PDdmH",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3748,
+          "cache_read_input_tokens": 56988,
+          "output_tokens": 353,
+          "output_tokens_details": {
+            "thinking_tokens": 189
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3748,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 353,
+              "cache_read_input_tokens": 56988,
+              "cache_creation_input_tokens": 3748,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 3748
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpmLnkRCmbZZKfkj4EK",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 475,
+          "cache_read_input_tokens": 60736,
+          "output_tokens": 232,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 475,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 232,
+              "cache_read_input_tokens": 60736,
+              "cache_creation_input_tokens": 475,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 475
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpmLnkRCmbZZKfkj4EK",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 475,
+          "cache_read_input_tokens": 60736,
+          "output_tokens": 232,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 475,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 232,
+              "cache_read_input_tokens": 60736,
+              "cache_creation_input_tokens": 475,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 475
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDprD1ZekoVpvTV698DL",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 384,
+          "cache_read_input_tokens": 61211,
+          "output_tokens": 110,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 384,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 110,
+              "cache_read_input_tokens": 61211,
+              "cache_creation_input_tokens": 384,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 384
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDprD1ZekoVpvTV698DL",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 384,
+          "cache_read_input_tokens": 61211,
+          "output_tokens": 110,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 384,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 110,
+              "cache_read_input_tokens": 61211,
+              "cache_creation_input_tokens": 384,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 384
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "1b086ada-259b-4e4a-8c41-6aadf5af6c69",
+        "message_id": "msg_011CfDpteBSrjQJJAB8qumWV",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 176,
+          "cache_read_input_tokens": 61595,
+          "output_tokens": 89,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 176,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 89,
+              "cache_read_input_tokens": 61595,
+              "cache_creation_input_tokens": 176,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 176
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      }
+    ]
+  },
+  {
+    "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/4dd3fa8c-4748-492e-b36c-6f691c3cceee.jsonl",
+    "records": [
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDoKb9rJFYFofjLYjj7n",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 9215,
+          "cache_read_input_tokens": 38219,
+          "output_tokens": 52,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 9215,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 52,
+              "cache_read_input_tokens": 38219,
+              "cache_creation_input_tokens": 9215,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 9215
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDoSHmXnKnnmv761BLxu",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 5289,
+          "cache_read_input_tokens": 47434,
+          "output_tokens": 266,
+          "output_tokens_details": {
+            "thinking_tokens": 123
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 5289,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 266,
+              "cache_read_input_tokens": 47434,
+              "cache_creation_input_tokens": 5289,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 5289
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDoSHmXnKnnmv761BLxu",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 5289,
+          "cache_read_input_tokens": 47434,
+          "output_tokens": 266,
+          "output_tokens_details": {
+            "thinking_tokens": 123
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 5289,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 266,
+              "cache_read_input_tokens": 47434,
+              "cache_creation_input_tokens": 5289,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 5289
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDoSn3PY6w6GwanbZHgb",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 320,
+          "cache_read_input_tokens": 52723,
+          "output_tokens": 1873,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 320,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 1873,
+              "cache_read_input_tokens": 52723,
+              "cache_creation_input_tokens": 320,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 320
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDoUH9PCyMKSkPkQ4mfZ",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1987,
+          "cache_read_input_tokens": 53043,
+          "output_tokens": 118,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1987,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 118,
+              "cache_read_input_tokens": 53043,
+              "cache_creation_input_tokens": 1987,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1987
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDoUb9rEgifQ5HedQQxe",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 190,
+          "cache_read_input_tokens": 55030,
+          "output_tokens": 147,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 190,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 147,
+              "cache_read_input_tokens": 55030,
+              "cache_creation_input_tokens": 190,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 190
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDoWeiUYRvssXoazjesF",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 267,
+          "cache_read_input_tokens": 55220,
+          "output_tokens": 244,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 267,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 244,
+              "cache_read_input_tokens": 55220,
+              "cache_creation_input_tokens": 267,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 267
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDoWeiUYRvssXoazjesF",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 267,
+          "cache_read_input_tokens": 55220,
+          "output_tokens": 244,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 267,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 244,
+              "cache_read_input_tokens": 55220,
+              "cache_creation_input_tokens": 267,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 267
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDobHKjd7MQ8EcN9fw9G",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 446,
+          "cache_read_input_tokens": 55487,
+          "output_tokens": 81,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 446,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 81,
+              "cache_read_input_tokens": 55487,
+              "cache_creation_input_tokens": 446,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 446
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4dd3fa8c-4748-492e-b36c-6f691c3cceee",
+        "message_id": "msg_011CfDobHKjd7MQ8EcN9fw9G",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 446,
+          "cache_read_input_tokens": 55487,
+          "output_tokens": 81,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 446,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 81,
+              "cache_read_input_tokens": 55487,
+              "cache_creation_input_tokens": 446,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 446
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      }
+    ]
+  },
+  {
+    "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/4ce04beb-f51a-4a38-a5e7-c315d306a7e1.jsonl",
+    "records": [
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDopQELSRyBcRPfS9vu5",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 9229,
+          "cache_read_input_tokens": 38219,
+          "output_tokens": 52,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 9229,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 52,
+              "cache_read_input_tokens": 38219,
+              "cache_creation_input_tokens": 9229,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 9229
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDoxQkKGy8gsJ8rRgHfA",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 783,
+          "cache_read_input_tokens": 47448,
+          "output_tokens": 99,
+          "output_tokens_details": {
+            "thinking_tokens": 25
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 783,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 99,
+              "cache_read_input_tokens": 47448,
+              "cache_creation_input_tokens": 783,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 783
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDoxQkKGy8gsJ8rRgHfA",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 783,
+          "cache_read_input_tokens": 47448,
+          "output_tokens": 99,
+          "output_tokens_details": {
+            "thinking_tokens": 25
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 783,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 99,
+              "cache_read_input_tokens": 47448,
+              "cache_creation_input_tokens": 783,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 783
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDoyi2QMFT6J6Thi2RVL",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 896,
+          "cache_read_input_tokens": 48231,
+          "output_tokens": 132,
+          "output_tokens_details": {
+            "thinking_tokens": 60
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 896,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 132,
+              "cache_read_input_tokens": 48231,
+              "cache_creation_input_tokens": 896,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 896
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDoyi2QMFT6J6Thi2RVL",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 896,
+          "cache_read_input_tokens": 48231,
+          "output_tokens": 132,
+          "output_tokens_details": {
+            "thinking_tokens": 60
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 896,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 132,
+              "cache_read_input_tokens": 48231,
+              "cache_creation_input_tokens": 896,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 896
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDozq5MHAZqEWWW1efba",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 789,
+          "cache_read_input_tokens": 49127,
+          "output_tokens": 136,
+          "output_tokens_details": {
+            "thinking_tokens": 35
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 789,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 136,
+              "cache_read_input_tokens": 49127,
+              "cache_creation_input_tokens": 789,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 789
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDozq5MHAZqEWWW1efba",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 789,
+          "cache_read_input_tokens": 49127,
+          "output_tokens": 136,
+          "output_tokens_details": {
+            "thinking_tokens": 35
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 789,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 136,
+              "cache_read_input_tokens": 49127,
+              "cache_creation_input_tokens": 789,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 789
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp3CEt261ZzAx5yugfc",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2983,
+          "cache_read_input_tokens": 49916,
+          "output_tokens": 132,
+          "output_tokens_details": {
+            "thinking_tokens": 25
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2983,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 132,
+              "cache_read_input_tokens": 49916,
+              "cache_creation_input_tokens": 2983,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2983
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp3CEt261ZzAx5yugfc",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2983,
+          "cache_read_input_tokens": 49916,
+          "output_tokens": 132,
+          "output_tokens_details": {
+            "thinking_tokens": 25
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2983,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 132,
+              "cache_read_input_tokens": 49916,
+              "cache_creation_input_tokens": 2983,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2983
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp4JBbJo3ZCDMWv5mXH",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1718,
+          "cache_read_input_tokens": 52899,
+          "output_tokens": 199,
+          "output_tokens_details": {
+            "thinking_tokens": 90
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1718,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 199,
+              "cache_read_input_tokens": 52899,
+              "cache_creation_input_tokens": 1718,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1718
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp4JBbJo3ZCDMWv5mXH",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1718,
+          "cache_read_input_tokens": 52899,
+          "output_tokens": 199,
+          "output_tokens_details": {
+            "thinking_tokens": 90
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1718,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 199,
+              "cache_read_input_tokens": 52899,
+              "cache_creation_input_tokens": 1718,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1718
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp4a458z1fh1e9F6idx",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1394,
+          "cache_read_input_tokens": 54617,
+          "output_tokens": 272,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1394,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 272,
+              "cache_read_input_tokens": 54617,
+              "cache_creation_input_tokens": 1394,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1394
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp4a458z1fh1e9F6idx",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 1394,
+          "cache_read_input_tokens": 54617,
+          "output_tokens": 272,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1394,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 272,
+              "cache_read_input_tokens": 54617,
+              "cache_creation_input_tokens": 1394,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 1394
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp6TZCUDkz85K6149Cr",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3856,
+          "cache_read_input_tokens": 56011,
+          "output_tokens": 214,
+          "output_tokens_details": {
+            "thinking_tokens": 106
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3856,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 214,
+              "cache_read_input_tokens": 56011,
+              "cache_creation_input_tokens": 3856,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 3856
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp6TZCUDkz85K6149Cr",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 3856,
+          "cache_read_input_tokens": 56011,
+          "output_tokens": 214,
+          "output_tokens_details": {
+            "thinking_tokens": 106
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3856,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 214,
+              "cache_read_input_tokens": 56011,
+              "cache_creation_input_tokens": 3856,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 3856
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp6nQn6AWhxHdjA9rY5",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2301,
+          "cache_read_input_tokens": 59867,
+          "output_tokens": 145,
+          "output_tokens_details": {
+            "thinking_tokens": 34
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2301,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 145,
+              "cache_read_input_tokens": 59867,
+              "cache_creation_input_tokens": 2301,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2301
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp6nQn6AWhxHdjA9rY5",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 2301,
+          "cache_read_input_tokens": 59867,
+          "output_tokens": 145,
+          "output_tokens_details": {
+            "thinking_tokens": 34
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2301,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 145,
+              "cache_read_input_tokens": 59867,
+              "cache_creation_input_tokens": 2301,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 2301
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp7U3FTktg98UYWV65i",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 369,
+          "cache_read_input_tokens": 62168,
+          "output_tokens": 214,
+          "output_tokens_details": {
+            "thinking_tokens": 87
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 369,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 214,
+              "cache_read_input_tokens": 62168,
+              "cache_creation_input_tokens": 369,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 369
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp7U3FTktg98UYWV65i",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 369,
+          "cache_read_input_tokens": 62168,
+          "output_tokens": 214,
+          "output_tokens_details": {
+            "thinking_tokens": 87
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 369,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 214,
+              "cache_read_input_tokens": 62168,
+              "cache_creation_input_tokens": 369,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 369
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp9PG4qf6yKrQqbeDCj",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 335,
+          "cache_read_input_tokens": 62537,
+          "output_tokens": 270,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 335,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 270,
+              "cache_read_input_tokens": 62537,
+              "cache_creation_input_tokens": 335,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 335
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDp9PG4qf6yKrQqbeDCj",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 335,
+          "cache_read_input_tokens": 62537,
+          "output_tokens": 270,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 335,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 270,
+              "cache_read_input_tokens": 62537,
+              "cache_creation_input_tokens": 335,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 335
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDpD9gN8Fnvx9yCJqt7g",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 438,
+          "cache_read_input_tokens": 62872,
+          "output_tokens": 94,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 438,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 94,
+              "cache_read_input_tokens": 62872,
+              "cache_creation_input_tokens": 438,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 438
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDpD9gN8Fnvx9yCJqt7g",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 438,
+          "cache_read_input_tokens": 62872,
+          "output_tokens": 94,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 438,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 94,
+              "cache_read_input_tokens": 62872,
+              "cache_creation_input_tokens": 438,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 438
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      },
+      {
+        "session_id": "4ce04beb-f51a-4a38-a5e7-c315d306a7e1",
+        "message_id": "msg_011CfDpEMaG8LtBhiDyr8aSj",
+        "model": "claude-sonnet-5",
+        "usage": {
+          "input_tokens": 2,
+          "cache_creation_input_tokens": 160,
+          "cache_read_input_tokens": 63310,
+          "output_tokens": 147,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 160,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 147,
+              "cache_read_input_tokens": 63310,
+              "cache_creation_input_tokens": 160,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 160
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard"
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,27 @@
+{
+  "GC_BIN": {
+    "exit": 0,
+    "value": "GC_BIN=/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc",
+    "error": ""
+  },
+  "GC_CITY": {
+    "exit": 0,
+    "value": "GC_CITY=/tmp/gcja-6vj8fe95/w/city",
+    "error": ""
+  },
+  "CLAUDE_CODE_EFFORT_LEVEL": {
+    "exit": 0,
+    "value": "CLAUDE_CODE_EFFORT_LEVEL=low",
+    "error": ""
+  },
+  "CLAUDE_CONFIG_DIR": {
+    "exit": 1,
+    "value": "",
+    "error": "unknown variable: CLAUDE_CONFIG_DIR"
+  },
+  "PATH": {
+    "exit": 0,
+    "value": "PATH=/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build:/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin:/private/tmp/gcja-6vj8fe95/w/gc-home/bin:/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/beads-init-diagnosis/build/bin:/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin:/opt/homebrew/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Users/csells/.local/bin:/Users/csells/.codex/packages/standalone/releases/0.154.0-aarch64-apple-darwin/codex-path:/Users/csells/.bb/runtime/server/node_modules/bb-app/host-daemon/dist:/Users/csells/bin:/opt/homebrew/Cellar/pyenv-virtualenv/1.2.6/shims:/Users/csells/.pyenv/shims:/Users/csells/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/csells/.lmstudio/bin",
+    "error": ""
+  }
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "label": "red",
+    "exit": 0,
+    "stdout": "{\"Outcome\":\"fail\",\"ExitCode\":1,\"RetryCount\":0,\"Stdout\":\"/opt/homebrew/bin/python3\\n\",\"Stderr\":\"Traceback (most recent call last):\\n  File \\\"\\u003cstring\\u003e\\\", line 1, in \\u003cmodule\\u003e\\n    import yaml, jsonschema; print(yaml.__file__)\\n    ^^^^^^^^^^^^^^^^^^^^^^^\\nModuleNotFoundError: No module named 'yaml'\\n\",\"Duration\":1056264292,\"Truncated\":false}\n",
+    "stderr": ""
+  },
+  {
+    "label": "green",
+    "exit": 0,
+    "stdout": "{\"Outcome\":\"pass\",\"ExitCode\":0,\"RetryCount\":0,\"Stdout\":\"/tmp/jev-gate-python-c69l16b0/bin/python3\\n/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/lib/python3.14/site-packages/yaml/__init__.py\\n\",\"Stderr\":\"\",\"Duration\":1794996375,\"Truncated\":false}\n",
+    "stderr": ""
+  }
+]

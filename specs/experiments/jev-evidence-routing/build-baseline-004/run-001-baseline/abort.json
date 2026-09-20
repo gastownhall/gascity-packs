@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-20T01:36:24.641371+00:00",
+  "status": "aborted",
+  "reason": "Confirmed gate environment excludes the virtualenv, causing three PyYAML failures. Generation self-marked pass in worker environment and workflow began a design author despite the failed check. Stop to correct dependency preflight before another baseline.",
+  "pid": 49319,
+  "elapsed_at_interrupt_ps": "38:44",
+  "valid_comparison": false
+}

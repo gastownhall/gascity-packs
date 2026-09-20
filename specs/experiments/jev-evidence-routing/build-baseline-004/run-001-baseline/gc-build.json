@@ -1,0 +1,23 @@
+{
+  "command": [
+    "go",
+    "build",
+    "-p",
+    "2",
+    "-ldflags",
+    "-s -w -X main.version=1.4.2-jev-tmux -X main.commit=local-regression",
+    "-o",
+    "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc",
+    "./cmd/gc"
+  ],
+  "exit": 0,
+  "seconds": 397.3489058748819,
+  "cgo": {
+    "CGO_CPPFLAGS": "-I/opt/homebrew/opt/icu4c/include",
+    "CGO_LDFLAGS": "-L/opt/homebrew/opt/icu4c/lib"
+  },
+  "global_binary_replaced": false,
+  "binary": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc",
+  "sha256": "b6869ba48a541a39cb06ed31204ef3efcc437dd2712f8acd4031a5ce62068771",
+  "version": "1.4.2-jev-tmux"
+}

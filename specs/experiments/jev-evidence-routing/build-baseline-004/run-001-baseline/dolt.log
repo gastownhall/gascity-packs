@@ -1,0 +1,19 @@
+gc scope watchdog: supervising dolt sql-server pid 49638 (config /tmp/gcja-6vj8fe95/w/city/.gc/runtime/packs/dolt/dolt-config.yaml, poll interval 30s)
+Starting server with Config HP="127.0.0.1:15589"|T="15000"|R="false"|L="warning"
+time="2026-09-19T17:58:43-07:00" level=warning msg="secure_file_priv is set to \"\", which is insecure."
+time="2026-09-19T17:58:43-07:00" level=warning msg="Any user with GRANT FILE privileges will be able to read any file which the sql-server process can read."
+time="2026-09-19T17:58:43-07:00" level=warning msg="Please consider restarting the server with secure_file_priv set to a safe (or non-existent) directory."
+time="2026-09-19T17:58:51-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:58:51.823589 -0700 PDT m=+9.005091542" connectionID=14 error="database not found: hq" queryTime="2026-09-19 17:58:51.831796 -0700 PDT m=+9.013298459"
+time="2026-09-19T17:58:53-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:58:53.035529 -0700 PDT m=+10.217014959" connectionDb=hq connectionID=17 error="table not found: config" queryTime="2026-09-19 17:58:53.046695 -0700 PDT m=+10.228180584"
+time="2026-09-19T17:58:54-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:58:54.793332 -0700 PDT m=+11.974793876" connectionDb=hq connectionID=21 error="table not found: issues" queryTime="2026-09-19 17:58:54.805116 -0700 PDT m=+11.986578167"
+time="2026-09-19T17:58:55-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:58:55.179188 -0700 PDT m=+12.360645251" connectionDb=hq connectionID=25 error="table not found: issues" queryTime="2026-09-19 17:58:55.36263 -0700 PDT m=+12.544084376"
+time="2026-09-19T17:59:55-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:59:55.479912 -0700 PDT m=+72.660558542" connectionID=97 error="database not found: fi" queryTime="2026-09-19 17:59:55.495602 -0700 PDT m=+72.676248001"
+time="2026-09-19T17:59:56-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:59:56.478333 -0700 PDT m=+73.658965417" connectionDb=fi connectionID=100 error="table not found: config" queryTime="2026-09-19 17:59:56.486863 -0700 PDT m=+73.667496042"
+time="2026-09-19T17:59:57-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:59:57.846405 -0700 PDT m=+75.027019167" connectionDb=fi connectionID=104 error="table not found: issues" queryTime="2026-09-19 17:59:57.887993 -0700 PDT m=+75.068606459"
+time="2026-09-19T17:59:58-07:00" level=warning msg="error running query" connectTime="2026-09-19 17:59:58.237343 -0700 PDT m=+75.417952334" connectionDb=fi connectionID=108 error="table not found: issues" queryTime="2026-09-19 17:59:58.404657 -0700 PDT m=+75.585263751"
+
+
+time="2026-09-19T18:24:25-07:00" level=warning msg="client connection went away while a query was executing" connectionID=10961 error=EOF
+time="2026-09-19T18:34:42-07:00" level=warning msg="client connection went away while a query was executing" connectionID=14826 error=EOF
+time="2026-09-19T18:36:47-07:00" level=error msg="Error reading packet from client 15617 (127.0.0.1:53680): read tcp 127.0.0.1:15589->127.0.0.1:53680: use of closed network connection\nio.ReadFull(header size) failed"
+gc scope watchdog: dolt sql-server pid 49638 exited cleanly

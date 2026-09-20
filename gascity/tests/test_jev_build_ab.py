@@ -101,3 +101,52 @@ def test_explicit_claude_profile_is_preserved(tmp_path):
     workspace=SimpleNamespace(gc_home=tmp_path/'h')
     result=build.configure_experiment_env({},workspace,real_home=Path('/Users/example'),claude_config_dir='/profiles/benchmark')
     assert result['CLAUDE_CONFIG_DIR']=='/profiles/benchmark'
+
+
+def test_gate_toolchain_preserves_virtualenv_python(tmp_path):
+    import os
+    import subprocess
+    import venv
+    venv.EnvBuilder(with_pip=False).create(tmp_path/'venv')
+    python = tmp_path/'venv/bin/python'
+    bd = tmp_path/'real-bd'
+    bd.write_text('#!/bin/sh\nexit 0\n')
+    bd.chmod(0o755)
+    workspace = SimpleNamespace(gc_home=tmp_path/'home')
+    env = build.install_gate_toolchain({'PATH':os.defpath}, workspace,
+        python_bin=str(python), bd_bin=str(bd))
+    # Model the SDK's narrowed PATH using only the directory of its selected bd.
+    safe_path = str(Path(build.shutil.which('bd', path=env['PATH'])).parent) + ':' + os.defpath
+    actual = subprocess.check_output(['python3','-c','import sys; print(sys.prefix)'],
+        env={'PATH':safe_path,'HOME':str(tmp_path)},text=True).strip()
+    assert Path(actual) == tmp_path/'venv'
+
+
+def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch):
+    events=[]
+    workspace=build.new_runtime_workspace(build.gate.PACK_SPECS['gascity'],'interrupt-test')
+    monkeypatch.setattr(build,'new_runtime_workspace',lambda *a:workspace)
+    real_output=build.subprocess.check_output
+    def output(cmd,**kw):
+        return real_output(cmd,**kw) if cmd[0]=='git' else 'test-version\n'
+    monkeypatch.setattr(build.subprocess,'check_output',output)
+    def interrupt(*a,**kw):raise KeyboardInterrupt()
+    monkeypatch.setattr(build.gate,'initialize_city',interrupt)
+    monkeypatch.setattr(build.gate,'stop_city',lambda *a,**kw:events.append('stop'))
+    monkeypatch.setattr(build,'stop_disposable_dolt',lambda *a:{'status':'not_started'})
+    monkeypatch.setattr(build,'transcript_usage',lambda *a:{'status':'missing'})
+    class Collector:
+        env={}
+        def __init__(self,*a):pass
+        def close(self):events.append('collector_close');return {'status':'missing'}
+    monkeypatch.setattr(build.usage,'Collector',Collector)
+    args=SimpleNamespace(gc_bin=build.shutil.which('true'),bd_bin=build.shutil.which('true'),model='unused',
+        jev_model='unused',setup_only=True,setup_timeout=1)
+    try:
+        try:result=build.run(args,'baseline',tmp_path/'run')
+        except KeyboardInterrupt:pytest.fail('Interrupt escaped before saving terminal result')
+        assert result['status']=='aborted'
+        assert json.loads((tmp_path/'run/result.json').read_text())['status']=='aborted'
+        assert events==['stop','collector_close']
+    finally:
+        build.shutil.rmtree(workspace.root.parent)

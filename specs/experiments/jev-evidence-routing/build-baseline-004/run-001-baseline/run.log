@@ -1,0 +1,170 @@
++ git init -b main
++ git config user.email gascity-pack-gate@example.invalid
++ git config user.name 'Gas City Pack Gate'
++ git add .
++ git commit -m 'Add inference gate fixtures'
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc init --skip-provider-readiness --name jev-gcja-6vj8fe95-run-001-baseline --file /private/tmp/gcja-6vj8fe95/w/city/city.toml --preserve-existing --yes /private/tmp/gcja-6vj8fe95/w/city
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-gcja-6vj8fe95-run-001-baseline" from city.toml.
+Skipping provider readiness checks.
+Registered city 'jev-gcja-6vj8fe95-run-001-baseline' (/tmp/gcja-6vj8fe95/w/city)
+Supervisor started (PID 50094)
+Dashboard:  http://127.0.0.1:51569/
+Waiting for supervisor to start city...
+  Adopting sessions...
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-49f17fc1.plist: exit status 1
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city import install
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city import check
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city config show
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture formula show build-basic
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc start /private/tmp/gcja-6vj8fe95/w/city --verbose
+Supervisor: pid=50094 exe=(unreadable) buildID=local-regression started=2m ago
+Registered city 'jev-gcja-6vj8fe95-run-001-baseline' (/tmp/gcja-6vj8fe95/w/city)
+[8/8] Waiting for supervisor to start city
+City started under supervisor.
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-49f17fc1.plist: exit status 1
+gc-start: pid=50094 binary=/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc build=local-regres drift=unknown warnings=0 fatal=
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture sling gc.run-operator --stdin --force --on build-basic --title 'gascity pack inference gate: build-basic' --nudge --json --var artifact_root=.gc/inference-gate/build-basic --var interaction_mode=headless --var review_mode=agent --var drain_policy=separate --var push=false --var open_pr=false --var max_iterations=2 --var jev_mode=off --var jev_model=jev-1.13.0 --var jev_threshold=0.85
+{"bead_id":"fi-ks9","dashboard_url":"http://127.0.0.1:51569/city/jev-gcja-6vj8fe95-run-001-baseline/runs/fi-ks9","dry_run":false,"formula":"build-basic","method":"on-formula","ok":true,"queued":false,"routed":true,"schema_version":"1","success":true,"target":"fixture/gc.run-operator","workflow_id":"fi-ks9"}
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd list --all --json --limit 1000
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
+workflow fi-ks9: status=in_progress outcome=<unset>
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-6vj8fe95/w/city --rig fixture bd show fi-ks9 --json --include-comments
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc stop /private/tmp/gcja-6vj8fe95/w/city --force --timeout 30s
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc supervisor stop --wait --wait-timeout 30s

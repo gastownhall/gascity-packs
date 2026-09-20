@@ -38,7 +38,9 @@ paid generative-model API endpoints. Jev access requires its credential; generat
 
 See `ledger.jsonl` for append-only setup and experiment events. Run artifacts
 will be linked from the results document when available. No credentials may
-appear in any experiment artifact.
+appear in any experiment artifact. Full task transcripts are also
+archived locally under ignored `raw-transcripts/` directories; committed manifests
+record their source paths and SHA-256 hashes.
 
 ## Initial observations
 

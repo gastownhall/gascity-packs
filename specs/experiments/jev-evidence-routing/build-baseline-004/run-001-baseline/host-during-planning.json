@@ -1,0 +1,28 @@
+{
+  "at": "2026-09-20T01:19:50.171202+00:00",
+  "logical_cpus": {
+    "exit": 0,
+    "stdout": "10",
+    "stderr": ""
+  },
+  "memory_bytes": {
+    "exit": 0,
+    "stdout": "34359738368",
+    "stderr": ""
+  },
+  "cpu_model": {
+    "exit": 0,
+    "stdout": "Apple M4",
+    "stderr": ""
+  },
+  "uptime": {
+    "exit": 0,
+    "stdout": "18:19  up 22 days,  7:24, 3 users, load averages: 23.22 22.13 19.48",
+    "stderr": ""
+  },
+  "memory_statistics": {
+    "exit": 0,
+    "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     3574.\nPages active:                                 526804.\nPages inactive:                               574565.\nPages speculative:                              8162.\nPages throttled:                                   0.\nPages wired down:                             239848.\nPages purgeable:                                2525.\n\"Translation faults\":                    30661118065.\nPages copy-on-write:                       624150721.\nPages zero filled:                        4158827346.\nPages reactivated:                          27574711.\nPages purged:                               13155309.\nFile-backed pages:                            342982.\nAnonymous pages:                              766549.\nPages stored in compressor:                  1704481.\nPages occupied by compressor:                 696585.\nDecompressions:                          15668825209.\nCompressions:                            15743826325.\nPageins:                                   464315911.\nPageouts:                                    2445131.\nSwapins:                                     2617606.\nSwapouts:                                    3341758.",
+    "stderr": ""
+  }
+}

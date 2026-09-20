@@ -1,0 +1,6 @@
+{
+  "pytest_exit": 1,
+  "original_tests_unchanged": true,
+  "implementation_produced": false,
+  "scope": "Original fixture tests after the aborted run; no successful end-to-end quality result"
+}

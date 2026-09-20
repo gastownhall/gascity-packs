@@ -1,0 +1,33 @@
+{
+  "retention": "Local compressed copies excluded from Git; hashes retained in the experiment record.",
+  "files": [
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-79-ojx3b-w-fixture/ebbc587d-c20a-4894-a585-a321ce504d70.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-79-ojx3b-w-fixture--ebbc587d-c20a-4894-a585-a321ce504d70.jsonl.gz",
+      "source_sha256": "96af1c62377b2871ce4df4ad10a18e61843ceb58cda89f8cf117eb31ac0586c1",
+      "archive_sha256": "093efb9433399c79a7f6aa7d999b2e0681d0ce9fb035504adcc9a58591cd51da",
+      "bytes": 90852
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-79-ojx3b-w-fixture/6a9a04da-b72f-4b2b-a3cd-b34d423d1c60.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-79-ojx3b-w-fixture--6a9a04da-b72f-4b2b-a3cd-b34d423d1c60.jsonl.gz",
+      "source_sha256": "c6b4177dfe86d516fdb3f6967baf8240c41c3398728d20cfabef8d37460a62dd",
+      "archive_sha256": "ce187310a76002c7635d313c88a690b40ce01464fc8b511519c96164c47d61f2",
+      "bytes": 90851
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-79-ojx3b-w-fixture/573cf364-3ea6-4b8a-9c36-fc2d3daa7eb1.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-79-ojx3b-w-fixture--573cf364-3ea6-4b8a-9c36-fc2d3daa7eb1.jsonl.gz",
+      "source_sha256": "e6fa6bbe2d960ca3a7a8ae31838836acbcfec42fa1b549d96ac2ab76e5e21077",
+      "archive_sha256": "0615447aa9846410b92d7afda952d7801c67ebbe06497838634dc7343b276692",
+      "bytes": 358813
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-79-ojx3b-w-fixture/754c4b44-d1cf-48ed-82d3-05b87c4d7f80.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-79-ojx3b-w-fixture--754c4b44-d1cf-48ed-82d3-05b87c4d7f80.jsonl.gz",
+      "source_sha256": "5bded58c90ae7e8e38ebee92ce3f246c703f6419f8b9958eaa24dfb9939e68e5",
+      "archive_sha256": "eaac97f0b42972b51823e4cb545973e6eab17eaa21f3ffb6d2b4668f148d3586",
+      "bytes": 90229
+    }
+  ]
+}

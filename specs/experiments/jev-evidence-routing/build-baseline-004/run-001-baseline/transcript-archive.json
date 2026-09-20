@@ -1,0 +1,40 @@
+{
+  "retention": "Local compressed copies excluded from Git; hashes retained in the experiment record.",
+  "files": [
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/67f5c9c0-d034-4f7a-868c-8e7cd45ef53d.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-6vj8fe95-w-fixture--67f5c9c0-d034-4f7a-868c-8e7cd45ef53d.jsonl.gz",
+      "source_sha256": "6411d96d5abf1cfc9582bfa64843850c20873762ea7b4d748878ec78c22bf909",
+      "archive_sha256": "511c8d8348ec674ebb2c66e778c9bc5c3d0e7a07893f94a0cff00636ed348d43",
+      "bytes": 351193
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/fb5084bf-5c87-4dd2-b10f-90f14a6f2c43.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-6vj8fe95-w-fixture--fb5084bf-5c87-4dd2-b10f-90f14a6f2c43.jsonl.gz",
+      "source_sha256": "4aa9eeeafca47d601b6b72710c472f69b1846883113b588d0c87322e832eaf82",
+      "archive_sha256": "0e639f5aa2b6e4c8615534df5ea4cfafa246725b339317010dd2151e3e8c9926",
+      "bytes": 257830
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/1b086ada-259b-4e4a-8c41-6aadf5af6c69.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-6vj8fe95-w-fixture--1b086ada-259b-4e4a-8c41-6aadf5af6c69.jsonl.gz",
+      "source_sha256": "635a49c36e6d14170c1bad3e950f623a954250e32cfba5a5c582e5b452f62c8b",
+      "archive_sha256": "fa0a56ccbbf5773129cbe912ee38e174a7b7cf5da3949621785cbe4837da564d",
+      "bytes": 375042
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/4dd3fa8c-4748-492e-b36c-6f691c3cceee.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-6vj8fe95-w-fixture--4dd3fa8c-4748-492e-b36c-6f691c3cceee.jsonl.gz",
+      "source_sha256": "b86e6fea366f1ebfd41ce9549f02bda36ea392792dd78d294a877a181f3da9f6",
+      "archive_sha256": "354ebc5a45f39d98161504746b0420b28c72d066546f1f947449e8367eb256fa",
+      "bytes": 324576
+    },
+    {
+      "source": "/Users/csells/.claude/projects/-private-tmp-gcja-6vj8fe95-w-fixture/4ce04beb-f51a-4a38-a5e7-c315d306a7e1.jsonl",
+      "local_archive": "raw-transcripts/-private-tmp-gcja-6vj8fe95-w-fixture--4ce04beb-f51a-4a38-a5e7-c315d306a7e1.jsonl.gz",
+      "source_sha256": "5d9d4217bd492b4ca3a7160c909a921435af1f31b60a618c8a4639cd3d6f13b7",
+      "archive_sha256": "802ce06a21d0a64c92214bcc9480a6e50886f3a105a78acb9ecc8b51ea7d5d89",
+      "bytes": 387579
+    }
+  ]
+}

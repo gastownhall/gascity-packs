@@ -17,7 +17,6 @@ import os
 from pathlib import Path
 import re
 import signal
-import shlex
 import shutil
 import tempfile
 import subprocess
@@ -122,41 +121,6 @@ def new_runtime_workspace(pack, name):
     return workspace
 
 
-def install_gate_toolchain(env, workspace, *, python_bin, bd_bin):
-    """Keep the selected Python available in the SDK's restricted gate PATH."""
-    directory = workspace.gc_home/'bin'
-    directory.mkdir(parents=True, exist_ok=True)
-    bd_target = shutil.which(bd_bin, path=env.get('PATH'))
-    if not bd_target:
-        raise ValueError(f'Beads executable not found: {bd_bin}')
-    (directory/'bd').symlink_to(Path(bd_target).resolve())
-    # Do not resolve the Python symlink: that would discard virtualenv identity.
-    python = directory/'python3'
-    with python.open('x') as f:
-        f.write('#!/bin/sh\nexec '+shlex.quote(os.path.abspath(python_bin))+' "$@"\n')
-    python.chmod(0o755)
-    return {**env, 'PATH':str(directory)+os.pathsep+env.get('PATH','')}
-
-
-def check_gate_python(env, workspace):
-    # Replay v1.4.2 conditionPATH/ConditionEnv. The real RunCondition boundary
-    # is separately verified in diagnosis/gate-python, including red and green.
-    directories=[]
-    for name in ('bd','gc','dolt','jq'):
-        path=shutil.which(name,path=env['PATH'])
-        if path and str(Path(path).parent) not in directories:
-            directories.append(str(Path(path).parent))
-    directories += ['/usr/local/bin','/usr/bin','/bin']
-    restricted={'PATH':os.pathsep.join(directories),'HOME':str(workspace.city_dir),
-                'TMPDIR':tempfile.gettempdir()}
-    command=['python3','-c','import json,sys,yaml,jsonschema,pytest; print(json.dumps({"executable":sys.executable,"prefix":sys.prefix,"yaml":yaml.__file__,"jsonschema":jsonschema.__file__,"pytest":pytest.__file__}))']
-    result=subprocess.run(command,env=restricted,capture_output=True,text=True,timeout=30)
-    return {'status':'passed' if result.returncode==0 else 'failed',
-        'policy':'Gas City v1.4.2 restricted gate PATH replay; real SDK boundary verified separately',
-        'command':command,'path':restricted['PATH'],'exit':result.returncode,
-        'stdout':result.stdout,'stderr':result.stderr}
-
-
 def run(args, arm, out):
     out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
@@ -176,11 +140,6 @@ def run(args, arm, out):
         claude_config_dir=real_claude if custom_claude else None)
     env['CLAUDE_CODE_EFFORT_LEVEL'] = 'low'
     env['PATH'] = str(Path(sys.executable).parent) + os.pathsep + env['PATH']
-    env = install_gate_toolchain(env,workspace,python_bin=sys.executable,bd_bin=args.bd_bin)
-    python_preflight = check_gate_python(env,workspace)
-    save(out/'gate-python-preflight.json',python_preflight)
-    if python_preflight['status'] != 'passed':
-        raise ValueError('Gate Python dependency preflight failed: '+python_preflight['stderr'])
     for key in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OLLAMA_API_KEY',
                 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY',
                 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'):
@@ -265,12 +224,11 @@ def run(args, arm, out):
                 save(out/'jev-reports.json',jev_reports)
                 if arm=='jev' and not any(r.get('status')=='completed' for r in jev_reports):
                     raise ValueError('Treatment not delivered: no completed Jev assessment; fallback is not a Jev result')
-        except (Exception, KeyboardInterrupt) as e:
+        except Exception as e:
             if isinstance(e, subprocess.TimeoutExpired):
                 for label, value in [('stdout', e.stdout), ('stderr', e.stderr)]:
                     (out/f'timeout-{label}.txt').write_bytes(value.encode() if isinstance(value, str) else value or b'')
-            report.update(status='aborted' if isinstance(e,KeyboardInterrupt) else 'failed',
-                          error=f'{type(e).__name__}: {e}')
+            report.update(status='failed',error=f'{type(e).__name__}: {e}')
             print(report['error'],flush=True)
         finally:
             try:
@@ -323,7 +281,6 @@ def main():
         error_summary = result.get('error','').splitlines()[0][:500] if result.get('error') else ''
         print(f'[{i}/{len(schedule)}] {result["status"]}: {error_summary}',flush=True)
         if result['status']=='failed':sys.exit(1)
-        if result['status']=='aborted':sys.exit(130)
 
 
 if __name__=='__main__':main()

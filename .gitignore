@@ -25,3 +25,6 @@ __pycache__/
 
 # Fixture source and proof are retained in suite/state JSON; nested Git stores stay local.
 /specs/experiments/jev-evidence-routing/**/fixture/
+
+# Full task transcripts are preserved locally; commit only their hashes and usage.
+/specs/experiments/jev-evidence-routing/**/raw-transcripts/

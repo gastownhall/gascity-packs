@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-20T01:15:29.676745+00:00",
+  "event": "requirements_scope_mismatch_observed",
+  "run": "build-baseline-004",
+  "artifact_sha256": "5bd9a5da898004641f30fa74e7679be789d67f969f61fac3c71275a93ff5cbe4",
+  "finding": "REQ-001..003 concern creation/schema/coverage of the requirements document. They omit the dispatched slugify behavior and unchanged-test constraint. Workflow remains untouched for independent terminal evaluation."
+}

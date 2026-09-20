@@ -1,0 +1,102 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______________ test_gate_toolchain_preserves_virtualenv_python ________________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-22/test_gate_toolchain_preserves_0')
+
+    def test_gate_toolchain_preserves_virtualenv_python(tmp_path):
+        import os
+        import subprocess
+        import venv
+        venv.EnvBuilder(with_pip=False).create(tmp_path/'venv')
+        python = tmp_path/'venv/bin/python'
+        bd = tmp_path/'real-bd'
+        bd.write_text('#!/bin/sh\nexit 0\n')
+        bd.chmod(0o755)
+        workspace = SimpleNamespace(gc_home=tmp_path/'home')
+>       env = build.install_gate_toolchain({'PATH':os.defpath}, workspace,
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            python_bin=str(python), bd_bin=str(bd))
+E       AttributeError: module 'jev_build_ab' has no attribute 'install_gate_toolchain'
+
+gascity/tests/test_jev_build_ab.py:116: AttributeError
+______________ test_interrupt_retains_terminal_report_and_cleanup ______________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-22/test_interrupt_retains_termina0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1070655b0>
+
+    def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch):
+        events=[]
+        workspace=build.new_runtime_workspace(build.gate.PACK_SPECS['gascity'],'interrupt-test')
+        monkeypatch.setattr(build,'new_runtime_workspace',lambda *a:workspace)
+        real_output=build.subprocess.check_output
+        def output(cmd,**kw):
+            return real_output(cmd,**kw) if cmd[0]=='git' else 'test-version\n'
+        monkeypatch.setattr(build.subprocess,'check_output',output)
+        def interrupt(*a,**kw):raise KeyboardInterrupt()
+        monkeypatch.setattr(build.gate,'initialize_city',interrupt)
+        monkeypatch.setattr(build.gate,'stop_city',lambda *a,**kw:events.append('stop'))
+        monkeypatch.setattr(build,'stop_disposable_dolt',lambda *a:{'status':'not_started'})
+        monkeypatch.setattr(build,'transcript_usage',lambda *a:{'status':'missing'})
+        class Collector:
+            env={}
+            def __init__(self,*a):pass
+            def close(self):events.append('collector_close');return {'status':'missing'}
+        monkeypatch.setattr(build.usage,'Collector',Collector)
+        args=SimpleNamespace(gc_bin='/bin/true',bd_bin='/bin/true',model='unused',
+            jev_model='unused',setup_only=True,setup_timeout=1)
+        try:
+>           try:result=build.run(args,'baseline',tmp_path/'run')
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+gascity/tests/test_jev_build_ab.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/jev_build_ab.py:187: in run
+    gate.initialize_city(args.gc_bin, workspace, pack_spec=pack, gates=['build-basic'], env=env,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+a = ('/bin/true', GateWorkspace(root=PosixPath('/private/tmp/gcja-4j1auyo9/w'), city_dir=PosixPath('/private/tmp/gcja-4j1a...ath('/private/tmp/gcja-4j1auyo9/w/gc-home/.claude'), city_name='jev-gcja-4j1auyo9-interrupt-test', rig_name='fixture'))
+kw = {'pack_spec': PackSpec(name='gascity', binding='gc', source=PosixPath('/Users/csells/.bb/personal-workspaces/env_tcfp9...s/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', ...}, 'seed_claude_state': False, ...}
+
+>   def interrupt(*a,**kw):raise KeyboardInterrupt()
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyboardInterrupt
+
+gascity/tests/test_jev_build_ab.py:133: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-22/test_interrupt_retains_termina0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1070655b0>
+
+    def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch):
+        events=[]
+        workspace=build.new_runtime_workspace(build.gate.PACK_SPECS['gascity'],'interrupt-test')
+        monkeypatch.setattr(build,'new_runtime_workspace',lambda *a:workspace)
+        real_output=build.subprocess.check_output
+        def output(cmd,**kw):
+            return real_output(cmd,**kw) if cmd[0]=='git' else 'test-version\n'
+        monkeypatch.setattr(build.subprocess,'check_output',output)
+        def interrupt(*a,**kw):raise KeyboardInterrupt()
+        monkeypatch.setattr(build.gate,'initialize_city',interrupt)
+        monkeypatch.setattr(build.gate,'stop_city',lambda *a,**kw:events.append('stop'))
+        monkeypatch.setattr(build,'stop_disposable_dolt',lambda *a:{'status':'not_started'})
+        monkeypatch.setattr(build,'transcript_usage',lambda *a:{'status':'missing'})
+        class Collector:
+            env={}
+            def __init__(self,*a):pass
+            def close(self):events.append('collector_close');return {'status':'missing'}
+        monkeypatch.setattr(build.usage,'Collector',Collector)
+        args=SimpleNamespace(gc_bin='/bin/true',bd_bin='/bin/true',model='unused',
+            jev_model='unused',setup_only=True,setup_timeout=1)
+        try:
+            try:result=build.run(args,'baseline',tmp_path/'run')
+>           except KeyboardInterrupt:pytest.fail('Interrupt escaped before saving terminal result')
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: Interrupt escaped before saving terminal result
+
+gascity/tests/test_jev_build_ab.py:147: Failed
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_build_ab.py::test_gate_toolchain_preserves_virtualenv_python
+FAILED gascity/tests/test_jev_build_ab.py::test_interrupt_retains_terminal_report_and_cleanup
+2 failed, 9 deselected in 1.93s

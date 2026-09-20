@@ -1,0 +1,6 @@
+{
+  "at": "2026-09-20T01:27:08.662421+00:00",
+  "finding": "Generation attempts 1 and 2 self-marked pass; both downstream gates failed because PyYAML was unavailable. Attempt 3 is running.",
+  "source": "Gas City internal/convergence/condition.go: conditionPATH includes only located bd/gc/dolt/jq directories and SafePATH, and ConditionEnv omits PYTHONPATH. Worker uses the venv; gate selects a different Python.",
+  "manual_intervention": false
+}

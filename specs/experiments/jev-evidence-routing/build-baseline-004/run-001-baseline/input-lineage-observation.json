@@ -1,0 +1,90 @@
+{
+  "at": "2026-09-20T01:17:37.851298+00:00",
+  "beads": {
+    "fi-ddp": {
+      "id": "fi-ddp",
+      "title": "Implement slugify and make pytest pass",
+      "status": "open",
+      "issue_type": "task",
+      "created_at": "2026-09-20T01:02:16Z",
+      "description": "The repository contains a deliberately failing Python fixture. Implement\n`slugify` in `slugger.py` so the existing tests pass.\n\nExpected behavior:\n- Lowercase ASCII alphanumeric words.\n- Treat any run of non-alphanumeric characters as a separator.\n- Join non-empty groups with single hyphens.\n- Return an empty string when the input contains no alphanumeric characters.\n\nConstraints:\n- Do not change tests/test_slugger.py.\n- Keep the implementation small and deterministic.\n- Run `python3 -m pytest -q` from the repository root and record that proof."
+    },
+    "fi-2fb": {
+      "id": "fi-2fb",
+      "title": "input convoy for fi-ddp",
+      "status": "open",
+      "issue_type": "convoy",
+      "created_at": "2026-09-20T01:02:33Z",
+      "metadata": {
+        "gc.synthetic": "true"
+      },
+      "dependencies": [
+        {
+          "issue_id": "fi-2fb",
+          "depends_on_id": "fi-ddp",
+          "type": "tracks"
+        }
+      ]
+    },
+    "fi-ks9": {
+      "id": "fi-ks9",
+      "title": "gascity pack inference gate: build-basic",
+      "status": "in_progress",
+      "issue_type": "task",
+      "created_at": "2026-09-20T01:04:05Z",
+      "description": "Default Gas City implementation of build-base.\n\nThis concrete workflow uses the built-in Gas City requirement, design review,\ndecomposition, implementation, review, and publish helpers while preserving the\nsame full-lifecycle stage contract exposed by build-base.\n",
+      "metadata": {
+        "gc.build.decomposition_path": ".gc/inference-gate/build-basic/decomposition.md",
+        "gc.build.final_report_path": ".gc/inference-gate/build-basic/factory-run.md",
+        "gc.build.implementation_summary_path": ".gc/inference-gate/build-basic/implementation-summary.md",
+        "gc.build.plan_path": ".gc/inference-gate/build-basic/implementation-plan.md",
+        "gc.build.requirements_path": "/private/tmp/gcja-6vj8fe95/w/fixture/.gc/inference-gate/build-basic/requirements.md",
+        "gc.build.review_report_path": ".gc/inference-gate/build-basic/review-report.md",
+        "gc.formula_contract": "graph.v2",
+        "gc.formula_name": "build-basic",
+        "gc.formula_source": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/gascity/formulas/build-basic.formula.toml",
+        "gc.graphv2_root_key": "graphv2-root:fi-2fb:build-basic:a678168d0836d12a:default",
+        "gc.graphv2_vars.v1": "{\"artifact_root\":\".gc/inference-gate/build-basic\",\"binding_name\":\"gc\",\"binding_prefix\":\"gc.\",\"code_review_formula\":\"review\",\"context_path\":\"\",\"decomposition_formula\":\"decomposition-base\",\"decomposition_path\":\"\",\"drain_policy\":\"separate\",\"implementation_formula\":\"implement\",\"implementation_item_formula\":\"do-work-item\",\"implementation_target\":\"gc.implementation-worker\",\"interaction_mode\":\"headless\",\"jev_mode\":\"off\",\"jev_model\":\"jev-1.13.0\",\"jev_threshold\":\"0.85\",\"max_iterations\":\"2\",\"open_pr\":\"false\",\"plan_path\":\"\",\"planning_formula\":\"planning-base\",\"push\":\"false\",\"requirements_path\":\"\",\"review_fix_formula\":\"fix-loop-base\",\"review_mode\":\"agent\",\"rig_name\":\"fixture\"}",
+        "gc.input_convoy_id": "fi-2fb",
+        "gc.kind": "workflow",
+        "gc.root_store_ref": "rig:fixture",
+        "gc.routed_to": "fixture/gc.run-operator",
+        "gc.session_name": "gc__requirements-planner-jg6r0b-6h7",
+        "gc.var.artifact_root": ".gc/inference-gate/build-basic",
+        "gc.var.binding_name": "gc",
+        "gc.var.binding_prefix": "gc.",
+        "gc.var.code_review_formula": "review",
+        "gc.var.context_path": "",
+        "gc.var.convoy_id": "fi-2fb",
+        "gc.var.decomposition_formula": "decomposition-base",
+        "gc.var.decomposition_path": ".gc/inference-gate/build-basic/decomposition.md",
+        "gc.var.drain_policy": "separate",
+        "gc.var.implementation_formula": "implement",
+        "gc.var.implementation_item_formula": "do-work-item",
+        "gc.var.implementation_target": "gc.implementation-worker",
+        "gc.var.interaction_mode": "headless",
+        "gc.var.jev_mode": "off",
+        "gc.var.jev_model": "jev-1.13.0",
+        "gc.var.jev_threshold": "0.85",
+        "gc.var.max_iterations": "2",
+        "gc.var.open_pr": "false",
+        "gc.var.plan_path": ".gc/inference-gate/build-basic/implementation-plan.md",
+        "gc.var.planning_formula": "planning-base",
+        "gc.var.push": "false",
+        "gc.var.requirements_path": ".gc/inference-gate/build-basic/requirements.md",
+        "gc.var.review_fix_formula": "fix-loop-base",
+        "gc.var.review_mode": "agent",
+        "gc.var.rig_name": "fixture",
+        "gc.work_dir": "/private/tmp/gcja-6vj8fe95/w/fixture"
+      },
+      "dependencies": [
+        {
+          "issue_id": "fi-ks9",
+          "depends_on_id": "fi-hae",
+          "type": "tracks"
+        }
+      ]
+    }
+  },
+  "finding": "Source bead fi-ddp retains slugify task. Workflow fi-ks9 has gc.input_convoy_id=fi-2fb; its own description is the formula description. Requirements artifact describes factory scaffolding rather than the source task. This is an observation, not proof of which prompt change would fix it."
+}
