@@ -1,0 +1,57 @@
+{
+  "kind": {
+    "title": "perf(gc): probe bd context once per TTL instead of once per store open (cr-uavzft)",
+    "body": "Every gc CLI call opens several stores, and each open ran the beads storage\npreflight, which unconditionally forked 'bd <scope> context --json' to ask what\nbackend the process was about to open (cr-m3g3od measured 4 children for one\n'gc bd show'). The answer - backend, dolt_mode, bd_version, schema_version - is\nprocess-static inside any window the call lives in, so read it once per\n(city, scope) and reuse it.\n\nOnly a success is recorded and the entry is aged by a TTL, so a bd that is\nunreachable, uninstalled, or mid-upgrade still fails the preflight closed on\nevery later check, and a long-lived controller re-probes instead of carrying a\nboot-time answer forever. The per-entry mutex is held across the probe, so\nconcurrent opens of one scope collapse into a single spawn.\n\nSame shape gc already uses for the city-scoped storage routes\n(cli_storage_routes.go), and consistent with its position on this probe in a\npoll path (api_state_conditional_writes.go: 'a status poll must not shell out\nto bd').\n\nBead: cr-uavzft\n(cherry picked from commit 4d18e29d55adb25a4e6a4ee03e4d5a1b6841d198)\n\nStaged and tested in the westlands estate (bead cr-uavzft); tests green on the estate builders.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_01BBBFPiLczFKntbLK2E9g58"
+  },
+  "findings": {
+    "findings": [
+      {
+        "id": "F1",
+        "text": "Linux recovery proof is missing; run the required Linux recovery test.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "Windows recovery proof is missing; run the required Windows recovery test.",
+        "source": "lane-1/review.md:11"
+      }
+    ]
+  },
+  "failure": {
+    "command": "bd init",
+    "output": "Unknown column type in field list; migration bootstrap aborted",
+    "context": "External installed bd failed before candidate source was executed; schema capability lookup uses the wrong catalog."
+  },
+  "evidence": {
+    "head": "2e54dcf25acc1ed5aed938b53a1e63ea292615c2",
+    "items": [
+      {
+        "id": "AC-1",
+        "criterion": "Reject string input with TypeError.",
+        "claim": "The string rejection behavior is tested and passes.",
+        "sources": [
+          {
+            "path": "subject.py",
+            "sha256": "25be2a45a33257af1cb7995a32daae3b2ae3685e2b4b2c29cd30997a860f009c",
+            "text": "def transform(x):\n    if not isinstance(x, int):\n        raise TypeError(\"integer required\")\n    return x * 2\n"
+          },
+          {
+            "path": "test_subject.py",
+            "sha256": "44e125359b7fda6eec274fd129238e3a0495d2e8743e2d79424d0b6fe332cf17",
+            "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        with self.assertRaises(TypeError):\n            transform(\"3\")\n"
+          }
+        ],
+        "proofs": [
+          {
+            "path": "proof.txt",
+            "sha256": "28a0a5c459c5a75646342350eeb32e56c5e5c55bf773a917640f767138a73f5c",
+            "command": "python3 -m unittest discover -v",
+            "exit_code": 0,
+            "head": "2e54dcf25acc1ed5aed938b53a1e63ea292615c2",
+            "text": "test_behavior (test_subject.TestSubject.test_behavior) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n"
+          }
+        ]
+      }
+    ]
+  }
+}

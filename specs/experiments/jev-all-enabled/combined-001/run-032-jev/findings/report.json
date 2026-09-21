@@ -1,0 +1,72 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "findings",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-21T01:30:16.351362+00:00",
+  "route": "llm",
+  "usage": {
+    "input_tokens": 896,
+    "output_tokens": 155
+  },
+  "mode": "auto",
+  "threshold": 0.9,
+  "state_sha256": "d72ff684fb83d627a8c639d9fb631c759326be901198a8741bdefa46a6cd6c75",
+  "status": "completed",
+  "model": "jev-1.13.0",
+  "decision": {
+    "answers": {
+      "finding_0": {
+        "type": "choice",
+        "choice": "missing_evidence",
+        "confidence": 0.77,
+        "probabilities": {
+          "missing_evidence": 0.83,
+          "required_fix": 0.0,
+          "unclear": 0.16,
+          "residual_risk": 0.01
+        }
+      },
+      "pair_0_1": {
+        "type": "choice",
+        "choice": "different",
+        "confidence": 0.99,
+        "probabilities": {
+          "different": 0.99,
+          "same": 0.0,
+          "unclear": 0.01
+        }
+      },
+      "finding_1": {
+        "type": "choice",
+        "choice": "missing_evidence",
+        "confidence": 0.5,
+        "probabilities": {
+          "missing_evidence": 0.63,
+          "required_fix": 0.36,
+          "unclear": 0.01,
+          "residual_risk": 0.0
+        }
+      }
+    },
+    "fallback_questions": [
+      "finding_0",
+      "finding_1"
+    ],
+    "route": "llm",
+    "findings": [
+      {
+        "id": "F1",
+        "text": "This might be wrong, but the intended behavior and observed output were not supplied.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "The saved command ran no tests selected for the required recovery scenario.",
+        "source": "lane-1/review.md:11"
+      }
+    ],
+    "possible_duplicate_pairs": []
+  },
+  "elapsed_seconds": 0.168913708999753
+}

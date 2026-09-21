@@ -1,0 +1,122 @@
+{
+  "features": {
+    "kind": {
+      "helper_attempts": 16,
+      "helper_completed": 16,
+      "helper_seconds": 3.6936794174835086,
+      "jev_tokens": {
+        "input_tokens": 22248,
+        "output_tokens": 868
+      },
+      "unknown_usage": 0,
+      "raw_correct": 16,
+      "raw_questions": 16,
+      "accepted_questions": 14,
+      "accepted_wrong": 0,
+      "fallback_questions": 2,
+      "baseline": {
+        "correct": 16,
+        "questions": 16
+      },
+      "final_jev": {
+        "correct": 16,
+        "questions": 16
+      },
+      "paired_regressions": 0,
+      "paired_improvements": 0
+    },
+    "findings": {
+      "helper_attempts": 16,
+      "helper_completed": 16,
+      "helper_seconds": 3.6770211262628436,
+      "jev_tokens": {
+        "input_tokens": 16550,
+        "output_tokens": 2990
+      },
+      "unknown_usage": 0,
+      "raw_correct": 58,
+      "raw_questions": 60,
+      "accepted_questions": 33,
+      "accepted_wrong": 0,
+      "fallback_questions": 27,
+      "baseline": {
+        "correct": 59,
+        "questions": 60
+      },
+      "final_jev": {
+        "correct": 59,
+        "questions": 60
+      },
+      "paired_regressions": 0,
+      "paired_improvements": 0
+    },
+    "failure": {
+      "helper_attempts": 16,
+      "helper_completed": 16,
+      "helper_seconds": 3.9920192898716778,
+      "jev_tokens": {
+        "input_tokens": 8552,
+        "output_tokens": 798
+      },
+      "unknown_usage": 0,
+      "raw_correct": 14,
+      "raw_questions": 16,
+      "accepted_questions": 12,
+      "accepted_wrong": 0,
+      "fallback_questions": 4,
+      "baseline": {
+        "correct": 16,
+        "questions": 16
+      },
+      "final_jev": {
+        "correct": 15,
+        "questions": 16
+      },
+      "paired_regressions": 1,
+      "paired_improvements": 0
+    },
+    "evidence": {
+      "helper_attempts": 16,
+      "helper_completed": 16,
+      "helper_seconds": 8.715709290932864,
+      "jev_tokens": {
+        "input_tokens": 16728,
+        "output_tokens": 926
+      },
+      "unknown_usage": 0,
+      "raw_correct": 14,
+      "raw_questions": 16,
+      "accepted_questions": 14,
+      "accepted_wrong": 0,
+      "fallback_questions": 2,
+      "baseline": {
+        "correct": 16,
+        "questions": 16
+      },
+      "final_jev": {
+        "correct": 16,
+        "questions": 16
+      },
+      "paired_regressions": 0,
+      "paired_improvements": 0
+    },
+    "ranking": {
+      "helper_attempts": 16,
+      "helper_completed": 16,
+      "helper_seconds": 3.719505707733333,
+      "jev_tokens": {
+        "input_tokens": 10624,
+        "output_tokens": 820
+      },
+      "unknown_usage": 0
+    }
+  },
+  "claude_token_reduction": 0.3383677379335255,
+  "time_reduction": 0.3706617779153607,
+  "mean_seconds": {
+    "baseline": 40.177874494722346,
+    "jev": 25.285472101648338
+  },
+  "all_attempts_included": true,
+  "scope": "Combined independent work packets with generated reports, not a full runtime workflow"
+}

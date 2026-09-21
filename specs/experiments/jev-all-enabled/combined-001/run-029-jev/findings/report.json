@@ -1,0 +1,112 @@
+{
+  "schema": "gc.workflow-decisions.v1",
+  "task": "findings",
+  "question_version": "gc.workflow-decisions.v1",
+  "requested_model": "jev-1.13.0",
+  "started_at": "2026-09-21T01:28:25.771377+00:00",
+  "route": "llm",
+  "usage": {
+    "input_tokens": 1439,
+    "output_tokens": 285
+  },
+  "mode": "auto",
+  "threshold": 0.9,
+  "state_sha256": "d79472a7d4adf1608c62cf0060442f53ef55177bd755cf5353f34b3e090bd834",
+  "status": "completed",
+  "model": "jev-1.13.0",
+  "decision": {
+    "answers": {
+      "finding_0": {
+        "type": "choice",
+        "choice": "required_fix",
+        "confidence": 0.82,
+        "probabilities": {
+          "unclear": 0.03,
+          "missing_evidence": 0.1,
+          "required_fix": 0.87,
+          "residual_risk": 0.0
+        }
+      },
+      "pair_0_1": {
+        "type": "choice",
+        "choice": "same",
+        "confidence": 0.78,
+        "probabilities": {
+          "different": 0.14,
+          "same": 0.85,
+          "unclear": 0.01
+        }
+      },
+      "pair_0_2": {
+        "type": "choice",
+        "choice": "same",
+        "confidence": 0.94,
+        "probabilities": {
+          "different": 0.04,
+          "same": 0.96,
+          "unclear": 0.0
+        }
+      },
+      "finding_1": {
+        "type": "choice",
+        "choice": "required_fix",
+        "confidence": 0.84,
+        "probabilities": {
+          "unclear": 0.02,
+          "missing_evidence": 0.1,
+          "required_fix": 0.88,
+          "residual_risk": 0.0
+        }
+      },
+      "pair_1_2": {
+        "type": "choice",
+        "choice": "same",
+        "confidence": 0.9,
+        "probabilities": {
+          "different": 0.06,
+          "same": 0.9400000000000001,
+          "unclear": 0.0
+        }
+      },
+      "finding_2": {
+        "type": "choice",
+        "choice": "required_fix",
+        "confidence": 0.83,
+        "probabilities": {
+          "residual_risk": 0.0,
+          "missing_evidence": 0.1,
+          "required_fix": 0.87,
+          "unclear": 0.03
+        }
+      }
+    },
+    "fallback_questions": [
+      "finding_0",
+      "pair_0_1",
+      "pair_0_2",
+      "finding_1",
+      "pair_1_2",
+      "finding_2"
+    ],
+    "route": "llm",
+    "findings": [
+      {
+        "id": "F1",
+        "text": "The empty-config path leaks its opened file; close it before returning.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "The empty-config error branch never closes the file it opened; ensure closure.",
+        "source": "lane-1/review.md:11"
+      },
+      {
+        "id": "F3",
+        "text": "Under empty configuration a file descriptor remains open; close the opened file on that path.",
+        "source": "lane-2/review.md:12"
+      }
+    ],
+    "possible_duplicate_pairs": []
+  },
+  "elapsed_seconds": 0.2433619168587029
+}

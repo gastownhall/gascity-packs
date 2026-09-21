@@ -1,0 +1,20 @@
+Waiting for combined cohort: 23/32 terminal attempts
+Waiting for combined cohort: 24/32 terminal attempts
+Waiting for combined cohort: 25/32 terminal attempts
+Waiting for combined cohort: 25/32 terminal attempts
+Waiting for combined cohort: 26/32 terminal attempts
+Waiting for combined cohort: 27/32 terminal attempts
+Waiting for combined cohort: 27/32 terminal attempts
+Waiting for combined cohort: 29/32 terminal attempts
+Waiting for combined cohort: 29/32 terminal attempts
+Waiting for combined cohort: 30/32 terminal attempts
+Waiting for combined cohort: 31/32 terminal attempts
+Combined cohort completed; starting full runtime pair
+[1/2] run-001-baseline starting; log: /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-all-enabled/full-build-001/run-001-baseline/run.log
+Preparing Claude subscription startup for /private/tmp/gcja-fn64i14s/w/fixture
+Accepted experiment startup prompt: folder_trust
+[1/2] failed: CalledProcessError: Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc', 'init', '--skip-provider-readiness', '--name', 'jev-gcja-fn64i14s-run-001-baseline', '--file', '/private/tmp/gcja-fn64i14s/w/city/city.toml', '--preserve-existing', '--yes', '/private/tmp/gcja-fn64i14s/w/city']' returned non-zero exit status 1.
+[2/2] run-002-jev starting; log: /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-all-enabled/full-build-001/run-002-jev/run.log
+Preparing Claude subscription startup for /private/tmp/gcja-f_noko6f/w/fixture
+Accepted experiment startup prompt: folder_trust
+[2/2] failed: TimeoutExpired: Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc', '--city', '/private/tmp/gcja-f_noko6f/w/city', '--rig', 'fixture', 'sling', 'gc.run-operator', '--stdin', '--force', '--on', 'build-basic', '--title', 'gascity pack inference gate: build-basic', '--nudge', '--json', '--var', 'artifact_root=.gc/inference-gate/build-basic', '--var', 'interaction_mode=headless', '--var', 'review_mode=agent', '--var', 'drain_policy=separate', '--var',

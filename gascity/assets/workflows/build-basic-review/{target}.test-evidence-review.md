@@ -16,17 +16,19 @@ worktree, write an iterate finding against review setup.
 
 Contract: `gc.work_dir` is the launcher rig root, not the implementation worktree.
 
-Optional evidence assistance: `jev_mode={{jev_mode}}`,
+Evidence assistance: `jev_mode={{jev_mode}}`,
 `jev_model={{jev_model}}`, `jev_threshold={{jev_threshold}}`.
 
 When mode is `off`, perform the ordinary review without calling Jev or creating
-its bundle. When mode is `assist`, follow `{{pack_root}}/assets/jev-evidence.md`:
+its bundle. In `auto`, use Jev when `TYPESAFE_API_KEY` is configured. Without
+a key, record `skipped / missing_credential` and use ordinary review without
+gathering an extra bundle. For configured `auto` or `assist`, follow `{{pack_root}}/assets/jev-evidence.md`:
 gather current source/test excerpts and actual proof output in each authorized
 implementation worktree, then run the helper on the hash-bound bundle:
 
 ```bash
 python3 {{pack_root}}/assets/scripts/jev_evidence.py "$BUNDLE_PATH" \
-  --output-dir "$JEV_RUN_DIR" --model '{{jev_model}}' \
+  --output-dir "$JEV_RUN_DIR" --mode '{{jev_mode}}' --model '{{jev_model}}' \
   --threshold '{{jev_threshold}}'
 ```
 

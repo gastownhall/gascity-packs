@@ -1,0 +1,274 @@
+{
+  "case_id": "packet-01",
+  "arm": "jev",
+  "status": "completed",
+  "started_at": "2026-09-21T01:20:31.246965+00:00",
+  "expected": {
+    "kind:kind": "docs",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "required_fix",
+    "failure:failure": "environment",
+    "evidence:evidence_0": "supported"
+  },
+  "helpers": {
+    "kind": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "kind",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:20:31.620265+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 1057,
+        "output_tokens": 54
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "e665b453841d412fd1b17f08278d308de09a587311a0576efccb1f7e8f3868f7",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "docs",
+            "confidence": 1.0,
+            "probabilities": {
+              "chore": 0.0,
+              "docs": 1.0,
+              "unclear": 0.0,
+              "bug": 0.0,
+              "feature": 0.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.24621512508019805
+    },
+    "findings": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "findings",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:20:32.293508+00:00",
+      "route": "llm",
+      "usage": {
+        "input_tokens": 896,
+        "output_tokens": 151
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "f33f7b79a997fae37edfeaee370f68a4f50eed90aae44f535810dea0c73698f1",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "finding_0": {
+            "type": "choice",
+            "choice": "required_fix",
+            "confidence": 0.71,
+            "probabilities": {
+              "residual_risk": 0.0,
+              "unclear": 0.03,
+              "missing_evidence": 0.18,
+              "required_fix": 0.79
+            }
+          },
+          "pair_0_1": {
+            "type": "choice",
+            "choice": "different",
+            "confidence": 1.0,
+            "probabilities": {
+              "different": 1.0,
+              "unclear": 0.0,
+              "same": 0.0
+            }
+          },
+          "finding_1": {
+            "type": "choice",
+            "choice": "required_fix",
+            "confidence": 0.9,
+            "probabilities": {
+              "residual_risk": 0.0,
+              "unclear": 0.01,
+              "missing_evidence": 0.07,
+              "required_fix": 0.92
+            }
+          }
+        },
+        "fallback_questions": [
+          "finding_0"
+        ],
+        "route": "llm",
+        "findings": [
+          {
+            "id": "F1",
+            "text": "parser.py drops invalid-input errors; return a nonzero exit.",
+            "source": "lane-0/review.md:10"
+          },
+          {
+            "id": "F2",
+            "text": "parser.py reads the full upload without its required size limit; reject oversized uploads.",
+            "source": "lane-1/review.md:11"
+          }
+        ],
+        "possible_duplicate_pairs": []
+      },
+      "elapsed_seconds": 0.2621816659811884
+    },
+    "failure": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "failure",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:20:33.257343+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 528,
+        "output_tokens": 49
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "0e6686a7d650c6612ca83f68c9b98b7932af64c590a2fa6747630ea6878dc06f",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "failure": {
+            "type": "choice",
+            "choice": "environment",
+            "confidence": 0.99,
+            "probabilities": {
+              "unclear": 0.0,
+              "missing_evidence": 0.0,
+              "environment": 1.0,
+              "product": 0.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.2868170419242233
+    },
+    "evidence": {
+      "schema": "gc.evidence-assessment.v1",
+      "advisory": true,
+      "started_at": "2026-09-21T01:20:34.606760+00:00",
+      "question_version": "gc.evidence-question.v2",
+      "requested_model": "jev-1.13.0",
+      "threshold": 0.85,
+      "mode": "auto",
+      "state_sha256": "683c6fff5d4a8657b21edd88cb5783e5f82f45165322e8778221a8dd83b22f70",
+      "decisions": [
+        {
+          "id": "AC-1",
+          "type": "choice",
+          "choice": "supported",
+          "confidence": 1.0,
+          "probabilities": {
+            "supported": 1.0,
+            "contradicted": 0.0,
+            "missing_evidence": 0.0,
+            "unclear": 0.0
+          },
+          "route": "reviewer_check"
+        }
+      ],
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1014,
+        "output_tokens": 56
+      },
+      "elapsed_seconds": 1.015929166926071
+    },
+    "ranking": {
+      "schema": "gc.duplicate-ranking.v1",
+      "question_version": "gc.duplicate-ranking.v1",
+      "requested_model": "jev-1.13.0",
+      "mode": "auto",
+      "route": "investigate_ranked_candidates",
+      "usage": {
+        "input_tokens": 715,
+        "output_tokens": 58
+      },
+      "started_at": "2026-09-21T01:20:36.625894+00:00",
+      "state_sha256": "bd1f3078ffb2aeb4a9e8c41c4c6d9d79f98d3de184846cf8578c78e127ae80c2",
+      "status": "completed",
+      "decision": {
+        "ranked_candidate_ids": [
+          "C3",
+          "C2",
+          "C1"
+        ],
+        "scores": {
+          "C1": 0.03,
+          "C2": 0.06,
+          "C3": 0.97
+        },
+        "candidates": [
+          {
+            "id": "C1",
+            "title": "CSV export quoting",
+            "body": "Exports need to quote fields containing commas."
+          },
+          {
+            "id": "C2",
+            "title": "CSV empty file",
+            "body": "An empty CSV file raises a different exception before parsing headers."
+          },
+          {
+            "id": "C3",
+            "title": "UTF-8 BOM breaks header detection",
+            "body": "Import treats the UTF-8 BOM as part of the first header and rejects a valid CSV."
+          }
+        ],
+        "requires_investigation": true
+      },
+      "model": "jev-1.13.0",
+      "elapsed_seconds": 0.2561890420038253
+    }
+  },
+  "state_sha256": "8e78635dc577153b76943ec0459babd395073b9365c01fb1fe13cfcbd4fdaa81",
+  "ranking_top1": true,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C3",
+    "C2",
+    "C1"
+  ],
+  "answers": {
+    "kind:kind": "docs",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "required_fix",
+    "failure:failure": "environment",
+    "evidence:evidence_0": "supported"
+  },
+  "correct": 6,
+  "questions": 6,
+  "report_contract_pass": true,
+  "quality_pass": true,
+  "elapsed_seconds": 25.111144084017724,
+  "claude_calls": 1,
+  "llm_tokens": {
+    "inputTokens": 2,
+    "outputTokens": 1331,
+    "cacheReadInputTokens": 2473,
+    "cacheCreationInputTokens": 5504,
+    "totalTokens": 9310
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 4210,
+    "output_tokens": 368
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": [
+    "findings:finding_0"
+  ]
+}

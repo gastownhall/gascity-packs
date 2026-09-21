@@ -1,0 +1,57 @@
+{
+  "kind": {
+    "title": "cmd-gc-productmetrics-testhook runs at 92-95% of its 5-minute budget on main; its six tests take 0.87s and the rest is compile",
+    "body": "## Symptom\n\n`cmd-gc-productmetrics-testhook` runs at 92\u201395% of its `timeout-minutes: 5` budget on `main`, so it fails as a cancellation (\"The operation was canceled\") on whichever PR happens to add a few seconds. It is a required-path job, so that reads as a red gate with no failing test in the log.\n\nMeasured across runs on 2026-09-16 (UTC):\n\n| branch | duration |\n|---|---|\n| `main` @ `9700d9a48` | 4m37 |\n| a branch with no `go.mod` change | 4m44 |\n| a branch that changed `go.sum` | **5m05 \u2192 killed** |\n\n## Root cause\n\nThe budget is buying compile time, not test time, on a runner the budget was not sized for.\n\nFrom the job's own timing artifact (`timing-cmd-gc-productmetrics-testhook-attempt-1`, run 35040648087, `main` @ `9700d9a48`):\n\n- `cmd/gc` package unit: **0.869 s**\n- every test in it: sub-second; six tests, **0.87 s total**\n\nagainst a 4m37 job. The remainder is `go build` of `cmd/gc` under `-tags productmetrics_testhook`.\n\nThe job requests `runs-on: ${{ needs.runner-policy.outputs.runner_32vcpu }}` (`.github/workflows/ci.yml:626`), but `runner-policy` resolves that to `ubuntu-latest` for every login outside the maintainer list \u2014 the same artifact's runner block reports `\"cpu_count\": 4`. So most runs compile `cmd/gc` on four cores inside a five-minute wall.\n\nThe `go.sum` sensitivity follows: `actions/setup-go`'s cache key includes `go.sum`, so any dependency change makes that build cold, and cold is what goes over.\n\n## Reproduction\n\nOpen a PR that changes `go.sum` at all, on a fork or from a non-maintainer login, and watch `cmd/gc product metrics testhook`. Or read the timing artifact of any recent `main` run and compare the summed test durations against the job duration.\n\n## Environment\n\n`main` @ `9700d9a48`, `ubuntu-latest` (4 vCPU), `actions/setup-go@4a36011`, Go per `go.mod`.\n\n## Proposed fixes, either\n\n1. **Give the job a warm build cache.** It is the only `cmd/gc`-building job with no warm step before it; the surrounding jobs go through `setup-gascity-ubuntu`. That attacks the 4m23 rather than the wall.\n2. **Size the budget for the runner the job actually gets** \u2014 10\u201312 minutes gives real margin at 4 vCPU.\n\n(1) is the better fix; (2) is the one-line stopgap. A gate at 95% of budget reports on runner speed rather than on the code.\n"
+  },
+  "findings": {
+    "findings": [
+      {
+        "id": "F1",
+        "text": "Optional future optimization: cache parsing results; current latency satisfies every requirement and all mandatory checks passed.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "The implementation hardcodes an empty result where the accepted export contract requires all rows.",
+        "source": "lane-1/review.md:11"
+      }
+    ]
+  },
+  "failure": {
+    "command": "./check.sh",
+    "output": "zsh: permission denied: ./check.sh",
+    "context": "The executable bit is absent on the external fixture script; no product code ran."
+  },
+  "evidence": {
+    "head": "deadf41952eda2e29f07d0b82283b43ee89ebe31",
+    "items": [
+      {
+        "id": "AC-1",
+        "criterion": "Reversing abc returns cba.",
+        "claim": "The passing test asserts the returned reverse string.",
+        "sources": [
+          {
+            "path": "subject.py",
+            "sha256": "f3c911091008dd9a593d5084a165ab408c0a3d25a869f4d9c270796b41e38488",
+            "text": "def transform(x):\n    return x[::-1]\n"
+          },
+          {
+            "path": "test_subject.py",
+            "sha256": "190fd6feef1a336813bb315d28ede46acc79a69520afb1019b20bd3ca8ffe971",
+            "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        transform(\"abc\")\n"
+          }
+        ],
+        "proofs": [
+          {
+            "path": "proof.txt",
+            "sha256": "28a0a5c459c5a75646342350eeb32e56c5e5c55bf773a917640f767138a73f5c",
+            "command": "python3 -m unittest discover -v",
+            "exit_code": 0,
+            "head": "deadf41952eda2e29f07d0b82283b43ee89ebe31",
+            "text": "test_behavior (test_subject.TestSubject.test_behavior) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n"
+          }
+        ]
+      }
+    ]
+  }
+}

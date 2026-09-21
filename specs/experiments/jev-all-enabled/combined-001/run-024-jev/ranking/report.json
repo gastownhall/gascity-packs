@@ -1,0 +1,39 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "requested_model": "jev-1.13.0",
+  "mode": "auto",
+  "route": "investigate_ranked_candidates",
+  "usage": {
+    "input_tokens": 603,
+    "output_tokens": 40
+  },
+  "started_at": "2026-09-21T01:25:17.483098+00:00",
+  "state_sha256": "f7d07afe02177a45399f7728ff86ba5eec69c216bf2ef7ed850ff79a7241379e",
+  "status": "completed",
+  "decision": {
+    "ranked_candidate_ids": [
+      "C2",
+      "C1"
+    ],
+    "scores": {
+      "C1": 0.14,
+      "C2": 0.97
+    },
+    "candidates": [
+      {
+        "id": "C1",
+        "title": "Retries ignore 503 backoff",
+        "body": "503 responses retry immediately; the client has a different 503 retry implementation."
+      },
+      {
+        "id": "C2",
+        "title": "Honor Retry-After on rate limits",
+        "body": "For 429, the HTTP client ignores the Retry-After header and retries at once."
+      }
+    ],
+    "requires_investigation": true
+  },
+  "model": "jev-1.13.0",
+  "elapsed_seconds": 0.21319862501695752
+}

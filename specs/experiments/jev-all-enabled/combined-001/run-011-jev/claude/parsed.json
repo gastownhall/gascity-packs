@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "kind:kind": "chore",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "missing_evidence",
+    "evidence:evidence_0": "supported"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "chore",
+      "quote": "probe bd context once per TTL instead of once per store open"
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "missing_evidence",
+      "quote": "Linux recovery proof is missing; run the required Linux recovery test."
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "different",
+      "quote": "lane-1/review.md:11"
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "missing_evidence",
+      "quote": "Windows recovery proof is missing; run the required Windows recovery test."
+    },
+    {
+      "id": "failure:failure",
+      "choice": "missing_evidence",
+      "quote": "External installed bd failed before candidate source was executed"
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "supported",
+      "quote": "with self.assertRaises(TypeError):"
+    }
+  ]
+}

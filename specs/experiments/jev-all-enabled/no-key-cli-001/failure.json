@@ -1,0 +1,1 @@
+{"command": "gh api repos/acme/app", "output": "HTTP 401: Bad credentials", "context": "Fetching fixture metadata, prior to building."}

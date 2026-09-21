@@ -1,0 +1,19 @@
+{
+  "findings": [
+    {
+      "id": "F1",
+      "text": "Accepted requirement: retain audit history. archive() deletes the prior record; preserve it instead.",
+      "source": "lane-0/review.md:10"
+    },
+    {
+      "id": "F2",
+      "text": "Run the missing concurrency proof before claiming the new archive operation is race-free.",
+      "source": "lane-1/review.md:11"
+    },
+    {
+      "id": "F3",
+      "text": "The earlier record is deleted during archiving despite required audit retention; preserve the record.",
+      "source": "lane-2/review.md:12"
+    }
+  ]
+}

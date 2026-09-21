@@ -101,3 +101,26 @@ def test_no_key_fails_without_network(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TYPESAFE_API_KEY"):
         jev.evaluate({"items": []}, model="jev-1.13.0")
+
+
+@pytest.mark.parametrize("mode,reason", [("off", "disabled"), ("auto", "missing_credential")])
+def test_inactive_modes_skip_bundle_and_network(tmp_path, monkeypatch, mode, reason):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setattr(jev, "evaluate", lambda *a, **kw: pytest.fail("network called"))
+    output = tmp_path / "result"
+    assert jev.main([str(tmp_path / "absent.json"), "--output-dir", str(output), "--mode", mode]) == 0
+    report = json.loads((output / "report.json").read_text())
+    assert report["status"] == "skipped"
+    assert report["reason"] == reason
+    assert report["route"] == "llm_review"
+    assert "decisions" not in report
+
+
+def test_auto_with_key_evaluates_bound_evidence(bundle, tmp_path, monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-placeholder")
+    monkeypatch.setattr(jev, "evaluate", lambda *a, **kw: response())
+    source = tmp_path / "bundle.json"
+    source.write_text(json.dumps(bundle))
+    output = tmp_path / "result"
+    assert jev.main([str(source), "--output-dir", str(output), "--mode", "auto"]) == 0
+    assert json.loads((output / "report.json").read_text())["status"] == "completed"

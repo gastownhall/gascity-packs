@@ -1,0 +1,57 @@
+{
+  "kind": {
+    "title": "docs(session): clarify primed_at as delivery-attempted, not consumed (#5236)",
+    "body": "Fixes #5236.\n\n## What's misleading\n\n`primed_at` is stamped when delivery was *selected and runtime start succeeded* \u2014 but several doc comments described this as \"confirmed delivered\" / \"actually delivers,\" which reads as proof the agent consumed the prompt. It isn't proof of that: the issue's own qualifying incident had a worker holding `primed_at` while its trigger bead stayed open/unassigned until a manual nudge forced the claim.\n\n## Fix \u2014 comment/doc-string only, zero behavior or schema change\n\n- `internal/session/lifecycle_transition.go` \u2014 `PrimedAtMetadataKey`'s doc said \"confirmed delivered\" with no caveat; added that \"confirmed\" means transport succeeded, not consumption, and pointed at trigger-bead assignment as the real work-started signal.\n- `cmd/gc/prompt_delivery.go` \u2014 `promptDeliveryResult`/`Delivered` docs said \"actually delivered it,\" but `promptDelivery()` does no I/O at all (pure routing decision, per its own existing doc) \u2014 clarified `Delivered` means \"a mechanism was selected.\"\n- `cmd/gc/session_lifecycle_parallel.go` \u2014 `promptDelivered` field doc said \"actually delivers the rendered startup prompt\" (one of the issue's own evidence citations) \u2014 same fix.\n\n**Deliberately left `session_level_converge.go` untouched**, even though it also uses \"CONFIRMED\" language for `primedAt`: that's the S19 Stage-1 migration module (\"nothing reads the action list yet ... until Stage 3 wires the act loop\"), and its terminology is already precisely scoped within its own durable-world/runtime-world framework \u2014 it separately tracks `primedEnv` as \"delivered this runtime but may not yet be durably recorded,\" meaning it already distinguishes the two states this issue wants clarified. Touching an in-progress migration module's carefully-established vocabulary without Stage 3/4 context felt like the wrong call. `internal/runtime/herdr/provider.go` (the issue's other evidence citation) was already correctly worded \u2014 no change needed there either.\n\n## Verification\n\n`go test ./internal/session/... -run 'Primed|Priming|Prompt'` and `go test ./cmd/gc/... -run 'PromptDelivery|Primed|Priming'` both green (comment-only, no regressions); gofmt clean; `go vet` clean on changed + dependent packages; `go build ./...` clean.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)"
+  },
+  "findings": {
+    "findings": [
+      {
+        "id": "F1",
+        "text": "parser.py drops invalid-input errors; return a nonzero exit.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "parser.py reads the full upload without its required size limit; reject oversized uploads.",
+        "source": "lane-1/review.md:11"
+      }
+    ]
+  },
+  "failure": {
+    "command": "gh api repos/acme/app",
+    "output": "HTTP 401: Bad credentials",
+    "context": "Fetching fixture metadata, prior to building."
+  },
+  "evidence": {
+    "head": "f90e140a3cbec0ed92c7055f12f8fc8d51d36b13",
+    "items": [
+      {
+        "id": "AC-1",
+        "criterion": "Trimming an empty string returns an empty string.",
+        "claim": "The empty-string behavior was verified.",
+        "sources": [
+          {
+            "path": "subject.py",
+            "sha256": "6609800e6f8ab6ad3102b770f0831a0d4018ce6f3248f7c3543dae78f59ad758",
+            "text": "def transform(x):\n    return x.strip()\n"
+          },
+          {
+            "path": "test_subject.py",
+            "sha256": "b373b8ff23dfa785d4dda704e5942322245ff08c0cc26005d69e8fdba6ef141e",
+            "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        self.assertEqual(transform(\"\"), \"\")\n"
+          }
+        ],
+        "proofs": [
+          {
+            "path": "proof.txt",
+            "sha256": "0f0351b05a7a111268e54baad2269896c1f10407d6e42f574fe86b34ae7333da",
+            "command": "python3 -m unittest discover -v",
+            "exit_code": 0,
+            "head": "f90e140a3cbec0ed92c7055f12f8fc8d51d36b13",
+            "text": "test_behavior (test_subject.TestSubject.test_behavior) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nOK\n"
+          }
+        ]
+      }
+    ]
+  }
+}

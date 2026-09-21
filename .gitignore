@@ -31,3 +31,8 @@ __pycache__/
 
 # Expanded Jev benchmarks retain fixture contents in state/proof artifacts.
 /specs/experiments/jev-expansion/**/fixture/
+
+# All-enabled experiments retain fixtures/snapshots locally and publish audited records.
+/specs/experiments/jev-all-enabled/**/fixture/
+/specs/experiments/jev-all-enabled/**/pack-snapshot/
+/specs/experiments/jev-all-enabled/**/raw-transcripts/

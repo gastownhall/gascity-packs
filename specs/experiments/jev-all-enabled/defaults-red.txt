@@ -1,0 +1,242 @@
+FF..F                                                           [100%]
+=================================== FAILURES ===================================
+__________ test_inactive_modes_skip_bundle_and_network[off-disabled] ___________
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-39/test_inactive_modes_skip_bundl0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1083555b0>
+mode = 'off', reason = 'disabled'
+
+    @pytest.mark.parametrize("mode,reason", [("off", "disabled"), ("auto", "missing_credential")])
+    def test_inactive_modes_skip_bundle_and_network(tmp_path, monkeypatch, mode, reason):
+        monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+        monkeypatch.setattr(jev, "evaluate", lambda *a, **kw: pytest.fail("network called"))
+        output = tmp_path / "result"
+>       assert jev.main([str(tmp_path / "absent.json"), "--output-dir", str(output), "--mode", mode]) == 0
+E       AssertionError: assert 1 == 0
+E        +  where 1 = <function main at 0x1073637f0>(['/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-39/test_inactive_modes_skip_bundl0/...4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-39/test_inactive_modes_skip_bundl0/result', '--mode', 'off'])
+E        +    where <function main at 0x1073637f0> = jev.main
+
+gascity/tests/test_jev_evidence.py:111: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"status": "failed", "report": "/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-39/test_inactive_modes_skip_bundl0/result/report.json"}
+_____ test_inactive_modes_skip_bundle_and_network[auto-missing_credential] _____
+
+tmp_path = PosixPath('/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-39/test_inactive_modes_skip_bundl1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1071a8d60>
+mode = 'auto', reason = 'missing_credential'
+
+    @pytest.mark.parametrize("mode,reason", [("off", "disabled"), ("auto", "missing_credential")])
+    def test_inactive_modes_skip_bundle_and_network(tmp_path, monkeypatch, mode, reason):
+        monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+        monkeypatch.setattr(jev, "evaluate", lambda *a, **kw: pytest.fail("network called"))
+        output = tmp_path / "result"
+>       assert jev.main([str(tmp_path / "absent.json"), "--output-dir", str(output), "--mode", mode]) == 0
+E       AssertionError: assert 1 == 0
+E        +  where 1 = <function main at 0x1073637f0>(['/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-39/test_inactive_modes_skip_bundl1/.../rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-39/test_inactive_modes_skip_bundl1/result', '--mode', 'auto'])
+E        +    where <function main at 0x1073637f0> = jev.main
+
+gascity/tests/test_jev_evidence.py:111: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"status": "failed", "report": "/private/var/folders/y4/rw0h1qjn1zxggz9pntkf34ww0000gn/T/pytest-of-csells/pytest-39/test_inactive_modes_skip_bundl1/result/report.json"}
+_ FormulaAssetTests.test_all_jev_integrations_default_auto (formula='build-basic', variable='jev_mode') _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_all_jev_integrations_default_auto>
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+>                   self.assertEqual(data["vars"][variable]["default"], "auto")
+E                   AssertionError: 'off' != 'auto'
+E                   - off
+E                   + auto
+
+gascity/tests/test_formula_assets.py:4102: AssertionError
+_ FormulaAssetTests.test_all_jev_integrations_default_auto (formula='build-basic', variable='jev_findings_mode') _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_all_jev_integrations_default_auto>
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+>                   self.assertEqual(data["vars"][variable]["default"], "auto")
+E                   AssertionError: 'off' != 'auto'
+E                   - off
+E                   + auto
+
+gascity/tests/test_formula_assets.py:4102: AssertionError
+_ FormulaAssetTests.test_all_jev_integrations_default_auto (formula='build-basic', variable='jev_failure_mode') _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_all_jev_integrations_default_auto>
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+>                   self.assertEqual(data["vars"][variable]["default"], "auto")
+E                   AssertionError: 'off' != 'auto'
+E                   - off
+E                   + auto
+
+gascity/tests/test_formula_assets.py:4102: AssertionError
+_ FormulaAssetTests.test_all_jev_integrations_default_auto (formula='build-basic-review', variable='jev_mode') _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_all_jev_integrations_default_auto>
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+>                   self.assertEqual(data["vars"][variable]["default"], "auto")
+E                   AssertionError: 'off' != 'auto'
+E                   - off
+E                   + auto
+
+gascity/tests/test_formula_assets.py:4102: AssertionError
+_ FormulaAssetTests.test_all_jev_integrations_default_auto (formula='build-basic-review', variable='jev_findings_mode') _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_all_jev_integrations_default_auto>
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+>                   self.assertEqual(data["vars"][variable]["default"], "auto")
+E                   AssertionError: 'off' != 'auto'
+E                   - off
+E                   + auto
+
+gascity/tests/test_formula_assets.py:4102: AssertionError
+_ FormulaAssetTests.test_all_jev_integrations_default_auto (formula='build-basic-review', variable='jev_failure_mode') _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_all_jev_integrations_default_auto>
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+>                   self.assertEqual(data["vars"][variable]["default"], "auto")
+E                   AssertionError: 'off' != 'auto'
+E                   - off
+E                   + auto
+
+gascity/tests/test_formula_assets.py:4102: AssertionError
+_ FormulaAssetTests.test_all_jev_integrations_default_auto (formula='github-issue-triage', variable='jev_kind_mode') _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_all_jev_integrations_default_auto>
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+>                   self.assertEqual(data["vars"][variable]["default"], "auto")
+E                   AssertionError: 'off' != 'auto'
+E                   - off
+E                   + auto
+
+gascity/tests/test_formula_assets.py:4102: AssertionError
+_ FormulaAssetTests.test_all_jev_integrations_default_auto (formula='github-pr-review', variable='jev_kind_mode') _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_all_jev_integrations_default_auto>
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+>                   self.assertEqual(data["vars"][variable]["default"], "auto")
+E                   AssertionError: 'off' != 'auto'
+E                   - off
+E                   + auto
+
+gascity/tests/test_formula_assets.py:4102: AssertionError
+_ FormulaAssetTests.test_github_issue_triage_kind_is_auto_and_separate_from_verdict _
+
+self = <test_formula_assets.FormulaAssetTests testMethod=test_github_issue_triage_kind_is_auto_and_separate_from_verdict>
+
+    def test_github_issue_triage_kind_is_auto_and_separate_from_verdict(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        data = resolve_formula(root, "github-issue-triage")
+>       self.assertEqual(data["vars"]["jev_kind_mode"]["default"], "auto")
+E       AssertionError: 'off' != 'auto'
+E       - off
+E       + auto
+
+gascity/tests/test_formula_assets.py:4083: AssertionError
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_evidence.py::test_inactive_modes_skip_bundle_and_network[off-disabled]
+FAILED gascity/tests/test_jev_evidence.py::test_inactive_modes_skip_bundle_and_network[auto-missing_credential]
+SUBFAILED(formula='build-basic', variable='jev_mode') gascity/tests/test_formula_assets.py::FormulaAssetTests::test_all_jev_integrations_default_auto
+SUBFAILED(formula='build-basic', variable='jev_findings_mode') gascity/tests/test_formula_assets.py::FormulaAssetTests::test_all_jev_integrations_default_auto
+SUBFAILED(formula='build-basic', variable='jev_failure_mode') gascity/tests/test_formula_assets.py::FormulaAssetTests::test_all_jev_integrations_default_auto
+SUBFAILED(formula='build-basic-review', variable='jev_mode') gascity/tests/test_formula_assets.py::FormulaAssetTests::test_all_jev_integrations_default_auto
+SUBFAILED(formula='build-basic-review', variable='jev_findings_mode') gascity/tests/test_formula_assets.py::FormulaAssetTests::test_all_jev_integrations_default_auto
+SUBFAILED(formula='build-basic-review', variable='jev_failure_mode') gascity/tests/test_formula_assets.py::FormulaAssetTests::test_all_jev_integrations_default_auto
+SUBFAILED(formula='github-issue-triage', variable='jev_kind_mode') gascity/tests/test_formula_assets.py::FormulaAssetTests::test_all_jev_integrations_default_auto
+SUBFAILED(formula='github-pr-review', variable='jev_kind_mode') gascity/tests/test_formula_assets.py::FormulaAssetTests::test_all_jev_integrations_default_auto
+FAILED gascity/tests/test_formula_assets.py::FormulaAssetTests::test_github_issue_triage_kind_is_auto_and_separate_from_verdict
+11 failed, 2 passed, 134 deselected, 1 subtests passed in 3.89s

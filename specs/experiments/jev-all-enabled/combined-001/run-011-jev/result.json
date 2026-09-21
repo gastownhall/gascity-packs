@@ -1,0 +1,274 @@
+{
+  "case_id": "packet-06",
+  "arm": "jev",
+  "status": "completed",
+  "started_at": "2026-09-21T01:17:41.156257+00:00",
+  "expected": {
+    "kind:kind": "chore",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "environment",
+    "evidence:evidence_0": "supported"
+  },
+  "helpers": {
+    "kind": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "kind",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:17:41.382407+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 876,
+        "output_tokens": 55
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "3d080a2b1dfccb3dff96d2a3a36b4a17d9d4770094bf239c3a04ff1cb172e28e",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "chore",
+            "confidence": 0.99,
+            "probabilities": {
+              "unclear": 0.0,
+              "feature": 0.0,
+              "chore": 1.0,
+              "bug": 0.0,
+              "docs": 0.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.1773080420680344
+    },
+    "findings": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "findings",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:17:41.879856+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 893,
+        "output_tokens": 155
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "b831fd03f74a1e7f33a60767d21a084d422ce3bc43bcad76c2275f8ca48fbd3e",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "finding_0": {
+            "type": "choice",
+            "choice": "missing_evidence",
+            "confidence": 0.99,
+            "probabilities": {
+              "residual_risk": 0.0,
+              "missing_evidence": 0.99,
+              "required_fix": 0.01,
+              "unclear": 0.0
+            }
+          },
+          "pair_0_1": {
+            "type": "choice",
+            "choice": "different",
+            "confidence": 0.96,
+            "probabilities": {
+              "different": 0.97,
+              "same": 0.03,
+              "unclear": 0.0
+            }
+          },
+          "finding_1": {
+            "type": "choice",
+            "choice": "missing_evidence",
+            "confidence": 0.99,
+            "probabilities": {
+              "unclear": 0.0,
+              "missing_evidence": 0.99,
+              "required_fix": 0.01,
+              "residual_risk": 0.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions",
+        "findings": [
+          {
+            "id": "F1",
+            "text": "Linux recovery proof is missing; run the required Linux recovery test.",
+            "source": "lane-0/review.md:10"
+          },
+          {
+            "id": "F2",
+            "text": "Windows recovery proof is missing; run the required Windows recovery test.",
+            "source": "lane-1/review.md:11"
+          }
+        ],
+        "possible_duplicate_pairs": []
+      },
+      "elapsed_seconds": 0.21428074990399182
+    },
+    "failure": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "failure",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:17:42.429396+00:00",
+      "route": "llm",
+      "usage": {
+        "input_tokens": 536,
+        "output_tokens": 49
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "d71ae2e8b5fcf4c379cbf39a981d833b012ef8b2d74055e6d2566a72373aef63",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "failure": {
+            "type": "choice",
+            "choice": "product",
+            "confidence": 0.24,
+            "probabilities": {
+              "unclear": 0.18,
+              "missing_evidence": 0.02,
+              "environment": 0.37,
+              "product": 0.43
+            }
+          }
+        },
+        "fallback_questions": [
+          "failure"
+        ],
+        "route": "llm"
+      },
+      "elapsed_seconds": 0.2270854169037193
+    },
+    "evidence": {
+      "schema": "gc.evidence-assessment.v1",
+      "advisory": true,
+      "started_at": "2026-09-21T01:17:43.031469+00:00",
+      "question_version": "gc.evidence-question.v2",
+      "requested_model": "jev-1.13.0",
+      "threshold": 0.85,
+      "mode": "auto",
+      "state_sha256": "48db36345c6b644faa3b013d560d8ced2d3f4032c7ec706d0140b0dbab8fa624",
+      "decisions": [
+        {
+          "id": "AC-1",
+          "type": "choice",
+          "choice": "supported",
+          "confidence": 1.0,
+          "probabilities": {
+            "missing_evidence": 0.0,
+            "supported": 1.0,
+            "contradicted": 0.0,
+            "unclear": 0.0
+          },
+          "route": "reviewer_check"
+        }
+      ],
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1039,
+        "output_tokens": 56
+      },
+      "elapsed_seconds": 0.4344240000937134
+    },
+    "ranking": {
+      "schema": "gc.duplicate-ranking.v1",
+      "question_version": "gc.duplicate-ranking.v1",
+      "requested_model": "jev-1.13.0",
+      "mode": "auto",
+      "route": "investigate_ranked_candidates",
+      "usage": {
+        "input_tokens": 734,
+        "output_tokens": 58
+      },
+      "started_at": "2026-09-21T01:17:43.879459+00:00",
+      "state_sha256": "236fdcdc5cc3da30f7ba20da54763d9a886f608c4f1a32d578001916d169230b",
+      "status": "completed",
+      "decision": {
+        "ranked_candidate_ids": [
+          "C2",
+          "C1",
+          "C3"
+        ],
+        "scores": {
+          "C1": 0.26,
+          "C2": 0.96,
+          "C3": 0.07
+        },
+        "candidates": [
+          {
+            "id": "C1",
+            "title": "Daily job skipped in spring",
+            "body": "At the spring DST transition, 02:30 does not exist and the daily job is skipped."
+          },
+          {
+            "id": "C2",
+            "title": "Autumn repeated hour duplicates a run",
+            "body": "A scheduled daily 01:30 run executes twice during the fall clock rollback."
+          },
+          {
+            "id": "C3",
+            "title": "UTC display",
+            "body": "Show UTC timestamps in the audit UI."
+          }
+        ],
+        "requires_investigation": true
+      },
+      "model": "jev-1.13.0",
+      "elapsed_seconds": 0.22629329096525908
+    }
+  },
+  "state_sha256": "891fe49de1f4739e0be357c93f5a54703a6ddfff945763b02f12ac60d8db0824",
+  "ranking_top1": true,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C2",
+    "C1",
+    "C3"
+  ],
+  "answers": {
+    "kind:kind": "chore",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "missing_evidence",
+    "evidence:evidence_0": "supported"
+  },
+  "correct": 5,
+  "questions": 6,
+  "report_contract_pass": true,
+  "quality_pass": false,
+  "elapsed_seconds": 22.954711250029504,
+  "claude_calls": 1,
+  "llm_tokens": {
+    "inputTokens": 2,
+    "outputTokens": 2148,
+    "cacheReadInputTokens": 2473,
+    "cacheCreationInputTokens": 5175,
+    "totalTokens": 9798
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 4078,
+    "output_tokens": 373
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": [
+    "failure:failure"
+  ]
+}

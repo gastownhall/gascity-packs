@@ -1045,8 +1045,9 @@ directly, except when diagnosing wrapper failures.
 
 ## Experimental Jev evidence assistance
 
-The default `build-basic` behavior is unchanged. Opt in with
-`--var jev_mode=assist`, optionally setting `jev_model` (default `jev-1.13.0`)
+`build-basic` defaults to `jev_mode=auto`, using Jev when configured and
+ordinary review when no key is present. Use `--var jev_mode=off` to disable
+it or `assist` to explicitly attempt it, optionally setting `jev_model` (default `jev-1.13.0`)
 and `jev_threshold` (default `0.85`). The test-evidence lane checks bounded,
 hash-bound evidence bundles with Jev and uses its suggestions to focus proof
 gathering and defect investigation. Existing review lanes and approval gates
@@ -1059,10 +1060,10 @@ are available; complete Gas City workflow benefit remains unmeasured. Generative
 
 ## Experimental Jev kind triage
 
-`github-issue-triage --var jev_kind_mode=assist` optionally uses Jev for the
+`github-issue-triage` defaults to `jev_kind_mode=auto`, using configured Jev for the
 primary kind decision (bug, feature, docs, chore), falling back to ordinary LLM
 triage on uncertainty or failure. Priority, complexity, reproduction, and
-approval decisions retain their existing policies. Default mode is `off`.
+approval decisions retain their existing policies. `off` disables kind assistance.
 The standalone helper also accepts PR snapshots for maintainer-city adapters;
 it never applies GitHub labels. See [the kind contract](assets/jev-kind.md)
 for label mappings and [backtesting](../specs/experiments/jev-evidence-routing/KIND-TRIAGE.md).
@@ -1078,9 +1079,22 @@ key, ordinary investigation continues without extra retrieval for Jev. Set
 
 PR kind in `github-pr-review`, finding categories/pair matching in starter
 synthesis (`jev_findings_mode`), and failure investigation during starter fixes
-(`jev_failure_mode`) are available but default to `off`. Issue kind and evidence
-assistance also remain opt-in. Their repeated decision/report experiments did
-not meet all quality and resource criteria for default promotion.
+(`jev_failure_mode`) now default to `auto`, as do issue kind and evidence
+assistance. This enables every implemented integration when the worker has a
+Jev key, at the user's explicit request to measure the full tradeoff. Earlier
+experiments found two paired classification regressions and downstream report
+overhead; enabling these paths is not a claim of quality equivalence. Set each
+mode to `off` for the baseline. See the [all-enabled experiment record](../specs/experiments/jev-all-enabled/README.md).
+
+| Entrypoint | Jev modes (all default to `auto`) |
+| --- | --- |
+| `build-basic`, `build-basic-review` | `jev_mode`, `jev_findings_mode`, `jev_failure_mode` |
+| `github-issue-triage` | `jev_kind_mode`, `jev_duplicates_mode` |
+| `github-pr-review` | `jev_kind_mode` |
+
+For a build baseline, pass all three: `--var jev_mode=off
+--var jev_findings_mode=off --var jev_failure_mode=off`. A configured `auto`
+mode still uses ordinary handling for uncertain or failed decisions.
 
 See [decision inputs and fallback policy](assets/jev-decisions.md) and
 [measured results, failures and limitations](../specs/experiments/jev-expansion/RESULTS.md).

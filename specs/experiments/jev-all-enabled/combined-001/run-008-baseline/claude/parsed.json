@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "kind:kind": "feature",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "same",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "missing_evidence",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "feature",
+      "quote": "An escalation names the bead it waits on."
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "missing_evidence",
+      "quote": "No Windows test execution or captured output was supplied; run the required Windows check."
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "same",
+      "quote": "The required Windows proof is absent; execute that check and retain its output."
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "missing_evidence",
+      "quote": "The required Windows proof is absent; execute that check and retain its output."
+    },
+    {
+      "id": "failure:failure",
+      "choice": "missing_evidence",
+      "quote": "No captured output is available."
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "missing_evidence",
+      "quote": "self.assertEqual(transform(1), 2)"
+    }
+  ]
+}

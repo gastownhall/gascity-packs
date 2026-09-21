@@ -4077,15 +4077,29 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("must not override", text)
         self.assertIn("gc.github-issue-triage-report.v1", text)
 
-    def test_github_issue_triage_kind_is_opt_in_and_separate_from_verdict(self) -> None:
+    def test_github_issue_triage_kind_is_auto_and_separate_from_verdict(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         data = resolve_formula(root, "github-issue-triage")
-        self.assertEqual(data["vars"]["jev_kind_mode"]["default"], "off")
+        self.assertEqual(data["vars"]["jev_kind_mode"]["default"], "auto")
         text = effective_formula_text(root, "github-issue-triage")
         self.assertIn("{{jev_kind_mode}}", text)
         self.assertIn("assets/jev-decisions.md", text)
         self.assertIn("priority", text)
         self.assertIn("gc.github-issue-triage-report.v1", text)
+
+    def test_all_jev_integrations_default_auto(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "build-basic": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "build-basic-review": ["jev_mode", "jev_findings_mode", "jev_failure_mode"],
+            "github-issue-triage": ["jev_kind_mode", "jev_duplicates_mode"],
+            "github-pr-review": ["jev_kind_mode"],
+        }
+        for name, variables in expected.items():
+            data = resolve_formula(root, name)
+            for variable in variables:
+                with self.subTest(formula=name, variable=variable):
+                    self.assertEqual(data["vars"][variable]["default"], "auto")
 
     def test_duplicate_ordering_is_auto_and_retains_investigation(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]

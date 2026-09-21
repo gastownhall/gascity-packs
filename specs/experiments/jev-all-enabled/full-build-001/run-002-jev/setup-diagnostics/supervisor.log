@@ -1,0 +1,439 @@
+gc supervisor: started: previous_exit=crash
+gc supervisor: workspace-service startup cleanup is not available on darwin; after a non-graceful supervisor exit, stale workspace-service processes may keep sockets bound. Registered workspace-service roots: /tmp/gcja-f_noko6f/w/city/.gc/services. Stop stale processes whose environment includes GC_SERVICE_STATE_ROOT under those roots, then restart those cities.
+gc supervisor: WARNING: API binding to ephemeral port 54033 -- set port = 8372 in ~/.gc/supervisor.toml
+Supervisor API listening on http://127.0.0.1:54033
+Dashboard:  http://127.0.0.1:54033/
+Supervisor started.
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': starting_bead_store took 1m12.98s
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': checking_bead_store_health took 3.77s
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': projecting_mcp took 5.66s
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': creating_session_provider took 2.5s
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': building_city_runtime took 2.78s
+2026/09/20 18:42:24 caching-store: priming ...
+2026/09/20 18:42:24 beads cache: stagger=16261ms agent=
+2026/09/20 18:42:25 caching-store: priming ...
+2026/09/20 18:42:25 beads cache: stagger=16261ms agent=
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': opening_controller_state took 2.3s
+2026/09/20 18:42:54 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=71ms cadence=default
+2026/09/20 18:42:55 beads cache: reconciled rig=jgfnr0j beads=0 adds=0 updates=0 removes=0 took=45ms cadence=default
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': running_pool_on_boot took 36.56s
+Launching city 'jev-gcja-f_noko6f-run-002-jev' (/tmp/gcja-f_noko6f/w/city)
+adoption barrier: listing running sessions partially failed: tmux server unreachable: no tmux server running
+gc supervisor: adoption barrier: 0 session(s) failed bead creation
+gc supervisor: startup phase=adoption-barrier elapsed=48ms
+gc supervisor: startup phase=config-reload elapsed=487ms
+2026/09/20 18:43:02 api: GET /v0/cities 200 18.029ms [memory] req_id=d86db96e97fb8da0
+2026/09/20 18:43:03 api: GET /v0/cities 200 241µs [memory] req_id=94ace2c5a42efad6
+2026/09/20 18:43:03 api: GET /v0/cities 200 238µs [memory] req_id=530e27b76ac223f0
+2026/09/20 18:43:03 api: GET /v0/cities 200 299µs [memory] req_id=ed9d69b24774813d
+2026/09/20 18:43:03 api: GET /v0/cities 200 163µs [memory] req_id=e49ff5a8d221508f
+2026/09/20 18:43:03 api: GET /v0/cities 200 129µs [memory] req_id=8543688905e4fff8
+2026/09/20 18:43:03 api: GET /v0/cities 200 291µs [memory] req_id=18b5a8a192dcd8d9
+2026/09/20 18:43:03 api: GET /v0/cities 200 79µs [memory] req_id=ba2cac03f56539c5
+2026/09/20 18:43:03 api: GET /v0/cities 200 186µs [memory] req_id=1153d5ee293bfba9
+2026/09/20 18:43:03 api: GET /v0/cities 200 103µs [memory] req_id=0d80235ab2012614
+2026/09/20 18:43:03 api: GET /v0/cities 200 325µs [memory] req_id=d86c2621d5da9c36
+2026/09/20 18:43:04 api: GET /v0/cities 200 218µs [memory] req_id=9db336afaad9393d
+2026/09/20 18:43:04 api: GET /v0/cities 200 107µs [memory] req_id=87eb66eefd7dbd93
+2026/09/20 18:43:04 api: GET /v0/cities 200 171µs [memory] req_id=ac5fe5181daf7aa1
+2026/09/20 18:43:04 api: GET /v0/cities 200 152µs [memory] req_id=c891a4fd6504cfed
+2026/09/20 18:43:04 api: GET /v0/cities 200 89µs [memory] req_id=2a18693e9f351462
+2026/09/20 18:43:04 api: GET /v0/cities 200 108µs [memory] req_id=e9674b104a8c6a2c
+2026/09/20 18:43:04 api: GET /v0/cities 200 168µs [memory] req_id=62bdba5cfc9a42cd
+2026/09/20 18:43:04 api: GET /v0/cities 200 272µs [memory] req_id=3089b88e4a47e586
+2026/09/20 18:43:04 api: GET /v0/cities 200 166µs [memory] req_id=e5b9872b575ee987
+gc supervisor: startup phase=startup-orders elapsed=2.047s
+gc supervisor: startup phase=startup-route-recovery elapsed=0s
+2026/09/20 18:43:05 api: GET /v0/cities 200 258µs [memory] req_id=245e59189de0e29c
+2026/09/20 18:43:05 api: GET /v0/cities 200 316µs [memory] req_id=bab939983ec690ce
+2026/09/20 18:43:05 api: GET /v0/cities 200 155µs [memory] req_id=f1717cd61f0cf70b
+2026/09/20 18:43:05 api: GET /v0/cities 200 238µs [memory] req_id=6f8b034cacf6f0ef
+2026/09/20 18:43:05 api: GET /v0/cities 200 172µs [memory] req_id=b0a02a5026630895
+2026/09/20 18:43:05 api: GET /v0/cities 200 4.388ms [memory] req_id=f23abab492153b30
+2026/09/20 18:43:05 api: GET /v0/cities 200 268µs [memory] req_id=c91e3b004b9acede
+2026/09/20 18:43:05 api: GET /v0/cities 200 97µs [memory] req_id=30e1d3de8def6844
+2026/09/20 18:43:05 api: GET /v0/cities 200 154µs [memory] req_id=193aa3c18ea4d89a
+2026/09/20 18:43:06 api: GET /v0/cities 200 141µs [memory] req_id=1ef3dc5672867e55
+trace: slow_storage_degraded: jev-gcja-f_noko6f-run-002-jev-55601-1789954943286689000-000001 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/20 18:43:06 api: GET /v0/cities 200 187µs [memory] req_id=011a656bed773d92
+2026/09/20 18:43:06 api: GET /v0/cities 200 850µs [memory] req_id=bbd912ed069d6eec
+2026/09/20 18:43:06 api: GET /v0/cities 200 207µs [memory] req_id=96ab8c8345ada553
+2026/09/20 18:43:06 api: GET /v0/cities 200 192µs [memory] req_id=863e30860b997df6
+2026/09/20 18:43:06 api: GET /v0/cities 200 98µs [memory] req_id=6db89b895c7539e3
+2026/09/20 18:43:06 api: GET /v0/cities 200 67µs [memory] req_id=bf2dc8d68961192d
+2026/09/20 18:43:06 api: GET /v0/cities 200 148µs [memory] req_id=a8239a8776711a1a
+2026/09/20 18:43:06 api: GET /v0/cities 200 64µs [memory] req_id=02c98399836927f6
+2026/09/20 18:43:07 api: GET /v0/cities 200 288µs [memory] req_id=92effd39f2bed785
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+2026/09/20 18:43:07 api: GET /v0/cities 200 127µs [memory] req_id=d87417141003c4b1
+assignedWorkBeads: 0 beads (rigStores=1)
+2026/09/20 18:43:07 api: GET /v0/cities 200 202µs [memory] req_id=9920494e529b5445
+2026/09/20 18:43:07 api: GET /v0/cities 200 115µs [memory] req_id=40fbd32f7fd1a2a3
+gc supervisor: startup phase=startup elapsed=2.417s
+gc supervisor: startup phase=convergence-startup elapsed=0s
+gc supervisor: startup ready elapsed=5.001s
+City started.
+2026/09/20 18:43:07 api: GET /v0/cities 200 105µs [memory] req_id=197ab121ba253dec
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/20 18:43:26 api: GET /health 200 59.746ms [memory] req_id=0cc05c4884d62daa
+2026/09/20 18:43:30 api: GET /v0/cities 200 19.007ms [memory] req_id=6a2d52c39d988640
+2026/09/20 18:43:33 api: GET /v0/cities 200 3.366ms [memory] req_id=791249b1274d4160
+2026/09/20 18:43:54 beads cache: reconciled rig=fi beads=0 adds=0 updates=0 removes=0 took=86ms cadence=default
+2026/09/20 18:43:55 beads cache: reconciled rig=jgfnr0j beads=0 adds=0 updates=0 removes=5 took=385ms cadence=default
+Config reloaded: 19 agents, 1 rigs (rev 776efd5382b8)
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/20 18:44:55 beads cache: reconciled rig=fi beads=2 adds=1 updates=0 removes=0 took=17ms cadence=default
+2026/09/20 18:44:56 beads cache: reconciled rig=jgfnr0j beads=8 adds=8 updates=0 removes=0 took=48ms cadence=default
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/20 18:45:48 packets.go:58 unexpected EOF
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/20 18:45:55 beads cache: reconciled rig=fi beads=2 adds=0 updates=0 removes=0 took=15ms cadence=default
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/20 18:45:56 beads cache: reconciled rig=jgfnr0j beads=4 adds=2 updates=0 removes=3 took=83ms cadence=default
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-f_noko6f-run-002-jev-55601-1789954943286689000-000011 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+[mysql] 2026/09/20 18:46:18 packets.go:58 unexpected EOF
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+trace: slow_storage_degraded: jev-gcja-f_noko6f-run-002-jev-55601-1789954943286689000-000013 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/20 18:46:56 beads cache: reconciled rig=fi beads=2 adds=0 updates=0 removes=0 took=589ms cadence=default
+2026/09/20 18:47:01 beads cache: reconciled rig=jgfnr0j beads=2 adds=1 updates=0 removes=0 took=1.707s cadence=default
+trace: slow_storage_degraded: jev-gcja-f_noko6f-run-002-jev-55601-1789954943286689000-000014 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+trace: slow_storage_degraded: jev-gcja-f_noko6f-run-002-jev-55601-1789954943286689000-000014 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/20 18:47:26 packets.go:58 read tcp 127.0.0.1:56124->127.0.0.1:41757: read: connection reset by peer
+trace: slow_storage_degraded: jev-gcja-f_noko6f-run-002-jev-55601-1789954943286689000-000015 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/20 18:47:37 gc: order exec dolt-health failed: exit status 1
+gc: order exec dolt-health failed: exit status 1
+2026/09/20 18:47:37 gc: order exec dolt-health output: {
+  "timestamp": "2026-09-21T01:47:37Z",
+  "server": {
+    "running": true,
+    "reachable": false,
+    "external": false,
+    "pid": 53699,
+    "port": 41757,
+    "latency_ms": 0
+  },
+  "databases": [
+
+  ],
+  "backups": {
+    "dolt_freshness": "",
+    "dolt_age_sec": 0,
+    "dolt_stale": false
+  },
+  "orphans": [
+    {"name": "fi", "size": "3.1 MB"}
+  ],
+  "processes": {
+    "zombie_count": 0,
+    "zombie_pids": []
+  }
+}
+Dolt server unreachable: running=true pid=53699 port=41757 latency_ms=0
+gc: order exec dolt-health output: {
+  "timestamp": "2026-09-21T01:47:37Z",
+  "server": {
+    "running": true,
+    "reachable": false,
+    "external": false,
+    "pid": 53699,
+    "port": 41757,
+    "latency_ms": 0
+  },
+  "databases": [
+
+  ],
+  "backups": {
+    "dolt_freshness": "",
+    "dolt_age_sec": 0,
+    "dolt_stale": false
+  },
+  "orphans": [
+    {"name": "fi", "size": "3.1 MB"}
+  ],
+  "processes": {
+    "zombie_count": 0,
+    "zombie_pids": []
+  }
+}
+Dolt server unreachable: running=true pid=53699 port=41757 latency_ms=0
+
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+2026/09/20 18:47:54 gc: order exec beads-health failed: context deadline exceeded
+gc: order exec beads-health failed: context deadline exceeded
+2026/09/20 18:48:01 beads cache: reconciled rig=fi beads=2 adds=0 updates=0 removes=0 took=2.998s cadence=default
+2026/09/20 18:48:02 beads cache: reconciled rig=jgfnr0j beads=4 adds=2 updates=1 removes=1 took=542ms cadence=default
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+assignedWorkBeads: 0 beads (rigStores=1)
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+[mysql] 2026/09/20 18:48:12 packets.go:58 unexpected EOF
+trace: slow_storage_degraded: jev-gcja-f_noko6f-run-002-jev-55601-1789954943286689000-000017 durable
+session reconciler: listing runtime sessions partially failed for dead cleanup; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/20 18:49:06 [circuit-breaker] 127.0.0.1:41757/fi: closed → open (tripped after 5 failures in 5.13s)
+2026/09/20 18:49:06 [circuit-breaker] 127.0.0.1:41757/hq: closed → open (tripped after 5 failures in 3.749s)
+2026/09/20 18:49:33 gc: order exec beads-health failed: context deadline exceeded
+gc: order exec beads-health failed: context deadline exceeded
+2026/09/20 18:49:37 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:49:38 gc: order beads-health: failed to label exec tracking bead jgfnr0j-wisp-rjb: setting order run outcome on "jgfnr0j-wisp-rjb": dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order beads-health: failed to label exec tracking bead jgfnr0j-wisp-rjb: setting order run outcome on "jgfnr0j-wisp-rjb": dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:49:41 gc: order beads-health: closing tracking bead jgfnr0j-wisp-rjb: closing order-tracking beads jgfnr0j-wisp-rjb: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order beads-health: closing tracking bead jgfnr0j-wisp-rjb: closing order-tracking beads jgfnr0j-wisp-rjb: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:49:45 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:49:45 beads cache: reconcile cache: native Dolt reconnect after transient read error (begin read tx: dial tcp 127.0.0.1:41757: connect: connection refused (circuit breaker tripped)): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:49:45 beads cache: cadence promoted small→medium driver=latency p95=42569ms window=10
+2026/09/20 18:49:50 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:49:50 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:49:56 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:50:02 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:50:08 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:50:18 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+2026/09/20 18:50:18 beads cache: reconcile cache: native Dolt reconnect after transient read error (begin read tx: dial tcp 127.0.0.1:41757: connect: connection refused (circuit breaker tripped)): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:50:18 beads cache: cadence promoted small→medium driver=latency p95=77570ms window=10
+2026/09/20 18:50:24 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+2026/09/20 18:50:24 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:50:29 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+2026/09/20 18:50:34 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+2026/09/20 18:50:35 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:50:35 gc: order dolt-health: failed to label exec tracking bead jgfnr0j-wisp-b4q: setting order run outcome on "jgfnr0j-wisp-b4q": dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dolt-health: failed to label exec tracking bead jgfnr0j-wisp-b4q: setting order run outcome on "jgfnr0j-wisp-b4q": dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:50:35 gc: order dolt-health: closing tracking bead jgfnr0j-wisp-b4q: closing order-tracking beads jgfnr0j-wisp-b4q: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dolt-health: closing tracking bead jgfnr0j-wisp-b4q: closing order-tracking beads jgfnr0j-wisp-b4q: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:50:41 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+2026/09/20 18:51:08 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:51:08 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s) (suppressed 3 duplicate logs)
+2026/09/20 18:51:41 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+2026/09/20 18:51:41 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s) (suppressed 3 duplicate logs)
+2026/09/20 18:51:51 gc: order dispatch: checking open work for jsonl-export: open-work gate for jsonl-export timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for jsonl-export: open-work gate for jsonl-export timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:52:02 gc: order dispatch: checking open work for nudge-mail-sweep: open-work gate for nudge-mail-sweep timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for nudge-mail-sweep: open-work gate for nudge-mail-sweep timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:52:09 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:52:09 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:52:12 gc: order dispatch: checking open work for nudge-on-route: open-work gate for nudge-on-route timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for nudge-on-route: open-work gate for nudge-on-route timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:52:20 gc: order dispatch: checking open work for order-tracking-sweep: open-work gate for order-tracking-sweep timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for order-tracking-sweep: open-work gate for order-tracking-sweep timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:52:28 gc: order dispatch: checking open work for orphan-sweep: open-work gate for orphan-sweep timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for orphan-sweep: open-work gate for orphan-sweep timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:52:31 gc: order exec gate-sweep failed: exit status 1
+gc: order exec gate-sweep failed: exit status 1
+2026/09/20 18:52:31 gc: order exec gate-sweep output: 2026/09/20 18:52:31 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order exec gate-sweep output: 2026/09/20 18:52:31 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+
+2026/09/20 18:52:31 gc: order gate-sweep: failed to label exec tracking bead jgfnr0j-wisp-069: setting order run outcome on "jgfnr0j-wisp-069": dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order gate-sweep: failed to label exec tracking bead jgfnr0j-wisp-069: setting order run outcome on "jgfnr0j-wisp-069": dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:52:32 gc: order gate-sweep: closing tracking bead jgfnr0j-wisp-069: closing order-tracking beads jgfnr0j-wisp-069: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order gate-sweep: closing tracking bead jgfnr0j-wisp-069: closing order-tracking beads jgfnr0j-wisp-069: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:52:36 gc: order dispatch: checking open work for prune-branches: open-work gate for prune-branches timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for prune-branches: open-work gate for prune-branches timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:52:41 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+2026/09/20 18:52:41 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:52:44 gc: order dispatch: checking open work for reaper: open-work gate for reaper timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for reaper: open-work gate for reaper timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:52:52 gc: order dispatch: checking open work for spawn-storm-detect: open-work gate for spawn-storm-detect timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for spawn-storm-detect: open-work gate for spawn-storm-detect timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:53:00 gc: order dispatch: checking open work for wisp-compact: open-work gate for wisp-compact timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for wisp-compact: open-work gate for wisp-compact timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:53:08 gc: order dispatch: checking open work for dolt-health: open-work gate for dolt-health timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for dolt-health: open-work gate for dolt-health timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:53:09 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:53:09 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for dolt-remotes-patrol: open-work gate for dolt-remotes-patrol timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+gc: order dispatch: checking open work for dolt-remotes-patrol: open-work gate for dolt-remotes-patrol timed out after 8s; skipping this order so later orders still dispatch (see #2893): open-work gate timed out
+2026/09/20 18:53:16 gc: order dispatch: checking open work for mol-dog-backup: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for mol-dog-backup: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for mol-dog-compactor: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for mol-dog-compactor: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for mol-dog-doctor: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for mol-dog-doctor: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for mol-dog-phantom-db: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for mol-dog-phantom-db: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for mol-dog-stale-db: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for mol-dog-stale-db: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for beads-health: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for beads-health: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for cascade-nudge-on-blocker-close: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for cascade-nudge-on-blocker-close: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for cross-rig-deps: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for cross-rig-deps: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 gc: order dispatch: checking open work for gate-sweep: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc: order dispatch: checking open work for gate-sweep: listing order-tracking beads: bd list: exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+bd query (wisps): exit status 1: Error: failed to open database: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+gc supervisor: route recovery (city): listing open work: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:16 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+gc supervisor: route recovery (rig fixture): listing open work: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: loading session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+session reconciler: listing runtime sessions partially failed for closed-bead reap; checking 0 visible session(s): tmux server unreachable: no tmux server running
+session reconciler: scanning process table for orphaned runtimes: tmux list running: tmux server unreachable: no tmux server running
+reapStaleSessionBeads: listing session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:34 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+collectAllOpenSessionInfos: PARTIAL — listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s) (cold-pool detection may undercount running sessions)
+2026/09/20 18:53:34 collectAssignedWorkBeads: List(in_progress): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:34 collectAssignedWorkBeads: List(open): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:34 collectAssignedWorkBeads: List(in_progress): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:34 collectAssignedWorkBeads: List(open): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:34 collectAssignedWorkBeads: Ready(): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:53:34 collectAssignedWorkBeads: Ready(): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+assignedWorkBeads: PARTIAL — store query failed, drain decisions suppressed
+assignedWorkBeads: 0 beads (rigStores=1)
+collectOpenUnassignedRoutedWork: city:city: List(open): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+collectOpenUnassignedRoutedWork: rig:fixture: List(open): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+buildDesiredState: default scale_check city templates=bd.dog,claude,core.control-dispatcher,fixture/claude,fixture/gc.design-author,fixture/gc.design-implementation-reviewer,fixture/gc.design-test-risk-reviewer,fixture/gc.feature-refiner,fixture/gc.gap-analyst,fixture/gc.implementation-reviewer,fixture/gc.implementation-worker,fixture/gc.issue-triager,fixture/gc.publisher,fixture/gc.quality-judge,fixture/gc.requirements-planner,fixture/gc.review-synthesizer,fixture/gc.run-operator,fixture/gc.task-decomposer: Ready(): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s) (counts above may be a partial of one demand source)
+buildDesiredState: default scale_check rig:fixture templates=fixture/claude,fixture/core.control-dispatcher,fixture/gc.design-author,fixture/gc.design-implementation-reviewer,fixture/gc.design-test-risk-reviewer,fixture/gc.feature-refiner,fixture/gc.gap-analyst,fixture/gc.implementation-reviewer,fixture/gc.implementation-worker,fixture/gc.issue-triager,fixture/gc.publisher,fixture/gc.quality-judge,fixture/gc.requirements-planner,fixture/gc.review-synthesizer,fixture/gc.run-operator,fixture/gc.task-decomposer: Ready(): dolt circuit breaker is open: server appears down, failing fast (cooldown 5s) (counts above may be a partial of one demand source)
+scaleCheck: PARTIAL — scale_check failed for bd.dog,claude,core.control-dispatcher,fixture/claude,fixture/core.control-dispatcher,fixture/gc.design-author,fixture/gc.design-implementation-reviewer,fixture/gc.design-test-risk-reviewer,fixture/gc.feature-refiner,fixture/gc.gap-analyst,fixture/gc.implementation-reviewer,fixture/gc.implementation-worker,fixture/gc.issue-triager,fixture/gc.publisher,fixture/gc.quality-judge,fixture/gc.requirements-planner,fixture/gc.review-synthesizer,fixture/gc.run-operator,fixture/gc.task-decomposer, retaining affected sessions
+buildDesiredState: listing session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: loading session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+session beads: listing existing: listing session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: loading session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+session reconciler: reaping stale extmsg bindings: list active bindings: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+session reconciler: reaping stale extmsg participants: list active group participants: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: loading session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: preparing waits: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: loading post-reconcile session snapshot: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: loading sessions for idle-claim nudge: listing session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+trace: slow_storage_degraded: jev-gcja-f_noko6f-run-002-jev-55601-1789954943286689000-000018 durable
+gc supervisor: pool death check skipped due to partial session listing: tmux server unreachable: no tmux server running
+2026/09/20 18:53:42 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+2026/09/20 18:53:42 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: managed dolt health preflight: waiting for provider lifecycle slot for "/tmp/gcja-f_noko6f/w/city": context deadline exceeded
+2026/09/20 18:54:05 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+2026/09/20 18:54:05 [circuit-breaker] 127.0.0.1:41757/fi: open → open (active probe failed, cooldown reset)
+gc supervisor: order tracking sweep watchdog: sweeping order-tracking city: listing order-tracking beads: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+sweeping order-tracking rig "fixture": listing order-tracking beads: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: nudge-mail-sweep watchdog: nudge-mail-sweep: listing stale nudge beads: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+2026/09/20 18:54:09 beads cache: reconcile cache: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+Unregistered city 'jev-gcja-f_noko6f-run-002-jev', stopping...
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev' did not exit within 5s after cancel; forcing shutdown
+gc supervisor: shutdown session listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+2026/09/20 18:54:21 [circuit-breaker] 127.0.0.1:41757/hq: open → open (active probe failed, cooldown reset)
+gc stop: marking sessions: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc lifecycle: session bead lookup degraded to legacy session-name resolution: listing session beads: listing session beads by type: dolt circuit breaker is open: server appears down, failing fast (cooldown 5s)
+gc supervisor: force shutdown late async-start listing partially failed; stopping 0 visible agent(s): tmux server unreachable: no tmux server running
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev' did not exit within 25s after forced shutdown
+2026/09/20 18:54:54 gc: order dispatch: checking open work for jsonl-export: open-work gate for jsonl-export aborted: context canceled
+gc: order dispatch: checking open work for jsonl-export: open-work gate for jsonl-export aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for nudge-mail-sweep: open-work gate for nudge-mail-sweep aborted: context canceled
+gc: order dispatch: checking open work for nudge-mail-sweep: open-work gate for nudge-mail-sweep aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for nudge-on-route: open-work gate for nudge-on-route aborted: context canceled
+gc: order dispatch: checking open work for nudge-on-route: open-work gate for nudge-on-route aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for order-tracking-sweep: open-work gate for order-tracking-sweep aborted: context canceled
+gc: order dispatch: checking open work for order-tracking-sweep: open-work gate for order-tracking-sweep aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for orphan-sweep: open-work gate for orphan-sweep aborted: context canceled
+gc: order dispatch: checking open work for orphan-sweep: open-work gate for orphan-sweep aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for prune-branches: open-work gate for prune-branches aborted: context canceled
+gc: order dispatch: checking open work for prune-branches: open-work gate for prune-branches aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for reaper: open-work gate for reaper aborted: context canceled
+gc: order dispatch: checking open work for reaper: open-work gate for reaper aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for spawn-storm-detect: open-work gate for spawn-storm-detect aborted: context canceled
+gc: order dispatch: checking open work for spawn-storm-detect: open-work gate for spawn-storm-detect aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for wisp-compact: open-work gate for wisp-compact aborted: context canceled
+gc: order dispatch: checking open work for wisp-compact: open-work gate for wisp-compact aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for dolt-health: open-work gate for dolt-health aborted: context canceled
+gc: order dispatch: checking open work for dolt-health: open-work gate for dolt-health aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for dolt-remotes-patrol: open-work gate for dolt-remotes-patrol aborted: context canceled
+gc: order dispatch: checking open work for dolt-remotes-patrol: open-work gate for dolt-remotes-patrol aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for mol-dog-backup: open-work gate for mol-dog-backup aborted: context canceled
+gc: order dispatch: checking open work for mol-dog-backup: open-work gate for mol-dog-backup aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for mol-dog-compactor: open-work gate for mol-dog-compactor aborted: context canceled
+gc: order dispatch: checking open work for mol-dog-compactor: open-work gate for mol-dog-compactor aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for mol-dog-doctor: open-work gate for mol-dog-doctor aborted: context canceled
+gc: order dispatch: checking open work for mol-dog-doctor: open-work gate for mol-dog-doctor aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for mol-dog-phantom-db: open-work gate for mol-dog-phantom-db aborted: context canceled
+gc: order dispatch: checking open work for mol-dog-phantom-db: open-work gate for mol-dog-phantom-db aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for mol-dog-stale-db: open-work gate for mol-dog-stale-db aborted: context canceled
+gc: order dispatch: checking open work for mol-dog-stale-db: open-work gate for mol-dog-stale-db aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for beads-health: open-work gate for beads-health aborted: context canceled
+gc: order dispatch: checking open work for beads-health: open-work gate for beads-health aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for cascade-nudge-on-blocker-close: open-work gate for cascade-nudge-on-blocker-close aborted: context canceled
+gc: order dispatch: checking open work for cascade-nudge-on-blocker-close: open-work gate for cascade-nudge-on-blocker-close aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for cross-rig-deps: open-work gate for cross-rig-deps aborted: context canceled
+gc: order dispatch: checking open work for cross-rig-deps: open-work gate for cross-rig-deps aborted: context canceled
+2026/09/20 18:54:54 gc: order dispatch: checking open work for gate-sweep: open-work gate for gate-sweep aborted: context canceled
+gc: order dispatch: checking open work for gate-sweep: open-work gate for gate-sweep aborted: context canceled
+gc supervisor: shutdown requested: source=socket_stop signal="" client="" mode=destructive
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': bead store: exec beads stop: context deadline exceeded
+gc supervisor: city 'jev-gcja-f_noko6f-run-002-jev': no pending request_id for city.unregister completion event (path=/tmp/gcja-f_noko6f/w/city)
+Supervisor stopped.

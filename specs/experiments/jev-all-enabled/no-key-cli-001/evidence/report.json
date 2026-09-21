@@ -1,0 +1,13 @@
+{
+  "schema": "gc.evidence-assessment.v1",
+  "advisory": true,
+  "started_at": "2026-09-21T01:17:55.072127+00:00",
+  "question_version": "gc.evidence-question.v2",
+  "requested_model": "jev-1.13.0",
+  "threshold": 0.85,
+  "mode": "auto",
+  "status": "skipped",
+  "route": "llm_review",
+  "reason": "missing_credential",
+  "elapsed_seconds": 0.0003619999624788761
+}

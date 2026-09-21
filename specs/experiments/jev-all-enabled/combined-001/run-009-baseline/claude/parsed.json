@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "kind:kind": "chore",
+    "findings:finding_0": "residual_risk",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "required_fix",
+    "failure:failure": "environment",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "chore",
+      "quote": "Size the budget for the runner the job actually gets"
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "residual_risk",
+      "quote": "Optional future optimization: cache parsing results"
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "different",
+      "quote": "where the accepted export contract requires all rows"
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "required_fix",
+      "quote": "The implementation hardcodes an empty result"
+    },
+    {
+      "id": "failure:failure",
+      "choice": "environment",
+      "quote": "The executable bit is absent on the external fixture script"
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "missing_evidence",
+      "quote": "def test_behavior(self):\n        transform(\"abc\")"
+    }
+  ]
+}

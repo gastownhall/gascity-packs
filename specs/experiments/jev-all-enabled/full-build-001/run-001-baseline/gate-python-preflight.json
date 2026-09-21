@@ -1,0 +1,13 @@
+{
+  "status": "passed",
+  "policy": "Gas City v1.4.2 restricted gate PATH replay; real SDK boundary verified separately",
+  "command": [
+    "python3",
+    "-c",
+    "import json,sys,yaml,jsonschema,pytest; print(json.dumps({\"executable\":sys.executable,\"prefix\":sys.prefix,\"yaml\":yaml.__file__,\"jsonschema\":jsonschema.__file__,\"pytest\":pytest.__file__}))"
+  ],
+  "path": "/private/tmp/gcja-fn64i14s/w/gc-home/bin:/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+  "exit": 0,
+  "stdout": "{\"executable\": \"/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python\", \"prefix\": \"/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv\", \"yaml\": \"/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/lib/python3.14/site-packages/yaml/__init__.py\", \"jsonschema\": \"/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/lib/python3.14/site-packages/jsonschema/__init__.py\", \"pytest\": \"/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/lib/python3.14/site-packages/pytest/__init__.py\"}\n",
+  "stderr": ""
+}

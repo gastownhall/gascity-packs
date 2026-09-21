@@ -1,0 +1,269 @@
+{
+  "case_id": "packet-04",
+  "arm": "jev",
+  "status": "completed",
+  "started_at": "2026-09-21T01:25:12.272672+00:00",
+  "expected": {
+    "kind:kind": "feature",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "same",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "missing_evidence",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "helpers": {
+    "kind": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "kind",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:25:12.847032+00:00",
+      "route": "llm",
+      "usage": {
+        "input_tokens": 1986,
+        "output_tokens": 54
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "be7d9c0a8499b3a4f95b2bbea96b06f54eb1f3bdabe7dae4b8d812ecff1b8533",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "feature",
+            "confidence": 0.6,
+            "probabilities": {
+              "bug": 0.32,
+              "docs": 0.0,
+              "feature": 0.68,
+              "chore": 0.0,
+              "unclear": 0.0
+            }
+          }
+        },
+        "fallback_questions": [
+          "kind"
+        ],
+        "route": "llm"
+      },
+      "elapsed_seconds": 0.24955108296126127
+    },
+    "findings": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "findings",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:25:13.866464+00:00",
+      "route": "llm",
+      "usage": {
+        "input_tokens": 898,
+        "output_tokens": 155
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "a1b178d2c7315fd91ded4968ad79f8dca8a7be669d19f14ba4324010c590b2cf",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "finding_0": {
+            "type": "choice",
+            "choice": "missing_evidence",
+            "confidence": 0.99,
+            "probabilities": {
+              "missing_evidence": 0.99,
+              "unclear": 0.0,
+              "residual_risk": 0.0,
+              "required_fix": 0.01
+            }
+          },
+          "pair_0_1": {
+            "type": "choice",
+            "choice": "same",
+            "confidence": 0.9,
+            "probabilities": {
+              "same": 0.93,
+              "unclear": 0.0,
+              "different": 0.07
+            }
+          },
+          "finding_1": {
+            "type": "choice",
+            "choice": "missing_evidence",
+            "confidence": 0.99,
+            "probabilities": {
+              "missing_evidence": 0.99,
+              "unclear": 0.0,
+              "residual_risk": 0.0,
+              "required_fix": 0.01
+            }
+          }
+        },
+        "fallback_questions": [
+          "pair_0_1"
+        ],
+        "route": "llm",
+        "findings": [
+          {
+            "id": "F1",
+            "text": "No Windows test execution or captured output was supplied; run the required Windows check.",
+            "source": "lane-0/review.md:10"
+          },
+          {
+            "id": "F2",
+            "text": "The required Windows proof is absent; execute that check and retain its output.",
+            "source": "lane-1/review.md:11"
+          }
+        ],
+        "possible_duplicate_pairs": []
+      },
+      "elapsed_seconds": 0.41025179205462337
+    },
+    "failure": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "failure",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:25:15.188242+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 529,
+        "output_tokens": 52
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "9b8378d4a4635e471041056c58234d5ac6e5960019e7e965bd4fe7939c1ac078",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "failure": {
+            "type": "choice",
+            "choice": "missing_evidence",
+            "confidence": 1.0,
+            "probabilities": {
+              "unclear": 0.0,
+              "missing_evidence": 1.0,
+              "environment": 0.0,
+              "product": 0.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.3472753749229014
+    },
+    "evidence": {
+      "schema": "gc.evidence-assessment.v1",
+      "advisory": true,
+      "started_at": "2026-09-21T01:25:16.228924+00:00",
+      "question_version": "gc.evidence-question.v2",
+      "requested_model": "jev-1.13.0",
+      "threshold": 0.85,
+      "mode": "auto",
+      "state_sha256": "92246adaed7d354167924346b93f45d4bc1eb420bd3c9489a7c989b1f2b2dd77",
+      "decisions": [
+        {
+          "id": "AC-1",
+          "type": "choice",
+          "choice": "missing_evidence",
+          "confidence": 0.99,
+          "probabilities": {
+            "missing_evidence": 0.99,
+            "contradicted": 0.01,
+            "unclear": 0.0,
+            "supported": 0.0
+          },
+          "route": "run_proof"
+        }
+      ],
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1038,
+        "output_tokens": 59
+      },
+      "elapsed_seconds": 0.4925726670771837
+    },
+    "ranking": {
+      "schema": "gc.duplicate-ranking.v1",
+      "question_version": "gc.duplicate-ranking.v1",
+      "requested_model": "jev-1.13.0",
+      "mode": "auto",
+      "route": "investigate_ranked_candidates",
+      "usage": {
+        "input_tokens": 603,
+        "output_tokens": 40
+      },
+      "started_at": "2026-09-21T01:25:17.483098+00:00",
+      "state_sha256": "f7d07afe02177a45399f7728ff86ba5eec69c216bf2ef7ed850ff79a7241379e",
+      "status": "completed",
+      "decision": {
+        "ranked_candidate_ids": [
+          "C2",
+          "C1"
+        ],
+        "scores": {
+          "C1": 0.14,
+          "C2": 0.97
+        },
+        "candidates": [
+          {
+            "id": "C1",
+            "title": "Retries ignore 503 backoff",
+            "body": "503 responses retry immediately; the client has a different 503 retry implementation."
+          },
+          {
+            "id": "C2",
+            "title": "Honor Retry-After on rate limits",
+            "body": "For 429, the HTTP client ignores the Retry-After header and retries at once."
+          }
+        ],
+        "requires_investigation": true
+      },
+      "model": "jev-1.13.0",
+      "elapsed_seconds": 0.21319862501695752
+    }
+  },
+  "state_sha256": "b66ac7e1f580df0ba42f905500d62e2af29ba9dcb1c40f5beeae6bf13ec0dd86",
+  "ranking_top1": true,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C2",
+    "C1"
+  ],
+  "answers": {
+    "kind:kind": "feature",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "same",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "missing_evidence",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "correct": 6,
+  "questions": 6,
+  "report_contract_pass": true,
+  "quality_pass": true,
+  "elapsed_seconds": 32.660411916906014,
+  "claude_calls": 1,
+  "llm_tokens": {
+    "inputTokens": 2,
+    "outputTokens": 1928,
+    "cacheReadInputTokens": 2473,
+    "cacheCreationInputTokens": 6822,
+    "totalTokens": 11225
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 5054,
+    "output_tokens": 360
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": [
+    "findings:pair_0_1",
+    "kind:kind"
+  ]
+}

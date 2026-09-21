@@ -1,0 +1,5 @@
+{
+  "command": "pytest test_parse.py",
+  "output": "AssertionError: parse(\"bad\") returned success instead of InvalidInput",
+  "context": "Executed test checks the documented malformed-input contract."
+}

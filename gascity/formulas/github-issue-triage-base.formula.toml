@@ -40,7 +40,7 @@ default = ""
 
 [vars.jev_kind_mode]
 description = "Kind classifier: off, auto (when configured), or assist. Kind only; priority and complexity retain the existing policy."
-default = "off"
+default = "auto"
 
 [vars.jev_kind_model]
 description = "Pinned Jev model for kind classification."

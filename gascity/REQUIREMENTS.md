@@ -870,7 +870,9 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 
 ## Experimental evidence assistance
 
-`build-basic` MAY opt into Jev with `jev_mode=assist`; the default MUST be `off`.
+`build-basic` MUST default to `jev_mode=auto`, using Jev when configured.
+Without access it MUST record skipped assistance and perform ordinary review.
+`off` disables assistance; `assist` explicitly attempts it.
 The helper MUST bind source/proof files to hashes and the implementation HEAD,
 record inputs/responses/usage/timing, and route uncertainty to ordinary review.
 Jev MUST NOT independently approve a review, publish work, execute model-selected
@@ -907,5 +909,7 @@ configured, using the ranking-only Noul helper and deterministic source-copying
 renderer. Without access it MUST preserve ordinary investigation. Ranking MUST
 retain every candidate and MUST NOT supply a duplicate verdict. Low similarity
 or ambiguous ordering MUST NOT be interpreted as proof that no duplicate exists.
-Kind, finding categories/pairs and failure classification remain opt-in after
-the expanded quality/resource evaluation; evidence assistance remains opt-in.
+Kind, finding categories/pairs, failure classification and evidence assistance
+MUST also default to auto when configured, as explicitly requested after the
+expanded evaluation. Known quality regressions and report overhead MUST remain
+documented; this default change does not establish quality equivalence.

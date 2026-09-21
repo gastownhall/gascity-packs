@@ -1,0 +1,415 @@
+[
+  {
+    "id": "jgfnr0j-wisp-tjj",
+    "title": "order:cross-rig-deps",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:43:18Z",
+    "labels": [
+      "exec",
+      "order-run:cross-rig-deps",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-b7o",
+    "title": "order:beads-health",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:43:17Z",
+    "labels": [
+      "exec",
+      "order-run:beads-health",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-2c7",
+    "title": "order:mol-dog-doctor",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:43:16Z",
+    "labels": [
+      "exec",
+      "order-run:mol-dog-doctor",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-2s1",
+    "title": "order:dolt-health",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:43:05Z",
+    "labels": [
+      "exec",
+      "order-run:dolt-health",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-k7p",
+    "title": "order:mol-dog-compactor",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:43:05Z",
+    "labels": [
+      "exec",
+      "order-run:mol-dog-compactor",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "fi-8qq",
+    "title": "Implement slugify and make pytest pass",
+    "status": "open",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:43:58Z",
+    "description": "The repository contains a deliberately failing Python fixture. Implement\n`slugify` in `slugger.py` so the existing tests pass.\n\nExpected behavior:\n- Lowercase ASCII alphanumeric words.\n- Treat any run of non-alphanumeric characters as a separator.\n- Join non-empty groups with single hyphens.\n- Return an empty string when the input contains no alphanumeric characters.\n\nConstraints:\n- Do not change tests/test_slugger.py.\n- Keep the implementation small and deterministic.\n- Run `python3 -m pytest -q` from the repository root and record that proof."
+  },
+  {
+    "id": "fi-7a3",
+    "title": "input convoy for fi-8qq",
+    "status": "open",
+    "issue_type": "convoy",
+    "created_at": "2026-09-21T01:44:30Z",
+    "metadata": {
+      "gc.synthetic": "true"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-7a3",
+        "depends_on_id": "fi-8qq",
+        "type": "tracks"
+      }
+    ]
+  },
+  {
+    "id": "jgfnr0j-wisp-d31",
+    "title": "order:order-tracking-sweep",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:44:53Z",
+    "labels": [
+      "exec",
+      "order-run:order-tracking-sweep",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-i6e",
+    "title": "order:orphan-sweep",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:44:53Z",
+    "labels": [
+      "exec",
+      "order-run:orphan-sweep",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-oss",
+    "title": "order:nudge-mail-sweep",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:44:53Z",
+    "labels": [
+      "exec",
+      "order-run:nudge-mail-sweep",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-1uv",
+    "title": "order:dolt-health",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:44:45Z",
+    "labels": [
+      "exec",
+      "order-run:dolt-health",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-2on",
+    "title": "order:jsonl-export",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:44:45Z",
+    "labels": [
+      "exec",
+      "order-run:jsonl-export",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-hba",
+    "title": "order:beads-health",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:44:45Z",
+    "labels": [
+      "exec",
+      "order-run:beads-health",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-w0d",
+    "title": "order:gate-sweep",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:44:45Z",
+    "labels": [
+      "exec",
+      "order-run:gate-sweep",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-8om",
+    "title": "order:prune-branches",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:44:53Z",
+    "labels": [
+      "exec",
+      "order-run:prune-branches",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-tcc",
+    "title": "order:wisp-compact",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:45:10Z",
+    "labels": [
+      "exec",
+      "order-run:wisp-compact",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-oui",
+    "title": "order:spawn-storm-detect",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:45:07Z",
+    "labels": [
+      "exec",
+      "order-run:spawn-storm-detect",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-akh",
+    "title": "order:reaper",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:45:06Z",
+    "labels": [
+      "exec",
+      "order-run:reaper",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-9hx",
+    "title": "order:dolt-health",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:45:42Z",
+    "labels": [
+      "exec",
+      "order-run:dolt-health",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-fga",
+    "title": "order:order-tracking-sweep",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:45:55Z",
+    "labels": [
+      "exec",
+      "order-run:order-tracking-sweep",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-62g",
+    "title": "order:dolt-health",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:46:23Z",
+    "labels": [
+      "exec-failed",
+      "order-run:dolt-health",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-az1",
+    "title": "order:beads-health",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:46:54Z",
+    "labels": [
+      "exec-failed",
+      "order-run:beads-health",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-dyw",
+    "title": "order:gate-sweep",
+    "status": "closed",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:46:56Z",
+    "labels": [
+      "exec",
+      "order-run:gate-sweep",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-b4q",
+    "title": "order:dolt-health",
+    "status": "open",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:47:53Z",
+    "labels": [
+      "order-run:dolt-health",
+      "order-tracking"
+    ],
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-caq",
+    "title": "order:order-tracking-sweep",
+    "status": "open",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:47:35Z",
+    "labels": [
+      "exec",
+      "order-run:order-tracking-sweep",
+      "order-tracking"
+    ],
+    "metadata": {
+      "close_reason": "order dispatch completed: tracking bead lifecycle finished"
+    },
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-069",
+    "title": "order:gate-sweep",
+    "status": "open",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:48:29Z",
+    "labels": [
+      "order-run:gate-sweep",
+      "order-tracking"
+    ],
+    "no_history": true
+  },
+  {
+    "id": "jgfnr0j-wisp-rjb",
+    "title": "order:beads-health",
+    "status": "open",
+    "issue_type": "task",
+    "created_at": "2026-09-21T01:48:27Z",
+    "labels": [
+      "order-run:beads-health",
+      "order-tracking"
+    ],
+    "no_history": true
+  }
+]

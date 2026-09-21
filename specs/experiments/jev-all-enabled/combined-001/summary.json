@@ -1,0 +1,119 @@
+{
+  "planned_attempts": 32,
+  "finished_attempts": 32,
+  "arms": {
+    "baseline": {
+      "elapsed_seconds": 642.8459919155575,
+      "claude_calls": 32,
+      "correct": 107,
+      "questions": 108,
+      "report_contract_pass": 16,
+      "quality_pass": 15,
+      "source_preserved": 16,
+      "llm_usage_unknown": 0,
+      "jev_usage_unknown": 0,
+      "attempts": 16,
+      "failed": 0,
+      "ranking_top1_correct": 12,
+      "ranking_positive_cases": 12,
+      "llm_tokens": {
+        "inputTokens": 64,
+        "outputTokens": 44092,
+        "cacheReadInputTokens": 77194,
+        "cacheCreationInputTokens": 133364,
+        "totalTokens": 254714
+      },
+      "jev_tokens": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "features": {
+        "kind": {
+          "correct": 16,
+          "questions": 16
+        },
+        "findings": {
+          "correct": 59,
+          "questions": 60
+        },
+        "failure": {
+          "correct": 16,
+          "questions": 16
+        },
+        "evidence": {
+          "correct": 16,
+          "questions": 16
+        }
+      }
+    },
+    "jev": {
+      "elapsed_seconds": 404.5675536263734,
+      "claude_calls": 16,
+      "correct": 106,
+      "questions": 108,
+      "report_contract_pass": 16,
+      "quality_pass": 14,
+      "source_preserved": 16,
+      "llm_usage_unknown": 0,
+      "jev_usage_unknown": 0,
+      "attempts": 16,
+      "failed": 0,
+      "ranking_top1_correct": 12,
+      "ranking_positive_cases": 12,
+      "llm_tokens": {
+        "inputTokens": 32,
+        "outputTokens": 31033,
+        "cacheReadInputTokens": 39568,
+        "cacheCreationInputTokens": 97894,
+        "totalTokens": 168527
+      },
+      "jev_tokens": {
+        "input_tokens": 74702,
+        "output_tokens": 6402
+      },
+      "features": {
+        "kind": {
+          "correct": 16,
+          "questions": 16
+        },
+        "findings": {
+          "correct": 59,
+          "questions": 60
+        },
+        "failure": {
+          "correct": 15,
+          "questions": 16
+        },
+        "evidence": {
+          "correct": 16,
+          "questions": 16
+        }
+      }
+    }
+  },
+  "mismatches": [
+    {
+      "case_id": "packet-06",
+      "repetition": 1,
+      "question": "failure:failure",
+      "expected": "environment",
+      "baseline": "environment",
+      "jev": "missing_evidence",
+      "regression": true,
+      "improvement": false
+    },
+    {
+      "case_id": "packet-08",
+      "repetition": 1,
+      "question": "findings:finding_0",
+      "expected": "unclear",
+      "baseline": "missing_evidence",
+      "jev": "missing_evidence",
+      "regression": false,
+      "improvement": false
+    }
+  ],
+  "regressions": 1,
+  "improvements": 0,
+  "scope": "Combined independent work packets with generated reports, not a full runtime workflow"
+}

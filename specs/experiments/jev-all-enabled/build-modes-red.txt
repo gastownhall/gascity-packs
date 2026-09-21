@@ -1,0 +1,14 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_build_arms_explicitly_set_every_applicable_jev_mode ___________
+
+    def test_build_arms_explicitly_set_every_applicable_jev_mode():
+        for arm, mode in [('baseline', 'off'), ('jev', 'auto')]:
+>           variables = build.jev_variables(arm, 'jev-1.13.0')
+                        ^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'jev_build_ab' has no attribute 'jev_variables'
+
+gascity/tests/test_jev_build_ab.py:17: AttributeError
+=========================== short test summary info ============================
+FAILED gascity/tests/test_jev_build_ab.py::test_build_arms_explicitly_set_every_applicable_jev_mode
+1 failed, 12 deselected in 0.17s

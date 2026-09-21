@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-21T01:32:03.535017+00:00",
+  "status": "passed",
+  "attempts": 32,
+  "claude_calls": 48,
+  "jev_calls": 80,
+  "operational_failures": 0,
+  "raw_usage_reconciled": true,
+  "paired_source_equal": true,
+  "accepted_answers_preserved": true,
+  "credential_absent": true,
+  "files_scanned": 1196
+}

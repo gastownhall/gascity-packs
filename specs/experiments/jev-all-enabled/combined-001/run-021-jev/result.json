@@ -1,0 +1,309 @@
+{
+  "case_id": "packet-03",
+  "arm": "jev",
+  "status": "completed",
+  "started_at": "2026-09-21T01:23:15.329421+00:00",
+  "expected": {
+    "kind:kind": "feature",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:pair_0_2": "same",
+    "findings:finding_1": "missing_evidence",
+    "findings:pair_1_2": "different",
+    "findings:finding_2": "required_fix",
+    "failure:failure": "product",
+    "evidence:evidence_0": "contradicted"
+  },
+  "helpers": {
+    "kind": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "kind",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:23:15.974706+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 1782,
+        "output_tokens": 54
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "7061e78030da80b401e063099fc4cd57a932115e750ceb32c98c6f8b77270554",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "feature",
+            "confidence": 0.98,
+            "probabilities": {
+              "chore": 0.01,
+              "docs": 0.0,
+              "feature": 0.98,
+              "bug": 0.01,
+              "unclear": 0.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.21397470799274743
+    },
+    "findings": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "findings",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:23:16.709715+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 1443,
+        "output_tokens": 287
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "39b0213b9c18f7e11ac50b8316ccaf1a61f75311e56d99a1953ef4d5e37c5a92",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "finding_0": {
+            "type": "choice",
+            "choice": "required_fix",
+            "confidence": 0.99,
+            "probabilities": {
+              "missing_evidence": 0.01,
+              "unclear": 0.0,
+              "residual_risk": 0.0,
+              "required_fix": 0.99
+            }
+          },
+          "pair_0_1": {
+            "type": "choice",
+            "choice": "different",
+            "confidence": 1.0,
+            "probabilities": {
+              "same": 0.0,
+              "unclear": 0.0,
+              "different": 1.0
+            }
+          },
+          "pair_0_2": {
+            "type": "choice",
+            "choice": "same",
+            "confidence": 0.99,
+            "probabilities": {
+              "same": 1.0,
+              "unclear": 0.0,
+              "different": 0.0
+            }
+          },
+          "finding_1": {
+            "type": "choice",
+            "choice": "missing_evidence",
+            "confidence": 1.0,
+            "probabilities": {
+              "missing_evidence": 1.0,
+              "unclear": 0.0,
+              "residual_risk": 0.0,
+              "required_fix": 0.0
+            }
+          },
+          "pair_1_2": {
+            "type": "choice",
+            "choice": "different",
+            "confidence": 0.99,
+            "probabilities": {
+              "same": 0.01,
+              "unclear": 0.0,
+              "different": 0.99
+            }
+          },
+          "finding_2": {
+            "type": "choice",
+            "choice": "required_fix",
+            "confidence": 0.99,
+            "probabilities": {
+              "missing_evidence": 0.0,
+              "unclear": 0.0,
+              "residual_risk": 0.0,
+              "required_fix": 1.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions",
+        "findings": [
+          {
+            "id": "F1",
+            "text": "Accepted requirement: retain audit history. archive() deletes the prior record; preserve it instead.",
+            "source": "lane-0/review.md:10"
+          },
+          {
+            "id": "F2",
+            "text": "Run the missing concurrency proof before claiming the new archive operation is race-free.",
+            "source": "lane-1/review.md:11"
+          },
+          {
+            "id": "F3",
+            "text": "The earlier record is deleted during archiving despite required audit retention; preserve the record.",
+            "source": "lane-2/review.md:12"
+          }
+        ],
+        "possible_duplicate_pairs": [
+          [
+            "F1",
+            "F3"
+          ]
+        ]
+      },
+      "elapsed_seconds": 0.21941008302383125
+    },
+    "failure": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "failure",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:23:17.516650+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 535,
+        "output_tokens": 49
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "17ec430e199b5fe3919616bb2dd3ad7130482579606d6bdeaa05db779174710b",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "failure": {
+            "type": "choice",
+            "choice": "product",
+            "confidence": 1.0,
+            "probabilities": {
+              "environment": 0.0,
+              "product": 1.0,
+              "missing_evidence": 0.0,
+              "unclear": 0.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.2586171659640968
+    },
+    "evidence": {
+      "schema": "gc.evidence-assessment.v1",
+      "advisory": true,
+      "started_at": "2026-09-21T01:23:18.273183+00:00",
+      "question_version": "gc.evidence-question.v2",
+      "requested_model": "jev-1.13.0",
+      "threshold": 0.85,
+      "mode": "auto",
+      "state_sha256": "60286d129330b00eb8a3c24fb51ee11d1f3b49eda06dbd336eb91bfaea56b73c",
+      "decisions": [
+        {
+          "id": "AC-1",
+          "type": "choice",
+          "choice": "contradicted",
+          "confidence": 1.0,
+          "probabilities": {
+            "supported": 0.0,
+            "missing_evidence": 0.0,
+            "contradicted": 1.0,
+            "unclear": 0.0
+          },
+          "route": "inspect_implementation"
+        }
+      ],
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1192,
+        "output_tokens": 59
+      },
+      "elapsed_seconds": 0.5153687079437077
+    },
+    "ranking": {
+      "schema": "gc.duplicate-ranking.v1",
+      "question_version": "gc.duplicate-ranking.v1",
+      "requested_model": "jev-1.13.0",
+      "mode": "auto",
+      "route": "investigate_ranked_candidates",
+      "usage": {
+        "input_tokens": 553,
+        "output_tokens": 40
+      },
+      "started_at": "2026-09-21T01:23:19.300287+00:00",
+      "state_sha256": "1553fcbd127f3c1ffe6f56fc7a75320e44a913ccd68e0eb069d22618a8dfe38f",
+      "status": "completed",
+      "decision": {
+        "ranked_candidate_ids": [
+          "C1",
+          "C2"
+        ],
+        "scores": {
+          "C1": 0.04,
+          "C2": 0.02
+        },
+        "candidates": [
+          {
+            "id": "C1",
+            "title": "Mouse gesture",
+            "body": "Support mouse gestures for closing windows."
+          },
+          {
+            "id": "C2",
+            "title": "Server health",
+            "body": "Expose an HTTP health endpoint."
+          }
+        ],
+        "requires_investigation": true
+      },
+      "model": "jev-1.13.0",
+      "elapsed_seconds": 0.24878812488168478
+    }
+  },
+  "state_sha256": "a138c08831d89048d4d3cf5599a41b765d2cd3ed20396d36c56346c8692ec1f1",
+  "ranking_top1": null,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C1",
+    "C2"
+  ],
+  "answers": {
+    "kind:kind": "feature",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:pair_0_2": "same",
+    "findings:finding_1": "missing_evidence",
+    "findings:pair_1_2": "different",
+    "findings:finding_2": "required_fix",
+    "failure:failure": "product",
+    "evidence:evidence_0": "contradicted"
+  },
+  "correct": 9,
+  "questions": 9,
+  "report_contract_pass": true,
+  "quality_pass": true,
+  "elapsed_seconds": 25.763035708107054,
+  "claude_calls": 1,
+  "llm_tokens": {
+    "inputTokens": 2,
+    "outputTokens": 1513,
+    "cacheReadInputTokens": 2473,
+    "cacheCreationInputTokens": 7647,
+    "totalTokens": 11635
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 5505,
+    "output_tokens": 489
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": []
+}

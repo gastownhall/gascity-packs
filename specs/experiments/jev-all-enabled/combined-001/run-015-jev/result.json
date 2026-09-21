@@ -1,0 +1,271 @@
+{
+  "case_id": "packet-08",
+  "arm": "jev",
+  "status": "completed",
+  "started_at": "2026-09-21T01:19:25.726134+00:00",
+  "expected": {
+    "kind:kind": "bug",
+    "findings:finding_0": "unclear",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "unclear",
+    "evidence:evidence_0": "supported"
+  },
+  "helpers": {
+    "kind": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "kind",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:19:26.110373+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 2246,
+        "output_tokens": 54
+      },
+      "mode": "auto",
+      "threshold": 0.85,
+      "state_sha256": "9d10c5c9105f19624362240cca07b6e9bde2e50e74f6b2f40de65f6d913275aa",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "bug",
+            "confidence": 1.0,
+            "probabilities": {
+              "docs": 0.0,
+              "chore": 0.0,
+              "bug": 1.0,
+              "unclear": 0.0,
+              "feature": 0.0
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.17461045808158815
+    },
+    "findings": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "findings",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:19:26.627871+00:00",
+      "route": "llm",
+      "usage": {
+        "input_tokens": 896,
+        "output_tokens": 155
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "d72ff684fb83d627a8c639d9fb631c759326be901198a8741bdefa46a6cd6c75",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "finding_0": {
+            "type": "choice",
+            "choice": "missing_evidence",
+            "confidence": 0.69,
+            "probabilities": {
+              "residual_risk": 0.02,
+              "required_fix": 0.0,
+              "missing_evidence": 0.77,
+              "unclear": 0.21
+            }
+          },
+          "pair_0_1": {
+            "type": "choice",
+            "choice": "different",
+            "confidence": 0.99,
+            "probabilities": {
+              "same": 0.0,
+              "unclear": 0.01,
+              "different": 0.99
+            }
+          },
+          "finding_1": {
+            "type": "choice",
+            "choice": "missing_evidence",
+            "confidence": 0.48,
+            "probabilities": {
+              "residual_risk": 0.0,
+              "required_fix": 0.37,
+              "missing_evidence": 0.61,
+              "unclear": 0.02
+            }
+          }
+        },
+        "fallback_questions": [
+          "finding_0",
+          "finding_1"
+        ],
+        "route": "llm",
+        "findings": [
+          {
+            "id": "F1",
+            "text": "This might be wrong, but the intended behavior and observed output were not supplied.",
+            "source": "lane-0/review.md:10"
+          },
+          {
+            "id": "F2",
+            "text": "The saved command ran no tests selected for the required recovery scenario.",
+            "source": "lane-1/review.md:11"
+          }
+        ],
+        "possible_duplicate_pairs": []
+      },
+      "elapsed_seconds": 0.269693500129506
+    },
+    "failure": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "failure",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:19:27.830513+00:00",
+      "route": "llm",
+      "usage": {
+        "input_tokens": 542,
+        "output_tokens": 50
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "ce71342519ef367c39dbbdc11763f499963e316b93a6418167e244d5b40081be",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "failure": {
+            "type": "choice",
+            "choice": "unclear",
+            "confidence": 0.66,
+            "probabilities": {
+              "missing_evidence": 0.25,
+              "product": 0.0,
+              "unclear": 0.75,
+              "environment": 0.0
+            }
+          }
+        },
+        "fallback_questions": [
+          "failure"
+        ],
+        "route": "llm"
+      },
+      "elapsed_seconds": 0.22629537503235042
+    },
+    "evidence": {
+      "schema": "gc.evidence-assessment.v1",
+      "advisory": true,
+      "started_at": "2026-09-21T01:19:28.508715+00:00",
+      "question_version": "gc.evidence-question.v2",
+      "requested_model": "jev-1.13.0",
+      "threshold": 0.85,
+      "mode": "auto",
+      "state_sha256": "7ee14ac8fc11f3c1754f72ce504f6a65feade15ae8d7cb7568ebbde7e3555800",
+      "decisions": [
+        {
+          "id": "AC-1",
+          "type": "choice",
+          "choice": "supported",
+          "confidence": 1.0,
+          "probabilities": {
+            "missing_evidence": 0.0,
+            "contradicted": 0.0,
+            "unclear": 0.0,
+            "supported": 1.0
+          },
+          "route": "reviewer_check"
+        }
+      ],
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1014,
+        "output_tokens": 56
+      },
+      "elapsed_seconds": 0.5909979999996722
+    },
+    "ranking": {
+      "schema": "gc.duplicate-ranking.v1",
+      "question_version": "gc.duplicate-ranking.v1",
+      "requested_model": "jev-1.13.0",
+      "mode": "auto",
+      "route": "investigate_ranked_candidates",
+      "usage": {
+        "input_tokens": 555,
+        "output_tokens": 40
+      },
+      "started_at": "2026-09-21T01:19:29.954547+00:00",
+      "state_sha256": "bcea31970b8e144c8e9c10da9b1f90ba32a5cc206c7f6e757d6a47cd66dc0b83",
+      "status": "completed",
+      "decision": {
+        "ranked_candidate_ids": [
+          "C2",
+          "C1"
+        ],
+        "scores": {
+          "C1": 0.34,
+          "C2": 0.42
+        },
+        "candidates": [
+          {
+            "id": "C1",
+            "title": "It is broken too",
+            "body": "No details supplied."
+          },
+          {
+            "id": "C2",
+            "title": "Maybe a problem",
+            "body": "No diagnosis or reproduction steps."
+          }
+        ],
+        "requires_investigation": true
+      },
+      "model": "jev-1.13.0",
+      "elapsed_seconds": 0.2745474169496447
+    }
+  },
+  "state_sha256": "64a10647f67f2b6af7da57bea0e9663fe34ad437a0fecb4583196e286ced0fef",
+  "ranking_top1": null,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C2",
+    "C1"
+  ],
+  "answers": {
+    "kind:kind": "bug",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "unclear",
+    "evidence:evidence_0": "supported"
+  },
+  "correct": 5,
+  "questions": 6,
+  "report_contract_pass": true,
+  "quality_pass": false,
+  "elapsed_seconds": 26.184920375002548,
+  "claude_calls": 1,
+  "llm_tokens": {
+    "inputTokens": 2,
+    "outputTokens": 3238,
+    "cacheReadInputTokens": 2473,
+    "cacheCreationInputTokens": 6916,
+    "totalTokens": 12629
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 5253,
+    "output_tokens": 355
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": [
+    "findings:finding_1",
+    "findings:finding_0",
+    "failure:failure"
+  ]
+}

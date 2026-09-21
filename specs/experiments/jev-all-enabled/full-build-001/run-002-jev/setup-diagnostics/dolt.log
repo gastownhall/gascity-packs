@@ -1,0 +1,27 @@
+gc scope watchdog: supervising dolt sql-server pid 53699 (config /tmp/gcja-f_noko6f/w/city/.gc/runtime/packs/dolt/dolt-config.yaml, poll interval 30s)
+Starting server with Config HP="127.0.0.1:41757"|T="15000"|R="false"|L="warning"
+time="2026-09-20T18:39:22-07:00" level=warning msg="secure_file_priv is set to \"\", which is insecure."
+time="2026-09-20T18:39:22-07:00" level=warning msg="Any user with GRANT FILE privileges will be able to read any file which the sql-server process can read."
+time="2026-09-20T18:39:22-07:00" level=warning msg="Please consider restarting the server with secure_file_priv set to a safe (or non-existent) directory."
+time="2026-09-20T18:39:38-07:00" level=warning msg="error running query" connectTime="2026-09-20 18:39:38.731299 -0700 PDT m=+17.181551210" connectionID=14 error="database not found: hq" queryTime="2026-09-20 18:39:38.754142 -0700 PDT m=+17.204394418"
+time="2026-09-20T18:39:42-07:00" level=warning msg="error running query" connectTime="2026-09-20 18:39:41.894883 -0700 PDT m=+20.345109918" connectionDb=hq connectionID=17 error="table not found: config" queryTime="2026-09-20 18:39:42.0383 -0700 PDT m=+20.488526168"
+time="2026-09-20T18:39:46-07:00" level=warning msg="error running query" connectTime="2026-09-20 18:39:46.372719 -0700 PDT m=+24.822910501" connectionDb=hq connectionID=21 error="table not found: issues" queryTime="2026-09-20 18:39:46.41133 -0700 PDT m=+24.861521168"
+time="2026-09-20T18:39:48-07:00" level=warning msg="error running query" connectTime="2026-09-20 18:39:47.358421 -0700 PDT m=+25.808603710" connectionDb=hq connectionID=25 error="table not found: issues" queryTime="2026-09-20 18:39:48.363522 -0700 PDT m=+26.813697751"
+time="2026-09-20T18:41:27-07:00" level=warning msg="error running query" connectTime="2026-09-20 18:41:27.828901 -0700 PDT m=+126.278280751" connectionID=97 error="database not found: fi" queryTime="2026-09-20 18:41:27.854708 -0700 PDT m=+126.304087418"
+time="2026-09-20T18:41:29-07:00" level=warning msg="error running query" connectTime="2026-09-20 18:41:29.284097 -0700 PDT m=+127.733464460" connectionDb=fi connectionID=100 error="table not found: config" queryTime="2026-09-20 18:41:29.306413 -0700 PDT m=+127.755781043"
+time="2026-09-20T18:41:30-07:00" level=warning msg="error running query" connectTime="2026-09-20 18:41:30.564239 -0700 PDT m=+129.013596793" connectionDb=fi connectionID=104 error="table not found: issues" queryTime="2026-09-20 18:41:30.577554 -0700 PDT m=+129.026911876"
+time="2026-09-20T18:41:31-07:00" level=warning msg="error running query" connectTime="2026-09-20 18:41:30.904868 -0700 PDT m=+129.354222626" connectionDb=fi connectionID=108 error="table not found: issues" queryTime="2026-09-20 18:41:31.036552 -0700 PDT m=+129.485905418"
+
+
+time="2026-09-20T18:47:38-07:00" level=warning msg="client connection went away while a query was executing" connectionID=1377 error=EOF
+time="2026-09-20T18:48:36-07:00" level=error msg="Error reading packet from client 1463 (127.0.0.1:56332): read tcp 127.0.0.1:41757->127.0.0.1:56332: use of closed network connection\nio.ReadFull(header size) failed"
+time="2026-09-20T18:48:36-07:00" level=error msg="Error reading packet from client 1460 (127.0.0.1:56321): read tcp 127.0.0.1:41757->127.0.0.1:56321: use of closed network connection\nio.ReadFull(header size) failed"
+time="2026-09-20T18:48:36-07:00" level=error msg="Error reading packet from client 1461 (127.0.0.1:56328): read tcp 127.0.0.1:41757->127.0.0.1:56328: use of closed network connection\nio.ReadFull(header size) failed"
+time="2026-09-20T18:48:36-07:00" level=error msg="Error reading packet from client 1442 (127.0.0.1:56300): read tcp 127.0.0.1:41757->127.0.0.1:56300: use of closed network connection\nio.ReadFull(header size) failed"
+gc scope watchdog: dolt sql-server pid 53699 exited cleanly
+gc scope watchdog: supervising dolt sql-server pid 69995 (config /tmp/gcja-f_noko6f/w/city/.gc/runtime/packs/dolt/dolt-config.yaml, poll interval 30s)
+Starting server with Config HP="127.0.0.1:41757"|T="15000"|R="false"|L="warning"
+time="2026-09-20T18:55:32-07:00" level=warning msg="secure_file_priv is set to \"\", which is insecure."
+time="2026-09-20T18:55:32-07:00" level=warning msg="Any user with GRANT FILE privileges will be able to read any file which the sql-server process can read."
+time="2026-09-20T18:55:32-07:00" level=warning msg="Please consider restarting the server with secure_file_priv set to a safe (or non-existent) directory."
+gc scope watchdog: dolt sql-server pid 69995 exited cleanly

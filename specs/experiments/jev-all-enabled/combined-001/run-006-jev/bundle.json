@@ -1,0 +1,31 @@
+{
+  "schema": "gc.evidence-bundle.v1",
+  "worktree": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-all-enabled/combined-001/input-packet-03/fixture",
+  "head": "21e658b63c3441cbd5f20f3e17feef4088db49d3",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Remove surrounding whitespace while preserving case.",
+      "claim": "The implementation trims whitespace and preserves case.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "07251e7d53925a0e0794944c2a53a011c9414c47a7ab1170ada733a49b7d0662"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "d213ea35391f026459e448c8c0b7e17cb266120fe8d0cef14eff68c716f25681"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "22b6b57924574f270f61573c96892938e221717181b6598909ba3fe5a84693ef",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 1,
+          "head": "21e658b63c3441cbd5f20f3e17feef4088db49d3"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "head": "abbd47e853f625d7f7709c6698231cf276390ed2",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Trimming an empty string returns an empty string.",
+      "claim": "The empty-string behavior was verified.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "6609800e6f8ab6ad3102b770f0831a0d4018ce6f3248f7c3543dae78f59ad758",
+          "text": "def transform(x):\n    return x.strip()\n"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "b373b8ff23dfa785d4dda704e5942322245ff08c0cc26005d69e8fdba6ef141e",
+          "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        self.assertEqual(transform(\"\"), \"\")\n"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "0f0351b05a7a111268e54baad2269896c1f10407d6e42f574fe86b34ae7333da",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "abbd47e853f625d7f7709c6698231cf276390ed2",
+          "text": "test_behavior (test_subject.TestSubject.test_behavior) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nOK\n"
+        }
+      ]
+    }
+  ]
+}

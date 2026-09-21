@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "kind:kind": "docs",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "required_fix",
+    "failure:failure": "environment",
+    "evidence:evidence_0": "supported"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "docs",
+      "quote": "comment/doc-string only, zero behavior or schema change"
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "required_fix",
+      "quote": "parser.py drops invalid-input errors; return a nonzero exit."
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "different",
+      "quote": "reads the full upload without its required size limit"
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "required_fix",
+      "quote": "reject oversized uploads"
+    },
+    {
+      "id": "failure:failure",
+      "choice": "environment",
+      "quote": "HTTP 401: Bad credentials"
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "supported",
+      "quote": "assertEqual(transform(\"\"), \"\")"
+    }
+  ]
+}

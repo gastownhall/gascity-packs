@@ -1,0 +1,46 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "requested_model": "jev-1.13.0",
+  "mode": "auto",
+  "route": "investigate_ranked_candidates",
+  "usage": {
+    "input_tokens": 715,
+    "output_tokens": 58
+  },
+  "started_at": "2026-09-21T01:13:46.230265+00:00",
+  "state_sha256": "bd1f3078ffb2aeb4a9e8c41c4c6d9d79f98d3de184846cf8578c78e127ae80c2",
+  "status": "completed",
+  "decision": {
+    "ranked_candidate_ids": [
+      "C3",
+      "C2",
+      "C1"
+    ],
+    "scores": {
+      "C1": 0.03,
+      "C2": 0.06,
+      "C3": 0.97
+    },
+    "candidates": [
+      {
+        "id": "C1",
+        "title": "CSV export quoting",
+        "body": "Exports need to quote fields containing commas."
+      },
+      {
+        "id": "C2",
+        "title": "CSV empty file",
+        "body": "An empty CSV file raises a different exception before parsing headers."
+      },
+      {
+        "id": "C3",
+        "title": "UTF-8 BOM breaks header detection",
+        "body": "Import treats the UTF-8 BOM as part of the first header and rejects a valid CSV."
+      }
+    ],
+    "requires_investigation": true
+  },
+  "model": "jev-1.13.0",
+  "elapsed_seconds": 0.5132572499569505
+}

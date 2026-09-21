@@ -12,6 +12,30 @@ build = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
 
 
+def test_build_arms_explicitly_set_every_applicable_jev_mode():
+    for arm, mode in [('baseline', 'off'), ('jev', 'auto')]:
+        variables = build.jev_variables(arm, 'jev-1.13.0')
+        assert {key: variables[key] for key in ('jev_mode', 'jev_findings_mode', 'jev_failure_mode')} == {
+            key: mode for key in ('jev_mode', 'jev_findings_mode', 'jev_failure_mode')}
+        assert variables['jev_model'] == variables['jev_decision_model'] == 'jev-1.13.0'
+
+
+def test_independent_quality_rejects_stub_even_when_edited_tests_pass(tmp_path, monkeypatch):
+    import os
+    rig=tmp_path/'fixture'; (rig/'tests').mkdir(parents=True)
+    (rig/'slugger.py').write_text('def slugify(value):\n    raise NotImplementedError\n')
+    original=b'def test_original():\n    assert False\n'
+    (rig/'tests/test_slugger.py').write_text('def test_placeholder():\n    assert True\n')
+    monkeypatch.setattr(build.gate,'build_result_candidates',lambda *a:[rig])
+    out=tmp_path/'out';out.mkdir()
+    rows=build.final_quality(SimpleNamespace(rig_dir=rig),[],out,dict(os.environ),build.hashlib.sha256(original).hexdigest())
+    assert len(rows)==1
+    assert rows[0]['original_tests_unchanged'] is False
+    assert rows[0]['pytest_exit']==0
+    assert rows[0]['hidden_exit']==1
+    assert all(not row['pass'] for row in json.loads((out/'quality-000/hidden.txt').read_text()))
+
+
 def test_transcript_usage_deduplicates_chunks_and_excludes_adjacent_city(tmp_path):
     workspace = tmp_path/'city'
     projects = tmp_path/'projects'

@@ -1,0 +1,42 @@
++ git init -b main
++ git config user.email gascity-pack-gate@example.invalid
++ git config user.name 'Gas City Pack Gate'
++ git add .
++ git commit -m 'Add inference gate fixtures'
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc init --skip-provider-readiness --name jev-gcja-f_noko6f-run-002-jev --file /private/tmp/gcja-f_noko6f/w/city/city.toml --preserve-existing --yes /private/tmp/gcja-f_noko6f/w/city
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-gcja-f_noko6f-run-002-jev" from city.toml.
+Skipping provider readiness checks.
+Registered city 'jev-gcja-f_noko6f-run-002-jev' (/tmp/gcja-f_noko6f/w/city)
+Supervisor started (PID 55601)
+Dashboard:  http://127.0.0.1:54033/
+Waiting for supervisor to start city...
+  Adopting sessions...
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-b52c61bc.plist: exit status 1
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-f_noko6f/w/city import install
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-f_noko6f/w/city import check
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-f_noko6f/w/city config show
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-f_noko6f/w/city --rig fixture formula show build-basic
++ git remote
++ git clone --bare --no-hardlinks /private/tmp/gcja-f_noko6f/w/fixture /private/tmp/gcja-f_noko6f/w/fixture-origin.git
++ git remote add origin /private/tmp/gcja-f_noko6f/w/fixture-origin.git
++ git fetch origin
++ git remote set-head origin --auto
++ git symbolic-ref --short refs/remotes/origin/HEAD
++ git rev-parse HEAD
++ git rev-parse origin/HEAD
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc start /private/tmp/gcja-f_noko6f/w/city --verbose
+Supervisor: pid=55601 exe=(unreadable) buildID=local-regression started=2m ago
+Registered city 'jev-gcja-f_noko6f-run-002-jev' (/tmp/gcja-f_noko6f/w/city)
+[8/8] Waiting for supervisor to start city
+City started under supervisor.
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-b52c61bc.plist: exit status 1
+gc-start: pid=55601 binary=/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc build=local-regres drift=unknown warnings=0 fatal=
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-f_noko6f/w/city --rig fixture sling gc.run-operator --stdin --force --on build-basic --title 'gascity pack inference gate: build-basic' --nudge --json --var artifact_root=.gc/inference-gate/build-basic --var interaction_mode=headless --var review_mode=agent --var drain_policy=separate --var push=false --var open_pr=false --var max_iterations=2 --var jev_mode=auto --var jev_findings_mode=auto --var jev_failure_mode=auto --var jev_model=jev-1.13.0 --var jev_decision_model=jev-1.13.0 --var jev_threshold=0.85 --var jev_decision_threshold=0.90
+TimeoutExpired: Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc', '--city', '/private/tmp/gcja-f_noko6f/w/city', '--rig', 'fixture', 'sling', 'gc.run-operator', '--stdin', '--force', '--on', 'build-basic', '--title', 'gascity pack inference gate: build-basic', '--nudge', '--json', '--var', 'artifact_root=.gc/inference-gate/build-basic', '--var', 'interaction_mode=headless', '--var', 'review_mode=agent', '--var', 'drain_policy=separate', '--var', 'push=false', '--var', 'open_pr=false', '--var', 'max_iterations=2', '--var', 'jev_mode=auto', '--var', 'jev_findings_mode=auto', '--var', 'jev_failure_mode=auto', '--var', 'jev_model=jev-1.13.0', '--var', 'jev_decision_model=jev-1.13.0', '--var', 'jev_threshold=0.85', '--var', 'jev_decision_threshold=0.90']' timed out after 600.0 seconds
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-f_noko6f/w/city --rig fixture bd list --all --json --limit 1000
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc stop /private/tmp/gcja-f_noko6f/w/city --force --timeout 30s
+cleanup command failed (/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc stop /private/tmp/gcja-f_noko6f/w/city --force --timeout 30s): Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc', 'stop', '/private/tmp/gcja-f_noko6f/w/city', '--force', '--timeout', '30s']' timed out after 60.0 seconds
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc supervisor stop --wait --wait-timeout 30s

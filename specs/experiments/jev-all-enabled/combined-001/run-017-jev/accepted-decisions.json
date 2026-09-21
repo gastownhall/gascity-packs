@@ -1,0 +1,7 @@
+{
+  "kind:kind": "docs",
+  "findings:pair_0_1": "different",
+  "findings:finding_1": "required_fix",
+  "failure:failure": "environment",
+  "evidence:evidence_0": "supported"
+}

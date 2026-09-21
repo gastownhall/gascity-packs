@@ -1,0 +1,14 @@
+{
+  "pytest": [
+    "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_slugger.py"
+  ],
+  "hidden": [
+    "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+    "-c",
+    "import importlib.util,json; s=importlib.util.spec_from_file_location('subject','slugger.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); cases=[('  Hello, World!  ','hello-world'),('a---b___c','a-b-c'),('123 ABC','123-abc'),('!@#','')]; results=[]\nfor x,y in cases:\n try: actual=m.slugify(x); results.append({'input':x,'expected':y,'actual':actual,'pass':actual==y})\n except Exception as e: results.append({'input':x,'expected':y,'pass':False,'error':type(e).__name__})\nprint(json.dumps(results)); raise SystemExit(0 if all(r['pass'] for r in results) else 1)"
+  ]
+}

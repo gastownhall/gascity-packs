@@ -1,0 +1,34 @@
++ git init -b main
++ git config user.email gascity-pack-gate@example.invalid
++ git config user.name 'Gas City Pack Gate'
++ git add .
++ git commit -m 'Add inference gate fixtures'
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc init --skip-provider-readiness --name jev-gcja-fn64i14s-run-001-baseline --file /private/tmp/gcja-fn64i14s/w/city/city.toml --preserve-existing --yes /private/tmp/gcja-fn64i14s/w/city
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-gcja-fn64i14s-run-001-baseline" from city.toml.
+Skipping provider readiness checks.
+Registered city 'jev-gcja-fn64i14s-run-001-baseline' (/tmp/gcja-fn64i14s/w/city)
+Supervisor started (PID 51310)
+Dashboard:  http://127.0.0.1:53228/
+Waiting for supervisor to start city...
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-f77d638a.plist: exit status 1
+gc init: city failed to start: init: beads lifecycle: init rig "fixture" beads: exec beads init: context deadline exceeded; keeping registration for 'jev-gcja-fn64i14s-run-001-baseline' so the supervisor can retry automatically
+gc init: check 'gc supervisor logs' for details
+Preserved existing pack.toml.
+Preserved existing city.toml.
+Welcome to Gas City!
+Initialized city "jev-gcja-fn64i14s-run-001-baseline" from city.toml.
+Skipping provider readiness checks.
+Registered city 'jev-gcja-fn64i14s-run-001-baseline' (/tmp/gcja-fn64i14s/w/city)
+Supervisor started (PID 51310)
+Dashboard:  http://127.0.0.1:53228/
+Waiting for supervisor to start city...
+gc supervisor install: launchctl load /Users/csells/Library/LaunchAgents/com.gascity.supervisor.gc-home-f77d638a.plist: exit status 1
+gc init: city failed to start: init: beads lifecycle: init rig "fixture" beads: exec beads init: context deadline exceeded; keeping registration for 'jev-gcja-fn64i14s-run-001-baseline' so the supervisor can retry automatically
+gc init: check 'gc supervisor logs' for details
+CalledProcessError: Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc', 'init', '--skip-provider-readiness', '--name', 'jev-gcja-fn64i14s-run-001-baseline', '--file', '/private/tmp/gcja-fn64i14s/w/city/city.toml', '--preserve-existing', '--yes', '/private/tmp/gcja-fn64i14s/w/city']' returned non-zero exit status 1.
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc --city /private/tmp/gcja-fn64i14s/w/city --rig fixture bd list --all --json --limit 1000
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc stop /private/tmp/gcja-fn64i14s/w/city --force --timeout 30s
++ /Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc supervisor stop --wait --wait-timeout 30s

@@ -1,0 +1,62 @@
+{
+  "kind": {
+    "title": "feat(controller): poke the reconciler on provider session events instead of waiting for the next patrol scan",
+    "body": "## What this changes\n\nA session that dies is noticed when the controller's patrol next scans for it. A provider\nthat pushes session events already knows seconds earlier, and nothing consumed that. This\nadds one consumer: `cmd/gc/session_event_pump.go` bridges the provider's event stream into\nthe session reconciler's existing poke channel.\n\nherdr implements `runtime.SessionEventProvider`, so it gets this. tmux has no stream and\nis untouched. Patrol cadence is unchanged, the reconciler's behavior is unchanged, and\nthere is no new configuration. The reconcile simply runs sooner, on a signal that was\nalready arriving and being dropped.\n\n## How it behaves\n\nThe pump is level-triggered throughout: an event is a hint to go look, never a fact to act\non.\n\n- Attributed `exited` and `closed` events poke immediately.\n- Resync events poke on a trailing delay (15s, re-armed per resync). Every connection\n  cycle leads with a resync, including the benign resubscribe the stream runs for each\n  newly detected agent pane, and an immediate poke would land a reconcile inside the very\n  start wave that triggered it.\n- One minute after the first resync of a burst, the poke lands regardless. The last re-arm\n  is clamped to what remains of that window, so the cap is the poke's deadline rather than\n  the point after which one more whole delay may still run.\n- Unattributed pane events are dropped. Such a poke races an in-flight create's metadata\n  stamp and rolls the pending create back.\n\nThe pump deliberately publishes no \"the stream is healthy\" signal. herdr's\n`SubscribeSessionEvents` returns a channel and a nil error unconditionally and connects\nbehind it, retrying forever with capped backoff, so a subscription to an unreachable\nprovider is indistinguishable from a live one. `streaming()` documents that, and says\noutright that it must not be used to decide to poll less: a stream that exists is not a\nstream that has delivered.\n\n## What is deliberately not here\n\n**Delivering queued nudges on idle events.** That consumer was written, reviewed, and then\nremoved from this change. Routing every delivery through one shared worker turns a\nper-session hang into a city-wide one: `runtime.Provider.Nudge` takes no context at all,\nherdr's implementation uses `context.Background()`, and the client applies no timeout, so a\nhung prompt would block delivery for every other session and ignore cancellation. The\nper-session pollers that exist today confine that blast radius. Retiring them is only safe\nonce each delivery is bounded and the worker can abandon a hung one, which is a change of\nits own.\n\n**A `[daemon].session_patrol_interval` that stretched the patrol while events were\nflowing.** Also written, also removed. The run loop cancels pending event-driven fires on\nevery patrol tick, and says why in a comment: a patrol scans every reconciler state\nauthoritatively. A patrol that skips the session phases makes that false, so a death poke\narmed a second before a patrol was cancelled by a patrol that then did not scan, and\ndetection waited for the stretched interval. It was an optimisation layered on a feature\nthat is worth having without it.\n\n## One unrelated test\n\n`TestNewCityRuntimeWiresAssignedWorkDeferTracker`. The assigned-work defer tracker is\nconstructed in `newCityRuntime` and consumed through an option, and every test for it\ndrives the option directly, so dropping the construction leaves the suite green while the\nbackstop is dead in production. That happened during this work, and only the unused-symbol\nlinter caught it, because the builder lost its last caller at the same moment; losing just\nthe call would have been silent.\n\nThe test asserts both halves, and it pins the production call site through `go/parser`\nrather than a text search. A text search cannot tell code from a comment, so commenting\nthe argument out would leave the backstop dead with the test still green.\n\n## Test plan\n\n- `gofmt`, `go build ./...`, `go vet ./...`: clean.\n- `go test ./internal/config/ ./internal/session/ ./internal/runtime/herdr/... ./internal/testpolicy/... ./test/docsync/`: pass.\n- `go test ./cmd/gc/`: pass (279s).\n- `make check-docs`: pass.\n- `golangci-lint run ./cmd/gc/... ./internal/config/... ./internal/session/... ./internal/runtime/herdr/...`: clean.\n- Live journey against herdr 0.8.0 (`make test-herdr-live`, which now covers the `cmd/gc`\n  journey as well): an agent's natural process exit lands a reconcile poke with no polling.\n  The opt-in predicate and the single subprocess the live tier shells out to moved into\n  `internal/runtime/herdr/herdrtest` so the provider tier and `cmd/gc` share one gate and\n  one bounded polling helper. Each `report-agent` invocation is bounded at 2s, because an\n  unbounded call inside the helper's poll condition would mean its 10s bound was never\n  reachable and a hung server would surface as the outer test timeout instead.\n- No test sleeps. The pump's timer behavior runs inside `testing/synctest` bubbles, where\n  the trailing-delay and cap assertions are exact rather than approximate.\n- Mutation checks on the wiring guard: deleting the tracker argument fails the test,\n  commenting it out fails it, and the real code passes.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_01CPcPXz8AxpyCCoDcK7Bu5W\n"
+  },
+  "findings": {
+    "findings": [
+      {
+        "id": "F1",
+        "text": "Accepted requirement: retain audit history. archive() deletes the prior record; preserve it instead.",
+        "source": "lane-0/review.md:10"
+      },
+      {
+        "id": "F2",
+        "text": "Run the missing concurrency proof before claiming the new archive operation is race-free.",
+        "source": "lane-1/review.md:11"
+      },
+      {
+        "id": "F3",
+        "text": "The earlier record is deleted during archiving despite required audit retention; preserve the record.",
+        "source": "lane-2/review.md:12"
+      }
+    ]
+  },
+  "failure": {
+    "command": "go test ./...",
+    "output": "./parser.go:42: undefined: parseRecord",
+    "context": "The changed product file calls an undefined function; dependency resolution succeeded."
+  },
+  "evidence": {
+    "head": "21e658b63c3441cbd5f20f3e17feef4088db49d3",
+    "items": [
+      {
+        "id": "AC-1",
+        "criterion": "Remove surrounding whitespace while preserving case.",
+        "claim": "The implementation trims whitespace and preserves case.",
+        "sources": [
+          {
+            "path": "subject.py",
+            "sha256": "07251e7d53925a0e0794944c2a53a011c9414c47a7ab1170ada733a49b7d0662",
+            "text": "def transform(x):\n    return x.lower()\n"
+          },
+          {
+            "path": "test_subject.py",
+            "sha256": "d213ea35391f026459e448c8c0b7e17cb266120fe8d0cef14eff68c716f25681",
+            "text": "import unittest\nfrom subject import transform\n\nclass TestSubject(unittest.TestCase):\n    def test_behavior(self):\n        self.assertEqual(transform(\"  A  \"), \"A\")\n"
+          }
+        ],
+        "proofs": [
+          {
+            "path": "proof.txt",
+            "sha256": "22b6b57924574f270f61573c96892938e221717181b6598909ba3fe5a84693ef",
+            "command": "python3 -m unittest discover -v",
+            "exit_code": 1,
+            "head": "21e658b63c3441cbd5f20f3e17feef4088db49d3",
+            "text": "test_behavior (test_subject.TestSubject.test_behavior) ... FAIL\n\n======================================================================\nFAIL: test_behavior (test_subject.TestSubject.test_behavior)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-all-enabled/combined-001/input-packet-03/fixture/test_subject.py\", line 6, in test_behavior\n    self.assertEqual(transform(\"  A  \"), \"A\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '  a  ' != 'A'\n-   a  \n+ A\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.002s\n\nFAILED (failures=1)\n"
+          }
+        ]
+      }
+    ]
+  }
+}

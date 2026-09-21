@@ -1,0 +1,36 @@
+{
+  "arm": "baseline",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-21T01:30:56.481084+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "failed",
+  "error": "CalledProcessError: Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc', 'init', '--skip-provider-readiness', '--name', 'jev-gcja-fn64i14s-run-001-baseline', '--file', '/private/tmp/gcja-fn64i14s/w/city/city.toml', '--preserve-existing', '--yes', '/private/tmp/gcja-fn64i14s/w/city']' returned non-zero exit status 1.",
+  "cleanup": {
+    "status": "no_leftover_server",
+    "pids": []
+  },
+  "otel_usage": {
+    "status": "missing",
+    "request_count": 0,
+    "models": [],
+    "totals": null,
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "independent_quality": [],
+  "jev_report_scan_errors": [],
+  "jev_feature_delivery": {
+    "evidence": 0,
+    "findings": 0,
+    "failure": 0
+  },
+  "elapsed_seconds": 436.8204118751455,
+  "llm_usage": {
+    "status": "missing",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 0,
+    "models": [],
+    "totals": null
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "kind:kind": "docs",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "product",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "docs",
+      "quote": "This is a documentation and contract-test change only"
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "required_fix",
+      "quote": "The executed permission test shows unauthorized callers can read another user's records, violating access control."
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "different",
+      "quote": "The required access-control regression command has not been run."
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "missing_evidence",
+      "quote": "The required access-control regression command has not been run."
+    },
+    {
+      "id": "failure:failure",
+      "choice": "product",
+      "quote": "returned success instead of InvalidInput"
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "missing_evidence",
+      "quote": "OK (skipped=1)"
+    }
+  ]
+}

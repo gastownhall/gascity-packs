@@ -1,0 +1,46 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "requested_model": "jev-1.13.0",
+  "mode": "auto",
+  "route": "investigate_ranked_candidates",
+  "usage": {
+    "input_tokens": 707,
+    "output_tokens": 58
+  },
+  "started_at": "2026-09-21T01:17:23.832095+00:00",
+  "state_sha256": "5edfa19c74effd11df22167f27b2d87c27f346ee8e68e91ccbd85d80413313bb",
+  "status": "completed",
+  "decision": {
+    "ranked_candidate_ids": [
+      "C1",
+      "C2",
+      "C3"
+    ],
+    "scores": {
+      "C1": 0.96,
+      "C2": 0.1,
+      "C3": 0.04
+    },
+    "candidates": [
+      {
+        "id": "C1",
+        "title": "Bad signature accepted by installer",
+        "body": "An archive signed with the wrong key still installs; signature verification is required."
+      },
+      {
+        "id": "C2",
+        "title": "Signing release artifacts",
+        "body": "Add a new signing step to the release pipeline."
+      },
+      {
+        "id": "C3",
+        "title": "Checksum network timeout",
+        "body": "Checksum download times out during an outage."
+      }
+    ],
+    "requires_investigation": true
+  },
+  "model": "jev-1.13.0",
+  "elapsed_seconds": 0.20302899996750057
+}

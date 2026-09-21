@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "kind:kind": "chore",
+    "findings:finding_0": "residual_risk",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "required_fix",
+    "failure:failure": "environment",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "chore",
+      "quote": "The budget is buying compile time, not test time, on a runner the budget was not sized for."
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "residual_risk",
+      "quote": "Optional future optimization: cache parsing results; current latency satisfies every requirement and all mandatory checks passed."
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "different",
+      "quote": "The implementation hardcodes an empty result where the accepted export contract requires all rows."
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "required_fix",
+      "quote": "hardcodes an empty result where the accepted export contract requires all rows"
+    },
+    {
+      "id": "failure:failure",
+      "choice": "environment",
+      "quote": "The executable bit is absent on the external fixture script; no product code ran."
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "missing_evidence",
+      "quote": "transform(\"abc\")"
+    }
+  ]
+}

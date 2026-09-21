@@ -1,0 +1,39 @@
+{
+  "schema": "gc.duplicate-ranking.v1",
+  "question_version": "gc.duplicate-ranking.v1",
+  "requested_model": "jev-1.13.0",
+  "mode": "auto",
+  "route": "investigate_ranked_candidates",
+  "usage": {
+    "input_tokens": 553,
+    "output_tokens": 40
+  },
+  "started_at": "2026-09-21T01:15:33.011050+00:00",
+  "state_sha256": "1553fcbd127f3c1ffe6f56fc7a75320e44a913ccd68e0eb069d22618a8dfe38f",
+  "status": "completed",
+  "decision": {
+    "ranked_candidate_ids": [
+      "C1",
+      "C2"
+    ],
+    "scores": {
+      "C1": 0.04,
+      "C2": 0.02
+    },
+    "candidates": [
+      {
+        "id": "C1",
+        "title": "Mouse gesture",
+        "body": "Support mouse gestures for closing windows."
+      },
+      {
+        "id": "C2",
+        "title": "Server health",
+        "body": "Expose an HTTP health endpoint."
+      }
+    ],
+    "requires_investigation": true
+  },
+  "model": "jev-1.13.0",
+  "elapsed_seconds": 0.16515720798633993
+}

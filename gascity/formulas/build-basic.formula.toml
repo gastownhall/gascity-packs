@@ -22,8 +22,8 @@ interaction_modes = ["interactive", "autonomous", "headless"]
 review_modes = ["report", "agent", "interactive"]
 
 [vars.jev_mode]
-description = "Optional advisory evidence checking: off or assist. Never changes review approval authority."
-default = "off"
+description = "Optional advisory evidence checking: off, auto (when configured), or assist. Never changes review approval authority."
+default = "auto"
 
 [vars.jev_model]
 description = "Pinned TypeSafe decision model for evidence assistance."
@@ -35,11 +35,11 @@ default = "0.85"
 
 [vars.jev_findings_mode]
 description = "Finding classification and pair matching: off, auto (when configured), or assist."
-default = "off"
+default = "auto"
 
 [vars.jev_failure_mode]
 description = "Failure investigation routing: off, auto (when configured), or assist."
-default = "off"
+default = "auto"
 
 [vars.jev_decision_model]
 description = "Pinned Jev model for bounded workflow decisions."

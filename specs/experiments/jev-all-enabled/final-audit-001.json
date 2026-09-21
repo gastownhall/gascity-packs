@@ -1,0 +1,27 @@
+{
+  "at": "2026-09-21T02:02:19.811968+00:00",
+  "status": "passed",
+  "combined_attempts": 32,
+  "full_runtime_attempts": 2,
+  "all_treatment_helpers_auto_and_completed": 80,
+  "combined_usage_reconciled": true,
+  "runtime_source_equal": true,
+  "runtime_observations": [
+    {
+      "arm": "baseline",
+      "status": "failed",
+      "observed_model_events": 0,
+      "token_totals": null
+    },
+    {
+      "arm": "jev",
+      "status": "failed",
+      "observed_model_events": 0,
+      "token_totals": null
+    }
+  ],
+  "original_fixture_checks_preserved": true,
+  "cleanup_verified": true,
+  "credential_absent": true,
+  "files_scanned": 1251
+}

@@ -1,0 +1,5 @@
+{
+  "command": "pytest -m integration",
+  "output": "24 deselected; 0 selected",
+  "context": "Acceptance requires integration proof, but no integration tests executed."
+}

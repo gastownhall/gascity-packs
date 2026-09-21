@@ -1,0 +1,15 @@
+gc supervisor: started: previous_exit=crash
+gc supervisor: workspace-service startup cleanup is not available on darwin; after a non-graceful supervisor exit, stale workspace-service processes may keep sockets bound. Registered workspace-service roots: /tmp/gcja-fn64i14s/w/city/.gc/services. Stop stale processes whose environment includes GC_SERVICE_STATE_ROOT under those roots, then restart those cities.
+gc supervisor: WARNING: API binding to ephemeral port 53228 -- set port = 8372 in ~/.gc/supervisor.toml
+Supervisor API listening on http://127.0.0.1:53228
+Dashboard:  http://127.0.0.1:53228/
+Supervisor started.
+gc supervisor: city 'jev-gcja-fn64i14s-run-001-baseline': starting_bead_store took 2m53.22s
+gc-fatal: init: beads lifecycle: init rig "fixture" beads: exec beads init: context deadline exceeded
+gc supervisor: city 'jev-gcja-fn64i14s-run-001-baseline': init: beads lifecycle: init rig "fixture" beads: exec beads init: context deadline exceeded (skipping)
+gc supervisor: city 'jev-gcja-fn64i14s-run-001-baseline': init failure #1, next retry in 10s
+2026/09/20 18:37:43 api: GET /v0/cities 200 34.065ms [memory] req_id=6fe6e325cffe7691
+2026/09/20 18:37:43 api: GET /v0/cities 200 217µs [memory] req_id=6f79f5f122881e03
+2026/09/20 18:37:55 api: GET /v0/cities 200 15.934ms [memory] req_id=6ce884419b14a0d0
+gc supervisor: shutdown requested: source=socket_stop signal="" client="" mode=destructive
+Supervisor stopped.

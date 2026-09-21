@@ -1,0 +1,23 @@
+{
+  "issue": {
+    "title": "Deleting a project leaves orphan tasks",
+    "body": "Deleting a project must delete its tasks, but task rows remain with a missing project."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Project deletion leaves task rows",
+      "body": "Task rows survive deleting their parent project and refer to a missing parent."
+    },
+    {
+      "id": "C2",
+      "title": "Cannot create a task",
+      "body": "A foreign-key check rejects creation with a nonexistent project."
+    },
+    {
+      "id": "C3",
+      "title": "Project icon",
+      "body": "Allow a custom project icon."
+    }
+  ]
+}

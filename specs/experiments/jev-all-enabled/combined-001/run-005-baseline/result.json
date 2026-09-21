@@ -1,0 +1,56 @@
+{
+  "case_id": "packet-03",
+  "arm": "baseline",
+  "status": "completed",
+  "started_at": "2026-09-21T01:14:55.202361+00:00",
+  "expected": {
+    "kind:kind": "feature",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:pair_0_2": "same",
+    "findings:finding_1": "missing_evidence",
+    "findings:pair_1_2": "different",
+    "findings:finding_2": "required_fix",
+    "failure:failure": "product",
+    "evidence:evidence_0": "contradicted"
+  },
+  "helpers": {},
+  "state_sha256": "a138c08831d89048d4d3cf5599a41b765d2cd3ed20396d36c56346c8692ec1f1",
+  "ranking_top1": null,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C1",
+    "C2"
+  ],
+  "answers": {
+    "kind:kind": "feature",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:pair_0_2": "same",
+    "findings:finding_1": "missing_evidence",
+    "findings:pair_1_2": "different",
+    "findings:finding_2": "required_fix",
+    "failure:failure": "product",
+    "evidence:evidence_0": "contradicted"
+  },
+  "correct": 9,
+  "questions": 9,
+  "report_contract_pass": true,
+  "quality_pass": true,
+  "elapsed_seconds": 34.87431366695091,
+  "claude_calls": 2,
+  "llm_tokens": {
+    "inputTokens": 4,
+    "outputTokens": 2136,
+    "cacheReadInputTokens": 4946,
+    "cacheCreationInputTokens": 9484,
+    "totalTokens": 16570
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 0,
+    "output_tokens": 0
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": []
+}

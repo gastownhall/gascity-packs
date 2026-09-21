@@ -1,7 +1,9 @@
-# Optional Jev kind triage
+# Jev kind triage
 
-`github-issue-triage --var jev_kind_mode=assist` delegates the bounded kind
-question to Jev. Default: `off`. The helper also accepts the pack's PR snapshot
+`github-issue-triage` defaults to `jev_kind_mode=auto`, delegating the bounded
+kind question to Jev when configured. Without access, ordinary triage applies.
+Use `off` to disable or `assist` to explicitly attempt assistance. The helper
+also accepts the pack's PR snapshot
 format for callers such as maintainer-city. It only reads title and body;
 existing labels, reference answers, priority and other snapshot fields are
 excluded from inference. It does not inspect code or diffs.

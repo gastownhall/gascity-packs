@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "kind:kind": "bug",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "unclear",
+    "evidence:evidence_0": "supported"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "bug",
+      "quote": "The runtime starts and the prompt is never delivered."
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "missing_evidence",
+      "quote": "the intended behavior and observed output were not supplied"
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "different",
+      "quote": "lane-1/review.md:11"
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "missing_evidence",
+      "quote": "The saved command ran no tests selected for the required recovery scenario."
+    },
+    {
+      "id": "failure:failure",
+      "choice": "unclear",
+      "quote": "No child status, stack trace or control-run evidence is available."
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "supported",
+      "quote": "test_behavior (test_subject.TestSubject.test_behavior) ... ok"
+    }
+  ]
+}

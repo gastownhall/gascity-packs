@@ -1,0 +1,39 @@
+{
+  "arm": "jev",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-21T01:38:13.312143+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "failed",
+  "setup_seconds": 307.8309359580744,
+  "error": "TimeoutExpired: Command '['/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-runtime-diagnosis/build/gc', '--city', '/private/tmp/gcja-f_noko6f/w/city', '--rig', 'fixture', 'sling', 'gc.run-operator', '--stdin', '--force', '--on', 'build-basic', '--title', 'gascity pack inference gate: build-basic', '--nudge', '--json', '--var', 'artifact_root=.gc/inference-gate/build-basic', '--var', 'interaction_mode=headless', '--var', 'review_mode=agent', '--var', 'drain_policy=separate', '--var', 'push=false', '--var', 'open_pr=false', '--var', 'max_iterations=2', '--var', 'jev_mode=auto', '--var', 'jev_findings_mode=auto', '--var', 'jev_failure_mode=auto', '--var', 'jev_model=jev-1.13.0', '--var', 'jev_decision_model=jev-1.13.0', '--var', 'jev_threshold=0.85', '--var', 'jev_decision_threshold=0.90']' timed out after 600.0 seconds",
+  "cleanup": {
+    "status": "termination_requested",
+    "pids": [
+      69995
+    ]
+  },
+  "otel_usage": {
+    "status": "missing",
+    "request_count": 0,
+    "models": [],
+    "totals": null,
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "independent_quality": [],
+  "jev_report_scan_errors": [],
+  "jev_feature_delivery": {
+    "evidence": 0,
+    "findings": 0,
+    "failure": 0
+  },
+  "elapsed_seconds": 1040.3009374579415,
+  "llm_usage": {
+    "status": "missing",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 0,
+    "models": [],
+    "totals": null
+  }
+}

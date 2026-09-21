@@ -1,0 +1,83 @@
+{
+  "passed": 5,
+  "checks": [
+    {
+      "task": "kind",
+      "command": [
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+        "gascity/assets/scripts/jev_tasks.py",
+        "kind",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/kind.json",
+        "--mode",
+        "auto",
+        "--output-dir",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/kind"
+      ],
+      "exit": 0,
+      "status": "skipped",
+      "reason": "missing_credential"
+    },
+    {
+      "task": "findings",
+      "command": [
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+        "gascity/assets/scripts/jev_tasks.py",
+        "findings",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/findings.json",
+        "--mode",
+        "auto",
+        "--output-dir",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/findings"
+      ],
+      "exit": 0,
+      "status": "skipped",
+      "reason": "missing_credential"
+    },
+    {
+      "task": "failure",
+      "command": [
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+        "gascity/assets/scripts/jev_tasks.py",
+        "failure",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/failure.json",
+        "--mode",
+        "auto",
+        "--output-dir",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/failure"
+      ],
+      "exit": 0,
+      "status": "skipped",
+      "reason": "missing_credential"
+    },
+    {
+      "task": "ranking",
+      "command": [
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+        "gascity/assets/scripts/jev_rank.py",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/ranking.json",
+        "--mode",
+        "auto",
+        "--output-dir",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/ranking"
+      ],
+      "exit": 0,
+      "status": "skipped",
+      "reason": "missing_credential"
+    },
+    {
+      "task": "evidence",
+      "command": [
+        "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/jev-venv/bin/python",
+        "gascity/assets/scripts/jev_evidence.py",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/evidence.json",
+        "--mode",
+        "auto",
+        "--output-dir",
+        "specs/experiments/jev-all-enabled/no-key-cli-001/evidence"
+      ],
+      "exit": 0,
+      "status": "skipped",
+      "reason": "missing_credential"
+    }
+  ]
+}

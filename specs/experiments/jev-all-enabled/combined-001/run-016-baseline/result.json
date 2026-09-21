@@ -1,0 +1,50 @@
+{
+  "case_id": "packet-08",
+  "arm": "baseline",
+  "status": "completed",
+  "started_at": "2026-09-21T01:19:51.922102+00:00",
+  "expected": {
+    "kind:kind": "bug",
+    "findings:finding_0": "unclear",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "unclear",
+    "evidence:evidence_0": "supported"
+  },
+  "helpers": {},
+  "state_sha256": "64a10647f67f2b6af7da57bea0e9663fe34ad437a0fecb4583196e286ced0fef",
+  "ranking_top1": null,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C1",
+    "C2"
+  ],
+  "answers": {
+    "kind:kind": "bug",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "unclear",
+    "evidence:evidence_0": "supported"
+  },
+  "correct": 5,
+  "questions": 6,
+  "report_contract_pass": true,
+  "quality_pass": false,
+  "elapsed_seconds": 39.31721395812929,
+  "claude_calls": 2,
+  "llm_tokens": {
+    "inputTokens": 4,
+    "outputTokens": 2104,
+    "cacheReadInputTokens": 4946,
+    "cacheCreationInputTokens": 8871,
+    "totalTokens": 15925
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 0,
+    "output_tokens": 0
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": []
+}

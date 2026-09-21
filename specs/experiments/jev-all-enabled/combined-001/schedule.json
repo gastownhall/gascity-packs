@@ -1,0 +1,162 @@
+[
+  {
+    "case_id": "packet-01",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-01",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-02",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-02",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-03",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-03",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-04",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-04",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-05",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-05",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-06",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-06",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-07",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-07",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-08",
+    "arm": "jev",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-08",
+    "arm": "baseline",
+    "repetition": 1
+  },
+  {
+    "case_id": "packet-01",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-01",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-02",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-02",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-03",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-03",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-04",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-04",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-05",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-05",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-06",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-06",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-07",
+    "arm": "jev",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-07",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-08",
+    "arm": "baseline",
+    "repetition": 2
+  },
+  {
+    "case_id": "packet-08",
+    "arm": "jev",
+    "repetition": 2
+  }
+]

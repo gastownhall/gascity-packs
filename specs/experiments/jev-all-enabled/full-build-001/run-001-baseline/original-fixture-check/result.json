@@ -1,0 +1,34 @@
+{
+  "scope": "original fixture after runtime termination; not a successful workflow output",
+  "initial_commit": "0a49decd7d4aebfe073d59f6d31ad975e884a3a1",
+  "original_tests_unchanged": true,
+  "original_test_sha256": "148afb6a5de401b3930b293c5e5d5d093bf25f16c36f2886ed1bd01351ed164c",
+  "pytest_exit": 1,
+  "hidden_exit": 1,
+  "hidden_results": [
+    {
+      "input": "  Hello, World!  ",
+      "expected": "hello-world",
+      "pass": false,
+      "error": "NotImplementedError"
+    },
+    {
+      "input": "a---b___c",
+      "expected": "a-b-c",
+      "pass": false,
+      "error": "NotImplementedError"
+    },
+    {
+      "input": "123 ABC",
+      "expected": "123-abc",
+      "pass": false,
+      "error": "NotImplementedError"
+    },
+    {
+      "input": "!@#",
+      "expected": "",
+      "pass": false,
+      "error": "NotImplementedError"
+    }
+  ]
+}

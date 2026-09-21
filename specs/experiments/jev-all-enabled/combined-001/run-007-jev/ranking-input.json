@@ -1,0 +1,18 @@
+{
+  "issue": {
+    "title": "429 responses retry without delay",
+    "body": "The HTTP client ignores Retry-After on 429 and immediately retries."
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "title": "Retries ignore 503 backoff",
+      "body": "503 responses retry immediately; the client has a different 503 retry implementation."
+    },
+    {
+      "id": "C2",
+      "title": "Honor Retry-After on rate limits",
+      "body": "For 429, the HTTP client ignores the Retry-After header and retries at once."
+    }
+  ]
+}

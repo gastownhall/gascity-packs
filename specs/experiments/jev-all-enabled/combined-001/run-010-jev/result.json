@@ -1,0 +1,274 @@
+{
+  "case_id": "packet-05",
+  "arm": "jev",
+  "status": "completed",
+  "started_at": "2026-09-21T01:17:21.008424+00:00",
+  "expected": {
+    "kind:kind": "chore",
+    "findings:finding_0": "residual_risk",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "required_fix",
+    "failure:failure": "environment",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "helpers": {
+    "kind": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "kind",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:17:21.382119+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 1232,
+        "output_tokens": 55
+      },
+      "mode": "auto",
+      "threshold": 0.85,
+      "state_sha256": "f8365aa73b33e1d98ce65dbb13a534312b2075d0d4db45dcc7233031f2f43d6e",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "kind": {
+            "type": "choice",
+            "choice": "chore",
+            "confidence": 0.93,
+            "probabilities": {
+              "bug": 0.06,
+              "feature": 0.0,
+              "docs": 0.0,
+              "unclear": 0.0,
+              "chore": 0.94
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.21410220908001065
+    },
+    "findings": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "findings",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:17:21.895969+00:00",
+      "route": "llm",
+      "usage": {
+        "input_tokens": 902,
+        "output_tokens": 154
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "ca712812ed628675c85acf97105f92e048fcdf8fbbc3a4f085cc47d7202c8bd5",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "finding_0": {
+            "type": "choice",
+            "choice": "residual_risk",
+            "confidence": 0.98,
+            "probabilities": {
+              "residual_risk": 0.99,
+              "unclear": 0.0,
+              "required_fix": 0.0,
+              "missing_evidence": 0.01
+            }
+          },
+          "pair_0_1": {
+            "type": "choice",
+            "choice": "different",
+            "confidence": 1.0,
+            "probabilities": {
+              "unclear": 0.0,
+              "different": 1.0,
+              "same": 0.0
+            }
+          },
+          "finding_1": {
+            "type": "choice",
+            "choice": "required_fix",
+            "confidence": 0.95,
+            "probabilities": {
+              "residual_risk": 0.0,
+              "unclear": 0.0,
+              "required_fix": 0.97,
+              "missing_evidence": 0.03
+            }
+          }
+        },
+        "fallback_questions": [
+          "finding_0"
+        ],
+        "route": "llm",
+        "findings": [
+          {
+            "id": "F1",
+            "text": "Optional future optimization: cache parsing results; current latency satisfies every requirement and all mandatory checks passed.",
+            "source": "lane-0/review.md:10"
+          },
+          {
+            "id": "F2",
+            "text": "The implementation hardcodes an empty result where the accepted export contract requires all rows.",
+            "source": "lane-1/review.md:11"
+          }
+        ],
+        "possible_duplicate_pairs": []
+      },
+      "elapsed_seconds": 0.19099370809271932
+    },
+    "failure": {
+      "schema": "gc.workflow-decisions.v1",
+      "task": "failure",
+      "question_version": "gc.workflow-decisions.v1",
+      "requested_model": "jev-1.13.0",
+      "started_at": "2026-09-21T01:17:22.451659+00:00",
+      "route": "use_decisions",
+      "usage": {
+        "input_tokens": 534,
+        "output_tokens": 49
+      },
+      "mode": "auto",
+      "threshold": 0.9,
+      "state_sha256": "89281a9a2b6990981902cb458008e7099a9154dbcf5798afbd137ec74eacbaec",
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "decision": {
+        "answers": {
+          "failure": {
+            "type": "choice",
+            "choice": "environment",
+            "confidence": 0.95,
+            "probabilities": {
+              "product": 0.0,
+              "missing_evidence": 0.03,
+              "unclear": 0.0,
+              "environment": 0.97
+            }
+          }
+        },
+        "fallback_questions": [],
+        "route": "use_decisions"
+      },
+      "elapsed_seconds": 0.24482416594401002
+    },
+    "evidence": {
+      "schema": "gc.evidence-assessment.v1",
+      "advisory": true,
+      "started_at": "2026-09-21T01:17:23.045008+00:00",
+      "question_version": "gc.evidence-question.v2",
+      "requested_model": "jev-1.13.0",
+      "threshold": 0.85,
+      "mode": "auto",
+      "state_sha256": "3b7eccb459e678d8938c3a7f693d32c8a2392a070b46a14b870b449b292f01fd",
+      "decisions": [
+        {
+          "id": "AC-1",
+          "type": "choice",
+          "choice": "missing_evidence",
+          "confidence": 0.94,
+          "probabilities": {
+            "missing_evidence": 0.96,
+            "contradicted": 0.04,
+            "unclear": 0.0,
+            "supported": 0.0
+          },
+          "route": "run_proof"
+        }
+      ],
+      "status": "completed",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1003,
+        "output_tokens": 59
+      },
+      "elapsed_seconds": 0.36209362489171326
+    },
+    "ranking": {
+      "schema": "gc.duplicate-ranking.v1",
+      "question_version": "gc.duplicate-ranking.v1",
+      "requested_model": "jev-1.13.0",
+      "mode": "auto",
+      "route": "investigate_ranked_candidates",
+      "usage": {
+        "input_tokens": 707,
+        "output_tokens": 58
+      },
+      "started_at": "2026-09-21T01:17:23.832095+00:00",
+      "state_sha256": "5edfa19c74effd11df22167f27b2d87c27f346ee8e68e91ccbd85d80413313bb",
+      "status": "completed",
+      "decision": {
+        "ranked_candidate_ids": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "scores": {
+          "C1": 0.96,
+          "C2": 0.1,
+          "C3": 0.04
+        },
+        "candidates": [
+          {
+            "id": "C1",
+            "title": "Bad signature accepted by installer",
+            "body": "An archive signed with the wrong key still installs; signature verification is required."
+          },
+          {
+            "id": "C2",
+            "title": "Signing release artifacts",
+            "body": "Add a new signing step to the release pipeline."
+          },
+          {
+            "id": "C3",
+            "title": "Checksum network timeout",
+            "body": "Checksum download times out during an outage."
+          }
+        ],
+        "requires_investigation": true
+      },
+      "model": "jev-1.13.0",
+      "elapsed_seconds": 0.20302899996750057
+    }
+  },
+  "state_sha256": "8f8ea8838dc0afafb555e64040160a67e0a3408f2d5b0cde7e8403ee27e8c36c",
+  "ranking_top1": true,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C1",
+    "C2",
+    "C3"
+  ],
+  "answers": {
+    "kind:kind": "chore",
+    "findings:finding_0": "residual_risk",
+    "findings:pair_0_1": "different",
+    "findings:finding_1": "required_fix",
+    "failure:failure": "environment",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "correct": 6,
+  "questions": 6,
+  "report_contract_pass": true,
+  "quality_pass": true,
+  "elapsed_seconds": 20.139261042000726,
+  "claude_calls": 1,
+  "llm_tokens": {
+    "inputTokens": 2,
+    "outputTokens": 1712,
+    "cacheReadInputTokens": 2473,
+    "cacheCreationInputTokens": 5595,
+    "totalTokens": 9782
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 4378,
+    "output_tokens": 375
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": [
+    "findings:finding_0"
+  ]
+}

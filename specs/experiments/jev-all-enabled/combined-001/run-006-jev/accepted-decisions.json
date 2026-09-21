@@ -1,0 +1,11 @@
+{
+  "kind:kind": "feature",
+  "findings:finding_0": "required_fix",
+  "findings:pair_0_1": "different",
+  "findings:pair_0_2": "same",
+  "findings:finding_1": "missing_evidence",
+  "findings:pair_1_2": "different",
+  "findings:finding_2": "required_fix",
+  "failure:failure": "product",
+  "evidence:evidence_0": "contradicted"
+}

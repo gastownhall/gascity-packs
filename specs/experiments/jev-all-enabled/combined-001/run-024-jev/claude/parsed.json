@@ -1,0 +1,42 @@
+{
+  "answers": {
+    "kind:kind": "feature",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "same",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "missing_evidence",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "feature",
+      "quote": "gc mail send --supersede <order>"
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "missing_evidence",
+      "quote": "No Windows test execution or captured output was supplied"
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "same",
+      "quote": "run the required Windows check"
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "missing_evidence",
+      "quote": "The required Windows proof is absent"
+    },
+    {
+      "id": "failure:failure",
+      "choice": "missing_evidence",
+      "quote": "No captured output is available."
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "missing_evidence",
+      "quote": "self.assertEqual(transform(1), 2)"
+    }
+  ]
+}

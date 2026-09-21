@@ -1,0 +1,50 @@
+{
+  "case_id": "packet-04",
+  "arm": "baseline",
+  "status": "completed",
+  "started_at": "2026-09-21T01:16:09.362159+00:00",
+  "expected": {
+    "kind:kind": "feature",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "same",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "missing_evidence",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "helpers": {},
+  "state_sha256": "b66ac7e1f580df0ba42f905500d62e2af29ba9dcb1c40f5beeae6bf13ec0dd86",
+  "ranking_top1": true,
+  "source_preserved": true,
+  "ranked_candidate_ids": [
+    "C2",
+    "C1"
+  ],
+  "answers": {
+    "kind:kind": "feature",
+    "findings:finding_0": "missing_evidence",
+    "findings:pair_0_1": "same",
+    "findings:finding_1": "missing_evidence",
+    "failure:failure": "missing_evidence",
+    "evidence:evidence_0": "missing_evidence"
+  },
+  "correct": 6,
+  "questions": 6,
+  "report_contract_pass": true,
+  "quality_pass": true,
+  "elapsed_seconds": 34.77386545785703,
+  "claude_calls": 2,
+  "llm_tokens": {
+    "inputTokens": 4,
+    "outputTokens": 2492,
+    "cacheReadInputTokens": 4946,
+    "cacheCreationInputTokens": 8779,
+    "totalTokens": 16221
+  },
+  "llm_usage_unknown": 0,
+  "jev_tokens": {
+    "input_tokens": 0,
+    "output_tokens": 0
+  },
+  "jev_usage_unknown": 0,
+  "fallback_questions": []
+}

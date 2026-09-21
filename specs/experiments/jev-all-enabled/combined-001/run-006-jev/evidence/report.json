@@ -1,0 +1,32 @@
+{
+  "schema": "gc.evidence-assessment.v1",
+  "advisory": true,
+  "started_at": "2026-09-21T01:15:32.297054+00:00",
+  "question_version": "gc.evidence-question.v2",
+  "requested_model": "jev-1.13.0",
+  "threshold": 0.85,
+  "mode": "auto",
+  "state_sha256": "60286d129330b00eb8a3c24fb51ee11d1f3b49eda06dbd336eb91bfaea56b73c",
+  "decisions": [
+    {
+      "id": "AC-1",
+      "type": "choice",
+      "choice": "contradicted",
+      "confidence": 1.0,
+      "probabilities": {
+        "missing_evidence": 0.0,
+        "supported": 0.0,
+        "unclear": 0.0,
+        "contradicted": 1.0
+      },
+      "route": "inspect_implementation"
+    }
+  ],
+  "status": "completed",
+  "model": "jev-1.13.0",
+  "usage": {
+    "input_tokens": 1192,
+    "output_tokens": 59
+  },
+  "elapsed_seconds": 0.37970375013537705
+}

@@ -1,0 +1,31 @@
+{
+  "schema": "gc.evidence-bundle.v1",
+  "worktree": "/Users/csells/.bb/personal-workspaces/env_tcfp9gdfcc/gascity-jev/specs/experiments/jev-all-enabled/combined-001/input-packet-01/fixture",
+  "head": "f90e140a3cbec0ed92c7055f12f8fc8d51d36b13",
+  "items": [
+    {
+      "id": "AC-1",
+      "criterion": "Trimming an empty string returns an empty string.",
+      "claim": "The empty-string behavior was verified.",
+      "sources": [
+        {
+          "path": "subject.py",
+          "sha256": "6609800e6f8ab6ad3102b770f0831a0d4018ce6f3248f7c3543dae78f59ad758"
+        },
+        {
+          "path": "test_subject.py",
+          "sha256": "b373b8ff23dfa785d4dda704e5942322245ff08c0cc26005d69e8fdba6ef141e"
+        }
+      ],
+      "proofs": [
+        {
+          "path": "proof.txt",
+          "sha256": "0f0351b05a7a111268e54baad2269896c1f10407d6e42f574fe86b34ae7333da",
+          "command": "python3 -m unittest discover -v",
+          "exit_code": 0,
+          "head": "f90e140a3cbec0ed92c7055f12f8fc8d51d36b13"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "observation": "Host process snapshot retained privately; unrelated application details excluded from public experiment artifacts.",
+  "private_artifact_sha256": "16d2395f0a58ec7109e9d645026a4aee9bbd31a60ad39e5e0c7eec5b6456d0be",
+  "load_average_at_prior_observation": [
+    49.470703125,
+    27.41064453125,
+    18.224609375
+  ],
+  "causal_attribution": "Not established; no unrelated processes changed or stopped."
+}

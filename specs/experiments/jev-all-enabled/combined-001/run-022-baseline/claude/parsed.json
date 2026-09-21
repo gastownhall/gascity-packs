@@ -1,0 +1,60 @@
+{
+  "answers": {
+    "kind:kind": "feature",
+    "findings:finding_0": "required_fix",
+    "findings:pair_0_1": "different",
+    "findings:pair_0_2": "same",
+    "findings:finding_1": "missing_evidence",
+    "findings:pair_1_2": "different",
+    "findings:finding_2": "required_fix",
+    "failure:failure": "product",
+    "evidence:evidence_0": "contradicted"
+  },
+  "report": [
+    {
+      "id": "kind:kind",
+      "choice": "feature",
+      "quote": "bridges the provider's event stream into"
+    },
+    {
+      "id": "findings:finding_0",
+      "choice": "required_fix",
+      "quote": "archive() deletes the prior record; preserve it instead."
+    },
+    {
+      "id": "findings:pair_0_1",
+      "choice": "different",
+      "quote": "Run the missing concurrency proof"
+    },
+    {
+      "id": "findings:pair_0_2",
+      "choice": "same",
+      "quote": "despite required audit retention; preserve the record."
+    },
+    {
+      "id": "findings:finding_1",
+      "choice": "missing_evidence",
+      "quote": "Run the missing concurrency proof before claiming"
+    },
+    {
+      "id": "findings:pair_1_2",
+      "choice": "different",
+      "quote": "The earlier record is deleted during archiving"
+    },
+    {
+      "id": "findings:finding_2",
+      "choice": "required_fix",
+      "quote": "The earlier record is deleted during archiving despite required audit retention"
+    },
+    {
+      "id": "failure:failure",
+      "choice": "product",
+      "quote": "./parser.go:42: undefined: parseRecord"
+    },
+    {
+      "id": "evidence:evidence_0",
+      "choice": "contradicted",
+      "quote": "return x.lower()"
+    }
+  ]
+}

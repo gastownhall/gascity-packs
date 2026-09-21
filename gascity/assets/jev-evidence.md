@@ -1,7 +1,9 @@
-# Optional Jev evidence assistance
+# Jev evidence assistance
 
-`build-basic --var jev_mode=assist` augments the existing test-evidence lane.
-The default is `off`. It does not replace the acceptance or simplicity lanes,
+`build-basic` defaults `jev_mode` to `auto`, using Jev in the existing
+test-evidence lane when a credential is configured. Without access, record the
+skipped assistance and perform ordinary review. `off` disables assistance;
+`assist` explicitly attempts it and records failures. It does not replace the acceptance or simplicity lanes,
 waive proof commands, or grant approval. It requires `TYPESAFE_API_KEY` in the
 worker environment. Keep credentials out of prompts, bundles, and run logs.
 
@@ -51,7 +53,7 @@ Run the helper with a new output directory for each attempt:
 
 ```sh
 python3 <pack-root>/assets/scripts/jev_evidence.py bundle.json \
-  --output-dir <artifact-root>/jev/attempt-1 \
+  --output-dir <artifact-root>/jev/attempt-1 --mode auto \
   --model jev-1.13.0 --threshold 0.85
 ```
 

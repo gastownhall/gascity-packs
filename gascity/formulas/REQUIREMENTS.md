@@ -142,7 +142,7 @@ this ledger against the `FORMULAS` constant and formula directory.
 | ID | Formula | Type | Required behavior | Evidence |
 | --- | --- | --- | --- | --- |
 | GC-BF-008 | `build-basic` | Cataloged concrete default | Extends `build-base`, preserves the full stage sequence, declares methodology metadata, uses built-in Gas City planning/decomposition/implementation helpers, writes a validated canonical implementation summary before review, exposes stable path-shadow overrides, validates artifacts through shared checks, and expands review through `build-basic-review`, forwarding evidence, finding and failure Jev settings. | `build-basic.formula.toml`; `../tests/test_formula_assets.py`; `../tests/test_formula_assets.py::FormulaAssetTests::test_producer_stages_gate_artifacts_with_bounded_repair` |
-| GC-BF-009 | `build-basic-review` | Expansion review loop | Runs starter review fanout across acceptance/correctness, test evidence, and simplicity/maintainability lanes, provides one override file per lane, synthesizes findings, applies required fixes, validates review/fix artifacts, and loops until approved, blocked, or attempts exhaust. Optional Jev finding/pair and failure assistance preserves all findings, lane verdicts and proof requirements. | `build-basic-review.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-009 | `build-basic-review` | Expansion review loop | Runs starter review fanout across acceptance/correctness, test evidence, and simplicity/maintainability lanes, provides one override file per lane, synthesizes findings, applies required fixes, validates review/fix artifacts, and loops until approved, blocked, or attempts exhaust. Jev finding/pair and failure assistance defaults to auto when configured and preserves all findings, lane verdicts and proof requirements. | `build-basic-review.formula.toml`; `../tests/test_formula_assets.py` |
 
 ### Continuation Entrypoints
 
@@ -187,7 +187,7 @@ this ledger against the `FORMULAS` constant and formula directory.
 
 | ID | Formula | Type | Required behavior | Evidence |
 | --- | --- | --- | --- | --- |
-| GC-BF-019 | `github-issue-triage-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, snapshots issue state, keys triage by issue-body hash, supports opt-in Jev primary-kind decisions and automatic-when-configured Noul candidate ordering with full source retention and explicit fallback, validates triage report schema, gates sensitive output, and creates or updates the sticky triage comment. | `github-issue-triage-base.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-019 | `github-issue-triage-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, snapshots issue state, keys triage by issue-body hash, uses configured Jev primary-kind decisions and Noul candidate ordering by default with full source retention and explicit fallback, validates triage report schema, gates sensitive output, and creates or updates the sticky triage comment. | `github-issue-triage-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-020 | `github-issue-triage` | Cataloged public adapter | Extends `github-issue-triage-base` without changing the base adapter stack. | `github-issue-triage.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-021 | `github-issue-fix-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, runs/reuses triage, gates fix eligibility, passes and validates planning/decomposition/implementation/review/fix selectors plus modes, optionally publishes PRs, and owns sticky issue-fix status. | `github-issue-fix-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-022 | `github-issue-fix` | Cataloged public adapter | Extends `github-issue-fix-base` without changing the base issue-fix graph. | `github-issue-fix.formula.toml`; `../tests/test_formula_assets.py` |
@@ -222,7 +222,7 @@ this ledger against the `FORMULAS` constant and formula directory.
 - Issue triage exposes kind and duplicate-candidate modes. PR review exposes
   kind mode. Both retain reuse no-ops, full investigation/review and public
   write gates. Kind never reduces review coverage.
-- `auto` uses a configured Jev credential, otherwise records ordinary LLM
+- All Jev modes default to `auto`, using a configured Jev credential, otherwise recording ordinary LLM
   handling. `off` disables assistance; `assist` requires access. Uncertainty,
   invalid responses, mismatched rubrics and failures record explicit fallback.
 - Findings preserve all source IDs; matching pairs do not authorize deletion
