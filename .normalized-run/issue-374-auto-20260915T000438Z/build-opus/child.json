@@ -1,0 +1,25 @@
+{
+  "child_root_id": "gcg--9223372036854774601",
+  "contract_sha": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "formula": "workflows-build-from-convoy",
+  "molecule_id": null,
+  "nonce": "34cbbd4e12f6a23fa6cdebb9a69700f84724c5f31a2e4d717cfad0c9b83e1c52",
+  "raw_launch_output": {
+    "bead_id": "gcg--9223372036854774601",
+    "dry_run": false,
+    "formula": "workflows-build-from-convoy",
+    "method": "on-formula",
+    "ok": true,
+    "queued": false,
+    "routed": true,
+    "schema_version": "1",
+    "success": true,
+    "target": "gascity-packs/gc.run-operator",
+    "workflow_id": "gcg--9223372036854774601"
+  },
+  "receipt_kind": "normalized-launch",
+  "source_bead": "gp-upuli",
+  "status": "launched",
+  "target": "gascity-packs/gc.run-operator",
+  "workflow_id": "gcg--9223372036854774601"
+}

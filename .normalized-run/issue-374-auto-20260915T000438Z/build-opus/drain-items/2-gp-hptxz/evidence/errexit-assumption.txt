@@ -1,0 +1,21 @@
+no-errexit execution assumption — measured on git version 2.43.0, GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+fixture: main ahead of side by one commit, side ahead by one (genuinely diverged)
+
+real probe rc values:
+  main->side (diverged): rc=1
+  self (ancestor):       rc=0
+  bogus refs (error):    rc=128
+
+A. shipped idiom, no errexit (what the fence assumes):
+  -> rebase arm (rc=1 fell through: CORRECT)
+
+B. same idiom under set -e:
+  shell exited rc=1 at the probe — the case is never entered, trichotomy destroyed
+
+C. prescribed errexit-safe form (ANCESTOR_RC=0; probe || ANCESTOR_RC=$?):
+  -> rebase arm (rc=1 preserved: CORRECT)
+
+D. why || true is forbidden — it collapses BOTH rc 1 and rc 128 to 0,
+   routing a needed rebase AND a probe error into the SKIP arm:
+  diverged  (real rc 1)   -> captured 0
+  probe err (real rc 128) -> captured 0

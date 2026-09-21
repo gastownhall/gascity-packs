@@ -1,0 +1,65 @@
+--- leg 1: skip preserves topology (EX-1 already-based/conflicting, EX-2 already-based/clean)
+    FAIL [leg 1] leg 1 ex1: fence rc: got '1', want '0'
+    FAIL [leg 1] leg 1 ex1: skip narration: missing literal: SKIP-REBASE:
+    FAIL [leg 1] leg 1 ex1: a rebase was started (.git/rebase-merge or rebase-apply present)
+    FAIL [leg 1] leg 1 ex2: skip narration: missing literal: SKIP-REBASE:
+    FAIL [leg 1] leg 1 ex2: temp is SHA-identical to origin/source: got '39ab97ef07cbbec12d08620835c8500af7510b01', want '762810667cb6caf9f20114c3a6bfc25863ba11aa'
+    FAIL [leg 1] leg 1 ex2: merge topology preserved: got '0', want '2'
+    leg 1: FAIL
+--- leg 1b: stranded temp fails closed at the skip-arm checkout (EX-1)
+    FAIL [leg 1b] leg 1b: fence rc: rc is 0, want non-zero
+    FAIL [leg 1b] leg 1b: skip-arm checkout STOP wording: missing literal: cannot materialize temp at origin/
+    FAIL [leg 1b] leg 1b: no drain-ack logged
+    leg 1b: FAIL
+--- leg 2: diverged clean rebases as today (EX-3a)
+    leg 2: PASS
+--- leg 3: diverged conflicting keeps the conflict path (EX-3b)
+    leg 3: PASS
+--- leg 4: fetch failure stops before the probe (stale-ref trap)
+    FAIL [leg 4] leg 4: fetch STOP wording: missing literal: tracking refs failed
+    FAIL [leg 4] leg 4: collective STOP sentence: missing literal: cannot evaluate rebase ancestry
+    FAIL [leg 4] leg 4: temp was created -- the stop must precede the checkout
+    FAIL [leg 4] leg 4: no drain-ack logged
+    leg 4: FAIL
+--- leg 5: missing source branch
+    FAIL [leg 5] leg 5: fence rc: rc is 0, want non-zero
+    FAIL [leg 5] leg 5: fetch STOP wording: missing literal: tracking refs failed
+    FAIL [leg 5] leg 5: no drain-ack logged
+    leg 5: FAIL
+--- leg 6: probe error fails closed (merge-base shimmed to 128)
+    FAIL [leg 6] leg 6: probe-error STOP wording: missing literal: errored (status 128)
+    FAIL [leg 6] leg 6: collective STOP sentence: missing literal: cannot evaluate rebase ancestry
+    FAIL [leg 6] leg 6: temp was created -- probe-first means nothing to clean
+    FAIL [leg 6] leg 6: a rebase was started after a probe error
+    FAIL [leg 6] leg 6: no drain-ack logged
+    leg 6: FAIL
+--- leg 7: structural backstop and ordering (static)
+    FAIL [leg 7] leg 7: probe line occurs exactly once: got '0', want '1'
+    FAIL [leg 7] leg 7: lift sentinel occurs exactly twice: got '1', want '2'
+    FAIL [leg 7] leg 7: collective STOP sentence occurs exactly twice: got '0', want '2'
+    FAIL [leg 7] leg 7: explicit BRANCH refspec: missing literal: +refs/heads/$BRANCH:refs/remotes/origin/$BRANCH
+    FAIL [leg 7] leg 7: explicit TARGET refspec: missing literal: +refs/heads/$TARGET:refs/remotes/origin/$TARGET
+    FAIL [leg 7] leg 7: probe rc capture: missing literal: ANCESTOR_RC=$?
+    FAIL [leg 7] leg 7: fetch-arm STOP literal: missing literal: tracking refs failed
+    FAIL [leg 7] leg 7: probe-arm STOP literal: missing literal: errored (status 
+    FAIL [leg 7] leg 7: skip-arm checkout STOP literal: missing literal: cannot materialize temp at origin/
+    FAIL [leg 7] leg 7: the halt's show-ref must precede the guard fetch
+    FAIL [leg 7] leg 7: the guard fetch must precede the probe
+    FAIL [leg 7] leg 7: the probe must immediately precede the rc capture
+    FAIL [leg 7] leg 7: the rc capture must precede the case
+    leg 7: FAIL
+--- leg 8: halt composition (target branch missing)
+    leg 8: PASS
+
+=== per-leg results (formula: /tmp/issue374-base-05031f2c/gastown/formulas/mol-refinery-patrol.toml) ===
+  leg 1: FAIL
+  leg 1b: FAIL
+  leg 2: PASS
+  leg 3: PASS
+  leg 4: FAIL
+  leg 5: FAIL
+  leg 6: FAIL
+  leg 7: FAIL
+  leg 8: PASS
+
+FAIL: one or more legs failed

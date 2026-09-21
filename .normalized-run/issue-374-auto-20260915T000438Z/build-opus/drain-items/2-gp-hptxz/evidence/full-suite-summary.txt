@@ -1,0 +1,7 @@
+  PASS  gastown/tests/test_gastown_pack_assets.sh
+  PASS  gastown/tests/test_gastown_theme_scripts.sh
+  PASS  gastown/tests/test_mol_refinery_patrol_rebase_guard.sh
+  PASS  gastown/tests/test_mol_witness_patrol_orphan_recovery.sh
+  PASS  gastown/tests/test_polecat_churn_watcher.sh
+  PASS  gastown/tests/test_polecat_push_gate.sh
+  PASS  gastown/tests/test_witness_heartbeat_check.sh

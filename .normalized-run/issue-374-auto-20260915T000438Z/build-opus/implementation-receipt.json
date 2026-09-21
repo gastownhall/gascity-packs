@@ -1,0 +1,24 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "candidate_branch": "normalized/3f91225712f8005e7b62ea43969101c0aa92df53258931f464bdd57cc963f24a/opus",
+  "candidate_convoy_id": "gp-upuli",
+  "candidate_head": "9b8951553f9e4c57effb84865cf2a1f282a467a1",
+  "candidate_tree": "c9af72b22c361df677dbfa9d9a1254044e004c85",
+  "child_root_id": "gcg--9223372036854774601",
+  "commits": [
+    "8d087e08c4d346ed2dfd7e169bc6ccf691cc9d17",
+    "9b8951553f9e4c57effb84865cf2a1f282a467a1"
+  ],
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "implementation_summary_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/builders/opus/implementation-summary.md",
+  "implementation_summary_sha256": "df5134440fd4add31e50fa28456645f3649a710258564803acb265a1352be0c4",
+  "lane": "opus",
+  "operation_id": "8d6c54211c547e851d134e647378926f7e8bfa7e5cf93b8aaf308bbed892c0ee",
+  "receipt_kind": "normalized-builder-child-implementation",
+  "run_key": "3f91225712f8005e7b62ea43969101c0aa92df53258931f464bdd57cc963f24a",
+  "source_bead": "gcg--9223372036854775297",
+  "status": "success",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1,
+  "worktree": "/data/projects/gascity-packs/worktrees/normalized-3f91225712f8005e7b62ea43969101c0aa92df53258931f464bdd57cc963f24a-opus"
+}
