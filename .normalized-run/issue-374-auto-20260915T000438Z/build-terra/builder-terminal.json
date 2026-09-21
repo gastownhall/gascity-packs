@@ -1,0 +1,18 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "candidate_convoy_id": "gp-mc9kp",
+  "child_root_id": null,
+  "child_status": null,
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "decompose_convoy_id": "gp-cd130",
+  "decompose_graph_sha256": "daac4c65d8869d449e5b18ed380a7bff6feac86521b6841947946b9d24f51fa5",
+  "error_receipt": "builder-error.json",
+  "lane": "terra",
+  "reason": "builder_reconciliation_error",
+  "receipt_kind": "normalized-builder-lane",
+  "run_key": "06e7ae9267b1e212b5d55ab940d5b69a3df782f3810702fdfe5a7296a37540f9",
+  "source_bead": "gcg--9223372036854775297",
+  "status": "blocked",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1
+}
