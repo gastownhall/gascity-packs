@@ -1,0 +1,65 @@
+{
+  "attempt": 1,
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "binding_kind": "work_contract",
+  "content_hash": "e64c57fb0025870f252c100cb578df0a4ee7cce3ebe9fc601a51b271223e365e",
+  "contract_revision": "issue-374-auto-20260915T000438Z.r1",
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "generation": 2,
+  "idempotency_key": null,
+  "input_hashes": {
+    "canonical_design": "68257da7f72d124f5e8f8530a939a7d7742c66a29aa982e1d2c93ed271ba65c4",
+    "design_review_input": "1a95784fe8a90a3095d98815142b551d94d3fadcf0ecb36fe1f4706929de6002",
+    "last_apply_summary": "3fc3152eebad5fbe07843cc9e31947a7ce57754c07297bf7952dbb89dae6bab4",
+    "last_synthesis": "e9741f58bf566fb7006d513edaec4e3b298571c6a6427830d579b317bb5a6bed",
+    "review_candidate": "057ad99d6da1db77b8fb68d5e7297b8d988eb7fffa697aea37d1638a32ce9738",
+    "work_contract": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616"
+  },
+  "input_paths": {
+    "canonical_design": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/canonical-design.md",
+    "design_review_input": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/design-review/input.json",
+    "last_apply_summary": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/design-review/attempt-2-retry-20260920T053717Z/apply-summary.md",
+    "last_synthesis": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/design-review/attempt-2-retry-20260920T053717Z/synthesis.md",
+    "review_candidate": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/design-review/review-candidate.md",
+    "work_contract": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/work-contract.json"
+  },
+  "inputs": {
+    "canonical_design": "68257da7f72d124f5e8f8530a939a7d7742c66a29aa982e1d2c93ed271ba65c4",
+    "design_review_input": "1a95784fe8a90a3095d98815142b551d94d3fadcf0ecb36fe1f4706929de6002",
+    "last_apply_summary": "3fc3152eebad5fbe07843cc9e31947a7ce57754c07297bf7952dbb89dae6bab4",
+    "last_synthesis": "e9741f58bf566fb7006d513edaec4e3b298571c6a6427830d579b317bb5a6bed",
+    "review_candidate": "057ad99d6da1db77b8fb68d5e7297b8d988eb7fffa697aea37d1638a32ce9738",
+    "work_contract": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616"
+  },
+  "output_hashes": {
+    "approved_design": "057ad99d6da1db77b8fb68d5e7297b8d988eb7fffa697aea37d1638a32ce9738",
+    "design_review_result": "ba94b09ae6633749392401289d4783d9395ee060eeb97dbd987f956930b10165"
+  },
+  "output_paths": {
+    "approved_design": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/approved-design.md",
+    "design_review_result": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/design-review/result.json"
+  },
+  "outputs": {
+    "approved_design": "057ad99d6da1db77b8fb68d5e7297b8d988eb7fffa697aea37d1638a32ce9738",
+    "design_review_result": "ba94b09ae6633749392401289d4783d9395ee060eeb97dbd987f956930b10165"
+  },
+  "phase": "design-review",
+  "prior_generations": [
+    {
+      "content_hash": "be9dda6db23566b6ad693e0da3f27d28d2006d2b321df998e8b105e82992c239",
+      "generation": 1,
+      "reason": "retry generation re-ran the design-review loop in this run dir; generation 1 binds the superseded candidate c1faf90f and attempt-3 paths of the prior child tree"
+    },
+    {
+      "content_hash": "b2cd865a293735241a27767d799403763b06fbc8ecfb07ca48977a8c0fe93b89",
+      "generation": 1,
+      "reason": "retry generation re-ran the design-review loop in this run dir; generation 1 binds the superseded candidate c1faf90f and attempt-3 paths of the prior child tree"
+    }
+  ],
+  "session": "gcg-session-e33fe4468e33d28d8933aae1cf38a00c",
+  "source_identity": null,
+  "source_revision": "2026-08-29T06:21:43Z",
+  "status": "complete",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1
+}
