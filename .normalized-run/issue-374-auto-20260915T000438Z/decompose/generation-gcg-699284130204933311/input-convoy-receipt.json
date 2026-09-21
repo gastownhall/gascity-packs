@@ -1,0 +1,16 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "convoy_id": "gp-riems",
+  "formula": "decomposition-base",
+  "issue_ids": [
+    "gp-z8xzf"
+  ],
+  "member_bead": "gp-z8xzf",
+  "name": "normalized-decompose-e4c7dd8468efcaa9ce7793fc991290a1124be3a8fb5aed128036ada2d2247bc9",
+  "nonce": "e4c7dd8468efcaa9ce7793fc991290a1124be3a8fb5aed128036ada2d2247bc9",
+  "receipt_kind": "normalized-input-convoy",
+  "source_bead": "gcg-699284130204933311",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1
+}

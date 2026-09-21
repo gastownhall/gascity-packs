@@ -1,0 +1,25 @@
+{
+  "child_root_id": "gcg--9223372036854775263",
+  "contract_sha": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "formula": "decomposition-base",
+  "molecule_id": null,
+  "nonce": "3d79dab8982e30b0441a3e6e804608e57516a4138a1c2380e179c6a0b1799e95",
+  "raw_launch_output": {
+    "bead_id": "gcg--9223372036854775263",
+    "dry_run": false,
+    "formula": "decomposition-base",
+    "method": "on-formula",
+    "ok": true,
+    "queued": false,
+    "routed": true,
+    "schema_version": "1",
+    "success": true,
+    "target": "gascity-packs/gc.run-operator",
+    "workflow_id": "gcg--9223372036854775263"
+  },
+  "receipt_kind": "normalized-launch",
+  "source_bead": "gp-d7pw4",
+  "status": "launched",
+  "target": "gascity-packs/gc.run-operator",
+  "workflow_id": "gcg--9223372036854775263"
+}

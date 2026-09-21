@@ -1,0 +1,16 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "convoy_id": "gp-d7pw4",
+  "formula": "decomposition-base",
+  "issue_ids": [
+    "gp-ess07"
+  ],
+  "member_bead": "gp-ess07",
+  "name": "normalized-decompose-d6b29576aafeaf3f587a4b61226577948a54439702898e9cd74808e3707021f0",
+  "nonce": "d6b29576aafeaf3f587a4b61226577948a54439702898e9cd74808e3707021f0",
+  "receipt_kind": "normalized-input-convoy",
+  "source_bead": "gcg--9223372036854775297",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1
+}

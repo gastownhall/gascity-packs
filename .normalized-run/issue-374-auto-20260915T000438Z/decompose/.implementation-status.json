@@ -1,0 +1,44 @@
+{
+  "children": [
+    {
+      "id": "gp-ikbyp",
+      "status": "open",
+      "title": "issue-374 W1: regression test test_mol_refinery_patrol_rebase_guard.sh (D4, test-first)",
+      "type": "task"
+    },
+    {
+      "id": "gp-zcsrt",
+      "status": "open",
+      "title": "issue-374 W2: D1+D2 formula guard insertion and D3 inference-gate repin (atomic)",
+      "type": "task"
+    },
+    {
+      "id": "gp-hptxz",
+      "status": "open",
+      "title": "issue-374 W3: red control, full verification sweep, and PR-body records",
+      "type": "task"
+    },
+    {
+      "id": "gp-zyrv0",
+      "status": "open",
+      "title": "issue-374 W4: file the residual-precision-(b) follow-up family as tracked work",
+      "type": "task"
+    }
+  ],
+  "convoy": {
+    "fields": {},
+    "id": "gp-cd130",
+    "labels": [
+      "owned"
+    ],
+    "owned": true,
+    "status": "open",
+    "title": "normalized-implementation-efbcd802ed3f1ab381e8046812a3ba97da344dcb43848404f83c0a20bcc52481"
+  },
+  "ok": true,
+  "progress": {
+    "closed": 0,
+    "total": 4
+  },
+  "schema_version": "1"
+}

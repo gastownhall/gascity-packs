@@ -1,0 +1,18 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "child_root_id": "gcg--9223372036854775263",
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "convoy_id": "gp-cd130",
+  "decompose_file_sha256": "ba2de296f17bf798bd10370521c67fc93902520634f835497c5099e349db4018",
+  "decomposition_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/decompose.md",
+  "decomposition_sha256": "84a9b1833164f4de4c61b8b700d73270a66fb1b5ec146e27ebc3fc58d1a26b5c",
+  "formula": "decomposition-base",
+  "graph_file_sha256": "d1eeeeff6057de5e438a2ffced9a51f40047ff6c64946fa10a143a852415a4a3",
+  "graph_sha256": "daac4c65d8869d449e5b18ed380a7bff6feac86521b6841947946b9d24f51fa5",
+  "input_convoy_id": "gp-d7pw4",
+  "receipt_kind": "normalized-implementation-convoy",
+  "source_bead": "gcg--9223372036854775297",
+  "status": "approved",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1
+}
