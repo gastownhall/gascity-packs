@@ -10,6 +10,19 @@ Use `gc bd update "<workflow-root-id>" --set-metadata "gc.build.review_report_pa
 Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
 object.
 
+Parser resolution (the same chain every review-slot producer uses): the
+rig-installed copy first, then the base pack checkout under the work dir, then
+the extending pack's mirror.
+
+```bash
+# The severity/scorecard parser: the rig-installed copy first, then the base
+# pack checkout under the work dir, then the pack mirror.
+COUNTS=".gc/scripts/review_findings_counts.py"
+if [ ! -f "$COUNTS" ]; then COUNTS="${GC_WORK_DIR:-.}/gascity/assets/scripts/review_findings_counts.py"; fi
+if [ ! -f "$COUNTS" ]; then COUNTS="${PACK_ROOT:?no review_findings_counts.py on the rig, under GC_WORK_DIR, or PACK_ROOT}/scripts/review_findings_counts.py"; fi
+python3 "$COUNTS" findings <report>
+```
+
 Review approval is based on the implementation source anchor/worktree recorded
 in the review context and canonical implementation summary. Do not downgrade the
 review to `changes_required` because the launcher rig root has not been mutated;

@@ -105,6 +105,9 @@ def test_write_gate_workspace_materializes_pack_check_scripts(tmp_path) -> None:
     check_script.chmod(0o755)
     validator = pack_source / "assets" / "scripts" / "validate_build_artifact.py"
     validator.write_text("print('ok')\n", encoding="utf-8")
+    findings_counts = pack_source / "assets" / "scripts" / "review_findings_counts.py"
+    findings_counts.write_text("#!/usr/bin/env python3\nprint('blocker=0,major=0,minor=0,nit=0')\n", encoding="utf-8")
+    findings_counts.chmod(0o755)
     schema = schemas_source / "requirements.v1.yaml"
     schema.write_text("schema_id: gc.build.requirements.v1\n", encoding="utf-8")
 
@@ -116,13 +119,22 @@ def test_write_gate_workspace_materializes_pack_check_scripts(tmp_path) -> None:
         rig_name="fixture",
     )
 
-    materialized_check = workspace.rig_dir / ".gc" / "scripts" / "checks" / "build-artifact-valid.sh"
-    materialized_validator = workspace.rig_dir / ".gc" / "scripts" / "validate_build_artifact.py"
+    scripts_dir = workspace.rig_dir / ".gc" / "scripts"
+    materialized_check = scripts_dir / "checks" / "build-artifact-valid.sh"
+    materialized_validator = scripts_dir / "validate_build_artifact.py"
+    materialized_findings_counts = scripts_dir / "review_findings_counts.py"
     materialized_schema = workspace.rig_dir / "schemas" / "build" / "requirements.v1.yaml"
 
     assert materialized_check.read_text(encoding="utf-8") == "#!/usr/bin/env bash\nexit 0\n"
     assert os.access(materialized_check, os.X_OK)
     assert materialized_validator.read_text(encoding="utf-8") == "print('ok')\n"
+    # The review prompts call `.gc/scripts/review_findings_counts.py`, so the
+    # installed file set must include the parser next to the validator.
+    assert materialized_findings_counts.read_text(encoding="utf-8") == findings_counts.read_text(encoding="utf-8")
+    assert os.access(materialized_findings_counts, os.X_OK)
+    assert sorted(path.name for path in scripts_dir.iterdir()) == [
+        "checks", "review_findings_counts.py", "validate_build_artifact.py",
+    ]
     assert materialized_schema.read_text(encoding="utf-8") == "schema_id: gc.build.requirements.v1\n"
 
 

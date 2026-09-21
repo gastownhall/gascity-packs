@@ -54,4 +54,17 @@ because its provider/model was unavailable, write `status: blocked`, record
 `gc.build.review_state=review_unavailable`, `gc.failure_class=review_unavailable`,
 `gc.failure_reason=model_unavailable`; do not invent findings.
 
+Parser resolution (the same chain every review-slot producer uses): the
+rig-installed copy first, then the base pack checkout under the work dir, then
+the extending pack's mirror.
+
+```bash
+# The severity/scorecard parser: the rig-installed copy first, then the base
+# pack checkout under the work dir, then the pack mirror.
+COUNTS=".gc/scripts/review_findings_counts.py"
+if [ ! -f "$COUNTS" ]; then COUNTS="${GC_WORK_DIR:-.}/gascity/assets/scripts/review_findings_counts.py"; fi
+if [ ! -f "$COUNTS" ]; then COUNTS="${PACK_ROOT:?no review_findings_counts.py on the rig, under GC_WORK_DIR, or PACK_ROOT}/scripts/review_findings_counts.py"; fi
+python3 "$COUNTS" findings <report>
+```
+
 Artifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.review_report_path` against schema `gc.build.review.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.

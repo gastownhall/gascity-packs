@@ -1019,6 +1019,13 @@ def materialize_pack_check_scripts(pack_source: Path, rig_dir: Path) -> None:
     if validator_source.is_file():
         shutil.copy2(validator_source, scripts_target / validator_source.name)
 
+    # The shared severity/scorecard parser that the review slot,
+    # apply-review-fixes, and build-basic-review prompts call as
+    # `.gc/scripts/review_findings_counts.py`; installed next to the validator.
+    findings_counts_source = scripts_source / "review_findings_counts.py"
+    if findings_counts_source.is_file():
+        shutil.copy2(findings_counts_source, scripts_target / findings_counts_source.name)
+
     schemas_source = pack_source / "schemas" / "build"
     if schemas_source.is_dir():
         schemas_target = rig_dir / "schemas" / "build"

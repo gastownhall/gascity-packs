@@ -56,6 +56,19 @@ Every finding under `## Residual Findings` is a bullet with
 reason. `trace.upstream` includes the review report with its `sha256:` and
 `{path: <worktree>, hash: git:<fix_head>, role: fix-subject}`.
 
+Parser resolution (the same chain every review-slot producer uses): the
+rig-installed copy first, then the base pack checkout under the work dir, then
+the extending pack's mirror.
+
+```bash
+# The severity/scorecard parser: the rig-installed copy first, then the base
+# pack checkout under the work dir, then the pack mirror.
+COUNTS=".gc/scripts/review_findings_counts.py"
+if [ ! -f "$COUNTS" ]; then COUNTS="${GC_WORK_DIR:-.}/gascity/assets/scripts/review_findings_counts.py"; fi
+if [ ! -f "$COUNTS" ]; then COUNTS="${PACK_ROOT:?no review_findings_counts.py on the rig, under GC_WORK_DIR, or PACK_ROOT}/scripts/review_findings_counts.py"; fi
+python3 "$COUNTS" findings review-fixes.md --section "Residual Findings"
+```
+
 Root metadata to record before closing: `gc.build.review_fixes_path`,
 `gc.build.review_fixes_sha256`, `gc.build.review_fix_commit`,
 `gc.build.review_fix_head`, `gc.build.review_fix_attempts=1` (`0` for

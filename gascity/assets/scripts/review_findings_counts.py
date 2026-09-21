@@ -71,10 +71,13 @@ def parse_scorecard(text: str) -> dict[str, object]:
     decision_match = DECISION_RE.search(text)
     score_match = SCORE_RE.search(text)
     threshold_match = THRESHOLD_RE.search(text)
-    decision = decision_match.group(1).lower() if decision_match else ""
-    score = int(score_match.group(1)) if score_match else None
+    decision = decision_match.group(1).lower() if decision_match else "missing"
+    # An absent score is the literal string "missing" in both the text and the
+    # JSON form so every consumer (shell gates, the receipt sealer, the judge)
+    # sees one spelling.
+    score: int | str = int(score_match.group(1)) if score_match else "missing"
     threshold = int(threshold_match.group(1)) if threshold_match else SCORECARD_THRESHOLD
-    return {"decision": decision or "missing", "score": score, "threshold": threshold}
+    return {"decision": decision, "score": score, "threshold": threshold}
 
 
 def format_findings(counts: dict[str, int]) -> str:
@@ -82,8 +85,7 @@ def format_findings(counts: dict[str, int]) -> str:
 
 
 def format_scorecard(card: dict[str, object]) -> str:
-    score = card["score"]
-    return f"decision={card['decision']},score={'missing' if score is None else score},threshold={card['threshold']}"
+    return f"decision={card['decision']},score={card['score']},threshold={card['threshold']}"
 
 
 def main(argv: list[str] | None = None) -> int:
