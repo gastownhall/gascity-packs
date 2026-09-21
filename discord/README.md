@@ -271,7 +271,7 @@ before it is routed. Four fields describe the body:
 | `body` | the whole message, bot mention removed, line breaks as typed |
 | `body_length` | `len(body)` |
 | `body_preview` | `body` flattened to one line and clipped to 160 chars for status lines |
-| `body_truncated` | `true` when `body_preview` dropped something |
+| `body_truncated` | `true` when the 160-char clip dropped something. It is computed from the flattened preview, so a heavily line-broken body can be `false` while `body` and `body_preview` still differ in shape. |
 
 **Read `body`. `body_preview` is for status lines.** They differ whenever
 `body_truncated` is true, and a clipped preview does not announce itself — one
@@ -281,7 +281,8 @@ the scope limit on the work it was authorizing.
 
 Records written before this shape existed have only `body_preview` and no
 `body_truncated`. A missing flag means "unknown", not "short" — for those, the
-authority is `message_debug.gateway_content_length`.
+closest signal is `message_debug.gateway_content_length`, which is an upper
+bound — it is measured before the bot mention is stripped.
 
 The session receives the same message a second time, complete, in the deferred
 `<discord-event>` reminder's `untrusted_body_json`. That copy was never lossy,

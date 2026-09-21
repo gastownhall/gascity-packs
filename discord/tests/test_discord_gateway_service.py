@@ -170,6 +170,19 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(fields["body_preview"], "do this - then this - and this")
         self.assertFalse(fields["body_truncated"])
 
+    def test_ingress_body_fields_keeps_paragraphs_after_an_embedded_mention(self) -> None:
+        content = "first paragraph <@999>\n\nsecond paragraph"
+        fields = gateway_service.ingress_body_fields({"content": content}, "999")
+
+        self.assertIn("\n\n", fields["body"])
+        self.assertTrue(fields["body"].startswith("first paragraph"))
+        self.assertTrue(fields["body"].endswith("second paragraph"))
+        # routing keeps the flattened form it always had
+        self.assertEqual(
+            gateway_service.strip_bot_mentions(content, "999"),
+            "first paragraph second paragraph",
+        )
+
     def test_process_inbound_dm_records_a_long_body_without_loss(self) -> None:
         common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
         # Long enough to clip, and split across lines so a flattening bug shows up

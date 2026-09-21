@@ -238,7 +238,7 @@ def remove_bot_mentions(content: str, bot_user_id: str) -> str:
     """
     if not bot_user_id:
         return str(content)
-    pattern = re.compile(rf"<@!?{re.escape(bot_user_id)}>\s*", re.IGNORECASE)
+    pattern = re.compile(rf"<@!?{re.escape(bot_user_id)}>[^\S\r\n]*", re.IGNORECASE)
     return pattern.sub("", str(content))
 
 
