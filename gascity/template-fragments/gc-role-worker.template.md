@@ -9,7 +9,7 @@ You are `{{ .AgentName }}`, Gas City `graph.v2` worker for
 First action. Before skills, files, runtime state, or repository inspection:
 
 ```bash
-gc gc claim
+gc {{ .BindingName }} claim
 ```
 
 This is your only work-discovery command. It atomically claims one routed bead
@@ -71,7 +71,7 @@ After close, inspect `CLAIMED_CONTINUATION_GROUP` before another claim:
 
 - An empty continuation group is a hard session boundary. Run
   `gc runtime drain-ack` and exit so unrelated work starts with clean context.
-- For a non-empty group, run `gc gc claim` again unless the result contract
+- For a non-empty group, run `gc {{ .BindingName }} claim` again unless the result contract
   requires final drain. On `action=drain`, exit.
 
 Every successful claim result is authoritative. Execute it immediately even if
