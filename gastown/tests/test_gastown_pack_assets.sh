@@ -277,6 +277,24 @@ test_polecat_startup_uses_standard_hook_claim() {
         fail "polecat propulsion fragment must not regress to an unclaimed hook/work-query choice"
 }
 
+test_polecat_escalation_winddown_is_valid_and_unconditional() {
+    local prompt="$GASTOWN/agents/polecat/prompt.template.md"
+
+    ! grep -F -- '--status=escalated' "$prompt" >/dev/null ||
+        fail "polecat escalation must not use the nonexistent built-in escalated status"
+    grep -F 'gc bd update <bead> --status=blocked || echo "WARNING: could not mark <bead> blocked" >&2' "$prompt" >/dev/null ||
+        fail "polecat escalation should best-effort mark the bead blocked without suppressing wind-down"
+    python3 - "$prompt" <<'PY' || fail "polecat escalation must drain-ack and exit even if the blocked-status update fails"
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text()
+update = 'gc bd update <bead> --status=blocked || echo "WARNING: could not mark <bead> blocked" >&2'
+expected = update + '\ngc runtime drain-ack\nexit'
+raise SystemExit(0 if expected in text else 1)
+PY
+}
+
 test_review_leg_contract_forbids_synthetic_mutation() {
     local formula prompt
     formula="$GASTOWN/formulas/mol-review-leg.toml"
@@ -695,6 +713,7 @@ test_shutdown_dance_lifecycle_and_audit_contracts
 test_work_bead_resolution_discriminator_is_pinned
 test_composition_is_documented
 test_polecat_startup_uses_standard_hook_claim
+test_polecat_escalation_winddown_is_valid_and_unconditional
 test_review_leg_contract_forbids_synthetic_mutation
 test_prime_prompts_are_city_generic_and_compact
 test_witness_wisp_queries_pin_include_infra

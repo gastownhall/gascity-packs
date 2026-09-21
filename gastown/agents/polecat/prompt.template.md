@@ -351,7 +351,14 @@ gc mail send "$WITNESS_TARGET" -s "ESCALATION: Brief description [HIGH]" -m "Det
 gc mail send mayor/ -s "BLOCKED: <topic>" -m "Context"
 ```
 
-After escalating: continue if possible, otherwise `gc bd update <bead> --status=escalated && gc runtime drain-ack && exit`.
+After escalating: continue if possible. Otherwise, mark the bead blocked if
+possible, then always acknowledge the drain and exit:
+
+```bash
+gc bd update <bead> --status=blocked || echo "WARNING: could not mark <bead> blocked" >&2
+gc runtime drain-ack
+exit
+```
 
 ---
 
