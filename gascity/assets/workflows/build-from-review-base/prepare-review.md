@@ -17,6 +17,7 @@ Validate that implementation evidence exists before review runs:
 - review_mode: {{review_mode}}
 - interaction_mode: {{interaction_mode}}
 - max_iterations: {{max_iterations}}
+- review_repair_policy: {{review_repair_policy}}
 
 If this suffix is launched directly, require explicit implementation evidence
 or a root metadata pointer to it. If this step is reached from
@@ -25,3 +26,12 @@ implementation suffix. Do not run implementation work from this step.
 
 Close only after the review subject, evidence paths, selected review/fix
 formulas, modes, and max iteration limit are recorded on the workflow root.
+
+Write `<artifact_root>/review-context.md` with an `## Implementation Worktrees`
+section (source anchor id, absolute implementation worktree from the source
+anchor's `work_dir`, base revision and diff range `<base>..HEAD`, changed files,
+proof commands from the implementation summary; append artifact excerpts with
+`cat`, never literal `$(...)`), record `gc.build.code_review_context_path` and
+`gc.build.review_repair_policy` on the workflow root, and close with
+`gc.outcome=fail` and a machine-readable reason if no implementation worktree
+can be resolved.

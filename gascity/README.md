@@ -145,6 +145,7 @@ launch or pin them in a rig's `formula_vars`:
 | `implementation_target` | `gc.implementation-worker` | The rig role that implements each work item. |
 | `push` / `open_pr` | `false` | Allow the publish stage to push and open a PR after all checks pass. |
 | `max_iterations` | `10` | Bound on implementation/review fix attempts. |
+| `review_repair_policy` | `loop` | `loop` repeats review/fix until approved or exhausted; `once` applies fixes one time and hands the judge a candidate with residual findings recorded. |
 
 When variables are not enough, every stage prompt can be replaced by dropping
 a Markdown file at the same relative path in a higher-priority layer, and
@@ -236,6 +237,8 @@ The cataloged `build-from-*` formulas are thin default Gas City wrappers around
 those bases. Methodology packs that want the same entrypoints should extend the
 matching `build-from-*-base` formula and override selector defaults, routes,
 drain item formulas, or review expansions instead of copying the suffix graph.
+The `review` step of `build-from-review-base` is a compose slot: bind a review
+expansion with `[[compose.expand]] target = "review"` in the extending formula.
 
 Third-party methodology packs can extend `build-base` and override only the
 stages they need. For implementation, packs should keep the Gas City drain

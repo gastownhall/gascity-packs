@@ -4,7 +4,10 @@ Virtual build continuation contract from implementation evidence.
 This suffix starts when implementation evidence already exists. It validates
 review prerequisites, runs the selected review/fix loop, finalizes the build
 result, and optionally publishes. Higher suffixes extend this base and hand off
-to `prepare-review` after producing implementation evidence.
+to `prepare-review` after producing implementation evidence. `review` is the
+code-review expansion slot: extending formulas may bind an expansion with
+`[[compose.expand]] target = "review"`; the slot carries no inline expansion
+and no default compose rule.
 """
 formula = "build-from-review-base"
 version = 1
@@ -76,8 +79,13 @@ description = "Review-fix methodology formula used after failed code-review find
 default = "fix-loop-base"
 
 [vars.max_iterations]
-description = "Maximum implementation/review fix attempts."
+description = "Maximum review-fix iterations under review_repair_policy=loop; one iteration is one fix pass followed by one fresh re-review."
 default = "10"
+
+[vars.review_repair_policy]
+description = "Review repair policy: loop (bounded review_fix_formula loop until approved, blocked, or max_iterations) or once (exactly one apply-review-fixes pass, then proceed with the post-fix state recorded)."
+default = "loop"
+pattern = "^(loop|once)$"
 
 [vars.push]
 description = "Set true to allow final publish push after all checks pass."
@@ -109,9 +117,25 @@ path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
 
 [[steps]]
+id = "apply-review-fixes"
+title = "Apply review findings once"
+needs = ["review"]
+condition = "{{review_repair_policy}} == once"
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.continuation_group" = "review-fixes", "gc.build.artifact_schema" = "gc.build.review-fixes.v1", "gc.build.artifact_path_keys" = "gc.build.review_fixes_path" }
+description_file = "../assets/workflows/build-from-review-base/apply-review-fixes.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
 id = "repair-review"
 title = "Repair or block continuation review findings"
-needs = ["review"]
+needs = ["review", "apply-review-fixes"]
 metadata = { "gc.run_target" = "gc.run-operator" }
 description_file = "../assets/workflows/build-from-review-base/repair-review.md"
 

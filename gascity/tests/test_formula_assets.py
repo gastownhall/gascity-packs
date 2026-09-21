@@ -97,6 +97,7 @@ BUILD_BASE_STEPS = [
 BUILD_FROM_REVIEW_STEPS = {
     "prepare-review",
     "review",
+    "apply-review-fixes",
     "repair-review",
     "finalize",
     "publish",
@@ -241,6 +242,7 @@ REVIEW_REPORT_GATE = (
 )
 FIX_LOOP_REVIEW_GATE = ("gc.build.review.v1", "gc.build.review_report_path")
 BUILD_REVIEW_GATE = ("gc.build.review.v1", "gc.build.review_report_path")
+REVIEW_FIXES_GATE = ("gc.build.review-fixes.v1", "gc.build.review_fixes_path")
 FINAL_REPORT_GATE = ("gc.build.final-report.v1", "gc.build.final_report_path")
 ROOT_IMPLEMENTATION_SUMMARY_GATE = (
     "gc.build.implementation-summary.v1",
@@ -287,6 +289,7 @@ BUILD_ARTIFACT_VALIDATION_GATES = {
     ("build-from-plan-base", "plan"): PLAN_GATE,
     ("build-from-decompose-base", "decompose"): DECOMPOSITION_GATE,
     ("build-from-review-base", "review"): BUILD_REVIEW_GATE,
+    ("build-from-review-base", "apply-review-fixes"): REVIEW_FIXES_GATE,
     ("build-from-review-base", "finalize"): FINAL_REPORT_GATE,
 }
 
@@ -1689,6 +1692,7 @@ class FormulaAssetTests(unittest.TestCase):
             "code_review_formula": "review",
             "review_fix_formula": "fix-loop-base",
             "max_iterations": "10",
+            "review_repair_policy": "loop",
             "push": "false",
             "open_pr": "false",
         }
@@ -1717,7 +1721,7 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertTrue(steps["implement-same-session"]["drain"]["item"]["single_lane"])
         self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session"])
         self.assertEqual(steps["review"]["needs"], ["prepare-review"])
-        self.assertEqual(steps["repair-review"]["needs"], ["review"])
+        self.assertEqual(steps["repair-review"]["needs"], ["review", "apply-review-fixes"])
         self.assertEqual(steps["finalize"]["needs"], ["repair-review"])
         self.assertEqual(steps["publish"]["needs"], ["finalize"])
 
@@ -1818,9 +1822,12 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["implement-same-session"]["needs"], ["prepare-convoy"])
         self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session"])
         self.assertEqual(steps["review"]["needs"], ["prepare-review"])
-        self.assertEqual(steps["repair-review"]["needs"], ["review"])
+        self.assertEqual(steps["repair-review"]["needs"], ["review", "apply-review-fixes"])
         self.assertEqual(steps["finalize"]["needs"], ["repair-review"])
         self.assertEqual(steps["publish"]["needs"], ["finalize"])
+        self.assertEqual(steps["apply-review-fixes"]["needs"], ["review"])
+        self.assertEqual(steps["apply-review-fixes"]["condition"], "{{review_repair_policy}} == once")
+        self.assertEqual(steps["apply-review-fixes"]["metadata"]["gc.run_target"], "{{implementation_target}}")
 
     def test_build_from_review_blocked_results_are_healable_not_passed(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -1839,9 +1846,266 @@ class FormulaAssetTests(unittest.TestCase):
             "gc.outcome=fail",
             "Do not close the workflow root with `gc.outcome=pass`",
             "Publishing disabled or no-op status must never convert",
+            "review_repair_policy=once",
+            "gc.build.repair_status=residual",
+            "gc.build.review_state=review_blocked",
+            "review_unavailable",
+            "gc.failure_class=review_fix_blocked",
+            "publish_blocked_residual_findings",
+            "never publish authorization",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, text)
+
+    def test_build_from_review_review_step_is_a_compose_expansion_slot(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        data = load_formula(root, "build-from-review-base")
+        resolved = resolve_formula(root, "build-from-review-base")
+        steps = {step["id"]: step for step in resolved["steps"]}
+
+        review = steps["review"]
+        self.assertNotIn("expand", review)
+        self.assertNotIn("expand_vars", review)
+        self.assertIn("check", review)
+        self.assertEqual(review["metadata"]["gc.build.artifact_schema"], "gc.build.review.v1")
+        self.assertNotIn("compose", data)
+
+        policy = resolved["vars"]["review_repair_policy"]
+        self.assertEqual(policy["default"], "loop")
+        self.assertEqual(policy["pattern"], "^(loop|once)$")
+        self.assertIn("compose.expand", data["description"])
+        self.assertIn('target = "review"', data["description"])
+
+        fixes = steps["apply-review-fixes"]
+        self.assertEqual(fixes["condition"], "{{review_repair_policy}} == once")
+        self.assertEqual(fixes["metadata"]["gc.continuation_group"], "review-fixes")
+        self.assertNotIn("expand", fixes)
+        self.assertNotIn("retry", fixes)
+
+    def test_build_from_review_once_policy_is_a_single_pass_candidate(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflow_dir = root / "assets" / "workflows" / "build-from-review-base"
+        apply_fixes = (workflow_dir / "apply-review-fixes.md").read_text(encoding="utf-8")
+        for fragment in (
+            "exactly one",
+            "never loop",
+            "never re-run the review",
+            "status: skipped",
+            "report_mode_forbids_mutation",
+            "gc.build.review_residual_required",
+            "gc.build.review_post_fix_verified=false",
+            "gc.build.review-fixes.v1",
+            "review_findings_counts.py",
+        ):
+            with self.subTest(file="apply-review-fixes.md", fragment=fragment):
+                self.assertIn(fragment, apply_fixes)
+
+        finalize = (workflow_dir / "finalize.md").read_text(encoding="utf-8")
+        for fragment in (
+            "gc.build.status=candidate",
+            "reviewed_fixed_unverified",
+            "reviewed_with_residual_findings",
+            "reviewed_approved",
+        ):
+            with self.subTest(file="finalize.md", fragment=fragment):
+                self.assertIn(fragment, finalize)
+
+        repair = (workflow_dir / "repair-review.md").read_text(encoding="utf-8")
+        for fragment in (
+            "review_repair_policy=once",
+            "do not run or dispatch",
+            "gc.build.repair_status=fixed",
+            "gc.build.review_state=reviewed_fixed_unverified",
+            "If review_repair_policy=loop",
+        ):
+            with self.subTest(file="repair-review.md", fragment=fragment):
+                self.assertIn(fragment, repair)
+
+        resolved = resolve_formula(root, "build-from-review-base")
+        self.assertIn("followed by one fresh re-review", resolved["vars"]["max_iterations"]["description"])
+
+    def test_review_slot_producers_record_slot_metadata(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflows = root / "assets" / "workflows"
+        for relative in (
+            "build-basic-review/{target}.md",
+            "fix-loop-base/re-review.md",
+            "build-from-review-base/review.md",
+        ):
+            text = (workflows / relative).read_text(encoding="utf-8")
+            for key in (
+                "gc.build.review_report_path",
+                "gc.build.review_verdict",
+                "gc.build.review_report_sha256",
+                "gc.build.review_initial_findings",
+            ):
+                with self.subTest(file=relative, key=key):
+                    self.assertIn(key, text)
+
+        for relative in (
+            "build-from-review-base/prepare-review.md",
+            "build-from-convoy-base/prepare-review.md",
+        ):
+            text = (workflows / relative).read_text(encoding="utf-8")
+            for fragment in (
+                "{{review_repair_policy}}",
+                "## Implementation Worktrees",
+                "gc.build.code_review_context_path",
+                "gc.build.review_repair_policy",
+            ):
+                with self.subTest(file=relative, fragment=fragment):
+                    self.assertIn(fragment, text)
+
+    @staticmethod
+    def _review_fixes_artifact(status: str) -> str:
+        return (
+            "---\n"
+            "schema: gc.build.review-fixes.v1\n"
+            "workflow:\n"
+            "  id: build-20260921-001\n"
+            "  formula: build-from-convoy\n"
+            "methodology:\n"
+            "  pack: gascity\n"
+            "  name: build-from-convoy\n"
+            "producer:\n"
+            "  formula: build-from-review-base\n"
+            "  stage: apply-review-fixes\n"
+            "  attempt: 1\n"
+            f"status: {status}\n"
+            "reviewed_head: 0123456789abcdef0123456789abcdef01234567\n"
+            'fix_commit: ""\n'
+            "fix_head: 0123456789abcdef0123456789abcdef01234567\n"
+            "residual:\n"
+            "  blocker: 0\n"
+            "  major: 0\n"
+            "  minor: 0\n"
+            "  nit: 0\n"
+            "trace:\n"
+            "  upstream:\n"
+            "    - path: review-report.md\n"
+            "      hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+            "    - path: /tmp/worktree\n"
+            "      hash: git:0123456789abcdef0123456789abcdef01234567\n"
+            "      role: fix-subject\n"
+            "  coverage:\n"
+            "    - id: GC-METH-001\n"
+            "      status: covered\n"
+            "---\n"
+            "\n"
+            "## Summary\n\n"
+            f"Review fixes status {status}.\n\n"
+            "| ID | Status |\n| --- | --- |\n| GC-METH-001 | covered |\n\n"
+            "## Applied Fixes\n\nNone.\n\n"
+            "## Residual Findings\n\nNone.\n\n"
+            "## Verification\n\n`git diff --check` clean.\n"
+        )
+
+    def _run_review_fixes_check(self, status: str) -> subprocess.CompletedProcess:
+        schema_id, path_key = REVIEW_FIXES_GATE
+        with tempfile.TemporaryDirectory() as artifact_dir:
+            artifact = pathlib.Path(artifact_dir) / "review-fixes.md"
+            artifact.write_text(self._review_fixes_artifact(status), encoding="utf-8")
+            control = json.dumps([{"id": "loop", "metadata": {
+                "gc.root_bead_id": "root",
+                "gc.build.artifact_schema": schema_id,
+                "gc.build.artifact_path_keys": path_key,
+            }}])
+            root_bead = json.dumps([{"id": "root", "metadata": {path_key: str(artifact)}}])
+            return self._run_build_artifact_check({"loop": control, "root": root_bead}, "loop")
+
+    def test_review_fixes_schema_validates_sample_artifacts(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        self.assertTrue((root / "schemas" / "build" / "review-fixes.v1.yaml").is_file())
+        formula = load_formula(root, "build-from-review-base")
+        step = {node["id"]: node for node in formula["steps"]}["apply-review-fixes"]
+        schema_id, path_key = REVIEW_FIXES_GATE
+        self.assertEqual(step["metadata"]["gc.build.artifact_schema"], schema_id)
+        self.assertEqual(step["metadata"]["gc.build.artifact_path_keys"], path_key)
+
+        for status in ("draft", "not_needed", "fixed", "residual", "skipped", "blocked", "superseded"):
+            with self.subTest(status=status):
+                result = self._run_review_fixes_check(status)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("build artifact valid", result.stdout)
+
+        # review.v1 statuses are not review-fixes statuses.
+        for status in ("approved", "changes_required"):
+            with self.subTest(status=status):
+                result = self._run_review_fixes_check(status)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("status", result.stderr)
+
+    def test_review_findings_counts_matches_adopt_pr_predicates(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "review_findings_counts.py"
+        self.assertTrue(os.access(script, os.X_OK), f"{script} must be executable")
+
+        def run(*args: str) -> str:
+            result = subprocess.run(
+                [str(script), *args], text=True, capture_output=True, check=False
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return result.stdout.strip()
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            report = tmp / "synthesis.md"
+            report.write_text(
+                "# Synthesis\n\n"
+                "## New Findings\n\n"
+                "- **Severity:** Blocker - unchecked path\n"
+                "  - **Evidence:** exporter.py:12\n"
+                "* Severity: major (retry loop)\n"
+                "- **Severity:** MAJOR\n"
+                "- **Severity:** minor\n"
+                "- **Severity:** nit\n"
+                "- **Severity:** majority is not a severity\n"
+                "- Severity blocker without a colon does not count\n\n"
+                "## Findings\n\n"
+                "- **Severity:** minor\n\n"
+                "## Verification\n\n"
+                "- **Severity:** blocker (outside both sections)\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                run("findings", str(report), "--section", "New Findings"),
+                "blocker=1,major=2,minor=1,nit=1",
+            )
+            self.assertEqual(run("findings", str(report)), "blocker=0,major=0,minor=1,nit=0")
+            self.assertEqual(
+                json.loads(run("findings", str(report), "--section", "Residual Findings", "--json")),
+                {"blocker": 0, "major": 0, "minor": 0, "nit": 0},
+            )
+
+            approve = tmp / "approve.md"
+            approve.write_text(
+                "# Quality Scorecard\n\n"
+                "## Decision: Approve\n\n"
+                "- Quality Score: 910 / 1000\n"
+                "- Threshold: 850\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(run("scorecard", str(approve)), "decision=approve,score=910,threshold=850")
+
+            changes = tmp / "changes.md"
+            changes.write_text(
+                "**Decision**: request_changes\n"
+                "**Quality Score**: 640/1000\n"
+                "Threshold: 900\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                json.loads(run("scorecard", str(changes), "--json")),
+                {"decision": "request_changes", "score": 640, "threshold": 900},
+            )
+
+            missing = tmp / "missing.md"
+            missing.write_text("Decision: block\nNo score recorded.\n", encoding="utf-8")
+            self.assertEqual(run("scorecard", str(missing)), "decision=block,score=missing,threshold=850")
+
+            empty = tmp / "empty.md"
+            empty.write_text("nothing here\n", encoding="utf-8")
+            self.assertEqual(run("scorecard", str(empty)), "decision=missing,score=missing,threshold=850")
 
     def test_default_continuation_entrypoints_extend_suffix_bases(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]

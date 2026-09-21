@@ -3,7 +3,10 @@ Finalize the build-basic starter factory review.
 Verify the latest starter review loop approved the implementation and wrote a
 starter review summary path. Record the approved review path on the workflow
 root bead so the build-basic finalize stage can include it in `factory-run.md`.
-Use `gc bd update "<workflow-root-id>" --set-metadata "gc.build.review_report_path=<absolute path>"`.
+Use `gc bd update "<workflow-root-id>" --set-metadata "gc.build.review_report_path=<absolute path>"
+--set-metadata gc.build.review_report_sha256=<sha256> --set-metadata gc.build.review_verdict=<status>
+--set-metadata gc.build.review_initial_findings=<counts>` (counts from
+`.gc/scripts/review_findings_counts.py findings <report>`).
 Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
 object.
 

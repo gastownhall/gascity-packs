@@ -251,6 +251,12 @@ class BuildArtifactValidatorTests(unittest.TestCase):
             "Artifacts",
             "Remaining Risks",
         ],
+        "gc.build.review-fixes.v1": [
+            "Summary",
+            "Applied Fixes",
+            "Residual Findings",
+            "Verification",
+        ],
     }
     SCHEMA_STATUS = {
         "gc.build.requirements.v1": "approved",
@@ -259,6 +265,7 @@ class BuildArtifactValidatorTests(unittest.TestCase):
         "gc.build.implementation-summary.v1": "approved",
         "gc.build.review.v1": "approved",
         "gc.build.final-report.v1": "approved",
+        "gc.build.review-fixes.v1": "fixed",
     }
     SCHEMA_FILES = {
         "gc.build.requirements.v1": "requirements.v1.yaml",
@@ -267,6 +274,7 @@ class BuildArtifactValidatorTests(unittest.TestCase):
         "gc.build.implementation-summary.v1": "implementation-summary.v1.yaml",
         "gc.build.review.v1": "review.v1.yaml",
         "gc.build.final-report.v1": "final-report.v1.yaml",
+        "gc.build.review-fixes.v1": "review-fixes.v1.yaml",
     }
     SCHEMA_ROOT = pathlib.Path(__file__).resolve().parents[1] / "schemas" / "build"
     VALIDATOR_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "assets" / "scripts" / "validate_build_artifact.py"

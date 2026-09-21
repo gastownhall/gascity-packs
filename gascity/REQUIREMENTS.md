@@ -201,6 +201,7 @@ for formula checks. Base schemas are expected at stable paths:
 | `gc.build.implementation-summary.v1` | `gascity/schemas/build/implementation-summary.v1.yaml` |
 | `gc.build.review.v1` | `gascity/schemas/build/review.v1.yaml` |
 | `gc.build.final-report.v1` | `gascity/schemas/build/final-report.v1.yaml` |
+| `gc.build.review-fixes.v1` | `gascity/schemas/build/review-fixes.v1.yaml` |
 
 Derived packs may add stricter methodology-specific schemas or extension fields,
 but they must not relax the base schema or replace required base sections,
@@ -386,6 +387,13 @@ states.
 | `agent` | Review writes a structured handoff for an implementation/fix loop. The caller applies fixes. |
 | `interactive` | Review preserves raw top-level review behavior. It may negotiate and apply safe fixes when allowed, recording changes and reasons. |
 
+`review_repair_policy` values (build-from-review continuation suffixes):
+
+| Value | Required behavior |
+| --- | --- |
+| `loop` | Bounded review/fix loop until approved, blocked, or `max_iterations` (default; GC-BF-BR-011/013). |
+| `once` | One `apply-review-fixes` pass, residual findings recorded, candidate proceeds, publish gated (GC-BF-BR-014). |
+
 Planning, review, decomposition, fix, and publish gates must honor both modes.
 Adapters must pass modes through to selected formulas and stop if the selected
 formula does not support the requested mode.
@@ -419,6 +427,11 @@ rather than converting the run to pass during finalization or no-op publish.
 - apply fixes through the selected implementation path;
 - re-run the selected review formula;
 - stop only on approval, block, or maximum iteration termination.
+
+Under `review_repair_policy=once` the workflow applies fixes exactly once, writes
+`reviews/attempt-1/fixes.md` (schema `gc.build.review-fixes.v1`), records
+`gc.build.review_state`, and finalizes a candidate whose residual findings are
+listed under Remaining Risks; `once` never re-reviews and never loops.
 
 ## Drain And Implementation Strategy Contract
 
@@ -778,7 +791,8 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 | GC-METH-BR-014 | GC-METH-US-001 | WHEN the workflow finalizes, THE final report SHALL summarize requirements, plan, decomposition, implementation, review attempts, fixes, drift, risk, publish status, and next action. |
 | GC-METH-BR-015 | GC-METH-US-001 | WHEN publish is not explicitly authorized, THE publish stage SHALL no-op and record `not_published`. |
 | GC-METH-BR-016 | GC-METH-US-001 | WHEN publish is authorized, THE publish stage SHALL record push status, PR status, or a blocked publish reason. |
-| GC-METH-BR-051 | GC-METH-US-001 | IF review/fix cannot reach approval because evidence is missing, a drain failed, review is blocked, report mode forbids mutation, or maximum iterations are exhausted, THEN finalization SHALL record a failing blocked outcome plus `gc.build.repair_status` and `gc.restart.*` metadata rather than closing the workflow as pass; publish no-op SHALL preserve that outcome. |
+| GC-METH-BR-051 | GC-METH-US-001 | IF review/fix cannot reach approval because evidence is missing, a drain failed, review is blocked, report mode forbids mutation, or, under `review_repair_policy=loop`, maximum iterations are exhausted, THEN finalization SHALL record a failing blocked outcome plus `gc.build.repair_status` and `gc.restart.*` metadata rather than closing the workflow as pass; publish no-op SHALL preserve that outcome. |
+| GC-METH-BR-054 | GC-METH-US-001 | WHEN `review_repair_policy=once`, THE finalization SHALL record `gc.build.review_state`, residual findings by severity, and `gc.build.status=candidate` for a fixed-but-unverified or residual candidate, and publish SHALL block on residual blocker/major findings without changing the workflow outcome. |
 | GC-METH-BR-017 | GC-METH-TS-003 | WHEN a downstream artifact consumes an upstream artifact, THE downstream artifact SHALL record the upstream path and content hash or revision ID. |
 | GC-METH-BR-018 | GC-METH-TS-003 | IF upstream artifacts drift after downstream work starts, THEN review and finalization SHALL surface drift and SHALL NOT silently proceed. |
 | GC-METH-BR-019 | GC-METH-US-006 | WHEN `interaction_mode=interactive`, THE workflow MAY ask one material question at a time and SHALL include a recommendation. |
