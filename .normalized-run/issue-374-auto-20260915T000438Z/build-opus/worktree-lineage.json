@@ -1,0 +1,10 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "candidate_branch": "normalized/82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e/opus",
+  "head": "4973942f80ff5a55146d688131cf52e776b67e60",
+  "lane": "opus",
+  "receipt_kind": "normalized-builder-worktree-lineage",
+  "run_key": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+  "version": 1,
+  "worktree": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus"
+}

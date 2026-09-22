@@ -1,0 +1,16 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "candidate_branch": "normalized/82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e/opus",
+  "candidate_convoy_id": "gp-ydg59",
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "implementation_summary_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/builders/opus/implementation-summary.md",
+  "lane": "opus",
+  "operation_id": "6f030f0ddde377703253efd78a3e451cc87e010d8bc910b2f6376df1a23c568f",
+  "receipt_kind": "normalized-builder-child-implementation-intent",
+  "receipt_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/builders/opus/implementation-receipt.json",
+  "run_key": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+  "source_bead": "gcg--9223372036854775297",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1,
+  "worktree": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus"
+}

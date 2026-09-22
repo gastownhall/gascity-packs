@@ -1,0 +1,59 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "candidate_branch": "normalized/82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e/opus",
+  "candidate_convoy_id": "gp-ydg59",
+  "candidate_head": "4973942f80ff5a55146d688131cf52e776b67e60",
+  "candidate_tree": "9b62cb87d811b7b628a32e274217d78cc84e6156",
+  "child_root_id": "gcg--9223372036854774975",
+  "commits": [
+    "4fb56420fdc48a5e447b2ca2331de92bd67ed420",
+    "2df2dca710ba79876f335300d9a37abbcb3d6d8b",
+    "4973942f80ff5a55146d688131cf52e776b67e60"
+  ],
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "implementation_summary_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/builders/opus/implementation-summary.md",
+  "implementation_summary_sha256": "2110ba770e0f0d76894c27e89dca21f80caa87474857044f6cc208ae384d9151",
+  "lane": "opus",
+  "operation_id": "6f030f0ddde377703253efd78a3e451cc87e010d8bc910b2f6376df1a23c568f",
+  "receipt_kind": "normalized-builder-child-implementation",
+  "review": {
+    "fix_attempts": 1,
+    "fix_commit": "4973942f80ff5a55146d688131cf52e776b67e60",
+    "fix_head": "4973942f80ff5a55146d688131cf52e776b67e60",
+    "fixes_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/builders/opus/review-fixes.md",
+    "fixes_sha256": "0a39874dc28c95af27a4c9dcc060e83a858ab170917a27c68f02e1bb3a1c6b3e",
+    "initial_findings": {
+      "blocker": 0,
+      "major": 2,
+      "minor": 2,
+      "nit": 1
+    },
+    "policy": "once",
+    "post_fix_verified": false,
+    "repair_status": "residual",
+    "report_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/builders/opus/review-report.md",
+    "report_sha256": "895c515a74c9a0d8b0c64c47b8f68097c6258e3e5198249814805550e92ea18b",
+    "residual_findings": {
+      "blocker": 0,
+      "major": 0,
+      "minor": 0,
+      "nit": 1
+    },
+    "residual_required": 0,
+    "reviewed_head": "2df2dca710ba79876f335300d9a37abbcb3d6d8b",
+    "scorecard_decision": "request_changes",
+    "scorecard_path": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus/.gc/reviews/gcg--9223372036854774975/attempt-1/quality-scorecard.md",
+    "scorecard_score": 837,
+    "scorecard_sha256": "92aec223d64d2e483b3199d1bc5ba39508753db29501b3764509cb74aa1bdf2b",
+    "state": "reviewed_with_residual_findings",
+    "synthesis_path": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus/.gc/reviews/gcg--9223372036854774975/attempt-1/synthesis.md",
+    "synthesis_sha256": "ba432975b668c2e6477650a8cabbdcc679f0dd90d0809efbc7991c14c59a0d2e",
+    "verdict": "changes_required"
+  },
+  "run_key": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+  "source_bead": "gcg--9223372036854775297",
+  "status": "success",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1,
+  "worktree": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus"
+}

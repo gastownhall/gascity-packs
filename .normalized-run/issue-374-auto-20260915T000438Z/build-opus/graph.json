@@ -1,0 +1,90 @@
+{
+  "commit_message": "normalized candidate opus",
+  "edges": [
+    {
+      "from_key": "gp-zcsrt--candidate-opus",
+      "to_key": "gp-ikbyp--candidate-opus",
+      "type": "blocks"
+    },
+    {
+      "from_key": "gp-hptxz--candidate-opus",
+      "to_key": "gp-zcsrt--candidate-opus",
+      "type": "blocks"
+    },
+    {
+      "from_key": "gp-zyrv0--candidate-opus",
+      "to_key": "gp-hptxz--candidate-opus",
+      "type": "blocks"
+    }
+  ],
+  "nodes": [
+    {
+      "key": "gp-ikbyp--candidate-opus",
+      "metadata": {
+        "normalized.base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+        "normalized.candidate_branch": "normalized/82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e/opus",
+        "normalized.candidate_key": "gp-ikbyp",
+        "normalized.candidate_lane": "opus",
+        "normalized.contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+        "normalized.run_id": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+        "normalized.run_key": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+        "normalized.source_bead": "gcg--9223372036854775297",
+        "normalized.source_graph_sha256": "e2725023330898042b48c54b5a4a1397ce9cd1672b2437972c857edd3263a18d",
+        "normalized.work_dir": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus"
+      },
+      "title": "issue-374 W1: regression test test_mol_refinery_patrol_rebase_guard.sh (D4, test-first)",
+      "type": "task"
+    },
+    {
+      "key": "gp-zcsrt--candidate-opus",
+      "metadata": {
+        "normalized.base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+        "normalized.candidate_branch": "normalized/82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e/opus",
+        "normalized.candidate_key": "gp-zcsrt",
+        "normalized.candidate_lane": "opus",
+        "normalized.contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+        "normalized.run_id": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+        "normalized.run_key": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+        "normalized.source_bead": "gcg--9223372036854775297",
+        "normalized.source_graph_sha256": "e2725023330898042b48c54b5a4a1397ce9cd1672b2437972c857edd3263a18d",
+        "normalized.work_dir": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus"
+      },
+      "title": "issue-374 W2: D1+D2 formula guard insertion and D3 inference-gate repin (atomic)",
+      "type": "task"
+    },
+    {
+      "key": "gp-hptxz--candidate-opus",
+      "metadata": {
+        "normalized.base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+        "normalized.candidate_branch": "normalized/82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e/opus",
+        "normalized.candidate_key": "gp-hptxz",
+        "normalized.candidate_lane": "opus",
+        "normalized.contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+        "normalized.run_id": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+        "normalized.run_key": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+        "normalized.source_bead": "gcg--9223372036854775297",
+        "normalized.source_graph_sha256": "e2725023330898042b48c54b5a4a1397ce9cd1672b2437972c857edd3263a18d",
+        "normalized.work_dir": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus"
+      },
+      "title": "issue-374 W3: red control, full verification sweep, and PR-body records",
+      "type": "task"
+    },
+    {
+      "key": "gp-zyrv0--candidate-opus",
+      "metadata": {
+        "normalized.base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+        "normalized.candidate_branch": "normalized/82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e/opus",
+        "normalized.candidate_key": "gp-zyrv0",
+        "normalized.candidate_lane": "opus",
+        "normalized.contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+        "normalized.run_id": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+        "normalized.run_key": "82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e",
+        "normalized.source_bead": "gcg--9223372036854775297",
+        "normalized.source_graph_sha256": "e2725023330898042b48c54b5a4a1397ce9cd1672b2437972c857edd3263a18d",
+        "normalized.work_dir": "/data/projects/gascity-packs/worktrees/normalized-82406fd32929a75b9af846d4c47c20dc95c2f78536446123e25ab94bedc39e2e-opus"
+      },
+      "title": "issue-374 W4: file the residual-precision-(b) follow-up family as tracked work",
+      "type": "task"
+    }
+  ]
+}
