@@ -247,6 +247,10 @@ the merge step — the other invalid-configuration halt in this formula.
 The same block also decides whether a rebase is needed at all: when
 `origin/$TARGET` is already an ancestor of `origin/$BRANCH`, the source is a
 pure fast-forward candidate and rebasing it would only destroy merge topology.
+Run this block as one script that shares shell state: the probe's status is
+captured into `ANCESTOR_RC` on the very next line, so a split at the probe reads
+`0` in a fresh shell and fires the skip arm on a genuinely diverged source, and
+every STOP arm's `exit` must end the step.
 ```bash
 git fetch --prune origin
 if ! git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
@@ -986,14 +990,29 @@ case "$BHRC_STATUS" in
 esac
 ```
 
-**1. Push the rebased branch back to origin:**
+**1. Push the branch back to origin:**
 ```bash
 git checkout temp
 git push origin HEAD:$BRANCH --force-with-lease
 ```
-If `--force-with-lease` fails, the existing PR branch moved after your
-fetch. STOP, fetch the latest branch, rebase your temp branch again, and
-retry with `--force-with-lease`. Do not use plain `--force`.
+If `--force-with-lease` fails, the existing PR branch moved after your fetch and
+`temp` is stale. STOP. Do NOT rebase `temp` in place and retry the push: `mr` is
+the only path that rewrites `$BRANCH`, and on the skip path `temp` is not a
+rebase product — it is `origin/$BRANCH` with its merge topology intact — so
+rebasing it here performs exactly the flattening the `rebase` step's ancestry
+decision exists to prevent, and then force-pushes the flattened result over the
+source branch.
+
+Instead, re-enter the `rebase` step and let its ancestry decision run again on
+the moved branch. Re-fetch both tracking refs, then
+**re-materialize `temp` at the freshly fetched `origin/$BRANCH` first**, and only
+then re-probe
+`git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"`:
+rc=0 keeps `temp` exactly as it is (do not rebase); rc=1 rebases onto
+`origin/$TARGET`; any other status STOPs without mutating bead state.
+Re-materializing replaces the tree that was tested, so this is a step re-entry
+and not a push-level fixup: `run-tests` runs again on the new `temp` before you
+return here to push. Do not use plain `--force`.
 
 **2. Reuse, create, or discover the pull request:**
 

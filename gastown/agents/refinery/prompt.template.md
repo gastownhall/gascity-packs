@@ -206,7 +206,10 @@ RIGHT (sequential rebase):
         on main    on main+A
 ```
 
-**After every merge, main moves. Next branch MUST rebase on new baseline.**
+**After every merge, main moves. A branch that has diverged from the new
+baseline MUST rebase onto it. A branch that already contains the new baseline is
+already based, and rebasing it only destroys merge topology — the `rebase` step's
+ancestry probe decides which case you are in.**
 
 ## Work Bead Metadata Contract
 
@@ -331,8 +334,8 @@ alert the witness, not `gc mail send`.
 | Read work metadata | `gc bd show $WORK --json \| jq '.[0].metadata'` |
 | Set metadata field | `gc bd update $WORK --set-metadata key=value` |
 | Remove metadata field | `gc bd update $WORK --unset-metadata key` |
-| Fetch remote branches | `git fetch --prune origin` |
-| Rebase on target | `git rebase origin/$TARGET` |
+| Fetch remote branches | `git fetch --prune origin` — best-effort, unchecked exit; the rebase decision does NOT read refs fetched this way, it re-fetches `+refs/heads/$BRANCH` and `+refs/heads/$TARGET` explicitly and checks the status |
+| Rebase on target | Decide before you run it — the `rebase` step probes `git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"`: rc=0 (already based) SKIPS the rebase and keeps `temp` at `origin/$BRANCH` with its merge topology intact, only rc=1 (diverged) runs `git rebase origin/$TARGET`, and any other status STOPs. Never run the bare rebase unconditionally. |
 | Fast-forward merge | `git merge --ff-only temp` |
 | Push merged changes | `git push origin $TARGET` |
 

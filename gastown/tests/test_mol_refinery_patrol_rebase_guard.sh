@@ -359,6 +359,12 @@ leg1() {
             fail "leg 1/$ex: temp is not SHA-identical to origin/source"
         [ "$(git -C "$d/clone" rev-list --count --merges temp)" -eq 2 ] ||
             fail "leg 1/$ex: merge topology was flattened"
+        # AC-374-02 names downstream `git merge --ff-only` accepting the source
+        # as its verification.  Leg 2 runs this assertion for the diverged path;
+        # run it here too so the AC's clause is executable on the skip path it is
+        # actually about, rather than only entailed by the SHA identity above.
+        git -C "$d/clone" merge-base --is-ancestor origin/main temp ||
+            fail "leg 1/$ex: origin/main is not an ancestor of the skipped temp, so merge-push's --ff-only would refuse it"
         [ ! -e "$d/clone/.git/rebase-merge" ] && [ ! -e "$d/clone/.git/rebase-apply" ] ||
             fail "leg 1/$ex: a rebase was started"
         [ "$(git -C "$d/clone" rev-parse origin/source)" = "$src_before" ] ||
@@ -609,6 +615,62 @@ leg8() {
     assert_no_temp "$d/clone" "leg 8: the halt must not create temp"
 }
 
+# Leg 9 -- the `mr` lease-failure carve-out (static, on the formula text).
+# The skip arm makes `temp` a non-rebase product: it is `origin/$BRANCH` with its
+# merges intact.  `mr` is the only downstream path that rewrites `$BRANCH`, and
+# its lease-failure recovery used to say "rebase your temp branch again, and
+# retry with --force-with-lease" -- on a skipped `temp` that is exactly the
+# flattening this guard exists to prevent, force-pushed over the source branch.
+# The fix is prose in a different step from the decision it has to agree with,
+# so pin it the way leg 7 pins the fence: the two halves drifted apart once
+# already.  This leg is the executable counterpart of that contract.
+leg9() {
+    local mr="$tmp/mr-section.md" off_rematerialize off_probe
+
+    # Prefix marker, matching the slice in gastown/tests/test_gastown_pack_assets.sh:
+    # the heading closes its bold run after the colon, so anchoring on `"mr"**`
+    # would match nothing.
+    awk 'index($0, "**If MERGE_STRATEGY = \"mr\"") { on = 1 } on' "$FORMULA" >"$mr"
+    [ -s "$mr" ] || fail "leg 9: could not slice the mr strategy section out of $FORMULA"
+
+    # The retired instruction must be gone, not merely supplemented: left in
+    # place it is still the literal thing an agent follows on lease failure.
+    ! grep -Fq -- 'rebase your temp branch again' "$mr" ||
+        fail "leg 9: the mr lease-failure recovery still instructs an in-place rebase of temp; on the skip path that flattens the source branch and force-pushes the result"
+
+    # The heading is part of the contract: on the skip path `temp` was never
+    # rebased, so a heading promising a rebased branch is false.
+    grep -Fq -- '**1. Push the branch back to origin:**' "$mr" ||
+        fail "leg 9: the mr push heading must not claim the branch is rebased -- the skip path pushes an unrebased temp"
+
+    # The recovery has to route back through the ancestry decision rather than
+    # describe a push-level fixup.
+    grep -Fq -- 're-enter the `rebase` step' "$mr" ||
+        fail "leg 9: the mr lease-failure recovery must re-enter the rebase step's ancestry decision"
+    grep -Fq -- 'git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"' "$mr" ||
+        fail "leg 9: the mr lease-failure recovery must re-probe ancestry, direction-locked like the decision itself"
+    grep -Fq -- 'rc=0 keeps `temp` exactly as it is (do not rebase)' "$mr" ||
+        fail "leg 9: the mr recovery must keep an already-based temp unrebased (probe rc=0)"
+    grep -Fq -- 'any other status STOPs without mutating bead state' "$mr" ||
+        fail "leg 9: the mr recovery must fail closed on a probe error, like the decision's third arm"
+    grep -Fq -- 'a step re-entry' "$mr" ||
+        fail "leg 9: the mr recovery re-materializes temp, so it must say the retry re-enters the step and re-runs run-tests rather than reading as a push-level fixup"
+    grep -Fq -- 'run-tests` runs again' "$mr" ||
+        fail "leg 9: the mr recovery must state that run-tests re-runs on the re-materialized temp"
+
+    # Ordering is the load-bearing half: re-materializing at the freshly fetched
+    # origin/$BRANCH must happen BEFORE the probe.  Probing first and then
+    # re-materializing would decide on one tree and push another.  Byte offsets,
+    # so a reflow of the paragraph cannot break the check.
+    off_rematerialize=$(grep -Fob -m1 -- 're-materialize `temp` at the freshly fetched `origin/$BRANCH` first' "$mr" | cut -d: -f1) || true
+    [ -n "$off_rematerialize" ] ||
+        fail "leg 9: the mr recovery must re-materialize temp at the freshly fetched origin/\$BRANCH first"
+    off_probe=$(grep -Fob -m1 -- 'git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"' "$mr" | cut -d: -f1) || true
+    [ -n "$off_probe" ] || fail "leg 9: the re-probe literal vanished between checks"
+    [ "$off_rematerialize" -lt "$off_probe" ] ||
+        fail "leg 9: the mr recovery must re-materialize temp before re-probing (re-materialize at byte $off_rematerialize, probe at byte $off_probe)"
+}
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -640,6 +702,7 @@ run_leg "5"  leg5
 run_leg "6"  leg6
 run_leg "7"  leg7
 run_leg "8"  leg8
+run_leg "9"  leg9
 
 echo "--- leg summary (formula: $FORMULA) ---"
 failed=0
@@ -653,4 +716,4 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-echo "PASS: mol-refinery-patrol rebase guard (9 legs)"
+echo "PASS: mol-refinery-patrol rebase guard (10 legs)"
