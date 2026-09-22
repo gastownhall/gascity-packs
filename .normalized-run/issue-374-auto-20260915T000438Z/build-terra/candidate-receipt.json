@@ -1,0 +1,21 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "bead_map": {
+    "gp-hptxz": "gp-sc2pz",
+    "gp-ikbyp": "gp-rtbrt",
+    "gp-zcsrt": "gp-opi6t",
+    "gp-zyrv0": "gp-2y2nd"
+  },
+  "candidate_branch": "normalized/b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141/terra",
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "convoy_id": "gp-j5ugs",
+  "convoy_name": "normalized-b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141-terra",
+  "graph_sha256": "8a879677d3a9648cbf6b47e789eb638f81ace6e49501f52310c6159af62388f7",
+  "lane": "terra",
+  "receipt_kind": "normalized-candidate-materialization",
+  "run_key": "b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141",
+  "source_bead": "gcg--9223372036854775297",
+  "status": "materialized",
+  "version": 1,
+  "work_dir": "/data/projects/gascity-packs/worktrees/normalized-b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141-terra"
+}

@@ -1,0 +1,10 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "candidate_branch": "normalized/b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141/terra",
+  "head": "6780afd401c573f614dc6303c728ce3909a4be6b",
+  "lane": "terra",
+  "receipt_kind": "normalized-builder-worktree-lineage",
+  "run_key": "b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141",
+  "version": 1,
+  "worktree": "/data/projects/gascity-packs/worktrees/normalized-b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141-terra"
+}

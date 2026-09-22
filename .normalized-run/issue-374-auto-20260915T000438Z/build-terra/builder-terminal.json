@@ -1,0 +1,59 @@
+{
+  "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
+  "candidate_convoy_id": "gp-j5ugs",
+  "candidate_head": "6780afd401c573f614dc6303c728ce3909a4be6b",
+  "candidate_tree": "1333c963437f140aa1a4a6cb5ae8fe185d4b5cfa",
+  "child_root_id": "gcg--9223372036854775805",
+  "child_status": "closed",
+  "commits": [
+    "83a2525e1a6956292144c1e82c1ba38b7a5e25c5",
+    "bb0c9de022cbc81dad012d509535d2feb766f251",
+    "6780afd401c573f614dc6303c728ce3909a4be6b"
+  ],
+  "contract_sha256": "04d51caeeb64a121224cab4ed2a331b11b17f864ae437041a684306e27ba9616",
+  "decompose_convoy_id": "gp-cd130",
+  "decompose_graph_sha256": "e2725023330898042b48c54b5a4a1397ce9cd1672b2437972c857edd3263a18d",
+  "formula": "workflows-build-from-convoy",
+  "input_convoy_id": "gp-j5ugs",
+  "lane": "terra",
+  "receipt_kind": "normalized-builder-lane",
+  "review": {
+    "fix_attempts": 1,
+    "fix_commit": "6780afd401c573f614dc6303c728ce3909a4be6b",
+    "fix_head": "6780afd401c573f614dc6303c728ce3909a4be6b",
+    "fixes_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/builders/terra/review-fixes.md",
+    "fixes_sha256": "81dc1bf4972e75aa5a78f5759abed813fecd668942267d275275261f5ddf1528",
+    "initial_findings": {
+      "blocker": 1,
+      "major": 1,
+      "minor": 5,
+      "nit": 0
+    },
+    "policy": "once",
+    "post_fix_verified": false,
+    "repair_status": "residual",
+    "report_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/builders/terra/review-report.md",
+    "report_sha256": "9c2d4ac1da755d1601fbbdc07c25558b49f2bcded684ba1b4872d485953aa836",
+    "residual_findings": {
+      "blocker": 0,
+      "major": 0,
+      "minor": 1,
+      "nit": 0
+    },
+    "residual_required": 0,
+    "reviewed_head": "bb0c9de022cbc81dad012d509535d2feb766f251",
+    "scorecard_decision": "block",
+    "scorecard_path": "/data/projects/gascity-packs/worktrees/normalized-b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141-terra/.gc/reviews/gcg--9223372036854775805/attempt-1/quality-scorecard.md",
+    "scorecard_score": 649,
+    "scorecard_sha256": "57d6a166bd8b237a4a18e01f4b4b8a47b6977c74146f41433fe9b9ea8e0b091e",
+    "state": "reviewed_with_residual_findings",
+    "synthesis_path": "/data/projects/gascity-packs/worktrees/normalized-b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141-terra/.gc/reviews/gcg--9223372036854775805/attempt-1/synthesis.md",
+    "synthesis_sha256": "5eab916bdbda80e164ebb38fe1d79996d3dde0a9d75df517eb6ef8195fefcd97",
+    "verdict": "changes_required"
+  },
+  "run_key": "b41aca27b0b56f221e5914867fb18a5b64c1b69de6719c21a904b104e88ba141",
+  "source_bead": "gcg--9223372036854775297",
+  "status": "success",
+  "target": "gascity-packs/gc.run-operator",
+  "version": 1
+}
