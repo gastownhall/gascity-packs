@@ -1,0 +1,41 @@
+{
+  "edges": [
+    {
+      "from_key": "gp-ikbyp",
+      "to_key": "gp-zcsrt",
+      "type": "blocks"
+    },
+    {
+      "from_key": "gp-zcsrt",
+      "to_key": "gp-hptxz",
+      "type": "blocks"
+    },
+    {
+      "from_key": "gp-hptxz",
+      "to_key": "gp-zyrv0",
+      "type": "blocks"
+    }
+  ],
+  "nodes": [
+    {
+      "key": "gp-ikbyp",
+      "title": "issue-374 W1: regression test test_mol_refinery_patrol_rebase_guard.sh (D4, test-first)",
+      "type": "task"
+    },
+    {
+      "key": "gp-zcsrt",
+      "title": "issue-374 W2: D1+D2 formula guard insertion and D3 inference-gate repin (atomic)",
+      "type": "task"
+    },
+    {
+      "key": "gp-hptxz",
+      "title": "issue-374 W3: red control, full verification sweep, and PR-body records",
+      "type": "task"
+    },
+    {
+      "key": "gp-zyrv0",
+      "title": "issue-374 W4: file the residual-precision-(b) follow-up family as tracked work",
+      "type": "task"
+    }
+  ]
+}

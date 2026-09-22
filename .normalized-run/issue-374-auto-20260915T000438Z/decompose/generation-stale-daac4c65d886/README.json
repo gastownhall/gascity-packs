@@ -1,0 +1,15 @@
+{
+  "archived": [
+    "decompose-graph.json",
+    "decompose.json",
+    ".implementation-adapter.json",
+    "implementation-convoy-receipt.json",
+    "convoy-receipt.json"
+  ],
+  "convoy_id": "gp-cd130",
+  "new_graph_sha256": "e2725023330898042b48c54b5a4a1397ce9cd1672b2437972c857edd3263a18d",
+  "old_graph_sha256": "daac4c65d8869d449e5b18ed380a7bff6feac86521b6841947946b9d24f51fa5",
+  "reason": "decompose graph regenerated from the native implementation snapshot: stored edges did not match the current adapter's derivation",
+  "receipt_kind": "normalized-decompose-stale-generation",
+  "version": 1
+}

@@ -2,5 +2,6 @@
   "base_sha": "05031f2c66e080865c379ff799c7369430560a8f",
   "convoy_id": "gp-cd130",
   "decomposition_path": "/data/projects/gascity-packs/.gc/normalized-pilot/issue-374-auto-20260915T000438Z/work/decompose.md",
-  "graph_sha256": "e2725023330898042b48c54b5a4a1397ce9cd1672b2437972c857edd3263a18d"
+  "graph_sha256": "daac4c65d8869d449e5b18ed380a7bff6feac86521b6841947946b9d24f51fa5",
+  "status": "approved"
 }
