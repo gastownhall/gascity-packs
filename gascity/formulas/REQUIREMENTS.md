@@ -141,8 +141,8 @@ this ledger against the `FORMULAS` constant and formula directory.
 
 | ID | Formula | Type | Required behavior | Evidence |
 | --- | --- | --- | --- | --- |
-| GC-BF-008 | `build-basic` | Cataloged concrete default | Extends `build-base`, preserves the full stage sequence, declares methodology metadata, uses built-in Gas City planning/decomposition/implementation helpers, writes a validated canonical implementation summary before review, exposes stable path-shadow overrides, validates artifacts through shared checks, and expands review through `build-basic-review`, forwarding evidence, finding and failure Jev settings. | `build-basic.formula.toml`; `../tests/test_formula_assets.py`; `../tests/test_formula_assets.py::FormulaAssetTests::test_producer_stages_gate_artifacts_with_bounded_repair` |
-| GC-BF-009 | `build-basic-review` | Expansion review loop | Runs starter review fanout across acceptance/correctness, test evidence, and simplicity/maintainability lanes, provides one override file per lane, synthesizes findings, applies required fixes, validates review/fix artifacts, and loops until approved, blocked, or attempts exhaust. Jev finding/pair and failure assistance defaults to auto when configured and preserves all findings, lane verdicts and proof requirements. | `build-basic-review.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-008 | `build-basic` | Cataloged concrete default | Extends `build-base`, preserves the full stage sequence, declares methodology metadata, uses built-in Gas City planning/decomposition/implementation helpers, writes a validated canonical implementation summary before review, exposes stable path-shadow overrides, validates artifacts through shared checks, and expands review through `build-basic-review`. | `build-basic.formula.toml`; `../tests/test_formula_assets.py`; `../tests/test_formula_assets.py::FormulaAssetTests::test_producer_stages_gate_artifacts_with_bounded_repair` |
+| GC-BF-009 | `build-basic-review` | Expansion review loop | Runs starter review fanout across acceptance/correctness, test evidence, and simplicity/maintainability lanes, provides one override file per lane, synthesizes findings, applies required fixes, validates review/fix artifacts, and loops until approved, blocked, or attempts exhaust. | `build-basic-review.formula.toml`; `../tests/test_formula_assets.py` |
 
 ### Continuation Entrypoints
 
@@ -187,12 +187,12 @@ this ledger against the `FORMULAS` constant and formula directory.
 
 | ID | Formula | Type | Required behavior | Evidence |
 | --- | --- | --- | --- | --- |
-| GC-BF-019 | `github-issue-triage-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, snapshots issue state, keys triage by issue-body hash, uses configured Jev primary-kind decisions and Noul candidate ordering by default with full source retention and explicit fallback, validates triage report schema, gates sensitive output, and creates or updates the sticky triage comment. | `github-issue-triage-base.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-019 | `github-issue-triage-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, snapshots issue state, keys triage by issue-body hash, validates triage report schema, gates sensitive output, and creates or updates the sticky triage comment. | `github-issue-triage-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-020 | `github-issue-triage` | Cataloged public adapter | Extends `github-issue-triage-base` without changing the base adapter stack. | `github-issue-triage.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-021 | `github-issue-fix-base` | Targetless base adapter | Accepts only canonical GitHub issue URLs, runs/reuses triage, gates fix eligibility, passes and validates planning/decomposition/implementation/review/fix selectors plus modes, optionally publishes PRs, and owns sticky issue-fix status. | `github-issue-fix-base.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-022 | `github-issue-fix` | Cataloged public adapter | Extends `github-issue-fix-base` without changing the base issue-fix graph. | `github-issue-fix.formula.toml`; `../tests/test_formula_assets.py` |
 | GC-BF-023 | `github-issue-fix-design-review-work` | Expansion design-review helper | Reviews issue-fix implementation plans through implementation-realism and testing-risk lanes, synthesizes findings, applies required changes, and finalizes only after approval. | `github-issue-fix-design-review-work.formula.toml`; `../tests/test_formula_assets.py` |
-| GC-BF-024 | `github-pr-review` | Cataloged targetless PR adapter | Accepts only canonical GitHub PR URLs, snapshots PR state, reuses current head-SHA review when possible, supports bounded Jev kind classification after reuse, validates and delegates to `code_review_formula`, honors review/interaction mode pass-through where applicable, gates posting, updates a sticky normal comment, and never mutates code or submits formal review events. | `github-pr-review.formula.toml`; `../tests/test_formula_assets.py` |
+| GC-BF-024 | `github-pr-review` | Cataloged targetless PR adapter | Accepts only canonical GitHub PR URLs, snapshots PR state, reuses current head-SHA review when possible, validates and delegates to `code_review_formula`, honors review/interaction mode pass-through where applicable, gates posting, updates a sticky normal comment, and never mutates code or submits formal review events. | `github-pr-review.formula.toml`; `../tests/test_formula_assets.py` |
 
 ## Evidence Index
 
@@ -213,20 +213,3 @@ this ledger against the `FORMULAS` constant and formula directory.
   side effects, stage selectors, drain semantics, and extension expectations.
 - Do not let external toolkit-specific behavior into this base ledger unless it
   becomes a shared requirement for all methodology implementations.
-
-## Jev integration
-
-- `build-basic` forwards evidence, finding/pair and failure settings to
-  `build-basic-review`. These assist the existing evidence, synthesis and fix
-  steps; all lanes, verdicts, checks and source findings remain authoritative.
-- Issue triage exposes kind and duplicate-candidate modes. PR review exposes
-  kind mode. Both retain reuse no-ops, full investigation/review and public
-  write gates. Kind never reduces review coverage.
-- All Jev modes default to `auto`, using a configured Jev credential, otherwise recording ordinary LLM
-  handling. `off` disables assistance; `assist` requires access. Uncertainty,
-  invalid responses, mismatched rubrics and failures record explicit fallback.
-- Findings preserve all source IDs; matching pairs do not authorize deletion
-  or transitive merges. Duplicate ranking preserves every retrieved candidate
-  and requires investigation before the existing duplicate verdict.
-- Failure classification chooses an investigation path, never an executable
-  command, automatic retry, waived check or approval.

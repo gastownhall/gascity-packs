@@ -15,35 +15,6 @@ contract = "graph.v2"
 description = "Role target used to apply starter review findings."
 default = "gc.implementation-worker"
 
-[vars.jev_mode]
-description = "Optional evidence assistance: off, auto (when configured), or assist."
-default = "auto"
-
-[vars.jev_model]
-description = "TypeSafe model for optional evidence assistance."
-default = "jev-1.13.0"
-
-[vars.jev_threshold]
-description = "Minimum confidence for advisory evidence routing."
-default = "0.85"
-
-[vars.jev_findings_mode]
-description = "Finding classification and pair matching: off, auto (when configured), or assist."
-default = "auto"
-
-[vars.jev_failure_mode]
-description = "Failure investigation routing: off, auto (when configured), or assist."
-default = "auto"
-
-[vars.jev_decision_model]
-description = "Pinned Jev model for bounded workflow decisions."
-default = "jev-1.13.0"
-
-[vars.jev_decision_threshold]
-description = "Confidence cutoff for decisions; pair matching has a 0.95 floor."
-default = "0.90"
-
-
 [[template]]
 id = "{target}.setup-build-basic-review"
 title = "Prepare build-basic starter review"

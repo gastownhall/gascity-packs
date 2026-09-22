@@ -40,7 +40,7 @@ def prepare(case, fixture_dir):
 
 
 def invoke(script, arguments, directory):
-    command = [sys.executable, str(ROOT/'gascity/assets/scripts'/script), *arguments,
+    command = [sys.executable, str(ROOT/'gascity-jev/assets/scripts'/script), *arguments,
                '--output-dir', str(directory), '--mode', 'auto']
     save(directory.parent/(directory.name+'-command.json'), command)
     result = subprocess.run(command, capture_output=True, text=True, timeout=65)

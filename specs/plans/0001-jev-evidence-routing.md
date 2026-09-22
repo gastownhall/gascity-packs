@@ -35,3 +35,14 @@ final agreement with seven fallbacks. See [kind results](../experiments/jev-evid
 and [the protocol](../experiments/jev-evidence-routing/KIND-TRIAGE.md).
 Broader samples, repeated measurements, independent adjudication and full
 workflow measurements remain outstanding.
+
+## Separate experimental pack
+
+The Jev-enabled pack now lives in `gascity-jev`, with all five integrations
+remaining automatic when configured. The sibling `gascity` pack is restored
+exactly to pre-Jev commit `05031f2c66e080865c379ff799c7369430560a8f`.
+The full-build harness selects these separate packs, including matching roles
+and validators, for future comparisons. Pack tests, real CLI installation and
+formula/role loading, lint, and no-key fallbacks passed. Historical experiment
+artifacts are unchanged; no new model comparison was run for this split.
+Full-workflow performance and quality equivalence remain unestablished.

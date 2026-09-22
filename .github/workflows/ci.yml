@@ -43,6 +43,11 @@ jobs:
       - name: Run Python pack tests
         run: python3 -m pytest tests contributing/tests gascity/tests discord/tests github/tests oversight-rig/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
 
+      # Both copies retain test module names, so collect them in separate
+      # pytest processes to avoid import-file mismatches.
+      - name: Run experimental Gas City Jev pack tests
+        run: python3 -m pytest gascity-jev/tests -q
+
       - name: Lint and exercise shared role prompt composition
         run: |
           go install github.com/gastownhall/gascity/cmd/gc@latest
@@ -57,12 +62,12 @@ jobs:
           # deletes that section. A dev gc already reports zero for it, so
           # pinning them would waive findings most contributors never see.
           # Refute: gc lint oversight-rig  (0 findings on main, 4 on v1.4.1)
-          for pack in gascity gascity/roles bmad compound-engineering gstack superpowers profiler \
+          for pack in gascity gascity/roles gascity-jev gascity-jev/roles bmad compound-engineering gstack superpowers profiler \
                       pr-pipeline slack-channel slack-full slack-mini; do
             "$GC_BIN" lint "$pack"
           done
           GC_TEST_BIN="$GC_BIN" python3 -m pytest oversight-rig/tests/test_order_scopes.py -q
-          GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py tests/test_pack_composition_warnings.py -q
+          GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py tests/test_pack_composition_warnings.py tests/test_gascity_jev_pack.py -q
 
       # Installed, not parsed. `gc lint` above reads each pack on its own and
       # the per-pack suites read their own TOML; neither can say what gc does

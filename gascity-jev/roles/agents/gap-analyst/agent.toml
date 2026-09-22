@@ -1,0 +1,3 @@
+description = "Gap analyst for comparing implementation results against approved requirements and design"
+scope = "rig"
+fallback = true

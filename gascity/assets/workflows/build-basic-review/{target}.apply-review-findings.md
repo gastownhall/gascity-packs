@@ -6,16 +6,6 @@ review summary. If required fixes or missing evidence remain, make the smallest
 focused changes, run the relevant proof commands, and write the review-fix
 summary under the build artifact root.
 
-When a proof command fails and `jev_failure_mode={{jev_failure_mode}}` is
-`auto` or `assist`, follow the `failure` contract in
-`{{pack_root}}/assets/jev-decisions.md`. Supply the actual command, captured
-output and known context; use model `{{jev_decision_model}}`, threshold
-`{{jev_decision_threshold}}`, and a new attempt under the build artifact root.
-Use the decision to choose what to investigate next. Preserve the failed
-attempt and rerun required proof after a confirmed repair; the route never
-waives a check or directly authorizes a retry. Missing credentials in auto mode
-or helper failure uses ordinary diagnosis with the reason recorded.
-
 Apply fixes to the implementation source anchor/worktree named in the review
 context, not to the launcher rig root. An unchanged root checkout is not itself
 a required fix for build-basic; publish owns propagation beyond the source

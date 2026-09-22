@@ -1,0 +1,62 @@
+description = """
+Report-only implementation review over a diff, branch, or artifact set.
+
+Launch inputs:
+- context_path: {{context_path}} (empty means no extra context bundle)
+- subject_path: {{subject_path}}
+- report_path: {{report_path}}
+- interaction_mode: {{interaction_mode}}
+- review_mode: {{review_mode}}
+"""
+formula = "review"
+version = 1
+contract = "graph.v2"
+extends = ["code-review-base"]
+target_required = false
+mode = "report"
+
+[catalog]
+name = "review"
+description = "Write an implementation review report for a diff, branch, or artifact set."
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[vars.subject_path]
+description = "Diff, summary, branch note, or artifact path to review."
+required = true
+
+[vars.report_path]
+description = "Path to write the review report."
+required = true
+
+[vars.interaction_mode]
+description = "Review interaction posture: interactive, autonomous, or headless."
+default = "autonomous"
+
+[vars.review_mode]
+description = "Review authority: report, agent, or interactive."
+default = "report"
+
+[[steps]]
+id = "validate-context"
+title = "Validate report context"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/review/validate-context.md"
+
+[[steps]]
+id = "write-report"
+title = "Write review report"
+needs = ["validate-context"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path,gc.var.report_path" }
+description_file = "../assets/workflows/review/write-report.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

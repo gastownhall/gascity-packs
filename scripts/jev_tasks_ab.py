@@ -6,7 +6,7 @@ import json, os
 from pathlib import Path
 import subprocess, sys, time
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'gascity/assets/scripts'))
+sys.path.insert(0,str(ROOT/'gascity-jev/assets/scripts'))
 import jev_tasks as tasks
 import jev_ab as accounting
 save=tasks.transport.save
@@ -76,7 +76,7 @@ def run(case,arm,directory,args):
         report['state_sha256']=tasks.transport.digest(json.dumps(state,sort_keys=True).encode())
         trusted={}
         if arm=='jev':
-            command=[sys.executable,str(ROOT/'gascity/assets/scripts/jev_tasks.py'),case['task'],
+            command=[sys.executable,str(ROOT/'gascity-jev/assets/scripts/jev_tasks.py'),case['task'],
                      str(directory/'input.json'),'--output-dir',str(directory/'jev'),'--mode','assist',
                      '--model',args.jev_model,'--threshold',str(args.threshold)]
             save(directory/'jev-command.json',command)

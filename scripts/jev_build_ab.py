@@ -9,6 +9,7 @@ is a treatment failure, even if the fallback build passes.
 from __future__ import annotations
 import argparse
 from contextlib import redirect_stdout, redirect_stderr
+from dataclasses import replace
 from datetime import datetime, timezone
 import importlib.util
 import hashlib
@@ -116,7 +117,9 @@ def new_runtime_workspace(pack, name):
     # macOS sockaddr_un cannot hold paths under the artifact directory.
     root = Path(tempfile.mkdtemp(prefix='gcja-', dir='/tmp'))/'w'
     workspace = gate.write_gate_workspace(root, pack_source=pack.source,
-        roles_source=pack.roles_source, city_name='jev-'+root.parent.name+'-'+name, rig_name='fixture')
+        roles_source=pack.roles_source, validator_source=pack.validator_source,
+        pack_name=pack.name, pack_binding=pack.binding,
+        city_name='jev-'+root.parent.name+'-'+name, rig_name='fixture')
     if len(str(workspace.gc_home/'supervisor.sock').encode()) >= 100:
         raise ValueError('Runtime path is too long for a portable Unix socket')
     return workspace
@@ -180,8 +183,42 @@ def prepare_local_origin(workspace, env):
             'initial_head':head, 'remote_head':remote_head, 'network_remote':False}
 
 
+def pack_for_arm(arm):
+    """Compare separate base and Jev packs through compatible gc role bindings."""
+    baseline = gate.PACK_SPECS['gascity']
+    if arm == 'baseline':
+        return baseline
+    if arm != 'jev':
+        raise ValueError(f'Unknown experiment arm: {arm}')
+    source = ROOT / 'gascity-jev'
+    return replace(baseline, name='gascity-jev', source=source,
+                   roles_source=source/'roles', validator_source=source)
+
+
+def snapshot_pack(pack, out):
+    """Retain the selected pack's actual bytes, including uncommitted additions."""
+    paths = [Path(__file__), ROOT/'scripts/gascity_pack_inference_gate.py',
+             ROOT/'scripts/jev_claude_usage.py', ROOT/'scripts/jev_claude_startup.py',
+             *sorted(pack.source.rglob('*'))]
+    save(out/'source-hashes.json', {
+        str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in paths if p.is_file() and not {'__pycache__', '.pytest_cache'}.intersection(p.parts)})
+    shutil.copytree(pack.source, out/'pack-snapshot',
+                    ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache'))
+    return {
+        'pack_name': pack.name, 'pack_source': str(pack.source),
+        'roles_source': str(pack.roles_source), 'validator_source': str(pack.validator_source),
+        'pack_git_head': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+        'pack_diff': subprocess.check_output(['git','diff','HEAD','--',str(pack.source.relative_to(ROOT))],cwd=ROOT,text=True),
+    }
+
+
 def jev_variables(arm, model):
-    mode = 'auto' if arm == 'jev' else 'off'
+    if arm == 'baseline':
+        return {}
+    if arm != 'jev':
+        raise ValueError(f'Unknown experiment arm: {arm}')
+    mode = 'auto'
     return {'jev_mode': mode, 'jev_findings_mode': mode, 'jev_failure_mode': mode,
             'jev_model': model, 'jev_decision_model': model,
             'jev_threshold': '0.85', 'jev_decision_threshold': '0.90'}
@@ -222,7 +259,8 @@ def run(args, arm, out):
     started = time.monotonic()
     report = {'arm': arm, 'scope': 'full-build-basic', 'started_at': datetime.now(timezone.utc).isoformat(),
               'model': args.model, 'jev_model': args.jev_model, 'status': 'starting'}
-    pack = gate.PACK_SPECS['gascity']
+    pack = pack_for_arm(arm)
+    report['pack_name'] = pack.name
     workspace = new_runtime_workspace(pack, out.name)
     save(out/'runtime-path.json', {'root': str(workspace.root), 'retained': True})
     # A nested city must not inherit the parent repository's remote during bd init.
@@ -274,14 +312,8 @@ def run(args, arm, out):
                 [('gc',[args.gc_bin,'version']),('bd',[args.bd_bin,'version']),('claude',['claude','--version']),('bash',['bash','--version'])]}
     save(out/'manifest.json', {'argv': sys.argv, 'versions': versions, 'model': args.model,
          'jev_model': args.jev_model, 'arm': arm, 'core_source': os.environ.get('GASCITY_SOURCE_ROOT'),
-         'pack_git_head': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
-         'pack_diff': subprocess.check_output(['git','diff','--','gascity'],cwd=ROOT,text=True)})
+         **snapshot_pack(pack, out)})
     (out/'jev_build_ab.py').write_bytes(Path(__file__).read_bytes())
-    save(out/'source-hashes.json', {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-        for p in [Path(__file__), ROOT/'scripts/gascity_pack_inference_gate.py', ROOT/'scripts/jev_claude_usage.py', ROOT/'scripts/jev_claude_startup.py',
-                  *sorted((ROOT/'gascity').rglob('*'))] if p.is_file() and '__pycache__' not in p.parts})
-    # Snapshot all current pack assets, including untracked new files.
-    shutil.copytree(ROOT/'gascity', out/'pack-snapshot', ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache'))
     collector = usage.Collector(out/'otel-usage.jsonl')
     env.pop('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', None)
     env.update(collector.env)

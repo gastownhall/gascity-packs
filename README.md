@@ -99,14 +99,16 @@ this is the shortest path. Each step is copy-pasteable; swap names to taste.
 | Pack | Process it runs | Reach for it when |
 | ---- | --------------- | ----------------- |
 | [gascity](./gascity) (`build-basic`) | Requirements → plan → review → decompose → implement → three-lane review | You want the default starter factory with the fewest moving parts. |
+| [gascity-jev](./gascity-jev) (`build-basic`) | The Gas City factory with five Jev-assisted decision paths | You want the experimental Jev variant; import it in place of `gascity` from a local checkout. Full-workflow gains remain unproven. |
 | [bmad](./bmad) (`bmad-build`) | PRD → architecture → epics/stories → readiness gate → story-by-story implementation with self-check and acceptance audit → adversarial review | You want disciplined document-first delivery with explicit story decomposition and readiness checks. |
 | [compound-engineering](./compound-engineering) (`compound-build`) | Brainstorm/plan → plan review → implement → the widest reviewer-persona fanout → resolution | Review depth matters most: correctness, security, performance, migrations, and API contracts each get their own reviewer lane. |
 | [superpowers](./superpowers) (`superpowers-build`) | Brainstorm → written spec approval → per-task test-driven development → spec-compliance then code-quality review | You want hard approval gates before code and strict TDD per task. |
 | [gstack](./gstack) (`gstack-build`) | Office-hours intake → multi-perspective plan review → build → staff review → QA → security → release readiness | You want founder/PM-flavored gates and explicit QA + release-readiness stages before shipping. |
 
-All five expose the same launch variables (`interaction_mode`, `review_mode`,
+These packs expose the same launch variables (`interaction_mode`, `review_mode`,
 `drain_policy`, `push`, `open_pr`, …), so switching methodology is a one-word
-change to the formula name.
+change to the formula name. `gascity-jev` instead keeps the base formula names
+and `gc` alias; switch the pack and its matching roles as described in its README.
 
 ## Using a pack
 
@@ -175,6 +177,12 @@ Use two mode concepts when comparing methodology packs:
 - [gascity](./gascity) provides the `build-base` workflow contract, the
   default `build-basic` implementation, and the `build-from-*` continuation
   entrypoints for resuming a build from existing artifacts.
+- [gascity-jev](./gascity-jev) is a separate experimental copy of the base
+  workflows with Jev kind, ranking, evidence, findings and failure assistance.
+  All five default to auto when configured. Use it as an alternative `gc`
+  import with its matching roles; current methodology packs continue to use
+  the unchanged `gascity` pack. The README records historical experiment
+  tradeoffs and installation from a branch checkout before release.
 - [compound-engineering](./compound-engineering) imports `gascity` as `gc`
   and implements `build-base` with vendored Compound Engineering skills,
   agent personas, and Gas City-native review/finalization expansions.

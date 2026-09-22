@@ -13,11 +13,47 @@ spec.loader.exec_module(build)
 
 
 def test_build_arms_explicitly_set_every_applicable_jev_mode():
-    for arm, mode in [('baseline', 'off'), ('jev', 'auto')]:
-        variables = build.jev_variables(arm, 'jev-1.13.0')
-        assert {key: variables[key] for key in ('jev_mode', 'jev_findings_mode', 'jev_failure_mode')} == {
-            key: mode for key in ('jev_mode', 'jev_findings_mode', 'jev_failure_mode')}
-        assert variables['jev_model'] == variables['jev_decision_model'] == 'jev-1.13.0'
+    # The restored baseline has no Jev variables; even off would be unknown.
+    assert build.jev_variables('baseline', 'jev-1.13.0') == {}
+    variables = build.jev_variables('jev', 'jev-1.13.0')
+    assert {key: variables[key] for key in ('jev_mode', 'jev_findings_mode', 'jev_failure_mode')} == {
+        key: 'auto' for key in ('jev_mode', 'jev_findings_mode', 'jev_failure_mode')}
+    assert variables['jev_model'] == variables['jev_decision_model'] == 'jev-1.13.0'
+
+
+@pytest.mark.parametrize('arm, name', [('baseline', 'gascity'), ('jev', 'gascity-jev')])
+def test_build_arm_installs_its_own_pack_roles_and_preserves_source_provenance(tmp_path, arm, name):
+    import tomllib
+    pack = build.pack_for_arm(arm)
+    assert pack.name == name
+    assert pack.source == ROOT / name
+    assert pack.roles_source == pack.source / 'roles'
+    assert pack.validator_source == pack.source
+    assert pack.binding == 'gc'
+    workspace = build.new_runtime_workspace(pack, 'pack-selection-test')
+    try:
+        config = tomllib.loads((workspace.city_dir / 'city.toml').read_text())
+        city_pack = tomllib.loads((workspace.city_dir / 'pack.toml').read_text())
+        assert city_pack['imports']['gc']['source'] == str(pack.source)
+        assert city_pack['pack']['name'] == f'{name}-pack-inference-gate'
+        assert config['rigs'][0]['imports']['gc']['source'] == str(pack.roles_source)
+        out = tmp_path / 'provenance'
+        out.mkdir()
+        provenance = build.snapshot_pack(pack, out)
+        assert provenance['pack_name'] == name
+        assert provenance['pack_source'] == str(pack.source)
+        assert provenance['roles_source'] == str(pack.roles_source)
+        assert provenance['validator_source'] == str(pack.validator_source)
+        hashes = json.loads((out / 'source-hashes.json').read_text())
+        assert f'{name}/pack.toml' in hashes
+        other = 'gascity-jev' if name == 'gascity' else 'gascity'
+        assert not any(path.startswith(other + '/') for path in hashes)
+        snapshot = out / 'pack-snapshot'
+        assert (snapshot / 'pack.toml').read_bytes() == (pack.source / 'pack.toml').read_bytes()
+        assert (snapshot / 'assets/scripts/jev_evidence.py').exists() == (arm == 'jev')
+        assert hashes[f'{name}/pack.toml'] == build.hashlib.sha256((snapshot / 'pack.toml').read_bytes()).hexdigest()
+    finally:
+        build.shutil.rmtree(workspace.root.parent)
 
 
 def test_independent_quality_rejects_stub_even_when_edited_tests_pass(tmp_path, monkeypatch):
@@ -110,7 +146,8 @@ def test_workspace_socket_path_fits_even_with_deep_artifact_directory(tmp_path):
         return SimpleNamespace(root=root,gc_home=root/'gc-home')
     with ExitStack() as stack:
         stack.enter_context(patch.object(build.gate,'write_gate_workspace',workspace))
-        result=build.new_runtime_workspace(SimpleNamespace(source=tmp_path,roles_source=tmp_path),'unit')
+        result=build.new_runtime_workspace(SimpleNamespace(source=tmp_path,roles_source=tmp_path,
+            validator_source=tmp_path,name='test',binding='gc'),'unit')
         stack.callback(build.shutil.rmtree,result.root.parent)
         assert len(str(result.gc_home/'supervisor.sock').encode())<100
 
@@ -146,15 +183,19 @@ def test_gate_toolchain_preserves_virtualenv_python(tmp_path):
     assert Path(actual) == tmp_path/'venv'
 
 
-def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch):
+@pytest.mark.parametrize('arm', ['baseline', 'jev'])
+def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch, arm):
     events=[]
-    workspace=build.new_runtime_workspace(build.gate.PACK_SPECS['gascity'],'interrupt-test')
+    selected_pack=build.pack_for_arm(arm)
+    workspace=build.new_runtime_workspace(selected_pack,'interrupt-test')
     monkeypatch.setattr(build,'new_runtime_workspace',lambda *a:workspace)
     real_output=build.subprocess.check_output
     def output(cmd,**kw):
         return real_output(cmd,**kw) if cmd[0]=='git' else 'test-version\n'
     monkeypatch.setattr(build.subprocess,'check_output',output)
-    def interrupt(*a,**kw):raise KeyboardInterrupt()
+    def interrupt(*a,**kw):
+        assert kw['pack_spec'] == selected_pack
+        raise KeyboardInterrupt()
     monkeypatch.setattr(build.gate,'initialize_city',interrupt)
     monkeypatch.setattr(build.gate,'stop_city',lambda *a,**kw:events.append('stop'))
     monkeypatch.setattr(build,'stop_disposable_dolt',lambda *a:{'status':'not_started'})
@@ -167,9 +208,15 @@ def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch):
     args=SimpleNamespace(gc_bin=build.shutil.which('true'),bd_bin=build.shutil.which('true'),model='unused',
         jev_model='unused',setup_only=True,setup_timeout=1)
     try:
-        try:result=build.run(args,'baseline',tmp_path/'run')
+        try:result=build.run(args,arm,tmp_path/'run')
         except KeyboardInterrupt:pytest.fail('Interrupt escaped before saving terminal result')
         assert result['status']=='aborted'
+        assert result['pack_name']==selected_pack.name
+        manifest=json.loads((tmp_path/'run/manifest.json').read_text())
+        assert manifest['pack_name']==selected_pack.name
+        assert manifest['pack_source']==str(selected_pack.source)
+        assert manifest['roles_source']==str(selected_pack.roles_source)
+        assert manifest['validator_source']==str(selected_pack.validator_source)
         assert json.loads((tmp_path/'run/result.json').read_text())['status']=='aborted'
         assert events==['stop','collector_close']
     finally:

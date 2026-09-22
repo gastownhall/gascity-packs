@@ -1,0 +1,71 @@
+description = """
+Virtual build continuation contract from an implementation convoy.
+
+This suffix starts when an implementation convoy already exists. It validates
+or records the convoy identity, drains implementation work, and then hands off
+to `build-from-review-base` through the inherited `prepare-review` step.
+"""
+formula = "build-from-convoy-base"
+version = 1
+contract = "graph.v2"
+extends = ["build-from-review-base"]
+target_required = false
+internal = true
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.implementation_convoy_id]
+description = "Existing implementation convoy ID. Empty means read gc.input_convoy_id from workflow metadata."
+default = ""
+
+[vars.drain_policy]
+description = "Implementation drain policy."
+default = "separate"
+
+[[steps]]
+id = "prepare-convoy"
+title = "Validate implementation convoy"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-convoy-base/prepare-convoy.md"
+
+[[steps]]
+id = "implement"
+title = "Drain continuation implementation convoy"
+needs = ["prepare-convoy"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/build-from-convoy-base/implement.md"
+
+[steps.drain]
+context = "separate"
+formula = "do-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Drain continuation convoy in one shared session"
+needs = ["prepare-convoy"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/build-from-convoy-base/implement-same-session.md"
+
+[steps.drain]
+context = "shared"
+formula = "do-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "prepare-review"
+title = "Validate review continuation inputs"
+needs = ["implement", "implement-same-session"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-convoy-base/prepare-review.md"

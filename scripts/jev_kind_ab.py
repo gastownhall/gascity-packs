@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess,sys,time
 
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'gascity/assets/scripts'))
+sys.path.insert(0,str(ROOT/'gascity-jev/assets/scripts'))
 import jev_kind as kind
 import jev_ab as evidence
 save=kind.transport.save

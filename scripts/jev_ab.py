@@ -17,7 +17,7 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / 'gascity/assets/scripts/jev_evidence.py'
+HELPER = ROOT / 'gascity-jev/assets/scripts/jev_evidence.py'
 spec = importlib.util.spec_from_file_location('jev_evidence', HELPER)
 jev = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jev)

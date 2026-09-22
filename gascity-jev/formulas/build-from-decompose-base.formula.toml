@@ -1,0 +1,90 @@
+description = """
+Virtual build continuation contract from an approved plan.
+
+This formula starts at the decompose stage when the upstream requirements,
+plan, and plan-review artifacts already exist. In practice, concrete
+methodology packs extend this base to bind their native decomposition formula
+rather than copying the suffix graph. This base does decomposition, then hands
+off to `build-from-convoy-base` through the inherited `prepare-convoy` step.
+
+Launch inputs:
+- artifact_root: {{artifact_root}}
+- context_path: {{context_path}}
+- requirements_path: {{requirements_path}}
+- plan_path: {{plan_path}}
+- plan_review_path: {{plan_review_path}}
+- decomposition_path: {{decomposition_path}}
+- drain_policy: {{drain_policy}}
+- interaction_mode: {{interaction_mode}}
+- review_mode: {{review_mode}}
+- implementation_target: {{implementation_target}}
+- decomposition_formula: {{decomposition_formula}}
+- implementation_formula: {{implementation_formula}}
+- implementation_item_formula: {{implementation_item_formula}}
+- code_review_formula: {{code_review_formula}}
+- review_fix_formula: {{review_fix_formula}}
+- max_iterations: {{max_iterations}}
+- push: {{push}}
+- open_pr: {{open_pr}}
+"""
+formula = "build-from-decompose-base"
+version = 1
+contract = "graph.v2"
+extends = ["build-from-convoy-base"]
+target_required = false
+internal = true
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.requirements_path]
+description = "Approved requirements artifact path."
+required = true
+
+[vars.plan_path]
+description = "Approved implementation plan artifact path."
+required = true
+
+[vars.plan_review_path]
+description = "Approved plan-review artifact path."
+required = true
+
+[vars.decomposition_path]
+description = "Task decomposition artifact path to create or reuse."
+default = ""
+
+[vars.decomposition_formula]
+description = "Decomposition methodology formula used to create implementation beads."
+default = "decomposition-base"
+
+[[steps]]
+id = "prepare-decompose"
+title = "Validate decompose continuation inputs"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-decompose-base/prepare-decompose.md"
+
+[[steps]]
+id = "decompose"
+title = "Create continuation implementation convoy"
+needs = ["prepare-decompose"]
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+description_file = "../assets/workflows/build-from-decompose-base/decompose.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "prepare-convoy"
+title = "Validate implementation convoy"
+needs = ["decompose"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-decompose-base/prepare-convoy.md"

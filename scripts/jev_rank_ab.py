@@ -4,7 +4,7 @@ import argparse,json,os,subprocess,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'gascity/assets/scripts'))
+sys.path.insert(0,str(ROOT/'gascity-jev/assets/scripts'))
 import jev_rank as rank
 import jev_ab as accounting
 save=rank.transport.save
@@ -38,7 +38,7 @@ def run(case,arm,directory):
   result['state_sha256']=rank.transport.digest(json.dumps(state,sort_keys=True).encode())
   if arm=='baseline':order,result['llm_usage']=claude(state,questions,directory)
   else:
-   command=[sys.executable,str(ROOT/'gascity/assets/scripts/jev_rank.py'),str(directory/'input.json'),'--output-dir',str(directory/'jev'),'--mode','assist']
+   command=[sys.executable,str(ROOT/'gascity-jev/assets/scripts/jev_rank.py'),str(directory/'input.json'),'--output-dir',str(directory/'jev'),'--mode','assist']
    save(directory/'command.json',command);proc=subprocess.run(command,capture_output=True,text=True,timeout=60)
    (directory/'stdout.txt').write_text(proc.stdout);(directory/'stderr.txt').write_text(proc.stderr)
    report=json.loads((directory/'jev/report.json').read_text());result['jev_usage']=report['usage']

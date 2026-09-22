@@ -14,7 +14,6 @@ Launch inputs:
 - post_mode: {{post_mode}}
 - triage_rubric_path: {{triage_rubric_path}} (optional Markdown rubric/prompt
   for report behavior; empty uses the base rubric)
-- jev_kind_mode: {{jev_kind_mode}} (off, auto, or assist; kind classification only)
 """
 formula = "github-issue-triage-base"
 version = 1
@@ -37,31 +36,6 @@ default = "auto"
 [vars.triage_rubric_path]
 description = "Optional path to a Markdown triage rubric/prompt. Empty uses the base report rubric in this formula."
 default = ""
-
-[vars.jev_kind_mode]
-description = "Kind classifier: off, auto (when configured), or assist. Kind only; priority and complexity retain the existing policy."
-default = "auto"
-
-[vars.jev_kind_model]
-description = "Pinned Jev model for kind classification."
-default = "jev-1.13.0"
-
-[vars.jev_kind_threshold]
-description = "Experimental confidence cutoff; lower-confidence kinds require ordinary LLM triage."
-default = "0.85"
-
-[vars.jev_kind_labels_path]
-description = "Optional JSON mapping bug, feature, docs, chore to repository kind labels. Empty uses the published Gas City labels."
-default = ""
-
-[vars.jev_duplicates_mode]
-description = "Duplicate candidate ranking: off, auto (when configured), or assist."
-default = "auto"
-
-[vars.jev_decision_model]
-description = "Pinned Jev model for bounded workflow decisions."
-default = "jev-1.13.0"
-
 
 [[steps]]
 id = "snapshot"
