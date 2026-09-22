@@ -244,6 +244,9 @@ refinery that carry `metadata.branch`, so a bead left assigned here is
 re-selected on the next cycle and one misconfigured `target` head-of-line
 blocks every other merge in the rig. Same shape as `block_existing_pr` in
 the merge step — the other invalid-configuration halt in this formula.
+The same block also decides whether a rebase is needed at all: when
+`origin/$TARGET` is already an ancestor of `origin/$BRANCH`, the source is a
+pure fast-forward candidate and rebasing it would only destroy merge topology.
 ```bash
 git fetch --prune origin
 if ! git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
@@ -291,14 +294,64 @@ Target: $TARGET"
   gc runtime drain-ack
   exit 1
 fi
-git checkout -b temp origin/$BRANCH
-git rebase origin/$TARGET
+# Guarded ancestry decision (issue 374). Pin exactly the two tracking refs the
+# decision reads: the prune fetch above is best-effort with an unchecked exit,
+# and a decision read off stale refs would skip (or force) a rebase the source
+# does not need. Refspecs deliberately unbraced — string-distinct from the
+# braced merge-push fetch so the inference-gate pin witnesses this site
+# uniquely. Fail closed here: no probe, no rebase, no bead mutation.
+if ! git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" "+refs/heads/$TARGET:refs/remotes/origin/$TARGET"; then
+  echo "git fetch of $BRANCH/$TARGET tracking refs failed (unreachable origin or missing branch); cannot evaluate rebase ancestry. STOP. Do not mutate bead state."
+  gc runtime drain-ack
+  exit 1
+fi
+# Already-based source (origin/$TARGET an ancestor of origin/$BRANCH) is a pure
+# fast-forward candidate: rebasing it drops merge commits and their recorded
+# conflict resolutions — artificial conflicts on an unchanged SHA (the
+# rejection treadmill) or silent flattening that merge-push then force-pushes
+# over the source branch. Probe BEFORE any branch exists so every STOP leaves
+# the worktree clean for the next patrol cycle.
+git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"
+ANCESTOR_RC=$?
+case "$ANCESTOR_RC" in
+  0)
+    # The materialization itself is exit-checked: over a stranded `temp` (the
+    # pre-existing merge-push STOP wedge) this checkout fails, and proceeding
+    # would mis-report a skip while downstream consumes the stale branch.
+    if ! git checkout -b temp origin/$BRANCH; then
+      echo "cannot materialize temp at origin/$BRANCH for the skip path (a stale temp branch may be stranded from a previous merge-push STOP). STOP. Do not mutate bead state."
+      gc runtime drain-ack
+      exit 1
+    fi
+    echo "SKIP-REBASE: origin/$TARGET ($(git rev-parse --short "origin/$TARGET")) is already an ancestor of origin/$BRANCH ($(git rev-parse --short "origin/$BRANCH")); temp materialized at origin/$BRANCH with merge topology preserved. Proceed to run-tests; do not rebase, amend, or reset."
+    ;;
+  1)
+    # Genuinely diverged: exactly the two lines this step has always run.
+    git checkout -b temp origin/$BRANCH
+    git rebase origin/$TARGET
+    ;;
+  *)
+    # A probe error is never "not an ancestor" (same idiom as merge-push's
+    # already-merged gate error arm).
+    echo "git merge-base --is-ancestor errored (status $ANCESTOR_RC); cannot evaluate rebase ancestry. STOP. Do not mutate bead state."
+    gc runtime drain-ack
+    exit 1
+    ;;
+esac
 ```
+
+If the ancestry decision SKIPPED the rebase (`SKIP-REBASE` printed, probe
+rc=0): `temp` is already materialized at `origin/$BRANCH` with merge topology
+intact — treat this step as succeeded without a rebase and proceed to run-tests
+exactly as a successful rebase does. Do not abort, amend, reset, or re-run a
+rebase on it. Nothing was rewritten; merge-push consumes `temp` unchanged.
 
 If rebase SUCCEEDED (exit 0): close this step, proceed to run-tests.
 
-If rebase FAILED (conflicts) — and only then, since the guard above has
-already ruled out an unresolvable target:
+If rebase FAILED (conflicts) — and only then: the guards above have already
+ruled out an unresolvable target, an already-based source, and fetch/probe tool
+errors, so what reaches a failed rebase is a genuine content conflict with
+`$TARGET`:
 
 1. Abort: `git rebase --abort`
 2. Clean up the existing workflow and reopen the source bead:

@@ -121,6 +121,26 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
     ),
     "mol-refinery-patrol": (
         "gc bd list ${GC_RIG:+--rig=\"$GC_RIG\"} --assignee=$GC_AGENT --status=open,in_progress",
+        # Guarded ancestry decision (issue 374). The guard fetch is pinned in
+        # its unbraced spelling: merge-push's fetch uses "${BRANCH}", so this
+        # fragment witnesses the decision's own site uniquely.
+        'git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"',
+        # Direction-locked: merge-push probes the reverse order, so flipping
+        # the operands here breaks the pin rather than silently inverting the
+        # skip decision.
+        'git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"',
+        # Renaming the capture (e.g. to the zsh-read-only `status`) fails the
+        # gate at commit time instead of the patrol at runtime.
+        "ANCESTOR_RC=$?",
+        # Collective pin over the fail-closed family: deleting or rerouting
+        # both error arms breaks it. A single deleted arm stays satisfied by
+        # the other arm's copy and is witnessed instead by the per-arm
+        # literals in gastown/tests/test_mol_refinery_patrol_rebase_guard.sh.
+        "cannot evaluate rebase ancestry. STOP. Do not mutate bead state.",
+        # Echo-anchored so no prose mention can satisfy it: without this,
+        # collapsing the skip arm would pass every other pin while deleting
+        # the feature.
+        'echo "SKIP-REBASE:',
         "git rebase origin/$TARGET",
         "{{typecheck_command}}",
         "{{lint_command}}",
