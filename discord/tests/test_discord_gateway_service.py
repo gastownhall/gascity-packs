@@ -232,6 +232,44 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(receipt["body"], content)
         self.assertTrue(receipt["body_truncated"])
 
+    def test_room_launch_record_keeps_the_whole_body(self) -> None:
+        # The launch record is the launcher room's own copy of the message, and
+        # a reader browsing launches sees it instead of the ingress receipt.
+        # Same loss, same fix: it must carry the body, not just the preview.
+        self._configure_discord_app()
+        common.set_room_launcher(common.load_config(), "1", "22")
+        content = ("@@corp/sky take this one.\n\n" + "Detail line. " * 40).strip()
+        self.assertGreater(len(content), gateway_service.MAX_STATUS_PREVIEW)
+        message = {
+            "id": "106",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common, "resolve_existing_session_for_handle", return_value={"session_name": "sky"}
+        ), mock.patch.object(
+            common, "ensure_room_launch_session", side_effect=lambda launch, **kwargs: launch
+        ), mock.patch.object(
+            gateway_service, "resume_ingress_delivery", side_effect=lambda receipt, **kwargs: receipt
+        ):
+            gateway_service.process_room_launch_message(
+                base_receipt={"ingress_id": "in-106", "discord_message_id": "106"},
+                launcher={"id": "launcher:1:22"},
+                message=message,
+                bot_user_id="999",
+                ingress_id="in-106",
+            )
+
+        launch = common.load_room_launch(common.room_launch_record_id("106"))
+        assert launch is not None
+        self.assertEqual(launch["body"], content)
+        self.assertEqual(launch["body_length"], len(content))
+        self.assertTrue(launch["body_truncated"])
+        self.assertTrue(launch["body_preview"].endswith("..."))
+
     def test_process_inbound_room_message_targets_only_named_alias(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["sky", "lawrence"], guild_id="1")
         message = {

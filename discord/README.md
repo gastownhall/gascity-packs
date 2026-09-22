@@ -284,10 +284,11 @@ Records written before this shape existed have only `body_preview` and no
 closest signal is `message_debug.gateway_content_length`, which is an upper
 bound — it is measured before the bot mention is stripped.
 
-The session receives the same message a second time, complete, in the deferred
-`<discord-event>` reminder's `untrusted_body_json`. That copy was never lossy,
-but it lands a turn or more later, so anything watching the ingress directory
-sees the file first.
+The session receives the same message a second time in the deferred
+`<discord-event>` reminder's `untrusted_body_json`. That copy is never
+truncated, but it is flattened to a single line, so `body` is the only copy
+that keeps the author's line breaks. It also lands a turn or more later, so
+anything watching the ingress directory sees the file first.
 
 ## Inspect Status
 
@@ -301,8 +302,10 @@ gateway state, and per-app counters. The gateway endpoint also reports an
 aggregate state without letting one failed bot hide or take down healthy bots.
 Status never prints token values.
 
-`Recent Chat Ingress` lines append `[CLIPPED — N chars total; ...]` when the
-printed preview is only part of the message.
+`Recent Chat Ingress` previews are redacted on this surface, so the line never
+shows message text. It does append `[CLIPPED — N chars total; ...]` when the
+record was clipped, which is how you tell a partial record from a whole one
+without reading the body.
 
 ## Workflow Helper
 

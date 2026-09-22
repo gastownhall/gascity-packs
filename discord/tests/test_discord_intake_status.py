@@ -35,5 +35,30 @@ class ChatIngressClippedMarkerTests(unittest.TestCase):
                 self.assertNotIn("chars total", marker)
 
 
+class RenderTextTests(unittest.TestCase):
+    def test_the_marker_reaches_the_rendered_ingress_line(self) -> None:
+        # The marker is the only thing on this surface that tells a clipped
+        # record from a whole one: `build_status_snapshot` redacts
+        # `body_preview`, so the preview it sits beside is "[redacted]".
+        snapshot = {
+            "recent_chat_ingress": [
+                {
+                    "ingress_id": "in-clipped",
+                    "body_preview": "[redacted]",
+                    "body_truncated": True,
+                    "body_length": 467,
+                },
+                {"ingress_id": "in-whole", "body_preview": "[redacted]"},
+            ]
+        }
+
+        rendered = status.render_text(snapshot).splitlines()
+        clipped_line = next(line for line in rendered if "in-clipped" in line)
+        whole_line = next(line for line in rendered if "in-whole" in line)
+
+        self.assertIn("[CLIPPED — 467 chars total", clipped_line)
+        self.assertNotIn("CLIPPED", whole_line)
+
+
 if __name__ == "__main__":
     unittest.main()
