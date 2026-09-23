@@ -330,8 +330,19 @@ case "$ANCESTOR_RC" in
     echo "SKIP-REBASE: origin/$TARGET ($(git rev-parse --short "origin/$TARGET")) is already an ancestor of origin/$BRANCH ($(git rev-parse --short "origin/$BRANCH")); temp materialized at origin/$BRANCH with merge topology preserved. Proceed to run-tests; do not rebase, amend, or reset."
     ;;
   1)
-    # Genuinely diverged: exactly the two lines this step has always run.
-    git checkout -b temp origin/$BRANCH
+    # Genuinely diverged: the rebase this step has always run, behind the same
+    # exit-checked materialization as the skip arm. Unchecked, a stranded temp
+    # (a merge-push STOP wedge, or an `mr` lease failure re-entered without the
+    # cleanup below) fails this checkout and leaves HEAD on the STALE branch, so
+    # the rebase rewrites the wrong commits. The damage is worse here than on the
+    # skip arm: merge-push then force-pushes the result over $BRANCH, and
+    # --force-with-lease does not stop it because the guard fetch above already
+    # advanced the remote-tracking ref the lease is compared against.
+    if ! git checkout -b temp origin/$BRANCH; then
+      echo "cannot materialize temp at origin/$BRANCH for the rebase path (a stale temp branch may be stranded from a previous merge-push STOP or mr lease failure); rebasing it would rewrite the wrong commits and merge-push would force-push them over $BRANCH. STOP. Do not mutate bead state."
+      gc runtime drain-ack
+      exit 1
+    fi
     git rebase origin/$TARGET
     ;;
   *)
@@ -1004,15 +1015,26 @@ decision exists to prevent, and then force-pushes the flattened result over the
 source branch.
 
 Instead, re-enter the `rebase` step and let its ancestry decision run again on
-the moved branch. Re-fetch both tracking refs, then
-**re-materialize `temp` at the freshly fetched `origin/$BRANCH` first**, and only
-then re-probe
-`git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"`:
-rc=0 keeps `temp` exactly as it is (do not rebase); rc=1 rebases onto
-`origin/$TARGET`; any other status STOPs without mutating bead state.
-Re-materializing replaces the tree that was tested, so this is a step re-entry
-and not a push-level fixup: `run-tests` runs again on the new `temp` before you
-return here to push. Do not use plain `--force`.
+the moved branch. Clear the tested branch out of the way first — the decision
+probes BEFORE any branch exists so that every STOP leaves the worktree clean,
+and both its arms materialize `temp` with an exit-checked `git checkout -b`, so a
+surviving `temp` makes the re-entry STOP rather than proceed:
+```bash
+git checkout --detach "origin/$TARGET" && git branch -D temp
+```
+Then re-enter the step from the top and let it decide. It re-fetches both
+tracking refs and re-probes
+`git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"` with no `temp`
+in the way, and its arms take it from there:
+rc=0 re-materializes `temp` at the freshly fetched `origin/$BRANCH`, unrebased;
+rc=1 re-materializes it and rebases onto `origin/$TARGET`;
+any other status STOPs without mutating bead state.
+Do not "re-materialize in place" with `git checkout -B temp` — that leaves the
+branch alive across the probe, which is the ordering the decision's own
+rationale rejects, and it strands a mutated `temp` behind a probe error.
+Deleting and re-materializing replaces the tree that was tested, so this is
+a step re-entry and not a push-level fixup: `run-tests` runs again on the new
+`temp` before you return here to push. Do not use plain `--force`.
 
 **2. Reuse, create, or discover the pull request:**
 
@@ -1052,7 +1074,10 @@ PR_BODY_FILE=$(mktemp)
   printf -- '- Issue: `%s` (%s%s)\n' "$WORK" "$ISSUE_TYPE" "${ISSUE_PRIORITY:+, P$ISSUE_PRIORITY}"
   printf -- '- Source branch: `%s`\n' "$BRANCH"
   printf -- '- Target: `%s`\n' "$TARGET"
-  printf -- '- Rebased on `%s` via Gastown Refinery.\n' "$TARGET"
+  # "Based on", not "Rebased on": on the skip path temp was never rebased, it is
+  # origin/$BRANCH with its merges intact. Both paths end with origin/$TARGET an
+  # ancestor of temp, which is exactly what this line now claims.
+  printf -- '- Based on `%s` via Gastown Refinery.\n' "$TARGET"
 } > "$PR_BODY_FILE"
 
 if [ -n "$EXISTING_PR" ]; then

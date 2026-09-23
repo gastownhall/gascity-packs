@@ -623,8 +623,11 @@ test_refinery_rebase_guidance_matches_the_guarded_step() {
 
     # Every quick-reference row naming the rebase must name the probe in the
     # same row.  Counting unguarded rows rather than pinning one exact row keeps
-    # this from freezing the row's wording.
-    unguarded="$(grep -F 'git rebase origin/$TARGET' "$refinery_prompt" | grep -c -v -F -- "$probe" || true)"
+    # this from freezing the row's wording.  Scoped to table rows (lines opening
+    # with `|`), because file-wide it also reds prose that legitimately names the
+    # bare rebase -- describing the rc=1 arm, for instance.  The cheat-sheet
+    # one-liner this exists to catch is a table row by construction.
+    unguarded="$(grep -E '^\|' "$refinery_prompt" | grep -F 'git rebase origin/$TARGET' | grep -c -v -F -- "$probe" || true)"
     [[ "${unguarded:-0}" -eq 0 ]] ||
         fail "the refinery prompt publishes 'git rebase origin/\$TARGET' as a Correct command without the ancestry probe in the same row (${unguarded} row(s)); a bare cheat-sheet one-liner overrides the guarded step"
 

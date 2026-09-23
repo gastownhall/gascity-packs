@@ -147,8 +147,12 @@ SH
 # runs in a plain agent shell, and testing it stricter than it ships would
 # measure the wrong thing.  The git shim, when supplied, is prepended to PATH
 # only here -- fixture setup and assertions always run with real git.
+#
+# The 4th argument selects which lifted script runs; it defaults to the rebase
+# fence, so leg 10 can drive the `mr` recovery fence through the identical
+# environment the step itself gets rather than a second harness.
 run_fence() {
-    local dir="$1" out="$2" pathpre="${3:-}"
+    local dir="$1" out="$2" pathpre="${3:-}" script="${4:-$BLOCK}"
     FENCE_RC=0
     LAST_OUT="$out"
     : >"$GC_LOG"
@@ -157,7 +161,7 @@ run_fence() {
         PATH="${pathpre:+$pathpre:}$BIN:$PATH" \
         BRANCH="$T_BRANCH" TARGET="$T_TARGET" WORK="$T_WORK" \
         GC_AGENT="$T_AGENT" GC_BEAD_ID="$T_WISP" GC_LOG="$GC_LOG" \
-            bash -c 'set +eu; . "$1"' bash "$BLOCK"
+            bash -c 'set +eu; . "$1"' bash "$script"
     ) >"$out" 2>&1 || FENCE_RC=$?
 }
 
@@ -403,6 +407,50 @@ leg1b() {
     return 0
 }
 
+# Leg 1c -- stranded temp fails closed at the DIVERGED-arm checkout.
+# Leg 1b's twin on the other case arm, and the more dangerous one: here the
+# unchecked failure is followed by a rebase, so the block rewrites a branch it
+# never materialized.  The fixture is the measured lease-failure state, not a
+# synthetic one -- `temp` exists at the sha `mr` pushed and is still CHECKED OUT
+# (`mr` step 1 does `git checkout temp`), and another actor has since moved
+# origin/source, which is what made the lease fail in the first place.
+# Red on base: the bare checkout fails, HEAD is still the stale `temp`, so
+# `git rebase origin/$TARGET` rewrites that branch and the fence exits 0 with no
+# STOP -- merge-push then force-pushes the rewritten stale branch over source.
+leg1c() {
+    local d="$tmp/leg1c" stale moved
+    fixture_ex3a "$d"
+    stale=$(git -C "$d/clone" rev-parse origin/source)
+    git -C "$d/clone" branch temp "$stale"
+    git -C "$d/clone" checkout --quiet temp
+    # The lease-failure trigger: origin/source moves after temp was materialized.
+    git -C "$d/build" checkout --quiet source
+    printf 'another actor\n' >"$d/build/other"
+    git -C "$d/build" add other
+    git -C "$d/build" commit --quiet -m "another actor advances source"
+    git -C "$d/build" push --quiet origin source
+    moved=$(git -C "$d/build" rev-parse source)
+    [ "$moved" != "$stale" ] || fail "leg 1c fixture: origin/source did not move"
+    run_fence "$d/clone" "$tmp/leg1c.out"
+    assert_rc_nonzero "leg 1c: a stranded temp must fail closed on the diverged arm"
+    assert_contains "leg 1c" "cannot materialize temp at origin/"
+    assert_contains "leg 1c" "for the rebase path"
+    assert_not_contains "leg 1c" "SKIP-REBASE"
+    assert_log_has "leg 1c" "gc runtime drain-ack"
+    assert_no_bead_mutation "leg 1c"
+    # The whole point: the stale branch is not rebased, and the commit the other
+    # actor pushed is still reachable from origin/source.
+    [ "$(git -C "$d/clone" rev-parse temp)" = "$stale" ] ||
+        fail "leg 1c: the stranded temp branch was rebased (it must be left exactly as found)"
+    [ "$(git -C "$d/clone" rev-parse --abbrev-ref HEAD)" = "temp" ] ||
+        fail "leg 1c: HEAD left the stranded temp branch"
+    [ ! -e "$d/clone/.git/rebase-merge" ] && [ ! -e "$d/clone/.git/rebase-apply" ] ||
+        fail "leg 1c: a rebase was started on the stranded temp"
+    [ "$(git -C "$d/clone" rev-parse origin/source)" = "$moved" ] ||
+        fail "leg 1c: origin/source no longer carries the other actor's commit"
+    return 0
+}
+
 # Leg 2 -- diverged clean rebases as today (EX-3a; AC-374-05).  Green control on
 # both trees.  Merge count is deliberately not asserted: today's diverged
 # flattening semantics are preserved here, not re-litigated.
@@ -549,6 +597,17 @@ leg7() {
     count_lit "$sentinel" 2 "the lift sentinel"
     count_lit "$collective" 2 "the collective STOP sentence"
 
+    # Both materializing arms are exit-checked, and the count is what makes that
+    # measurable: a per-arm presence grep alone stays green when one arm's check
+    # is dropped, because the other arm still carries the shared literal.  The
+    # two arm-naming suffixes below then say WHICH arm regressed -- and they are
+    # why the count cannot be satisfied by wording both STOPs identically.
+    count_lit 'cannot materialize temp at origin/' 2 "the exit-checked materialization STOP"
+    grep -Fq -- 'for the skip path' "$BLOCK" ||
+        fail "leg 7: the skip arm's checkout STOP no longer names its arm"
+    grep -Fq -- 'for the rebase path' "$BLOCK" ||
+        fail "leg 7: the diverged (rc=1) arm's checkout STOP is missing; an unchecked checkout there rebases a stranded temp"
+
     # Both explicit refspecs, the capture, and every per-arm STOP literal, so
     # that deleting any single fail-closed arm goes red statically here and not
     # only behaviorally in legs 1b/4/6.
@@ -562,8 +621,10 @@ leg7() {
         fail "leg 7: the fetch-failure STOP literal is missing"
     grep -Fq -- 'errored (status ' "$BLOCK" ||
         fail "leg 7: the probe-error STOP literal is missing"
+    # Retained beside the count above for its message: this one says the shared
+    # wording vanished outright, the count says one of the two arms lost it.
     grep -Fq -- 'cannot materialize temp at origin/' "$BLOCK" ||
-        fail "leg 7: the skip-arm checkout STOP literal is missing"
+        fail "leg 7: the checkout STOP literal is missing from both materializing arms"
 
     l_prune=$(line_of 'git fetch --prune origin')
     l_showref=$(line_of 'git show-ref --verify --quiet "refs/remotes/origin/$TARGET"')
@@ -625,7 +686,7 @@ leg8() {
 # so pin it the way leg 7 pins the fence: the two halves drifted apart once
 # already.  This leg is the executable counterpart of that contract.
 leg9() {
-    local mr="$tmp/mr-section.md" off_rematerialize off_probe
+    local mr="$tmp/mr-section.md" off_clear off_probe off_rematerialize
 
     # Prefix marker, matching the slice in gastown/tests/test_gastown_pack_assets.sh:
     # the heading closes its bold run after the colon, so anchoring on `"mr"**`
@@ -649,26 +710,132 @@ leg9() {
         fail "leg 9: the mr lease-failure recovery must re-enter the rebase step's ancestry decision"
     grep -Fq -- 'git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"' "$mr" ||
         fail "leg 9: the mr lease-failure recovery must re-probe ancestry, direction-locked like the decision itself"
-    grep -Fq -- 'rc=0 keeps `temp` exactly as it is (do not rebase)' "$mr" ||
+    # Single-line literals throughout: `grep -F` treats an embedded newline as a
+    # pattern separator, so a two-line pattern would quietly become an OR.
+    grep -Fq -- 'rc=0 re-materializes `temp` at the freshly fetched `origin/$BRANCH`, unrebased' "$mr" ||
         fail "leg 9: the mr recovery must keep an already-based temp unrebased (probe rc=0)"
     grep -Fq -- 'any other status STOPs without mutating bead state' "$mr" ||
         fail "leg 9: the mr recovery must fail closed on a probe error, like the decision's third arm"
+
+    # "Re-materialize" is a verb, not a command.  Bind it: the recovery names the
+    # exact pair an agent runs, and leg 10 executes that pair out of the formula.
+    grep -Fq -- 'git checkout --detach "origin/$TARGET" && git branch -D temp' "$mr" ||
+        fail "leg 9: the mr lease-failure recovery must name the concrete command that clears temp, not an unbound \"re-materialize\""
+    grep -Fq -- 'git checkout -B temp' "$mr" ||
+        fail "leg 9: the mr recovery must warn off re-materializing in place with git checkout -B temp, which keeps the branch alive across the probe"
+
+    # The provenance line is published to human reviewers.  On the skip path temp
+    # was never rebased, so it may not claim it was; both paths do leave
+    # origin/$TARGET an ancestor of temp, which is what "Based on" asserts.
+    grep -Fq -- "printf -- '- Based on \`%s\` via Gastown Refinery." "$mr" ||
+        fail "leg 9: the mr PR body must not advertise a rebase that the skip path never ran"
+    ! grep -Fq -- "printf -- '- Rebased on \`%s\` via Gastown Refinery." "$mr" ||
+        fail "leg 9: the mr PR body still publishes '- Rebased on ...' provenance, false on the skip path"
     grep -Fq -- 'a step re-entry' "$mr" ||
         fail "leg 9: the mr recovery re-materializes temp, so it must say the retry re-enters the step and re-runs run-tests rather than reading as a push-level fixup"
     grep -Fq -- 'run-tests` runs again' "$mr" ||
         fail "leg 9: the mr recovery must state that run-tests re-runs on the re-materialized temp"
 
-    # Ordering is the load-bearing half: re-materializing at the freshly fetched
-    # origin/$BRANCH must happen BEFORE the probe.  Probing first and then
-    # re-materializing would decide on one tree and push another.  Byte offsets,
-    # so a reflow of the paragraph cannot break the check.
-    off_rematerialize=$(grep -Fob -m1 -- 're-materialize `temp` at the freshly fetched `origin/$BRANCH` first' "$mr" | cut -d: -f1) || true
-    [ -n "$off_rematerialize" ] ||
-        fail "leg 9: the mr recovery must re-materialize temp at the freshly fetched origin/\$BRANCH first"
+    # Ordering is the load-bearing half, and it is the DECISION's order that wins:
+    # the rebase step probes before any branch exists ("so every STOP leaves the
+    # worktree clean"), and legs 4/6 assert it.  An earlier revision of this
+    # recovery mandated the inverse -- re-materialize, then probe -- which left a
+    # mutated temp behind a probe error and put the two halves of one contract in
+    # contradiction.  So: clear temp FIRST, then the probe, and only then the
+    # re-materialization the arms perform.  Byte offsets, so a reflow of the
+    # paragraph cannot break the check.
+    off_clear=$(grep -Fob -m1 -- 'git checkout --detach "origin/$TARGET" && git branch -D temp' "$mr" | cut -d: -f1) || true
+    [ -n "$off_clear" ] ||
+        fail "leg 9: the mr recovery must clear temp with a concrete command before re-entering the step"
     off_probe=$(grep -Fob -m1 -- 'git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"' "$mr" | cut -d: -f1) || true
     [ -n "$off_probe" ] || fail "leg 9: the re-probe literal vanished between checks"
-    [ "$off_rematerialize" -lt "$off_probe" ] ||
-        fail "leg 9: the mr recovery must re-materialize temp before re-probing (re-materialize at byte $off_rematerialize, probe at byte $off_probe)"
+    off_rematerialize=$(grep -Fob -m1 -- 'rc=0 re-materializes `temp` at the freshly fetched `origin/$BRANCH`, unrebased' "$mr" | cut -d: -f1) || true
+    [ -n "$off_rematerialize" ] || fail "leg 9: the rc=0 re-materialization literal vanished between checks"
+    [ "$off_clear" -lt "$off_probe" ] ||
+        fail "leg 9: the mr recovery must clear temp before re-probing (clear at byte $off_clear, probe at byte $off_probe)"
+    [ "$off_probe" -lt "$off_rematerialize" ] ||
+        fail "leg 9: the mr recovery must probe before re-materializing temp, matching the rebase step's probe-first rationale (probe at byte $off_probe, re-materialize at byte $off_rematerialize)"
+}
+
+# Leg 10 -- the `mr` lease-failure recovery, EXECUTED rather than pinned.
+# Leg 9 proves the recovery says the right thing; this leg proves it works.  The
+# commands are LIFTED out of the formula for the same reason the rebase fence is:
+# a transcribed copy drifts from the recipe that actually runs, and "re-materialize
+# `temp`" already shipped once as a verb no command in the step could perform.
+#
+# The lift happens HERE rather than at the top level on purpose: the recovery
+# fence does not exist on an unguarded tree, and a top-level lift would abort the
+# whole run with an extraction error instead of producing the per-leg red
+# enumeration this file's red control depends on.
+#
+# Both topologies, because the recovery is reached from either: the skip path is
+# where an in-place rebase would flatten the merges (the damage the paragraph
+# exists to prevent), the diverged path is where it would rewrite a stale branch.
+leg10() {
+    local ex d recovery first_temp moved
+    recovery="$tmp/mr-recovery.sh"
+    lift_block 'git checkout --detach "origin/$TARGET" && git branch -D temp' "$recovery"
+
+    for ex in ex1 ex3a; do
+        d="$tmp/leg10-$ex"
+        "fixture_$ex" "$d"
+
+        # Pass 1 is the state `mr` pushes from: the step materialized temp and
+        # left HEAD on it, and `mr` step 1 re-checks it out.
+        run_fence "$d/clone" "$tmp/leg10-$ex-pass1.out"
+        assert_rc_zero "leg 10/$ex: the first pass must succeed"
+        first_temp=$(git -C "$d/clone" rev-parse temp)
+        [ "$(git -C "$d/clone" rev-parse --abbrev-ref HEAD)" = "temp" ] ||
+            fail "leg 10/$ex: the step did not leave HEAD on temp, so the fixture is not the mr push state"
+
+        # The lease failure: origin/source moves under the tree that was tested.
+        git -C "$d/build" checkout --quiet source
+        printf 'another actor\n' >"$d/build/other"
+        git -C "$d/build" add other
+        git -C "$d/build" commit --quiet -m "another actor advances source"
+        git -C "$d/build" push --quiet origin source
+        moved=$(git -C "$d/build" rev-parse source)
+
+        # The recovery, exactly as the formula states it.
+        run_fence "$d/clone" "$tmp/leg10-$ex-recovery.out" "" "$recovery"
+        assert_rc_zero "leg 10/$ex: the recovery commands must succeed as written"
+        assert_no_temp "$d/clone" "leg 10/$ex: the recovery must delete the tested temp"
+        [ "$(git -C "$d/clone" rev-parse --abbrev-ref HEAD)" = "HEAD" ] ||
+            fail "leg 10/$ex: the recovery must leave HEAD detached rather than on a branch"
+
+        # Re-entry.  This is what the unbound prose could not do: with temp still
+        # alive, the exit-checked checkout STOPs on both arms, so a recovery that
+        # only says "re-materialize" dead-ends here instead of deciding.
+        run_fence "$d/clone" "$tmp/leg10-$ex-pass2.out"
+        assert_rc_zero "leg 10/$ex: the re-entry must reach a decision, not a STOP"
+        assert_not_contains "leg 10/$ex (re-entry)" "cannot materialize temp at origin/"
+        assert_no_bead_mutation "leg 10/$ex"
+        [ "$(git -C "$d/clone" rev-parse origin/source)" = "$moved" ] ||
+            fail "leg 10/$ex: the re-entry did not pick up the moved source branch"
+        [ "$(git -C "$d/clone" rev-parse temp)" != "$first_temp" ] ||
+            fail "leg 10/$ex: temp is still the tree that was already pushed, so the re-entry decided on stale refs"
+        git -C "$d/clone" merge-base --is-ancestor origin/main temp ||
+            fail "leg 10/$ex: origin/main is not an ancestor of the re-materialized temp, so merge-push's --ff-only would refuse it"
+
+        case "$ex" in
+            ex1)
+                # Already-based across the move: the recovery must land back on
+                # the skip arm, with the merges the in-place rebase would drop.
+                assert_contains "leg 10/$ex (re-entry)" "SKIP-REBASE:"
+                [ "$(git -C "$d/clone" rev-parse temp)" = "$moved" ] ||
+                    fail "leg 10/$ex: the skip arm must re-materialize temp at the moved origin/source"
+                [ "$(git -C "$d/clone" rev-list --count --merges temp)" -eq 2 ] ||
+                    fail "leg 10/$ex: the recovered temp lost its merge topology"
+                ;;
+            ex3a)
+                # Still diverged: the recovery must land back on the rebase arm.
+                assert_not_contains "leg 10/$ex (re-entry)" "SKIP-REBASE"
+                [ "$(git -C "$d/clone" rev-parse temp)" != "$moved" ] ||
+                    fail "leg 10/$ex: the diverged arm did not rebase the re-materialized temp"
+                ;;
+        esac
+    done
+    return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -695,6 +862,7 @@ lift_block 'git checkout -b temp origin/$BRANCH' "$BLOCK"
 
 run_leg "1"  leg1
 run_leg "1b" leg1b
+run_leg "1c" leg1c
 run_leg "2"  leg2
 run_leg "3"  leg3
 run_leg "4"  leg4
@@ -703,6 +871,7 @@ run_leg "6"  leg6
 run_leg "7"  leg7
 run_leg "8"  leg8
 run_leg "9"  leg9
+run_leg "10" leg10
 
 echo "--- leg summary (formula: $FORMULA) ---"
 failed=0
@@ -716,4 +885,4 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-echo "PASS: mol-refinery-patrol rebase guard (10 legs)"
+echo "PASS: mol-refinery-patrol rebase guard (${#LEG_NAMES[@]} legs)"
