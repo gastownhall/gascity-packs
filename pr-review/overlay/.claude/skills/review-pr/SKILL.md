@@ -899,6 +899,16 @@ You are running from a git worktree checked out at the PR head. The full diff is
 - For Dolt/database operations: always trace merge conflict resolution paths (`--theirs`, `--ours`, `DOLT_CONFLICTS_RESOLVE`). These are specifically designed to handle divergent branch state.
 - Include your findings in the Evidence Bundle under a new field: **Existing handlers checked:** [list with path:line, or "none found"]
 
+### Gas City Mechanical Sync Checks
+- **Typed front doors:** Session, order, nudge, and other bead access must use the owning typed front door rather than a raw `beads.Store` bypass.
+- **Metadata constants:** New `"gc.*"` keys must be centralized in `beadmeta`; flag bare string literals at read or write sites.
+- **Neutral markers:** New marker keys must remain provider- and role-neutral. Extend the zero-hardcoded-roles audit through `*_test.go` fixtures and CLI help/example strings, because those strings feed user-visible and generated contracts.
+- **Capability intersections:** When a runtime capability struct gains a field, verify every composite provider (including auto and hybrid) preserves it in capability intersections.
+- **Contended writes:** Claims, routing, epochs, and other contended metadata must use `ConditionalWriter`/CAS rather than unchecked read-modify-write sequences.
+- **Typed event triple:** An event constant, its `RegisterPayload` registration, and its event-feed allowlist entry must land together.
+- **Rollout boundary:** Rollout flags are transport/configuration state and must never leak into agent prompts as policy.
+- **Test synchronization:** New tests must not add `time.Sleep`; upstream treats sleeps as a census-budgeted exception.
+
 ### Gastown-Specific Invariants
 - **Formula TOML contracts:** Step dependencies must form a DAG. No orphan steps. Variable references (Go text/template) must resolve. New steps must appear in TopologicalSort output.
 - **Role boundaries:** Polecats never touch main branch. Refinery never creates worktrees. Deacon never merges. Witness never does implementation work. Mayor never spawns polecats directly.
@@ -1001,6 +1011,15 @@ You are running from a git worktree checked out at the base branch, which repres
 - Flag if the PR bypasses an existing mechanism (e.g., writing directly to a data store instead of going through the established merge/conflict-resolution pipeline). Even if the bypass "works", it breaks architectural contracts.
 - When you cannot fully verify the premise, mark the Fix Validation as `incomplete` with a note explaining what you couldn't trace, rather than defaulting to `correct`.
 
+### Doc-Contract Verification
+- For every added or modified comment or documentation claim, verify it against the code path it names. This includes precedence order, no-op conditions, atomicity, lock requirements, and claims such as "mirrored" or "at most one."
+- Treat a claim contradicted by its implementation as a finding even when the implementation itself appears internally consistent.
+
+### Error-Path Parity
+- For every error branch claiming to preserve behavior (for example, "fail open" or "same as before"), trace the calls actually made on that branch and diff them against the pre-change behavior.
+- Verify every documented timeout bounds the whole operation, including connection establishment rather than only work after a connection succeeds.
+- For every `*Locked` function or documented mutex contract, verify that no blocking I/O occurs while the lock is held and that every caller, including tests and helpers, satisfies the lock contract.
+
 ### Gastown-Specific Invariants
 - **Formula TOML contracts:** Step dependencies must form a DAG. No orphan steps. Variable references (Go text/template) must resolve. Changed steps must not break TopologicalSort or ReadySteps computation.
 - **Role boundaries:** Polecats never touch main. Refinery never creates worktrees. Deacon never merges. Witness never implements. Mayor never spawns polecats directly. Violations are silent and catastrophic.
@@ -1102,6 +1121,9 @@ You are running from a git worktree checked out at the PR head — the code as i
 **Pattern drift detection:**
 - Compare the PR's approach against the dominant pattern in the codebase. If 8 out of 10 similar functions use pattern A and the PR introduces pattern B, flag it — even if B works. Consistency has value.
 - Look for copy-paste with incomplete adaptation: when code is clearly modeled on an existing function, check that ALL relevant differences were addressed (not just the obvious ones).
+- Treat raw `beads.Store` access where a typed session/order/nudge front door exists as architectural drift, and verify new `"gc.*"` metadata keys use centralized `beadmeta` constants.
+- Compare contended metadata updates with the established `ConditionalWriter`/CAS pattern; unchecked read-modify-write is incomplete propagation even when a single-agent test passes.
+- Verify rollout flags remain in transport/configuration layers and do not enter prompts, where they would turn temporary rollout state into agent policy.
 
 **Dependency chain analysis:**
 - Map the chain: what calls the changed code, and what does the changed code call? Follow the chain 2-3 levels deep. Are there intermediate functions that make assumptions the PR violates?
