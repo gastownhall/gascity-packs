@@ -10,6 +10,16 @@ not retain the experiment virtualenv directory or PYTHONPATH. Its gate selected
 Homebrew Python, where PyYAML was absent. No version incompatibility or database
 migration caused this failure.
 
+Correction, 2026-09-23: this is an environment/dependency failure, not a Gas
+City bug. The gate PATH is intentionally built from the bd/gc/dolt/jq
+directories, and the gascity pack requires PyYAML on the Python it finds there.
+The cause of the recorded red result is not established: on 2026-09-23 the same
+`/opt/homebrew/bin/python3` (Python 3.14.7, installed 2026-08-22) imports yaml
+from `/opt/homebrew/lib/python3.14/site-packages` (PyYAML 6.0.3, installed
+2026-06-19) under an equivalent restricted PATH and HOME. The red probe ran
+inside a since-deleted bb workspace whose environment may have differed. The
+wrapper fix below adapts the harness; it does not reflect a gap in Gas City.
+
 [result.json](result.json) drives the actual SDK `convergence.RunCondition`:
 original environment fails importing yaml, while a private tool directory with
 a bd symlink and Python wrapper passes. The harness now installs those wrappers

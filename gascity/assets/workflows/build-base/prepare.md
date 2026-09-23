@@ -24,7 +24,7 @@ Launch inputs:
 - push: {{push}}
 - open_pr: {{open_pr}}
 
-Validate the target, artifact root, and optional context inputs. Record the normalized artifact paths on the workflow root bead so later stages can reuse them without inventing new locations.
+Validate the target (the input convoy recorded on the workflow root as `gc.input_convoy_id`, whose tracked beads carry the requested task text), artifact root, and optional context inputs. Record the normalized artifact paths on the workflow root bead so later stages can reuse them without inventing new locations.
 
 Validate mode inputs against the methodology vocabulary before any stage runs:
 `interaction_mode` must be `interactive`, `autonomous`, or `headless`;

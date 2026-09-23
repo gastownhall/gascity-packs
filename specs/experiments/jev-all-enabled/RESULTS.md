@@ -7,6 +7,14 @@ request to enable everything and measure quality loss. The prior promotion gate
 no longer determines these defaults. Review requirements and confidence/error
 fallbacks remain active; no credential means ordinary handling.
 
+**Correction, 2026-09-23.** The full-runtime failures below were caused by the
+harness and host load, not by Gas City, Beads or Jev. The runs used locally
+patched `gc`/`bd` builds. The `gc sling` "deadline" was the harness's own
+subprocess timeout, and the city's managed Dolt server went down under host load
+during it. The `dolt-health`/`beads-health` order failures came from Dolt's
+circuit breaker being open, not from order bugs. The combined work-packet
+comparison is unaffected. See the note in the full-runtime section.
+
 ## Combined work-packet comparison
 
 Eight frozen packets, twice per arm, produced 32 completed attempts with no
@@ -114,6 +122,29 @@ stopped, the experiment-owned remaining Dolt process received termination, and
 that PID was verified absent. Unrelated processes were left alone. Raw runtime
 logs, failed outcomes, original-fixture checks and cleanup evidence are retained
 under [full-build-001](full-build-001/); see [the runtime summary](full-runtime-summary.json).
+
+Correction, 2026-09-23: neither attempt is evidence of a product bug.
+
+- Both used locally patched `gc` 1.4.2 and `bd` 1.3.0 builds and a harness that
+  departed from the documented operator path.
+- The baseline `gc init` failure happened while Beads initialization was slowed
+  by host load; on this host a plain `bd init` took 25–56 s at load averages of
+  20–74 on 18 CPUs. This is a latent, load-dependent Beads issue, not a
+  demonstrated production bug.
+- The treatment's 600-second "dispatch deadline" was the harness's own
+  subprocess timeout around `gc sling`, not a Gas City limit. During that wait
+  the city's managed Dolt server went down under host load.
+- The `dolt-health` and `beads-health` order failures happened because Dolt's
+  circuit breaker was open. They are not order bugs.
+- The 1,200-second workflow limit was too short in any case: baseline 005 of
+  the evidence-routing experiment took about 46 minutes to reach
+  implementation, and the upstream gate uses 75 minutes.
+
+No full build reached a Jev decision stage, so these attempts say nothing about
+Jev. The harness is being reworked to follow the documented operator path
+(standalone city, cloned fixture with `origin`, `gc rig add`, default patrol
+interval, Gas City's own trust handling, a 75-minute workflow limit, and a
+host-load preflight).
 
 The evidence supports the combined work-packet tradeoff above. Full-build or
 full-triage performance with all integrations active remains unestablished.

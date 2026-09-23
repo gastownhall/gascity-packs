@@ -21,6 +21,27 @@ Prerequisites: Gas City installed and a city running (`gc init`, `gc start`),
 and your project added as a rig (`gc rig add .` inside the repo). See the
 [repository README](../README.md) for the from-scratch path.
 
+The rig must be a git repository with an `origin` remote whose default branch
+resolves as `origin/HEAD`. Implementation creates each worktree from the
+fetched `origin/<default-branch>`, never local `HEAD`, and fails closed with
+`gc.failure_class=missing-remote` otherwise. A `git clone` sets this up. For a
+repository created with `git init`, point `origin` at a remote (a local
+`git init --bare` repository works):
+
+```sh
+git remote add origin <url>
+git push -u origin HEAD   # empty remote only; needs a commit
+git fetch origin
+git remote set-head origin --auto
+```
+
+If `--auto` cannot determine the remote HEAD (for example, a bare remote
+whose HEAD names a different branch), name it:
+`git remote set-head origin <branch>`.
+
+Artifact check gates also need a `python3` with PyYAML on Gas City's gate PATH;
+see [Python for check gates](#python-for-check-gates).
+
 1. Import formulas, claim command, and rig roles. From city directory:
 
    ```sh
@@ -991,6 +1012,17 @@ with `verdict: pass|fail`. Validate with:
 ```sh
 python3 <pack-root>/assets/scripts/validate_verdict_report.py report.md --kind review
 ```
+
+### Python for check gates
+
+The pack's formula check gates, such as
+`.gc/scripts/checks/build-artifact-valid.sh`, run `python3` and import PyYAML.
+Gas City runs gate scripts with a restricted PATH rather than your shell's: the
+directories containing the `bd`, `gc`, `dolt`, and `jq` binaries the controller
+resolves, then `/usr/local/bin:/usr/bin:/bin`. The first `python3` on that PATH
+must have PyYAML installed (for example `python3 -m pip install PyYAML` for that
+interpreter). An interpreter that exists only in a virtualenv or shell-managed
+PATH is not visible to gates, and producer stages then fail validation.
 
 ## GitHub Adapter Workflows
 

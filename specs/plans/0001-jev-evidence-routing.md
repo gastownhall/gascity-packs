@@ -25,6 +25,16 @@ validation. No full build has passed. Step 7 has a measured focused comparison a
 [RESULTS.md](../experiments/jev-evidence-routing/RESULTS.md). The classification
 results do not establish full-pack savings or speedup.
 
+Correction, 2026-09-23: the local patches were not fixes for new upstream bugs.
+The tmux-reaper failure is a known bug already fixed on Gas City `main`
+(a6b72d832, #5392) but not in v1.4.2. The Beads forced-init preflight is a
+latent issue that only appears under heavy host load, as here. The latch
+closure relates to an upstream fix not in v1.4.2 (449df7c4a) plus a pack-side
+claim/template gap. The missing-origin failure was caused by the harness; the
+gate Python failure was environmental, with its exact cause unestablished. Step 6 will resume with a harness that follows the documented
+operator path and unpatched upstream binaries. See the
+[RESULTS.md correction summary](../experiments/jev-evidence-routing/RESULTS.md).
+
 ## Added scope: maintainer-city kind triage
 
 Support Julian's kind-only use case before extending Jev to priority or adopt-pr

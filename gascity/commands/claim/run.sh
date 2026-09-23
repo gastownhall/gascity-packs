@@ -148,105 +148,134 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 max_attempts=3
-claim_try=0
-work_id=""
-while [ "$claim_try" -lt "$max_attempts" ]; do
-    claim_try=$((claim_try + 1))
-    if gc hook --claim --drain-ack --json >"$claim_file" 2>"$err_file"; then
-        claim_code=0
-    else
-        claim_code=$?
-    fi
-
-    claim_action="$(json_pick action <"$claim_file")"
-    work_id="$(json_pick bead_id <"$claim_file")"
-    claim_assignee="$(json_pick assignee <"$claim_file")"
-    claim_route="$(json_pick route <"$claim_file")"
-
-    if [ "$claim_code" -eq 0 ] && [ "$claim_action" = "drain" ]; then
-        cat "$claim_file"
-        exit 0
-    fi
-
-    if [ "$claim_code" -eq 0 ] && [ "$claim_action" = "work" ] && [ -n "$work_id" ]; then
-        break
-    fi
-
+# Workflow roots, scope latches, and formula specs anchor workflow topology;
+# agents must never claim or execute them (Gas City WorkflowTopologyKinds,
+# gastownhall/gascity#5900). If the hook hands one out anyway, release it back
+# with a conditional release and look for real work again instead of
+# returning the latch as work.
+latch_try=0
+while :; do
+    claim_try=0
     work_id=""
-    if [ -s "$err_file" ]; then
-        printf 'CLAIM_RETRY %s/%s gc hook --claim failed: %s\n' \
-            "$claim_try" "$max_attempts" "$(sed -n '1p' "$err_file")" >&2
-    else
-        printf 'CLAIM_RETRY %s/%s unexpected gc hook --claim result\n' \
-            "$claim_try" "$max_attempts" >&2
-    fi
-    if [ "$claim_try" -lt "$max_attempts" ]; then
-        sleep 2
-    fi
-done
+    while [ "$claim_try" -lt "$max_attempts" ]; do
+        claim_try=$((claim_try + 1))
+        if gc hook --claim --drain-ack --json >"$claim_file" 2>"$err_file"; then
+            claim_code=0
+        else
+            claim_code=$?
+        fi
 
-if [ -z "$work_id" ]; then
-    printf 'CLAIM_REJECTED gc hook --claim returned no workable bead after %s attempts\n' \
-        "$max_attempts" >&2
-    exit 1
-fi
+        claim_action="$(json_pick action <"$claim_file")"
+        work_id="$(json_pick bead_id <"$claim_file")"
+        claim_assignee="$(json_pick assignee <"$claim_file")"
+        claim_route="$(json_pick route <"$claim_file")"
 
-hook_assignee="$claim_assignee"
-hook_route="$claim_route"
-verified=0
-verify_try=0
-while [ "$verify_try" -lt "$max_attempts" ]; do
-    verify_try=$((verify_try + 1))
-    if ! gc bd show "$work_id" --json >"$show_file" 2>"$err_file"; then
+        if [ "$claim_code" -eq 0 ] && [ "$claim_action" = "drain" ]; then
+            cat "$claim_file"
+            exit 0
+        fi
+
+        if [ "$claim_code" -eq 0 ] && [ "$claim_action" = "work" ] && [ -n "$work_id" ]; then
+            break
+        fi
+
+        work_id=""
         if [ -s "$err_file" ]; then
-            printf 'CLAIM_RETRY %s/%s bead read failed for %s: %s\n' \
-                "$verify_try" "$max_attempts" "$work_id" "$(sed -n '1p' "$err_file")" >&2
+            printf 'CLAIM_RETRY %s/%s gc hook --claim failed: %s\n' \
+                "$claim_try" "$max_attempts" "$(sed -n '1p' "$err_file")" >&2
         else
-            printf 'CLAIM_RETRY %s/%s bead read failed for %s\n' \
-                "$verify_try" "$max_attempts" "$work_id" >&2
+            printf 'CLAIM_RETRY %s/%s unexpected gc hook --claim result\n' \
+                "$claim_try" "$max_attempts" >&2
         fi
-    else
-        claim_id="$(json_pick id <"$show_file")"
-        claim_status="$(json_pick status <"$show_file")"
-        show_assignee="$(json_pick assignee <"$show_file")"
-        show_route="$(json_pick metadata:gc.routed_to <"$show_file")"
-        claim_assignee="$hook_assignee"
-        claim_route="$hook_route"
-        [ -n "$show_assignee" ] && claim_assignee="$show_assignee"
-        [ -n "$show_route" ] && claim_route="$show_route"
+        if [ "$claim_try" -lt "$max_attempts" ]; then
+            sleep 2
+        fi
+    done
 
-        if [ -z "$claim_id" ] || [ -z "$claim_status" ] || [ -z "$claim_assignee" ]; then
-            printf 'CLAIM_RETRY %s/%s incomplete bead record for %s\n' \
-                "$verify_try" "$max_attempts" "$work_id" >&2
-        elif [ "$claim_id" != "$work_id" ]; then
-            printf 'CLAIM_REJECTED verification failed for %s\n' "$work_id" >&2
-            break
-        elif [ "$claim_status" != "open" ] && [ "$claim_status" != "in_progress" ]; then
-            printf 'CLAIM_REJECTED unexpected status for %s: %s\n' \
-                "$work_id" "$claim_status" >&2
-            break
-        elif ! claim_assignee_is_ours "$claim_assignee"; then
-            printf 'CLAIM_REJECTED assignee mismatch for %s\n' "$work_id" >&2
-            break
-        elif [ -n "$EXPECTED_ROUTE" ] && [ -n "$claim_route" ] && [ "$claim_route" != "$EXPECTED_ROUTE" ]; then
-            printf 'CLAIM_REJECTED route mismatch for %s\n' "$work_id" >&2
-            break
-        else
-            verified=1
-            break
-        fi
+    if [ -z "$work_id" ]; then
+        printf 'CLAIM_REJECTED gc hook --claim returned no workable bead after %s attempts\n' \
+            "$max_attempts" >&2
+        exit 1
     fi
 
-    if [ "$verify_try" -lt "$max_attempts" ]; then
-        sleep 1
+    hook_assignee="$claim_assignee"
+    hook_route="$claim_route"
+    verified=0
+    verify_try=0
+    while [ "$verify_try" -lt "$max_attempts" ]; do
+        verify_try=$((verify_try + 1))
+        if ! gc bd show "$work_id" --json >"$show_file" 2>"$err_file"; then
+            if [ -s "$err_file" ]; then
+                printf 'CLAIM_RETRY %s/%s bead read failed for %s: %s\n' \
+                    "$verify_try" "$max_attempts" "$work_id" "$(sed -n '1p' "$err_file")" >&2
+            else
+                printf 'CLAIM_RETRY %s/%s bead read failed for %s\n' \
+                    "$verify_try" "$max_attempts" "$work_id" >&2
+            fi
+        else
+            claim_id="$(json_pick id <"$show_file")"
+            claim_status="$(json_pick status <"$show_file")"
+            show_assignee="$(json_pick assignee <"$show_file")"
+            show_route="$(json_pick metadata:gc.routed_to <"$show_file")"
+            claim_assignee="$hook_assignee"
+            claim_route="$hook_route"
+            [ -n "$show_assignee" ] && claim_assignee="$show_assignee"
+            [ -n "$show_route" ] && claim_route="$show_route"
+
+            if [ -z "$claim_id" ] || [ -z "$claim_status" ] || [ -z "$claim_assignee" ]; then
+                printf 'CLAIM_RETRY %s/%s incomplete bead record for %s\n' \
+                    "$verify_try" "$max_attempts" "$work_id" >&2
+            elif [ "$claim_id" != "$work_id" ]; then
+                printf 'CLAIM_REJECTED verification failed for %s\n' "$work_id" >&2
+                break
+            elif [ "$claim_status" != "open" ] && [ "$claim_status" != "in_progress" ]; then
+                printf 'CLAIM_REJECTED unexpected status for %s: %s\n' \
+                    "$work_id" "$claim_status" >&2
+                break
+            elif ! claim_assignee_is_ours "$claim_assignee"; then
+                printf 'CLAIM_REJECTED assignee mismatch for %s\n' "$work_id" >&2
+                break
+            elif [ -n "$EXPECTED_ROUTE" ] && [ -n "$claim_route" ] && [ "$claim_route" != "$EXPECTED_ROUTE" ]; then
+                printf 'CLAIM_REJECTED route mismatch for %s\n' "$work_id" >&2
+                break
+            else
+                verified=1
+                break
+            fi
+        fi
+
+        if [ "$verify_try" -lt "$max_attempts" ]; then
+            sleep 1
+        fi
+    done
+
+    if [ "$verified" -ne 1 ]; then
+        printf 'CLAIM_REJECTED verification failed for %s after %s attempts\n' \
+            "$work_id" "$verify_try" >&2
+        exit 1
+    fi
+
+    claim_kind="$(json_pick metadata:gc.kind <"$show_file")"
+    case "$claim_kind" in
+        workflow|scope|spec) ;;
+        *) break ;;
+    esac
+
+    latch_try=$((latch_try + 1))
+    if ! release_output="$(gc bd release-if-current "$work_id" "$claim_assignee" 2>"$err_file")"; then
+        printf 'CLAIM_REJECTED could not release workflow latch %s (gc.kind=%s): %s\n' \
+            "$work_id" "$claim_kind" "$(sed -n '1p' "$err_file")" >&2
+        exit 1
+    fi
+    release_state="$(printf '%s\n' "$release_output" | awk 'NF { print $1; exit }')"
+    printf 'CLAIM_LATCH_REFUSED %s/%s %s gc.kind=%s release=%s\n' \
+        "$latch_try" "$max_attempts" "$work_id" "$claim_kind" "${release_state:-unknown}" >&2
+    if [ "$latch_try" -ge "$max_attempts" ]; then
+        printf 'CLAIM_REJECTED gc hook --claim returned only workflow latches after %s attempts\n' \
+            "$max_attempts" >&2
+        exit 1
     fi
 done
-
-if [ "$verified" -ne 1 ]; then
-    printf 'CLAIM_REJECTED verification failed for %s after %s attempts\n' \
-        "$work_id" "$verify_try" >&2
-    exit 1
-fi
 
 restore_explicit_run_pointer() {
     run_id="${GASWORKS_RUN_ID:-}"

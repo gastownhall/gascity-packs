@@ -9,8 +9,11 @@ ordinary handling without it. Confidence/error fallbacks and review gates remain
 
 The pack copies the Jev-enabled `gascity/` tree from branch commit
 `f823c1598354581282141dce6b2d5af1399c6885`, whose pre-Jev base is
-`05031f2c66e080865c379ff799c7369430560a8f`. The sibling `gascity/` pack is
-restored to that base. This is a separate copy with the same formula names and
+`05031f2c66e080865c379ff799c7369430560a8f`. The sibling `gascity/` pack matches
+that base plus shared pack fixes that both packs carry identically: requirements
+stages read the task from the input convoy's tracked beads, the claim command
+refuses workflow and scope latches, and the READMEs document the `origin` and
+gate-Python prerequisites. This is a separate copy with the same formula names and
 `gc.*` worker routes. Choose one implementation per city and its matching roles;
 do not import both together. Existing methodology packs still import `gascity`.
 
@@ -41,6 +44,27 @@ and optionally publishes. It ships three things:
 Prerequisites: Gas City installed and a city running (`gc init`, `gc start`),
 and your project added as a rig (`gc rig add .` inside the repo). See the
 [repository README](../README.md) for the from-scratch path.
+
+The rig must be a git repository with an `origin` remote whose default branch
+resolves as `origin/HEAD`. Implementation creates each worktree from the
+fetched `origin/<default-branch>`, never local `HEAD`, and fails closed with
+`gc.failure_class=missing-remote` otherwise. A `git clone` sets this up. For a
+repository created with `git init`, point `origin` at a remote (a local
+`git init --bare` repository works):
+
+```sh
+git remote add origin <url>
+git push -u origin HEAD   # empty remote only; needs a commit
+git fetch origin
+git remote set-head origin --auto
+```
+
+If `--auto` cannot determine the remote HEAD (for example, a bare remote
+whose HEAD names a different branch), name it:
+`git remote set-head origin <branch>`.
+
+Artifact check gates also need a `python3` with PyYAML on Gas City's gate PATH;
+see [Python for check gates](#python-for-check-gates).
 
 This pack is available from a checkout of this branch; no registry release is
 required. Use an absolute path to that checkout in both imports below. A remote
@@ -1017,6 +1041,17 @@ with `verdict: pass|fail`. Validate with:
 ```sh
 python3 <pack-root>/assets/scripts/validate_verdict_report.py report.md --kind review
 ```
+
+### Python for check gates
+
+The pack's formula check gates, such as
+`.gc/scripts/checks/build-artifact-valid.sh`, run `python3` and import PyYAML.
+Gas City runs gate scripts with a restricted PATH rather than your shell's: the
+directories containing the `bd`, `gc`, `dolt`, and `jq` binaries the controller
+resolves, then `/usr/local/bin:/usr/bin:/bin`. The first `python3` on that PATH
+must have PyYAML installed (for example `python3 -m pip install PyYAML` for that
+interpreter). An interpreter that exists only in a virtualenv or shell-managed
+PATH is not visible to gates, and producer stages then fail validation.
 
 ## GitHub Adapter Workflows
 

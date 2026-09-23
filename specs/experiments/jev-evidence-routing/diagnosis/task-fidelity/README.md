@@ -35,3 +35,12 @@ stub and tests. Its first artifact still omitted the explicit unchanged-test
 constraint and did not clearly state ASCII-only scope. This variation reinforces
 that the input-retrieval hypothesis needs a controlled comparison; it is not a
 proven deterministic failure. Initial artifacts and hashes for both runs are retained.
+
+Correction, 2026-09-23: baselines 004 and 005 ran with locally patched `gc` and
+`bd` builds and a harness that departed from the documented operator path (see
+the [RESULTS.md correction summary](../../RESULTS.md)). Observations from them
+may not carry over to the released runtime. Separately, a later review found a
+pack-side gap in how work is claimed: the claim command did not check `gc.kind`,
+and the worker template gave contradictory instructions. That is being fixed in
+the packs. No run reached a Jev decision stage, so this observation says nothing
+about Jev.

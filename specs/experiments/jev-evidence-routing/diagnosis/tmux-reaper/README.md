@@ -3,6 +3,17 @@
 Confirmed during `build-baseline-003` on 2026-09-19 PDT. This is separate from
 the earlier Beads forced-init bug and Claude configuration errors.
 
+**Correction, 2026-09-23.** This is not a new finding. It is a known upstream bug
+already fixed on Gas City `main` by a6b72d832 "fix(proctable): never classify a
+tmux server as an agent root (#5392)" (2026-09-03). That commit is not an
+ancestor of the v1.4.2 release used here, so the bug was present in the tested
+binary. The local patch below duplicates the upstream fix. The harness set
+`patrol_interval = "1s"`, while the documented default is 30s
+(`docs/reference/config.md`), which probably made the reaper act sooner. Also,
+the "Beads forced-init bug" mentioned above is a latent, load-dependent issue,
+not a demonstrated production bug; see the
+[diagnosis correction](../README.md). Original text is kept.
+
 ## Observed failure
 
 The controller logged `reaped process-table orphan pid=19620 session=jg7or0b-6hr`.
@@ -52,3 +63,7 @@ The local binary built successfully as `1.4.2-jev-tmux`; its SHA-256 and exact
 compiler flags are in [build metadata](build-icu-result.json). Validation covers
 the affected scanner package and real tmux boundary; the full upstream CI suite
 has not been run. Baseline 004 uses this experimental binary.
+
+Correction, 2026-09-23: new runs should not use this patched binary. The fix
+is upstream in a6b72d832; use a build that includes it, and keep the default
+patrol interval.

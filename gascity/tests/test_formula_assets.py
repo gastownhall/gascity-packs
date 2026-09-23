@@ -786,9 +786,13 @@ class FormulaAssetTests(unittest.TestCase):
             "Review findings, missing tests, or follow-up usually are output",
             "After close, inspect `CLAIMED_CONTINUATION_GROUP`",
             'Never claim "drained" without acknowledgement',
+            "is allowed and often required",
+            "Never claim, execute, or close work found that way",
+            "If you ever hold one, do not implement it",
+            'gc bd release-if-current "<latch-id>" "<its assignee>"',
         ):
             with self.subTest(required=required):
-                self.assertIn(required, text)
+                self.assertIn(required, " ".join(text.split()))
         self.assertNotIn("GC_CLAIM", text)
 
         for agent_name in ROLE_AGENTS:
@@ -1274,6 +1278,129 @@ class FormulaAssetTests(unittest.TestCase):
         show_call = " ".join(("b" + "d", "show", "bd-123", "--json"))
         self.assertEqual(call_lines.count(show_call), 3)
         self.assertEqual(len(call_lines), 4)
+
+
+    def _run_claim_with_latches(self, root: pathlib.Path, *, latch_claims: int, release_exit: int = 0):
+        """Run commands/claim/run.sh against a fake gc whose hook hands out
+        `latch_claims` workflow latches before one real step bead."""
+        command = root / "commands" / "claim" / "run.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            hook_count = tmp_path / "hook-count"
+            hook_count.write_text("0", encoding="utf-8")
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = hook ]; then\n"
+                "  n=$(($(cat \"$GC_TEST_HOOK_COUNT\") + 1))\n"
+                "  printf '%s' \"$n\" >\"$GC_TEST_HOOK_COUNT\"\n"
+                "  if [ \"$n\" -le \"$GC_TEST_LATCH_CLAIMS\" ]; then\n"
+                "    printf '%s\\n' '{\"action\":\"work\",\"bead_id\":\"root-1\",\"assignee\":\"worker\",\"route\":\"gc.implementation-worker\"}'\n"
+                "  else\n"
+                "    printf '%s\\n' '{\"action\":\"work\",\"bead_id\":\"bd-123\",\"assignee\":\"worker\",\"route\":\"gc.implementation-worker\"}'\n"
+                "  fi\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = root-1 ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"root-1\",\"status\":\"in_progress\",\"assignee\":\"worker\",\"metadata\":{\"gc.kind\":\"workflow\",\"gc.routed_to\":\"gc.implementation-worker\"}}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = bd-123 ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"bd-123\",\"status\":\"in_progress\",\"assignee\":\"worker\",\"metadata\":{\"gc.routed_to\":\"gc.implementation-worker\",\"gc.root_bead_id\":\"root-1\",\"gc.continuation_group\":\"group-1\"}}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = release-if-current ]; then\n"
+                "  if [ \"$GC_TEST_RELEASE_EXIT\" -ne 0 ]; then\n"
+                "    echo 'release failed' >&2\n"
+                "    exit \"$GC_TEST_RELEASE_EXIT\"\n"
+                "  fi\n"
+                "  echo released\n"
+                "else\n"
+                "  exit 2\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_AGENT": "gc.implementation-worker",
+                "GC_TEMPLATE": "",  # see the GC_TEMPLATE note above
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_TEST_CALLS": str(calls),
+                "GC_TEST_HOOK_COUNT": str(hook_count),
+                "GC_TEST_LATCH_CLAIMS": str(latch_claims),
+                "GC_TEST_RELEASE_EXIT": str(release_exit),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run(
+                [str(command)], capture_output=True, env=env, text=True, timeout=5
+            )
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+        return result, call_lines
+
+    def test_city_claim_command_releases_workflow_latch_and_claims_real_work(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        result, call_lines = self._run_claim_with_latches(root, latch_claims=1)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["bead_id"], "bd-123")
+        self.assertIn("CLAIM_LATCH_REFUSED 1/3 root-1 gc.kind=workflow release=released", result.stderr)
+        release_call = " ".join(("b" + "d", "release-if-current", "root-1", "worker"))
+        self.assertEqual(call_lines.count(release_call), 1)
+        self.assertEqual(call_lines.count("hook --claim --drain-ack --json"), 2)
+        self.assertFalse(any(line.startswith("b" + "d close") for line in call_lines))
+
+    def test_city_claim_command_never_returns_workflow_latch(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        result, call_lines = self._run_claim_with_latches(root, latch_claims=99)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("returned only workflow latches after 3 attempts", result.stderr)
+        release_call = " ".join(("b" + "d", "release-if-current", "root-1", "worker"))
+        self.assertEqual(call_lines.count(release_call), 3)
+        self.assertEqual(call_lines.count("hook --claim --drain-ack --json"), 3)
+        self.assertNotIn("runtime drain-ack", call_lines)
+
+    def test_city_claim_command_fails_closed_when_latch_release_fails(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        result, call_lines = self._run_claim_with_latches(root, latch_claims=1, release_exit=3)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("could not release workflow latch root-1", result.stderr)
+        self.assertIn("release failed", result.stderr)
+        self.assertEqual(call_lines.count("hook --claim --drain-ack --json"), 1)
+
+    def test_build_requirements_prompts_read_task_from_input_convoy(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        for relative_path in (
+            "assets/workflows/build-basic/requirements.md",
+            "assets/workflows/build-base/requirements.md",
+            "assets/workflows/build-from-requirements-base/requirements.md",
+        ):
+            text = " ".join((root / relative_path).read_text(encoding="utf-8").split())
+            for fragment in (
+                "`gc.root_bead_id`",
+                "`gc.input_convoy_id`",
+                'gc bd show "<input-convoy-id>" --json',
+                'gc convoy status "<input-convoy-id>" --json',
+                "`children[].id`",
+                "`gc.drain_member_id`",
+                'gc bd show "<source-bead-id>" --json',
+                "`title` and full `description`",
+                "every explicit constraint",
+                "never properties of the requirements artifact itself",
+                "`path: beads/<bead-id>` with `hash: bead:<bead-id>`",
+                "do not invent a task",
+                "`gc.failure_class=missing-task-input`",
+            ):
+                with self.subTest(asset=relative_path, fragment=fragment):
+                    self.assertIn(fragment, text)
+        self.assertNotIn(
+            "Preserve the input target",
+            (root / "assets/workflows/build-basic/requirements.md").read_text(encoding="utf-8"),
+        )
 
 
     def test_third_party_agents_include_work_claim_protocol(self) -> None:

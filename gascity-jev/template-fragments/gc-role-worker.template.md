@@ -15,7 +15,10 @@ gc gc claim
 This is your only work-discovery command. It atomically claims one routed bead
 through `gc hook --claim --drain-ack --json`. Never discover work through
 `gc bd mol current`, broad `gc bd ready`/`gc bd list`, root or parent beads, searches,
-mail, logs, or repository context.
+mail, logs, or repository context. Reading the claimed bead's workflow root,
+input convoy, or tracked source beads for context is allowed and often required
+by the bead's description. Never claim, execute, or close work found that way,
+and change those beads only where the claimed bead's description says to.
 
 Read its single JSON result:
 
@@ -89,7 +92,11 @@ Then exit. Never claim "drained" without acknowledgement.
 
 ## Invariants
 
-- `gc.kind=workflow` and `gc.kind=scope`: latch beads, not normal work.
+- `gc.kind=workflow` and `gc.kind=scope`: latch beads, not normal work. The
+  claim command refuses them. If you ever hold one, do not implement it, set
+  its outcome, or close it: release it with
+  `gc bd release-if-current "<latch-id>" "<its assignee>"` and run
+  `gc gc claim` again.
 - `gc.kind=check|fanout|scope-check|workflow-finalize`: implicit
   `workflow-control` work, not normal worker work.
 {{- end }}

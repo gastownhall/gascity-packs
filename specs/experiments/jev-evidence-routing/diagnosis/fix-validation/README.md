@@ -1,5 +1,13 @@
 # Isolated fix validation
 
+**Correction, 2026-09-23.** The patch validated here works around a latent,
+load-dependent Beads issue, not a demonstrated production bug. The five-second
+preflight only interrupts migrations that run longer than five seconds; on this
+host a plain `bd init` took 25–56 s under load averages of 20–74 on 18 CPUs.
+Gas City `main` has a related mitigation not in v1.4.2 (8c2b970fe, #5330). Runs
+that used this patched `bd` are not representative of the released runtime.
+Original text is kept below.
+
 The proposed Beads v1.3.0 patch changes `countExistingIssues` to use the existing
 read-only store opener. This prevents a five-second issue-count probe from
 starting migrations. It does not change schema versions or migrate a user city.
@@ -74,6 +82,10 @@ city initialization, import install/check, configuration loading and the
 build-basic formula lookup succeeded with Gas City 1.4.2 and the local patched
 Beads binary. City and rig schema versions are both 66. Setup took 365.929 seconds
 on this busy host; this is not an LLM execution-speed measurement.
+
+Correction, 2026-09-23: the fact that setup needed a patched `bd` and more than
+300 seconds reflects this host's load, not a requirement of the released
+runtime.
 
 City stop exceeded its 60-second process timeout. The subsequent supervisor-stop
 command succeeded, and independent process inspection confirmed that experiment

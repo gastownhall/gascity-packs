@@ -41,6 +41,23 @@ this is the shortest path. Each step is copy-pasteable; swap names to taste.
    gc rig add .
    ```
 
+   Implementation worktrees are created from the fetched `origin` default
+   branch, so the rig must have an `origin` remote whose `origin/HEAD`
+   resolves; without it, implementation fails closed with `missing-remote`.
+   `git clone` sets this up. For a repository started with `git init`, point
+   `origin` at a remote (a local `git init --bare` repository works):
+
+   ```sh
+   git remote add origin <url>
+   git push -u origin HEAD   # empty remote only; needs a commit
+   git fetch origin
+   git remote set-head origin --auto
+   ```
+
+   If `--auto` cannot determine the remote HEAD (for example, a bare remote
+   whose HEAD names a different branch), name it:
+   `git remote set-head origin <branch>`.
+
 3. **Import the base pack.** From the city directory:
 
    ```sh

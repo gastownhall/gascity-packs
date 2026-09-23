@@ -4,6 +4,20 @@ Diagnosis on 2026-09-19, using the installed Gas City 1.4.2, Beads 1.3.0 and
 Dolt 2.3.5 binaries. Binary hashes are in [manifest.json](manifest.json).
 The evidence does not support a general incompatibility between these versions.
 
+**Correction, 2026-09-23.** This diagnosis overstates the preflight as the
+defect behind the failures. The code path is accurately described: bd v1.3.0
+`countExistingIssues` (`cmd/bd/init.go` ~2670–2708) opens a writable store under
+a five-second deadline, and `runInitReinitPreflight` ignores the error. But it
+only causes harm when migrations take longer than five seconds. On this host a
+plain `bd init` took 25–56 s because load averages were 20–74 on an 18-CPU
+machine, with swapping and several concurrent Dolt servers; the
+`full-original-001` and `full-fresh-001` probes also ran concurrently. This is a
+latent, load-dependent Beads issue, not a demonstrated production bug. Gas City
+`main` already has a related mitigation that is not in v1.4.2: 8c2b970fe
+"fix(bd): corroborate a negative schema probe before force-reinitializing
+(#5330)" (2026-09-12). The `HOME` override and 131-byte socket path described
+below were harness errors, as the text already says. Original text is kept.
+
 ## Primary failure: a supposedly observational preflight migrates the database
 
 1. Gas City writes a `.beads/metadata.json` stub before backend initialization.
@@ -31,6 +45,12 @@ The defect is the mutating count preflight, triggered by Gas City's forced-init
 path for a new metadata stub. Replacing `--force` with its newer spelling alone
 would take the same path. This is not a stale old-version database or evidence
 that the releases cannot operate together.
+
+Correction, 2026-09-23: step 4 ("the deadline interrupts that migration on this
+machine") is the load-dependent part. The interruption requires migrations to
+exceed five seconds, which this host's load caused. "The defect" should read
+"a latent preflight weakness exposed by host load"; it has not been shown to
+affect a normally loaded installation.
 
 ## Evidence and controls
 
@@ -111,6 +131,11 @@ an already initialized store requiring destructive reinit. Any adjustment must
 preserve existing-database safety checks. The diagnostic wrapper is evidence, not
 a production repair or permission to delete metadata in an existing city.
 
+Correction, 2026-09-23: Gas City `main` already addresses part of this with
+8c2b970fe (#5330), which corroborates a negative schema probe before
+force-reinitializing. That commit is not in v1.4.2. These recommendations remain
+reasonable hardening, but they are not driven by a demonstrated production bug.
+
 The experiment harness separately needs real HOME, short GC_HOME/socket paths,
 and isolated configuration files. A complete A/B run remains unperformed; these
 probes evaluate initialization only and dispatch no experimental model work.
@@ -150,3 +175,7 @@ setup took 365.929 seconds including its preparation and validation.
 
 The installed Homebrew Beads binary remains unchanged. This is a tested local
 experiment runtime, not an upstream release or a completed Jev A/B evaluation.
+
+Correction, 2026-09-23: the patch is a workaround for a heavily loaded host, not
+a fix for a demonstrated production bug. Future runs will use unpatched binaries,
+follow the documented operator path, and check host load before starting.

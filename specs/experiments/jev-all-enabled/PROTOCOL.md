@@ -50,6 +50,15 @@ change global runtimes or touch user databases. Explicitly set evidence, finding
 and failure modes off in baseline and auto in treatment. Kind/ranking are issue
 and PR adapter features and do not apply to this build workflow.
 
+Correction, 2026-09-23: the "tmux fix" duplicates a known upstream fix already
+on Gas City `main` (a6b72d832, #5392), and the "read-only preflight fix" works
+around a latent, load-dependent Beads issue rather than a demonstrated
+production bug. The local-origin preflight and isolated gate Python adapt
+harness deviations from the documented operator path. The 1,200-second
+workflow cap below was too short (the upstream gate uses 75 minutes), and the
+600-second dispatch cap is the harness's own subprocess timeout. This protocol
+is kept as registered; see the correction in [the results](RESULTS.md).
+
 Cap workflow wait at 1,200 seconds per arm, setup at 900 and dispatch at 600.
 Continue the paired schedule after a failed arm; no retry until green. No public
 GitHub writes, pushes, or PR creation by the evaluated workflow. Record terminal

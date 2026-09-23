@@ -11,8 +11,9 @@ Schema: `gc.build-methodology-base.requirements.v1`
 | Related implementations | `compound-engineering`, `superpowers`, `bmad`, `gstack` continue to import the sibling `gascity` pack |
 
 This ledger copies the branch's Jev-enabled `gascity` requirements at
-`f823c1598354581282141dce6b2d5af1399c6885`. The sibling base pack is restored to
-`05031f2c66e080865c379ff799c7369430560a8f`. Schema names and requirement IDs remain
+`f823c1598354581282141dce6b2d5af1399c6885`. The sibling base pack matches
+`05031f2c66e080865c379ff799c7369430560a8f` plus shared pack fixes that both packs
+carry (GC-METH-BR-054 and GC-METH-BR-055). Schema names and requirement IDs remain
 shared for compatibility; requirements here govern this variant, while
 [the base ledger](../gascity/REQUIREMENTS.md) governs existing methodology packs.
 Jev requirements below do not change those packs or prove their compatibility
@@ -820,6 +821,8 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 | GC-METH-BR-051 | GC-METH-US-001 | WHEN prerequisite inputs already exist for a build stage, THE base pack SHALL provide reusable `build-from-*-base` continuation suffixes that validate those prerequisites, perform only their owned stage or handoff, and delegate to the next suffix without silently rerunning skipped upstream stages. |
 | GC-METH-BR-052 | GC-METH-US-002 | WHEN a methodology pack needs a continuation entrypoint, THE pack SHOULD extend the matching `build-from-*-base` suffix and override selectors, routes, drain formulas, or review expansions instead of copying the suffix graph. |
 | GC-METH-BR-053 | GC-METH-US-001 | WHEN a user wants the built-in Gas City continuation behavior, THE base pack SHALL provide cataloged `build-from-*` wrappers that extend the matching suffix bases. |
+| GC-METH-BR-054 | GC-METH-US-001 | WHEN a requirements stage writes a new requirements artifact, THE stage SHALL read the requested task from the title and description of the beads tracked by the workflow root's `gc.input_convoy_id`, restate the requested behavior and every explicit constraint, and write acceptance criteria about the requested change rather than the artifact; IF no task text can be found, THEN the stage SHALL fail with `gc.failure_class=missing-task-input` instead of inventing a task. |
+| GC-METH-BR-055 | GC-METH-US-001 | WHEN the shared `claim` command's hook claim returns a workflow topology bead (`gc.kind` `workflow`, `scope`, or `spec`), THE command SHALL NOT return it as work; it SHALL release the bead with `gc bd release-if-current` and claim again, and SHALL fail non-zero after bounded consecutive latch claims or a failed release. |
 
 ## Scenario Ledger
 
@@ -829,7 +832,7 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 | GC-METH-002 | Default implementation | `build-basic` extends `build-base`, is cataloged, preserves the base stage sequence, uses beginner-friendly prompts, and uses starter review fanout through `build-basic-review`. | `formulas/build-basic.formula.toml`; `formulas/build-basic-review.formula.toml`; `tests/test_formula_assets.py::FormulaAssetTests::test_build_basic_extends_full_lifecycle_base` |
 | GC-METH-003 | Stage selector compatibility | `build-base`, `github-issue-fix-base`, and `github-pr-review` expose methodology selector vars with defaults that point at the base implementation. | `tests/test_formula_assets.py::FormulaAssetTests::test_entrypoint_adapters_expose_methodology_formula_vars` |
 | GC-METH-004 | Virtual stage contracts | `planning-base`, `decomposition-base`, `implementation-base`, `implementation-item-base`, `code-review-base`, and `fix-loop-base` are internal, non-catalog base contracts with shadowable step assets. | `tests/test_formula_assets.py::FormulaAssetTests::test_methodology_stage_contracts_are_virtual_and_shadowable` |
-| GC-METH-005 | Requirements artifact shape | Requirements artifacts include the base sections, stable `SHALL` behavior requirements, example mapping, acceptance criteria, out-of-scope, and open questions. | `assets/workflows/build-basic/requirements.md`; this ledger |
+| GC-METH-005 | Requirements artifact shape | Requirements artifacts include the base sections, stable `SHALL` behavior requirements, example mapping, acceptance criteria, out-of-scope, and open questions, and restate the task text and explicit constraints read from the input convoy's tracked beads, failing closed when none is found. | `assets/workflows/build-basic/requirements.md`; `tests/test_formula_assets.py::FormulaAssetTests::test_build_requirements_prompts_read_task_from_input_convoy`; this ledger |
 | GC-METH-006 | Traceability and drift | Downstream artifacts carry upstream paths and hashes, and review/finalization surface drift. | this ledger; future schema/gate tests |
 | GC-METH-007 | Review/fix loop | Review verdicts drive fix-loop iterations and per-attempt report/fix artifacts until approval, block, or maximum iterations. | `formulas/build-basic-review.formula.toml`; `formulas/fix-loop-base.formula.toml` |
 | GC-METH-008 | Mode handling | `interactive`, `autonomous`, and `headless` interaction modes plus `report`, `agent`, and `interactive` review modes remain distinct and are propagated through selectors. | this ledger; `README.md`; `tests/test_formula_assets.py::FormulaAssetTests::test_entrypoint_adapters_expose_methodology_formula_vars` |

@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Run isolated build-basic A/B arms through Gas City with subscription Claude.
 
+Each arm follows the documented operator path in a disposable standalone city:
+`gc init`, `gc import add`, `gc rig add` on a cloned fixture with an origin,
+`gc bd create`, then `gc sling <bead> --on build-basic`. Gas City defaults are
+kept (patrol interval, provider readiness, startup-dialog handling). Only the
+supervisor is isolated under a private GC_HOME so the user's own cities are
+never touched.
+
 Retains cities, evidence, logs and transcript usage. Full build timing includes
 city initialization, execution, independent verification and city shutdown.
 No success is inferred from dispatch. A Jev arm without a completed Jev report
@@ -33,9 +40,6 @@ spec.loader.exec_module(gate)
 usage_spec = importlib.util.spec_from_file_location('jev_claude_usage', ROOT/'scripts/jev_claude_usage.py')
 usage = importlib.util.module_from_spec(usage_spec)
 usage_spec.loader.exec_module(usage)
-startup_spec = importlib.util.spec_from_file_location('jev_claude_startup', ROOT/'scripts/jev_claude_startup.py')
-startup = importlib.util.module_from_spec(startup_spec)
-startup_spec.loader.exec_module(startup)
 
 
 def save(path, data):
@@ -114,15 +118,111 @@ def configure_experiment_env(env, workspace, *, real_home, claude_config_dir=Non
 
 
 def new_runtime_workspace(pack, name):
+    """Lay out a standalone city and a fixture cloned from its own origin.
+
+    Nothing is registered here: `gc init` and `gc rig add` do that later, the
+    same way an operator would.
+    """
     # macOS sockaddr_un cannot hold paths under the artifact directory.
     root = Path(tempfile.mkdtemp(prefix='gcja-', dir='/tmp'))/'w'
-    workspace = gate.write_gate_workspace(root, pack_source=pack.source,
-        roles_source=pack.roles_source, validator_source=pack.validator_source,
-        pack_name=pack.name, pack_binding=pack.binding,
+    workspace = gate.GateWorkspace(root=root.resolve(), city_dir=root.resolve()/'city',
+        rig_dir=root.resolve()/'fixture', gc_home=root.resolve()/'gc-home',
+        runtime_dir=root.resolve()/'runtime', claude_config_dir=root.resolve()/'gc-home/.claude',
         city_name='jev-'+root.parent.name+'-'+name, rig_name='fixture')
+    for path in (workspace.gc_home, workspace.runtime_dir):
+        path.mkdir(parents=True)
     if len(str(workspace.gc_home/'supervisor.sock').encode()) >= 100:
         raise ValueError('Runtime path is too long for a portable Unix socket')
     return workspace
+
+
+def write_city_config(workspace, *, model, collector_env, claude_config_dir=None):
+    """The city.toml handed to `gc init --file`; only provider and env choices."""
+    env = {'CLAUDE_CODE_EFFORT_LEVEL': 'low',
+           # Expanded at session launch; the value is never written to disk.
+           # An empty baseline environment leaves it unset.
+           'TYPESAFE_API_KEY': '$TYPESAFE_API_KEY', **collector_env}
+    if claude_config_dir:
+        env['CLAUDE_CONFIG_DIR'] = str(claude_config_dir)
+    lines = ['[workspace]', 'provider = "claude"', '', '[workspace.env]',
+             *(f'{k} = {gate.toml_string(v)}' for k, v in env.items()), '',
+             '[providers.claude]', 'base = "builtin:claude"',
+             'args_append = '+json.dumps(['--model', model, '--effort', 'low',
+                                          '--setting-sources', 'project,local']), '',
+             '[session]', '# Claude CLI cold starts can exceed the 60s default on a loaded host.',
+             'startup_timeout = "3m"', '']
+    path = workspace.root/'city.toml.in'
+    path.write_text('\n'.join(lines))
+    return path
+
+
+def prepare_fixture_repo(workspace, pack, env):
+    """Clone the rig from a local origin, as the documented path clones a repo.
+
+    do-work's worktree stage requires origin/HEAD; a clone provides it without
+    any network remote.
+    """
+    seed, origin = workspace.root/'fixture-seed', workspace.root/'fixture-origin.git'
+    if workspace.rig_dir.exists() or origin.exists():
+        raise ValueError('Refusing to reuse an existing experiment fixture')
+    seed.mkdir()
+    gate.materialize_pack_check_scripts(pack.validator_source, seed)
+    gate.write_build_basic_fixture(seed)
+    gate.initialize_rig_git(seed, env=env)
+    def git(*arguments, cwd=workspace.root):
+        return gate.run_checked(['git', *arguments], cwd=cwd, env=env, timeout=60).strip()
+    git('clone', '--bare', '--no-hardlinks', str(seed), str(origin))
+    git('clone', str(origin), str(workspace.rig_dir))
+    for key, value in (('user.name', 'Gas City Pack Gate'), ('user.email', 'gascity-pack-gate@example.invalid')):
+        git('config', key, value, cwd=workspace.rig_dir)
+    branch = git('symbolic-ref', '--short', 'refs/remotes/origin/HEAD', cwd=workspace.rig_dir)
+    head = git('rev-parse', 'HEAD', cwd=workspace.rig_dir)
+    remote_head = git('rev-parse', 'origin/HEAD', cwd=workspace.rig_dir)
+    if not branch.startswith('origin/') or remote_head != head:
+        raise ValueError('Experiment origin does not resolve to the initial fixture commit')
+    return {'status':'passed', 'remote':str(origin), 'default_branch':branch,
+            'initial_head':head, 'remote_head':remote_head, 'network_remote':False}
+
+
+def add_rig_roles_import(config, rig_name, roles_source):
+    """Bind the pack's rig roles as `gc`, per the pack README's city.toml step."""
+    text = config.read_text()
+    header = f'name = {gate.toml_string(rig_name)}'
+    if text.count(header) != 1:
+        raise ValueError(f'Expected exactly one [[rigs]] entry for {rig_name} after gc rig add')
+    lines = text.splitlines()
+    index = lines.index(header)
+    # Insert after the rig's own scalar keys, before any following table.
+    end = index + 1
+    while end < len(lines) and not lines[end].startswith('['):
+        end += 1
+    block = ['', '[rigs.imports.gc]', f'source = {gate.toml_string(roles_source)}', '']
+    config.write_text('\n'.join(lines[:end] + block + lines[end:]).rstrip('\n') + '\n')
+
+
+def initialize_operator_city(gc_bin, workspace, pack, env, *, config_file, setup_timeout):
+    """Create the city exactly as the gascity README quick start describes."""
+    city = ['--city', str(workspace.city_dir)]
+    gate.write_supervisor_config(workspace.gc_home)
+    gate.run_checked([gc_bin, 'init', '--file', str(config_file), '--name', workspace.city_name,
+                      '--yes', str(workspace.city_dir)], env=env, timeout=setup_timeout, log_output=True)
+    gate.run_checked([gc_bin, *city, 'import', 'add', '--name', 'gc', str(pack.source)],
+                     env=env, timeout=300, log_output=True)
+    gate.run_checked([gc_bin, *city, 'rig', 'add', str(workspace.rig_dir), '--name', workspace.rig_name],
+                     env=env, timeout=setup_timeout, log_output=True)
+    add_rig_roles_import(workspace.city_dir/'city.toml', workspace.rig_name, pack.roles_source)
+    for command in (['import', 'install'], ['import', 'check'], ['config', 'show'],
+                    ['--rig', workspace.rig_name, 'formula', 'show', 'build-basic']):
+        gate.run_checked([gc_bin, *city, *command], env=env, timeout=300, log_output=True)
+
+
+def host_load(max_load):
+    """Refuse to time a build on a host that is already saturated."""
+    one, five, fifteen = os.getloadavg()
+    cpus = os.cpu_count() or 1
+    limit = cpus if max_load is None else max_load
+    return {'status': 'passed' if one <= limit else 'failed', 'load_average': [one, five, fifteen],
+            'logical_cpus': cpus, 'max_load': limit}
 
 
 def install_gate_toolchain(env, workspace, *, python_bin, bd_bin):
@@ -152,35 +252,12 @@ def check_gate_python(env, workspace):
     directories += ['/usr/local/bin','/usr/bin','/bin']
     restricted={'PATH':os.pathsep.join(directories),'HOME':str(workspace.city_dir),
                 'TMPDIR':tempfile.gettempdir()}
-    command=['python3','-c','import json,sys,yaml,jsonschema,pytest; print(json.dumps({"executable":sys.executable,"prefix":sys.prefix,"yaml":yaml.__file__,"jsonschema":jsonschema.__file__,"pytest":pytest.__file__}))']
+    command=['python3','-c','import json,sys,yaml; print(json.dumps({"executable":sys.executable,"prefix":sys.prefix,"yaml":yaml.__file__}))']
     result=subprocess.run(command,env=restricted,capture_output=True,text=True,timeout=30)
     return {'status':'passed' if result.returncode==0 else 'failed',
         'policy':'Gas City v1.4.2 restricted gate PATH replay; real SDK boundary verified separately',
         'command':command,'path':restricted['PATH'],'exit':result.returncode,
         'stdout':result.stdout,'stderr':result.stderr}
-
-
-def prepare_local_origin(workspace, env):
-    """Provide the remote default branch required by do-work's worktree stage."""
-    rig = workspace.rig_dir
-    def git(*arguments):
-        return gate.run_checked(['git', *arguments], cwd=rig, env=env,
-                                timeout=60).strip()
-    if 'origin' in git('remote').splitlines():
-        raise ValueError('Fresh experiment fixture unexpectedly has an origin remote')
-    origin = workspace.root/'fixture-origin.git'
-    if origin.exists():
-        raise ValueError('Refusing to reuse an existing experiment origin')
-    git('clone', '--bare', '--no-hardlinks', str(rig), str(origin))
-    git('remote', 'add', 'origin', str(origin))
-    git('fetch', 'origin')
-    git('remote', 'set-head', 'origin', '--auto')
-    branch = git('symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
-    head, remote_head = git('rev-parse', 'HEAD'), git('rev-parse', 'origin/HEAD')
-    if not branch.startswith('origin/') or remote_head != head:
-        raise ValueError('Experiment origin does not resolve to the initial fixture commit')
-    return {'status':'passed', 'remote':str(origin), 'default_branch':branch,
-            'initial_head':head, 'remote_head':remote_head, 'network_remote':False}
 
 
 def pack_for_arm(arm):
@@ -198,7 +275,7 @@ def pack_for_arm(arm):
 def snapshot_pack(pack, out):
     """Retain the selected pack's actual bytes, including uncommitted additions."""
     paths = [Path(__file__), ROOT/'scripts/gascity_pack_inference_gate.py',
-             ROOT/'scripts/jev_claude_usage.py', ROOT/'scripts/jev_claude_startup.py',
+             ROOT/'scripts/jev_claude_usage.py',
              *sorted(pack.source.rglob('*'))]
     save(out/'source-hashes.json', {
         str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -261,12 +338,15 @@ def run(args, arm, out):
               'model': args.model, 'jev_model': args.jev_model, 'status': 'starting'}
     pack = pack_for_arm(arm)
     report['pack_name'] = pack.name
+    load = host_load(args.max_load)
+    save(out/'host-load-preflight.json', load)
+    if load['status'] != 'passed':
+        raise ValueError(f"Host load {load['load_average'][0]:.1f} exceeds {load['max_load']}; "
+                         'timings from a saturated host are not comparable')
     workspace = new_runtime_workspace(pack, out.name)
     save(out/'runtime-path.json', {'root': str(workspace.root), 'retained': True})
-    # A nested city must not inherit the parent repository's remote during bd init.
-    subprocess.run(['git', 'init', '-q', str(workspace.city_dir)], check=True)
     env = gate.build_gate_env(args.gc_bin, workspace, bd_bin=args.bd_bin)
-    # Isolate the controller's state. Workers use the existing subscription login.
+    # Isolate the supervisor's state. Workers use the existing subscription login.
     real_home = Path.home()
     custom_claude = os.environ.get('CLAUDE_CONFIG_DIR') or None
     real_claude = Path(custom_claude or real_home/'.claude').expanduser().resolve()
@@ -293,55 +373,47 @@ def run(args, arm, out):
         save(out/'subscription-preflight.json',safe_status)
         if auth.returncode or not status.get('loggedIn') or status.get('authMethod') != 'claude.ai':
             raise ValueError('Claude subscription login unavailable in worker environment')
-        startup_collector = usage.Collector(out/'startup-usage.jsonl')
-        try:
-            startup_result = startup.prepare({**env, **startup_collector.env},workspace.rig_dir,args.model)
-            save(out/'startup-preflight.json',startup_result)
-        finally:
-            save(out/'startup-usage-summary.json',startup_collector.close())
-    config = workspace.city_dir/'city.toml'
-    text = config.read_text().replace('HOME = '+gate.toml_string(workspace.gc_home),
-        'HOME = '+gate.toml_string(real_home)+'\nCLAUDE_CODE_EFFORT_LEVEL = "low"'+(('\nCLAUDE_CONFIG_DIR = '+gate.toml_string(real_claude)) if custom_claude else ''))
-    text = text.replace('base = "builtin:claude"', 'base = "builtin:claude"\nargs_append = '+
-        json.dumps(['--model', args.model, '--effort', 'low', '--setting-sources', 'project,local']))
-    # Expand the inherited variable at session launch, never persist the value
-    # in city.toml or the benchmark's command arguments. Empty baseline unsets it.
-    text = text.replace('[workspace.env]', '[workspace.env]\nTYPESAFE_API_KEY = "$TYPESAFE_API_KEY"')
-    config.write_text(text)
     versions = {name: subprocess.check_output(cmd, text=True).strip() for name,cmd in
                 [('gc',[args.gc_bin,'version']),('bd',[args.bd_bin,'version']),('claude',['claude','--version']),('bash',['bash','--version'])]}
     save(out/'manifest.json', {'argv': sys.argv, 'versions': versions, 'model': args.model,
-         'jev_model': args.jev_model, 'arm': arm, 'core_source': os.environ.get('GASCITY_SOURCE_ROOT'),
+         'jev_model': args.jev_model, 'arm': arm, 'setup': 'operator-path',
          **snapshot_pack(pack, out)})
     (out/'jev_build_ab.py').write_bytes(Path(__file__).read_bytes())
     collector = usage.Collector(out/'otel-usage.jsonl')
-    env.pop('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', None)
     env.update(collector.env)
-    config.write_text(config.read_text().replace('[workspace.env]', '[workspace.env]\n' +
-        '\n'.join(f'{k} = {gate.toml_string(v)}' for k,v in collector.env.items())))
+    config_file = write_city_config(workspace, model=args.model, collector_env=collector.env,
+                                    claude_config_dir=real_claude if custom_claude else None)
     final_beads, original_test_hash = [], None
     with (out/'run.log').open('x', buffering=1) as log, redirect_stdout(log), redirect_stderr(log):
         try:
-            gate.initialize_city(args.gc_bin, workspace, pack_spec=pack, gates=['build-basic'], env=env,
-                seed_claude_state=False, init_timeout=args.setup_timeout)
-            save(out/'fixture-origin-preflight.json', prepare_local_origin(workspace, env))
+            save(out/'fixture-origin-preflight.json', prepare_fixture_repo(workspace, pack, env))
             original_test_hash = hashlib.sha256((workspace.rig_dir/'tests/test_slugger.py').read_bytes()).hexdigest()
             save(out/'original-test-hash.json', {'sha256':original_test_hash})
+            initialize_operator_city(args.gc_bin, workspace, pack, env,
+                                     config_file=config_file, setup_timeout=args.setup_timeout)
             report['setup_seconds'] = time.monotonic() - started
             if args.setup_only:
                 report['status'] = 'setup_only'
             else:
                 gate.start_city(args.gc_bin, workspace, env=env)
-                cmd = [args.gc_bin,'--city',str(workspace.city_dir),'--rig','fixture',
-                       'sling','gc.run-operator','--stdin','--force','--on','build-basic',
+                rig = [args.gc_bin,'--city',str(workspace.city_dir),'--rig',workspace.rig_name]
+                task = gate.build_basic_work_item()
+                title, description = task.split('\n', 1)
+                created = gate.run_checked([*rig,'bd','create',title,'--description',description.strip(),'--json'],
+                                           cwd=workspace.rig_dir,env=env,timeout=120,log_output=True)
+                source_id = gate.find_first_key(gate.extract_json_payload(created), ('id',))
+                if not source_id:
+                    raise ValueError('gc bd create did not report the task bead id')
+                report['source_bead_id'] = source_id
+                cmd = [*rig,'sling','gc.run-operator',source_id,'--on','build-basic',
                        '--title',gate.BUILD_TITLE,'--nudge','--json']
                 variables = {'artifact_root':str(gate.BUILD_ARTIFACT_ROOT),'interaction_mode':'headless',
                     'review_mode':'agent','drain_policy':'separate','push':'false','open_pr':'false',
                     'max_iterations':'2', **jev_variables(arm, args.jev_model)}
                 for k,v in variables.items(): cmd += ['--var',f'{k}={v}']
-                save(out/'launch.json', {'command':cmd,'task':gate.build_basic_work_item()})
+                save(out/'launch.json', {'command':cmd,'task':task,'source_bead_id':source_id})
                 dispatched = gate.run_checked(cmd,cwd=workspace.rig_dir,env=env,timeout=args.dispatch_timeout,
-                                              input_text=gate.build_basic_work_item(),log_output=True)
+                                              log_output=True)
                 root_id = gate.resolve_workflow_root_id(args.gc_bin,workspace,env=env,
                     candidate_id=gate.extract_sling_root_id(dispatched),title=gate.BUILD_TITLE,
                     source_title=gate.BUILD_SOURCE_TITLE,timeout=30)
@@ -425,9 +497,13 @@ def main():
     p.add_argument('--jev-model',default='jev-1.13.0')
     p.add_argument('--gc-bin',default='/opt/homebrew/bin/gc')
     p.add_argument('--bd-bin',default='/opt/homebrew/bin/bd')
-    p.add_argument('--timeout',type=float,default=1200)
+    # Baseline 005 needed ~46 minutes just to reach implementation; upstream's
+    # inference gate allows 75.
+    p.add_argument('--timeout',type=float,default=4500)
     p.add_argument('--setup-timeout',type=float,default=900)
     p.add_argument('--dispatch-timeout',type=float,default=600)
+    p.add_argument('--max-load',type=float,default=None,
+                   help='Refuse to start an arm above this 1-minute load average (default: logical CPU count).')
     p.add_argument('--setup-only',action='store_true')
     p.add_argument('--continue-on-failure', action='store_true',
                    help='Retain failed arms and still run the predeclared paired schedule.')

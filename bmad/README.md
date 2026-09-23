@@ -39,6 +39,23 @@ mkdir proj && cd proj && git init
 gc rig add .
 ```
 
+Implementation worktrees are created from the fetched `origin` default branch,
+so the rig must have an `origin` remote whose `origin/HEAD` resolves; without
+it, implementation fails closed with `missing-remote`. `git clone` sets this
+up. For this fresh `git init` repository, point `origin` at a remote (a local
+`git init --bare` repository works):
+
+```sh
+git remote add origin <url>
+git push -u origin HEAD   # empty remote only; needs a commit
+git fetch origin
+git remote set-head origin --auto
+```
+
+If `--auto` cannot determine the remote HEAD (for example, a bare remote
+whose HEAD names a different branch), name it:
+`git remote set-head origin <branch>`.
+
 1. **Import the pack.** From the city directory, add bmad at city scope. This
    writes the import, fetches the latest release, and pins it in `packs.lock`
    — no clone needed. The pack imports the Gas City base pack internally as

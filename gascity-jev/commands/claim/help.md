@@ -15,6 +15,12 @@ object. Result includes `bead_id`, `root_bead_id`, `continuation_group`, and
 full `bead` record. `action=drain` means no routed work remained and drain
 acknowledgement completed.
 
+Workflow topology beads (`gc.kind=workflow`, `scope`, or `spec`) are latches,
+never work. If the hook claims one, the command releases it with
+`gc bd release-if-current <id> <assignee>` and claims again instead of
+returning it. After three consecutive latch claims it returns non-zero without
+handing out a bead.
+
 Hook and bead-read failures are retried at most three times. Because a failed
 hook may already have assigned work, terminal hook or verification failures
 return non-zero without mutating claims or acknowledging drain. Configuration

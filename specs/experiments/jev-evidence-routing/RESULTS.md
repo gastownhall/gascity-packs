@@ -5,6 +5,47 @@ Claude token use and elapsed time on the small frozen synthetic suite, with
 matching final labels. Complete Gas City workflow benefit remains unmeasured.
 See the live results below; earlier baseline and runtime failures are preserved.
 
+**Correction, 2026-09-23.** A later root-cause review found that this document
+overstates the full-build failures as new upstream bugs. The original text is
+kept; dated notes beside each claim give the corrected reading. In short:
+
+- The tmux orphan-reaper failure is a known Gas City bug, already fixed on
+  `main` by a6b72d832 "fix(proctable): never classify a tmux server as an agent
+  root (#5392)" (2026-09-03). That commit is not in the v1.4.2 release used here.
+  The local patch duplicated it. The harness's `patrol_interval = "1s"` (the
+  documented default is 30s) probably made it appear sooner.
+- The Beads forced-init preflight code is real (bd v1.3.0 `countExistingIssues`
+  opens a writable store under a five-second deadline, and
+  `runInitReinitPreflight` ignores its error), but it only matters when
+  migrations take longer than five seconds. On this host a plain `bd init` took
+  25–56 s under load averages of 20–74 on 18 CPUs, with swapping and concurrent
+  Dolt servers. It is a latent, load-dependent Beads issue, not a demonstrated
+  production bug. Gas City `main` has a related mitigation not in v1.4.2:
+  8c2b970fe "fix(bd): corroborate a negative schema probe before
+  force-reinitializing (#5330)" (2026-09-12).
+- The worker closing a `do-work` latch relates to 449df7c4a "fix(hook): gate
+  workflow root run_target fallback on gc.workflow_expanded (#5900)(#5901)"
+  (2026-09-18, not in v1.4.2), plus a pack-side gap: the claim command did not
+  check `gc.kind` and the worker template was contradictory.
+- The other failures were caused by the harness, not the product: nested city
+  inheriting the parent Git remote, `CLAUDE_CONFIG_DIR=~/.claude`, disabled trust
+  seeding, a fixture without `origin`,
+  the harness's own 120/600 s `gc sling` subprocess timeouts, 1,200/3,600 s
+  workflow limits (the upstream gate uses 75 minutes), and the `HOME` override
+  and 131-byte socket path in early probes.
+- The gate PyYAML failure is an environment/dependency failure, not a Gas City
+  bug; its exact cause is unestablished (see
+  [gate-python](diagnosis/gate-python/README.md)).
+- Early setup runs used locally patched `gc`/`bd` builds, and setup attempts
+  001–002 imported core/bd packs from a Gas City `main` checkout with a 1.4.2
+  binary (version skew).
+
+No full build reached a Jev decision stage. None of these results bears on Jev,
+and none demonstrates a new upstream bug. The harness is being reworked to
+follow the documented operator path: standalone city, cloned fixture with
+`origin`, `gc rig add`, default patrol interval, Gas City's own trust handling,
+a 75-minute workflow limit, and a host-load preflight.
+
 ## Live paired results — September 20, 2026
 
 The exact Dashlane note supplied by Chris unlocked Jev access. Credentials were
@@ -167,6 +208,14 @@ reinitialization, and preservation of an existing issue. See
 [patch and validation](diagnosis/fix-validation/README.md). The global Beads
 executable remains unchanged.
 
+Correction, 2026-09-23: the preflight code path is real, but it only fails when
+schema migration exceeds its five-second deadline. That happened here because
+the host was heavily loaded (load 20–74 on 18 CPUs, swapping, concurrent Dolt
+servers; plain `bd init` took 25–56 s). Treat it as a latent, load-dependent
+Beads issue, not a demonstrated production bug. Gas City `main` already carries
+a related mitigation (8c2b970fe, #5330) that is not in v1.4.2. The local patch
+is a workaround for this host, not a required fix.
+
 
 The initial setup attempts did not reach model dispatch. Each attempt has its own
 manifest, raw log and result. Setup durations are not build-speed results.
@@ -182,6 +231,13 @@ or a Jev comparison.
 | [002](build-setup-002/run-001-baseline/run.log) | Beads required explicit migration consent for a freshly created shared database. The harness permits migration only in its new disposable city. |
 | [003](build-setup-003/run-001-baseline/run.log) | With version-matched runtime packs, migration failed on a pre-existing dirty `events` table in the fresh database. |
 | [004](build-setup-004/run-001-baseline/run.log) | Preinitializing an embedded store succeeded, but managed-server initialization still failed on a dirty `child_counters` table. This unsuccessful workaround was removed. |
+
+Correction, 2026-09-23: attempt 001 was a harness error; the documented setup
+always uses a standalone city directory, which cannot inherit a parent remote.
+Attempts 001 and 002 imported core/bd packs from a Gas City `main` checkout
+while running the 1.4.2 binary, so their results carry version skew. The
+dirty-table failures in 002–004 follow from the load-dependent preflight
+timeout described above, not from a demonstrated production bug.
 
 The exact migration error asks for a Dolt commit at the current schema before
 migration. These are newly created experimental databases; no user database was
@@ -208,6 +264,15 @@ complete comparable coverage; transcript totals alone are insufficient.
 | [Baseline 004](build-baseline-004/run-001-baseline/result.json) | Aborted at 38m44s after three missing-PyYAML gate failures. | 47 observed requests, 2,323,078 processed tokens; implementation unchanged. |
 | [Baseline 005](build-baseline-005/run-001-baseline/result.json) | Requirements, plan and decomposition gates passed. Worktree preparation failed without an origin remote; workflow exceeded its 3,600 s limit. Total elapsed 4,166.829 s. | 142 observed requests, 7,689,642 processed tokens; all three original tests and independent hidden checks fail, implementation unchanged. |
 
+Correction, 2026-09-23: the 120 s dispatch "deadline" in baseline 001 was the
+harness's own subprocess timeout, not a Gas City limit. The 1,200 s and 3,600 s
+workflow limits were too short: baseline 005 took about 46 minutes just to
+reach implementation, and the upstream gate uses 75 minutes. The baseline 003
+tmux failure is a known upstream bug already fixed on Gas City `main`
+(a6b72d832, #5392), not a new finding. The baseline 004 PyYAML and baseline 005
+missing-origin failures were caused by the harness (see below). None of these
+runs is evidence about Jev.
+
 The authentication failure was caused by the harness explicitly setting
 `CLAUDE_CONFIG_DIR` to `~/.claude`. Although that is the usual data directory,
 setting it changes the configuration/authentication namespace. The exact worker
@@ -223,6 +288,13 @@ the subscription prompt in 10.288 s. The clean baseline's startup took 4.458 s.
 No model events were observed during these startup checks; absent usage remains
 unknown rather than a measured zero. Startup time is included in total elapsed time.
 
+Correction, 2026-09-23: both problems were caused by the harness. Gas City never
+asks for `CLAUDE_CONFIG_DIR` to be set. For the trust prompt, Gas City 1.4.2
+auto-dismisses workspace-trust dialogs (`internal/runtime/dialog.go`), and the
+upstream gate seeds trust; this harness had turned that off with
+`seed_claude_state=False`. The separate tmux trust-preparation step works around
+a harness choice, not a product gap.
+
 Baseline 002 recorded **24 model requests and 1,258,960 processed tokens**:
 4,890 uncached input, 10,072 output, 1,188,712 cache-read, and 55,286 cache-creation.
 These include observed Sonnet and Haiku calls and are diagnostic consumption,
@@ -233,6 +305,14 @@ both CLI arguments and worker environment. Its
 limitations separately from the raw result.
 
 See the [confirmed tmux-reaper diagnosis and real-process regression](diagnosis/tmux-reaper/README.md). Baseline 004 used the local runtime fix and showed no observed shared-server reaping. It was aborted after 38m44s when the requirements gate exhausted three retries because its restricted PATH selected Python without PyYAML. Its 47 observed requests processed 2,323,078 tokens. Original tests remained unchanged and failed; no implementation was produced. These diagnostic totals are not a completed-build comparison. See [terminal record](build-baseline-004/run-001-baseline/result.json) and [gate-environment diagnosis](diagnosis/gate-python/README.md).
+
+Correction, 2026-09-23: the "confirmed tmux-reaper diagnosis" describes a known
+upstream bug, already fixed on Gas City `main` by a6b72d832 (#5392, 2026-09-03)
+but not in v1.4.2. The local runtime fix duplicated it. The PyYAML failure is
+an environment/dependency failure, not a Gas City bug: the gate PATH is
+intentionally built from the bd/gc/dolt/jq directories and the pack requires
+PyYAML there. Why the recorded probe's Homebrew Python lacked yaml is not
+established; see [gate-python](diagnosis/gate-python/README.md).
 
 ### Task fidelity observed in baseline 004
 
@@ -270,9 +350,21 @@ with a non-main branch, fetch, and detached worktree creation. See the
 [origin diagnosis](diagnosis/fixture-origin/README.md). This repair was not applied
 to the running experiment, and the remaining full workflow has not been verified.
 
+Correction, 2026-09-23: the documented operator path clones the repository and
+runs `gc rig add`, which probes `origin`. A fixture without `origin` is a harness
+deviation from that path, not a product failure. The replacement harness will
+use a cloned fixture and `gc rig add` rather than a synthesized bare origin.
+
 A separate observation is preserved: a worker claimed and closed a `do-work`
 workflow latch without implementing the task. Its routing cause is not isolated;
 the origin fix does not establish that this behavior is corrected.
+
+Correction, 2026-09-23: this behavior relates to an upstream fix on Gas City
+`main`, 449df7c4a "fix(hook): gate workflow root run_target fallback on
+gc.workflow_expanded (#5900)(#5901)" (2026-09-18), which is not in v1.4.2. There
+was also a pack-side gap: the claim command did not check `gc.kind`, and the
+worker template gave contradictory instructions. The pack-side gap is being fixed
+in the packs.
 
 The later [implementation summary](build-baseline-005/run-001-baseline/produced-artifacts/implementation-summary.md)
 correctly marked the work blocked, observed the unchanged stub, and recorded
@@ -365,6 +457,12 @@ python scripts/jev_build_ab.py --arms both --repetitions 2 --timeout 3600 \
   --out /absolute/new/build-directory
 ```
 
+Correction, 2026-09-23: do not use the patched binaries above for new runs. The
+tmux fix is already upstream (a6b72d832), and the Beads preflight issue only
+appears under heavy host load. Future full builds should use released or
+upstream binaries and follow the documented operator path described in the
+correction summary at the top of this document.
+
 Live Jev uses `TYPESAFE_API_KEY` injected privately from the exact Dashlane
 secure note supplied by Chris. Earlier searches and secure-entry requests did
 not supply a key; live access was verified on September 20. Generative model
@@ -375,6 +473,9 @@ Automatic approval review rejected a Claude probe outside safe mode because it
 could include workspace instructions/configuration. The user subsequently approved the Claude run. The approved telemetry probe
 matched CLI token counters exactly; baseline 003 exposed a separate macOS tmux-reaper defect after two
 retained failed/diagnostic attempts. Jev access is now verified.
+
+Correction, 2026-09-23: the "macOS tmux-reaper defect" was a known upstream bug
+already fixed on Gas City `main` (a6b72d832, #5392), not a new finding.
 
 Remaining work: working full-build execution and complete token telemetry;
 paired full-build measurements; broader and repeated kind-triage evaluation. The generative baseline evaluated here is Claude. Codex or another

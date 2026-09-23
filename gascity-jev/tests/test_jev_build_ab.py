@@ -23,37 +23,70 @@ def test_build_arms_explicitly_set_every_applicable_jev_mode():
 
 @pytest.mark.parametrize('arm, name', [('baseline', 'gascity'), ('jev', 'gascity-jev')])
 def test_build_arm_installs_its_own_pack_roles_and_preserves_source_provenance(tmp_path, arm, name):
-    import tomllib
     pack = build.pack_for_arm(arm)
     assert pack.name == name
     assert pack.source == ROOT / name
     assert pack.roles_source == pack.source / 'roles'
     assert pack.validator_source == pack.source
     assert pack.binding == 'gc'
-    workspace = build.new_runtime_workspace(pack, 'pack-selection-test')
-    try:
-        config = tomllib.loads((workspace.city_dir / 'city.toml').read_text())
-        city_pack = tomllib.loads((workspace.city_dir / 'pack.toml').read_text())
-        assert city_pack['imports']['gc']['source'] == str(pack.source)
-        assert city_pack['pack']['name'] == f'{name}-pack-inference-gate'
-        assert config['rigs'][0]['imports']['gc']['source'] == str(pack.roles_source)
-        out = tmp_path / 'provenance'
-        out.mkdir()
-        provenance = build.snapshot_pack(pack, out)
-        assert provenance['pack_name'] == name
-        assert provenance['pack_source'] == str(pack.source)
-        assert provenance['roles_source'] == str(pack.roles_source)
-        assert provenance['validator_source'] == str(pack.validator_source)
-        hashes = json.loads((out / 'source-hashes.json').read_text())
-        assert f'{name}/pack.toml' in hashes
-        other = 'gascity-jev' if name == 'gascity' else 'gascity'
-        assert not any(path.startswith(other + '/') for path in hashes)
-        snapshot = out / 'pack-snapshot'
-        assert (snapshot / 'pack.toml').read_bytes() == (pack.source / 'pack.toml').read_bytes()
-        assert (snapshot / 'assets/scripts/jev_evidence.py').exists() == (arm == 'jev')
-        assert hashes[f'{name}/pack.toml'] == build.hashlib.sha256((snapshot / 'pack.toml').read_bytes()).hexdigest()
-    finally:
-        build.shutil.rmtree(workspace.root.parent)
+    out = tmp_path / 'provenance'
+    out.mkdir()
+    provenance = build.snapshot_pack(pack, out)
+    assert provenance['pack_name'] == name
+    assert provenance['pack_source'] == str(pack.source)
+    assert provenance['roles_source'] == str(pack.roles_source)
+    assert provenance['validator_source'] == str(pack.validator_source)
+    hashes = json.loads((out / 'source-hashes.json').read_text())
+    assert f'{name}/pack.toml' in hashes
+    other = 'gascity-jev' if name == 'gascity' else 'gascity'
+    assert not any(path.startswith(other + '/') for path in hashes)
+    snapshot = out / 'pack-snapshot'
+    assert (snapshot / 'pack.toml').read_bytes() == (pack.source / 'pack.toml').read_bytes()
+    assert (snapshot / 'assets/scripts/jev_evidence.py').exists() == (arm == 'jev')
+    assert hashes[f'{name}/pack.toml'] == build.hashlib.sha256((snapshot / 'pack.toml').read_bytes()).hexdigest()
+
+
+def test_city_config_keeps_gas_city_defaults(tmp_path):
+    import tomllib
+    workspace = SimpleNamespace(root=tmp_path)
+    path = build.write_city_config(workspace, model='claude-sonnet-5',
+                                   collector_env={'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://127.0.0.1:1'})
+    config = tomllib.loads(path.read_text())
+    # No rigs, imports, HOME override or patrol interval: gc init, gc import add
+    # and gc rig add own those, and the daemon keeps its documented defaults.
+    assert 'rigs' not in config and 'daemon' not in config
+    assert 'HOME' not in config['workspace']['env']
+    assert config['workspace']['env']['TYPESAFE_API_KEY'] == '$TYPESAFE_API_KEY'
+    assert config['workspace']['env']['OTEL_EXPORTER_OTLP_ENDPOINT'] == 'http://127.0.0.1:1'
+    assert config['providers']['claude']['args_append'][:2] == ['--model', 'claude-sonnet-5']
+
+
+def test_rig_roles_import_binds_gc_to_the_added_rig_only(tmp_path):
+    import tomllib
+    config = tmp_path / 'city.toml'
+    config.write_text('[workspace]\nprovider = "claude"\n\n[[rigs]]\nname = "other"\n\n'
+                      '[[rigs]]\nname = "fixture"\ndefault_branch = "main"\n\n[session]\nstartup_timeout = "3m"\n')
+    build.add_rig_roles_import(config, 'fixture', Path('/packs/gascity/roles'))
+    parsed = tomllib.loads(config.read_text())
+    rigs = {rig['name']: rig for rig in parsed['rigs']}
+    assert rigs['fixture']['imports']['gc']['source'] == '/packs/gascity/roles'
+    assert rigs['fixture']['default_branch'] == 'main'
+    assert 'imports' not in rigs['other']
+    assert parsed['session']['startup_timeout'] == '3m'
+
+
+def test_rig_roles_import_requires_the_rig_gc_added(tmp_path):
+    config = tmp_path / 'city.toml'
+    config.write_text('[workspace]\nprovider = "claude"\n')
+    with pytest.raises(ValueError, match='fixture'):
+        build.add_rig_roles_import(config, 'fixture', Path('/roles'))
+
+
+def test_busy_host_is_refused(monkeypatch):
+    monkeypatch.setattr(build.os, 'getloadavg', lambda: (40.0, 30.0, 20.0))
+    monkeypatch.setattr(build.os, 'cpu_count', lambda: 18)
+    assert build.host_load(None)['status'] == 'failed'
+    assert build.host_load(50)['status'] == 'passed'
 
 
 def test_independent_quality_rejects_stub_even_when_edited_tests_pass(tmp_path, monkeypatch):
@@ -137,19 +170,14 @@ def test_experiment_env_retains_home_and_separates_mutable_config(tmp_path):
     assert 'BD_ALLOW_REMOTE_MIGRATE' not in result
 
 
-def test_workspace_socket_path_fits_even_with_deep_artifact_directory(tmp_path):
-    from contextlib import ExitStack
-    from unittest.mock import patch
-    captured={}
-    def workspace(root,**kwargs):
-        captured['root']=root
-        return SimpleNamespace(root=root,gc_home=root/'gc-home')
-    with ExitStack() as stack:
-        stack.enter_context(patch.object(build.gate,'write_gate_workspace',workspace))
-        result=build.new_runtime_workspace(SimpleNamespace(source=tmp_path,roles_source=tmp_path,
-            validator_source=tmp_path,name='test',binding='gc'),'unit')
-        stack.callback(build.shutil.rmtree,result.root.parent)
-        assert len(str(result.gc_home/'supervisor.sock').encode())<100
+def test_workspace_is_standalone_and_socket_path_fits(tmp_path):
+    workspace = build.new_runtime_workspace(SimpleNamespace(name='test'), 'unit')
+    try:
+        assert len(str(workspace.gc_home/'supervisor.sock').encode()) < 100
+        # gc init and gc rig add create these; nothing may pre-register them.
+        assert not workspace.city_dir.exists() and not workspace.rig_dir.exists()
+    finally:
+        build.shutil.rmtree(workspace.root.parent)
 
 
 def test_default_claude_login_does_not_set_config_override(tmp_path):
@@ -193,10 +221,11 @@ def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch, ar
     def output(cmd,**kw):
         return real_output(cmd,**kw) if cmd[0]=='git' else 'test-version\n'
     monkeypatch.setattr(build.subprocess,'check_output',output)
-    def interrupt(*a,**kw):
-        assert kw['pack_spec'] == selected_pack
+    def interrupt(gc_bin,workspace,pack,env,**kw):
+        assert pack == selected_pack
         raise KeyboardInterrupt()
-    monkeypatch.setattr(build.gate,'initialize_city',interrupt)
+    monkeypatch.setattr(build,'initialize_operator_city',interrupt)
+    monkeypatch.setattr(build,'host_load',lambda limit:{'status':'passed'})
     monkeypatch.setattr(build.gate,'stop_city',lambda *a,**kw:events.append('stop'))
     monkeypatch.setattr(build,'stop_disposable_dolt',lambda *a:{'status':'not_started'})
     monkeypatch.setattr(build,'transcript_usage',lambda *a:{'status':'missing'})
@@ -206,7 +235,7 @@ def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch, ar
         def close(self):events.append('collector_close');return {'status':'missing'}
     monkeypatch.setattr(build.usage,'Collector',Collector)
     args=SimpleNamespace(gc_bin=build.shutil.which('true'),bd_bin=build.shutil.which('true'),model='unused',
-        jev_model='unused',setup_only=True,setup_timeout=1)
+        jev_model='unused',setup_only=True,setup_timeout=1,max_load=None)
     try:
         try:result=build.run(args,arm,tmp_path/'run')
         except KeyboardInterrupt:pytest.fail('Interrupt escaped before saving terminal result')
@@ -223,23 +252,23 @@ def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch, ar
         build.shutil.rmtree(workspace.root.parent)
 
 
-def test_local_origin_supports_workflow_default_branch_and_worktree(tmp_path):
+def test_fixture_is_a_clone_whose_origin_supports_detached_worktrees(tmp_path):
     import os
-    import subprocess
     env={**os.environ,'GIT_CONFIG_GLOBAL':os.devnull,'GIT_CONFIG_NOSYSTEM':'1'}
-    rig=tmp_path/'fixture'; rig.mkdir()
+    workspace=SimpleNamespace(root=tmp_path,rig_dir=tmp_path/'fixture')
+    pack=build.pack_for_arm('baseline')
+    result=build.prepare_fixture_repo(workspace,pack,env)
+    rig=workspace.rig_dir
     def git(*args):
-        return subprocess.check_output(['git','-C',str(rig),*args],env=env,text=True).strip()
-    git('init','-b','release-line')
-    (rig/'fixture.txt').write_text('original fixture\n')
-    git('add','.')
-    git('-c','user.name=Experiment','-c','user.email=experiment@example.invalid','commit','-m','fixture')
-    original=git('rev-parse','HEAD')
-    result=build.prepare_local_origin(SimpleNamespace(root=tmp_path,rig_dir=rig),env)
-    assert result['default_branch']=='origin/release-line'
-    assert git('rev-parse','origin/HEAD')==original
-    assert Path(git('remote','get-url','origin')).is_relative_to(tmp_path)
+        return build.subprocess.check_output(['git','-C',str(rig),*args],env=env,text=True).strip()
+    assert result['default_branch']=='origin/main'
+    assert git('rev-parse','origin/HEAD')==result['initial_head']
+    assert Path(git('remote','get-url','origin'))==tmp_path/'fixture-origin.git'
+    assert (rig/'.gc/scripts/checks/build-artifact-valid.sh').is_file()
+    assert git('status','--porcelain')==''
     worktree=tmp_path/'implementation'
-    git('fetch','--prune','origin','release-line')
+    git('fetch','--prune','origin','main')
     git('worktree','add',str(worktree),'--detach',result['default_branch'])
-    assert (worktree/'fixture.txt').read_text()=='original fixture\n'
+    assert (worktree/'tests/test_slugger.py').read_bytes()==(rig/'tests/test_slugger.py').read_bytes()
+    with pytest.raises(ValueError, match='reuse'):
+        build.prepare_fixture_repo(workspace,pack,env)
