@@ -77,7 +77,8 @@ Implemented:
       ID (no session binding required; useful for one-shot ops posts)
 - [x] `gc slack status` — read-only diagnostics (adapters, bindings,
       recent traffic). `--session SID` for one-session detail,
-      `--since 5m` for a time window, `--json` for scripting. Exits 0
+      `--since 5m` for a time window (default `168h`; `--since ''`
+      reads the full history), `--json` for scripting. Exits 0
       when every section was read, 2 when any section could not be;
       an unreadable section is marked `(UNREADABLE: <reason>)` rather
       than being shown as empty, and the readable sections still print.

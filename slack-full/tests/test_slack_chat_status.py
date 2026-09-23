@@ -192,6 +192,46 @@ def test_since_param_is_propagated_to_events_query(
         assert "limit=200" in url
 
 
+def test_default_window_is_bounded_to_one_week(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The events endpoint walks newest-first and stops only at ``limit``
+    matches. Slack traffic is rare enough that 50 matches are never reached,
+    so an unbounded default read the whole event history and every archive
+    on every call, past the 30s client timeout (dr-1yk67)."""
+    status_mod, common = _import_modules()
+    fake, captured = _make_router({
+        "/extmsg/adapters": {"items": []},
+        "events?type=extmsg.inbound": [],
+        "events?type=extmsg.outbound": [],
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    assert status_mod.main([]) == 0
+
+    event_urls = [c["url"] for c in captured if "/events?" in c["url"]]
+    assert len(event_urls) == 2
+    for url in event_urls:
+        assert "since=168h" in url
+
+
+def test_empty_since_reads_the_full_history(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    status_mod, common = _import_modules()
+    fake, captured = _make_router({
+        "/extmsg/adapters": {"items": []},
+        "events?type=extmsg.inbound": [],
+        "events?type=extmsg.outbound": [],
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    assert status_mod.main(["--since", ""]) == 0
+
+    event_urls = [c["url"] for c in captured if "/events?" in c["url"]]
+    assert len(event_urls) == 2
+    for url in event_urls:
+        assert "since=" not in url
+
+
 def test_event_counts_include_both_directions(
         monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
     status_mod, common = _import_modules()

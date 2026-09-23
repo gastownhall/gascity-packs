@@ -186,8 +186,12 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--session", default="",
                         help="Restrict bindings + activity to a single session id")
-    parser.add_argument("--since", default="",
-                        help="Event window (e.g. 5m, 1h). Default: most recent --limit events.")
+    # Bounded by default: the events endpoint walks newest-first and stops only
+    # at --limit matches, which rare Slack traffic never reaches, so an empty
+    # window read the whole history and every archive past the client timeout.
+    parser.add_argument("--since", default="168h",
+                        help="Event window (e.g. 5m, 1h). Default: 168h. "
+                             "Pass --since '' to read the full history.")
     parser.add_argument("--limit", type=int, default=50,
                         help="Max events to scan per direction. Default: 50")
     parser.add_argument("--json", dest="as_json", action="store_true",
