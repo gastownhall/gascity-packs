@@ -1,0 +1,3 @@
+description = "Persistent, attachable research and planning conversation with report publication"
+scope = "rig"
+fallback = false

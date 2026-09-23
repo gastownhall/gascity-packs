@@ -40,7 +40,6 @@ on:
           - gascity
           - superpowers
           - compound-engineering
-          - gstack
           - bmad
           - gastown
         default: all-supported

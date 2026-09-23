@@ -38,7 +38,7 @@ SMOKE_GATE = "smoke"
 ALL_GATE = "all"
 GASCITY_PACK = "gascity"
 GASTOWN_PACK = "gastown"
-MODEL_SMOKE_PACKS = ("superpowers", "compound-engineering", "gstack", "bmad", GASTOWN_PACK)
+MODEL_SMOKE_PACKS = ("superpowers", "compound-engineering", "bmad", GASTOWN_PACK)
 GASCITY_REMOTE_SOURCE = "https://github.com/gastownhall/gascity.git"
 BEADS_MODULE = "github.com/steveyegge/beads"
 REVIEW_SUBJECT_PATH = Path(".gc/inference-gate/review-subject.diff")
@@ -401,100 +401,6 @@ METHODOLOGY_FLOW_CONTRACTS = {
             "compound-plan-review": "design-review-approved.sh",
         },
     },
-    "gstack": {
-        "review_expansion": "gstack-code-review",
-        "build_steps": {
-            "requirements": {
-                "run_target": "gstack.office-hours",
-                "artifact_schema": "gc.build.requirements.v1",
-                "check": "build-artifact-valid.sh",
-            },
-            "plan": {
-                "run_target": "gstack.founder-reviewer",
-                "artifact_schema": "gc.build.plan.v1",
-                "check": "build-artifact-valid.sh",
-            },
-            "plan-review": {
-                "run_target": "gstack.review-synthesizer",
-                "expand": "gstack-plan-review",
-            },
-            "decompose": {
-                "run_target": "gstack.decomposer",
-                "artifact_schema": "gc.build.decomposition.v1",
-                "check": "build-artifact-valid.sh",
-            },
-            "implement": {
-                "run_target": "{{implementation_target}}",
-                "drain_formula": "gstack-work",
-                "drain_context": "separate",
-            },
-            "implement-same-session": {
-                "run_target": "{{implementation_target}}",
-                "drain_formula": "gstack-work-item",
-                "drain_context": "shared",
-                "single_lane": True,
-            },
-            "review": {
-                "run_target": "gstack.review-synthesizer",
-                "artifact_schema": "gc.build.review.v1",
-                "expand": "gstack-code-review",
-                "needs": ("summarize-implementation",),
-            },
-            "qa": {
-                "run_target": "gstack.qa-lead",
-                "expand": "gstack-qa-review",
-                "needs": ("review",),
-            },
-            "release-readiness": {
-                "run_target": "gstack.release-engineer",
-                "expand": "gstack-release-readiness",
-                "needs": ("qa",),
-            },
-            "finalize": {
-                "run_target": "gstack.release-engineer",
-                "artifact_schema": "gc.build.final-report.v1",
-                "needs": ("release-readiness",),
-                "check": "build-artifact-valid.sh",
-            },
-            "publish": {
-                "run_target": "gc.publisher",
-                "needs": ("finalize",),
-            },
-        },
-        "expansion_routes": {
-            "gstack-code-review": (
-                "gstack.staff-reviewer",
-                "gstack.qa-lead",
-                "gstack.security-officer",
-                "gstack.review-synthesizer",
-                "{implementation_target}",
-            ),
-            "gstack-plan-review": (
-                "gstack.founder-reviewer",
-                "gstack.design-reviewer",
-                "gstack.eng-reviewer",
-                "gstack.devex-reviewer",
-                "gstack.review-synthesizer",
-            ),
-            "gstack-qa-review": (
-                "gstack.qa-lead",
-                "gstack.staff-reviewer",
-                "gstack.review-synthesizer",
-                "{implementation_target}",
-            ),
-            "gstack-release-readiness": (
-                "gstack.docs-engineer",
-                "gstack.release-engineer",
-                "gstack.review-synthesizer",
-            ),
-        },
-        "expansion_checks": {
-            "gstack-code-review": "implementation-review-approved.sh",
-            "gstack-plan-review": "design-review-approved.sh",
-            "gstack-qa-review": "implementation-review-approved.sh",
-            "gstack-release-readiness": "implementation-review-approved.sh",
-        },
-    },
     "bmad": {
         "review_expansion": "bmad-code-review-flow",
         "build_steps": {
@@ -719,34 +625,6 @@ def make_pack_specs() -> dict[str, PackSpec]:
             ),
             smoke_agent="compound-engineering.ce-brainstorm",
         ),
-        "gstack": PackSpec(
-            name="gstack",
-            binding="gstack",
-            source=REPO_ROOT / "gstack",
-            roles_source=roles_source,
-            validator_source=validator_source,
-            review_formula="gstack-review",
-            build_formula="gstack-build",
-            default_gates=(REVIEW_GATE, BUILD_GATE),
-            setup_formulas=("gstack-review", "gstack-build"),
-            required_review_routes=(
-                "gstack.staff-reviewer",
-                "gstack.qa-lead",
-                "gstack.security-officer",
-                "gstack.review-synthesizer",
-            ),
-            required_build_routes=(
-                "gstack.office-hours",
-                "gstack.founder-reviewer",
-                "gstack.decomposer",
-                "gstack.implementer",
-                "gstack.review-synthesizer",
-                "gstack.qa-lead",
-                "gstack.security-officer",
-                "gstack.release-engineer",
-            ),
-            smoke_agent="gstack.office-hours",
-        ),
         "bmad": PackSpec(
             name="bmad",
             binding="bmad",
@@ -799,7 +677,7 @@ def make_pack_specs() -> dict[str, PackSpec]:
 
 
 PACK_SPECS = make_pack_specs()
-METHODOLOGY_PACKS = ("superpowers", "compound-engineering", "gstack", "bmad")
+METHODOLOGY_PACKS = ("superpowers", "compound-engineering", "bmad")
 SUPPORTED_PACK_CHOICES = (*PACK_SPECS.keys(), "methodology", "model-smoke", "all-supported")
 
 
