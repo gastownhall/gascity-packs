@@ -1,0 +1,67 @@
+description = """
+Virtual build continuation contract from approved requirements.
+
+This suffix starts when approved requirements already exist. It produces the
+implementation plan and plan-review verdict, then hands off to
+`build-from-decompose-base` through the inherited `prepare-decompose` step.
+"""
+formula = "build-from-plan-base"
+version = 1
+contract = "graph.v2"
+extends = ["build-from-decompose-base"]
+target_required = false
+internal = true
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.planning_formula]
+description = "Planning methodology formula used for requirements and implementation-plan artifacts."
+default = "planning-base"
+
+[vars.plan_path]
+description = "Implementation plan artifact path to create or reuse."
+default = ""
+
+[vars.plan_review_path]
+description = "Plan-review artifact path to create or reuse."
+default = ""
+
+[[steps]]
+id = "prepare-plan"
+title = "Validate plan continuation inputs"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-plan-base/prepare-plan.md"
+
+[[steps]]
+id = "plan"
+title = "Produce implementation plan"
+needs = ["prepare-plan"]
+metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+description_file = "../assets/workflows/build-from-plan-base/plan.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "plan-review"
+title = "Review implementation plan"
+needs = ["plan"]
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+description_file = "../assets/workflows/build-from-plan-base/plan-review.md"
+
+[[steps]]
+id = "prepare-decompose"
+title = "Validate decompose continuation inputs"
+needs = ["plan-review"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-plan-base/prepare-decompose.md"

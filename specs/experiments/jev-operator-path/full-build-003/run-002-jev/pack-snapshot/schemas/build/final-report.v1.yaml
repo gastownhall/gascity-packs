@@ -1,0 +1,33 @@
+# Base build artifact schema. Schema IDs are immutable once published;
+# breaking changes require a new version ID (for example gc.build.final-report.v2).
+# Base schemas must not require owner, stage-owner, persona, or role fields.
+schema_id: gc.build.final-report.v1
+artifact: final-report
+allowed_statuses:
+  - draft
+  - approved
+  - blocked
+  - superseded
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - methodology.pack
+  - methodology.name
+  - producer.formula
+  - producer.stage
+  - producer.attempt
+  - status
+  - trace
+coverage_statuses:
+  - covered
+  - not_applicable
+  - deferred
+  - blocked
+  - out_of_scope
+  - superseded
+required_sections:
+  - Summary
+  - Outcome
+  - Artifacts
+  - Remaining Risks

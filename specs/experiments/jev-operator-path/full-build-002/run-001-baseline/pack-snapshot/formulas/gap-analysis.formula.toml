@@ -1,0 +1,43 @@
+description = """
+Report-only gap analysis over implementation artifacts.
+
+Launch inputs:
+- context_path: {{context_path}} (empty means no extra context bundle)
+- subject_path: {{subject_path}}
+- report_path: {{report_path}}
+"""
+formula = "gap-analysis"
+version = 1
+contract = "graph.v2"
+target_required = false
+mode = "report"
+
+[catalog]
+name = "gap-analysis"
+description = "Write a report comparing implementation artifacts to approved requirements and design."
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[vars.subject_path]
+description = "Implementation summary, diff, or artifact path to review."
+required = true
+
+[vars.report_path]
+description = "Path to write the gap-analysis report."
+required = true
+
+[[steps]]
+id = "validate-context"
+title = "Validate report context"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/gap-analysis/validate-context.md"
+
+[[steps]]
+id = "write-report"
+title = "Write gap-analysis report"
+needs = ["validate-context"]
+metadata = { "gc.run_target" = "gc.gap-analyst" }
+description_file = "../assets/workflows/gap-analysis/write-report.md"

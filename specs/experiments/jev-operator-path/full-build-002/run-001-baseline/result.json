@@ -1,0 +1,56 @@
+{
+  "arm": "baseline",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-24T02:52:51.055555+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "aborted",
+  "pack_name": "gascity",
+  "setup_seconds": 40.254398333025165,
+  "source_bead_id": "fi-wai",
+  "root_id": "fi-8vk",
+  "error": "KeyboardInterrupt: ",
+  "cleanup": {
+    "status": "no_leftover_server",
+    "pids": []
+  },
+  "otel_usage": {
+    "status": "observed",
+    "request_count": 33,
+    "models": [
+      "claude-haiku-4-5-20251001",
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 8484,
+      "output_tokens": 11361,
+      "cache_read_tokens": 1585420,
+      "cache_creation_tokens": 95393,
+      "total_tokens": 1700658
+    },
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "independent_quality": [],
+  "jev_report_scan_errors": [],
+  "jev_feature_delivery": {
+    "evidence": 16,
+    "findings": 36,
+    "failure": 36
+  },
+  "elapsed_seconds": 579.2617522920482,
+  "llm_usage": {
+    "status": "observed",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 29,
+    "models": [
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 58,
+      "output_tokens": 11296,
+      "cache_read_input_tokens": 1585420,
+      "cache_creation_input_tokens": 95393
+    }
+  }
+}

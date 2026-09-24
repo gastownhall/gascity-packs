@@ -1,0 +1,30 @@
+{
+  "argv": [
+    "scripts/jev_build_ab.py",
+    "--out",
+    "specs/experiments/jev-operator-path/full-build-003",
+    "--arms",
+    "both",
+    "--repetitions",
+    "1",
+    "--continue-on-failure",
+    "--gc-bin",
+    "/private/tmp/claude-501/-Users-csells-Code-gastownhall-gascity-packs/73ae4534-e6f7-48d3-b739-f130fdb4d1a0/scratchpad/gc-1.5/bin/gc"
+  ],
+  "versions": {
+    "gc": "dev (commit: 26172ff4b, built: 2026-09-23T11:53:28-07:00)",
+    "bd": "bd version 1.3.0 (Homebrew)",
+    "claude": "2.1.281 (Claude Code)",
+    "bash": "GNU bash, version 5.3.20(1)-release (aarch64-apple-darwin25.6.0)\nCopyright (C) 2025 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n\nThis is free software; you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law."
+  },
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "arm": "jev",
+  "setup": "operator-path",
+  "pack_name": "gascity-jev",
+  "pack_source": "/Users/csells/Code/gastownhall/gascity-packs/gascity-jev",
+  "roles_source": "/Users/csells/Code/gastownhall/gascity-packs/gascity-jev/roles",
+  "validator_source": "/Users/csells/Code/gastownhall/gascity-packs/gascity-jev",
+  "pack_git_head": "7f1cb03f66333987fde3a4534bd0250e0200eaac",
+  "pack_diff": "diff --git a/gascity-jev/tests/test_jev_build_ab.py b/gascity-jev/tests/test_jev_build_ab.py\nindex 29553fd..7138038 100644\n--- a/gascity-jev/tests/test_jev_build_ab.py\n+++ b/gascity-jev/tests/test_jev_build_ab.py\n@@ -143,6 +143,19 @@ def test_cleanup_only_signals_exact_disposable_server(tmp_path, monkeypatch):\n     assert signals==[(2,build.signal.SIGTERM)]\n \n \n+def test_cleanup_stops_this_citys_beads_proxy_before_its_server(tmp_path, monkeypatch):\n+    city=tmp_path/'city'\n+    root=city/'.beads/dolt'\n+    listing=(f'7 /x/bd db-proxy-child --root /other/city/.beads/dolt --port 0\\n'\n+             f'8 dolt sql-server --config {root}/config.yaml\\n'\n+             f'9 /x/bd db-proxy-child --root {root} --port 0 --idle-timeout -1ns\\n')\n+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))\n+    signals=[]\n+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:signals.append(pid))\n+    assert build.stop_disposable_dolt(city)['pids']==[9,8]\n+    assert signals==[9,8]\n+\n+\n def test_cleanup_reports_when_process_inspection_fails(tmp_path, monkeypatch):\n     monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=1,stdout='',stderr='denied'))\n     monkeypatch.setattr(build.os,'kill',lambda *a:pytest.fail('must not signal without ownership evidence'))\n"
+}

@@ -1,0 +1,135 @@
+description = """
+Default Gas City implementation of build-base.
+
+This concrete workflow uses the built-in Gas City requirement, design review,
+decomposition, implementation, review, and publish helpers while preserving the
+same full-lifecycle stage contract exposed by build-base.
+"""
+formula = "build-basic"
+version = 1
+contract = "graph.v2"
+extends = ["build-base"]
+target_required = true
+
+[catalog]
+name = "build-basic"
+description = "Run the default Gas City full-lifecycle build workflow from requirements through clean review and optional publish."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[[steps]]
+id = "requirements"
+title = "Generate requirements"
+needs = ["prepare"]
+metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+description_file = "../assets/workflows/build-basic/requirements.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "plan"
+title = "Write implementation plan"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+description_file = "../assets/workflows/build-basic/plan.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "plan-review"
+title = "Run design review"
+needs = ["plan"]
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+description_file = "../assets/workflows/build-basic/plan-review.md"
+
+[[steps]]
+id = "decompose"
+title = "Create task beads"
+needs = ["plan-review"]
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+description_file = "../assets/workflows/build-basic/decompose.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "implement"
+title = "Drain build implementation"
+needs = ["decompose"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/build-basic/implement.md"
+
+[steps.drain]
+context = "separate"
+formula = "do-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Drain build implementation in one shared session"
+needs = ["decompose"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/build-basic/implement-same-session.md"
+
+[steps.drain]
+context = "shared"
+formula = "do-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "review"
+title = "Run starter implementation review"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+expand = "build-basic-review"
+expand_vars = { implementation_target = "{{implementation_target}}" }
+description_file = "../assets/workflows/build-basic/review.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize build-basic"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/build-basic/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "publish"
+title = "Optionally publish build-basic"
+needs = ["finalize"]
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/build-basic/publish.md"

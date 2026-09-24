@@ -14,8 +14,9 @@ not in v1.4.2. The Beads forced-init preflight is a latent issue that only
 appears when migrations exceed five seconds, which happened here under heavy
 host load. The `do-work` latch closure relates to an upstream fix not in v1.4.2
 (449df7c4a, #5900/#5901) plus a pack-side claim/template gap. The remaining
-failures (remote inheritance, Claude config/trust, missing `origin`, dispatch
-and workflow timeouts) were caused by the harness; the gate PyYAML failure was
+failures (remote inheritance, Claude config, missing `origin`, dispatch and
+workflow timeouts) were caused by the harness; the folder-trust prompt is a
+known upstream bug fixed on `main` (c5fd5fb96, #5904) but not in v1.4.2; the gate PyYAML failure was
 environmental, with its exact cause unestablished. No full build
 reached a Jev decision stage, so none of these results bears on Jev. The harness
 is being reworked to follow the documented operator path. Details are in the

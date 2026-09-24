@@ -1,0 +1,55 @@
+description = """
+Virtual code-review methodology contract.
+
+This methodology contract writes a report-only review over a supplied subject.
+Concrete methodology packs override it with native review fanout, synthesis, or
+scoring while entrypoint adapters keep GitHub/comment lifecycle ownership.
+"""
+formula = "code-review-base"
+version = 1
+contract = "graph.v2"
+target_required = false
+internal = true
+mode = "report"
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[vars.subject_path]
+description = "Diff, summary, branch note, or artifact path to review."
+required = true
+
+[vars.report_path]
+description = "Path to write the review report."
+required = true
+
+[vars.interaction_mode]
+description = "Review interaction posture: interactive, autonomous, or headless."
+default = "autonomous"
+
+[vars.review_mode]
+description = "Review authority: report, agent, or interactive."
+default = "report"
+
+[[steps]]
+id = "validate-context"
+title = "Validate report context"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/code-review-base/validate-context.md"
+
+[[steps]]
+id = "write-report"
+title = "Write review report"
+needs = ["validate-context"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path,gc.var.report_path" }
+description_file = "../assets/workflows/code-review-base/write-report.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

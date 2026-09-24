@@ -1,0 +1,120 @@
+[
+  {
+    "path": "/private/tmp/gcja-11o413e9/w/fixture/.gc/inference-gate/build-basic/jev/findings-attempt-1/report.json",
+    "schema": "gc.workflow-decisions.v1",
+    "task": "findings",
+    "question_version": "gc.workflow-decisions.v1",
+    "requested_model": "jev-1.13.0",
+    "started_at": "2026-09-24T05:30:06.915531+00:00",
+    "route": "llm",
+    "usage": {
+      "input_tokens": 747,
+      "output_tokens": 60
+    },
+    "mode": "auto",
+    "threshold": 0.9,
+    "state_sha256": "01e791f1118a06772fa693b69e714d8edb4e6f05d6dee043a07c4fb207ab5bb3",
+    "status": "completed",
+    "model": "jev-1.13.0",
+    "decision": {
+      "answers": {
+        "finding_0": {
+          "type": "choice",
+          "choice": "residual_risk",
+          "confidence": 0.29,
+          "probabilities": {
+            "missing_evidence": 0.2,
+            "residual_risk": 0.47,
+            "required_fix": 0.31,
+            "unclear": 0.02
+          }
+        }
+      },
+      "fallback_questions": [
+        "finding_0"
+      ],
+      "route": "llm",
+      "findings": [
+        {
+          "id": "F1",
+          "text": "implementation-summary.md records slugger.py at sha256:9d7ea153a02d2847d334f0d7eb66f111ba6faaeff63018b99d1d9b0660576cf9, but the actual slugger.py in the authorized implementation worktree (commit 118e6e5) hashes to sha256:eec28656a4bb095b35f02acc0a6d5315af2a8d8e9f554bc77129c867fa519590. The file content itself matches the approved plan and pytest passes 3/3; this is a provenance/evidence-quality defect in implementation-summary.md's trace.upstream metadata, not a code or test failure.",
+          "source": "review.test-evidence-review, source anchor fi-5b0, worktree /private/tmp/gcja-11o413e9/w/fixture/worktrees/fi-5b0, report .gc/inference-gate/build-basic/test-evidence-report.md"
+        }
+      ],
+      "possible_duplicate_pairs": []
+    },
+    "elapsed_seconds": 0.28290508303325623
+  },
+  {
+    "path": "/private/tmp/gcja-11o413e9/w/fixture/worktrees/fi-5b0/.gc/inference-gate/build-basic/jev/test-evidence-attempt-1/report.json",
+    "schema": "gc.evidence-assessment.v1",
+    "advisory": true,
+    "started_at": "2026-09-24T05:26:48.263270+00:00",
+    "question_version": "gc.evidence-question.v2",
+    "requested_model": "jev-1.13.0",
+    "threshold": 0.85,
+    "mode": "auto",
+    "state_sha256": "7fcbdb67378f850e9e62b84ea2df5d3f854047c2baa774ae9e4c690ee8a31243",
+    "decisions": [
+      {
+        "id": "AC-1",
+        "type": "choice",
+        "choice": "supported",
+        "confidence": 0.98,
+        "probabilities": {
+          "contradicted": 0.0,
+          "supported": 0.99,
+          "missing_evidence": 0.01,
+          "unclear": 0.0
+        },
+        "route": "reviewer_check"
+      },
+      {
+        "id": "AC-2",
+        "type": "choice",
+        "choice": "supported",
+        "confidence": 0.96,
+        "probabilities": {
+          "contradicted": 0.0,
+          "supported": 0.97,
+          "missing_evidence": 0.02,
+          "unclear": 0.01
+        },
+        "route": "reviewer_check"
+      },
+      {
+        "id": "AC-3",
+        "type": "choice",
+        "choice": "supported",
+        "confidence": 0.9,
+        "probabilities": {
+          "contradicted": 0.0,
+          "supported": 0.93,
+          "missing_evidence": 0.05,
+          "unclear": 0.02
+        },
+        "route": "reviewer_check"
+      },
+      {
+        "id": "AC-4",
+        "type": "choice",
+        "choice": "missing_evidence",
+        "confidence": 0.34,
+        "probabilities": {
+          "contradicted": 0.01,
+          "supported": 0.19,
+          "missing_evidence": 0.5,
+          "unclear": 0.3
+        },
+        "route": "llm_review"
+      }
+    ],
+    "status": "completed",
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 3495,
+      "output_tokens": 218
+    },
+    "elapsed_seconds": 0.37007212510798126
+  }
+]

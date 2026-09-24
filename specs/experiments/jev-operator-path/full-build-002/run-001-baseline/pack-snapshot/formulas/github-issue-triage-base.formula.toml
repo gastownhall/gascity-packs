@@ -1,0 +1,86 @@
+description = """
+Base targetless GitHub issue triage adapter.
+
+This formula accepts only a full canonical GitHub issue URL. It snapshots the
+issue through the pack GitHub wrapper, keys triage by `sha256(issue.body)`,
+validates the triage report schema, and creates or updates the body-hash-keyed
+GitHub comment. It may gather reproduction evidence, but it must not create
+implementation convoys, mutate branches, or publish PRs.
+
+Launch inputs:
+- github_issue_url: {{github_issue_url}}
+- artifact_root: {{artifact_root}} (optional override; empty resolves to the
+  rig artifact root with the pack artifact helper)
+- post_mode: {{post_mode}}
+- triage_rubric_path: {{triage_rubric_path}} (optional Markdown rubric/prompt
+  for report behavior; empty uses the base rubric)
+"""
+formula = "github-issue-triage-base"
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[vars]
+[vars.github_issue_url]
+description = "Full GitHub issue URL: https://github.com/<owner>/<repo>/issues/<number>."
+required = true
+
+[vars.artifact_root]
+description = "Optional artifact root override. Empty resolves to the rig artifact root through assets/scripts/artifacts.py."
+default = ""
+
+[vars.post_mode]
+description = "Comment posting policy: auto or human_gate. Security-sensitive and p0 output always gates."
+default = "auto"
+
+[vars.triage_rubric_path]
+description = "Optional path to a Markdown triage rubric/prompt. Empty uses the base report rubric in this formula."
+default = ""
+
+[[steps]]
+id = "snapshot"
+title = "Snapshot GitHub issue"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-triage-base/snapshot.md"
+
+[[steps]]
+id = "reuse-current-body-hash"
+title = "Reuse current body-hash triage when present"
+needs = ["snapshot"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-triage-base/reuse-current-body-hash.md"
+
+[[steps]]
+id = "write-triage-report"
+title = "Write triage report"
+needs = ["reuse-current-body-hash"]
+metadata = { "gc.run_target" = "gc.issue-triager" }
+description_file = "../assets/workflows/github-issue-triage-base/write-triage-report.md"
+
+[[steps]]
+id = "render-comment"
+title = "Render triage comment"
+needs = ["write-triage-report"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-triage-base/render-comment.md"
+
+[[steps]]
+id = "human-gate-sensitive-output"
+title = "Gate sensitive or forced-human output"
+needs = ["render-comment"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-triage-base/human-gate-sensitive-output.md"
+
+[[steps]]
+id = "post-comment"
+title = "Create or update triage comment"
+needs = ["render-comment", "human-gate-sensitive-output"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-triage-base/post-comment.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize triage result"
+needs = ["post-comment"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-triage-base/finalize.md"

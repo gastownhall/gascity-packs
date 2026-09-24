@@ -1,0 +1,1 @@
+[{"input": "  Hello, World!  ", "expected": "hello-world", "actual": "hello-world", "pass": true}, {"input": "a---b___c", "expected": "a-b-c", "actual": "a-b-c", "pass": true}, {"input": "123 ABC", "expected": "123-abc", "actual": "123-abc", "pass": true}, {"input": "!@#", "expected": "", "actual": "", "pass": true}]

@@ -143,6 +143,30 @@ def test_cleanup_only_signals_exact_disposable_server(tmp_path, monkeypatch):
     assert signals==[(2,build.signal.SIGTERM)]
 
 
+def test_cleanup_stops_this_citys_beads_proxy_before_its_server(tmp_path, monkeypatch):
+    city=tmp_path/'city'
+    root=city/'.beads/dolt'
+    listing=(f'7 /x/bd db-proxy-child --root /other/city/.beads/dolt --port 0\n'
+             f'8 dolt sql-server --config {root}/config.yaml\n'
+             f'9 /x/bd db-proxy-child --root {root} --port 0 --idle-timeout -1ns\n')
+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))
+    signals=[]
+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:signals.append(pid))
+    assert build.stop_disposable_dolt(city)['pids']==[9,8]
+    assert signals==[9,8]
+
+
+def test_cleanup_includes_the_rigs_own_beads_store(tmp_path, monkeypatch):
+    city, rig = tmp_path/'city', tmp_path/'fixture'
+    listing=(f'4 /x/bd db-proxy-child --root {rig}/.beads/dolt --port 0\n'
+             f'5 dolt sql-server --config {rig}/.beads/dolt/config.yaml\n'
+             f'6 dolt sql-server --config {tmp_path}/other/.beads/dolt/config.yaml\n')
+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))
+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:None)
+    assert build.stop_disposable_dolt(city)['pids']==[]
+    assert build.stop_disposable_dolt(city, rig)['pids']==[4,5]
+
+
 def test_cleanup_reports_when_process_inspection_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=1,stdout='',stderr='denied'))
     monkeypatch.setattr(build.os,'kill',lambda *a:pytest.fail('must not signal without ownership evidence'))
@@ -228,6 +252,7 @@ def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch, ar
     monkeypatch.setattr(build,'host_load',lambda limit:{'status':'passed'})
     monkeypatch.setattr(build.gate,'stop_city',lambda *a,**kw:events.append('stop'))
     monkeypatch.setattr(build,'stop_disposable_dolt',lambda *a:{'status':'not_started'})
+    monkeypatch.setattr(build.time,'sleep',lambda seconds:None)
     monkeypatch.setattr(build,'transcript_usage',lambda *a:{'status':'missing'})
     class Collector:
         env={}

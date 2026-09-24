@@ -1,0 +1,58 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__________________________ test_slugify_basic_phrase ___________________________
+
+    def test_slugify_basic_phrase() -> None:
+>       assert slugify("Hello, World!") == "hello-world"
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_slugger.py:5: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = 'Hello, World!'
+
+    def slugify(value: str) -> str:
+        """Return a URL slug for value."""
+>       raise NotImplementedError("slugify is intentionally missing")
+E       NotImplementedError: slugify is intentionally missing
+
+slugger.py:6: NotImplementedError
+______________________ test_slugify_collapses_separators _______________________
+
+    def test_slugify_collapses_separators() -> None:
+>       assert slugify("  Multiple---spaces___OK  ") == "multiple-spaces-ok"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_slugger.py:9: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '  Multiple---spaces___OK  '
+
+    def slugify(value: str) -> str:
+        """Return a URL slug for value."""
+>       raise NotImplementedError("slugify is intentionally missing")
+E       NotImplementedError: slugify is intentionally missing
+
+slugger.py:6: NotImplementedError
+____________________ test_slugify_handles_no_alphanumerics _____________________
+
+    def test_slugify_handles_no_alphanumerics() -> None:
+>       assert slugify("!!!") == ""
+               ^^^^^^^^^^^^^^
+
+tests/test_slugger.py:13: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '!!!'
+
+    def slugify(value: str) -> str:
+        """Return a URL slug for value."""
+>       raise NotImplementedError("slugify is intentionally missing")
+E       NotImplementedError: slugify is intentionally missing
+
+slugger.py:6: NotImplementedError
+=========================== short test summary info ============================
+FAILED tests/test_slugger.py::test_slugify_basic_phrase - NotImplementedError...
+FAILED tests/test_slugger.py::test_slugify_collapses_separators - NotImplemen...
+FAILED tests/test_slugger.py::test_slugify_handles_no_alphanumerics - NotImpl...
+3 failed in 0.01s

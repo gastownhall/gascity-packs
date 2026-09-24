@@ -28,11 +28,13 @@ kept; dated notes beside each claim give the corrected reading. In short:
   (2026-09-18, not in v1.4.2), plus a pack-side gap: the claim command did not
   check `gc.kind` and the worker template was contradictory.
 - The other failures were caused by the harness, not the product: nested city
-  inheriting the parent Git remote, `CLAUDE_CONFIG_DIR=~/.claude`, disabled trust
-  seeding, a fixture without `origin`,
+  inheriting the parent Git remote, `CLAUDE_CONFIG_DIR=~/.claude`, a fixture
+  without `origin`,
   the harness's own 120/600 s `gc sling` subprocess timeouts, 1,200/3,600 s
   workflow limits (the upstream gate uses 75 minutes), and the `HOME` override
   and 131-byte socket path in early probes.
+- The folder-trust prompt that blocked workers in fresh fixtures is a known
+  upstream bug fixed on `main` by c5fd5fb96 (#5904, 2026-09-02), not in v1.4.2.
 - The gate PyYAML failure is an environment/dependency failure, not a Gas City
   bug; its exact cause is unestablished (see
   [gate-python](diagnosis/gate-python/README.md)).
@@ -288,12 +290,20 @@ the subscription prompt in 10.288 s. The clean baseline's startup took 4.458 s.
 No model events were observed during these startup checks; absent usage remains
 unknown rather than a measured zero. Startup time is included in total elapsed time.
 
-Correction, 2026-09-23: both problems were caused by the harness. Gas City never
-asks for `CLAUDE_CONFIG_DIR` to be set. For the trust prompt, Gas City 1.4.2
-auto-dismisses workspace-trust dialogs (`internal/runtime/dialog.go`), and the
-upstream gate seeds trust; this harness had turned that off with
-`seed_claude_state=False`. The separate tmux trust-preparation step works around
-a harness choice, not a product gap.
+Correction, 2026-09-23: the authentication failure was caused by the harness;
+Gas City never asks for `CLAUDE_CONFIG_DIR` to be set. The trust prompt is a
+known upstream bug, not a harness choice: Gas City 1.4.2 answers Claude's
+workspace-trust dialog by pressing Enter on the assumption that "Yes, I trust
+this folder" is pre-selected, but current Claude Code pre-selects "No, exit",
+so every worker in an untrusted folder exits during startup. Gas City `main`
+fixed this with c5fd5fb96 "Select the safe option in workspace-trust dialogs
+(#5904)", 2026-09-02, not in v1.4.2. Production rigs are folders the operator
+has already trusted, so they do not hit it; a fresh experiment fixture does.
+(An earlier version of this correction wrongly said 1.4.2 dismisses the dialog;
+a 2026-09-23 run without the trust-preparation step stalled on it, 103 worker
+start attempts in four minutes, see `../jev-operator-path/full-build-001`.) Later runs
+use a local build of `release/v1.5.0`, which carries the fix; see
+[jev-operator-path](../jev-operator-path/README.md).
 
 Baseline 002 recorded **24 model requests and 1,258,960 processed tokens**:
 4,890 uncached input, 10,072 output, 1,188,712 cache-read, and 55,286 cache-creation.

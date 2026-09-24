@@ -1,0 +1,46 @@
+description = """
+Internal helper for explicit opt-in push and PR creation.
+
+Launch inputs:
+- final_report: {{final_report}}
+- push: {{push}}
+- open_pr: {{open_pr}}
+"""
+formula = "publish"
+version = 1
+contract = "graph.v2"
+target_required = false
+internal = true
+
+[vars]
+[vars.final_report]
+description = "Final report path to publish from."
+required = true
+
+[vars.push]
+description = "Positive authorization to push."
+default = "false"
+
+[vars.open_pr]
+description = "Positive authorization to open a PR."
+default = "false"
+
+[[steps]]
+id = "preflight"
+title = "Run publish preflight"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/publish/preflight.md"
+
+[[steps]]
+id = "push"
+title = "Push branch if authorized"
+needs = ["preflight"]
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/publish/push.md"
+
+[[steps]]
+id = "open-pr"
+title = "Open PR if authorized"
+needs = ["push"]
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/publish/open-pr.md"

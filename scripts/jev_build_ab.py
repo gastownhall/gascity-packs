@@ -83,23 +83,38 @@ def transcript_usage(projects, workspace, out):
 
 
 
-def stop_disposable_dolt(city):
-    """Stop leftover server only when its exact config is inside this run's city."""
-    config = city.resolve()/'.gc/runtime/packs/dolt/dolt-config.yaml'
+def stop_disposable_dolt(city, rig=None):
+    """Stop leftover servers only when their exact paths are inside this run's city or rig.
+
+    Gas City 1.4 runs Dolt from the dolt pack's runtime directory. Gas City 1.5
+    runs city and rig stores under `.beads/dolt` behind `bd db-proxy-child`
+    processes that `gc stop` leaves running; proxies are stopped before servers.
+    """
+    city = city.resolve()
+    stores = [city/'.beads/dolt'] + ([rig.resolve()/'.beads/dolt'] if rig else [])
+    configs = {city/'.gc/runtime/packs/dolt/dolt-config.yaml', *(root/'config.yaml' for root in stores)}
+    proxy_roots = set(stores)
     result = subprocess.run(['ps', '-axo', 'pid=,command='], capture_output=True, text=True)
     if result.returncode:
         return {'status': 'unverified', 'error': result.stderr.strip()}
-    signalled = []
+    proxies, servers = [], []
     for line in result.stdout.splitlines():
         fields = line.strip().split(None, 1)
-        command = re.fullmatch(r'(?:\S*/)?dolt sql-server --config (.+)', fields[1]) if len(fields) == 2 else None
-        if command and Path(command.group(1)).resolve() == config:
-            pid = int(fields[0])
-            try:
-                os.kill(pid, signal.SIGTERM)
-                signalled.append(pid)
-            except ProcessLookupError:
-                pass
+        if len(fields) != 2:
+            continue
+        proxy = re.match(r'(?:\S*/)?bd db-proxy-child --root (\S+)', fields[1])
+        server = re.fullmatch(r'(?:\S*/)?dolt sql-server --config (.+)', fields[1])
+        if proxy and Path(proxy.group(1)).resolve() in proxy_roots:
+            proxies.append(int(fields[0]))
+        elif server and Path(server.group(1)).resolve() in configs:
+            servers.append(int(fields[0]))
+    signalled = []
+    for pid in proxies + servers:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            signalled.append(pid)
+        except ProcessLookupError:
+            pass
     return {'status': 'termination_requested' if signalled else 'no_leftover_server', 'pids': signalled}
 
 
@@ -374,7 +389,7 @@ def run(args, arm, out):
         if auth.returncode or not status.get('loggedIn') or status.get('authMethod') != 'claude.ai':
             raise ValueError('Claude subscription login unavailable in worker environment')
     versions = {name: subprocess.check_output(cmd, text=True).strip() for name,cmd in
-                [('gc',[args.gc_bin,'version']),('bd',[args.bd_bin,'version']),('claude',['claude','--version']),('bash',['bash','--version'])]}
+                [('gc',[args.gc_bin,'version','--long']),('bd',[args.bd_bin,'version']),('claude',['claude','--version']),('bash',['bash','--version'])]}
     save(out/'manifest.json', {'argv': sys.argv, 'versions': versions, 'model': args.model,
          'jev_model': args.jev_model, 'arm': arm, 'setup': 'operator-path',
          **snapshot_pack(pack, out)})
@@ -452,7 +467,11 @@ def run(args, arm, out):
                     report['final_bead_collection_error'] = f'{type(error).__name__}: {error}'
             try:
                 gate.stop_city(args.gc_bin,workspace,env=env)
-                report['cleanup'] = stop_disposable_dolt(workspace.city_dir)
+                report['cleanup'] = stop_disposable_dolt(workspace.city_dir, workspace.rig_dir)
+                # A late bd call from a stopping worker can respawn the 1.5
+                # Beads proxy seconds after the first sweep; sweep once more.
+                time.sleep(20)
+                report['cleanup_resweep'] = stop_disposable_dolt(workspace.city_dir, workspace.rig_dir)
             finally:
                 report['otel_usage'] = collector.close()
                 report['otel_usage']['coverage'] = 'Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals.'

@@ -1,0 +1,40 @@
+{
+  "arm": "baseline",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-23T20:19:55.596836+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "aborted",
+  "pack_name": "gascity",
+  "setup_seconds": 38.179194333031774,
+  "source_bead_id": "fi-k32",
+  "root_id": "fi-2p3",
+  "error": "KeyboardInterrupt: ",
+  "cleanup": {
+    "status": "no_leftover_server",
+    "pids": []
+  },
+  "otel_usage": {
+    "status": "missing",
+    "request_count": 0,
+    "models": [],
+    "totals": null,
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "independent_quality": [],
+  "jev_report_scan_errors": [],
+  "jev_feature_delivery": {
+    "evidence": 0,
+    "findings": 0,
+    "failure": 0
+  },
+  "elapsed_seconds": 354.6842783750035,
+  "llm_usage": {
+    "status": "missing",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 0,
+    "models": [],
+    "totals": null
+  }
+}
