@@ -1,0 +1,6 @@
+14:17:16 CHECK key=rig-l2v attempt=1 args=
+14:20:27 CHECK key=rig-qg0 attempt=2 args=
+14:21:14 CHECK-TOP key=rig-86y attempt=1 args=
+14:25:04 CHECK-TOP key=rig-86y attempt=2 args=
+14:25:37 CHECK key=rig-86y attempt=1 args=
+14:25:53 CHECK key=rig-86y attempt=2 args=

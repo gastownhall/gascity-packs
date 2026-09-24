@@ -1,0 +1,14 @@
+{
+  "step": "jev-review-tail.q1-gated.gate.item.1.synthesize",
+  "saw_root_plan": null,
+  "saw_root_summary": null,
+  "output_json": null,
+  "lanes_at_claim": "[{\"s\":\"jev-review-tail.q1-gated.gate.item.1.simplicity-review\",\"st\":\"closed\"}]"
+}
+{
+  "step": "q1-gated.gate",
+  "saw_root_plan": "{\"acceptance\":\"skip\",\"test_evidence\":\"skip\",\"simplicity\":\"run\"}",
+  "saw_root_summary": "implemented-by-rig-ubn",
+  "output_json": "{\"items\":[{\"acceptance\":\"skip\",\"test_evidence\":\"skip\",\"simplicity\":\"run\"}]}",
+  "lanes_at_claim": null
+}

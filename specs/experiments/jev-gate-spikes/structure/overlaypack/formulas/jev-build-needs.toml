@@ -1,0 +1,15 @@
+description = "Probe: a replaced step changes its needs (review now needs implement, skipping summarize)."
+formula = "jev-build-needs"
+version = 1
+extends = ["jev-build"]
+
+[[steps]]
+id = "review"
+title = "Review gate (rewired)"
+needs = ["implement"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "gate" }
+
+[steps.on_complete]
+for_each = "output.items"
+bond = "jev-review-tail"
+vars = { acceptance = "{item.acceptance}", test_evidence = "{item.test_evidence}", simplicity = "{item.simplicity}" }

@@ -1,0 +1,29 @@
+[pack]
+name = "spike"
+schema = 2
+
+[imports]
+[imports.bd]
+source = "https://github.com/gastownhall/gascity/tree/main/examples/bd"
+version = "sha:f895c0ff47d6ee9334ed282a416387eb5b084d24"
+[imports.core]
+source = "https://github.com/gastownhall/gascity/tree/main/internal/bootstrap/packs/core"
+version = "sha:f895c0ff47d6ee9334ed282a416387eb5b084d24"
+
+[imports.jover]
+source = "/tmp/gcsp-7HiB/jover"
+
+[patches]
+
+[[patches.agent]]
+name = "bd.dog"
+suspended = true
+
+[[patches.agent]]
+name = "claude"
+suspended = true
+
+[[patches.agent]]
+rig = "rig"
+name = "claude"
+suspended = true

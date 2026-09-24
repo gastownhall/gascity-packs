@@ -1,0 +1,45 @@
+description = "Spike virtual build contract (build-base lookalike)."
+formula = "sbuild-base"
+version = 1
+contract = "graph.v2"
+internal = true
+
+[vars]
+[vars.plan]
+description = "Review plan JSON the implement step writes onto the root."
+default = '{"acceptance":"run","test_evidence":"run","simplicity":"run"}'
+
+[[steps]]
+id = "prepare"
+title = "Prepare"
+metadata = { "gc.run_target" = "scripter", "spike.role" = "prepare" }
+
+[[steps]]
+id = "implement"
+title = "Implement"
+needs = ["prepare"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "implement", "spike.plan" = "{{plan}}" }
+
+[[steps]]
+id = "summarize-implementation"
+title = "Summarize implementation"
+needs = ["implement"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "summarize" }
+
+[[steps]]
+id = "review"
+title = "Review implementation (base)"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "base-review" }
+
+[[steps]]
+id = "finalize"
+title = "Finalize (base)"
+needs = ["review"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "base-finalize" }
+
+[[steps]]
+id = "publish"
+title = "Publish (base)"
+needs = ["finalize"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "base-publish" }

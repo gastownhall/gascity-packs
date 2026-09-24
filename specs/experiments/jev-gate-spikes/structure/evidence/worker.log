@@ -1,0 +1,539 @@
+1790283866.478 START pid=39317 session=rig--jover__scripter-2-pool
+1790283866.478 START pid=39315 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283868.305 CLAIM id=rig-zav step=q1-gated.implement role=implement root=rig-9q1
+✓ Updated issue: rig-9q1 — q1-gated
+1790283868.613 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790283868.626 ROOTWRITE root=rig-9q1 rc=0 plan={"acceptance":"run","test_evidence":"run","simplicity":"run"}
+gc bd: work-record gate (warn-only): close of rig-zav: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-zav — Implement (writes plan onto root)
+1790283868.967 CLOSED id=rig-zav step=q1-gated.implement rc=0
+1790283876.066 START pid=40397 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283877.718 CLAIM id=rig-9my step=q1-gated.gate role=gate root=rig-9q1
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-9my — Review gate
+1790283878.304 GATE items={"items":[{"acceptance":"run","test_evidence":"run","simplicity":"run"}]} saw_summary=implemented-by-rig-zav rc=0
+gc bd: work-record gate (warn-only): close of rig-9my: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-9my — Review gate
+1790283878.645 CLOSED id=rig-9my step=q1-gated.gate rc=0
+1790283882.301 START pid=41296 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283884.164 CLAIM id=rig-1vb step=jev-review-tail.q1-gated.gate.item.1.acceptance-review role=lane root=rig-9q1
+gc bd: work-record gate (warn-only): close of rig-1vb: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-1vb — Lane: acceptance
+1790283886.490 CLOSED id=rig-1vb step=jev-review-tail.q1-gated.gate.item.1.acceptance-review rc=0
+1790283887.520 START pid=42136 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790283890.295 CLAIM id=rig-382 step=jev-review-tail.q1-gated.gate.item.1.simplicity-review role=lane root=rig-9q1
+gc bd: work-record gate (warn-only): close of rig-382: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-382 — Lane: simplicity
+1790283893.796 CLOSED id=rig-382 step=jev-review-tail.q1-gated.gate.item.1.simplicity-review rc=0
+1790283897.789 START pid=43382 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283900.613 CLAIM id=rig-cch step=jev-review-tail.q1-gated.gate.item.1.test-evidence-review role=lane root=rig-9q1
+gc bd: work-record gate (warn-only): close of rig-cch: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-cch — Lane: test evidence
+1790283906.286 CLOSED id=rig-cch step=jev-review-tail.q1-gated.gate.item.1.test-evidence-review rc=0
+1790283918.406 START pid=46106 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283921.361 CLAIM id=rig-61s step=jev-review-tail.q1-gated.gate.item.1.synthesize role=synthesize root=rig-9q1
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-61s — Synthesize review
+1790283922.073 SYNTH lanes_at_claim=[{"s":"jev-review-tail.q1-gated.gate.item.1.acceptance-review","st":"closed"},{"s":"jev-review-tail.q1-gated.gate.item.1.simplicity-review","st":"closed"},{"s":"jev-review-tail.q1-gated.gate.item.1.test-evidence-review","st":"closed"}]
+gc bd: work-record gate (warn-only): close of rig-61s: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-61s — Synthesize review
+1790283922.614 CLOSED id=rig-61s step=jev-review-tail.q1-gated.gate.item.1.synthesize rc=0
+1790283926.618 START pid=47442 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283928.393 CLAIM id=rig-qba step=jev-review-tail.q1-gated.gate.item.1.apply role=apply root=rig-9q1
+gc bd: work-record gate (warn-only): close of rig-qba: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-qba — Apply review findings
+1790283928.729 CLOSED id=rig-qba step=jev-review-tail.q1-gated.gate.item.1.apply rc=0
+1790283932.049 START pid=48266 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283933.835 CLAIM id=rig-npm step=jev-review-tail.q1-gated.gate.item.1.finalize role=finalize root=rig-9q1
+gc bd: work-record gate (warn-only): close of rig-npm: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-npm — Finalize build
+1790283934.160 CLOSED id=rig-npm step=jev-review-tail.q1-gated.gate.item.1.finalize rc=0
+1790283937.927 START pid=49163 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283939.641 CLAIM id=rig-6bl step=jev-review-tail.q1-gated.gate.item.1.publish role=publish root=rig-9q1
+gc bd: work-record gate (warn-only): close of rig-6bl: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-6bl — Publish build
+1790283939.958 CLOSED id=rig-6bl step=jev-review-tail.q1-gated.gate.item.1.publish rc=0
+1790283943.170 START pid=50027 session=rig--jover__scripter-1-pool
+1790283944.961 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790283971.519 START pid=53257 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790283975.627 CLAIM id=rig-ubn step=q1-gated.implement role=implement root=rig-s09
+✓ Updated issue: rig-s09 — q1-gated
+1790283976.235 ROOTWRITE root=rig-s09 rc=0 plan={"acceptance":"skip","test_evidence":"skip","simplicity":"run"}
+gc bd: work-record gate (warn-only): close of rig-ubn: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-ubn — Implement (writes plan onto root)
+1790283977.187 CLOSED id=rig-ubn step=q1-gated.implement rc=0
+1790283999.098 START pid=55720 session=rig--jover__scripter-2-pool
+1790283999.107 START pid=55722 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284003.773 CLAIM id=rig-ceh step=q1-gated.gate role=gate root=rig-s09
+gc bd: answering from the rig "rig" store
+1790284004.753 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+✓ Updated issue: rig-ceh — Review gate
+1790284005.264 GATE items={"items":[{"acceptance":"skip","test_evidence":"skip","simplicity":"run"}]} saw_summary=implemented-by-rig-ubn rc=0
+gc bd: work-record gate (warn-only): close of rig-ceh: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-ceh — Review gate
+1790284006.015 CLOSED id=rig-ceh step=q1-gated.gate rc=0
+1790284020.090 START pid=58115 session=rig--jover__scripter-1-pool
+1790284020.097 START pid=58117 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284024.218 CLAIM id=rig-8fu step=jev-review-tail.q1-gated.gate.item.1.simplicity-review role=lane root=rig-s09
+1790284024.621 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+gc bd: work-record gate (warn-only): close of rig-8fu: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-8fu — Lane: simplicity
+1790284028.327 CLOSED id=rig-8fu step=jev-review-tail.q1-gated.gate.item.1.simplicity-review rc=0
+1790284032.537 START pid=59676 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284035.680 CLAIM id=rig-2ol step=jev-review-tail.q1-gated.gate.item.1.synthesize role=synthesize root=rig-s09
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-2ol — Synthesize review
+1790284036.753 SYNTH lanes_at_claim=[{"s":"jev-review-tail.q1-gated.gate.item.1.simplicity-review","st":"closed"}]
+gc bd: work-record gate (warn-only): close of rig-2ol: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-2ol — Synthesize review
+1790284037.735 CLOSED id=rig-2ol step=jev-review-tail.q1-gated.gate.item.1.synthesize rc=0
+1790284051.769 START pid=61585 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284055.859 CLAIM id=rig-ip4 step=jev-review-tail.q1-gated.gate.item.1.apply role=apply root=rig-s09
+gc bd: work-record gate (warn-only): close of rig-ip4: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-ip4 — Apply review findings
+1790284056.939 CLOSED id=rig-ip4 step=jev-review-tail.q1-gated.gate.item.1.apply rc=0
+1790284067.964 START pid=62870 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284072.453 CLAIM id=rig-w2f step=jev-review-tail.q1-gated.gate.item.1.finalize role=finalize root=rig-s09
+gc bd: work-record gate (warn-only): close of rig-w2f: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-w2f — Finalize build
+1790284073.176 CLOSED id=rig-w2f step=jev-review-tail.q1-gated.gate.item.1.finalize rc=0
+1790284083.460 START pid=64675 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284088.571 CLAIM id=rig-6r0 step=jev-review-tail.q1-gated.gate.item.1.publish role=publish root=rig-s09
+gc bd: work-record gate (warn-only): close of rig-6r0: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-6r0 — Publish build
+1790284089.595 CLOSED id=rig-6r0 step=jev-review-tail.q1-gated.gate.item.1.publish rc=0
+1790284100.520 START pid=66122 session=rig--jover__scripter-1-pool
+1790284105.954 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284122.948 START pid=68247 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284127.213 CLAIM id=rig-5s4 step=q1-gated.implement role=implement root=rig-qax
+✓ Updated issue: rig-qax — q1-gated
+1790284127.975 ROOTWRITE root=rig-qax rc=0 plan={"acceptance":"skip","test_evidence":"skip","simplicity":"skip"}
+gc bd: work-record gate (warn-only): close of rig-5s4: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-5s4 — Implement (writes plan onto root)
+1790284128.695 CLOSED id=rig-5s4 step=q1-gated.implement rc=0
+1790284142.694 START pid=70223 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284146.877 CLAIM id=rig-gve step=q1-gated.gate role=gate root=rig-qax
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-gve — Review gate
+1790284147.864 GATE items={"items":[{"acceptance":"skip","test_evidence":"skip","simplicity":"skip"}]} saw_summary=implemented-by-rig-5s4 rc=0
+gc bd: work-record gate (warn-only): close of rig-gve: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-gve — Review gate
+1790284148.308 CLOSED id=rig-gve step=q1-gated.gate rc=0
+1790284155.540 START pid=72143 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284158.559 CLAIM id=rig-xja step=jev-review-tail.q1-gated.gate.item.1.synthesize role=synthesize root=rig-qax
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-xja — Synthesize review
+1790284159.188 SYNTH lanes_at_claim=[]
+gc bd: work-record gate (warn-only): close of rig-xja: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-xja — Synthesize review
+1790284159.822 CLOSED id=rig-xja step=jev-review-tail.q1-gated.gate.item.1.synthesize rc=0
+1790284165.326 START pid=73449 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284168.239 CLAIM id=rig-50z step=jev-review-tail.q1-gated.gate.item.1.apply role=apply root=rig-qax
+gc bd: work-record gate (warn-only): close of rig-50z: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-50z — Apply review findings
+1790284168.879 CLOSED id=rig-50z step=jev-review-tail.q1-gated.gate.item.1.apply rc=0
+1790284175.222 START pid=74734 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284178.661 CLAIM id=rig-tvr step=jev-review-tail.q1-gated.gate.item.1.finalize role=finalize root=rig-qax
+gc bd: work-record gate (warn-only): close of rig-tvr: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-tvr — Finalize build
+1790284179.337 CLOSED id=rig-tvr step=jev-review-tail.q1-gated.gate.item.1.finalize rc=0
+1790284185.559 START pid=75983 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284189.048 CLAIM id=rig-dn4 step=jev-review-tail.q1-gated.gate.item.1.publish role=publish root=rig-qax
+gc bd: work-record gate (warn-only): close of rig-dn4: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-dn4 — Publish build
+1790284189.708 CLOSED id=rig-dn4 step=jev-review-tail.q1-gated.gate.item.1.publish rc=0
+1790284196.404 START pid=77573 session=rig--jover__scripter-2-pool
+1790284199.727 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284231.106 START pid=81701 session=rig--jover__scripter-2-pool
+1790284231.121 START pid=81705 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284234.635 CLAIM id=rig-w14 step=jev-build.prepare role=prepare root=rig-mkg
+gc bd: work-record gate (warn-only): close of rig-w14: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+1790284235.198 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+✓ Updated issue: rig-w14 — Prepare
+1790284235.347 CLOSED id=rig-w14 step=jev-build.prepare rc=0
+1790284252.261 START pid=84209 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284255.419 CLAIM id=rig-qfc step=jev-build.implement role=implement root=rig-mkg
+✓ Updated issue: rig-mkg — jev-build
+1790284255.921 ROOTWRITE root=rig-mkg rc=0 plan={"acceptance":"run","test_evidence":"run","simplicity":"run"}
+gc bd: work-record gate (warn-only): close of rig-qfc: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-qfc — Implement
+1790284256.420 CLOSED id=rig-qfc step=jev-build.implement rc=0
+1790284262.338 START pid=85739 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284265.665 CLAIM id=rig-4vh step=jev-build.summarize-implementation role=summarize root=rig-mkg
+gc bd: work-record gate (warn-only): close of rig-4vh: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-4vh — Summarize implementation
+1790284266.416 CLOSED id=rig-4vh step=jev-build.summarize-implementation rc=0
+1790284272.707 START pid=86917 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284276.142 CLAIM id=rig-wog step=jev-build.review role=gate root=rig-mkg
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-wog — Review gate
+1790284277.142 GATE items={"items":[{"acceptance":"run","test_evidence":"run","simplicity":"run"}]} saw_summary=implemented-by-rig-qfc rc=0
+gc bd: work-record gate (warn-only): close of rig-wog: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-wog — Review gate
+1790284277.772 CLOSED id=rig-wog step=jev-build.review rc=0
+1790284292.297 START pid=89466 session=rig--jover__scripter-1-pool
+1790284292.302 START pid=89468 session=rig--jover__scripter-3-pool
+1790284292.303 START pid=89464 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284295.174 CLAIM id=rig-18v step=jev-review-tail.jev-build.review.item.1.acceptance-review role=lane root=rig-mkg
+gc bd: answering from the rig "rig" store
+1790284295.777 CLAIM id=rig-4un step=jev-review-tail.jev-build.review.item.1.test-evidence-review role=lane root=rig-mkg
+gc bd: answering from the rig "rig" store
+1790284296.137 CLAIM id=rig-o1c step=jev-review-tail.jev-build.review.item.1.simplicity-review role=lane root=rig-mkg
+gc bd: work-record gate (warn-only): close of rig-18v: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-18v — Lane: acceptance
+1790284297.726 CLOSED id=rig-18v step=jev-review-tail.jev-build.review.item.1.acceptance-review rc=0
+gc bd: work-record gate (warn-only): close of rig-o1c: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-o1c — Lane: simplicity
+1790284299.797 CLOSED id=rig-o1c step=jev-review-tail.jev-build.review.item.1.simplicity-review rc=0
+gc bd: work-record gate (warn-only): close of rig-4un: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-4un — Lane: test evidence
+1790284301.382 CLOSED id=rig-4un step=jev-review-tail.jev-build.review.item.1.test-evidence-review rc=0
+1790284307.753 START pid=91775 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284310.823 CLAIM id=rig-tnv step=jev-review-tail.jev-build.review.item.1.synthesize role=synthesize root=rig-mkg
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-tnv — Synthesize review
+1790284311.488 SYNTH lanes_at_claim=[{"s":"jev-review-tail.jev-build.review.item.1.acceptance-review","st":"closed"},{"s":"jev-review-tail.jev-build.review.item.1.test-evidence-review","st":"closed"},{"s":"jev-review-tail.jev-build.review.item.1.simplicity-review","st":"closed"}]
+gc bd: work-record gate (warn-only): close of rig-tnv: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-tnv — Synthesize review
+1790284312.009 CLOSED id=rig-tnv step=jev-review-tail.jev-build.review.item.1.synthesize rc=0
+1790284320.571 START pid=93518 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284323.568 CLAIM id=rig-hpg step=jev-review-tail.jev-build.review.item.1.apply role=apply root=rig-mkg
+gc bd: work-record gate (warn-only): close of rig-hpg: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-hpg — Apply review findings
+1790284324.139 CLOSED id=rig-hpg step=jev-review-tail.jev-build.review.item.1.apply rc=0
+1790284330.436 START pid=94727 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284332.171 CLAIM id=rig-oow step=jev-review-tail.jev-build.review.item.1.finalize role=finalize root=rig-mkg
+gc bd: work-record gate (warn-only): close of rig-oow: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-oow — Finalize build
+1790284332.502 CLOSED id=rig-oow step=jev-review-tail.jev-build.review.item.1.finalize rc=0
+1790284335.726 START pid=95643 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284337.351 CLAIM id=rig-cyh step=jev-review-tail.jev-build.review.item.1.publish role=publish root=rig-mkg
+gc bd: work-record gate (warn-only): close of rig-cyh: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-cyh — Publish build
+1790284337.686 CLOSED id=rig-cyh step=jev-review-tail.jev-build.review.item.1.publish rc=0
+1790284341.055 START pid=96774 session=rig--jover__scripter-1-pool
+1790284342.833 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284350.538 START pid=98628 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284352.350 CLAIM id=rig-chy step=jev-build.prepare role=prepare root=rig-ff5
+gc bd: work-record gate (warn-only): close of rig-chy: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-chy — Prepare
+1790284352.795 CLOSED id=rig-chy step=jev-build.prepare rc=0
+1790284357.495 START pid=99911 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284359.228 CLAIM id=rig-51r step=jev-build.implement role=implement root=rig-ff5
+✓ Updated issue: rig-ff5 — jev-build
+1790284359.529 ROOTWRITE root=rig-ff5 rc=0 plan={"acceptance":"skip","test_evidence":"run","simplicity":"skip"}
+gc bd: work-record gate (warn-only): close of rig-51r: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-51r — Implement
+1790284359.869 CLOSED id=rig-51r step=jev-build.implement rc=0
+1790284364.972 START pid=1794 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284366.584 CLAIM id=rig-0en step=jev-build.summarize-implementation role=summarize root=rig-ff5
+gc bd: work-record gate (warn-only): close of rig-0en: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-0en — Summarize implementation
+1790284366.901 CLOSED id=rig-0en step=jev-build.summarize-implementation rc=0
+1790284370.063 START pid=2845 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284371.896 CLAIM id=rig-d8e step=jev-build.review role=gate root=rig-ff5
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-d8e — Review gate
+1790284372.590 GATE items={"items":[{"acceptance":"skip","test_evidence":"run","simplicity":"skip"}]} saw_summary=implemented-by-rig-51r rc=0
+gc bd: work-record gate (warn-only): close of rig-d8e: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-d8e — Review gate
+1790284373.747 CLOSED id=rig-d8e step=jev-build.review rc=0
+1790284381.145 START pid=5238 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284382.830 CLAIM id=rig-dae step=jev-review-tail.jev-build.review.item.1.test-evidence-review role=lane root=rig-ff5
+gc bd: work-record gate (warn-only): close of rig-dae: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-dae — Lane: test evidence
+1790284388.174 CLOSED id=rig-dae step=jev-review-tail.jev-build.review.item.1.test-evidence-review rc=0
+1790284398.587 START pid=8355 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284400.235 CLAIM id=rig-ppl step=jev-review-tail.jev-build.review.item.1.synthesize role=synthesize root=rig-ff5
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-ppl — Synthesize review
+1790284400.637 SYNTH lanes_at_claim=[{"s":"jev-review-tail.jev-build.review.item.1.test-evidence-review","st":"closed"}]
+gc bd: work-record gate (warn-only): close of rig-ppl: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-ppl — Synthesize review
+1790284400.966 CLOSED id=rig-ppl step=jev-review-tail.jev-build.review.item.1.synthesize rc=0
+1790284406.096 START pid=9667 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284407.810 CLAIM id=rig-pvy step=jev-review-tail.jev-build.review.item.1.apply role=apply root=rig-ff5
+gc bd: work-record gate (warn-only): close of rig-pvy: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-pvy — Apply review findings
+1790284408.220 CLOSED id=rig-pvy step=jev-review-tail.jev-build.review.item.1.apply rc=0
+1790284411.890 START pid=10816 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284413.543 CLAIM id=rig-jzl step=jev-review-tail.jev-build.review.item.1.finalize role=finalize root=rig-ff5
+gc bd: work-record gate (warn-only): close of rig-jzl: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-jzl — Finalize build
+1790284413.875 CLOSED id=rig-jzl step=jev-review-tail.jev-build.review.item.1.finalize rc=0
+1790284419.072 START pid=12262 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284422.019 CLAIM id=rig-jqv step=jev-review-tail.jev-build.review.item.1.publish role=publish root=rig-ff5
+gc bd: work-record gate (warn-only): close of rig-jqv: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-jqv — Publish build
+1790284422.400 CLOSED id=rig-jqv step=jev-review-tail.jev-build.review.item.1.publish rc=0
+1790284425.571 START pid=13414 session=rig--jover__scripter-1-pool
+1790284427.717 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284447.122 START pid=16802 session=rig--jover__scripter-2-pool
+1790284447.122 START pid=16801 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284448.983 CLAIM id=rig-nty step=jev-build-nodrop.prepare role=prepare root=rig-cbm
+gc bd: work-record gate (warn-only): close of rig-nty: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+1790284449.264 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+✓ Updated issue: rig-nty — Prepare
+1790284449.365 CLOSED id=rig-nty step=jev-build-nodrop.prepare rc=0
+1790284468.476 START pid=19984 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284470.578 CLAIM id=rig-np5 step=jev-build-nodrop.implement role=implement root=rig-cbm
+✓ Updated issue: rig-cbm — jev-build-nodrop
+1790284470.900 ROOTWRITE root=rig-cbm rc=0 plan={"acceptance":"run","test_evidence":"run","simplicity":"run"}
+gc bd: work-record gate (warn-only): close of rig-np5: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-np5 — Implement
+1790284471.266 CLOSED id=rig-np5 step=jev-build-nodrop.implement rc=0
+1790284475.103 START pid=21308 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284477.044 CLAIM id=rig-cp1 step=jev-build-nodrop.summarize-implementation role=summarize root=rig-cbm
+gc bd: work-record gate (warn-only): close of rig-cp1: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-cp1 — Summarize implementation
+1790284477.371 CLOSED id=rig-cp1 step=jev-build-nodrop.summarize-implementation rc=0
+1790284480.890 START pid=22249 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284482.607 CLAIM id=rig-hby step=jev-build-nodrop.review role=gate root=rig-cbm
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-hby — Review gate
+1790284483.252 GATE items={"items":[{"acceptance":"run","test_evidence":"run","simplicity":"run"}]} saw_summary=implemented-by-rig-np5 rc=0
+gc bd: work-record gate (warn-only): close of rig-hby: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-hby — Review gate
+1790284483.589 CLOSED id=rig-hby step=jev-build-nodrop.review rc=0
+1790284488.949 START pid=23598 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284490.853 CLAIM id=rig-4k9 step=jev-build-nodrop.finalize role=basic-finalize root=rig-cbm
+gc bd: work-record gate (warn-only): close of rig-4k9: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-4k9 — Finalize (basic)
+1790284491.217 CLOSED id=rig-4k9 step=jev-build-nodrop.finalize rc=0
+1790284497.515 START pid=24821 session=rig--jover__scripter-1-pool
+1790284497.515 START pid=24823 session=rig--jover__scripter-3-pool
+gc bd: answering from the rig "rig" store
+1790284501.165 CLAIM id=rig-yaw step=jev-build-nodrop.publish role=basic-publish root=rig-cbm
+gc bd: answering from the rig "rig" store
+gc bd: work-record gate (warn-only): close of rig-yaw: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+1790284501.467 CLAIM id=rig-6b2 step=jev-review-tail.jev-build-nodrop.review.item.1.acceptance-review role=lane root=rig-cbm
+✓ Updated issue: rig-yaw — Publish (basic)
+1790284501.613 CLOSED id=rig-yaw step=jev-build-nodrop.publish rc=0
+gc bd: work-record gate (warn-only): close of rig-6b2: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-6b2 — Lane: acceptance
+1790284503.838 CLOSED id=rig-6b2 step=jev-review-tail.jev-build-nodrop.review.item.1.acceptance-review rc=0
+1790284511.386 START pid=28124 session=rig--jover__scripter-1-pool
+1790284511.386 START pid=28118 session=rig--jover__scripter-3-pool
+gc bd: answering from the rig "rig" store
+1790284516.198 CLAIM id=rig-cbg step=jev-review-tail.jev-build-nodrop.review.item.1.test-evidence-review role=lane root=rig-cbm
+gc bd: answering from the rig "rig" store
+1790284516.456 CLAIM id=rig-mc5 step=jev-review-tail.jev-build-nodrop.review.item.1.simplicity-review role=lane root=rig-cbm
+gc bd: work-record gate (warn-only): close of rig-mc5: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-mc5 — Lane: simplicity
+1790284519.998 CLOSED id=rig-mc5 step=jev-review-tail.jev-build-nodrop.review.item.1.simplicity-review rc=0
+gc bd: work-record gate (warn-only): close of rig-cbg: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-cbg — Lane: test evidence
+1790284521.544 CLOSED id=rig-cbg step=jev-review-tail.jev-build-nodrop.review.item.1.test-evidence-review rc=0
+1790284530.930 START pid=31225 session=rig--jover__scripter-3-pool
+1790284530.931 START pid=31228 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284532.699 CLAIM id=rig-ool step=jev-review-tail.jev-build-nodrop.review.item.1.synthesize role=synthesize root=rig-cbm
+gc bd: answering from the rig "rig" store
+1790284532.980 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+✓ Updated issue: rig-ool — Synthesize review
+1790284533.115 SYNTH lanes_at_claim=[{"s":"jev-review-tail.jev-build-nodrop.review.item.1.acceptance-review","st":"closed"},{"s":"jev-review-tail.jev-build-nodrop.review.item.1.test-evidence-review","st":"closed"},{"s":"jev-review-tail.jev-build-nodrop.review.item.1.simplicity-review","st":"closed"}]
+gc bd: work-record gate (warn-only): close of rig-ool: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-ool — Synthesize review
+1790284533.486 CLOSED id=rig-ool step=jev-review-tail.jev-build-nodrop.review.item.1.synthesize rc=0
+1790284540.627 START pid=33138 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284542.253 CLAIM id=rig-9hh step=jev-review-tail.jev-build-nodrop.review.item.1.apply role=apply root=rig-cbm
+gc bd: work-record gate (warn-only): close of rig-9hh: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-9hh — Apply review findings
+1790284542.594 CLOSED id=rig-9hh step=jev-review-tail.jev-build-nodrop.review.item.1.apply rc=0
+1790284545.631 START pid=33975 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284547.345 CLAIM id=rig-za8 step=jev-review-tail.jev-build-nodrop.review.item.1.finalize role=finalize root=rig-cbm
+gc bd: work-record gate (warn-only): close of rig-za8: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-za8 — Finalize build
+1790284547.711 CLOSED id=rig-za8 step=jev-review-tail.jev-build-nodrop.review.item.1.finalize rc=0
+1790284551.189 START pid=35041 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284552.991 CLAIM id=rig-gqa step=jev-review-tail.jev-build-nodrop.review.item.1.publish role=publish root=rig-cbm
+gc bd: work-record gate (warn-only): close of rig-gqa: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-gqa — Publish build
+1790284553.354 CLOSED id=rig-gqa step=jev-review-tail.jev-build-nodrop.review.item.1.publish rc=0
+1790284556.723 START pid=36077 session=rig--jover__scripter-1-pool
+1790284558.566 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284584.556 START pid=39887 session=rig--jover__scripter-2-pool
+1790284584.557 START pid=39888 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284586.178 CLAIM id=rig-cd2 step=q1-gated-checked.implement role=implement root=rig-qg0
+1790284586.468 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+✓ Updated issue: rig-qg0 — q1-gated-checked
+1790284586.502 ROOTWRITE root=rig-qg0 rc=0 plan={"acceptance":"run","test_evidence":"skip","simplicity":"skip"}
+gc bd: work-record gate (warn-only): close of rig-cd2: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-cd2 — Implement (writes plan onto root)
+1790284586.864 CLOSED id=rig-cd2 step=q1-gated-checked.implement rc=0
+1790284594.182 START pid=41780 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284595.901 CLAIM id=rig-iv1 step=q1-gated-checked.gate role=gate root=rig-qg0
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-iv1 — Review gate
+1790284596.403 GATE items={"items":[{"acceptance":"run","test_evidence":"skip","simplicity":"skip"}]} saw_summary=implemented-by-rig-cd2 rc=0
+gc bd: work-record gate (warn-only): close of rig-iv1: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-iv1 — Review gate
+1790284596.709 CLOSED id=rig-iv1 step=q1-gated-checked.gate rc=0
+1790284600.210 START pid=43103 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284602.040 CLAIM id=rig-4t7 step=jev-review-tail-checked.q1-gated-checked.gate.item.1.acceptance-review role=lane root=rig-qg0
+gc bd: work-record gate (warn-only): close of rig-4t7: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-4t7 — Lane: acceptance
+1790284604.636 CLOSED id=rig-4t7 step=jev-review-tail-checked.q1-gated-checked.gate.item.1.acceptance-review rc=0
+1790284614.883 START pid=44805 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284617.197 CLAIM id=rig-lbv step=jev-review-tail-checked.q1-gated-checked.gate.item.1.synthesize role=synthesize root=rig-qg0
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-lbv — Synthesize review
+1790284617.925 SYNTH lanes_at_claim=[{"s":"jev-review-tail-checked.q1-gated-checked.gate.item.1.acceptance-review","st":"closed"}]
+gc bd: work-record gate (warn-only): close of rig-lbv: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-lbv — Synthesize review
+1790284618.424 CLOSED id=rig-lbv step=jev-review-tail-checked.q1-gated-checked.gate.item.1.synthesize rc=0
+1790284625.092 START pid=47413 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284626.949 CLAIM id=rig-5dy step=jev-review-tail-checked.q1-gated-checked.gate.item.1.apply role=apply root=rig-qg0
+gc bd: work-record gate (warn-only): close of rig-5dy: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-5dy — Apply review findings
+1790284627.325 CLOSED id=rig-5dy step=jev-review-tail-checked.q1-gated-checked.gate.item.1.apply rc=0
+1790284632.086 START pid=48992 session=rig--jover__scripter-2-pool
+gc bd: answering from the rig "rig" store
+1790284634.225 CLAIM id=rig-l2v step=q1-gated-checked.gate.item.1.finalize.iteration.1 role=finalize root=rig-qg0
+gc bd: work-record gate (warn-only): close of rig-l2v: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-l2v — Finalize build
+1790284634.905 CLOSED id=rig-l2v step=q1-gated-checked.gate.item.1.finalize.iteration.1 rc=0
+1790284639.465 START pid=50756 session=rig--jover__scripter-2-pool
+1790284641.439 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284644.827 START pid=51554 session=rig--jover__scripter-2-pool
+1790284646.893 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284649.991 START pid=52370 session=rig--jover__scripter-2-pool
+1790284652.174 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284655.475 START pid=53490 session=rig--jover__scripter-2-pool
+1790284657.210 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284660.446 START pid=54427 session=rig--jover__scripter-2-pool
+1790284662.308 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284821.107 START pid=68908 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284823.602 CLAIM id=rig-hy4 step=jev-review-tail-checked.q1-gated-checked.gate.item.1.finalize.iteration.2 role=finalize root=rig-qg0
+✓ Updated issue: rig-hy4 — Finalize build
+1790284824.463 CLOSED id=rig-hy4 step=jev-review-tail-checked.q1-gated-checked.gate.item.1.finalize.iteration.2 rc=0
+1790284830.593 START pid=70260 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284832.410 CLAIM id=rig-jav step=jev-review-tail-checked.q1-gated-checked.gate.item.1.publish role=publish root=rig-qg0
+gc bd: work-record gate (warn-only): close of rig-jav: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-jav — Publish build
+1790284832.911 CLOSED id=rig-jav step=jev-review-tail-checked.q1-gated-checked.gate.item.1.publish rc=0
+1790284839.170 START pid=71860 session=rig--jover__scripter-1-pool
+1790284841.085 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284849.902 START pid=73368 session=rig--jover__scripter-1-pool
+1790284851.593 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284869.000 START pid=76308 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790284870.574 CLAIM id=rig-2kf step=implement.iteration.1 role=implement root=rig-86y
+✓ Updated issue: rig-86y — q1-gated-checked-q
+1790284870.880 ROOTWRITE root=rig-86y rc=0 plan={"acceptance":"skip","test_evidence":"skip","simplicity":"skip"}
+gc bd: work-record gate (warn-only): close of rig-2kf: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-2kf — Implement (writes plan onto root)
+1790284871.233 CLOSED id=rig-2kf step=implement.iteration.1 rc=0
+1790284875.717 START pid=77504 session=rig--jover__scripter-1-pool
+1790284877.635 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284883.047 START pid=78618 session=rig--jover__scripter-1-pool
+1790284885.621 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790284889.961 START pid=79560 session=rig--jover__scripter-1-pool
+1790284892.601 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790285099.599 START pid=10170 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790285101.267 CLAIM id=rig-1k1 step=q1-gated-checked-q.implement.iteration.2 role=implement root=rig-86y
+✓ Updated issue: rig-86y — q1-gated-checked-q
+1790285101.561 ROOTWRITE root=rig-86y rc=0 plan={"acceptance":"skip","test_evidence":"skip","simplicity":"skip"}
+✓ Updated issue: rig-1k1 — Implement (writes plan onto root)
+1790285101.884 CLOSED id=rig-1k1 step=q1-gated-checked-q.implement.iteration.2 rc=0
+1790285109.240 START pid=12231 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790285110.950 CLAIM id=rig-6zy step=q1-gated-checked-q.gate role=gate root=rig-86y
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-6zy — Review gate
+1790285111.465 GATE items={"items":[{"acceptance":"skip","test_evidence":"skip","simplicity":"skip"}]} saw_summary=implemented-by-rig-1k1 rc=0
+gc bd: work-record gate (warn-only): close of rig-6zy: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-6zy — Review gate
+1790285111.797 CLOSED id=rig-6zy step=q1-gated-checked-q.gate rc=0
+1790285119.285 START pid=14709 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790285121.047 CLAIM id=rig-ul4 step=jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.synthesize role=synthesize root=rig-86y
+gc bd: answering from the rig "rig" store
+✓ Updated issue: rig-ul4 — Synthesize review
+1790285121.468 SYNTH lanes_at_claim=[]
+gc bd: work-record gate (warn-only): close of rig-ul4: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-ul4 — Synthesize review
+1790285121.778 CLOSED id=rig-ul4 step=jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.synthesize rc=0
+1790285125.592 START pid=15671 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790285127.278 CLAIM id=rig-qr0 step=jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.apply role=apply root=rig-86y
+gc bd: work-record gate (warn-only): close of rig-qr0: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-qr0 — Apply review findings
+1790285127.649 CLOSED id=rig-qr0 step=jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.apply rc=0
+1790285131.298 START pid=16809 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790285132.994 CLAIM id=rig-ayg step=q1-gated-checked-q.gate.item.1.finalize.iteration.1 role=finalize root=rig-86y
+gc bd: work-record gate (warn-only): close of rig-ayg: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-ayg — Finalize build
+1790285133.351 CLOSED id=rig-ayg step=q1-gated-checked-q.gate.item.1.finalize.iteration.1 rc=0
+1790285137.375 START pid=18146 session=rig--jover__scripter-1-pool
+1790285139.227 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}
+1790285147.172 START pid=19839 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790285151.192 CLAIM id=rig-13i step=jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.finalize.iteration.2 role=finalize root=rig-86y
+✓ Updated issue: rig-13i — Finalize build
+1790285151.803 CLOSED id=rig-13i step=jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.finalize.iteration.2 rc=0
+1790285156.009 START pid=21225 session=rig--jover__scripter-1-pool
+gc bd: answering from the rig "rig" store
+1790285157.719 CLAIM id=rig-chw step=jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.publish role=publish root=rig-86y
+gc bd: work-record gate (warn-only): close of rig-chw: missing gc.work_outcome (want one of shipped|no-op|blocked|abandoned)
+✓ Updated issue: rig-chw — Publish build
+1790285158.066 CLOSED id=rig-chw step=jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.publish rc=0
+1790285161.295 START pid=22233 session=rig--jover__scripter-1-pool
+1790285163.247 NOWORK action=drain raw={"schema_version":"1","ok":true,"command":"hook","action":"drain","reason":"no_work","drain_acknowledged":true}

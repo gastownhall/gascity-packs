@@ -1,0 +1,5 @@
+[pack]
+name = "jbase"
+version = "0.0.1"
+schema = 2
+description = "Spike base pack: build-base/build-basic lookalike formulas plus a script worker."

@@ -1,0 +1,14 @@
+{
+  "step": "jev-review-tail.jev-build.review.item.1.synthesize",
+  "saw_root_plan": null,
+  "saw_root_summary": null,
+  "output_json": null,
+  "lanes_at_claim": "[{\"s\":\"jev-review-tail.jev-build.review.item.1.test-evidence-review\",\"st\":\"closed\"}]"
+}
+{
+  "step": "jev-build.review",
+  "saw_root_plan": "{\"acceptance\":\"skip\",\"test_evidence\":\"run\",\"simplicity\":\"skip\"}",
+  "saw_root_summary": "implemented-by-rig-51r",
+  "output_json": "{\"items\":[{\"acceptance\":\"skip\",\"test_evidence\":\"run\",\"simplicity\":\"skip\"}]}",
+  "lanes_at_claim": null
+}

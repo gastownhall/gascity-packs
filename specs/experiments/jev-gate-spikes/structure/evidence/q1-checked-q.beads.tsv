@@ -1,0 +1,15 @@
+rig-2kf	closed	implement.iteration.1	-	pass	2026-09-24T21:21:11Z	rig/jover.scripter
+rig-1k1	closed	q1-gated-checked-q.implement.iteration.2	task	pass	2026-09-24T21:25:02Z	rig/jover.scripter
+rig-1g0	closed	q1-gated-checked-q.implement	ralph	pass	2026-09-24T21:25:04Z	rig/core.control-dispatcher
+rig-6zy	closed	q1-gated-checked-q.gate	-	pass	2026-09-24T21:25:12Z	rig/jover.scripter
+rig-ul4	closed	jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.synthesize	-	pass	2026-09-24T21:25:22Z	rig/jover.scripter
+rig-qr0	closed	jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.apply	-	pass	2026-09-24T21:25:28Z	rig/jover.scripter
+rig-ayg	closed	q1-gated-checked-q.gate.item.1.finalize.iteration.1	-	pass	2026-09-24T21:25:33Z	rig/jover.scripter
+rig-13i	closed	jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.finalize.iteration.2	task	pass	2026-09-24T21:25:52Z	rig/jover.scripter
+rig-0e3	closed	jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.finalize	ralph	pass	2026-09-24T21:25:54Z	rig/core.control-dispatcher
+rig-chw	closed	jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.publish	-	pass	2026-09-24T21:25:58Z	rig/jover.scripter
+rig-lro	closed	q1-gated-checked-q.gate-fanout	fanout	pass	2026-09-24T21:26:01Z	rig/core.control-dispatcher
+rig-7sv	closed	jev-review-tail-checked-q.q1-gated-checked-q.gate.item.1.finalize.spec	spec	pass	2026-09-24T21:26:05Z	-
+rig-86y	closed	(root)	workflow	pass	2026-09-24T21:26:05Z	rig/jover.scripter
+rig-ghh	closed	q1-gated-checked-q.implement.spec	spec	pass	2026-09-24T21:26:05Z	-
+rig-pqj	closed	q1-gated-checked-q.workflow-finalize	workflow-finalize	pass	2026-09-24T21:26:08Z	rig/core.control-dispatcher

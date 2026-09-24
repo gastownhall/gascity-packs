@@ -1,0 +1,16 @@
+description = "Spike starter review expansion (build-basic-review lookalike)."
+formula = "sbuild-review"
+type = "expansion"
+version = 1
+contract = "graph.v2"
+
+[[template]]
+id = "{target}.setup-review"
+title = "Setup starter review"
+metadata = { "gc.run_target" = "scripter", "spike.role" = "basic-review-setup" }
+
+[[template]]
+id = "{target}"
+title = "Finalize starter review"
+needs = ["{target}.setup-review"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "basic-review-final" }

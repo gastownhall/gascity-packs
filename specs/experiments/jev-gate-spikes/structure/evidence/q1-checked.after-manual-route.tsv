@@ -1,0 +1,13 @@
+rig-cd2	closed	q1-gated-checked.implement	pass	2026-09-24T21:16:27Z	rig/jover.scripter
+rig-iv1	closed	q1-gated-checked.gate	pass	2026-09-24T21:16:37Z	rig/jover.scripter
+rig-4t7	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.acceptance-review	pass	2026-09-24T21:16:45Z	rig/jover.scripter
+rig-lbv	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.synthesize	pass	2026-09-24T21:16:58Z	rig/jover.scripter
+rig-5dy	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.apply	pass	2026-09-24T21:17:07Z	rig/jover.scripter
+rig-l2v	closed	q1-gated-checked.gate.item.1.finalize.iteration.1	pass	2026-09-24T21:17:15Z	rig/jover.scripter
+rig-hy4	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.finalize.iteration.2	pass	2026-09-24T21:20:24Z	rig/jover.scripter
+rig-25f	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.finalize	pass	2026-09-24T21:20:28Z	rig/core.control-dispatcher
+rig-jav	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.publish	pass	2026-09-24T21:20:33Z	rig/jover.scripter
+rig-3jf	closed	q1-gated-checked.gate-fanout	pass	2026-09-24T21:20:34Z	rig/core.control-dispatcher
+rig-vq3	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.finalize.spec	pass	2026-09-24T21:20:37Z	-
+rig-qg0	closed	(root)	pass	2026-09-24T21:20:37Z	rig/jover.scripter
+rig-8sl	open	q1-gated-checked.workflow-finalize	-	-	rig/core.control-dispatcher

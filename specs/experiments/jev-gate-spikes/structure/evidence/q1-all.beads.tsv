@@ -1,0 +1,12 @@
+rig-zav	closed	q1-gated.implement	-	pass	2026-09-24T21:04:21Z	2026-09-24T21:04:29Z	1790283868.067	1790283868.631
+rig-9my	closed	q1-gated.gate	-	pass	2026-09-24T21:04:21Z	2026-09-24T21:04:39Z	1790283877.46	1790283878.309
+rig-1vb	closed	jev-review-tail.q1-gated.gate.item.1.acceptance-review	-	pass	2026-09-24T21:04:43Z	2026-09-24T21:04:46Z	1790283883.934	1790283886.176
+rig-382	closed	jev-review-tail.q1-gated.gate.item.1.simplicity-review	-	pass	2026-09-24T21:04:43Z	2026-09-24T21:04:54Z	1790283889.92	1790283893.316
+rig-cch	closed	jev-review-tail.q1-gated.gate.item.1.test-evidence-review	-	pass	2026-09-24T21:04:43Z	2026-09-24T21:05:06Z	1790283900.204	1790283905.644
+rig-61s	closed	jev-review-tail.q1-gated.gate.item.1.synthesize	-	pass	2026-09-24T21:04:43Z	2026-09-24T21:05:22Z	1790283920.929	1790283922.08
+rig-qba	closed	jev-review-tail.q1-gated.gate.item.1.apply	-	pass	2026-09-24T21:04:43Z	2026-09-24T21:05:29Z	1790283928.176	1790283928.398
+rig-npm	closed	jev-review-tail.q1-gated.gate.item.1.finalize	-	pass	2026-09-24T21:04:43Z	2026-09-24T21:05:34Z	1790283933.627	1790283933.84
+rig-6bl	closed	jev-review-tail.q1-gated.gate.item.1.publish	-	pass	2026-09-24T21:04:43Z	2026-09-24T21:05:40Z	1790283939.428	1790283939.646
+rig-b89	closed	q1-gated.gate-fanout	fanout	pass	2026-09-24T21:04:21Z	2026-09-24T21:05:43Z	-	-
+rig-9q1	closed	(root)	workflow	pass	2026-09-24T21:04:21Z	2026-09-24T21:05:47Z	-	-
+rig-jn9	closed	q1-gated.workflow-finalize	workflow-finalize	pass	2026-09-24T21:04:21Z	2026-09-24T21:05:50Z	-	-

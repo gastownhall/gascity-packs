@@ -1,0 +1,9 @@
+formula = "zprobe-drop-middle"
+description = "Drop only finalize; inherited publish still needs it."
+extends = ["sbuild"]
+[requires]
+formula_compiler = ">=2.0.0"
+[[steps]]
+id = "finalize"
+title = "dropped"
+condition = "{{never}}"

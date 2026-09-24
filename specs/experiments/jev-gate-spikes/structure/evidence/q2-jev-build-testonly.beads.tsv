@@ -1,0 +1,12 @@
+rig-chy	closed	jev-build.prepare	-	pass	2026-09-24T21:12:25Z	2026-09-24T21:12:33Z	1790284352.092	1790284352.357
+rig-51r	closed	jev-build.implement	-	pass	2026-09-24T21:12:25Z	2026-09-24T21:12:40Z	1790284359.005	1790284359.538
+rig-0en	closed	jev-build.summarize-implementation	-	pass	2026-09-24T21:12:25Z	2026-09-24T21:12:47Z	1790284366.371	1790284366.59
+rig-d8e	closed	jev-build.review	-	pass	2026-09-24T21:12:25Z	2026-09-24T21:12:54Z	1790284371.615	1790284372.605
+rig-dae	closed	jev-review-tail.jev-build.review.item.1.test-evidence-review	-	pass	2026-09-24T21:12:58Z	2026-09-24T21:13:08Z	1790284382.585	1790284387.85
+rig-ppl	closed	jev-review-tail.jev-build.review.item.1.synthesize	-	pass	2026-09-24T21:12:58Z	2026-09-24T21:13:21Z	1790284400.028	1790284400.641
+rig-pvy	closed	jev-review-tail.jev-build.review.item.1.apply	-	pass	2026-09-24T21:12:58Z	2026-09-24T21:13:28Z	1790284407.605	1790284407.815
+rig-jzl	closed	jev-review-tail.jev-build.review.item.1.finalize	-	pass	2026-09-24T21:12:58Z	2026-09-24T21:13:34Z	1790284413.335	1790284413.549
+rig-jqv	closed	jev-review-tail.jev-build.review.item.1.publish	-	pass	2026-09-24T21:12:58Z	2026-09-24T21:13:42Z	1790284421.795	1790284422.025
+rig-0uh	closed	jev-build.review-fanout	fanout	pass	2026-09-24T21:12:25Z	2026-09-24T21:13:45Z	-	-
+rig-ff5	closed	(root)	workflow	pass	2026-09-24T21:12:25Z	2026-09-24T21:13:49Z	-	-
+rig-c8s	closed	jev-build.workflow-finalize	workflow-finalize	pass	2026-09-24T21:12:25Z	2026-09-24T21:13:53Z	-	-

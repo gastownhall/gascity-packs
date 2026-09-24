@@ -1,0 +1,19 @@
+formula = "zprobe-waits"
+description = "Keep inherited finalize but gate it with waits_for children-of(review)."
+extends = ["sbuild"]
+[requires]
+formula_compiler = ">=2.0.0"
+[[steps]]
+id = "review"
+title = "Review gate"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "gate" }
+[steps.on_complete]
+for_each = "output.items"
+bond = "jev-review-tail"
+[[steps]]
+id = "finalize"
+title = "Finalize waits"
+needs = ["review"]
+waits_for = "children-of(review)"
+metadata = { "gc.run_target" = "scripter" }

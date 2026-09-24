@@ -1,0 +1,5 @@
+workspace_name = "spike"
+
+[[rig]]
+name = "rig"
+path = "/tmp/gcsp-7HiB/rig"

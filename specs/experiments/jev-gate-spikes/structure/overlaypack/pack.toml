@@ -1,0 +1,8 @@
+[pack]
+name = "jover"
+version = "0.0.1"
+schema = 2
+description = "Spike overlay pack: extends the base build formula with a gated review tail."
+
+[imports.jbase]
+source = "/tmp/gcsp-7HiB/jbase"

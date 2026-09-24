@@ -1,0 +1,13 @@
+rig-cd2	closed	q1-gated-checked.implement	-	pass	2026-09-24T21:16:21Z	2026-09-24T21:16:27Z	1790284585.964	1790284586.507
+rig-iv1	closed	q1-gated-checked.gate	-	pass	2026-09-24T21:16:21Z	2026-09-24T21:16:37Z	1790284595.681	1790284596.408
+rig-4t7	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.acceptance-review	-	pass	2026-09-24T21:16:39Z	2026-09-24T21:16:45Z	1790284601.806	1790284604.062
+rig-lbv	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.synthesize	-	pass	2026-09-24T21:16:39Z	2026-09-24T21:16:58Z	1790284616.908	1790284617.933
+rig-5dy	closed	jev-review-tail-checked.q1-gated-checked.gate.item.1.apply	-	pass	2026-09-24T21:16:39Z	2026-09-24T21:17:07Z	1790284626.737	1790284626.955
+rig-l2v	closed	q1-gated-checked.gate.item.1.finalize.iteration.1	-	pass	2026-09-24T21:16:39Z	2026-09-24T21:17:15Z	1790284633.797	1790284634.236
+rig-25f	open	jev-review-tail-checked.q1-gated-checked.gate.item.1.finalize	ralph	-	2026-09-24T21:16:39Z	-	1790284633.797	1790284634.236
+rig-hy4	open	jev-review-tail-checked.q1-gated-checked.gate.item.1.finalize.iteration.2	task	-	2026-09-24T21:17:18Z	-	-	-
+rig-jav	open	jev-review-tail-checked.q1-gated-checked.gate.item.1.publish	-	-	2026-09-24T21:16:39Z	-	-	-
+rig-vq3	open	jev-review-tail-checked.q1-gated-checked.gate.item.1.finalize.spec	spec	-	2026-09-24T21:16:39Z	-	-	-
+rig-3jf	open	q1-gated-checked.gate-fanout	fanout	-	2026-09-24T21:16:21Z	-	-	-
+rig-8sl	open	q1-gated-checked.workflow-finalize	workflow-finalize	-	2026-09-24T21:16:21Z	-	-	-
+rig-qg0	in_progress	(root)	workflow	-	2026-09-24T21:16:21Z	-	-	-

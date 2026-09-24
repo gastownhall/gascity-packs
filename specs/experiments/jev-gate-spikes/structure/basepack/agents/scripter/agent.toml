@@ -1,0 +1,7 @@
+description = "Deterministic script worker (no LLM), one-shot"
+scope = "rig"
+start_command = "sh /tmp/gcsp-7HiB/jbase/assets/scripts/worker.sh"
+prompt_mode = "none"
+process_names = ["sh"]
+lifecycle = "one_shot"
+max_active_sessions = 4

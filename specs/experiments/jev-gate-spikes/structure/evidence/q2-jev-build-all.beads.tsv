@@ -1,0 +1,14 @@
+rig-w14	closed	jev-build.prepare	-	pass	2026-09-24T21:10:20Z	2026-09-24T21:10:35Z	1790284234.2	1790284234.646
+rig-qfc	closed	jev-build.implement	-	pass	2026-09-24T21:10:20Z	2026-09-24T21:10:56Z	1790284254.927	1790284255.929
+rig-4vh	closed	jev-build.summarize-implementation	-	pass	2026-09-24T21:10:20Z	2026-09-24T21:11:06Z	1790284265.242	1790284265.675
+rig-wog	closed	jev-build.review	-	pass	2026-09-24T21:10:20Z	2026-09-24T21:11:18Z	1790284275.712	1790284277.156
+rig-18v	closed	jev-review-tail.jev-build.review.item.1.acceptance-review	-	pass	2026-09-24T21:11:21Z	2026-09-24T21:11:38Z	1790284294.708	1790284297.196
+rig-o1c	closed	jev-review-tail.jev-build.review.item.1.simplicity-review	-	pass	2026-09-24T21:11:21Z	2026-09-24T21:11:40Z	1790284295.726	1790284299.16
+rig-4un	closed	jev-review-tail.jev-build.review.item.1.test-evidence-review	-	pass	2026-09-24T21:11:21Z	2026-09-24T21:11:41Z	1790284295.268	1790284300.803
+rig-tnv	closed	jev-review-tail.jev-build.review.item.1.synthesize	-	pass	2026-09-24T21:11:21Z	2026-09-24T21:11:52Z	1790284310.482	1790284311.497
+rig-hpg	closed	jev-review-tail.jev-build.review.item.1.apply	-	pass	2026-09-24T21:11:21Z	2026-09-24T21:12:04Z	1790284323.224	1790284323.577
+rig-oow	closed	jev-review-tail.jev-build.review.item.1.finalize	-	pass	2026-09-24T21:11:21Z	2026-09-24T21:12:12Z	1790284331.97	1790284332.177
+rig-cyh	closed	jev-review-tail.jev-build.review.item.1.publish	-	pass	2026-09-24T21:11:21Z	2026-09-24T21:12:18Z	1790284337.143	1790284337.357
+rig-cdw	closed	jev-build.review-fanout	fanout	pass	2026-09-24T21:10:20Z	2026-09-24T21:12:18Z	-	-
+rig-mkg	closed	(root)	workflow	pass	2026-09-24T21:10:20Z	2026-09-24T21:12:22Z	-	-
+rig-7u4	closed	jev-build.workflow-finalize	workflow-finalize	pass	2026-09-24T21:10:20Z	2026-09-24T21:12:24Z	-	-

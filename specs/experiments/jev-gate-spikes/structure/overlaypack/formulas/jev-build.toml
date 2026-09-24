@@ -1,0 +1,35 @@
+description = "Overlay: sbuild with the review stage replaced by a script gate whose bond owns the review tail, finalize and publish."
+formula = "jev-build"
+version = 1
+extends = ["sbuild"]
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars]
+[vars.keep_inherited_tail]
+description = "Leave empty. A falsy value drops the inherited finalize/publish steps; the bond owns them."
+default = ""
+
+# Replace the inherited review stage (by id) with the gate producer.
+[[steps]]
+id = "review"
+title = "Review gate"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "gate" }
+
+[steps.on_complete]
+for_each = "output.items"
+bond = "jev-review-tail"
+vars = { acceptance = "{item.acceptance}", test_evidence = "{item.test_evidence}", simplicity = "{item.simplicity}" }
+
+# Drop the inherited finalize/publish: whole-step replace + a condition that is always false.
+[[steps]]
+id = "finalize"
+title = "Finalize (dropped by jev-build)"
+condition = "{{keep_inherited_tail}}"
+
+[[steps]]
+id = "publish"
+title = "Publish (dropped by jev-build)"
+condition = "{{keep_inherited_tail}}"

@@ -1,0 +1,14 @@
+{
+  "step": "jev-review-tail.jev-build.review.item.1.synthesize",
+  "saw_root_plan": null,
+  "saw_root_summary": null,
+  "output_json": null,
+  "lanes_at_claim": "[{\"s\":\"jev-review-tail.jev-build.review.item.1.acceptance-review\",\"st\":\"closed\"},{\"s\":\"jev-review-tail.jev-build.review.item.1.test-evidence-review\",\"st\":\"closed\"},{\"s\":\"jev-review-tail.jev-build.review.item.1.simplicity-review\",\"st\":\"closed\"}]"
+}
+{
+  "step": "jev-build.review",
+  "saw_root_plan": "{\"acceptance\":\"run\",\"test_evidence\":\"run\",\"simplicity\":\"run\"}",
+  "saw_root_summary": "implemented-by-rig-qfc",
+  "output_json": "{\"items\":[{\"acceptance\":\"run\",\"test_evidence\":\"run\",\"simplicity\":\"run\"}]}",
+  "lanes_at_claim": null
+}

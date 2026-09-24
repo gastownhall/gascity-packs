@@ -1,0 +1,14 @@
+{
+  "step": "jev-review-tail-checked.q1-gated-checked.gate.item.1.synthesize",
+  "saw_root_plan": null,
+  "saw_root_summary": null,
+  "output_json": null,
+  "lanes_at_claim": "[{\"s\":\"jev-review-tail-checked.q1-gated-checked.gate.item.1.acceptance-review\",\"st\":\"closed\"}]"
+}
+{
+  "step": "q1-gated-checked.gate",
+  "saw_root_plan": "{\"acceptance\":\"run\",\"test_evidence\":\"skip\",\"simplicity\":\"skip\"}",
+  "saw_root_summary": "implemented-by-rig-cd2",
+  "output_json": "{\"items\":[{\"acceptance\":\"run\",\"test_evidence\":\"skip\",\"simplicity\":\"skip\"}]}",
+  "lanes_at_claim": null
+}

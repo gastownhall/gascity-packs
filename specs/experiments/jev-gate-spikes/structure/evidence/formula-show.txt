@@ -1,0 +1,90 @@
+===== gc formula show q1-gated
+Formula: q1-gated
+Description: Q1: implement -> gate (script) whose on_complete bond runs the gated review tail.
+
+Steps (4):
+  ├── q1-gated.implement: Implement (writes plan onto root)
+  ├── q1-gated.gate: Review gate [needs: q1-gated.implement]
+  ├── q1-gated.gate-fanout: Expand fanout for Review gate [needs: q1-gated.gate]
+  └── q1-gated.workflow-finalize: Finalize workflow [needs: q1-gated.gate-fanout]
+===== gc formula show sbuild
+Formula: sbuild
+Description: Spike concrete build (build-basic lookalike): review expands a fixed starter review.
+
+Steps (8):
+  ├── sbuild.prepare: Prepare
+  ├── sbuild.implement: Implement [needs: sbuild.prepare]
+  ├── sbuild.summarize-implementation: Summarize implementation [needs: sbuild.implement]
+  ├── sbuild.review.setup-review: Setup starter review [needs: sbuild.summarize-implementation]
+  ├── sbuild.review: Finalize starter review [needs: sbuild.review.setup-review]
+  ├── sbuild.finalize: Finalize (basic) [needs: sbuild.review]
+  ├── sbuild.publish: Publish (basic) [needs: sbuild.finalize]
+  └── sbuild.workflow-finalize: Finalize workflow [needs: sbuild.publish]
+===== gc formula show jev-build
+Formula: jev-build
+Description: Overlay: sbuild with the review stage replaced by a script gate whose bond owns the review tail, finalize and publish.
+
+Steps (6):
+  ├── jev-build.prepare: Prepare
+  ├── jev-build.implement: Implement [needs: jev-build.prepare]
+  ├── jev-build.summarize-implementation: Summarize implementation [needs: jev-build.implement]
+  ├── jev-build.review: Review gate [needs: jev-build.summarize-implementation]
+  ├── jev-build.review-fanout: Expand fanout for Review gate [needs: jev-build.review]
+  └── jev-build.workflow-finalize: Finalize workflow [needs: jev-build.review-fanout]
+===== gc formula show jev-build-nodrop
+Formula: jev-build-nodrop
+Description: Control: replace review with the gate but keep the inherited finalize/publish.
+
+Steps (8):
+  ├── jev-build-nodrop.prepare: Prepare
+  ├── jev-build-nodrop.implement: Implement [needs: jev-build-nodrop.prepare]
+  ├── jev-build-nodrop.summarize-implementation: Summarize implementation [needs: jev-build-nodrop.implement]
+  ├── jev-build-nodrop.review: Review gate [needs: jev-build-nodrop.summarize-implementation]
+  ├── jev-build-nodrop.finalize: Finalize (basic) [needs: jev-build-nodrop.review]
+  ├── jev-build-nodrop.publish: Publish (basic) [needs: jev-build-nodrop.finalize]
+  ├── jev-build-nodrop.review-fanout: Expand fanout for Review gate [needs: jev-build-nodrop.review]
+  └── jev-build-nodrop.workflow-finalize: Finalize workflow [needs: jev-build-nodrop.publish, jev-build-nodrop.review-fanout]
+===== gc formula show jev-build-needs
+Formula: jev-build-needs
+Description: Probe: a replaced step changes its needs (review now needs implement, skipping summarize).
+
+Steps (6):
+  ├── jev-build-needs.prepare: Prepare
+  ├── jev-build-needs.implement: Implement [needs: jev-build-needs.prepare]
+  ├── jev-build-needs.summarize-implementation: Summarize implementation [needs: jev-build-needs.implement]
+  ├── jev-build-needs.review: Review gate (rewired) [needs: jev-build-needs.implement]
+  ├── jev-build-needs.review-fanout: Expand fanout for Review gate (rewired) [needs: jev-build-needs.review]
+  └── jev-build-needs.workflow-finalize: Finalize workflow [needs: jev-build-needs.summarize-implementation, jev-build-needs.review-fanout]
+===== gc formula show zprobe-drop-middle
+Formula: zprobe-drop-middle
+Description: Drop only finalize; inherited publish still needs it.
+
+Steps (7):
+  ├── zprobe-drop-middle.prepare: Prepare
+  ├── zprobe-drop-middle.implement: Implement [needs: zprobe-drop-middle.prepare]
+  ├── zprobe-drop-middle.summarize-implementation: Summarize implementation [needs: zprobe-drop-middle.implement]
+  ├── zprobe-drop-middle.review.setup-review: Setup starter review [needs: zprobe-drop-middle.summarize-implementation]
+  ├── zprobe-drop-middle.review: Finalize starter review [needs: zprobe-drop-middle.review.setup-review]
+  ├── zprobe-drop-middle.publish: Publish (basic)
+  └── zprobe-drop-middle.workflow-finalize: Finalize workflow [needs: zprobe-drop-middle.review, zprobe-drop-middle.publish]
+===== gc formula show zprobe-waits
+Formula: zprobe-waits
+Description: Keep inherited finalize but gate it with waits_for children-of(review).
+
+Steps (8):
+  ├── zprobe-waits.prepare: Prepare
+  ├── zprobe-waits.implement: Implement [needs: zprobe-waits.prepare]
+  ├── zprobe-waits.summarize-implementation: Summarize implementation [needs: zprobe-waits.implement]
+  ├── zprobe-waits.review: Review gate [needs: zprobe-waits.summarize-implementation]
+  ├── zprobe-waits.finalize: Finalize waits [needs: zprobe-waits.review]
+  ├── zprobe-waits.publish: Publish (basic) [needs: zprobe-waits.finalize]
+  ├── zprobe-waits.review-fanout: Expand fanout for Review gate [needs: zprobe-waits.review]
+  └── zprobe-waits.workflow-finalize: Finalize workflow [needs: zprobe-waits.publish, zprobe-waits.review-fanout]
+===== gc formula show zprobe-drop-notitle
+gc formula show: resolving formula "zprobe-drop-notitle": formula validation failed:
+  - steps[5] (publish): title is required (unless using expand)
+===== gc formula show zprobe-needs-fanout
+gc formula show: resolving formula "zprobe-needs-fanout": formula validation failed:
+  - steps[4] (finalize): needs references unknown step "review-fanout"
+===== gc formula show zprobe-literal-cond
+gc formula show: applying inline expansions to "zprobe-literal-cond": filtering conditioned steps after inline expansion: step "publish": invalid step condition format: "false" (expected {{var}} or {{var}} == value)

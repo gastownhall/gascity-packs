@@ -1,0 +1,16 @@
+rig-nty	closed	jev-build-nodrop.prepare	-	pass	2026-09-24T21:14:01Z	2026-09-24T21:14:09Z	1790284448.736	1790284448.991
+rig-np5	closed	jev-build-nodrop.implement	-	pass	2026-09-24T21:14:01Z	2026-09-24T21:14:31Z	1790284470.351	1790284470.905
+rig-cp1	closed	jev-build-nodrop.summarize-implementation	-	pass	2026-09-24T21:14:01Z	2026-09-24T21:14:37Z	1790284476.791	1790284477.05
+rig-hby	closed	jev-build-nodrop.review	-	pass	2026-09-24T21:14:01Z	2026-09-24T21:14:44Z	1790284482.391	1790284483.258
+rig-4k9	closed	jev-build-nodrop.finalize	-	pass	2026-09-24T21:14:01Z	2026-09-24T21:14:51Z	1790284490.573	1790284490.859
+rig-yaw	closed	jev-build-nodrop.publish	-	pass	2026-09-24T21:14:01Z	2026-09-24T21:15:02Z	1790284500.869	1790284501.176
+rig-6b2	closed	jev-review-tail.jev-build-nodrop.review.item.1.acceptance-review	-	pass	2026-09-24T21:14:48Z	2026-09-24T21:15:04Z	1790284501.156	1790284503.493
+rig-mc5	closed	jev-review-tail.jev-build-nodrop.review.item.1.simplicity-review	-	pass	2026-09-24T21:14:48Z	2026-09-24T21:15:20Z	1790284516.154	1790284519.471
+rig-cbg	closed	jev-review-tail.jev-build-nodrop.review.item.1.test-evidence-review	-	pass	2026-09-24T21:14:48Z	2026-09-24T21:15:21Z	1790284515.846	1790284521.215
+rig-ool	closed	jev-review-tail.jev-build-nodrop.review.item.1.synthesize	-	pass	2026-09-24T21:14:48Z	2026-09-24T21:15:33Z	1790284532.495	1790284533.122
+rig-9hh	closed	jev-review-tail.jev-build-nodrop.review.item.1.apply	-	pass	2026-09-24T21:14:48Z	2026-09-24T21:15:43Z	1790284542.052	1790284542.261
+rig-za8	closed	jev-review-tail.jev-build-nodrop.review.item.1.finalize	-	pass	2026-09-24T21:14:48Z	2026-09-24T21:15:48Z	1790284547.126	1790284547.351
+rig-gqa	closed	jev-review-tail.jev-build-nodrop.review.item.1.publish	-	pass	2026-09-24T21:14:48Z	2026-09-24T21:15:53Z	1790284552.765	1790284552.996
+rig-6qm	closed	jev-build-nodrop.review-fanout	fanout	pass	2026-09-24T21:14:01Z	2026-09-24T21:15:54Z	-	-
+rig-cbm	closed	(root)	workflow	pass	2026-09-24T21:14:01Z	2026-09-24T21:15:57Z	-	-
+rig-5mc	closed	jev-build-nodrop.workflow-finalize	workflow-finalize	pass	2026-09-24T21:14:01Z	2026-09-24T21:16:01Z	-	-

@@ -1,0 +1,24 @@
+description = "Spike concrete build (build-basic lookalike): review expands a fixed starter review."
+formula = "sbuild"
+version = 1
+contract = "graph.v2"
+extends = ["sbuild-base"]
+
+[[steps]]
+id = "review"
+title = "Run starter review (basic)"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "basic-review" }
+expand = "sbuild-review"
+
+[[steps]]
+id = "finalize"
+title = "Finalize (basic)"
+needs = ["review"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "basic-finalize" }
+
+[[steps]]
+id = "publish"
+title = "Publish (basic)"
+needs = ["finalize"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "basic-publish" }

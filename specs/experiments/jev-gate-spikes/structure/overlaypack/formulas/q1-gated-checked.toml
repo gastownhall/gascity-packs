@@ -1,0 +1,24 @@
+formula = "q1-gated-checked"
+description = "Q1: implement -> gate (script) whose on_complete bond runs the gated review tail."
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars]
+plan = '{"acceptance":"run","test_evidence":"run","simplicity":"run"}'
+
+[[steps]]
+id = "implement"
+title = "Implement (writes plan onto root)"
+metadata = { "gc.run_target" = "scripter", "spike.role" = "implement", "spike.plan" = "{{plan}}" }
+
+[[steps]]
+id = "gate"
+title = "Review gate"
+needs = ["implement"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "gate" }
+
+[steps.on_complete]
+for_each = "output.items"
+bond = "jev-review-tail-checked"
+vars = { acceptance = "{item.acceptance}", test_evidence = "{item.test_evidence}", simplicity = "{item.simplicity}" }

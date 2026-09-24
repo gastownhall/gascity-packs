@@ -1,0 +1,61 @@
+formula = "jev-review-tail-checked"
+description = "Bond: gated review lanes -> synthesize -> apply -> finalize -> publish (one instance per gate item)."
+type = "expansion"
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars]
+acceptance = "skip"
+test_evidence = "skip"
+simplicity = "skip"
+
+[[template]]
+id = "{target}.acceptance-review"
+title = "Lane: acceptance"
+condition = "{{acceptance}} == run"
+metadata = { "gc.run_target" = "scripter", "spike.role" = "lane", "spike.sleep" = "2" }
+
+[[template]]
+id = "{target}.test-evidence-review"
+title = "Lane: test evidence"
+condition = "{{test_evidence}} == run"
+metadata = { "gc.run_target" = "scripter", "spike.role" = "lane", "spike.sleep" = "5" }
+
+[[template]]
+id = "{target}.simplicity-review"
+title = "Lane: simplicity"
+condition = "{{simplicity}} == run"
+metadata = { "gc.run_target" = "scripter", "spike.role" = "lane", "spike.sleep" = "3" }
+
+[[template]]
+id = "{target}.synthesize"
+title = "Synthesize review"
+needs = ["{target}.acceptance-review", "{target}.test-evidence-review", "{target}.simplicity-review"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "synthesize" }
+
+[[template]]
+id = "{target}.apply"
+title = "Apply review findings"
+needs = ["{target}.synthesize"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "apply" }
+
+[[template]]
+id = "{target}.finalize"
+title = "Finalize build"
+needs = ["{target}.apply"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "finalize" }
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = "/tmp/gcsp-7HiB/jbase/assets/scripts/check-flaky.sh"
+timeout = "1m"
+
+[[template]]
+id = "{target}.publish"
+title = "Publish build"
+needs = ["{target}.finalize"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "publish", "spike.sleep" = "1" }

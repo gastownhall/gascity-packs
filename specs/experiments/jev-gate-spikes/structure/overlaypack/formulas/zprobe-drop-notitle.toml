@@ -1,0 +1,7 @@
+formula = "zprobe-drop-notitle"
+extends = ["sbuild"]
+[requires]
+formula_compiler = ">=2.0.0"
+[[steps]]
+id = "publish"
+condition = "{{never}}"

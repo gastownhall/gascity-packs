@@ -1,0 +1,9 @@
+formula = "zprobe-literal-cond"
+description = "Can condition be a literal (no var)?"
+extends = ["sbuild"]
+[requires]
+formula_compiler = ">=2.0.0"
+[[steps]]
+id = "publish"
+title = "dropped"
+condition = "false"

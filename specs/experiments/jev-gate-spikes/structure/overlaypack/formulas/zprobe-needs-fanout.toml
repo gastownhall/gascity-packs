@@ -1,0 +1,17 @@
+formula = "zprobe-needs-fanout"
+extends = ["sbuild"]
+[requires]
+formula_compiler = ">=2.0.0"
+[[steps]]
+id = "review"
+title = "Review gate"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "scripter", "spike.role" = "gate" }
+[steps.on_complete]
+for_each = "output.items"
+bond = "jev-review-tail"
+[[steps]]
+id = "finalize"
+title = "Finalize after fanout"
+needs = ["review-fanout"]
+metadata = { "gc.run_target" = "scripter" }

@@ -1,0 +1,29 @@
+[workspace]
+provider = "claude"
+
+[providers.claude]
+base = "builtin:claude"
+ready_delay_ms = 0
+
+[daemon]
+formula_v2 = true
+patrol_interval = "1s"
+
+[[rigs]]
+name = "rig"
+
+[orders]
+skip = ["mol-dog-stale-db"]
+
+[[patches.agent]]
+name = "bd.dog"
+suspended = true
+
+[[patches.agent]]
+name = "claude"
+suspended = true
+
+[[patches.agent]]
+rig = "rig"
+name = "claude"
+suspended = true
