@@ -173,12 +173,42 @@ for ORPHAN in $ORPHANS; do
   # surfaces beads the inbox missed.
 done
 
-# Step 1: Check for an in-progress patrol wisp
-{{ .AssignedInProgressQuery }}
+# Step 1: Atomically resume an assigned open or in-progress patrol wisp.
+# The refinery agent's work_query is deliberately restricted to this rig,
+# assignee, and exact mol-refinery-patrol title, so merge work cannot be
+# mistaken for the lifecycle root.
+CLAIM=$(gc hook --claim --json)
+CLAIM_STATUS=$?
+CLAIM_ACTION=$(printf '%s' "$CLAIM" | jq -r '.action // empty')
+CLAIM_REASON=$(printf '%s' "$CLAIM" | jq -r '.reason // empty')
+if [ "$CLAIM_ACTION" = "work" ]; then
+  WISP=$(printf '%s' "$CLAIM" | jq -r '.bead_id // empty')
+elif [ "$CLAIM_STATUS" -eq 1 ] && [ "$CLAIM_ACTION" = "drain" ] && [ "$CLAIM_REASON" = "no_work" ]; then
+  WISP=""
+else
+  echo "Could not safely classify the refinery patrol claim result; not pouring."
+  gc runtime drain-ack
+  exit 1
+fi
 
-# If none found, pour one (root-only — no child step beads) and assign it
-WISP=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id')
-gc bd update "$WISP" --assignee="$GC_AGENT"
+# Only an explicit no_work drain result may pour a root. Assign it, then promote that
+# exact open successor through the same atomic claim path before proceeding.
+if [ -z "$WISP" ]; then
+  WISP=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
+  if [ -z "$WISP" ] || ! gc bd update "$WISP" --assignee="$GC_AGENT"; then
+    echo "Could not create and assign a refinery patrol wisp."
+    gc runtime drain-ack
+    exit 1
+  fi
+  CLAIM=$(gc hook --claim --json)
+  CLAIM_STATUS=$?
+  CLAIMED_WISP=$(printf '%s' "$CLAIM" | jq -r 'select(.action == "work") | .bead_id // empty')
+  if [ "$CLAIM_STATUS" -ne 0 ] || [ "$CLAIMED_WISP" != "$WISP" ]; then
+    echo "Could not atomically claim the newly assigned refinery patrol wisp; preserving it for recovery."
+    gc runtime drain-ack
+    exit 1
+  fi
+fi
 ```
 
 Then follow the formula. The step descriptions below are your instructions —
