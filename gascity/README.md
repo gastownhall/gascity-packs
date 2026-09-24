@@ -204,6 +204,102 @@ Default formula routes use these qualified targets: `gc.run-operator`,
 `gc.implementation-worker`, `gc.gap-analyst`, `gc.implementation-reviewer`,
 and `gc.publisher`.
 
+## Codex provider shim
+
+A Codex session has no memory that tells it how to mint a secret-store token,
+so a city that gives its Codex role agents an Infisical machine identity mints
+the token at session start. An agent's `env` map is static and `pre_start`
+runs in its own process; the one city-side place a freshly minted value can
+enter the session environment is a provider `command` wrapper. This pack
+ships that wrapper as `assets/scripts/codex-infisical-shim.sh`: when
+`INFISICAL_TOKEN` is unset or empty it sources
+`$HOME/.config/infisical-agent/token.sh` fail-open, in a subshell whose
+stdout and stderr are `/dev/null` for its whole lifetime, and carries over
+exactly one value, the token the helper exported (a missing file is silent, a
+failing helper leaves the token unset and prints one WARN, an `exit`, a
+`set --`, a trace or an EXIT trap in the helper cannot reach the shim or the
+session output, the session starts either way); then it execs the real codex
+with argv intact. It never execs itself: it locates itself with shell
+builtins only and refuses to run when it cannot, every PATH entry that is its
+own directory is removed first (by inode, so symlinked, relative and
+doubled-slash spellings count; empty entries kept; when nothing survives,
+PATH becomes `/dev/null`, never the empty string bash reads as the current
+directory), the target is the executable file `type -P` finds (an exported
+function or alias named `codex` is ignored) and that checked path is what
+runs, and no codex left on PATH is an error (exit 127), never a loop.
+Inherited shell options reach codex as they came: xtrace is off while the
+token is handled and back on for the exec with the shim's own trace lines
+discarded on stdout and stderr alike (a `PS4` that expands the token prints
+nothing, whichever of the two `BASH_XTRACEFD` names), noglob and errexit
+are left as found.
+
+Install it as the city's shim, in its own directory (gc does not sync a
+pack's `assets/scripts` anywhere), with the per-city settings in a
+`codex.env` beside it. A variable present in the environment, even empty,
+wins over the file; the file is plain `KEY=VALUE` lines and never evaluated;
+a blank value means "not set":
+
+```sh
+mkdir -p "$CITY/.gc/shims/codex-astra"
+install -m 0755 path/to/gascity/assets/scripts/codex-infisical-shim.sh \
+  "$CITY/.gc/shims/codex-astra/codex"
+cat > "$CITY/.gc/shims/codex-astra/codex.env" <<'EOT'
+CODEX_SHIM_PATH_PREPEND=/abs/path/to/city/.gc/shims/toolchain
+CODEX_SHIM_EXEC=npx -y @openai/codex@0.153.3
+EOT
+```
+
+`CODEX_SHIM_PATH_PREPEND` puts the city's toolchain wrappers first on PATH for
+the session and every child process, git hooks included; `CODEX_SHIM_EXEC` is
+the command line that runs the real codex when it is a pinned build rather
+than the `codex` on PATH. Both are optional.
+
+The provider runs the shim and the role agents select the provider. In
+`city.toml`, a provider over `builtin:codex` names the shim as its `command`
+and, because codex resumes by subcommand, its `resume_command`; each Codex
+role agent (an `agents/<name>/agent.toml`, one per rig) sets
+`provider = "codex-astra"` and carries the project id the Infisical CLI needs
+under a machine identity as `[env] INFISICAL_PROJECT_ID` (an id, not a
+secret):
+
+```toml
+# city.toml
+[providers.codex-astra]
+base = "builtin:codex"
+command = "/abs/path/to/city/.gc/shims/codex-astra/codex"
+resume_command = "/abs/path/to/city/.gc/shims/codex-astra/codex resume {{.SessionKey}}"
+
+# agents/implementation-worker-codex/agent.toml
+provider = "codex-astra"
+[env]
+INFISICAL_PROJECT_ID = "<project id>"
+```
+
+The installed copy is city runtime state; the file here is its source of
+record. A city verifies at each wake that the installed shim is this file at
+the installed pin. Record the canonical md5 once, from the pack checkout at
+that pin (the extraction must succeed before anything is hashed, so a bad pin
+records nothing rather than the hash of empty input), and compare the
+installed file to the literal, so a missing file or a missing md5 tool fails
+the check instead of matching an empty string (`md5sum` on Linux prints the
+same hash first):
+
+```sh
+canonical=$(mktemp) && git -C path/to/gascity-packs show <pin>:gascity/assets/scripts/codex-infisical-shim.sh > "$canonical" && md5 -q "$canonical"
+test "$(md5 -q "$CITY/.gc/shims/codex-astra/codex")" = <that md5>
+```
+
+`gascity/tests/test_codex_infisical_shim.py` holds the contract: fail-open
+with the helper absent, present, failing, exiting, tracing, trapping,
+printing or rewriting argv; only the token crosses over; argv intact; PATH
+pruned through symlinked, relative and doubled-slash aliases with empty
+entries kept and never emptied; the self-exec refusals, with no utility on
+PATH, under CDPATH and with an exported function named `codex`; inherited
+xtrace never printing the token and inherited xtrace and noglob reaching
+codex; the settings file never evaluated; the install recipe above run from
+a fresh directory, the md5 recording refusing a bad pin and the check failing
+on a missing file.
+
 ## Build Methodology Contract
 
 `build-base` is the virtual full-lifecycle workflow contract. It defines the
