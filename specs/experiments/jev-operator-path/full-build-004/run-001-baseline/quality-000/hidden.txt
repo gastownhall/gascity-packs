@@ -1,0 +1,1 @@
+[{"input": "  Hello, World!  ", "expected": "hello-world", "pass": false, "error": "NotImplementedError"}, {"input": "a---b___c", "expected": "a-b-c", "pass": false, "error": "NotImplementedError"}, {"input": "123 ABC", "expected": "123-abc", "pass": false, "error": "NotImplementedError"}, {"input": "!@#", "expected": "", "pass": false, "error": "NotImplementedError"}]

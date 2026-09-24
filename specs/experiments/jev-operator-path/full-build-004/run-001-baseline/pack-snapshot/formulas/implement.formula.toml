@@ -1,0 +1,115 @@
+description = """
+Convoy-first implementation entry point.
+
+Core records the graph.v2 source target as `gc.input_convoy_id` on the
+workflow root. The formula validates that input convoy before it creates drain
+work.
+
+Launch inputs:
+- input_convoy: {{convoy_id}}
+- context_path: {{context_path}} (empty means no extra context bundle)
+- drain_policy: {{drain_policy}}
+- implementation_target: {{implementation_target}}
+- summary_path: {{summary_path}} (empty means use the default implementation summary)
+- push: {{push}}
+- open_pr: {{open_pr}}
+"""
+formula = "implement"
+version = 2
+contract = "graph.v2"
+target_required = true
+sling_container_mode = "source"
+
+[catalog]
+name = "implement"
+description = "Launch implementation for an approved convoy without the full build loop."
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path with name/path/description entries."
+default = ""
+
+[vars.drain_policy]
+description = "Implementation drain policy: separate or same-session."
+default = "separate"
+
+[vars.implementation_target]
+description = "Role target for implementation work."
+default = "gc.implementation-worker"
+
+[vars.summary_path]
+description = "Optional aggregate implementation summary path."
+default = ""
+
+[vars.push]
+description = "Set true to allow publish push after direct implementation succeeds."
+default = "false"
+
+[vars.open_pr]
+description = "Set true to allow publish PR creation after direct implementation succeeds."
+default = "false"
+
+[[steps]]
+id = "prepare"
+title = "Validate implementation convoy"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/implement/prepare.md"
+
+[[steps]]
+id = "drain-separate"
+title = "Drain implementation convoy into separate sessions"
+needs = ["prepare"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/implement/drain-separate.md"
+
+[steps.drain]
+context = "separate"
+formula = "do-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "drain-same-session"
+title = "Drain implementation convoy in one shared session"
+needs = ["prepare"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/implement/drain-same-session.md"
+
+[steps.drain]
+context = "shared"
+formula = "do-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "wait-for-drain"
+title = "Wait for drain completion"
+needs = ["drain-separate", "drain-same-session"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/implement/wait-for-drain.md"
+
+[[steps]]
+id = "summarize"
+title = "Write implementation summary"
+needs = ["wait-for-drain"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.var.summary_path" }
+description_file = "../assets/workflows/implement/summarize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "publish"
+title = "Optionally publish direct implementation"
+needs = ["summarize"]
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/implement/publish.md"

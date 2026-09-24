@@ -56,3 +56,11 @@ and validators, for future comparisons. Pack tests, real CLI installation and
 formula/role loading, lint, and no-key fallbacks passed. Historical experiment
 artifacts are unchanged; no new model comparison was run for this split.
 Full-workflow performance and quality equivalence remain unestablished.
+
+## Next
+
+The redesign that lets Jev decisions replace Claude sessions, instead of
+advising them, is settled in
+[0003-gascity-jev-redesign-design.md](0003-gascity-jev-redesign-design.md).
+The first complete full-build pair is in
+[jev-operator-path](../experiments/jev-operator-path/README.md).

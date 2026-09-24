@@ -1,0 +1,73 @@
+{
+  "arm": "baseline",
+  "scope": "full-build-basic",
+  "started_at": "2026-09-24T13:06:57.743281+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "aborted",
+  "pack_name": "gascity",
+  "setup_seconds": 16.520273500005715,
+  "source_bead_id": "fi-81s",
+  "root_id": "fi-fb1",
+  "error": "KeyboardInterrupt: ",
+  "cleanup": {
+    "status": "termination_requested",
+    "pids": [
+      5511,
+      5520
+    ]
+  },
+  "cleanup_resweep": {
+    "status": "termination_requested",
+    "pids": [
+      5529,
+      5538
+    ]
+  },
+  "otel_usage": {
+    "status": "observed",
+    "request_count": 33,
+    "models": [
+      "claude-haiku-4-5-20251001",
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 11663,
+      "output_tokens": 11967,
+      "cache_read_tokens": 1443188,
+      "cache_creation_tokens": 110681,
+      "total_tokens": 1577499
+    },
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "independent_quality": [
+    {
+      "worktree": "/private/tmp/gcja-j2pxzrzi/w/fixture",
+      "original_tests_unchanged": true,
+      "pytest_exit": 1,
+      "hidden_exit": 1
+    }
+  ],
+  "jev_report_scan_errors": [],
+  "jev_feature_delivery": {
+    "evidence": 0,
+    "findings": 0,
+    "failure": 0
+  },
+  "elapsed_seconds": 123.19947266601957,
+  "llm_usage": {
+    "status": "observed",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 26,
+    "models": [
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 52,
+      "output_tokens": 11876,
+      "cache_read_input_tokens": 1334511,
+      "cache_creation_input_tokens": 110539
+    }
+  }
+}

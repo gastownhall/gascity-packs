@@ -46,7 +46,7 @@ to end with and without Jev; it does not establish a speed or cost difference.
 | — cache read | 15,874,100 | 17,349,312 |
 | — cache creation | 609,285 | 632,001 |
 | Jev evidence assessment | — | completed: 3,495 in / 218 out tokens, 0.37 s |
-| Jev findings categories/pairs | — | completed: no findings to classify (747 in / 60 out) |
+| Jev findings categories/pairs | — | completed: 1 finding, Jev below threshold (`residual_risk` 0.29) → ordinary review classed it `required_fix` (747 in / 60 out) |
 | Jev failure routing | — | not invoked (no fix failure occurred) |
 
 **Baseline drain failure that still passed.** The baseline worker committed
@@ -68,6 +68,15 @@ scope and the explicit "do not modify `tests/test_slugger.py`" constraint —
 the task-fidelity loss seen in baselines 004 and 005 did not recur after the
 requirements-prompt fix.
 
+The Jev arm's test-evidence reviewer found a real defect the baseline did not
+have: `implementation-summary.md` recorded a SHA-256 for `slugger.py` that does
+not match the worktree file (an agent-written provenance hash). Synthesis
+classified it as a required fix and the fix lane corrected it, so part of the
+Jev arm's longer review stage is handling that finding, not Jev overhead. (An
+earlier version of this note said the findings step had nothing to classify;
+that misread the `gc.workflow-decisions.v1` report, whose answers live under
+`decision.answers`.)
+
 The Jev arm took 14% longer and used 9% more Claude tokens in this single
 pair. With n=1, uncontrolled host load and nondeterministic agent paths, that
 difference is not evidence that Jev slows builds; it is equally not evidence
@@ -83,6 +92,9 @@ second). A comparative claim needs repeated, order-balanced pairs.
   `release/v1.5.0` by #5904 (see also follow-up #6531). No model tokens used.
 - [full-build-002](full-build-002/): Gas City 1.4.2 with #5904 backported.
   Aborted by choice during setup to target the 1.5 branch instead.
+- [full-build-004](full-build-004/): a three-pair rerun of the unchanged packs
+  on the 1.5 build, stopped at the user's request during the first baseline
+  build because it would not advance the redesign. Inconclusive; no result.
 
 ## Observations for Gas City 1.5
 

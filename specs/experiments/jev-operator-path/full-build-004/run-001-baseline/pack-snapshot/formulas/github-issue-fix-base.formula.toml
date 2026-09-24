@@ -1,0 +1,176 @@
+description = """
+Base targetless GitHub issue fix adapter.
+
+This formula accepts only a full canonical GitHub issue URL. It always
+invokes/reuses `github-issue-triage` first, then generates approved planning
+artifacts and runs the implementation plus post-implementation review loop only
+for triage outcomes that authorize work. It keeps one sticky issue-fix status
+comment and may open or update a draft/ready PR only after implementation and
+review, including gap-analysis coverage, all pass. V0 never merges.
+
+Launch inputs:
+- github_issue_url: {{github_issue_url}}
+- artifact_root: {{artifact_root}} (optional override; empty resolves to the
+  rig artifact root with the pack artifact helper)
+- mode: {{mode}} (backward-compatible alias for interaction_mode)
+- interaction_mode: {{interaction_mode}} (empty means normalize from mode)
+- review_mode: {{review_mode}}
+- pr_mode: {{pr_mode}}
+- drain_policy: {{drain_policy}}
+- implementation_target: {{implementation_target}}
+- planning_formula: {{planning_formula}}
+- decomposition_formula: {{decomposition_formula}}
+- implementation_formula: {{implementation_formula}}
+- implementation_item_formula: {{implementation_item_formula}}
+- code_review_formula: {{code_review_formula}}
+- review_fix_formula: {{review_fix_formula}}
+"""
+formula = "github-issue-fix-base"
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[vars]
+[vars.github_issue_url]
+description = "Full GitHub issue URL: https://github.com/<owner>/<repo>/issues/<number>."
+required = true
+
+[vars.artifact_root]
+description = "Optional artifact root override. Empty resolves to the rig artifact root through assets/scripts/artifacts.py."
+default = ""
+
+[vars.mode]
+description = "Backward-compatible alias for interaction_mode: interactive, autonomous, or headless. The snapshot step normalizes the effective value into workflow root metadata gc.var.interaction_mode."
+default = "interactive"
+
+[vars.interaction_mode]
+description = "Workflow interaction posture: interactive, autonomous, or headless. Empty means normalize from the mode alias."
+default = ""
+
+[vars.review_mode]
+description = "Review authority requested from the selected code-review and review-fix formulas: report, agent, or interactive."
+default = "agent"
+
+[vars.pr_mode]
+description = "PR publication mode: none, draft, or ready."
+default = "none"
+
+[vars.drain_policy]
+description = "Implementation drain policy inherited by implementation and review-fix passes."
+default = "separate"
+
+[vars.implementation_target]
+description = "Role target inherited by implementation work."
+default = "gc.implementation-worker"
+
+[vars.planning_formula]
+description = "Planning methodology formula used for requirements and implementation-plan artifacts."
+default = "planning-base"
+
+[vars.decomposition_formula]
+description = "Decomposition methodology formula used to create implementation beads."
+default = "decomposition-base"
+
+[vars.implementation_formula]
+description = "Implementation methodology formula used for the issue fix work."
+default = "implement"
+
+[vars.implementation_item_formula]
+description = "Single-item implementation formula used by shared-drain issue-fix implementations."
+default = "do-work-item"
+
+[vars.code_review_formula]
+description = "Code-review methodology formula used after implementation."
+default = "review"
+
+[vars.review_fix_formula]
+description = "Review-fix methodology formula used to apply failed review findings."
+default = "fix-loop-base"
+
+[[steps]]
+id = "snapshot"
+title = "Snapshot GitHub issue"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-fix-base/snapshot.md"
+
+[[steps]]
+id = "triage"
+title = "Run or reuse issue triage"
+needs = ["snapshot"]
+metadata = { "gc.run_target" = "gc.issue-triager" }
+description_file = "../assets/workflows/github-issue-fix-base/triage.md"
+
+[[steps]]
+id = "triage-gate"
+title = "Gate fix eligibility"
+needs = ["triage"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-fix-base/triage-gate.md"
+
+[[steps]]
+id = "resume-or-create-run"
+title = "Resume or create issue-fix run"
+needs = ["triage-gate"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-fix-base/resume-or-create-run.md"
+
+[[steps]]
+id = "update-status-started"
+title = "Update sticky issue-fix status"
+needs = ["resume-or-create-run"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-fix-base/update-status-started.md"
+
+[[steps]]
+id = "generate-requirements"
+title = "Generate approved requirements"
+needs = ["update-status-started"]
+metadata = { "gc.run_target" = "gc.requirements-planner" }
+description_file = "../assets/workflows/github-issue-fix-base/generate-requirements.md"
+
+[[steps]]
+id = "implementation-plan"
+title = "Generate or gate implementation plan"
+needs = ["generate-requirements"]
+metadata = { "gc.run_target" = "gc.design-author" }
+description_file = "../assets/workflows/github-issue-fix-base/implementation-plan.md"
+
+[[steps]]
+id = "design-review"
+title = "Review approved implementation plan"
+needs = ["implementation-plan"]
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+expand = "github-issue-fix-design-review-work"
+description_file = "../assets/workflows/github-issue-fix-base/design-review.md"
+
+[steps.expand_vars]
+mode = "{{mode}}"
+
+[[steps]]
+id = "create-beads"
+title = "Create or gate implementation beads"
+needs = ["design-review"]
+metadata = { "gc.run_target" = "gc.task-decomposer" }
+description_file = "../assets/workflows/github-issue-fix-base/create-beads.md"
+
+[[steps]]
+id = "build"
+title = "Run build quality loop"
+needs = ["create-beads"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-fix-base/build.md"
+
+[[steps]]
+id = "publish-pr"
+title = "Optionally publish PR"
+needs = ["build"]
+condition = "{{pr_mode}} != none"
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/github-issue-fix-base/publish-pr.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize issue-fix result"
+needs = ["build", "publish-pr"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-issue-fix-base/finalize.md"

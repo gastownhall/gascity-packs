@@ -1,0 +1,26 @@
+[
+  {
+    "repetition": 0,
+    "arm": "baseline"
+  },
+  {
+    "repetition": 0,
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "arm": "jev"
+  },
+  {
+    "repetition": 1,
+    "arm": "baseline"
+  },
+  {
+    "repetition": 2,
+    "arm": "baseline"
+  },
+  {
+    "repetition": 2,
+    "arm": "jev"
+  }
+]
