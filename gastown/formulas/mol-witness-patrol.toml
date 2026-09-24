@@ -2,7 +2,12 @@ description = """
 Witness patrol loop. Poured as a root-only wisp on startup:
 
   gc bd mol wisp mol-witness-patrol --root-only --var binding_prefix='{{binding_prefix}}'
-  gc bd update $WISP --assignee=$GC_AGENT
+  gc bd update $WISP --assignee=$GC_AGENT --status=in_progress
+
+`--status=in_progress` on the assign is load-bearing: `gc bd mol wisp` pours
+at status=open and `--assignee` alone does not transition it, so a wisp
+poured without it is invisible to the startup resume check (which filters
+status=in_progress) — the next restart pours a duplicate on top of it.
 
 Each wisp is ONE iteration: check for work, patrol, pour the next
 iteration. On crash, re-read the formula steps and determine where
@@ -831,21 +836,54 @@ Wisp roots are `issue_type=molecule` (never `--type=wisp`, which is not a
 valid gc bd type and matches nothing). They are also ephemeral, so they live
 in the wisps tier that `gc bd list` hides without `--include-infra` — drop that
 flag and this query returns `[]` even when a wisp is already queued.
+
+**Exclude the wisp you are executing, by id — never by status.** The current
+wisp is frequently still `status=open` while it is being executed (assigning
+it does not transition it), so a reconcile that merely filters on
+`status=open` cannot tell "the wisp I am running" from "a genuinely
+queued-next". When only the current wisp matches, `NEXT` resolves to it,
+the pour below is skipped, and step 3 then burns it — the witness ends the
+turn holding ZERO wisps and the patrol stalls until something external
+rebootstraps it (observed live 2026-09-17, pv-wisp-0k5). Resolve the current
+wisp FIRST and subtract it from the candidates.
 ```bash
-OPEN_WISPS=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --include-infra --limit=0 --json | jq -r '.[].id')
+THIS_WISP=${GC_BEAD_ID:-}
+if [ -z "$THIS_WISP" ]; then
+  THIS_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
+fi
+if [ -z "$THIS_WISP" ]; then
+  echo "Could not resolve current witness wisp; not pouring and not burning."
+  gc runtime drain-ack
+  exit 1
+fi
+OPEN_WISPS=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --include-infra --limit=0 --json \
+  | jq -r --arg self "$THIS_WISP" '.[] | select(.id != $self) | .id')
 NEXT=$(printf '%s\n' $OPEN_WISPS | sed -n '1p')
 for extra in $(printf '%s\n' $OPEN_WISPS | sed '1d'); do
   gc bd mol burn "$extra" --force
 done
 if [ -z "$NEXT" ]; then
-  NEXT=$(gc bd mol wisp mol-witness-patrol --root-only --var binding_prefix='{{binding_prefix}}' --json | jq -r '.new_epic_id')
-  gc bd update "$NEXT" --assignee="$GC_AGENT"
+  NEXT=$(gc bd mol wisp mol-witness-patrol --root-only --var binding_prefix='{{binding_prefix}}' --json | jq -r '.new_epic_id // empty')
+  if [ -z "$NEXT" ]; then
+    echo "Could not pour next witness wisp; not burning the current one."
+    gc runtime drain-ack
+    exit 1
+  fi
+fi
+# --status=in_progress is load-bearing: `gc bd mol wisp` pours at status=open
+# and --assignee alone does not transition it, so the next restart's resume
+# check (which filters status=in_progress) cannot see a wisp assigned without
+# it and startup pours a duplicate on top.
+if ! gc bd update "$NEXT" --assignee="$GC_AGENT" --status=in_progress; then
+  echo "Could not assign next witness wisp; not burning the current one."
+  gc runtime drain-ack
+  exit 1
 fi
 ```
 
 **3. Burn this wisp:**
 ```bash
-gc bd mol burn <this-wisp-id> --force
+gc bd mol burn "$THIS_WISP" --force
 ```
 
 **4. Exit this turn:**

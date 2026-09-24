@@ -182,12 +182,17 @@ for extra in $(printf '%s\n' $WISP_IDS | sed '1d'); do  # burn any surplus
 done
 
 # Step 2: Already have a wisp? Resume it. Otherwise check mail, then pour ONE.
+# Either way the wisp must end up in_progress: --assignee alone leaves a poured
+# wisp at status=open, where the resume check above (which prefers
+# status=in_progress) cannot see it — so the next restart pours a duplicate
+# on top of a wisp this session already held.
 if [ -n "$WISP" ]; then
   echo "Resuming patrol wisp $WISP"
+  gc bd update "$WISP" --assignee="$GC_AGENT" --status=in_progress
 else
   gc mail inbox
-  WISP=$(gc bd mol wisp mol-witness-patrol --root-only --var binding_prefix='{{ .BindingPrefix }}' --json | jq -r '.new_epic_id')
-  gc bd update "$WISP" --assignee="$GC_AGENT"
+  WISP=$(gc bd mol wisp mol-witness-patrol --root-only --var binding_prefix='{{ .BindingPrefix }}' --json | jq -r '.new_ephic_id // .new_epic_id // empty')
+  gc bd update "$WISP" --assignee="$GC_AGENT" --status=in_progress
 fi
 
 # Step 3: Execute — read formula steps and work through them in order
@@ -212,13 +217,19 @@ CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
   CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
 fi
-# Reconcile queued (open) patrol wisps to exactly one. A prior cycle may have
-# poured a next wisp without burning, or a restart may have raced — keep the
-# first and burn the surplus so wisps never accumulate. Wisp roots are
-# molecules (never --type=wisp, which is not a valid gc bd type and matches
-# nothing), and they are ephemeral, so --include-infra is required here too —
-# gc bd list hides the wisps tier without it.
-OPEN_WISPS=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --include-infra --limit=0 --json | jq -r '.[].id')
+# Reconcile queued (open) patrol wisps — every one assigned to you EXCEPT the
+# one you are executing — to exactly one. A prior cycle may have poured a next
+# wisp without burning, or a restart may have raced — keep the first and burn
+# the surplus so wisps never accumulate. Wisp roots are molecules (never
+# --type=wisp, which is not a valid gc bd type and matches nothing), and they
+# are ephemeral, so --include-infra is required here too — gc bd list hides
+# the wisps tier without it. Exclude $CURRENT_WISP by id: the wisp you are
+# executing is frequently still status=open (assigning it does not transition
+# it), so a status-only filter mistakes it for a queued-next — it gets reused
+# as the successor, then burned below, and the witness ends the turn holding
+# ZERO wisps. The current wisp is burned below, never reused.
+OPEN_WISPS=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --include-infra --limit=0 --json \
+  | jq -r --arg self "$CURRENT_WISP" '.[] | select(.id != $self) | .id')
 ASSIGNED_WISP=$(printf '%s\n' $OPEN_WISPS | sed -n '1p')
 for extra in $(printf '%s\n' $OPEN_WISPS | sed '1d'); do
   gc bd mol burn "$extra" --force
@@ -229,7 +240,7 @@ if [ -n "$CURRENT_WISP" ] && [ -z "$ASSIGNED_WISP" ]; then
     echo "Could not pour next witness wisp; not burning."
     exit 1
   fi
-  if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
+  if ! gc bd update "$NEXT" --assignee="$GC_AGENT" --status=in_progress; then
     echo "Could not assign next witness wisp; not burning."
     exit 1
   fi
@@ -242,7 +253,7 @@ elif [ -z "$ASSIGNED_WISP" ]; then
     echo "Could not bootstrap next witness wisp."
     exit 1
   fi
-  if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
+  if ! gc bd update "$NEXT" --assignee="$GC_AGENT" --status=in_progress; then
     echo "Could not assign bootstrap witness wisp."
     exit 1
   fi
