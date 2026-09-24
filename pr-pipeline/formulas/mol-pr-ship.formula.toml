@@ -183,7 +183,7 @@ The loop:
 
    ```bash
    ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
-   git diff origin/main..HEAD > "/tmp/pr-ship-${BRANCH//\\//-}-iter${ITER_N}.patch"
+   git diff origin/main...HEAD > "/tmp/pr-ship-${BRANCH//\\//-}-iter${ITER_N}.patch"
    ```
 
 2. Spawn the reviewer panel in a SINGLE message with parallel Agent
@@ -309,7 +309,7 @@ if grep -q "^check-docs:" Makefile 2>/dev/null; then
     DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEFAULT_BRANCH=""
     if [ -n "$DEFAULT_BRANCH" ]; then
         # Only if docs were touched on this branch vs. its base.
-        if git diff --name-only "$DEFAULT_BRANCH..HEAD" | grep -qE "\\.md$|/docs/"; then
+        if git diff --name-only "$DEFAULT_BRANCH...HEAD" | grep -qE "\\.md$|/docs/"; then
             make check-docs && GATES_PASSED="$GATES_PASSED docs" || GATES_FAILED="$GATES_FAILED docs"
         fi
     fi
