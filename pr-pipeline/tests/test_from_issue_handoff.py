@@ -16,6 +16,7 @@ import tomllib
 import pytest
 
 FORMULA = pathlib.Path(__file__).resolve().parent.parent / "formulas" / "mol-pr-from-issue.formula.toml"
+README = pathlib.Path(__file__).resolve().parent.parent / "README.md"
 TITLE = "Revert PR #12: user's login fails"
 BODY = "/tmp/city dir/x/pr-body.md"
 SPECIAL_BRANCH = "fix/$USER x"
@@ -110,6 +111,13 @@ def test_no_prose_promises_a_pool_write():
     gate = step("gate-publish-readiness")
     assert "actually push" not in gate
     assert "arm the bypass token" not in gate
+
+
+def test_readme_describes_publish_handoff_not_pool_write():
+    text = README.read_text(encoding="utf-8")
+    assert "(optional) open PR" not in text
+    assert "authorize the\neligibility-gated push" not in text
+    assert "authorizes no push and no PR open" in text
 
 
 def gate_skip_block() -> str:
