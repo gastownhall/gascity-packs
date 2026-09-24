@@ -1324,6 +1324,54 @@ def test_polecat_base_ref_contract_rejects_a_neutralised_stop_arm(tmp_path) -> N
         gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
 
 
+def test_polecat_base_ref_contract_rejects_a_neutralised_diverged_arm(tmp_path) -> None:
+    # The sibling above only reaches the block's `else`. The diverged-base arm
+    # is a nested `if`, so every structural check skips it: the stop-arm
+    # assertions never see it, and it kept its `exit 1` here anyway. Stripping
+    # its halt_reason stamp left the whole battery green until the ceremony
+    # fragments were pinned.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        '        gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=base_branch_diverged\n',
+        "",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="base_branch_diverged"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_rejects_a_downgraded_witness_mail(tmp_path) -> None:
+    # `halt_reason` has no runtime consumers, so the mail is the only live
+    # signal a halted polecat emits. Downgrading it to an echo keeps the stamp,
+    # the STOP message and the non-zero exit -- so the stamp pin, the stop-arm
+    # assertions and the halt-count pin all stay green -- while the bead halts
+    # silently on every witness re-pool.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_vanished ($WORK_BEAD_ID)" -m "',
+        'echo "',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="base_branch_vanished"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_rejects_a_dropped_witness_rederivation(tmp_path) -> None:
+    # `self-review` is a fresh session, so dropping the re-derivation mails the
+    # halt to an empty target -- the original defect -- while the stamp, the
+    # mail line, the STOP text and the exit all survive. A pin on the bare
+    # assignment could not catch this: it also matches the workspace-setup
+    # copy. Only the adjacency to the arm it serves is unique.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        '    WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"\n',
+        "",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="base_ref_lost"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
 def test_polecat_base_ref_contract_rejects_a_missing_stop_arm(tmp_path) -> None:
     pack_source = mutated_gastown_source(
         tmp_path,

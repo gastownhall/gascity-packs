@@ -149,6 +149,15 @@ The STOP arms stamp `halt_reason` and mail the witness on the way out —
 a base misconfiguration needs a human, and an unrecorded exit just loops
 through witness recovery until someone reads session logs.
 
+Every later base STOP arm in this formula owes the same ceremony: step 3's
+`base_branch_vanished` arm and `self-review`'s `base_ref_lost` arm. The
+`base_branch_vanished` case is the one that must never exit bare — a base
+deleted on origin leaves this clone's remote-tracking ref behind, so the
+block above keeps resolving it, and the bead halts identically on every
+witness re-pool. `WITNESS_TARGET` is a shell variable and dies with the
+session exactly as `$BASE_REF` does, so `self-review` re-derives it rather
+than referencing this one across the step boundary.
+
 Every later block in this step uses `$BASE_REF` — never assume
 `origin/{{base_branch}}` exists. `$BASE_REF` is a shell variable and
 dies with this session, so the resolution is also recorded on the work
@@ -259,6 +268,8 @@ elif ! git fetch origin {{base_branch}} >/dev/null 2>&1; then
     else
         echo "STOP: {{base_branch}} no longer resolves on origin (deleted, renamed, or unreachable)."
         echo "Re-run workspace-setup to re-resolve the base; do not branch from a stale ref."
+        gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=base_branch_vanished
+        gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_vanished ($WORK_BEAD_ID)" -m "{{base_branch}} no longer resolves on origin, but this clone's refs/remotes/origin/{{base_branch}} survives the failed fetch, so step 1 keeps resolving it and $WORK_BEAD_ID halts here again every time witness recovery re-pools it. Restore {{base_branch}} on origin, or fix the rig/bead base configuration and prune the stale tracking ref."
         gc runtime drain-ack
         exit 1
     fi
@@ -330,6 +341,11 @@ BASE_REF=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.base_ref // 
 if [ -z "$BASE_REF" ] || ! git rev-parse --verify --quiet "$BASE_REF^{commit}" >/dev/null; then
     echo "STOP: base ref unresolved (metadata.base_ref='$BASE_REF')."
     echo "Re-run workspace-setup to resolve and record the base; do not substitute a different one."
+    # This step is a fresh session, so workspace-setup's WITNESS_TARGET is not
+    # in scope here — re-derive it rather than mailing an empty target.
+    WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"
+    gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=base_ref_lost
+    gc mail send "$WITNESS_TARGET" -s "polecat halted: base_ref_lost ($WORK_BEAD_ID)" -m "metadata.base_ref on $WORK_BEAD_ID is empty or no longer resolves to a commit, so self-review cannot pick the commit set to review. Re-running workspace-setup re-resolves and re-stamps it, so re-pooling the bead is usually enough; if it halts here twice, the recorded base has been deleted."
     gc runtime drain-ack
     exit 1
 fi
