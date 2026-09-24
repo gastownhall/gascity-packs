@@ -18,7 +18,7 @@ git_c() {
 # the rig was cloned from an origin that already existed).
 new_upstream_and_rig() {
     local base="$1"
-    git_c init -q --bare "$base/upstream.git"
+    git_c init -q --bare -b main "$base/upstream.git"
     git_c init -q -b main "$base/seed"
     (cd "$base/seed" && git_c commit -q --allow-empty -m init \
         && git_c remote add origin "$base/upstream.git" \
