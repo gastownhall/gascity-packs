@@ -5402,7 +5402,12 @@ description = "Override sink that writes the base triage report contract."
                         self.assertIn(expected_out, result.stdout)
 
     def _run_sibling_gate(
-        self, script_name: str, *, show_json: str, list_json: str
+        self,
+        script_name: str,
+        *,
+        show_json: str,
+        list_json: str,
+        extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / script_name
@@ -5424,10 +5429,523 @@ description = "Override sink that writes the base triage report contract."
                 "BD_LIST_JSON": str(list_path),
                 "GC_BEAD_ID": "loop",
                 "GC_ITERATION": "1",
+                **(extra_env or {}),
             }
             return subprocess.run(
                 [str(script)], env=env, text=True, capture_output=True, check=False
             )
+
+    @staticmethod
+    def _rig_row(
+        bead_id: str,
+        metadata: dict,
+        *,
+        status: str = "closed",
+        updated_at: str | None = None,
+    ) -> dict:
+        """A row shaped like this rig's `gc ready --json` reader: eight keys,
+
+        `updated_at` present only when given. Do not chase the live superset
+        (`dependencies`, `assignee`) -- the eight-key fixture is the contract
+        TS-3/AC-003 pin, and a ninth key here would stop proving what the rig
+        actually emits.
+        """
+        row = {
+            "id": bead_id,
+            "status": status,
+            "created_at": "2026-09-01T00:00:00Z",
+            "issue_type": "task",
+            "priority": 1,
+            "title": bead_id,
+            "description": "",
+            "metadata": metadata,
+        }
+        if updated_at is not None:
+            row["updated_at"] = updated_at
+        return row
+
+    def test_design_review_check_fails_closed_when_recency_is_unknown(self) -> None:
+        """REQ-002/REQ-004: undated disagreement is never ranked by id order."""
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        base_metadata = {
+            "gc.root_bead_id": "root",
+            "gc.attempt": "1",
+            "gc.continuation_group": "design-review-fixes",
+        }
+
+        def row(bead_id: str, verdict: str, updated_at: str | None = None) -> dict:
+            return self._rig_row(
+                bead_id,
+                {**base_metadata, "design_review.verdict": verdict},
+                updated_at=updated_at,
+            )
+
+        with self.subTest(case="id-last done beats id-first iterate, both undated"):
+            list_json = json.dumps([row("gcg-aaa", "iterate"), row("gcg-zzz", "done")])
+            result = self._run_sibling_gate(
+                "design-review-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("Design review needs another pass", result.stdout)
+            self.assertIn('selected "iterate" (fail-closed among 2 values)', result.stderr)
+
+        with self.subTest(case="values swapped, still undated"):
+            list_json = json.dumps([row("gcg-aaa", "done"), row("gcg-zzz", "iterate")])
+            result = self._run_sibling_gate(
+                "design-review-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("Design review needs another pass", result.stdout)
+
+        with self.subTest(case="one dated, one undated -- not ranked"):
+            list_json = json.dumps(
+                [
+                    row("gcg-aaa", "done", updated_at="2026-08-13T03:00:00Z"),
+                    row("gcg-zzz", "iterate"),
+                ]
+            )
+            result = self._run_sibling_gate(
+                "design-review-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('selected "iterate" (fail-closed among 2 values)', result.stderr)
+
+        with self.subTest(case="both undated, agree"):
+            list_json = json.dumps([row("gcg-aaa", "done"), row("gcg-zzz", "done")])
+            result = self._run_sibling_gate(
+                "design-review-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Design review approved", result.stdout)
+
+    def test_gap_analysis_check_fails_closed_when_recency_is_unknown(self) -> None:
+        """REQ-002/REQ-004: the same guard for the gap-analysis gate."""
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        base_metadata = {"gc.root_bead_id": "root", "gc.attempt": "1"}
+
+        def row(bead_id: str, verdict: str, updated_at: str | None = None) -> dict:
+            return self._rig_row(
+                bead_id,
+                {**base_metadata, "gap_analysis.verdict": verdict},
+                updated_at=updated_at,
+            )
+
+        with self.subTest(case="id-last done beats id-first iterate, both undated"):
+            list_json = json.dumps([row("gcg-aaa", "iterate"), row("gcg-zzz", "done")])
+            result = self._run_sibling_gate(
+                "gap-analysis-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("Gap analysis needs another iteration: iterate", result.stdout)
+            self.assertIn('selected "iterate" (fail-closed among 2 values)', result.stderr)
+
+        with self.subTest(case="values swapped, still undated"):
+            list_json = json.dumps([row("gcg-aaa", "done"), row("gcg-zzz", "iterate")])
+            result = self._run_sibling_gate(
+                "gap-analysis-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("Gap analysis needs another iteration: iterate", result.stdout)
+
+        with self.subTest(case="one dated, one undated -- not ranked"):
+            list_json = json.dumps(
+                [
+                    row("gcg-aaa", "done", updated_at="2026-08-13T03:00:00Z"),
+                    row("gcg-zzz", "iterate"),
+                ]
+            )
+            result = self._run_sibling_gate(
+                "gap-analysis-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('selected "iterate" (fail-closed among 2 values)', result.stderr)
+
+        with self.subTest(case="both undated, agree"):
+            list_json = json.dumps([row("gcg-aaa", "done"), row("gcg-zzz", "done")])
+            result = self._run_sibling_gate(
+                "gap-analysis-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Gap analysis approved", result.stdout)
+
+    def test_design_review_check_is_invariant_under_id_permutation(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        base_metadata = {
+            "gc.root_bead_id": "root",
+            "gc.attempt": "1",
+            "gc.continuation_group": "design-review-fixes",
+        }
+
+        def row(bead_id: str, verdict: str) -> dict:
+            return self._rig_row(bead_id, {**base_metadata, "design_review.verdict": verdict})
+
+        list_json_a = json.dumps([row("gcg-aaa", "iterate"), row("gcg-zzz", "done")])
+        list_json_b = json.dumps([row("gcg-aaa", "done"), row("gcg-zzz", "iterate")])
+
+        result_a = self._run_sibling_gate(
+            "design-review-approved.sh", show_json=show_json, list_json=list_json_a
+        )
+        result_b = self._run_sibling_gate(
+            "design-review-approved.sh", show_json=show_json, list_json=list_json_b
+        )
+
+        self.assertEqual(result_a.returncode, 1, result_a.stdout + result_a.stderr)
+        self.assertEqual(
+            (result_a.returncode, result_a.stdout), (result_b.returncode, result_b.stdout)
+        )
+
+    def test_gap_analysis_check_is_invariant_under_id_permutation(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        base_metadata = {"gc.root_bead_id": "root", "gc.attempt": "1"}
+
+        def row(bead_id: str, verdict: str) -> dict:
+            return self._rig_row(bead_id, {**base_metadata, "gap_analysis.verdict": verdict})
+
+        list_json_a = json.dumps([row("gcg-aaa", "iterate"), row("gcg-zzz", "done")])
+        list_json_b = json.dumps([row("gcg-aaa", "done"), row("gcg-zzz", "iterate")])
+
+        result_a = self._run_sibling_gate(
+            "gap-analysis-approved.sh", show_json=show_json, list_json=list_json_a
+        )
+        result_b = self._run_sibling_gate(
+            "gap-analysis-approved.sh", show_json=show_json, list_json=list_json_b
+        )
+
+        self.assertEqual(result_a.returncode, 1, result_a.stdout + result_a.stderr)
+        self.assertEqual(
+            (result_a.returncode, result_a.stdout), (result_b.returncode, result_b.stdout)
+        )
+
+    def test_design_review_check_accepts_every_approval_spelling(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        for spelling in ("approve", "Approve", "approved", "pass", "done", "DONE"):
+            with self.subTest(verdict=spelling):
+                list_json = json.dumps(
+                    [
+                        self._rig_row(
+                            "gcg-aaa",
+                            {
+                                "gc.root_bead_id": "root",
+                                "gc.attempt": "1",
+                                "gc.continuation_group": "design-review-fixes",
+                                "design_review.verdict": spelling,
+                            },
+                        )
+                    ]
+                )
+                result = self._run_sibling_gate(
+                    "design-review-approved.sh", show_json=show_json, list_json=list_json
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Design review approved", result.stdout)
+
+    def test_gap_analysis_check_accepts_every_approval_spelling(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        for spelling in ("approve", "Approve", "approved", "pass", "done", "DONE"):
+            with self.subTest(verdict=spelling):
+                list_json = json.dumps(
+                    [
+                        self._rig_row(
+                            "gcg-aaa",
+                            {
+                                "gc.root_bead_id": "root",
+                                "gc.attempt": "1",
+                                "gap_analysis.verdict": spelling,
+                            },
+                        )
+                    ]
+                )
+                result = self._run_sibling_gate(
+                    "gap-analysis-approved.sh", show_json=show_json, list_json=list_json
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Gap analysis approved", result.stdout)
+
+    def test_design_review_check_rejects_every_non_approving_spelling(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        for spelling in ("iterate", "fail", "retry", ""):
+            with self.subTest(verdict=spelling or "<empty>"):
+                if spelling:
+                    list_json = json.dumps(
+                        [
+                            self._rig_row(
+                                "gcg-aaa",
+                                {
+                                    "gc.root_bead_id": "root",
+                                    "gc.attempt": "1",
+                                    "gc.continuation_group": "design-review-fixes",
+                                    "design_review.verdict": spelling,
+                                },
+                            )
+                        ]
+                    )
+                else:
+                    list_json = "[]"
+                result = self._run_sibling_gate(
+                    "design-review-approved.sh", show_json=show_json, list_json=list_json
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("Design review needs another pass", result.stdout)
+
+        with self.subTest(verdict="bogus"):
+            list_json = json.dumps(
+                [
+                    self._rig_row(
+                        "gcg-aaa",
+                        {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            "gc.continuation_group": "design-review-fixes",
+                            "design_review.verdict": "bogus",
+                        },
+                    )
+                ]
+            )
+            result = self._run_sibling_gate(
+                "design-review-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("bogus", result.stderr)
+
+    def test_gap_analysis_check_rejects_every_non_approving_spelling(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        for spelling in ("iterate", "fail", "retry", ""):
+            with self.subTest(verdict=spelling or "<empty>"):
+                if spelling:
+                    list_json = json.dumps(
+                        [
+                            self._rig_row(
+                                "gcg-aaa",
+                                {
+                                    "gc.root_bead_id": "root",
+                                    "gc.attempt": "1",
+                                    "gap_analysis.verdict": spelling,
+                                },
+                            )
+                        ]
+                    )
+                else:
+                    list_json = "[]"
+                result = self._run_sibling_gate(
+                    "gap-analysis-approved.sh", show_json=show_json, list_json=list_json
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("Gap analysis needs another iteration", result.stdout)
+
+        with self.subTest(verdict="bogus"):
+            list_json = json.dumps(
+                [
+                    self._rig_row(
+                        "gcg-aaa",
+                        {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            "gap_analysis.verdict": "bogus",
+                        },
+                    )
+                ]
+            )
+            result = self._run_sibling_gate(
+                "gap-analysis-approved.sh", show_json=show_json, list_json=list_json
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("bogus", result.stderr)
+
+    def test_design_review_check_takes_owner_iterate_over_lane_done(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        base_metadata = {
+            "gc.root_bead_id": "root",
+            "gc.attempt": "1",
+            "gc.continuation_group": "design-review-fixes",
+        }
+
+        def owner_row(bead_id: str) -> dict:
+            return self._rig_row(bead_id, {**base_metadata, "design_review.verdict": "iterate"})
+
+        def lane_row(bead_id: str) -> dict:
+            return self._rig_row(
+                bead_id,
+                {
+                    **base_metadata,
+                    "design_review.verdict": "done",
+                    "design_review.review_verdict": "approve",
+                },
+            )
+
+        for label, owner_id, lane_id in (
+            ("owner id-first", "gcg-aaa", "gcg-zzz"),
+            ("owner id-last", "gcg-zzz", "gcg-aaa"),
+        ):
+            with self.subTest(order=label):
+                list_json = json.dumps([owner_row(owner_id), lane_row(lane_id)])
+                result = self._run_sibling_gate(
+                    "design-review-approved.sh", show_json=show_json, list_json=list_json
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("Design review needs another pass", result.stdout)
+
+    def test_design_review_check_notes_lane_fallback_without_owner(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        base_metadata = {
+            "gc.root_bead_id": "root",
+            "gc.attempt": "1",
+            "gc.continuation_group": "design-review-fixes",
+        }
+        list_json = json.dumps(
+            [
+                self._rig_row(
+                    "gcg-aaa",
+                    {
+                        **base_metadata,
+                        "design_review.verdict": "done",
+                        "plan_review.founder_verdict": "approve",
+                    },
+                ),
+                self._rig_row(
+                    "gcg-zzz",
+                    {
+                        **base_metadata,
+                        "design_review.verdict": "done",
+                        "plan_review.design_verdict": "approve",
+                    },
+                ),
+            ]
+        )
+        result = self._run_sibling_gate(
+            "design-review-approved.sh", show_json=show_json, list_json=list_json
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Design review approved", result.stdout)
+        self.assertIn("no owner-shaped bead at attempt 1", result.stderr)
+        self.assertIn("reduced 2 lane candidates", result.stderr)
+
+    def test_design_review_check_prefers_the_highest_attempt_before_recency(self) -> None:
+        show_json = json.dumps([{"id": "loop", "metadata": {"gc.root_bead_id": "root"}}])
+        base_metadata = {"gc.root_bead_id": "root", "gc.continuation_group": "design-review-fixes"}
+
+        def attempt1_row(bead_id: str) -> dict:
+            return self._rig_row(
+                bead_id,
+                {**base_metadata, "gc.attempt": "1", "design_review.verdict": "done"},
+                updated_at="2026-08-13T05:00:00Z",
+            )
+
+        def attempt2_row(bead_id: str) -> dict:
+            return self._rig_row(
+                bead_id,
+                {**base_metadata, "gc.attempt": "2", "design_review.verdict": "iterate"},
+                updated_at="2026-08-13T01:00:00Z",
+            )
+
+        for label, ordering in (
+            ("attempt-1 id-first", [attempt1_row("gcg-aaa"), attempt2_row("gcg-zzz")]),
+            ("attempt-1 id-last", [attempt2_row("gcg-aaa"), attempt1_row("gcg-zzz")]),
+        ):
+            with self.subTest(order=label):
+                list_json = json.dumps(ordering)
+                result = self._run_sibling_gate(
+                    "design-review-approved.sh", show_json=show_json, list_json=list_json
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("Design review needs another pass", result.stdout)
+
+    def test_gap_analysis_check_checks_every_report_at_the_attempt(self) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        base_metadata = {"gc.root_bead_id": "root", "gc.attempt": "1"}
+
+        with tempfile.TemporaryDirectory() as td:
+            work_dir = pathlib.Path(td)
+            (work_dir / "report-a.md").write_text("all clear\n", encoding="utf-8")
+            (work_dir / "report-b.md").write_text("severity: critical\n", encoding="utf-8")
+
+            def row(bead_id: str, report_path: str) -> dict:
+                return self._rig_row(
+                    bead_id,
+                    {
+                        **base_metadata,
+                        "gap_analysis.verdict": "done",
+                        "gap_analysis.report_path": report_path,
+                    },
+                )
+
+            for label, ordering in (
+                (
+                    "critical id-last",
+                    [row("gcg-aaa", "report-a.md"), row("gcg-zzz", "report-b.md")],
+                ),
+                (
+                    "critical id-first",
+                    [row("gcg-aaa", "report-b.md"), row("gcg-zzz", "report-a.md")],
+                ),
+            ):
+                with self.subTest(order=label):
+                    list_json = json.dumps(ordering)
+                    result = self._run_sibling_gate(
+                        "gap-analysis-approved.sh",
+                        show_json=show_json,
+                        list_json=list_json,
+                        extra_env={"GC_WORK_DIR": str(work_dir)},
+                    )
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn(
+                        "still contains critical/blocker/major findings", result.stdout
+                    )
+
+            with self.subTest(order="both clean"):
+                list_json = json.dumps(
+                    [row("gcg-aaa", "report-a.md"), row("gcg-zzz", "report-a.md")]
+                )
+                result = self._run_sibling_gate(
+                    "gap-analysis-approved.sh",
+                    show_json=show_json,
+                    list_json=list_json,
+                    extra_env={"GC_WORK_DIR": str(work_dir)},
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Gap analysis approved", result.stdout)
+
+    def test_design_review_gap_analysis_and_implementation_review_checks_share_one_vocabulary(
+        self,
+    ) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        checks_dir = root / "assets" / "scripts" / "checks"
+        definitions = {}
+        for name in (
+            "design-review-approved.sh",
+            "gap-analysis-approved.sh",
+            "implementation-review-approved.sh",
+        ):
+            lines = [
+                line
+                for line in (checks_dir / name).read_text(encoding="utf-8").splitlines()
+                if line.startswith("APPROVAL_VERDICTS=(")
+            ]
+            self.assertEqual(len(lines), 1, f"{name}: {lines}")
+            definitions[name] = lines[0]
+
+        self.assertEqual(len(set(definitions.values())), 1, definitions)
 
     def test_gap_analysis_check_takes_the_newest_verdict_not_the_id_last_one(self) -> None:
         """The gap-analysis gate decides by recency -- pinned before it is ported.
