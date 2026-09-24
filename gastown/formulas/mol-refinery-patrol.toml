@@ -972,8 +972,10 @@ rejected/reworked attempt before the successful close.
 ```bash
 git checkout --detach "origin/$TARGET" >/dev/null 2>&1 || true
 git branch -d temp || git branch -D temp || true
+if [ "{{delete_merged_branches}}" = "true" ]; then
+  git push origin --delete "$BRANCH" || true
+fi
 ```
-If delete_merged_branches = "true": `git push origin --delete $BRANCH`
 
 **If MERGE_STRATEGY = "mr":**
 
