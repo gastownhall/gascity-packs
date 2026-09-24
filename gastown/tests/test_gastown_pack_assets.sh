@@ -44,6 +44,28 @@ test_retired_dog_formulas_are_not_reintroduced() {
         fail "gastown pack should not advertise retired dog formulas"
 }
 
+test_deacon_correlates_backup_alerts_by_database() {
+    local formula="$GASTOWN/formulas/mol-deacon-patrol.toml"
+
+    parse_toml "$formula"
+    grep -F 'per-database `dolt_databases[]` records' "$formula" >/dev/null ||
+        fail "deacon should parse per-database backup freshness records"
+    grep -F '[.databases[].name] as $active' "$formula" >/dev/null ||
+        fail "deacon should derive the active database set before backup alerts"
+    grep -F '.backups.dolt_databases[]?' "$formula" >/dev/null ||
+        fail "deacon should evaluate the named backup records"
+    grep -F '$active | index($name)' "$formula" >/dev/null ||
+        fail "deacon should correlate backup freshness with the same active database name"
+    grep -F 'Never combine a commit count from one `databases[]` record' "$formula" >/dev/null ||
+        fail "deacon must not pair one database's commits with another backup's age"
+    grep -F 'aggregate backup stale; database unknown' "$formula" >/dev/null ||
+        fail "older aggregate-only health payloads should stay explicitly unattributed"
+    grep -F 'Backup needed: <db_name> backup is <age> old' "$formula" >/dev/null ||
+        fail "backup nudges should identify the exact stale database"
+    ! grep -F 'Backup needed: dolt backup is <age> old' "$formula" >/dev/null ||
+        fail "deacon must not emit an unattributed aggregate backup nudge"
+}
+
 test_shutdown_dance_contracts_are_executable() {
     local formula="$GASTOWN/formulas/mol-shutdown-dance.toml"
 
@@ -727,6 +749,7 @@ test_prime_prompts_are_city_generic_and_compact() {
 
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
+test_deacon_correlates_backup_alerts_by_database
 test_shutdown_dance_contracts_are_executable
 test_shutdown_dance_lifecycle_and_audit_contracts
 test_work_bead_resolution_discriminator_is_pinned
