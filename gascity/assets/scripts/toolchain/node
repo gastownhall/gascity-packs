@@ -1,0 +1,374 @@
+#!/bin/sh
+# node / npm / npx — gc worker toolchain wrapper, one file installed three
+# times under $CITY/.gc/shims/toolchain/ (`node`, and `npm` and `npx` as
+# links to it; the name it was called by selects the program). It puts a
+# Node the repository accepts on the worker PATH, installed ONCE under the
+# city, never machine-wide, and never replaces the machine's node.
+#
+# Version, first hit wins:
+#   1. GC_TOOLCHAIN_NODE_VERSION in the environment;
+#   2. the nearest .nvmrc or .node-version above the working directory
+#      (`24`, `24.21`, `24.21.0`, with or without a leading v; other specs
+#      such as `lts/*` are skipped with a WARN);
+#   3. NODE_VERSION in toolchain.env beside this file (plain KEY=VALUE, never
+#      evaluated).
+#   None: this wrapper is transparent and runs the next node/npm/npx on PATH.
+# The selected install's bin directory goes first on PATH before the
+# program runs, so npm and npx (`#!/usr/bin/env node` scripts) and every
+# script they run find the selected node, whatever PATH the caller had.
+# A major or major.minor resolves to the newest matching install under the
+# toolchain, else to the newest matching release in <dist>/index.json.
+#
+# Install: <toolchain dir>/node/v<version>/ from
+# <dist>/v<version>/node-v<version>-<os>-<arch>.tar.gz, checked against that
+# release's SHASUMS256.txt before anything is extracted; the extraction is
+# staged beside the target and moved into place by rename, under an
+# .installing-v<version> lock (mkdir, owner pid inside, released on exit and
+# on HUP/INT/TERM) that concurrent callers wait for; a lock whose owner is
+# dead (or a zombie), or that has had no owner for two minutes, is an
+# interrupted install and is moved aside by rename, never deleted, and
+# retaken, but only under a second, atomic reclaim lock
+# (.installing-v<version>.reclaim) and only after re-reading that it is
+# still the same stale lock, so two waiters that both saw the dead owner
+# cannot both clear it and a live lock (the first waiter's fresh one) is
+# never moved; a reclaim lock left behind for two minutes (a crash inside
+# the reclaim) is reported and the wrapper falls through. When
+# the pinned version is not installed and cannot be (the lock directory is
+# not writable, as under a sandbox; no network; a checksum mismatch; no
+# release matches), the wrapper prints one WARN line and falls through to
+# the next node on PATH, so no session is stranded on a toolchain error.
+#
+# Settings (environment wins; then toolchain.env; then the default):
+#   GC_TOOLCHAIN_DIR / TOOLCHAIN_DIR            (default <shim dir>/../../toolchain)
+#   GC_TOOLCHAIN_NODE_VERSION / NODE_VERSION    the pin
+#   GC_TOOLCHAIN_NODE_DIST / NODE_DIST          (default https://nodejs.org/dist)
+#   GC_TOOLCHAIN_NODE_INSTALL / NODE_INSTALL    "off": never download, only use
+#                                               what is installed
+
+set -eu
+
+NAME="${0##*/}"
+case "$NAME" in
+    node|npm|npx) ;;
+    *) printf 'gc-toolchain node: ERROR install this file as node, npm or npx (called as %s)\n' "$NAME" >&2; exit 1 ;;
+esac
+
+log() { printf 'gc-toolchain %s: %s\n' "$NAME" "$*" >&2; }
+warn() { printf 'gc-toolchain %s: WARN %s\n' "$NAME" "$*" >&2; }
+die() { printf 'gc-toolchain %s: ERROR %s\n' "$NAME" "$*" >&2; exit "${2:-1}"; }
+
+case "$0" in
+    */*) self_dir="${0%/*}" ;;
+    *)   self_dir="." ;;
+esac
+[ -n "$self_dir" ] || self_dir="/"
+SELF_DIR="$(cd -P "$self_dir" 2>/dev/null && pwd -P)" || die "cannot resolve my own directory from $0"
+SIDECAR="$SELF_DIR/toolchain.env"
+
+setting() {
+    # shellcheck disable=SC2154  # v is assigned by the eval on the next line
+    eval "v=\${$2-__unset__}"
+    if [ "$v" != "__unset__" ]; then
+        printf '%s\n' "$v"
+        return 0
+    fi
+    if [ -r "$SIDECAR" ]; then
+        line="$(grep -- "^$1=" "$SIDECAR" 2>/dev/null | sed -n '1p')"
+        if [ -n "$line" ]; then
+            printf '%s\n' "${line#*=}"
+            return 0
+        fi
+    fi
+    printf '%s\n' "$3"
+}
+
+# --- fall through to the next program of this name on PATH ------------------------
+run_next_on_path() {
+    rest="${PATH-}:"
+    while [ -n "$rest" ]; do
+        entry="${rest%%:*}"
+        rest="${rest#*:}"
+        [ -n "$entry" ] || entry="."
+        candidate="$entry/$NAME"
+        [ -f "$candidate" ] && [ -x "$candidate" ] || continue
+        entry_dir="$(cd -P "$entry" 2>/dev/null && pwd -P)" || continue
+        [ "$entry_dir" != "$SELF_DIR" ] || continue
+        exec "$candidate" "$@"
+    done
+    die "no $NAME found on PATH besides this wrapper" 127
+}
+
+TOOLCHAIN_DIR="$(setting TOOLCHAIN_DIR GC_TOOLCHAIN_DIR "")"
+[ -n "$TOOLCHAIN_DIR" ] || TOOLCHAIN_DIR="$SELF_DIR/../../toolchain"
+case "$TOOLCHAIN_DIR" in
+    /*) ;;
+    *) TOOLCHAIN_DIR="$SELF_DIR/$TOOLCHAIN_DIR" ;;
+esac
+NODE_DIST="$(setting NODE_DIST GC_TOOLCHAIN_NODE_DIST https://nodejs.org/dist)"
+NODE_INSTALL="$(setting NODE_INSTALL GC_TOOLCHAIN_NODE_INSTALL on)"
+
+# --- which version -----------------------------------------------------------------
+# normalize_spec RAW: prints X, X.Y or X.Y.Z (no v), or nothing when unusable.
+normalize_spec() {
+    s="$(printf '%s' "$1" | tr -d ' \t\r')"
+    s="${s#v}"
+    case "$s" in
+        ''|*[!0-9.]*) return 1 ;;
+    esac
+    case "$s" in
+        *.*.*.*|.*|*.|*..*) return 1 ;;
+    esac
+    printf '%s\n' "$s"
+}
+
+SPEC=""
+SPEC_FROM=""
+if [ -n "${GC_TOOLCHAIN_NODE_VERSION+x}" ]; then
+    SPEC="$GC_TOOLCHAIN_NODE_VERSION"
+    SPEC_FROM="GC_TOOLCHAIN_NODE_VERSION"
+else
+    d="$(pwd -P 2>/dev/null || pwd)"
+    while :; do
+        for f in .nvmrc .node-version; do
+            if [ -f "$d/$f" ]; then
+                raw="$(sed -n '1p' "$d/$f" 2>/dev/null || true)"
+                if SPEC="$(normalize_spec "$raw")"; then
+                    SPEC_FROM="$d/$f"
+                else
+                    warn "$d/$f says '$raw', which this wrapper does not resolve; ignoring it"
+                    SPEC=""
+                fi
+                break 2
+            fi
+        done
+        [ "$d" != "/" ] || break
+        d="${d%/*}"
+        [ -n "$d" ] || d="/"
+    done
+    if [ -z "$SPEC_FROM" ]; then
+        SPEC="$(setting NODE_VERSION __none__ "")"
+        [ -z "$SPEC" ] || SPEC_FROM="$SIDECAR"
+    fi
+fi
+
+if [ -z "$SPEC" ]; then
+    run_next_on_path "$@"
+fi
+if ! SPEC="$(normalize_spec "$SPEC")"; then
+    warn "node version '$SPEC' from $SPEC_FROM is not X, X.Y or X.Y.Z; using the node on PATH"
+    run_next_on_path "$@"
+fi
+
+NODE_ROOT="$TOOLCHAIN_DIR/node"
+
+# newest_installed PREFIX: newest vPREFIX(.n)* directory under NODE_ROOT.
+newest_installed() {
+    [ -d "$NODE_ROOT" ] || return 1
+    best=""
+    for dir in "$NODE_ROOT"/v"$1" "$NODE_ROOT"/v"$1".*; do
+        [ -x "$dir/bin/node" ] || continue
+        ver="${dir##*/v}"
+        case "$ver" in
+            "$1"|"$1".*) ;;
+            *) continue ;;
+        esac
+        if [ -z "$best" ]; then best="$ver"
+        elif [ "$(printf '%s\n%s\n' "$best" "$ver" | sort -t. -k1,1n -k2,2n -k3,3n | sed -n '2p')" = "$ver" ]; then best="$ver"
+        fi
+    done
+    [ -n "$best" ] || return 1
+    printf '%s\n' "$best"
+}
+
+# newest_release PREFIX: newest matching version in <dist>/index.json.
+newest_release() {
+    command -v curl >/dev/null 2>&1 || return 1
+    curl -fsSL --max-time 20 "$NODE_DIST/index.json" 2>/dev/null \
+        | tr ',' '\n' \
+        | sed -n 's/^.*"version" *: *"v\([0-9][0-9.]*\)".*$/\1/p' \
+        | while IFS= read -r ver; do
+            case "$ver" in
+                "$1"|"$1".*) printf '%s\n' "$ver" ;;
+            esac
+        done \
+        | sort -t. -k1,1n -k2,2n -k3,3n \
+        | tail -n 1 \
+        | grep . || return 1
+}
+
+case "$SPEC" in
+    *.*.*) VERSION="$SPEC" ;;
+    *)
+        if VERSION="$(newest_installed "$SPEC")"; then
+            :
+        elif [ "$NODE_INSTALL" != "off" ] && VERSION="$(newest_release "$SPEC")"; then
+            :
+        else
+            warn "no installed or downloadable node matches '$SPEC' (from $SPEC_FROM); using the node on PATH"
+            run_next_on_path "$@"
+        fi ;;
+esac
+TARGET="$NODE_ROOT/v$VERSION"
+
+# --- install once ------------------------------------------------------------------
+sha256_of() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 -- "$1" | sed 's/ .*//'
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum -- "$1" | sed 's/ .*//'
+    else
+        return 1
+    fi
+}
+
+owner_is_dead() {
+    ! kill -0 "$1" 2>/dev/null && return 0
+    case "$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ')" in
+        Z*) return 0 ;;
+    esac
+    return 1
+}
+
+# lock_is_stale: $lock exists and its owner is dead or a zombie, or it has
+# had no owner for over two minutes (a run died between mkdir and the pid
+# write; a live run publishes within milliseconds). Sets `owner`.
+lock_is_stale() {
+    [ -d "$lock" ] || return 1
+    owner="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [ -n "$owner" ]; then
+        owner_is_dead "$owner"
+    else
+        [ -n "$(find "$lock" -maxdepth 0 -mmin +2 2>/dev/null)" ]
+    fi
+}
+
+# reclaim_stale_lock: move $lock aside if, under the reclaim lock, it is
+# still stale. 0 when something was moved; 1 otherwise (lost the reclaim
+# race, the lock turned out live or gone: wait on); 2 when the reclaim lock
+# itself is older than two minutes, a crash residue that is never removed
+# here (two contenders removing it would race exactly like the primary
+# lock): the caller falls through to the node on PATH.
+reclaim_stale_lock() {
+    reclaim="$lock.reclaim"
+    if ! mkdir "$reclaim" 2>/dev/null; then
+        if [ -n "$(find "$reclaim" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+            warn "stale reclaim lock $reclaim is older than two minutes; remove it by hand after checking no node install is alive"
+            return 2
+        fi
+        return 1
+    fi
+    [ -z "${GC_TOOLCHAIN_TEST_PAUSE_IN_RECLAIM:-}" ] || sleep "$GC_TOOLCHAIN_TEST_PAUSE_IN_RECLAIM"
+    moved=1
+    if lock_is_stale; then
+        aside="$lock.stale-${owner:-nopid}-$$"
+        if mv "$lock" "$aside" 2>/dev/null; then
+            warn "moved aside an interrupted node v$VERSION install lock (owner pid ${owner:-none}) -> $aside"
+            moved=0
+        fi
+    fi
+    rmdir "$reclaim" 2>/dev/null || true
+    return "$moved"
+}
+
+install_node() {
+    [ "$NODE_INSTALL" != "off" ] || { warn "node v$VERSION is not installed under $NODE_ROOT and installs are off"; return 1; }
+    command -v curl >/dev/null 2>&1 || { warn "curl is required to install node v$VERSION"; return 1; }
+    os="$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    case "$os" in darwin|linux) ;; *) warn "no node build for $os"; return 1 ;; esac
+    arch="$(uname -m 2>/dev/null)"
+    case "$arch" in
+        arm64|aarch64) arch=arm64 ;;
+        x86_64|amd64) arch=x64 ;;
+        *) warn "no node build for $arch"; return 1 ;;
+    esac
+    file="node-v$VERSION-$os-$arch.tar.gz"
+    lock="$NODE_ROOT/.installing-v$VERSION"
+    mkdir -p "$NODE_ROOT" 2>/dev/null || { warn "cannot write $NODE_ROOT to install node v$VERSION (sandboxed or read-only?)"; return 1; }
+    waited=0
+    while ! mkdir "$lock" 2>/dev/null; do
+        if [ ! -d "$lock" ]; then
+            warn "cannot write $NODE_ROOT to install node v$VERSION (sandboxed or read-only?)"
+            return 1
+        fi
+        # a lock whose owner is dead, or that has had no owner for two minutes,
+        # is an interrupted install: move it aside (nothing deleted) and
+        # retake, one reclaimer at a time, after a re-read under its lock
+        owner=""
+        if lock_is_stale; then
+            [ -z "${GC_TOOLCHAIN_TEST_PAUSE_BEFORE_RECLAIM:-}" ] || sleep "$GC_TOOLCHAIN_TEST_PAUSE_BEFORE_RECLAIM"
+            reclaimed=0
+            reclaim_stale_lock || reclaimed=$?
+            case "$reclaimed" in
+                0) continue ;;
+                2) return 1 ;;
+            esac
+        fi
+        [ -x "$TARGET/bin/node" ] && return 0
+        [ "$waited" -lt 300 ] || { warn "node v$VERSION install by another caller (pid ${owner:-unknown}) did not complete"; return 1; }
+        [ "$waited" -gt 0 ] || log "waiting for another caller's node v$VERSION install (pid ${owner:-unknown})"
+        sleep 1
+        waited=$((waited + 1))
+    done
+    printf '%s\n' "$$" > "$lock/pid"
+    NODE_LOCK="$lock"
+    trap 'release_node_lock' EXIT
+    trap 'release_node_lock; exit 129' HUP
+    trap 'release_node_lock; exit 130' INT
+    trap 'release_node_lock; exit 143' TERM
+    if [ -x "$TARGET/bin/node" ]; then
+        release_node_lock
+        return 0      # installed by the caller whose lock we just took over
+    fi
+    stage="$NODE_ROOT/.stage-v$VERSION-$$"
+    ok=1
+    if mkdir "$stage" 2>/dev/null \
+        && curl -fsSL --max-time 600 -o "$stage/$file" "$NODE_DIST/v$VERSION/$file" \
+        && curl -fsSL --max-time 60 -o "$stage/SHASUMS256.txt" "$NODE_DIST/v$VERSION/SHASUMS256.txt"; then
+        want="$(grep -- " $file\$" "$stage/SHASUMS256.txt" 2>/dev/null | sed -n '1p' | sed 's/ .*//')"
+        have="$(sha256_of "$stage/$file" 2>/dev/null || true)"
+        if [ -n "$want" ] && [ -n "$have" ] && [ "$want" = "$have" ]; then
+            if tar -xzf "$stage/$file" -C "$stage" 2>/dev/null \
+                && [ -x "$stage/node-v$VERSION-$os-$arch/bin/node" ] \
+                && mv "$stage/node-v$VERSION-$os-$arch" "$TARGET" 2>/dev/null; then
+                ok=0
+                rm -f "$stage/$file" "$stage/SHASUMS256.txt"
+                rmdir "$stage" 2>/dev/null || true
+                log "installed node v$VERSION under $TARGET"
+            else
+                warn "node v$VERSION archive did not extract or move into place"
+            fi
+        else
+            warn "node v$VERSION checksum mismatch (SHASUMS256.txt ${want:-absent}, file ${have:-unhashed}); nothing installed"
+        fi
+    else
+        warn "node v$VERSION download from $NODE_DIST failed"
+    fi
+    release_node_lock
+    return "$ok"
+}
+
+NODE_LOCK=""
+release_node_lock() {
+    if [ -n "$NODE_LOCK" ]; then
+        [ "$(cat "$NODE_LOCK/pid" 2>/dev/null || true)" = "$$" ] && rm -f "$NODE_LOCK/pid" 2>/dev/null && rmdir "$NODE_LOCK" 2>/dev/null || true
+        NODE_LOCK=""
+    fi
+}
+
+if [ ! -x "$TARGET/bin/node" ]; then
+    if ! install_node; then
+        warn "pinned node v$VERSION (from $SPEC_FROM) unavailable; using the node on PATH"
+        run_next_on_path "$@"
+    fi
+fi
+
+[ -x "$TARGET/bin/$NAME" ] || die "node v$VERSION under $TARGET has no bin/$NAME"
+# npm and npx are `#!/usr/bin/env node` scripts: they, and every script they
+# run, must find the selected node first on PATH, whatever PATH the caller
+# had (an absolute-path call with no node on PATH exited 127 before).
+case ":$PATH:" in
+    "$TARGET/bin:"*) ;;
+    *) PATH="$TARGET/bin:$PATH" ;;
+esac
+export PATH
+exec "$TARGET/bin/$NAME" "$@"

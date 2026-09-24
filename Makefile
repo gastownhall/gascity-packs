@@ -14,7 +14,22 @@ ifneq ($(strip $(PACK_DESCRIPTION)),)
 STAMP_PACK_DESCRIPTION := --pack-description "$(PACK_DESCRIPTION)"
 endif
 
-.PHONY: registry-help registry-format-validate registry-validate registry-validate-all registry-publish registry-withdraw
+# The pytest suites CI runs (.github/workflows/ci.yml). `test` uses the
+# interpreter's own pytest when pytest, PyYAML and jsonschema import, else
+# `uv run --with ...` (a Homebrew python3 has no pytest). GC_TEMPLATE is unset
+# because a gc worker session exports it and one claim-command test would
+# otherwise inherit it as its expected route.
+PYTEST_DIRS ?= tests contributing/tests gascity/tests discord/tests github/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests
+PYTEST_ARGS ?= -q
+PYTEST_RUNNER = if $(PYTHON) -c 'import pytest, yaml, jsonschema' >/dev/null 2>&1; then echo '$(PYTHON) -m pytest'; else echo 'uv run --with pytest --with pyyaml --with jsonschema $(PYTHON) -m pytest'; fi
+
+.PHONY: test test-gascity registry-help registry-format-validate registry-validate registry-validate-all registry-publish registry-withdraw
+
+test:
+	env -u GC_TEMPLATE $$($(PYTEST_RUNNER)) $(PYTEST_DIRS) $(PYTEST_ARGS)
+
+test-gascity:
+	env -u GC_TEMPLATE $$($(PYTEST_RUNNER)) tests gascity/tests $(PYTEST_ARGS)
 
 registry-help:
 	@printf '%s\n' 'Registry targets:'

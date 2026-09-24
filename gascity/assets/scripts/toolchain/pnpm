@@ -1,0 +1,961 @@
+#!/bin/sh
+# pnpm — gc worker toolchain wrapper. Install as $CITY/.gc/shims/toolchain/pnpm
+# (README, "Worker toolchain"), the directory a provider shim puts first on
+# PATH for every worker session and its child processes.
+#
+# What it does, in order:
+#   1. pnpm itself is installed ONCE per version under the city, never
+#      machine-wide: <toolchain dir>/pnpm/v<version>/node_modules/.bin/pnpm
+#      (npm --prefix), so a changed PNPM_VERSION is a new install, never a
+#      stale cache. The first caller installs, concurrent callers wait for
+#      it; a caller that still finds no binary runs `npx -y pnpm@<version>`
+#      for this one command.
+#   2. pnpm's own in-command install is turned off for the command it runs
+#      (pnpm_config_verify_deps_before_run=false, the one value the
+#      environment prefix reaches). pnpm 11 defaults verify-deps-before-run
+#      to "install": every `pnpm run`, `pnpm exec`, `pnpm test` and bare
+#      `pnpm <script>` first re-runs `pnpm install` when node_modules is out
+#      of sync (missing after a fresh lane, stale after a branch switch), and
+#      parallel read-only checks then race on the same node_modules. The
+#      lane path below is the one path that installs.
+#   3. Every command is one of three kinds, decided by the first bare token
+#      after the global options and the prefixes pnpm accepts
+#      (`recursive`/`multi`/`m`, `pm`, `with <runtime>`); which option
+#      swallows which token is pnpm's own option table (below, read from
+#      the pinned pnpm), never a guess: `--child-concurrency 1 install` and
+#      `--recursive false install` are installs. The directory pnpm acts
+#      on, TARGET, is the last `-C`/`--dir`/`--config.dir=` value in pnpm's
+#      own option scope, else the last `--prefix` (`--dir` wins wherever
+#      it stands, measured) (the whole line for a built-in; for `run` up to the
+#      script name, whose own arguments are its own; nothing after `exec`,
+#      `test` or `create`, whose next token is the bin or script name
+#      whatever it looks like; a bare script name ends the scope), else
+#      the working directory; `-w`/`--workspace-root` moves it to the
+#      workspace root above that. `--ignore-workspace` (pnpm's "treat this
+#      directory as a standalone project"; measured on 11.20: the flag,
+#      `--ignore-workspace=true` and a literal `true` after it select,
+#      `--ignore-workspace=false`, a literal `false` and
+#      `--no-ignore-workspace` deselect, the last one wins, and neither
+#      `--config.ignore-workspace`, `npm_config_ignore_workspace` nor an
+#      .npmrc line reaches it, so none is read here) is carried through
+#      everything below: the lane is TARGET itself, the probe and the lane
+#      install pass the flag, and `-w` moves nothing (pnpm refuses it
+#      outside a workspace). A lifecycle script of a standalone install
+#      re-enters without the flag (pnpm hands it no such environment) and
+#      resolves the workspace above, as pnpm itself would.
+#      `pnpm audit --fix` is a mutate (pnpm runs its update handler).
+#        info    — reports or manages state outside node_modules (`store`,
+#                  `config`, `list`, `outdated`, `--version`, `help`, ...),
+#                  and any command whose last `-h`/`--help`/`-v`/`--version`
+#                  in pnpm's option scope is on (nopt keeps the last value:
+#                  `--no-help --help` asks, `--help --no-help` does not;
+#                  measured on 11.20, a final false prints no help and
+#                  installs nothing either, "Unknown option: 'help'"):
+#                  runs as is, touches no lock.
+#        mutate  — every pnpm 11.20 built-in that can change node_modules
+#                  (`install`, `ci`, `add`, `remove`, `update`, `link`,
+#                  `prune`, `dedupe`, `rebuild`, `clean`, `purge`, ...): runs
+#                  where typed, arguments unchanged, under the lane lock, so
+#                  it never overlaps another caller's install. A package
+#                  script named `clean`, `purge`, `rebuild` (`rb`), `setup`
+#                  or `deploy` in the manifest of the directory pnpm acts on
+#                  wins over the built-in for pnpm, so it does here (project),
+#                  unless `pnpm pm <name>` forced the built-in; an empty
+#                  script is no script to pnpm (`"clean": ""` runs the
+#                  built-in, measured), so it is none here.
+#        project — `run`, `exec`, `test`, a bare script or bin name, anything
+#                  else: first makes sure the lane is in sync, then runs.
+#      In sync is pnpm's own word, never this wrapper's: before a project
+#      command the wrapper asks pnpm read-only, in TARGET, with
+#      `--config.verify-deps-before-run=error` (the flag; the environment
+#      prefix installs for any value but false) and a command that runs
+#      nothing (`exec true`). pnpm's checkDepsStatus compares node_modules
+#      with the lockfile, every manifest, the workspace membership and the
+#      settings, and answers yes (exit 0) or no (a VERIFY_DEPS_BEFORE_RUN
+#      error, node_modules missing included); any other failure (a broken
+#      manifest, a denied write to pnpm's workspace state file on a
+#      read-only lane, which pnpm reports under the same VERIFY code with
+#      the file error as its reason, measured) is not a verdict: one WARN
+#      and the command runs as is, never an install. The question is asked
+#      under the lane lock, <lane>/node_modules/.gc-lane-deps.lock (mkdir,
+#      this wrapper's pid inside; a mutate or install in flight holds it,
+#      and a rebuild half done reads as yes to pnpm, so it is waited for
+#      first). Yes: the lock is released and the command runs, holding
+#      nothing. No: (the lane is the workspace root above TARGET, the
+#      nearest pnpm-workspace.yaml, since a workspace install writes every
+#      member's tree whatever sharedWorkspaceLockfile says, else the nearest
+#      pnpm-lock.yaml; under `--ignore-workspace` it is TARGET when TARGET
+#      holds pnpm-lock.yaml, the only lockfile pnpm reads then; a project
+#      command with no lane runs as is) `pnpm install --frozen-lockfile`
+#      (with `--ignore-workspace` when the command carried it) runs in the
+#      lane, still under the lock, then the lock is released and the
+#      command runs; every concurrent caller waits for the lock and asks
+#      pnpm again, so a lane is installed once whatever runs in parallel.
+#      A failed install fails the command (exit status of pnpm install):
+#      the requested command does not run. pnpm fails the frozen install
+#      closed when a manifest is ahead of the lockfile; the worker's own
+#      `pnpm install` (a mutate) resolves that.
+#      THE CONTRACT (shape A; the mayor's decision after gate rounds 19 to
+#      29 each found a hole around a reader/writer model of running
+#      commands): this wrapper owns exactly two things. (a) Its own
+#      question and the one frozen install per lockfile, under the lane
+#      lock. (b) Mutate-vs-mutate serialization: two callers that both
+#      change dependencies (install, add, remove, update, dedupe, import,
+#      link, unlink, prune, patch, rebuild, and the other mutating built-ins
+#      in pnpm's own command table) serialize on that same lock. A project
+#      command (run, exec, test, a script or bin name, dlx, any
+#      non-mutating command) runs after the question with no token of any
+#      kind; nothing tracks running commands. NON-GOAL: A running command
+#      is not fenced from a dependency mutation another caller starts
+#      afterwards. This is bare pnpm's own position, and under the lane
+#      model one lane belongs to one agent (memory
+#      dispatch-worktree-constraint), so the two callers are the same
+#      agent. That names `pnpm run build` under syncInjectedDepsAfterScripts
+#      (pnpm writes injected dependencies and bin links after the script:
+#      a writer holding no lock, unfenced by design) as much as
+#      `node check.js & pnpm rebuild`. Lock ownership is this wrapper's
+#      pid, and the dead-wrapper window is accepted, not chased: a wrapper
+#      killed outright (SIGKILL) while its pnpm child still runs leaves a
+#      lock whose owner is dead, the next caller reclaims it and may run
+#      beside the orphaned child. A signal this wrapper traps (HUP, INT,
+#      TERM) releases the lock only after the child has ended, since sh
+#      runs a trap after the foreground command completes (measured on
+#      /bin/sh: the trap ran three seconds later, when the child ended).
+#      No child-pid tracking, no ancestor exemption.
+#      A lock whose owner pid is dead (or a zombie), or that has no owner
+#      after two minutes, is moved aside by rename (atomic; nothing is
+#      deleted) and retaken. Every change of hands of the lock goes through
+#      one gate, <lock>.reclaim (mkdir, held for an instant): making the
+#      lock (the mkdir and the pid inside as one step, with HUP, INT and
+#      TERM held for it) and judging a stale lock and moving it aside. So a
+#      waiter cannot make a fresh lock while another judges the old one,
+#      two waiters cannot both clear it, and a lock that under the gate
+#      names another owner than the one judged dead is never moved. A pid
+#      that cannot be written leaves no lock standing and fails the command
+#      closed naming the file. A gate left standing for two minutes (a
+#      wrapper killed outright inside it) fails the command closed, for a
+#      human to remove after checking no lane install is alive. A live lock
+#      is waited for up to <wait> seconds, then this command fails closed
+#      naming the holder. Only the pid that took the lock releases it, and
+#      a trapped signal releases the lock and the gate this wrapper holds;
+#      the release itself runs with the signals held, removal before the
+#      mark, so a signal there is lost, never a lock left standing. A lifecycle script that a mutate or install runs
+#      (a `postinstall` that calls `pnpm run build`) re-enters this wrapper
+#      with the lane already locked by its parent: the locking wrapper
+#      exports GC_TOOLCHAIN_LANE_DEPS_INSTALLING=<lane> and a descendant
+#      that resolves the same lane runs as info, never asking pnpm or
+#      waiting on its parent's lock. A command a running project command
+#      starts is any other caller: a project command asks pnpm again under
+#      the lock, a mutate takes the lock and runs, under the command that
+#      started it (the non-goal above). A lane whose node_modules refuses
+#      the lock for this caller (a sandbox, a read-only lane) cannot be
+#      coordinated from here: its question and install serialize on that
+#      lock, so the command fails closed naming the refusal;
+#      GC_TOOLCHAIN_LANE_DEPS=off is the way to run there when the lane is
+#      this caller's alone.
+#   4. The wrapper's own directory goes first on PATH, so the node pnpm runs
+#      on (and every script it runs) is the toolchain's node when the city
+#      pinned one (see the node wrapper beside this file).
+#
+# Settings (environment wins; then toolchain.env beside this file, plain
+# KEY=VALUE lines, never evaluated; then the default):
+#   GC_TOOLCHAIN_DIR / TOOLCHAIN_DIR             where pinned tools live
+#                                                (default: <shim dir>/../../toolchain,
+#                                                 i.e. $CITY/.gc/toolchain)
+#   GC_TOOLCHAIN_PNPM_VERSION / PNPM_VERSION     pnpm to install (default 11.20.0;
+#                                                pnpm honours a repo's packageManager
+#                                                pin on top of it)
+#   GC_TOOLCHAIN_LANE_DEPS / LANE_DEPS           "off": every command runs as info
+#   GC_TOOLCHAIN_LANE_DEPS_WAIT / LANE_DEPS_WAIT seconds to wait for another
+#                                                caller's lock (default 600)
+
+set -eu
+
+log() { printf 'gc-toolchain pnpm: %s\n' "$*" >&2; }
+warn() { printf 'gc-toolchain pnpm: WARN %s\n' "$*" >&2; }
+die() { printf 'gc-toolchain pnpm: ERROR %s\n' "$*" >&2; exit 1; }
+die_with() { st="$1"; shift; printf 'gc-toolchain pnpm: ERROR %s\n' "$*" >&2; exit "$st"; }
+
+# --- locate self with parameter expansion only ------------------------------------
+case "$0" in
+    */*) self_dir="${0%/*}" ;;
+    *)   self_dir="." ;;
+esac
+[ -n "$self_dir" ] || self_dir="/"
+SELF_DIR="$(cd -P "$self_dir" 2>/dev/null && pwd -P)" || die "cannot resolve my own directory from $0"
+SIDECAR="$SELF_DIR/toolchain.env"
+
+# setting NAME ENV_NAME DEFAULT: environment (even empty) wins over the
+# sidecar; the sidecar is read as text, first matching line, never evaluated.
+setting() {
+    # shellcheck disable=SC2154  # v is assigned by the eval on the next line
+    eval "v=\${$2-__unset__}"
+    if [ "$v" != "__unset__" ]; then
+        printf '%s\n' "$v"
+        return 0
+    fi
+    if [ -r "$SIDECAR" ]; then
+        line="$(grep -- "^$1=" "$SIDECAR" 2>/dev/null | sed -n '1p')"
+        if [ -n "$line" ]; then
+            printf '%s\n' "${line#*=}"
+            return 0
+        fi
+    fi
+    printf '%s\n' "$3"
+}
+
+TOOLCHAIN_DIR="$(setting TOOLCHAIN_DIR GC_TOOLCHAIN_DIR "")"
+if [ -z "$TOOLCHAIN_DIR" ]; then
+    TOOLCHAIN_DIR="$SELF_DIR/../../toolchain"
+fi
+case "$TOOLCHAIN_DIR" in
+    /*) ;;
+    *) TOOLCHAIN_DIR="$SELF_DIR/$TOOLCHAIN_DIR" ;;
+esac
+PNPM_VERSION="$(setting PNPM_VERSION GC_TOOLCHAIN_PNPM_VERSION 11.20.0)"
+LANE_DEPS="$(setting LANE_DEPS GC_TOOLCHAIN_LANE_DEPS on)"
+LANE_DEPS_WAIT="$(setting LANE_DEPS_WAIT GC_TOOLCHAIN_LANE_DEPS_WAIT 600)"
+case "$LANE_DEPS_WAIT" in
+    ''|*[!0-9]*) LANE_DEPS_WAIT=600 ;;
+esac
+
+# The toolchain's own tools first, so `node` under pnpm is the pinned one.
+case ":$PATH:" in
+    "$SELF_DIR:"*) ;;
+    *) PATH="$SELF_DIR:$PATH" ;;
+esac
+export PATH
+
+# --- 1. pnpm itself, once per version under the city -------------------------------
+PNPM_ROOT="$TOOLCHAIN_DIR/pnpm/v$PNPM_VERSION"
+PNPM_BIN="$PNPM_ROOT/node_modules/.bin/pnpm"
+if [ ! -x "$PNPM_BIN" ]; then
+    if mkdir -p "$PNPM_ROOT" 2>/dev/null && mkdir "$PNPM_ROOT/.installing" 2>/dev/null; then
+        log "installing pnpm $PNPM_VERSION once under $PNPM_ROOT"
+        npm install --prefix "$PNPM_ROOT" --no-audit --no-fund --loglevel=error "pnpm@$PNPM_VERSION" >&2 \
+            || warn "pnpm $PNPM_VERSION did not install under $PNPM_ROOT"
+        rmdir "$PNPM_ROOT/.installing" 2>/dev/null || true
+    else
+        waited=0
+        while [ -d "$PNPM_ROOT/.installing" ] && [ "$waited" -lt 120 ]; do
+            [ "$waited" -gt 0 ] || log "waiting for another caller's pnpm install"
+            sleep 1
+            waited=$((waited + 1))
+        done
+    fi
+fi
+
+run_pnpm() {
+    if [ -x "$PNPM_BIN" ]; then
+        "$PNPM_BIN" "$@"
+    else
+        npx -y "pnpm@$PNPM_VERSION" "$@"
+    fi
+}
+
+exec_pnpm() {
+    if [ -x "$PNPM_BIN" ]; then
+        exec "$PNPM_BIN" "$@"
+    fi
+    warn "pinned pnpm $PNPM_VERSION is not installed; running npx -y pnpm@$PNPM_VERSION for this command"
+    exec npx -y "pnpm@$PNPM_VERSION" "$@"
+}
+
+# --- 2. pnpm's in-command install is off for the command it runs ---------------------
+pnpm_config_verify_deps_before_run=false
+export pnpm_config_verify_deps_before_run
+
+# --- 3. classify ---------------------------------------------------------------------
+
+# resolve_dir VALUE: absolute form of a directory option value.
+resolve_dir() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *)  printf '%s/%s\n' "$(pwd -P)" "$1" ;;
+    esac
+}
+
+# script_defined NAME: the package.json pnpm would read at TARGET defines
+# scripts.NAME with a value pnpm counts (pnpm's test is the value's truth,
+# measured on 11.20: `"clean": ""` is no script and the built-in runs,
+# `"purge": "   "` is one and runs as a script; read with node, the
+# toolchain's own when pinned; without node the built-in reading stands).
+script_defined() {
+    [ -f "$TARGET/package.json" ] || return 1
+    command -v node >/dev/null 2>&1 || return 1
+    node -e 'const s=(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).scripts)||{};process.exit(s[process.argv[2]]?0:1)' "$TARGET/package.json" "$1" 2>/dev/null
+}
+
+# --- pnpm's own option table ----------------------------------------------------------
+# pnpm 11.20.0 finds its command with one nopt pass over these option types
+# (GLOBAL_OPTIONS + the `add` and `install` option types + filter/help/
+# recursive) and the universal shorthands (parse-cli-args, parseCliArgs);
+# the first token left over is the command. The tables and the rules below
+# are that pass, read from the pinned pnpm.mjs, so what this wrapper takes
+# for the command is what pnpm takes:
+#   - a boolean option swallows only a literal true/false after it (`color`
+#     also always/auto/never, `link-workspace-packages` also deep); an
+#     unknown option is a boolean unless written --name=value;
+#   - a string option swallows the next token unless it looks like an
+#     option (-x, --x); every other value type swallows the next token
+#     unless it is `--`;
+#   - --no-<name> negates a boolean; --name=value is `--name value`; a
+#     unique prefix of an option name is that option (`--ignore-w`); a
+#     shorthand is expanded first (`-C` → --dir, `-s` → --reporter=silent,
+#     `-rw` → --recursive --workspace-root, a unique prefix of a shorthand
+#     word such as `--verb` too), never when it spells an option name;
+#   - `--` (or any run of dashes alone) ends the options; so do the tokens
+#     create, exec and test (pnpm's escapeArgs): everything after them is
+#     positional, `exec`'s next token is the bin name whatever it looks like;
+#   - `run`/`run-script` (pnpm's specially escaped commands) keep taking
+#     pnpm's options up to the script name.
+OPTS_BOOL=" aggregate-output color config dangerously-allow-all-builds dev dry-run engine-strict fail-if-no-match fix-lockfile force frozen-lockfile frozen-store global help hoist ignore-pnpmfile ignore-scripts ignore-workspace ignore-workspace-root-check include-workspace-root link-workspace-packages lockfile lockfile-only merge-git-branch-lockfiles node-experimental-package-map offline optimistic-repeat-install optional parseable prefer-frozen-lockfile prefer-offline production recursive resolution-only runtime save save-dev save-exact save-optional save-peer save-prod save-workspace-protocol shamefully-hoist shared-workspace-lockfile side-effects-cache side-effects-cache-readonly stream strict-peer-dependencies trust-lockfile unsafe-perm update-checksums use-stderr verify-store-integrity virtual-store-only workspace workspace-root yes "
+OPTS_STRING=" cache-dir dir filter global-bin-dir global-dir global-pnpmfile lockfile-dir modules-dir noproxy npm-path pnpmfile reporter save-catalog-name save-prefix store-dir virtual-store-dir "
+OPTS_VALUE=" allow-build changed-files-ignore-pattern child-concurrency cpu fetch-retries fetch-retry-factor fetch-retry-maxtimeout fetch-retry-mintimeout fetch-timeout filter-prod hoist-pattern hoisting-limits https-proxy libc loglevel merge-git-branch-lockfiles-branch-pattern network-concurrency node-linker node-package-map-type only os package-import-method pm-on-fail pnpr-server prefix proxy public-hoist-pattern registry scripts-prepend-node-path test-pattern trust-policy trust-policy-exclude trust-policy-ignore-after workspace-packages "
+ALL_OPTS="$OPTS_BOOL$OPTS_STRING$OPTS_VALUE"
+# Once the command is known pnpm parses the line again with GLOBAL_OPTIONS
+# (help and recursive too) plus that command's own types; the wrapper reads
+# the directory, workspace and fix flags, and `run`'s script name, from
+# that second pass: `install`/`add` use the table above, `run` its own,
+# `audit` adds `fix`, every other command reads the globals and takes an
+# unknown option for a boolean.
+GLOBAL_BOOL=" aggregate-output color fail-if-no-match help ignore-workspace include-workspace-root parseable recursive stream use-stderr workspace-root yes "
+GLOBAL_STRING=" dir filter reporter "
+GLOBAL_VALUE=" changed-files-ignore-pattern filter-prod loglevel pm-on-fail prefix test-pattern workspace-packages "
+RUN_BOOL="$GLOBAL_BOOL bail if-present report-summary reporter-hide-prefix reverse sequential sort unsafe-perm "
+RUN_STRING="$GLOBAL_STRING resume-from "
+RUN_VALUE="$GLOBAL_VALUE scripts-prepend-node-path workspace-concurrency "
+AUDIT_BOOL="$GLOBAL_BOOL fix "
+PHASE=explore
+
+# phase_tables: sets T_BOOL, T_STRING, T_VALUE for PHASE.
+phase_tables() {
+    case "$PHASE" in
+        explore|install) T_BOOL="$OPTS_BOOL"; T_STRING="$OPTS_STRING"; T_VALUE="$OPTS_VALUE" ;;
+        run) T_BOOL="$RUN_BOOL"; T_STRING="$RUN_STRING"; T_VALUE="$RUN_VALUE" ;;
+        audit) T_BOOL="$AUDIT_BOOL"; T_STRING="$GLOBAL_STRING"; T_VALUE="$GLOBAL_VALUE" ;;
+        *) T_BOOL="$GLOBAL_BOOL"; T_STRING="$GLOBAL_STRING"; T_VALUE="$GLOBAL_VALUE" ;;
+    esac
+}
+
+# opt_canonical NAME: the option NAME names in the current phase's table,
+# exactly or as a unique prefix (nopt's abbrev); 1 when it names none or
+# several.
+opt_canonical() {
+    phase_tables
+    table="$T_BOOL$T_STRING$T_VALUE"
+    case "$table" in *" $1 "*) printf '%s\n' "$1"; return 0 ;; esac
+    hit=""
+    hits=0
+    for k in $table; do
+        case "$k" in "$1"*) hit="$k"; hits=$((hits + 1)) ;; esac
+    done
+    [ "$hits" -eq 1 ] || return 1
+    printf '%s\n' "$hit"
+}
+
+# opt_kind NAME: bool, string, value, or unknown, in the current phase's table.
+opt_kind() {
+    phase_tables
+    case "$T_BOOL" in *" $1 "*) printf 'bool\n'; return 0 ;; esac
+    case "$T_STRING" in *" $1 "*) printf 'string\n'; return 0 ;; esac
+    case "$T_VALUE" in *" $1 "*) printf 'value\n'; return 0 ;; esac
+    printf 'unknown\n'
+}
+
+# short_expand WORD: the universal shorthand WORD stands for (pnpm's
+# shorthands plus `r`), 1 when WORD is none.
+short_expand() {
+    case "$1" in
+        s|silent) printf '%s\n' '--reporter=silent' ;;
+        d) printf '%s\n' '--loglevel=info' ;;
+        dd|verbose) printf '%s\n' '--loglevel=verbose' ;;
+        ddd) printf '%s\n' '--loglevel=silly' ;;
+        quiet|q) printf '%s\n' '--loglevel=warn' ;;
+        L) printf '%s\n' '--latest' ;;
+        r) printf '%s\n' '--recursive' ;;
+        h|H|'?'|usage) printf '%s\n' '--help' ;;
+        v) printf '%s\n' '--version' ;;
+        f) printf '%s\n' '--force' ;;
+        local) printf '%s\n' '--no-global' ;;
+        l) printf '%s\n' '--long' ;;
+        p|porcelain) printf '%s\n' '--parseable' ;;
+        prod) printf '%s\n' '--production' ;;
+        development) printf '%s\n' '--dev' ;;
+        g) printf '%s\n' '--global' ;;
+        S) printf '%s\n' '--save' ;;
+        D) printf '%s\n' '--save-dev' ;;
+        P) printf '%s\n' '--save-prod' ;;
+        E) printf '%s\n' '--save-exact' ;;
+        O) printf '%s\n' '--save-optional' ;;
+        C) printf '%s\n' '--dir' ;;
+        w) printf '%s\n' '--workspace-root' ;;
+        i) printf '%s\n' '--interactive' ;;
+        F) printf '%s\n' '--filter' ;;
+        y) printf '%s\n' '--yes' ;;
+        *) return 1 ;;
+    esac
+}
+
+# short_resolve WORD (an option token with its dashes removed): prints the
+# expansion nopt's resolveShort gives it, 1 when it is an option, not a
+# shorthand: an exact option name; else the shorthand; else a run of
+# one-letter shorthands (`rw`); else a unique option prefix is an option;
+# else a unique prefix of a shorthand word (`verb`).
+short_resolve() {
+    case "$ALL_OPTS" in *" $1 "*) return 1 ;; esac
+    if short_expand "$1"; then return 0; fi
+    rest="$1"
+    run=""
+    while [ -n "$rest" ]; do
+        c="${rest%"${rest#?}"}"
+        rest="${rest#?}"
+        case "$c" in
+            s|d|L|r|q|h|H|'?'|v|f|l|p|g|S|D|P|E|O|C|w|i|F|y) run="$run $(short_expand "$c")" ;;
+            *) run=""; break ;;
+        esac
+    done
+    if [ -n "$run" ]; then printf '%s\n' "${run# }"; return 0; fi
+    if opt_canonical "$1" >/dev/null; then return 1; fi
+    hit=""
+    hits=0
+    for k in s d dd ddd L r silent verbose quiet q h H usage v f local l p porcelain prod development g S D P E O C w i F y; do
+        case "$k" in "$1"*) hit="$k"; hits=$((hits + 1)) ;; esac
+    done
+    [ "$hits" -eq 1 ] || return 1
+    short_expand "$hit"
+}
+
+# scan ARGS: one nopt-shaped pass over the normalized arguments with the
+# PHASE table. PHASE=explore takes the first token left over for the
+# command (sets command_name, KIND, pm_forced, override_name) and stops
+# there; any other PHASE reads the option flags (TARGET, IGNORE_WORKSPACE,
+# workspace_root, fix_flag) over the whole of pnpm's option scope and, for
+# `run`, stops at the script name. A help or version request is info.
+scan() {
+    positional=0
+    command_seen=0
+    info_request=0
+    while [ $# -gt 0 ]; do
+        a="$1"
+        shift
+        if [ "$positional" -eq 0 ]; then
+            case "$a" in
+                --) positional=1; continue ;;
+                -?*)
+                    had_eq=0
+                    name="$a"
+                    case "$a" in *=*) had_eq=1; name="${a%%=*}"; set -- "${a#*=}" "$@" ;; esac
+                    while [ "${name#-}" != "$name" ]; do name="${name#-}"; done
+                    no=0
+                    while [ "${name#no-}" != "$name" ]; do no=$((1 - no)); name="${name#no-}"; done
+                    canon="$(opt_canonical "$name")" || canon="$name"
+                    kind="$(opt_kind "$canon")"
+                    if [ "$kind" = unknown ] && [ "$had_eq" -eq 0 ]; then kind=bool; fi
+                    la_set=0
+                    la=""
+                    if [ $# -gt 0 ]; then la_set=1; la="$1"; fi
+                    consumed=0
+                    case "$kind" in
+                        bool)
+                            val=1
+                            if [ "$la_set" -eq 1 ]; then
+                                case "$la" in
+                                    true) shift; val=1 ;;
+                                    false) shift; val=0 ;;
+                                    *) case "$canon:$la" in color:always|color:auto|color:never|link-workspace-packages:deep) shift ;; esac ;;
+                                esac
+                            fi
+                            [ "$no" -eq 0 ] || val=$((1 - val))
+                            case "$canon" in
+                                help|version|v) info_request="$val" ;;   # the last value stands, as nopt leaves it (`--help --no-help` asks for none, `--no-help --help` asks); decided after the scan
+                                ignore-workspace) IGNORE_WORKSPACE="$val" ;;
+                                workspace-root) workspace_root="$val" ;;
+                                fix) fix_flag="$val" ;;
+                            esac ;;
+                        string)
+                            if [ "$la_set" -eq 1 ]; then
+                                case "$la" in
+                                    -[!-]*|--[!-]*) ;;      # looks like an option: not the value
+                                    --|---*) case "$la" in *[!-]*) shift; consumed=1 ;; esac ;;   # nor a run of dashes
+                                    *) shift; consumed=1 ;;
+                                esac
+                            fi
+                            [ "$consumed" -eq 0 ] || case "$canon" in dir) dir_target="$(resolve_dir "$la")" ;; esac ;;
+                        *)
+                            if [ "$la_set" -eq 1 ]; then
+                                case "$la" in
+                                    --|---*) case "$la" in *[!-]*) shift; consumed=1 ;; esac ;;
+                                    *) shift; consumed=1 ;;
+                                esac
+                            fi
+                            if [ "$consumed" -eq 1 ]; then
+                                case "$canon" in
+                                    prefix) prefix_target="$(resolve_dir "$la")" ;;
+                                    config.dir) [ "$had_eq" -eq 0 ] || dir_target="$(resolve_dir "$la")" ;;   # `--config.dir=V` is `--dir V` for pnpm (measured; the space form is not)
+                                    fix) case "$la" in false) fix_flag=0 ;; *) fix_flag=1 ;; esac ;;   # audit reads --fix as a boolean
+                                esac
+                            fi ;;
+                    esac
+                    continue ;;
+            esac
+        fi
+        # a positional token
+        case "$a" in
+            create|exec|test) positional=1 ;;    # pnpm's escapeArgs: the rest is positional
+        esac
+        if [ "$command_seen" -eq 2 ]; then
+            return 0        # `run`'s script name: what follows belongs to it
+        fi
+        [ "$command_seen" -eq 0 ] || continue
+        case "$a" in
+            recursive|multi|m) continue ;;
+            pm) [ "$PHASE" != explore ] || pm_forced=1; continue ;;
+            with) shift; continue ;;          # `with <runtime>`: the runtime word is not the command
+        esac
+        command_seen=1
+        if [ "$PHASE" != explore ]; then
+            case "$a" in run|run-script) command_seen=2; continue ;; esac
+            # a bare script or bin name (pnpm's fallback `run <name>`, or the
+            # token after exec/test/create): what follows belongs to it
+            [ "$KIND" != project ] || return 0
+            continue
+        fi
+        command_name="$a"
+        case "$a" in
+            clean|purge|rebuild|rb|setup|deploy)
+                # a package script of the same name wins over the built-in unless `pm`
+                # forced it; decided below, once the target directory is final
+                [ "$pm_forced" -eq 1 ] || override_name="$a" ;;
+        esac
+        case "$a" in
+            install|i|ci|install-clean|ic|clean-install|install-test|it|add|remove|rm|uninstall|un|uni| \
+            update|up|upgrade|link|ln|unlink|dislink|import|prune|fetch|dedupe|rebuild|rb|runtime|rt| \
+            patch|patch-commit|patch-remove|approve-builds|deploy|setup|clean|purge)
+                KIND=mutate ;;
+            store|config|c|get|set|env|self-update|outdated|audit|list|ls|ll|la|why|peers|pack|pack-app|publish| \
+            stage|licenses|cat-file|cat-index|find-hash|ignored-builds|init|create|dlx|doctor|help| \
+            root|prefix|bin|server|completion|cache|access|adduser|bugs|deprecate|undeprecate|dist-tag| \
+            dist-tags|docs|find|home|info|issues|login|logout|owner|owners|ping|pkg|repo|s|sbom|se|search| \
+            set-script|show|ss|star|stars|team|unpublish|unstar|v|version|view|whoami|lane|change)
+                KIND=info ;;
+            *)
+                # run, exec, test, a script or bin name
+                KIND=project ;;
+        esac
+        return 0
+    done
+}
+
+# classify ARGS: sets KIND (info, mutate or project), TARGET and
+# IGNORE_WORKSPACE (see header) from a copy of the arguments: pass 1
+# expands shorthands the way nopt does before it reads an option (an
+# `=value` stays attached to a plain option so a later pass knows it was
+# written that way; after `--` nothing is touched); pass 2 finds the
+# command with the exploratory table; pass 3 reads the flags with the
+# command's table.
+classify() {
+    KIND=info
+    TARGET="$(pwd -P)"
+    dir_target=""
+    prefix_target=""
+    IGNORE_WORKSPACE=0
+    pm_forced=0
+    override_name=""
+    command_name=""
+    fix_flag=0
+    workspace_root=0
+    # pass 1: shorthands
+    total=$#
+    i=0
+    ended=0
+    while [ "$i" -lt "$total" ]; do
+        a="$1"
+        shift
+        i=$((i + 1))
+        if [ "$ended" -eq 1 ]; then set -- "$@" "$a"; continue; fi
+        case "$a" in
+            --|---*) case "$a" in *[!-]*) ;; *) set -- "$@" "--"; ended=1; continue ;; esac ;;
+        esac
+        case "$a" in
+            -?*)
+                name="${a%%=*}"
+                while [ "${name#-}" != "$name" ]; do name="${name#-}"; done
+                if [ -n "$name" ] && expansion="$(short_resolve "$name")"; then
+                    # shellcheck disable=SC2086  # the expansion is this file's own words
+                    set -- "$@" $expansion
+                    case "$a" in *=*) set -- "$@" "${a#*=}" ;; esac
+                    continue
+                fi ;;
+        esac
+        set -- "$@" "$a"
+    done
+    # pass 2: the command, by pnpm's exploratory table
+    PHASE=explore
+    scan "$@" || return 0
+    # pass 3: the flags and `run`'s script name, by the command's table
+    case "$command_name" in
+        run|run-script) PHASE=run ;;
+        install|i|install-test|it|add) PHASE=install ;;
+        audit) PHASE=audit ;;
+        *) PHASE=other ;;
+    esac
+    scan "$@" || return 0
+    if [ "$info_request" -eq 1 ]; then
+        KIND=info       # a help or version request runs nothing, wherever the flag stood
+        return 0
+    fi
+    # pnpm acts in --dir (-C, `--config.dir=`) when given, whatever its place
+    # beside --prefix (measured: `--prefix B --dir A` and `--dir A --prefix B`
+    # both act in A; of two --dir the last wins, `--config.dir=` among them;
+    # `--config.prefix=`, `--config.workspace-root=` and
+    # `--config.ignore-workspace=` are not read by pnpm), else in --prefix,
+    # else here
+    if [ -n "$dir_target" ]; then TARGET="$dir_target"
+    elif [ -n "$prefix_target" ]; then TARGET="$prefix_target"
+    fi
+    if [ "$workspace_root" -eq 1 ] && [ "$IGNORE_WORKSPACE" -eq 0 ]; then
+        # -w/--workspace-root: pnpm acts on the workspace root above the target
+        # (under --ignore-workspace there is none and pnpm refuses the flag)
+        ws="$(workspace_root_of "$TARGET")" && TARGET="$ws"
+    fi
+    if [ "$command_name" = audit ] && [ "$fix_flag" -eq 1 ]; then
+        KIND=mutate      # `pnpm audit --fix` runs pnpm's update handler
+    fi
+    if [ -n "$override_name" ] && script_defined "$override_name"; then
+        KIND=project
+    fi
+}
+
+# workspace_root_of DIR: nearest ancestor of DIR (DIR included) holding
+# pnpm-workspace.yaml; 1 when there is none.
+workspace_root_of() {
+    d="$(cd -P "$1" 2>/dev/null && pwd -P)" || return 1
+    while :; do
+        if [ -f "$d/pnpm-workspace.yaml" ]; then
+            printf '%s\n' "$d"
+            return 0
+        fi
+        [ "$d" != "/" ] || return 1
+        d="${d%/*}"
+        [ -n "$d" ] || d="/"
+    done
+}
+
+# lane_of DIR: the workspace root above DIR (DIR included), the nearest
+# ancestor holding pnpm-workspace.yaml, because a workspace install writes
+# every member's tree whatever directory it started in and whatever
+# sharedWorkspaceLockfile says; without a workspace, the nearest ancestor
+# holding pnpm-lock.yaml; 1 when there is neither. Under --ignore-workspace
+# pnpm reads no workspace file and no lockfile above DIR: the lane is DIR
+# when DIR holds pnpm-lock.yaml, else there is none.
+lane_of() {
+    d="$(cd -P "$1" 2>/dev/null && pwd -P)" || return 1
+    if [ "$IGNORE_WORKSPACE" -eq 1 ]; then
+        [ -f "$d/pnpm-lock.yaml" ] || return 1
+        printf '%s\n' "$d"
+        return 0
+    fi
+    lockfile_dir=""
+    while :; do
+        if [ -f "$d/pnpm-workspace.yaml" ]; then
+            printf '%s\n' "$d"
+            return 0
+        fi
+        if [ -z "$lockfile_dir" ] && [ -f "$d/pnpm-lock.yaml" ]; then
+            lockfile_dir="$d"
+        fi
+        [ "$d" != "/" ] || break
+        d="${d%/*}"
+        [ -n "$d" ] || d="/"
+    done
+    [ -n "$lockfile_dir" ] || return 1
+    printf '%s\n' "$lockfile_dir"
+}
+
+# deps_status: pnpm's own verdict on TARGET, running nothing. Prints one of
+# insync (exit 0), stale (pnpm named ERR_PNPM_VERIFY_DEPS_BEFORE_RUN) or
+# unknown (any other failure: a denied write to pnpm's workspace state file
+# on a read-only lane, a broken manifest, ...); an unknown verdict is not a
+# reason to install, the command runs as pnpm would run it, after one WARN.
+deps_status() {
+    # the same workspace selection as the command: pnpm judges the project
+    # the command will run in, a standalone one under --ignore-workspace
+    set -- --config.verify-deps-before-run=error exec true
+    [ "$IGNORE_WORKSPACE" -eq 0 ] || set -- --ignore-workspace "$@"
+    # pnpm prints the verdict on stdout, the rest on stderr: read both.
+    probe_err="$(
+        unset pnpm_config_verify_deps_before_run
+        cd "$TARGET" && run_pnpm "$@" 2>&1
+    )" && { printf 'insync\n'; return 0; }
+    case "$probe_err" in
+        *VERIFY_DEPS_BEFORE_RUN*)
+            # pnpm reports a file error met inside its check under the same
+            # code (measured: `[ERR_PNPM_VERIFY_DEPS_BEFORE_RUN] EACCES:
+            # permission denied, open '…/.pnpm-workspace-state-v1.json.…'`
+            # when node_modules refuses the state refresh): a reason that is
+            # a system error code is no verdict either. pnpm's own reasons
+            # never start with one.
+            issue="$(printf '%s\n' "$probe_err" | sed -n 's/^.*ERR_PNPM_VERIFY_DEPS_BEFORE_RUN[]]* *//p' | sed -n '1p')"
+            case "$issue" in
+                E[A-Z0-9]*:\ *)
+                    warn "pnpm could not judge the lane at $TARGET (a file error inside its check), running as is: $(printf '%s\n' "$issue" | cut -c1-160)"
+                    printf 'unknown\n' ;;
+                *) printf 'stale\n' ;;
+            esac ;;
+        *) warn "pnpm could not judge the lane at $TARGET, running as is: $(printf '%s\n' "$probe_err" | sed -n '1p' | cut -c1-160)"
+           printf 'unknown\n' ;;
+    esac
+}
+
+# lane_install: the one frozen install, in LANE, with the command's own
+# workspace selection (a standalone project stays standalone).
+lane_install() {
+    set -- install --frozen-lockfile
+    [ "$IGNORE_WORKSPACE" -eq 0 ] || set -- --ignore-workspace "$@"
+    (cd "$LANE" && GC_TOOLCHAIN_LANE_DEPS_INSTALLING="$LANE" run_pnpm "$@")
+}
+
+# --- the lane lock ---------------------------------------------------------------------
+# One lock for the lane, <lane>/node_modules/.gc-lane-deps.lock (mkdir, this
+# wrapper's pid inside): a mutate holds it while it runs; a project command
+# holds it for the question and the one frozen install, then releases it and
+# runs holding nothing (the contract and the non-goal in the header).
+# Every change of hands goes through one gate, $LOCK.reclaim (mkdir, held for
+# the instant of the change): making the lock (the mkdir and the pid write as
+# one step under the gate, so nobody judging the lock sees it without its
+# owner), and judging a stale lock and moving it aside. Release is the
+# owner's alone and takes no gate: a judge that read an owner who then
+# released finds, under the gate, the directory gone or another owner's, and
+# moves nothing. The mkdirs, the pid write and the removals run with HUP,
+# INT and TERM held: sh runs a trap between two commands (measured on /bin/sh: a trap
+# fired during `sleep 2 && G=1` saw G=0), so a trap between `mkdir` and the
+# mark that says "mine" would leak what was just made; a signal sent in that
+# instant is lost, not deferred (measured: the trap set back afterwards did
+# not fire), and the traps come back right after.
+LOCK=""
+LOCKED=0
+GATE=""
+GATED=0
+# release_lock / release_gate: the removal and the mark that says "no longer
+# mine" are one step with the signals held, the removal first: a trap
+# between the two would otherwise find the mark cleared and leave the
+# directory standing, and a second cleanup after the removal finds nothing
+# of this wrapper's to remove.
+release_lock() {
+    [ "$LOCKED" -eq 1 ] || return 0
+    hold_signals
+    [ -z "${GC_TOOLCHAIN_TEST_PAUSE_IN_RELEASE:-}" ] || sleep "$GC_TOOLCHAIN_TEST_PAUSE_IN_RELEASE"
+    if [ "$(cat "$LOCK/pid" 2>/dev/null || true)" = "$$" ]; then
+        rm -f "$LOCK/pid" 2>/dev/null || true
+        rmdir "$LOCK" 2>/dev/null || true
+    fi
+    LOCKED=0
+    heed_signals
+}
+release_gate() {
+    [ "$GATED" -eq 1 ] || return 0
+    hold_signals
+    [ -z "${GC_TOOLCHAIN_TEST_PAUSE_IN_RELEASE:-}" ] || sleep "$GC_TOOLCHAIN_TEST_PAUSE_IN_RELEASE"
+    rmdir "$GATE" 2>/dev/null || true
+    GATED=0
+    heed_signals
+}
+cleanup() { release_lock; release_gate; }
+heed_signals() {
+    trap 'cleanup; exit 129' HUP
+    trap 'cleanup; exit 130' INT
+    trap 'cleanup; exit 143' TERM
+}
+hold_signals() { trap '' HUP INT TERM; }
+trap 'cleanup' EXIT
+heed_signals
+
+owner_is_dead() {
+    ! kill -0 "$1" 2>/dev/null && return 0
+    case "$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ')" in
+        Z*) return 0 ;;
+    esac
+    return 1
+}
+
+# lock_is_stale: $LOCK exists and its owner is dead or a zombie, or it has had
+# no owner for over two minutes (a run killed outright between mkdir and the
+# pid write; a live run publishes within milliseconds). Sets `owner`.
+lock_is_stale() {
+    [ -d "$LOCK" ] || return 1
+    owner="$(cat "$LOCK/pid" 2>/dev/null || true)"
+    [ -z "${GC_TOOLCHAIN_TEST_PAUSE_AFTER_OWNER_READ:-}" ] || sleep "$GC_TOOLCHAIN_TEST_PAUSE_AFTER_OWNER_READ"
+    if [ -n "$owner" ]; then
+        owner_is_dead "$owner"
+    else
+        [ -n "$(find "$LOCK" -maxdepth 0 -mmin +2 2>/dev/null)" ]
+    fi
+}
+
+# claim_dir DIR MARK: mkdir DIR and set MARK=1. 0 made; 1 DIR stands (held by
+# another caller); 2 refused: the mkdir failed and no directory stands, once
+# more to tell a refusal (node_modules refuses the write for this caller: a
+# sandbox, a read-only lane) from a holder that just left; LOCK_REFUSED names
+# the refusal. The caller holds the signals around this.
+LOCK_REFUSED=""
+claim_dir() {
+    err=""
+    if mkdir "$1" 2>/dev/null; then eval "$2=1"; return 0; fi
+    if [ ! -d "$1" ] && err="$(mkdir "$1" 2>&1)"; then eval "$2=1"; return 0; fi
+    if [ -d "$1" ] || [ -z "$err" ]; then return 1; fi
+    LOCK_REFUSED="cannot create $1 (${err#mkdir: })"
+    return 2
+}
+
+# take_gate: hold $GATE on return (0). Another caller holds it for an instant
+# and is waited for; a gate older than two minutes was left by a wrapper
+# killed outright inside it and fails the command closed rather than being
+# removed here (two contenders removing it would race exactly like the lock;
+# a human removes it after checking no lane install is alive). Returns 1 with
+# LOCK_REFUSED set when node_modules refuses the mkdir for this caller.
+take_gate() {
+    gate_waited=0
+    while :; do
+        hold_signals
+        rc=0
+        claim_dir "$GATE" GATED || rc=$?
+        heed_signals
+        [ "$rc" -ne 0 ] || return 0
+        [ "$rc" -eq 1 ] || return 1
+        if [ -n "$(find "$GATE" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+            die "stale reclaim lock $GATE is older than two minutes; remove it by hand after checking no lane install is alive"
+        fi
+        [ "$gate_waited" -lt "$LANE_DEPS_WAIT" ] \
+            || die "the lane lock's gate $GATE has been held for ${LANE_DEPS_WAIT}s (a wrapper killed outright inside it leaves it; remove it by hand after checking no lane install is alive); this command did not run"
+        sleep 1
+        gate_waited=$((gate_waited + 1))
+    done
+}
+
+# make_lock: under the gate, mkdir $LOCK and publish this pid inside, as one
+# step with the signals held. 0 holding it; 1 otherwise: held by another
+# caller (LOCK_REFUSED empty: wait and look again), or refused with
+# LOCK_REFUSED set when the gate, the lock or the pid file cannot be made by
+# this caller. A pid that cannot be written takes the directory just made
+# with it: a lock standing without its owner would be judged ownerless and
+# moved from under the mutation it was guarding.
+make_lock() {
+    take_gate || return 1
+    hold_signals
+    rc=0
+    claim_dir "$LOCK" LOCKED || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        if pid_err="$( { printf '%s\n' "$$" > "$LOCK/pid"; } 2>&1 )"; then
+            heed_signals
+            release_gate
+            return 0
+        fi
+        rm -f "$LOCK/pid" 2>/dev/null || true       # opened but not written (ENOSPC) would hold the directory
+        rmdir "$LOCK" 2>/dev/null || true
+        LOCKED=0
+        LOCK_REFUSED="cannot write $LOCK/pid (${pid_err##*: })"
+    fi
+    heed_signals
+    release_gate
+    return 1
+}
+
+# reclaim_stale_lock: under the gate, judge $LOCK again and move it aside
+# only when it is still the stale lock that was seen: the owner it names,
+# re-read right before the move, is the one judged dead (or none, judged by
+# age). The gate keeps every wrapper from making a lock while this runs; the
+# re-read covers a hand that changed outside this wrapper's rules. 0 when
+# something was moved, 1 otherwise (the lock turned out live or gone).
+reclaim_stale_lock() {
+    take_gate || die "$LOCK_REFUSED; this command did not run"
+    [ -z "${GC_TOOLCHAIN_TEST_PAUSE_IN_RECLAIM:-}" ] || sleep "$GC_TOOLCHAIN_TEST_PAUSE_IN_RECLAIM"
+    moved=1
+    if lock_is_stale; then
+        judged="$owner"
+        if [ "$(cat "$LOCK/pid" 2>/dev/null || true)" = "$judged" ]; then
+            aside="$LOCK.stale-${judged:-nopid}-$$"
+            if mv "$LOCK" "$aside" 2>/dev/null; then
+                warn "moved aside a stale lane install lock (owner pid ${judged:-none}) -> $aside"
+                moved=0
+            fi
+        fi
+    fi
+    release_gate
+    return "$moved"
+}
+
+# take_lane_lock: hold $LOCK on return (0). Fails closed after LANE_DEPS_WAIT
+# seconds behind a live holder; returns 1 with LOCK_REFUSED set when the
+# lock cannot be made for this caller (see make_lock): with no lock there is
+# nobody to wait for, and nothing this caller could hold against another
+# that can write, so every caller fails closed on it.
+take_lane_lock() {
+    mkdir -p "$NM" 2>/dev/null || die "cannot create $NM (read-only here?)"
+    waited=0
+    while :; do
+        if make_lock; then
+            return 0
+        fi
+        [ -z "$LOCK_REFUSED" ] || return 1
+        if lock_is_stale; then
+            [ -z "${GC_TOOLCHAIN_TEST_PAUSE_BEFORE_RECLAIM:-}" ] || sleep "$GC_TOOLCHAIN_TEST_PAUSE_BEFORE_RECLAIM"
+            if reclaim_stale_lock; then
+                continue
+            fi
+        fi
+        [ "$waited" -lt "$LANE_DEPS_WAIT" ] \
+            || die "another lane install (pid ${owner:-unknown}) has held $LOCK for ${LANE_DEPS_WAIT}s; this command did not run"
+        [ "$waited" -gt 0 ] || log "waiting for another caller's lane install (pid ${owner:-unknown})"
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+
+classify "$@"
+if [ "$LANE_DEPS" = "off" ] || [ "$KIND" = "info" ]; then
+    exec_pnpm "$@"
+fi
+if LANE="$(lane_of "$TARGET")"; then
+    :
+elif [ "$KIND" = "mutate" ]; then
+    # a first install creates the lockfile: the lane is the directory pnpm acts on
+    LANE="$(cd -P "$TARGET" 2>/dev/null && pwd -P)" || exec_pnpm "$@"
+else
+    exec_pnpm "$@"     # no lockfile anywhere above: nothing to keep in sync
+fi
+if [ "${GC_TOOLCHAIN_LANE_DEPS_INSTALLING:-}" = "$LANE" ]; then
+    exec_pnpm "$@"     # a lifecycle script of the mutation in progress; its parent holds the lock
+fi
+NM="$LANE/node_modules"
+LOCK="$NM/.gc-lane-deps.lock"
+GATE="$LOCK.reclaim"
+
+case "$KIND" in
+    mutate)
+        # under the lane lock, so two callers changing dependencies never
+        # overlap; a command running beside it is not waited for (the
+        # non-goal in the header)
+        take_lane_lock || die "$LOCK_REFUSED; this command did not run"
+        status=0
+        GC_TOOLCHAIN_LANE_DEPS_INSTALLING="$LANE" run_pnpm "$@" || status=$?
+        release_lock
+        exit "$status"
+        ;;
+    project)
+        # the question and the one frozen install under the lane lock (a
+        # mutate in flight is waited for first; a rebuild half done still
+        # reads as in sync to pnpm); then the lock is released and the
+        # command runs holding nothing (the contract in the header)
+        take_lane_lock \
+            || die "$LOCK_REFUSED: this lane cannot be coordinated from here, its question and install serialize on that lock; run with GC_TOOLCHAIN_LANE_DEPS=off if the lane is yours alone; this command did not run"
+        if [ "$(deps_status)" = stale ]; then
+            log "installing lane dependencies once for $LANE (pnpm says node_modules is out of sync)"
+            status=0
+            lane_install >&2 || status=$?
+            [ "$status" -eq 0 ] || die_with "$status" "lane install failed (pnpm install --frozen-lockfile exit $status); this command did not run"
+        fi
+        release_lock
+        exec_pnpm "$@"
+        ;;
+esac
