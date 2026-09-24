@@ -230,7 +230,12 @@ Never infer a branch name. If `metadata.branch` is missing, reject the bead.
 
 On rebase conflict or test failure:
 1. Put work bead back in pool:
-   `gc bd update $WORK --status=open --assignee="" --set-metadata rejection_reason="..."`
+   `gc bd update $WORK --status=open --assignee="" --set-metadata rejection_reason="..." --unset-metadata handoff_stage`
+
+   Clearing `handoff_stage` is required, not cosmetic, and belongs in the same
+   update as the pool reset: rejection invalidates the polecat's completed
+   submit, and a bead left carrying the marker is one the witness would hand
+   straight back to you as a crash-recovery handoff.
 2. Branch handling depends on failure type:
    - Conflict: leave branch intact (polecat needs it for rebase)
    - Test failure: delete branch (polecat redoes work)
@@ -271,6 +276,16 @@ the bead when the branch has been pushed. If validation fails, record a
 durable blocked reason on the bead and escalate to mayor instead of
 closing the work.
 
+**GitHub-specific today.** `gh pr view`/`gh pr create` require a
+GitHub-hosted origin. Non-GitHub hosts (e.g. Azure DevOps Repos) are
+not yet supported: `metadata.existing_pr` suppresses the `gh pr create`
+call, but the validation step above (`gh pr view`) is also
+GitHub-only — it cannot resolve a non-GitHub PR, so a refinery on a
+non-GitHub rig will correctly fail validation and escalate to mayor
+rather than close, even for a perfectly valid PR. There is no working
+non-GitHub path today. Native support is tracked upstream:
+gascity#5260.
+
 If `metadata.existing_pr` is present while `merge_strategy` is unset or
 `direct`, treat the handoff as `mr`. An existing PR cannot be validated
 and then ignored by landing directly to the target branch.
@@ -310,7 +325,7 @@ alert the witness, not `gc mail send`.
 |------------|----------------|
 | Pour next wisp | `gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }}` |
 | Burn current wisp | Follow Patrol Lifecycle Discipline Rule 1: pour next wisp, validate `NEXT`, assign it to `$GC_AGENT`, then burn `$CURRENT_WISP`. Never run a standalone burn. |
-| Find assigned work | `gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee="$GC_AGENT" --status=open` |
+| Find assigned work | `gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee="$GC_AGENT" --status=open,in_progress` — both statuses, comma-separated: a bead you already claimed is in_progress, and a query filtered to open alone can never see it again |
 | Snapshot event position | `gc events --seq` |
 | Wait for assignment | `gc events --watch --type=bead.updated --after=$SEQ` |
 | Read work metadata | `gc bd show $WORK --json \| jq '.[0].metadata'` |

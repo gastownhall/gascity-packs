@@ -46,6 +46,23 @@ class MolPrFromIssueVarBindingTests(unittest.TestCase):
             'selects the v2 graph compiler, e.g. ">=2.0.0"',
         )
 
+    def test_v2_compiler_requirement_is_declared_in_the_form_gc_reads(self) -> None:
+        """`contract = "graph.v2"` is deprecated; `[requires]` is the live form.
+
+        This asserted the deprecated key until 2026-08-17, and passed the whole
+        time. It could not have done otherwise: it read the file's own text back
+        to itself, and gc was never involved. Meanwhile every city importing this
+        pack carried a `formula-requirements` warning from `gc doctor`. The check
+        that catches the next one of these is tests/test_reference_city.py, which
+        runs the binary; this one just pins the value that fix landed on.
+        """
+        self.assertNotIn(
+            "contract",
+            self.data,
+            "gc reports `contract = \"graph.v2\"` as deprecated in gc doctor",
+        )
+        self.assertEqual(self.data["requires"]["formula_compiler"], ">=2.0.0")
+
     def test_github_issue_input_is_named_issue_number(self) -> None:
         variables = self.data.get("vars", {})
         self.assertIn("issue_number", variables, "GitHub-issue input must be bound as issue_number")

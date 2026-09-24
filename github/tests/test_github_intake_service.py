@@ -326,6 +326,13 @@ def _env_vars_read_by(
 
     return found, unresolved
 
+# GC_BIN: the assertions below expect the literal `gc`, which is what
+# `os.environ.get("GC_BIN", "gc")` falls back to in the service. A Gas City seat
+# exports GC_BIN, so 14 of these tests fail for anyone running the suite from
+# inside a city, and pass in CI only because CI has not installed gc yet at the
+# step that runs them. Each setUp pins the fallback rather than depending on the
+# variable's absence.
+
 
 class DummyWebhookHandler:
     def __init__(self, body: bytes, headers: dict[str, str]) -> None:
@@ -364,6 +371,7 @@ class GitHubIntakeServiceTests(unittest.TestCase):
         for key in [k for k in os.environ if k.startswith(MODULE_ENV_PREFIXES)]:
             del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
+        os.environ.pop("GC_BIN", None)  # see GC_BIN note at the top of this file
 
     def tearDown(self) -> None:
         os.environ.clear()
@@ -2104,6 +2112,9 @@ class PublishImportedIdentityTests(unittest.TestCase):
         for key in [k for k in os.environ if k.startswith(MODULE_ENV_PREFIXES)]:
             del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
+        os.environ.pop("GC_BIN", None)  # see GC_BIN note at the top of this file
+        os.environ.pop("GITHUB_INTAKE_IDENTITY_PUBLISHER", None)
+        os.environ.pop("GITHUB_INTAKE_APP_IDENTITY", None)
 
     def tearDown(self) -> None:
         os.environ.clear()
@@ -2186,6 +2197,7 @@ class RenderAdminHomeTests(unittest.TestCase):
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
+        os.environ.pop("GC_BIN", None)  # see GC_BIN note at the top of this file
 
     def tearDown(self) -> None:
         os.environ.clear()

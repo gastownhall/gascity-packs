@@ -1,7 +1,16 @@
 description = """
-From a triaged issue to an open PR. Runs pr-start → ship → open-PR with
-halt-on-flag gates between steps. This is the outbound-PR (author-side)
-analogue of the maintainer-side incoming-PR adoption workflow.
+From a triaged issue to a finished, unpublished branch. Runs pr-start →
+ship → publish hand-off with halt-on-flag gates between steps. This is the
+outbound-PR (author-side) analogue of the maintainer-side incoming-PR
+adoption workflow.
+
+**This formula performs no upstream write.** Its pool half ends at a
+hand-off: the branch is committed locally, the exact publish commands are
+recorded on the root bead, and the publisher named by `publish_owner`
+performs the push and the PR open from its own login, after a human has
+approved that artifact. The recommended deployment gives unattended pool seats a READ-ONLY
+`GH_TOKEN`. Without it the pool itself can publish, and nothing but this
+formula's prose stands between an unreviewed branch and the forge.
 
 A coding agent (polecat or equivalent) follows the chain. Each gate step
 inspects the prior step's evidence and either halts the chain or proceeds.
@@ -18,7 +27,8 @@ notes and metadata. Crash-safe: `gc bd mol current` resumes at the right step.
 1. Caller slings with `--var issue_number=<number>` (and optionally `--var skip_open_pr=true`)
 2. Polecat works through 6 sequential steps with explicit per-step gates
 3. Chain ends with either:
-   - an opened PR on `gastownhall/gascity`, OR
+   - a finished branch at branch-ready, with the publish commands recorded
+     on the root bead for the publisher, OR
    - a halt with `metadata.summary_for_human` set on the root bead
 
 ## Variables
@@ -26,8 +36,9 @@ notes and metadata. Crash-safe: `gc bd mol current` resumes at the right step.
 | Variable | Source | Description |
 |----------|--------|-------------|
 | issue_number | caller | Upstream GitHub issue number (required) |
-| skip_open_pr | caller | "true" to stop at ship-green/branch-ready; do not actually open the PR (default: "false") |
-| auto_push | caller | "true" to authorize the polecat to push + open PR after the eligibility gate passes. Default "false" → halt at branch-ready (default-deny). See dr-1l9hc4 for the autonomous-pr-ship carve-out. |
+| skip_open_pr | caller | "true" to close at branch-ready without consulting the publish-readiness gate (default: "false"). Every run now ends at branch-ready; this selects how much evidence is gathered first. |
+| auto_push | caller | "true" to run the publish-readiness gates and record their evidence. Authorizes no push and no PR open; every run ends at branch-ready. |
+| publish_owner | caller | Who runs the recorded publish commands (default: "maintainer") |
 
 ## Failure Modes
 
@@ -35,10 +46,9 @@ notes and metadata. Crash-safe: `gc bd mol current` resumes at the right step.
 |-----------|--------|
 | pr-start raises critical flag (gate, scope, duplicate PR) | gate-after-pr-start halts; summary_for_human set |
 | ship readiness verdict != READY | gate-after-ship halts; summary_for_human set |
-| auto_push=true but eligibility gate fails any hard check | gate-auto-push-eligibility halts; gc.escalate_to=mayor set; summary_for_human names the failed gate |
-| auto_push=false (default) or gate did not write evidence.gate_passed=true | open-pr soft-halts at branch-ready; summary_for_human notes the default-deny outcome |
-| git push fails with 403 (maintainerCanModify) | open-pr halts; recovery is supersede-via-our-fork (see step description) |
-| gh pr create fails | open-pr halts; raw error captured in evidence and summary_for_human |
+| auto_push=true but a readiness gate fails any hard check | gate-publish-readiness halts; gc.escalate_to=mayor set; summary_for_human names the failed gate |
+| auto_push=false (default) or gate did not write evidence.gate_passed=true | hand-off-publish closes at branch-ready and says the gate did not run |
+| a publish identifier cannot be read from the forge | hand-off-publish records what it resolved and names the missing one; the branch is still finished |
 
 ## Known scope notes (vapor phase — needs validation)
 
@@ -63,14 +73,17 @@ phase = "vapor"
 # predicate (internal/formula/compile.go) is
 #   rootOnly := (!f.Pour && f.Phase == "vapor") || len(f.Steps) == 0
 # which keys only on pour and phase; the graph declaration form is never
-# consulted, so declaring the graph compiler in [requires] below does not
-# protect against it. Note the
-# failure is silent: RecipeHasReadySurface still returns true because RootOnly
-# itself satisfies it, so the pool sling is accepted and only the steps go
-# missing.
+# consulted, so declaring a compiler requirement does not protect against it.
+# Note the failure is silent: RecipeHasReadySurface still returns true because
+# RootOnly itself satisfies it, so the pool sling is accepted and only the
+# steps go missing.
 pour = true
 version = 1
 
+# The v2 compiler requirement, in the form gc reads today. This was
+# `contract = "graph.v2"`, which gc still honors and reports as deprecated in
+# `gc doctor` -- one `formula-requirements` warning in every city that imports
+# this pack.
 [requires]
 formula_compiler = ">=2.0.0"
 
@@ -84,8 +97,12 @@ description = "Stop at the ship-green / branch-ready state; do NOT actually open
 default = "false"
 
 [vars.auto_push]
-description = "Positive signal authorizing polecat push + open-PR after eligibility gate. Default false. Required-positive — absence treated as halt-at-branch-ready regardless of skip_open_pr."
+description = "Run the publish-readiness gates and record their evidence for the publisher. Default false. It authorizes no push and no PR open: nothing in this formula writes upstream under any value, and every run ends at branch-ready."
 default = "false"
+
+[vars.publish_owner]
+description = "Who runs the recorded publish commands. Recorded as evidence.publish_owner so the hand-off names its publisher. Default: maintainer."
+default = "maintainer"
 
 [[steps]]
 id = "pr-start"
@@ -99,7 +116,8 @@ mol-pr-start's contract defers. Writes `evidence.*` on close.
 code is written" — it produces only a plan markdown. This step
 extends that contract because the downstream `ship` step expects an
 implemented branch to operate against. Planning alone is insufficient
-in a chain that ends with an opened PR. The extension is intentional
+in a chain that ends with a finished, unpublished branch and a publish
+hand-off. The extension is intentional
 and scoped to this macro formula.
 
 **1. Find the root bead and confirm we're in a git repo:**
@@ -127,8 +145,15 @@ Follow mol-pr-start's six step bodies in order (copy-with-prune from
 
   b. **gates** — Two BLOCKING gates. Either fires → halt the chain:
 
-     - **Gate 1 (Competing PR)**: any open PR already addresses this
-       issue, OR `gh issue view {{issue_number}} --json state` is `CLOSED`.
+     - **Gate 1 (Competing PR)**: an open PR is shown to COVER this issue
+       by mol-pr-start's two-phase decision, OR `gh issue view
+       {{issue_number}} --json state` is `CLOSED`. Run both phases as
+       written there — `gh pr list --search` only nominates candidates, and
+       a bare mention is never coverage. A candidate covers the issue only
+       on a closing keyword bound to it (on a default-branch PR) or a
+       schema-valid model verdict citing the PR body verbatim. Candidates
+       that merely mention the issue are recorded as context and the chain
+       CONTINUES: a false block here kills the whole authoring run.
      - **Gate 2 (Architectural refactor)**: active design docs marked
        Accepted/Implementing, open consolidation PRs from maintainers,
        or recent supersedes-pattern PRs in the area.
@@ -230,7 +255,7 @@ VERDICT=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata."evidence.reviewer
     ```bash
     gc bd close "$ROOT_ID" --reason "halt_chain set after pr-start"
     ```
-  - Do NOT proceed. The downstream ship/open-pr steps will not run
+  - Do NOT proceed. The downstream ship/hand-off steps will not run
     because the chain is halted. The loop-close handler picks up the
     root bead close downstream.
 
@@ -259,7 +284,16 @@ ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 BRANCH=$(git branch --show-current)
-DEFAULT=$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p' || echo "main")
+# Resolve the default branch locally. `|| echo "main"` on the old
+# `git remote show origin` pipeline could never fire: sed exits 0 on empty
+# input, so a network failure produced DEFAULT="" and this check silently
+# fell back to the hardcoded main/master arms below.
+DEFAULT=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+if [ -z "$DEFAULT" ]; then
+    git remote set-head origin --auto >/dev/null 2>&1 || true
+    DEFAULT=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+fi
+[ -n "$DEFAULT" ] || DEFAULT=main
 if [ "$BRANCH" = "$DEFAULT" ] || [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
     gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
       --set-metadata "summary_for_human=Cannot ship from default branch ($BRANCH). pr-start did not create a feature branch — chain stopped."
@@ -323,8 +357,8 @@ Map readiness → verdict:
 - readiness=BLOCKED → `reviewer_verdict=blocked`
 
 **Critical:** This step MUST NOT run `git push` or `gh pr create`.
-Push and PR open happen in the `open-pr` step, gated on the
-`gate-after-ship` decision.
+Nothing in this formula pushes or opens a PR. The `hand-off-publish`
+step records the publish commands for the publisher instead.
 
 **Exit criteria:** Report written, verdict recorded, evidence set."""
 
@@ -334,7 +368,7 @@ title = "Gate: major concerns on ship?"
 needs = ["ship"]
 description = """
 Inspect ship's evidence.reviewer_verdict. Halt the chain if not pass;
-otherwise close cleanly and proceed to open-pr.
+otherwise close cleanly and proceed to the publish hand-off.
 
 **1. Find the root bead and read ship state:**
 ```bash
@@ -360,28 +394,28 @@ REPORT_PATH=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata."evidence.arti
     ```bash
     gc bd close "$ROOT_ID" --reason "ship verdict != pass"
     ```
-  - Do NOT proceed to open-pr.
+  - Do NOT proceed to the publish hand-off.
 
 - Otherwise (verdict = pass), proceed without closing the root bead —
-  the molecule advances to the `open-pr` step automatically once this
+  the molecule advances to the `hand-off-publish` step automatically once this
   step body completes. Display:
   ```
-  [pr-from-issue] gate-after-ship: cleared. Proceeding to open-pr.
+  [pr-from-issue] gate-after-ship: cleared. Proceeding to the publish hand-off.
   ```
 
 **Exit criteria:** Either halted (root closed, summary_for_human + halt_chain
 set) or cleared (step body completes; molecule advances)."""
 
 [[steps]]
-id = "gate-auto-push-eligibility"
+id = "gate-publish-readiness"
 title = "Gate: mechanical eligibility check before push"
 needs = ["gate-after-ship"]
 description = """
-Mechanical eligibility gate per the autonomous-pr-ship design decision
+Mechanical eligibility gate per the autonomous-pr-ship design
 (dr-1l9hc4). This step
-is the carve-out that lets a polecat actually push when — and only when — a
-positive `auto_push=true` signal arrived with the dispatch AND every
-mechanical check below passes.
+records readiness evidence for the publisher when a positive
+`auto_push=true` signal arrived with the dispatch AND every mechanical
+check below passes. It authorizes no push.
 
 **No LLM judgment in this step.** Every gate is a count, regex match, or
 shell exit code. The only soft input is the polecat's own `polecat_confidence`
@@ -390,31 +424,34 @@ would require judgment routes to mayor via `summary_for_human` and
 `gc.escalate_to=mayor`.
 
 When `auto_push != "true"`, this step is a no-op and the chain falls
-through to `open-pr`, whose top-of-step check soft-halts at branch-ready
-(default-deny). The existing `skip_open_pr=true` path is preserved.
+through to `hand-off-publish`, which closes at branch-ready either way.
+`auto_push` no longer authorizes a push -- nothing in this formula pushes.
+What it now selects is whether these readiness gates run and leave their
+evidence for the publisher. The `skip_open_pr=true` path is preserved.
 
 **1. Find the root bead and resolve identifiers:**
 ```bash
 ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 AUTO_PUSH="{{auto_push}}"
+SKIP_OPEN_PR="{{skip_open_pr}}"
 ISSUE_NUM={{issue_number}}
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 BRANCH=$(git branch --show-current)
 ```
 
-**2. Skip when auto_push != "true":**
+**2. Skip when auto_push != "true" or skip_open_pr = "true":**
 
 ```bash
-if [ "$AUTO_PUSH" != "true" ]; then
-    echo "[gate-auto-push-eligibility] auto_push=$AUTO_PUSH; skipping gate. open-pr will halt at branch-ready (default-deny)."
+if [ "$AUTO_PUSH" != "true" ] || [ "$SKIP_OPEN_PR" = "true" ]; then
+    echo "[gate-publish-readiness] auto_push=$AUTO_PUSH skip_open_pr=$SKIP_OPEN_PR; skipping gate. hand-off-publish closes at branch-ready."
     exit 0
 fi
 ```
 
 No evidence is written and `gc.halt_chain` is NOT set — the chain advances
-to `open-pr`, which sees the absence of `evidence.gate_passed=true` and
-takes the soft-halt path.
+to `hand-off-publish`, which sees the absence of `evidence.gate_passed=true`
+and says so in its summary.
 
 **3. Hard gates — first failure halts the chain and routes to mayor.**
 
@@ -434,12 +471,16 @@ halt_gate() {
 
   a. **kill-switch** (checked first so the gate fails fast when disarmed):
   ```bash
+PUBLISH_OWNER=$(cat <<'OWNER'
+{{publish_owner}}
+OWNER
+)
   if [ ! -e "${HOME}/.gc/auto-push-armed.flag" ]; then
       gc bd update "$ROOT_ID" \\
         --set-metadata "evidence.review_required=true" \\
         --set-metadata "gc.halt_chain=true" \\
         --set-metadata "gc.escalate_to=mayor" \\
-        --set-metadata "summary_for_human=Auto-push kill-switch ${HOME}/.gc/auto-push-armed.flag is absent. Halting at branch-ready for issue #${ISSUE_NUM}. Mayor must arm the flag before any auto-push proceeds."
+        --set-metadata "summary_for_human=Readiness-gate switch ${HOME}/.gc/auto-push-armed.flag is absent, so no readiness evidence was recorded for issue #${ISSUE_NUM}. Halting at branch-ready; nothing was published, and publishing stays $PUBLISH_OWNER's hand-off either way."
       gc bd close "$ROOT_ID" --reason "auto-push gate halt: kill-switch absent"
       exit 0
   fi
@@ -547,41 +588,50 @@ halt_gate() {
   fi
   ```
 
-**4. All gates passed — write evidence and arm the bypass token:**
+**4. All gates passed — write the readiness evidence:**
 
 ```bash
-BYPASS_TOKEN="auto_push_validated:${ROOT_ID}"
 gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.gate_passed=true" \\
-  --set-metadata "evidence.auto_push_bypass_token=${BYPASS_TOKEN}" \\
   --set-metadata "evidence.gate_diff_loc=${DIFF_LOC}" \\
   --set-metadata "evidence.gate_diff_files=${DIFF_FILES}" \\
   --set-metadata "evidence.gate_commits=${COMMITS}" \\
   --set-metadata "evidence.gate_confidence=${CONFIDENCE}"
-export GASCITY_SHIP_BYPASS="${BYPASS_TOKEN}"
-echo "[gate-auto-push-eligibility] all gates pass. Bypass armed: ${BYPASS_TOKEN}"
+echo "[gate-publish-readiness] all gates pass; readiness evidence written."
 ```
 
-The `GASCITY_SHIP_BYPASS` env export is consumed by the
-`gascity-ship-gate` PreToolUse hook in the `open-pr` step (see design
-doc §5). The `evidence.auto_push_bypass_token` metadata is the persisted
-form — `open-pr` re-exports it from metadata to guarantee the env var is
-set when the push runs, regardless of whether the formula runner preserves
-env across step boundaries.
+This evidence is read by a HUMAN publisher, not by a hook. It arms
+nothing. The `GASCITY_SHIP_BYPASS` token this step used to export was
+retired, along with the `gascity-ship-gate` carve-out that
+consumed it. Under the recommended read-only pool credential no token
+written here can make an upstream write succeed; with a write-capable
+credential, nothing in this step stops one, which is why none is written.
 
 **Exit criteria:** Either halted (root closed, `gc.halt_chain=true` and
 `gc.escalate_to=mayor` set, summary_for_human routes to mayor) or cleared
-(evidence.gate_passed=true written; molecule advances to open-pr)."""
+(evidence.gate_passed=true written; molecule advances to
+hand-off-publish)."""
 
 [[steps]]
-id = "open-pr"
-title = "Push fork + open PR upstream"
-needs = ["gate-auto-push-eligibility"]
+id = "hand-off-publish"
+title = "Record the publish hand-off for the publisher"
+needs = ["gate-publish-readiness"]
 description = """
-Push the implementation branch to the contributor's fork and open the PR
-on `gastownhall/gascity`. The first step that performs WRITES to the
-upstream — everything before this is local-only or read-only against
-upstream.
+The pool half of this chain ENDS HERE. This step performs NO upstream
+write: no `git push`, no `gh pr create`, no `gh` write verb of any kind.
+It resolves the identifiers a publisher needs, composes the PR title and
+body, records the exact commands that would publish the branch, and
+closes the molecule at branch-ready.
+
+**Why this step does not publish.** The recommended deployment gives unattended pool seats a READ-ONLY
+`GH_TOKEN`. Without it the pool itself can publish, and nothing but this
+formula's prose stands between an unreviewed branch and the forge. Under that
+deployment a push or a create from here cannot succeed whatever the
+formula says, and the old `GASCITY_SHIP_BYPASS` carve-out armed a bypass
+for a write that then failed at the forge, AFTER the implementation work
+was done. The work stays in the pool; the write moves to the publisher
+named by `publish_owner`, who runs it from its own login after a human
+has approved that specific artifact.
 
 **1. Find the root bead and resolve identifiers:**
 ```bash
@@ -590,188 +640,126 @@ BRANCH=$(git branch --show-current)
 ISSUE_NUM={{issue_number}}
 SKIP_OPEN_PR="{{skip_open_pr}}"
 GATE_PASSED=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata."evidence.gate_passed" // ""')
-BYPASS_TOKEN=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata."evidence.auto_push_bypass_token" // ""')
+COMMIT_SHA=$(git rev-parse HEAD)
 ```
 
-**2. Honor skip_open_pr=true (early-exit before any write):**
+**2. Resolve the publish identifiers. These are READS.**
 
-If `SKIP_OPEN_PR == "true"`:
+`gh repo view` and `gh issue view` are reads and work under the pool's
+read-only credential. Resolving them here is what makes the recorded
+commands exact rather than templates the publisher has to fill in:
 ```bash
-COMMIT_SHA=$(git rev-parse HEAD)
+FORK_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+FORK_OWNER=$(echo "$FORK_REPO" | cut -d/ -f1)
+UPSTREAM_REPO=$(gh repo view --json parent --jq '.parent.nameWithOwner // empty')
+[ -n "$UPSTREAM_REPO" ] || UPSTREAM_REPO="$FORK_REPO"
+UPSTREAM_BASE=$(gh repo view "$UPSTREAM_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name // "main"')
+ISSUE_TITLE=$(gh issue view "$ISSUE_NUM" --repo "$UPSTREAM_REPO" --json title --jq '.title')
+```
+
+If one of these reads fails, record what you did resolve and name the one
+that failed. A missing identifier makes the hand-off less useful; it does
+not make the branch less finished, and it is never a reason to attempt a
+write.
+
+**3. Compose the PR title and body, and leave them on disk.**
+
+Not a `mktemp`: the publisher runs in a different process, so a temp file
+deleted at the end of this step is no use to them. Composing the body is
+real work and it stays in the pool; only the write leaves:
+```bash
+PLAN_PATH=".gc/pr-pipeline/plans/issue-${ISSUE_NUM}.md"
+PR_MARKER="<!-- gc-pr-bead-id:${ROOT_ID} -->"
+BODY_DIR="${GC_CITY_PATH:?}/.gc/staged-gh/$ROOT_ID-issue-${ISSUE_NUM}"
+mkdir -p "$BODY_DIR"
+PR_BODY_PATH="$BODY_DIR/pr-body.md"
+cat > "$PR_BODY_PATH" <<MD
+Fixes #$ISSUE_NUM.
+
+Closes #$ISSUE_NUM.
+
+Generated by mol-pr-from-issue from issue #$ISSUE_NUM. See plan at $PLAN_PATH.
+
+$PR_MARKER
+MD
+```
+
+PR title: a conventional-commit style summary derived from the issue.
+Set it as `PR_TITLE` here; it goes into `evidence.pr_title` and, shell-
+quoted, into the create command below. Do not leave a placeholder for the
+publisher to invent:
+```bash
+PR_TITLE=$(cat <<'TITLE'
+<conventional commit summary>
+TITLE
+)
+```
+
+**4. Record the exact publish commands on the root bead.**
+
+Two commands, in the order the publisher runs them, with every identifier
+already resolved. Anything they have to edit is a defect in this step:
+```bash
+PUBLISH_OWNER=$(cat <<'OWNER'
+{{publish_owner}}
+OWNER
+)
+GIT_DIR_ABS=$(git rev-parse --path-format=absolute --git-common-dir)
+git update-ref "refs/staged-gh/$ROOT_ID" "$COMMIT_SHA"
+PUBLISH_PUSH="git --git-dir=$(printf %q "$GIT_DIR_ABS") push $(printf %q "https://github.com/$FORK_REPO.git") $(printf %q "$COMMIT_SHA:refs/heads/$BRANCH")"
+PUBLISH_CREATE="gh pr create --repo $(printf %q "$UPSTREAM_REPO") --base $(printf %q "$UPSTREAM_BASE") --head $(printf %q "$FORK_OWNER:$BRANCH") --title $(printf %q "$PR_TITLE") --body-file $(printf %q "$PR_BODY_PATH")"
+
 gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.artifact_path=git:$COMMIT_SHA" \\
   --set-metadata "evidence.reviewer_verdict=pass" \\
   --set-metadata "evidence.reviewer_agent=<this polecat session>" \\
   --set-metadata "evidence.branch=$BRANCH" \\
-  --set-metadata "summary_for_human=Branch $BRANCH ready at $COMMIT_SHA for issue #$ISSUE_NUM. skip_open_pr=true — no push, no PR. Run: git push <fork-remote> $BRANCH when ready."
-gc bd close "$ROOT_ID" --reason "skip_open_pr=true; branch ready for human-driven open"
-exit 0
+  --set-metadata "evidence.commit_sha=$COMMIT_SHA" \\
+  --set-metadata "evidence.pr_title=$PR_TITLE" \\
+  --set-metadata "evidence.pr_body_path=$PR_BODY_PATH" \\
+  --set-metadata "evidence.publish_push_cmd=$PUBLISH_PUSH" \\
+  --set-metadata "evidence.publish_create_cmd=$PUBLISH_CREATE" \\
+  --set-metadata "evidence.publish_owner=$PUBLISH_OWNER" \\
+  --set-metadata "gc.outcome=branch-ready"
 ```
 
-Note: this is a soft-success close. The loop-close handler surfaces the
-`summary_for_human` as the molecule's final message; from a Slack-thread
-reader's perspective, it reads as "halted at the open-pr step by your own
-flag" rather than a full success. That's intentional — the chain
-intentionally stopped short of opening the PR.
+**5. Close the molecule at branch-ready.**
 
-**2.5 Honor auto-push gate (soft early-exit when gate did not write pass):**
-
-`gate-auto-push-eligibility` either set `evidence.gate_passed=true` (and an
-`evidence.auto_push_bypass_token`) when `auto_push=true` AND every
-mechanical check passed, or skipped silently when `auto_push != "true"`,
-or halted the chain when a gate fired. The chain only reaches this point
-in the first two cases; the third closes the root bead at the gate step.
-
-If `GATE_PASSED != "true"` (gate skipped because auto_push wasn't armed,
-or evidence missing for any other reason), soft-halt at branch-ready —
-same shape as the `skip_open_pr=true` exit, distinguishable by
-`summary_for_human`:
-
+Three terminal shapes, distinguishable by `summary_for_human`. All three
+are the SAME kind of outcome -- a finished branch that nobody published --
+and none of them is a failure:
 ```bash
-if [ "$GATE_PASSED" != "true" ]; then
-    COMMIT_SHA=$(git rev-parse HEAD)
-    gc bd update "$ROOT_ID" \\
-      --set-metadata "evidence.artifact_path=git:$COMMIT_SHA" \\
-      --set-metadata "evidence.reviewer_verdict=pass" \\
-      --set-metadata "evidence.reviewer_agent=<this polecat session>" \\
-      --set-metadata "evidence.branch=$BRANCH" \\
-      --set-metadata "summary_for_human=Branch $BRANCH ready at $COMMIT_SHA for issue #$ISSUE_NUM. auto_push not armed (default-deny) — no push, no PR. To proceed: re-sling with --var auto_push=true so the eligibility gate runs, or push manually with: git push <fork-remote> $BRANCH."
-    gc bd close "$ROOT_ID" --reason "auto_push=false; branch ready, halted at open-pr soft gate"
-    exit 0
-fi
-```
-
-If `GATE_PASSED == "true"`, re-export the bypass token so the
-`gascity-ship-gate` PreToolUse hook accepts the upcoming `git push` and
-`gh pr create` regardless of whether the formula runner preserved env
-across the gate-step → open-pr-step boundary:
-
-```bash
-if [ -n "$BYPASS_TOKEN" ]; then
-    export GASCITY_SHIP_BYPASS="$BYPASS_TOKEN"
-fi
-```
-
-**3. Resolve the fork and upstream identities.**
-
-The local checkout is the contributor's fork. Resolve:
-```bash
-FORK_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-FORK_OWNER=$(echo "$FORK_REPO" | cut -d/ -f1)
-UPSTREAM_REPO=$(gh repo view --json parent --jq '.parent.nameWithOwner // empty')
-if [ -z "$UPSTREAM_REPO" ]; then
-    # Not a fork — open the PR against the same repo.
-    UPSTREAM_REPO="$FORK_REPO"
-fi
-UPSTREAM_BASE=$(gh repo view "$UPSTREAM_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name // "main"')
-```
-
-The fork remote is the local push remote (typically `origin`):
-```bash
-FORK_REMOTE=$(git remote -v | awk -v fork="$FORK_REPO" 'index($2, fork) && /\\(push\\)/ {print $1; exit}')
-[ -z "$FORK_REMOTE" ] && FORK_REMOTE="origin"
-```
-
-**4. Push the branch:**
-```bash
-git push -u "$FORK_REMOTE" "$BRANCH"
-PUSH_EXIT=$?
-```
-
-If the push fails with `403` or "Permission to ... denied":
-
-This is the `maintainerCanModify` misleading case (see memory
-`reference_maintainer_can_modify_misleading`). It typically means the
-fork doesn't allow this push direction. The recovery is "supersede via
-our fork":
-- Create a new branch on a fork the polecat does own
-- Cherry-pick the implementation commits to it
-- Open the PR from that fork instead
-
-If you cannot complete this recovery automatically, halt:
-```bash
-gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-  --set-metadata "summary_for_human=Push to fork failed with 403 for branch $BRANCH (maintainerCanModify gap). Implementation is local at $(git rev-parse HEAD); manual supersede-via-our-fork recovery needed before PR can be opened."
-gc bd close "$ROOT_ID" --reason "push 403; manual recovery required"
-exit 0
-```
-
-**5. Read the issue title + plan to compose the PR body.**
-
-```bash
-ISSUE_TITLE=$(gh issue view "$ISSUE_NUM" --repo "$UPSTREAM_REPO" --json title --jq '.title')
-PLAN_PATH=".gc/pr-pipeline/plans/issue-${ISSUE_NUM}.md"
-```
-
-PR title: a conventional-commit style summary derived from the issue.
-PR body: short summary + reference to issue + link to plan path (in the
-contributor's fork; can be inlined if the maintainer prefers).
-
-**6. Open the PR upstream.**
-
-```bash
-PR_URL=$(gh pr create \\
-    --repo "$UPSTREAM_REPO" \\
-    --base "$UPSTREAM_BASE" \\
-    --head "$FORK_OWNER:$BRANCH" \\
-    --title "<conventional commit summary>" \\
-    --body "<body referencing issue #$ISSUE_NUM and the plan>" 2>&1)
-PR_EXIT=$?
-```
-
-`gh pr create` can exit 0 with no URL on stdout when a PR for that
-branch already exists (it prints a warning instead). Recover:
-```bash
-if [ "$PR_EXIT" -eq 0 ] && [ -z "$(echo "$PR_URL" | grep -E 'https://[^ ]+/pull/[0-9]+')" ]; then
-    # No URL captured — look up an existing PR on this head.
-    PR_URL=$(gh pr list --repo "$UPSTREAM_REPO" --head "$BRANCH" --state open \\
-              --json url --jq '.[0].url // empty')
-fi
-
-if [ "$PR_EXIT" -ne 0 ] || [ -z "$PR_URL" ]; then
-    gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
-      --set-metadata "summary_for_human=Branch $BRANCH pushed to fork but gh pr create failed or no PR URL captured. Investigate before retrying."
-    gc bd close "$ROOT_ID" --reason "gh pr create failed or url empty"
-    exit 0
-fi
-
-# Extract the PR number from the URL (last path segment after /pull/).
-PR_NUM=$(echo "$PR_URL" | grep -oE '/pull/[0-9]+' | head -1 | sed 's|/pull/||')
-```
-
-**7. Check CI status (best-effort, non-blocking):**
-
-```bash
-CI_STATUS=$(gh pr view "$PR_NUM" --repo "$UPSTREAM_REPO" --json statusCheckRollup --jq '.statusCheckRollup | length' 2>/dev/null || echo "0")
-if [ "$CI_STATUS" = "0" ]; then
-    CI_NOTE="no checks reported yet"
+PUBLISH_OWNER=$(cat <<'OWNER'
+{{publish_owner}}
+OWNER
+)
+if [ "$SKIP_OPEN_PR" = "true" ]; then
+    REASON="skip_open_pr=true; branch ready to publish"
+    NOTE="skip_open_pr=true was set, so the publish-readiness gate was not consulted."
+elif [ "$GATE_PASSED" = "true" ]; then
+    REASON="publish-readiness gate passed; branch ready to publish"
+    NOTE="The publish-readiness gate passed; its evidence is on this bead for the publisher to weigh."
 else
-    CI_NOTE="$CI_STATUS checks running"
+    REASON="auto_push not armed; branch ready to publish"
+    NOTE="auto_push was not armed, so the publish-readiness gate did not run. The branch is finished regardless."
 fi
+
+gc bd update "$ROOT_ID" --set-metadata "summary_for_human=Branch $BRANCH is ready at $COMMIT_SHA for issue #$ISSUE_NUM: $ISSUE_TITLE. Nothing has been pushed and no pull request exists. $NOTE Publishing is $PUBLISH_OWNER's step, from its own login, after a human approves this artifact; the exact push and create commands are on this bead as evidence.publish_push_cmd and evidence.publish_create_cmd."
+gc bd close "$ROOT_ID" --reason "$REASON"
 ```
 
-**8. Write evidence and summary_for_human:**
-```bash
-gc bd update "$ROOT_ID" \\
-  --set-metadata "evidence.artifact_path=github-pr:gastownhall/gascity/$PR_NUM" \\
-  --set-metadata "evidence.reviewer_verdict=pass" \\
-  --set-metadata "evidence.reviewer_agent=<this polecat session>" \\
-  --set-metadata "evidence.pr_url=$PR_URL" \\
-  --set-metadata "summary_for_human=Opened PR #$PR_NUM for issue #$ISSUE_NUM: $ISSUE_TITLE. URL: $PR_URL. CI status: $CI_NOTE."
-```
+**Do not treat an unpublished branch as unfinished work.** The generated bd
+session-completion workflow says work is not complete until `git push`
+succeeds. That does not reach this formula: on a publication-hold rig a
+reviewed, unpushed branch is the correct terminal state.
 
-**9. Close the molecule:**
-```bash
-gc bd close "$ROOT_ID" --reason "PR #$PR_NUM opened"
-```
-
-**Exit criteria:** PR opened upstream (or halt set with summary_for_human
-on recovery-needed failure path)."""
+**Exit criteria:** publish commands recorded on the root bead, PR body on
+disk, molecule closed at branch-ready. No upstream write performed."""
 
 [[steps]]
 id = "drain"
 title = "Signal completion"
-needs = ["open-pr"]
+needs = ["hand-off-publish"]
 description = """
 Final step. Signal the controller to reclaim this polecat session.
 

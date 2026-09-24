@@ -160,19 +160,12 @@ def test_thread_ts_and_idempotency_propagate_through_gc_path(
     assert body["filename"] == "out.txt"
 
 
-def test_thread_current_unwraps_helper_tuple(
+def _upload_thread_current(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
-) -> None:
-    """Regression for the gc-j8h live-smoke bug.
-
-    `find_latest_inbound_message_id_for_session` returns
-    `tuple[str, dict]`; the upload script must extract `match[0]`
-    rather than passing the whole tuple as `thread_ts`. Without
-    the unpack, gc rejects the request with a 422 because
-    `reply_to_message_id` arrives on the wire as a 2-element list
-    instead of a string.
-    """
+    lookup: Any,
+) -> dict[str, Any]:
+    """Run `upload --thread-current` against a stubbed thread lookup."""
     upload, common = _import_modules()
     captured: dict[str, Any] = {}
 
@@ -184,10 +177,7 @@ def test_thread_current_unwraps_helper_tuple(
     monkeypatch.setattr(common, "_request", fake_request)
     monkeypatch.setattr(common, "look_up_binding", lambda _sid: _fake_binding())
     monkeypatch.setattr(
-        common,
-        "find_latest_inbound_message_id_for_session",
-        lambda _sid: ("1777779766.848799", _fake_binding()),
-    )
+        common, "find_latest_inbound_thread_for_session", lookup)
 
     file_path = _make_file(tmp_path)
     upload.main([
@@ -195,7 +185,133 @@ def test_thread_current_unwraps_helper_tuple(
         "--session", "gc-test-session",
         "--thread-current",
     ])
-    body = captured["body"]
-    # Critical: a plain string, NOT the (msg_id, conversation) tuple.
+    return captured["body"]
+
+
+def test_thread_current_unwraps_helper_tuple(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Regression for the gc-j8h live-smoke bug.
+
+    The lookup returns a tuple; the upload script must extract the ts
+    rather than passing the whole tuple as `thread_ts`. Without the
+    unpack, gc rejects the request with a 422 because
+    `reply_to_message_id` arrives on the wire as a list instead of a
+    string.
+    """
+    body = _upload_thread_current(
+        monkeypatch, tmp_path,
+        lambda _sid: ("1777779766.848799", "", _fake_binding()))
+    # Critical: a plain string, NOT the lookup tuple.
     assert body["reply_to_message_id"] == "1777779766.848799"
     assert isinstance(body["reply_to_message_id"], str)
+
+
+def test_thread_current_anchors_at_thread_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """`upload --thread-current` anchors at the ROOT ts of a thread-reply
+    inbound, matching `reply-current --thread-current`.
+
+    upload/help.md promises "same logic as `gc slack reply-current`". While
+    upload consumed the mid-only wrapper, a thread-reply inbound anchored
+    the upload at the child's own ts — Slack hangs threads off the parent,
+    so the file stranded outside the thread the human was reading (gp-i62)
+    and the parity claim was false.
+    """
+    body = _upload_thread_current(
+        monkeypatch, tmp_path,
+        lambda _sid: ("1786291407.960839", "1786250478.963679", _fake_binding()))
+    assert body["reply_to_message_id"] == "1786250478.963679"
+
+
+def test_thread_current_unthreaded_uses_own_ts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """A plain (unthreaded) inbound still anchors the upload at its own ts."""
+    body = _upload_thread_current(
+        monkeypatch, tmp_path,
+        lambda _sid: ("1786291407.960839", "", _fake_binding()))
+    assert body["reply_to_message_id"] == "1786291407.960839"
+
+
+# --------------------------------------------------------------------------
+# Accidental-mrkdwn guard (gp-o42) — --initial-comment renders as mrkdwn
+# beside the file, so tilde pairs would strike it through.
+# --------------------------------------------------------------------------
+
+_RUNWAY_LINE = "• Total out: ~$58.5k → *~$16.5k left on Sep 30* from a $75k start."
+
+
+def _capture_upload(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    upload, common = _import_modules()
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, body: dict[str, Any] | None = None,
+                     *, csrf: bool = True, timeout: float = 30.0) -> dict[str, Any]:
+        captured["body"] = body
+        return {"Receipt": {"Delivered": True, "FileID": "F7"}}
+
+    monkeypatch.setattr(common, "_request", fake_request)
+    monkeypatch.setattr(common, "look_up_binding", lambda _sid: _fake_binding())
+    captured["upload"] = upload
+    return captured
+
+
+def test_initial_comment_is_guarded_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    import slack_mrkdwn  # type: ignore
+    captured = _capture_upload(monkeypatch)
+
+    exit_code = captured["upload"].main([
+        "--file", str(_make_file(tmp_path)),
+        "--session", "gc-test-session",
+        "--initial-comment", _RUNWAY_LINE,
+    ])
+    assert exit_code == 0
+    comment = captured["body"]["initial_comment"]
+    assert "~" not in comment  # no pairable ASCII tilde reaches Slack
+    assert comment == _RUNWAY_LINE.replace("~", slack_mrkdwn.TILDE_SUBSTITUTE)
+
+
+def test_initial_comment_raw_flag_skips_the_guard(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    captured = _capture_upload(monkeypatch)
+
+    exit_code = captured["upload"].main([
+        "--file", str(_make_file(tmp_path)),
+        "--session", "gc-test-session",
+        "--initial-comment", _RUNWAY_LINE,
+        "--raw",
+    ])
+    assert exit_code == 0
+    assert captured["body"]["initial_comment"] == _RUNWAY_LINE
+
+
+def test_via_adapter_branch_is_guarded_too(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    # Upload guards inline in main() rather than in a shared body loader,
+    # and both --via branches read the one guarded variable. Pin the
+    # adapter branch as well so a future refactor cannot guard only the
+    # default path while the suite stays green.
+    import slack_mrkdwn  # type: ignore
+    captured = _capture_upload(monkeypatch)
+
+    exit_code = captured["upload"].main([
+        "--file", str(_make_file(tmp_path)),
+        "--session", "gc-test-session",
+        "--via", "adapter",
+        "--initial-comment", _RUNWAY_LINE,
+    ])
+    assert exit_code == 0
+    assert captured["body"]["initial_comment"] == \
+        _RUNWAY_LINE.replace("~", slack_mrkdwn.TILDE_SUBSTITUTE)

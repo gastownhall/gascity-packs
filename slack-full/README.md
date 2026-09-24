@@ -57,7 +57,9 @@ for the full rationale.
 Implemented:
 
 - [x] `gc slack bind-dm` — bind a Slack DM channel to one named session
-- [x] `gc slack bind-room` — bind a room to multiple sessions; flags
+- [x] `gc slack bind-room` — bind a room to multiple sessions; requires
+      exactly one of `--binding-owner SESSION` / `--group-only` to
+      declare the room's binding shape; further flags
       `--enable-peer-fanout`, `--allow-untargeted-publication`,
       `--max-peer-triggered-publishes`, `--max-total-peer-deliveries`,
       `--default-handle`, `--handle HANDLE=SESSION` (creates a
@@ -65,7 +67,9 @@ Implemented:
 - [x] `gc slack reply-current` — reply to the latest Slack event in the
       current session, by default through gc's `/extmsg/outbound` so
       transcript recording + peer fanout fire (`--via adapter` keeps the
-      old direct-to-adapter path for diagnostics)
+      old direct-to-adapter path for diagnostics). A thread-reply
+      inbound is answered in its thread by default (`--no-thread`
+      forces a channel-level post)
 - [x] `gc slack publish` — publish to a session's saved binding (target
       session required, no event-scan fallback — fail-fast when the
       session has no active binding)
@@ -295,13 +299,25 @@ reminder to the other bound sessions so they see what their peer just
 said.
 
 `--binding-owner SESSION` is what makes outbound publishes (and
-therefore `gc slack reply-current --via gc`) actually work. Without
-it, peer fanout still fires on inbound, but `/extmsg/outbound` has
-no `SessionBindingRecord` to resolve the conversation through and the
-publish is rejected. The owner must be one of the participants —
-prefer the session that "owns" the room from gc's perspective. Pass
-the gc session id (e.g. `gc-77139`) when alias resolution semantics
-matter; for stable named sessions, the alias works too.
+therefore `gc slack reply-current --via gc`) actually work: without a
+direct binding, `/extmsg/outbound` has no `SessionBindingRecord` to
+resolve the conversation through and the publish is rejected, even
+though peer fanout still fires on inbound. The owner must be one of
+the participants — prefer the session that "owns" the room from gc's
+perspective. Pass the gc session id (e.g. `gc-77139`) when alias
+resolution semantics matter; for stable named sessions, the alias
+works too.
+
+Every run must declare which of the two shapes it wants: pass
+`--binding-owner SESSION` for a room with an outbound publisher, or
+`--group-only` for a purely group-routed room. `--group-only` removes
+*every* active direct binding for the conversation — including ones
+created by other tooling — so that none can shadow the group route,
+and it prints each removed binding to stderr. Because that removal is
+destructive, it is never the default: a run with neither flag is
+rejected before any API call rather than quietly sweeping the room's
+publisher. Re-running `bind-room` on an owned room therefore has to
+name the owner again.
 
 ## Adapter as a proxy_process service
 
@@ -474,10 +490,17 @@ GC_CITY_NAME=<your-city-name>
 ### Cutover sequence
 
 ```
-# 1. Build the adapter binary in place (source colocated with the pack)
+# 1. Build the adapter binary in place (source colocated with the pack).
+#    Optional: the [[service]] command is adapter/run.sh, which rebuilds
+#    gc-slack-adapter itself when the binary is missing (e.g. after
+#    `gc import install` re-materialized the pack cache git-only).
 ( cd slack-full/adapter && go build -o gc-slack-adapter )
 
-# 2. Source the secrets so the supervisor inherits them
+# 2. Source the secrets so the supervisor inherits them.
+#    Optional: run.sh sources this same file itself at service start
+#    (override the path with GC_SLACK_ADAPTER_ENV — if you set it, the
+#    file must exist: run.sh refuses to start on ambient credentials
+#    rather than post to whatever workspace is in the environment).
 set -a; source "${XDG_CONFIG_HOME:-$HOME/.config}/gc-slack-adapter/env"; set +a
 
 # 3. Stop any manually-managed adapter that may still be running

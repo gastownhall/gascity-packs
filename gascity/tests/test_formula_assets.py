@@ -123,6 +123,7 @@ FORMULAS = {
 
 ROLE_AGENTS = {
     "design-author",
+    "feature-refiner",
     "design-implementation-reviewer",
     "design-test-risk-reviewer",
     "gap-analyst",
@@ -130,6 +131,7 @@ ROLE_AGENTS = {
     "implementation-worker",
     "issue-triager",
     "publisher",
+    "quality-judge",
     "requirements-planner",
     "review-synthesizer",
     "run-operator",
@@ -930,6 +932,11 @@ class FormulaAssetTests(unittest.TestCase):
                 **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
+                # commands/claim/run.sh reads `${GC_TEMPLATE:-${GC_AGENT:-}}`, so
+                # a seat's exported GC_TEMPLATE outranks the GC_AGENT this test is
+                # exercising and the claim is rejected on a route mismatch. Empty
+                # falls through to GC_AGENT; the env dict cannot unset a name.
+                "GC_TEMPLATE": "",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
                 "PATH": f"{bin_dir}:/usr/bin:/bin",
@@ -1033,6 +1040,7 @@ class FormulaAssetTests(unittest.TestCase):
                 **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
+                "GC_TEMPLATE": "",  # see the GC_TEMPLATE note above
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
                 "GC_SESSION_ID": "session-1",
@@ -4363,9 +4371,13 @@ description = "Override sink that writes the base triage report contract."
         list_json: str,
         parent_show_json: str | None = None,
         extra_env: dict[str, str] | None = None,
+        script: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess:
+        # `script` runs a caller-supplied copy of the gate instead of the
+        # shipped one, so a test can mutate a line the fixtures cannot reach.
         root = pathlib.Path(__file__).resolve().parents[1]
-        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+        if script is None:
+            script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
 
         with tempfile.TemporaryDirectory() as td:
             tmp = pathlib.Path(td)
@@ -4950,43 +4962,676 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("code_review.verdict=iterate", apply_text)
         self.assertIn("code_review.report_path=<fix summary path>", apply_text)
 
-    def test_implementation_review_check_takes_newest_verdict_not_highest_id(self) -> None:
-        """`| last` in the verdict extractors has to mean newest, not highest id.
+    def test_implementation_review_check_takes_owner_verdict_not_highest_id(self) -> None:
+        """The owner's verdict decides the loop, and id order is irrelevant.
 
-        gmol dedupes the four status legs with `unique_by(.id)`, and jq's
-        unique_by sorts — so without a re-sort the union arrives in bead-id
-        order and this gate's `| last` picks a verdict by id hash. Here the
-        stale `iterate` sorts after the newer `done`, so an already-approved
-        review would loop until Ralph ran out of attempts: the exact symptom
-        the federating-reader fix was written to end, re-entering by ordering
-        rather than by starvation.
+        gmol dedupes the four status legs with `unique_by(.id)`, so the union
+        arrives in bead-id order. Ownership, not position, decides: the verdict
+        the loop acts on is the one written by the bead that *owns* it -- the
+        apply lane -- and a review lane's opinion never outranks it however the
+        ids or the timestamps fall. Here a review lane, marked by its own
+        `code_review.review_verdict`, carries `iterate`, sorts last by id, and
+        is also the *newer* row; the owner's `done` must still win, because the
+        lane is dropped before recency is ever consulted.
+
+        `updated_at` is real: it is `omitempty` on the reader's bead struct,
+        absent only on a bead never updated since creation, which no verdict
+        carrier can be. The fixtures carry it because the reader emits it.
         """
         show_json = json.dumps(
             [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
         )
 
-        def member(bead_id: str, updated: str, verdict: str) -> dict:
-            return {
-                "id": bead_id,
-                "updated_at": updated,
-                "metadata": {
-                    "gc.root_bead_id": "root",
-                    "gc.attempt": "1",
-                    "code_review.verdict": verdict,
-                    "code_review.report_path": f"/reports/{bead_id}.md",
-                },
+        def member(bead_id: str, verdict: str, updated: str, *, lane: bool = False) -> dict:
+            metadata = {
+                "gc.root_bead_id": "root",
+                "gc.attempt": "1",
+                "code_review.verdict": verdict,
+                "code_review.report_path": f"/reports/{bead_id}.md",
             }
+            if lane:
+                # Any `code_review.*_verdict` key marks a review lane. Every
+                # lane prompt in the packs is contracted not to write the bare
+                # `code_review.verdict` the apply lane owns.
+                metadata["code_review.review_verdict"] = verdict
+            return {"id": bead_id, "updated_at": updated, "metadata": metadata}
 
-        # "gcg-zzz" sorts last by id but carries the OLDER verdict.
+        # "gcg-zzz" sorts last by id AND carries the newer timestamp -- it loses
+        # on both counts to ownership alone.
         list_json = json.dumps(
             [
-                member("gcg-aaa", "2026-08-13T03:00:00Z", "done"),
-                member("gcg-zzz", "2026-08-13T01:00:00Z", "iterate"),
+                member("gcg-aaa", "done", "2026-08-13T01:00:00Z"),
+                member("gcg-zzz", "iterate", "2026-08-13T03:00:00Z", lane=True),
             ]
         )
         result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_implementation_review_check_is_invariant_under_id_permutation(self) -> None:
+        """Exchanging the two bead ids changes neither exit code nor stdout.
+
+        This is the property the id-ordered `| last` could not hold: the same
+        molecule, relabelled, decided the loop differently. The timestamps stay
+        attached to the *roles* while the ids are exchanged, so nothing but the
+        labelling differs between the two runs.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        def fixture(owner_id: str, lane_id: str) -> str:
+            return json.dumps(
+                [
+                    {
+                        "id": owner_id,
+                        "updated_at": "2026-08-13T01:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            "code_review.verdict": "done",
+                        },
+                    },
+                    {
+                        "id": lane_id,
+                        "updated_at": "2026-08-13T03:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            "code_review.verdict": "iterate",
+                            "code_review.review_verdict": "iterate",
+                        },
+                    },
+                ]
+            )
+
+        first = self._run_implementation_review_check(
+            show_json=show_json, list_json=fixture("gcg-aaa", "gcg-zzz")
+        )
+        second = self._run_implementation_review_check(
+            show_json=show_json, list_json=fixture("gcg-zzz", "gcg-aaa")
+        )
+
+        self.assertEqual(
+            first.returncode,
+            second.returncode,
+            f"{first.stdout}{first.stderr}||{second.stdout}{second.stderr}",
+        )
+        self.assertEqual(first.stdout, second.stdout)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+
+    def test_implementation_review_check_accepts_every_approval_spelling(self) -> None:
+        """One approval vocabulary, matched case-insensitively.
+
+        The bash dispatch and the jq lane-status helper used to carry separate
+        copies of the list, and the bash copy was missing `approve` -- a value
+        the jq copy had always treated as approval.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        for verdict in ("approve", "approved", "pass", "done", "Approve", "DONE"):
+            with self.subTest(verdict=verdict):
+                list_json = json.dumps(
+                    [
+                        {
+                            "id": "apply",
+                            "updated_at": "2026-08-13T01:00:00Z",
+                            "metadata": {
+                                "gc.root_bead_id": "root",
+                                "gc.attempt": "1",
+                                "code_review.verdict": verdict,
+                            },
+                        }
+                    ]
+                )
+
+                result = self._run_implementation_review_check(
+                    show_json=show_json, list_json=list_json
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Implementation review approved", result.stdout)
+
+    def test_implementation_review_check_rejects_owner_iterate_over_lane_approve(self) -> None:
+        """A lane's approval cannot outvote the owner's `iterate`.
+
+        No total order over the *values* satisfies both this case and the
+        `{done, iterate}` fix-pass case below -- they differ only in who wrote
+        each value, which is why the selection partitions by ownership.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        # The lane sorts last by id and is the newer row; only ownership keeps
+        # it from deciding.
+        list_json = json.dumps(
+            [
+                {
+                    "id": "aaa-apply",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "iterate",
+                    },
+                },
+                {
+                    "id": "zzz-acceptance",
+                    "updated_at": "2026-08-13T03:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "approve",
+                        "code_review.acceptance_verdict": "approve",
+                    },
+                },
+            ]
+        )
+
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("needs another iteration: iterate", result.stdout)
+
+    def test_implementation_review_check_never_starves_a_molecule_with_a_verdict(self) -> None:
+        """Narrowing to owners may never empty the candidate set.
+
+        Two shapes reach the same conclusion. A molecule whose only verdict
+        carrier also looks like a lane has no distinguishable owner, so the
+        selection falls back to the full candidate set instead of reporting a
+        missing verdict; and a molecule with no bare verdict at all still
+        reaches the lane-status aggregation, which this change leaves intact.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        with self.subTest(shape="no distinguishable owner"):
+            list_json = json.dumps(
+                [
+                    {
+                        "id": "only-carrier",
+                        "updated_at": "2026-08-13T01:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            "code_review.verdict": "done",
+                            "code_review.review_verdict": "approve",
+                        },
+                    }
+                ]
+            )
+
+            result = self._run_implementation_review_check(
+                show_json=show_json, list_json=list_json
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("missing verdict", result.stdout)
+
+        with self.subTest(shape="lane status only"):
+            list_json = json.dumps(
+                [
+                    {
+                        "id": f"lane-{key}",
+                        "updated_at": "2026-08-13T01:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            f"code_review.{key}_verdict": "approve",
+                        },
+                    }
+                    for key in ("acceptance", "test_evidence", "simplicity")
+                ]
+            )
+
+            result = self._run_implementation_review_check(
+                show_json=show_json, list_json=list_json
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Implementation review approved from lane verdicts", result.stdout)
+
+        with self.subTest(shape="lane status, mixed case"):
+            # The shared vocabulary reaches the jq lane-status helper via
+            # `--argjson approvals` and is matched with `ascii_downcase`. Every
+            # other `*_verdict` fixture in this file spells the value in lower
+            # case, so a helper that hard-coded a case-sensitive list of its own
+            # would leave the suite green. Spell two lanes' approvals in mixed
+            # case to pin the case-insensitive match on this path specifically.
+            list_json = json.dumps(
+                [
+                    {
+                        "id": f"lane-{key}",
+                        "updated_at": "2026-08-13T01:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            f"code_review.{key}_verdict": value,
+                        },
+                    }
+                    for key, value in (
+                        ("acceptance", "Approve"),
+                        ("test_evidence", "approve"),
+                        ("simplicity", "DONE"),
+                    )
+                ]
+            )
+
+            result = self._run_implementation_review_check(
+                show_json=show_json, list_json=list_json
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Implementation review approved from lane verdicts", result.stdout)
+
+    @staticmethod
+    def _owner_bead(bead_id: str, verdict: str, updated: str | None = None) -> dict:
+        bead = {
+            "id": bead_id,
+            "metadata": {
+                "gc.root_bead_id": "root",
+                "gc.attempt": "1",
+                "code_review.verdict": verdict,
+            },
+        }
+        if updated is not None:
+            bead["updated_at"] = updated
+        return bead
+
+    def test_implementation_review_check_prefers_the_newest_owner_verdict(self) -> None:
+        """Among owner-shaped beads the newest `updated_at` decides, both ways.
+
+        Two owner-shaped beads at one attempt is the re-serve-after-stamp shape,
+        and the only thing that distinguishes them is when they were written.
+        The gate must follow that in *both* directions, or it is not reading
+        recency at all: a later `done` closes the loop, and a later `iterate`
+        keeps it open. The second direction is the one that matters -- resolving
+        it toward the stale approval ships unaddressed findings.
+
+        Recency is read by value (`max`), not by row position, so exchanging the
+        two ids leaves both answers unchanged. That is asserted here rather than
+        assumed: it is what separates "reads `updated_at`" from "happens to sort
+        the way the fixture was written".
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        old, new = "2026-08-13T01:00:00Z", "2026-08-13T03:00:00Z"
+
+        for label, stale, fresh, expected_code, expected_out in (
+            ("later iterate keeps the loop open", "done", "iterate", 1, "iterate"),
+            ("later done closes the loop", "iterate", "done", 0, "approved"),
+        ):
+            # Exchange the ids so the fresh row is once id-last and once
+            # id-first: neither ordering may change the decision.
+            for id_order in (("gcg-aaa", "gcg-zzz"), ("gcg-zzz", "gcg-aaa")):
+                stale_id, fresh_id = id_order
+                with self.subTest(case=label, stale_id=stale_id):
+                    list_json = json.dumps(
+                        [
+                            self._owner_bead(stale_id, stale, old),
+                            self._owner_bead(fresh_id, fresh, new),
+                        ]
+                    )
+
+                    result = self._run_implementation_review_check(
+                        show_json=show_json, list_json=list_json
+                    )
+
+                    self.assertEqual(
+                        result.returncode,
+                        expected_code,
+                        result.stdout + result.stderr,
+                    )
+                    self.assertIn(expected_out, result.stdout)
+                    self.assertIn(f'selected "{fresh}" (newest updated_at)', result.stderr)
+
+    def test_implementation_review_check_notes_multiple_owner_candidates(self) -> None:
+        """Owner ambiguity is always reported on stderr, whichever way it falls.
+
+        The note is an audit artifact -- no control flow reads it -- so its job
+        is to let a human tell a recency decision from a fail-closed one after
+        the fact. It names how many owners were seen, every value among them,
+        the selection, and the basis for it.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        list_json = json.dumps(
+            [
+                self._owner_bead("gcg-aaa", "done", "2026-08-13T01:00:00Z"),
+                self._owner_bead("gcg-zzz", "iterate", "2026-08-13T03:00:00Z"),
+            ]
+        )
+
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertIn("2 owner-shaped beads carry code_review.verdict", result.stderr)
+        self.assertIn("values: done, iterate", result.stderr)
+        self.assertIn('selected "iterate" (newest updated_at)', result.stderr)
+
+    def test_implementation_review_check_fails_closed_when_owner_recency_is_unknown(self) -> None:
+        """Owners that disagree with no usable recency resolve to `iterate`.
+
+        `updated_at` is omitempty, so a set where it is missing -- or where the
+        newest rows still disagree -- carries no signal to rank on. The gate
+        then takes the non-approving value: one more loop iteration in a state
+        that should not occur is recoverable, and a silent ship is not. Ranking
+        a partly dated set instead would quietly treat "no timestamp" as
+        "oldest", which is a guess dressed as a reading, so the undated row here
+        must not be demoted into losing.
+
+        Both subtests would pass under a rule that simply preferred the
+        *approving* value, which is what base did -- hence the third assertion,
+        that the stated basis is the fail-closed one and not recency.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        for label, beads in (
+            (
+                "no row is dated",
+                [
+                    self._owner_bead("gcg-aaa", "done"),
+                    self._owner_bead("gcg-zzz", "iterate"),
+                ],
+            ),
+            (
+                "only one row is dated",
+                [
+                    # The dated row is the approval. If the undated row were
+                    # ranked as older, this would approve.
+                    self._owner_bead("gcg-aaa", "done", "2026-08-13T03:00:00Z"),
+                    self._owner_bead("gcg-zzz", "iterate"),
+                ],
+            ),
+            (
+                "the newest rows still disagree",
+                [
+                    self._owner_bead("gcg-aaa", "done", "2026-08-13T03:00:00Z"),
+                    self._owner_bead("gcg-zzz", "iterate", "2026-08-13T03:00:00Z"),
+                ],
+            ),
+        ):
+            with self.subTest(shape=label):
+                result = self._run_implementation_review_check(
+                    show_json=show_json, list_json=json.dumps(beads)
+                )
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("needs another iteration: iterate", result.stdout)
+                self.assertIn('selected "iterate" (fail-closed among 2 values)', result.stderr)
+
+    def test_implementation_review_check_notes_lane_fallback_without_owner(self) -> None:
+        """The no-starvation fallback announces itself and reduces fail-closed.
+
+        When no owner-shaped bead exists, every candidate survives narrowing and
+        the value reduction runs over lane beads. Reaching this branch means the
+        gate is looking at protocol-violating data -- every lane prompt in the
+        packs is contracted not to write the bare `code_review.verdict` -- so it
+        resolves the disagreement the same way the owner path does: toward the
+        non-approving value. One lane's approval does not outvote two `iterate`s
+        just because it is spelled hopefully. The branch must also not be
+        silent: the note names the fallback, how many candidates it reduced, and
+        what it selected.
+
+        All three rows share one timestamp, so recency cannot decide and the
+        fail-closed reduction is what is under test.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        list_json = json.dumps(
+            [
+                {
+                    "id": "gcg-aaa",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "iterate",
+                        "code_review.acceptance_verdict": "iterate",
+                    },
+                },
+                {
+                    "id": "gcg-mmm",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "iterate",
+                        "code_review.test_evidence_verdict": "iterate",
+                    },
+                },
+                {
+                    "id": "gcg-zzz",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "approve",
+                        "code_review.simplicity_verdict": "approve",
+                    },
+                },
+            ]
+        )
+
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("needs another iteration: iterate", result.stdout)
+        self.assertIn("no owner-shaped bead at attempt 1", result.stderr)
+        self.assertIn("reduced 3 lane candidates", result.stderr)
+        self.assertIn('selected "iterate" (fail-closed among 2 values)', result.stderr)
+
+    def test_implementation_review_check_matches_a_mixed_case_vocabulary_entry(self) -> None:
+        """A vocabulary entry reaches both consumers whatever case it is written in.
+
+        `APPROVAL_VERDICTS` is the single definition the bash dispatch and the
+        jq lane-status helper both read, and the comment above it promises that
+        a spelling added there reaches every consumer at once. Every shipped
+        entry is already lowercase, so a consumer that downcased only the
+        *candidate* would leave this whole suite green while the next `Approve`
+        added to the array matched nothing anywhere. No fixture can reach that
+        line, so the test rewrites it in a copy of the gate.
+
+        The removal case is the control: it fails if the harness is running
+        anything other than the substituted array.
+        """
+        root = pathlib.Path(__file__).resolve().parents[1]
+        gate_source = (
+            root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+        ).read_text(encoding="utf-8")
+        vocabulary = "APPROVAL_VERDICTS=(approve approved pass done)"
+        self.assertEqual(
+            gate_source.count(vocabulary),
+            1,
+            "the vocabulary line moved; retarget this mutation before trusting it",
+        )
+
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        # `approve` is the spelling under test: as an owner verdict it goes
+        # through the bash dispatch, and as three lane verdicts it goes through
+        # the jq helper, which receives the same array via --argjson.
+        owner_rows = json.dumps(
+            [self._owner_bead("gcg-aaa", "approve", "2026-08-13T01:00:00Z")]
+        )
+        lane_rows = json.dumps(
+            [
+                {
+                    "id": "gcg-aaa",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.acceptance_verdict": "approve",
+                        "code_review.test_evidence_verdict": "approve",
+                        "code_review.simplicity_verdict": "approve",
+                    },
+                }
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            gate = pathlib.Path(td) / "implementation-review-approved.sh"
+            for label, mutation, expected_code, owner_out, lane_out in (
+                (
+                    "a mixed-case entry still matches",
+                    "APPROVAL_VERDICTS=(APPROVE approved pass done)",
+                    0,
+                    "Implementation review approved",
+                    "Implementation review approved from lane verdicts",
+                ),
+                (
+                    "an entry dropped from the array stops matching",
+                    "APPROVAL_VERDICTS=(approved pass done)",
+                    1,
+                    "needs another iteration: approve",
+                    "needs another iteration: iterate:",
+                ),
+            ):
+                gate.write_text(gate_source.replace(vocabulary, mutation), encoding="utf-8")
+                gate.chmod(0o755)
+                for consumer, list_json, expected_out in (
+                    ("bash dispatch", owner_rows, owner_out),
+                    ("jq lane status", lane_rows, lane_out),
+                ):
+                    with self.subTest(case=label, consumer=consumer):
+                        result = self._run_implementation_review_check(
+                            show_json=show_json, list_json=list_json, script=gate
+                        )
+
+                        self.assertEqual(
+                            result.returncode,
+                            expected_code,
+                            result.stdout + result.stderr,
+                        )
+                        self.assertIn(expected_out, result.stdout)
+
+    def _run_sibling_gate(
+        self, script_name: str, *, show_json: str, list_json: str
+    ) -> subprocess.CompletedProcess:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / script_name
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            write_check_gc_stub(bin_dir)
+            show_path = tmp / "show.json"
+            list_path = tmp / "list.json"
+            show_path.write_text(show_json, encoding="utf-8")
+            list_path.write_text(list_json, encoding="utf-8")
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "BD_SHOW_JSON": str(show_path),
+                "BD_LIST_JSON": str(list_path),
+                "GC_BEAD_ID": "loop",
+                "GC_ITERATION": "1",
+            }
+            return subprocess.run(
+                [str(script)], env=env, text=True, capture_output=True, check=False
+            )
+
+    def test_gap_analysis_check_takes_the_newest_verdict_not_the_id_last_one(self) -> None:
+        """The gap-analysis gate decides by recency -- pinned before it is ported.
+
+        This PR leaves its two sibling gates alone and files the port of
+        owner/value selection as a follow-up. `gap-analysis-approved.sh` has
+        exactly one recency mechanism: the `sort_by(.updated_at // "")` inside
+        its `gmol`, staging row order for a bare `| last` at the selection site.
+        Deleting that sort while porting -- which the follow-up as first written
+        proposed -- would reduce the gate to picking a verdict by bead id.
+        Measured: with the sort removed both directions below flip, so this is
+        the fail-open the guard exists to catch.
+
+        It is a behavior test, not a text assertion, so the port stays free to
+        move the mechanism as long as the answers survive. Both directions are
+        asserted because a gate stuck on `iterate` would pass the first alone.
+        """
+        self._assert_sibling_gate_reads_recency(
+            "gap-analysis-approved.sh",
+            verdict_key="gap_analysis.verdict",
+            extra_metadata={},
+            iterate_output="Gap analysis needs another iteration: iterate",
+            approve_output="Gap analysis approved",
+        )
+
+    def test_design_review_check_takes_the_newest_verdict_not_the_id_last_one(self) -> None:
+        """The same guard for design-review, which carries recency somewhere else.
+
+        `design-review-approved.sh` re-sorts at the selection site --
+        `sort_by(.attempt, .updated_at) | last.verdict` -- so unlike its
+        gap-analysis sibling it does not depend on the sort inside its `gmol`;
+        deleting that one alone is measurably inert here. The distinction is
+        worth pinning precisely, because the tempting generalisation from this
+        file to the other is exactly wrong: the same deletion next door is a
+        fail-open. What the two gates do share is the behavior below, and that
+        is what a port has to keep.
+        """
+        self._assert_sibling_gate_reads_recency(
+            "design-review-approved.sh",
+            verdict_key="design_review.verdict",
+            # With no step or scope on the loop bead, this gate matches members
+            # by continuation group.
+            extra_metadata={"gc.continuation_group": "design-review-fixes"},
+            iterate_output="Design review needs another pass",
+            approve_output="Design review approved",
+        )
+
+    def _assert_sibling_gate_reads_recency(
+        self,
+        script_name: str,
+        *,
+        verdict_key: str,
+        extra_metadata: dict,
+        iterate_output: str,
+        approve_output: str,
+    ) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        old, new = "2026-08-13T01:00:00Z", "2026-08-13T03:00:00Z"
+
+        def member(bead_id: str, verdict: str, updated: str) -> dict:
+            return {
+                "id": bead_id,
+                "status": "closed",
+                "updated_at": updated,
+                "metadata": {
+                    "gc.root_bead_id": "root",
+                    "gc.attempt": "1",
+                    verdict_key: verdict,
+                    **extra_metadata,
+                },
+            }
+
+        for label, fresh, stale, expected_code, expected_out in (
+            ("a fresh iterate outranks a stale done", "iterate", "done", 1, iterate_output),
+            ("a fresh done outranks a stale iterate", "done", "iterate", 0, approve_output),
+        ):
+            with self.subTest(case=label, script=script_name):
+                # The fresh row is id-*first*, so selecting by id order takes
+                # the stale one. That is the arrangement a lost sort exposes.
+                list_json = json.dumps(
+                    [member("gcg-aaa", fresh, new), member("gcg-zzz", stale, old)]
+                )
+
+                result = self._run_sibling_gate(
+                    script_name, show_json=show_json, list_json=list_json
+                )
+
+                self.assertEqual(result.returncode, expected_code, result.stdout + result.stderr)
+                self.assertIn(expected_out, result.stdout)
 
     def test_design_review_check_unions_every_status_leg(self) -> None:
         """The verdict usually lands on a bead the review just closed.
@@ -5441,6 +6086,334 @@ description = "Override sink that writes the base triage report contract."
             artifact_keys,
         )
 
+
+    def test_build_artifact_check_failure_surfaces_gc_bd_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "echo 'IMPORT_LOCKED_NOT_CACHED run gc import install' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "bd-err",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("gc bd show bd-err failed", result.stderr)
+        self.assertIn("IMPORT_LOCKED_NOT_CACHED", result.stderr)
+
+    def test_implementation_review_check_notes_gc_bd_stderr_on_tolerant_paths(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                # The member read is `gc ready` (see gmol); let it succeed with an
+                # empty union so this test isolates the tolerant `gc bd show` site.
+                "if [ \"$1\" = \"ready\" ]; then\n"
+                "  printf '[]\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  echo 'STDERR_A root lookup unavailable' >&2\n"
+                "  exit 3\n"
+                "fi\n"
+                "exit 99\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "root-err",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        # Tolerant sites keep their fallbacks (the gate still iterates rather
+        # than crashing), but the attempt log now carries the real error.
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("review check: note: gc bd show root-err failed", result.stderr)
+        self.assertIn("STDERR_A", result.stderr)
+        self.assertIn("Implementation review needs another iteration: missing verdict", result.stdout)
+
+    def test_design_review_check_surfaces_member_read_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"root-ok\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "echo 'DISTINCTIVE_LIST_FAILURE' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "bead-ok",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("gmol: gc ready failed for status:", result.stderr)
+        self.assertIn("DISTINCTIVE_LIST_FAILURE", result.stderr)
+
+    def test_gap_analysis_check_notes_gc_bd_stderr_on_tolerant_paths(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "gap-analysis-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                # The member read is `gc ready` (see gmol); let it succeed with an
+                # empty union so this test isolates the tolerant `gc bd show` site.
+                "if [ \"$1\" = \"ready\" ]; then\n"
+                "  printf '[]\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  echo 'GAP_SHOW_FAILURE' >&2\n"
+                "  exit 3\n"
+                "fi\n"
+                "exit 99\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "gap-root",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("gap check: note: gc bd show gap-root failed", result.stderr)
+        self.assertIn("GAP_SHOW_FAILURE", result.stderr)
+        self.assertIn("Gap analysis needs another iteration: missing verdict", result.stdout)
+
+    # The member read these gates make is `gc ready`, one leg per status, and a
+    # failed leg has to fail the gate rather than contribute an empty set: an
+    # empty union is indistinguishable from "no verdict yet", so swallowing the
+    # error starves the gate silently until Ralph runs out of attempts. The two
+    # tests below pin that -- the underlying stderr reaches the gate's stderr,
+    # and the gate does NOT reach its "needs another iteration" dispatch.
+
+    def test_implementation_review_check_fails_loudly_when_member_read_fails(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"root-ok\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "echo 'REVIEW_MEMBER_READ_FAILURE' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "root-ok",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("gmol: gc ready failed for status:", result.stderr)
+        self.assertIn("REVIEW_MEMBER_READ_FAILURE", result.stderr)
+        self.assertNotIn("needs another iteration", result.stdout)
+
+    def test_gap_analysis_check_fails_loudly_when_member_read_fails(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "gap-analysis-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"gap-ok\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "echo 'GAP_MEMBER_READ_FAILURE' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "gap-ok",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("gmol: gc ready failed for status:", result.stderr)
+        self.assertIn("GAP_MEMBER_READ_FAILURE", result.stderr)
+        self.assertNotIn("needs another iteration", result.stdout)
+
+    # The three tests below pin the capture sites the fixtures above never
+    # reach. Every fixture above fails the *first* `gc bd show`, which short
+    # -circuits design-review and makes the tolerant gates fall back to
+    # `PARENT_ROOT=$ROOT_ID` -- so the fatal design-review handler (the exact
+    # symptom this change exists to fix) and the two re-show sites were
+    # unpinned. Each fixture below lets the first show succeed.
+
+    def test_design_review_check_surfaces_gc_bd_show_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            # A dedicated TMPDIR that nothing else writes to, so "empty after the
+            # run" is an exact pin on the EXIT trap reclaiming the capture file.
+            tmpdir = pathlib.Path(tmp) / "tmpdir"
+            tmpdir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "echo 'DESIGN_SHOW_FAILURE store unavailable' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "design-bead",
+                "TMPDIR": str(tmpdir),
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+            leaked = sorted(p.name for p in tmpdir.iterdir())
+
+        # This site is fatal by design: a gate that cannot read its own bead
+        # must not fall through to a verdict decision.
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR: gc bd show design-bead failed", result.stderr)
+        self.assertIn("DESIGN_SHOW_FAILURE", result.stderr)
+        # `trap 'rm -f "$GC_ERR"' EXIT INT TERM HUP` actually reclaims the file.
+        self.assertEqual(leaked, [])
+
+    def test_implementation_review_check_notes_parent_show_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                # The member read is `gc ready` (see gmol); let it succeed with an
+                # empty union so this test isolates the parent `gc bd show` site.
+                "if [ \"$1\" = \"ready\" ]; then\n"
+                "  printf '[]\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                # The root read succeeds and names a *different* parent, which is
+                # the only way control reaches the parent re-show.
+                "  if [ \"$3\" = \"parent-err\" ]; then\n"
+                "    echo 'PARENT_SHOW_FAILURE parent lookup unavailable' >&2\n"
+                "    exit 3\n"
+                "  fi\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"parent-err\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 99\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "root-child",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("review check: note: gc bd show parent-err failed", result.stderr)
+        self.assertIn("PARENT_SHOW_FAILURE", result.stderr)
+        # The root read succeeded, so the tolerant note is the parent's alone --
+        # without this the fixture could regress into the already-pinned site.
+        self.assertNotIn("gc bd show root-child failed", result.stderr)
+
+    def test_build_artifact_check_root_reshow_failure_surfaces_gc_bd_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$3\" = \"root-err\" ]; then\n"
+                "  echo 'ROOT_RESHOW_FAILURE root lookup unavailable' >&2\n"
+                "  exit 3\n"
+                "fi\n"
+                # The step read succeeds with a complete artifact contract and a
+                # root that differs from the bead, so the re-show is reached.
+                "printf '%s\\n' '{\"metadata\":{"
+                "\"gc.build.artifact_schema\":\"gc.build.requirements.v1\","
+                "\"gc.build.artifact_path_keys\":\"gc.build.requirements_path\","
+                "\"gc.root_bead_id\":\"root-err\"}}'\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "bd-child",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("build-artifact-check: gc bd show root-err failed", result.stderr)
+        self.assertIn("ROOT_RESHOW_FAILURE", result.stderr)
+        # The first show succeeded; only the root re-show is being reported.
+        self.assertNotIn("gc bd show bd-child failed", result.stderr)
 
 class ExtendsConstraintAccumulationTests(unittest.TestCase):
     """gc unions formula_compiler constraints down the extends chain.

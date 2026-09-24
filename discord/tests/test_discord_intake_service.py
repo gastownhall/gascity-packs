@@ -65,6 +65,9 @@ class DiscordIntakeServiceTests(unittest.TestCase):
         for key in [k for k in os.environ if k.startswith("GC_")]:
             del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
+        # See the SEAT_ENV_OVERRIDES note in test_discord_intake_common.py.
+        for name in ("GC_BIN", "GC_API_BASE_URL"):
+            os.environ.pop(name, None)
         service.LAST_REQUEST_PRUNE_AT = 0.0
         service.LAST_REQUEST_RECOVERY_AT = 0.0
 

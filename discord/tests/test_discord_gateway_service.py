@@ -131,6 +131,145 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "delivered")
         self.assertEqual(receipt["app"], "")
 
+    def test_summarize_body_detail_reports_whether_it_clipped(self) -> None:
+        short, clipped = gateway_service.summarize_body_detail("well within the limit")
+        self.assertEqual(short, "well within the limit")
+        self.assertFalse(clipped)
+
+        exact, clipped = gateway_service.summarize_body_detail("x" * gateway_service.MAX_STATUS_PREVIEW)
+        self.assertEqual(exact, "x" * gateway_service.MAX_STATUS_PREVIEW)
+        self.assertFalse(clipped)
+
+        over, clipped = gateway_service.summarize_body_detail("x" * (gateway_service.MAX_STATUS_PREVIEW + 1))
+        self.assertTrue(clipped)
+        self.assertTrue(over.endswith("..."))
+
+    def test_ingress_body_fields_keeps_the_whole_message(self) -> None:
+        # 467 chars is the length of the operator message that went out clipped
+        # on 2026-07-25 and started gm-pbejk.
+        content = "A" * 467
+        fields = gateway_service.ingress_body_fields({"content": content}, "999")
+
+        self.assertEqual(fields["body"], content)
+        self.assertEqual(fields["body_length"], 467)
+        self.assertTrue(fields["body_truncated"])
+        self.assertEqual(len(fields["body_preview"]), gateway_service.MAX_STATUS_PREVIEW + len("..."))
+
+    def test_ingress_body_fields_marks_a_short_message_untruncated(self) -> None:
+        fields = gateway_service.ingress_body_fields({"content": "<@999> ship it"}, "999")
+
+        self.assertEqual(fields["body"], "ship it")
+        self.assertEqual(fields["body_preview"], "ship it")
+        self.assertFalse(fields["body_truncated"])
+        self.assertEqual(fields["body_length"], len("ship it"))
+
+    def test_ingress_body_fields_preserves_paragraphs_the_preview_flattens(self) -> None:
+        fields = gateway_service.ingress_body_fields({"content": "<@999> do this\n\n- then this\n- and this"}, "999")
+
+        self.assertEqual(fields["body"], "do this\n\n- then this\n- and this")
+        self.assertEqual(fields["body_preview"], "do this - then this - and this")
+        self.assertFalse(fields["body_truncated"])
+
+    def test_ingress_body_fields_keeps_paragraphs_after_an_embedded_mention(self) -> None:
+        content = "first paragraph <@999>\n\nsecond paragraph"
+        fields = gateway_service.ingress_body_fields({"content": content}, "999")
+
+        self.assertIn("\n\n", fields["body"])
+        self.assertTrue(fields["body"].startswith("first paragraph"))
+        self.assertTrue(fields["body"].endswith("second paragraph"))
+        # routing keeps the flattened form it always had
+        self.assertEqual(
+            gateway_service.strip_bot_mentions(content, "999"),
+            "first paragraph second paragraph",
+        )
+
+    def test_process_inbound_dm_records_a_long_body_without_loss(self) -> None:
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        # Long enough to clip, and split across lines so a flattening bug shows up
+        # as a content difference rather than only a length one.
+        content = ("Delegating this one to you.\n\n" + "Detail line. " * 40).strip()
+        self.assertGreater(len(content), gateway_service.MAX_STATUS_PREVIEW)
+        message = {
+            "id": "104",
+            "channel_id": "55",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "suspended"}}
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted", "id": "gc-1"}):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        receipt = common.load_chat_ingress("in-104")
+        assert receipt is not None
+        self.assertEqual(receipt["body"], content)
+        self.assertEqual(receipt["body_length"], len(content))
+        self.assertTrue(receipt["body_truncated"])
+        self.assertTrue(receipt["body_preview"].endswith("..."))
+
+    def test_rejected_ingress_receipt_records_the_full_body(self) -> None:
+        # A message the gateway refuses is still a message the operator sent; the
+        # rejection paths write their own receipts and must not drop it either.
+        content = "B" * 400
+        message = {
+            "id": "105",
+            "channel_id": "55",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        gateway_service.save_rejected_ingress_receipt(
+            message,
+            "999",
+            status="rejected_shutting_down",
+            reason="service_shutting_down",
+        )
+
+        receipt = common.load_chat_ingress("in-105")
+        assert receipt is not None
+        self.assertEqual(receipt["body"], content)
+        self.assertTrue(receipt["body_truncated"])
+
+    def test_room_launch_record_keeps_the_whole_body(self) -> None:
+        # The launch record is the launcher room's own copy of the message, and
+        # a reader browsing launches sees it instead of the ingress receipt.
+        # Same loss, same fix: it must carry the body, not just the preview.
+        self._configure_discord_app()
+        common.set_room_launcher(common.load_config(), "1", "22")
+        content = ("@@corp/sky take this one.\n\n" + "Detail line. " * 40).strip()
+        self.assertGreater(len(content), gateway_service.MAX_STATUS_PREVIEW)
+        message = {
+            "id": "106",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common, "resolve_existing_session_for_handle", return_value={"session_name": "sky"}
+        ), mock.patch.object(
+            common, "ensure_room_launch_session", side_effect=lambda launch, **kwargs: launch
+        ), mock.patch.object(
+            gateway_service, "resume_ingress_delivery", side_effect=lambda receipt, **kwargs: receipt
+        ):
+            gateway_service.process_room_launch_message(
+                base_receipt={"ingress_id": "in-106", "discord_message_id": "106"},
+                launcher={"id": "launcher:1:22"},
+                message=message,
+                bot_user_id="999",
+                ingress_id="in-106",
+            )
+
+        launch = common.load_room_launch(common.room_launch_record_id("106"))
+        assert launch is not None
+        self.assertEqual(launch["body"], content)
+        self.assertEqual(launch["body_length"], len(content))
+        self.assertTrue(launch["body_truncated"])
+        self.assertTrue(launch["body_preview"].endswith("..."))
+
     def test_process_inbound_room_message_targets_only_named_alias(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["sky", "lawrence"], guild_id="1")
         message = {
@@ -886,6 +1025,239 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertFalse(handled)
         normalize_to_extmsg_message.assert_not_called()
         deliver_to_extmsg.assert_not_called()
+
+    def test_record_extmsg_inbound_skips_launcher_room_mentions(self) -> None:
+        # Same precedence as a bound room: extmsg must yield the launcher's
+        # own room so process_room_launch_message gets the message instead of
+        # spawning a generic session in a thread the launcher never sees.
+        self._configure_discord_app()
+        common.set_room_launcher(common.load_config(), "1", "22")
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207c",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@@corp/sky what changed?",
+            "author": {"id": "u-207c", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "resolve_at_mentions", return_value=["sky"]) as resolve_at_mentions, mock.patch.object(
+            common, "resolve_mention_targets"
+        ) as resolve_mention_targets, mock.patch.object(common, "launch_thread_for_mentions") as launch_thread_for_mentions:
+            handled = worker._record_extmsg_inbound(message, bot_user_id="999")
+
+        self.assertFalse(handled)
+        resolve_at_mentions.assert_not_called()
+        resolve_mention_targets.assert_not_called()
+        launch_thread_for_mentions.assert_not_called()
+
+    def _record_extmsg_thread_message(
+        self, worker: "gateway_service.GatewayWorker", message: dict, parent_id: str,
+    ) -> tuple[object, mock.MagicMock]:
+        """Drive a thread message all the way to extmsg delivery, stubbing the
+        agent-directory lookups the thread branch makes on the way. Without
+        those stubs the branch raises and returns False on its own, and every
+        "extmsg did not take this thread" assertion passes vacuously.
+        """
+        with mock.patch.object(gateway_service, "_resolve_thread_parent", return_value=parent_id), mock.patch.object(
+            common, "resolve_at_mentions", return_value=[]
+        ), mock.patch.object(
+            common, "resolve_nl_agent_mentions", return_value=[]
+        ), mock.patch.object(
+            common, "normalize_to_extmsg_message", return_value={},
+        ), mock.patch.object(common, "deliver_to_extmsg") as deliver_to_extmsg:
+            handled = worker._record_extmsg_inbound(message, bot_user_id="999")
+        return handled, deliver_to_extmsg
+
+    def test_record_extmsg_inbound_delivers_threads_outside_a_launcher(self) -> None:
+        # Positive control for the two thread skips below: this fixture does
+        # reach extmsg delivery, so their assert_not_called is a real signal.
+        self._configure_discord_app()
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207g",
+            "guild_id": "1",
+            "channel_id": "223",
+            "content": "still there?",
+            "author": {"id": "u-207g", "username": "alice"},
+        }
+
+        handled, deliver_to_extmsg = self._record_extmsg_thread_message(worker, message, parent_id="33")
+
+        self.assertTrue(handled)
+        deliver_to_extmsg.assert_called_once()
+
+    def test_record_extmsg_inbound_skips_thread_inside_launcher_room(self) -> None:
+        self._configure_discord_app()
+        common.set_room_launcher(common.load_config(), "1", "22")
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207d",
+            "guild_id": "1",
+            "channel_id": "223",
+            "content": "still there?",
+            "author": {"id": "u-207d", "username": "alice"},
+        }
+
+        handled, deliver_to_extmsg = self._record_extmsg_thread_message(worker, message, parent_id="22")
+
+        self.assertFalse(handled)
+        deliver_to_extmsg.assert_not_called()
+
+    def test_record_extmsg_inbound_skips_lingering_launch_record_thread(self) -> None:
+        # Condition 3 carrying the claim alone: the launcher was unconfigured
+        # while its launch records lingered, so the parent is no longer a
+        # launcher room and only the record's thread_id still identifies the
+        # thread as launcher-managed.
+        self._configure_discord_app()
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:224",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "224",
+                "qualified_handle": "corp/sky",
+                "thread_id": "224",
+                "state": "active",
+            }
+        )
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207e",
+            "guild_id": "1",
+            "channel_id": "224",
+            "content": "follow up",
+            "author": {"id": "u-207e", "username": "alice"},
+        }
+
+        handled, deliver_to_extmsg = self._record_extmsg_thread_message(worker, message, parent_id="22")
+
+        self.assertFalse(handled)
+        deliver_to_extmsg.assert_not_called()
+
+    def test_record_extmsg_inbound_still_handles_rooms_without_a_launcher(self) -> None:
+        # Positive control for the two skips above: with no launcher and no
+        # binding, extmsg keeps its room-mention path. Without this, widening
+        # launcher_claims_message to claim everything stays green.
+        self._configure_discord_app()
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207f",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@randy what changed?",
+            "author": {"id": "u-207f", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "resolve_at_mentions", return_value=["randy"]) as resolve_at_mentions, mock.patch.object(
+            common, "resolve_mention_targets", return_value=[]
+        ), mock.patch.object(common, "launch_thread_for_mentions"):
+            worker._record_extmsg_inbound(message, bot_user_id="999")
+
+        resolve_at_mentions.assert_called_once()
+
+    def test_participant_target_identity_carries_every_selector(self) -> None:
+        identity = gateway_service.participant_target_identity(
+            {"session_name": "s-gc-123", "session_id": "gc-123", "session_alias": "corp/gasburger.sky",
+             "delivery_selector": "s-gc-123"}
+        )
+
+        self.assertEqual(
+            identity,
+            {"session_name": "s-gc-123", "session_id": "gc-123", "session_alias": "corp/gasburger.sky"},
+        )
+        self.assertEqual(gateway_service.participant_target_identity({"session_id": " "}), {})
+        self.assertEqual(gateway_service.participant_target_identity({}), {})
+
+    def test_process_inbound_room_launch_receipt_target_carries_session_identity(self) -> None:
+        # reply-current matches a receipt target by whichever of
+        # GC_SESSION_ID / GC_SESSION_NAME / alias the replying session
+        # presents, so all three must survive into targets[].
+        common.set_room_launcher(common.load_config(), "1", "22")
+        message = {
+            "id": "208z",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@@corp/sky please help",
+            "author": {"id": "u-208z", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "resolve_agent_handle", return_value=("corp/sky", "")), mock.patch.object(
+            common,
+            "ensure_room_launch_session",
+            return_value={
+                "launch_id": "room-launch:208z",
+                "qualified_handle": "corp/sky",
+                "session_alias": "corp/gasburger.sky",
+                "session_name": "s-gc-123",
+                "session_id": "gc-123",
+            },
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}):
+            gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        receipt = common.load_chat_ingress("in-208z")
+        assert receipt is not None
+        target = receipt["targets"][0]
+        self.assertEqual(target["session_name"], "s-gc-123")
+        self.assertEqual(target["session_id"], "gc-123")
+        self.assertEqual(target["session_alias"], "corp/gasburger.sky")
+
+    def test_launcher_claims_message_matches_configured_launcher_room(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+
+        self.assertTrue(gateway_service.launcher_claims_message(config, "22"))
+
+    def test_launcher_claims_message_matches_thread_whose_parent_is_the_launcher(self) -> None:
+        # Condition 2 on its own: a thread channel with no launch record is
+        # still the launcher's, claimed via its parent.
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+
+        self.assertTrue(gateway_service.launcher_claims_message(config, "999222", parent_id="22"))
+        self.assertFalse(gateway_service.launcher_claims_message(config, "999222"))
+
+    def test_launcher_claims_message_matches_launch_record_thread(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:225",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "225",
+                "qualified_handle": "corp/sky",
+                "thread_id": "225",
+                "state": "active",
+            }
+        )
+
+        self.assertTrue(gateway_service.launcher_claims_message(config, "225"))
+
+    def test_launcher_claims_message_ignores_unrelated_channels(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+
+        self.assertFalse(gateway_service.launcher_claims_message(config, "33"))
+        self.assertFalse(gateway_service.launcher_claims_message(config, "33", parent_id="44"))
+        self.assertFalse(gateway_service.launcher_claims_message(config, ""))
+
+    def test_launcher_claims_message_ignores_launch_record_for_a_different_thread(self) -> None:
+        # The record must name this channel as its thread: a launch whose
+        # thread lives elsewhere does not claim the root message's channel.
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:226",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "226",
+                "qualified_handle": "corp/sky",
+                "thread_id": "22699",
+                "state": "active",
+            }
+        )
+
+        self.assertFalse(gateway_service.launcher_claims_message(config, "226"))
 
     def test_process_inbound_room_launch_routes_handle_without_bot_mention(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")

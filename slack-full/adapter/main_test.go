@@ -783,12 +783,14 @@ func TestHandlePublishDedupesOnIdempotencyKey(t *testing.T) {
 	origBase := slackAPIBase
 	t.Cleanup(func() { slackAPIBase = origBase })
 	var posts int
+	var captured slackPostMessageReq
 	ts := "1700000000.000100"
-	fakeSlack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		posts++
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"ts":"` + ts + `"}`))
-	}))
+	// The readback has to echo the text actually posted, not the request text:
+	// a keyed publish is stamped with the reference marker, so a fake that
+	// confirmed "hello" would report a content mismatch, leave the receipt
+	// undelivered, and take the dedup cache — which only stores delivered
+	// receipts — out of the picture entirely.
+	fakeSlack := httptest.NewServer(newFakeSlackPublishHandler(t, &captured, ts, func() { posts++ }))
 	t.Cleanup(fakeSlack.Close)
 	slackAPIBase = fakeSlack.URL
 
@@ -810,14 +812,18 @@ func TestHandlePublishDedupesOnIdempotencyKey(t *testing.T) {
 	}
 	second := publish()
 	if second.Code != http.StatusOK {
-		t.Fatalf("retry status = %d, want 200 (body=%q)", second.Code, second.Body.String())
+		t.Fatalf("first retry status = %d, want 200 (body=%q)", second.Code, second.Body.String())
+	}
+	third := publish()
+	if third.Code != http.StatusOK {
+		t.Fatalf("second retry status = %d, want 200 (body=%q)", third.Code, third.Body.String())
 	}
 
 	if posts != 1 {
 		t.Fatalf("Slack chat.postMessage called %d times, want 1 (retry must not re-post)", posts)
 	}
-	// Both responses must carry the same delivered receipt + message id.
-	for _, rec := range []*httptest.ResponseRecorder{first, second} {
+	// All responses must carry the same delivered receipt + message id.
+	for _, rec := range []*httptest.ResponseRecorder{first, second, third} {
 		var got publishReceipt
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("decode receipt %q: %v", rec.Body.String(), err)
@@ -825,6 +831,14 @@ func TestHandlePublishDedupesOnIdempotencyKey(t *testing.T) {
 		if !got.Delivered || got.MessageID != ts {
 			t.Errorf("receipt = %+v, want delivered with message_id %q", got, ts)
 		}
+	}
+
+	// Dedup is scoped to the caller-supplied key, not the conversation or text.
+	distinctBody := strings.Replace(body, `"idempotency_key":"k-1"`, `"idempotency_key":"k-2"`, 1)
+	req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(distinctBody))
+	handler(httptest.NewRecorder(), req)
+	if posts != 2 {
+		t.Fatalf("Slack chat.postMessage called %d times after a distinct idempotency key, want 2", posts)
 	}
 }
 
@@ -838,10 +852,14 @@ func TestHandlePublishNoDedupWithoutKey(t *testing.T) {
 	origBase := slackAPIBase
 	t.Cleanup(func() { slackAPIBase = origBase })
 	var posts int
-	fakeSlack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		posts++
+	fakeSlack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"ts":"1.2"}`))
+		if r.URL.Path == "/conversations.history" {
+			_, _ = w.Write([]byte(`{"ok":true,"messages":[{"ts":"1.2","text":"hi"}]}`))
+			return
+		}
+		posts++
+		_, _ = w.Write([]byte(`{"ok":true,"channel":"C1","ts":"1.2"}`))
 	}))
 	t.Cleanup(fakeSlack.Close)
 	slackAPIBase = fakeSlack.URL
@@ -888,6 +906,488 @@ func TestPublishDedupCache(t *testing.T) {
 	clock = clock.Add(2*time.Minute + time.Second)
 	if _, ok := c.Get("k"); ok {
 		t.Error("entry should have expired past its TTL")
+	}
+}
+
+// TestReferenceSuffixMatchesCrossLanguageTestVector asserts the same
+// (key, suffix) pair as gas-city's messaging state reconciler.
+func TestReferenceSuffixMatchesCrossLanguageTestVector(t *testing.T) {
+	const key = "dr-3msk6.3-test-vector"
+	const want = "50e90a583c36"
+	if got := referenceSuffix(key); got != want {
+		t.Errorf("referenceSuffix(%q) = %q, want %q (must match the Python-side test vector)", key, got, want)
+	}
+}
+
+func TestReferenceSuffixIsDeterministicAndKeySensitive(t *testing.T) {
+	if referenceSuffix("a") != referenceSuffix("a") {
+		t.Error(`referenceSuffix("a") produced different output on two calls; want deterministic`)
+	}
+	if referenceSuffix("a") == referenceSuffix("b") {
+		t.Error(`referenceSuffix("a") == referenceSuffix("b"); want distinct keys to derive distinct suffixes`)
+	}
+}
+
+// TestHandlePublishAppendsReferenceMarkerWhenIdempotencyKeySet verifies that
+// a keyed publish can be located later in Slack channel history.
+func TestHandlePublishAppendsReferenceMarkerWhenIdempotencyKeySet(t *testing.T) {
+	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
+	if err != nil {
+		t.Fatalf("newIdentityRegistry: %v", err)
+	}
+
+	origBase := slackAPIBase
+	t.Cleanup(func() { slackAPIBase = origBase })
+	var captured slackPostMessageReq
+	fakeSlack := httptest.NewServer(newFakeSlackPublishHandler(t, &captured, "1.2", nil))
+	t.Cleanup(fakeSlack.Close)
+	slackAPIBase = fakeSlack.URL
+
+	cfg := config{slackBotToken: "xoxb-test"}
+	body := `{"session_id":"gc-pl-1","conversation":{"conversation_id":"C1"},"text":"hello","idempotency_key":"dr-3msk6.3-test-vector"}`
+	req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+	const wantText = "hello\n\n_ref:50e90a583c36_"
+	if captured.Text != wantText {
+		t.Errorf("posted text = %q, want %q", captured.Text, wantText)
+	}
+}
+
+func TestHandlePublishOmitsReferenceMarkerWhenNoIdempotencyKey(t *testing.T) {
+	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
+	if err != nil {
+		t.Fatalf("newIdentityRegistry: %v", err)
+	}
+
+	origBase := slackAPIBase
+	t.Cleanup(func() { slackAPIBase = origBase })
+	var captured slackPostMessageReq
+	fakeSlack := httptest.NewServer(newFakeSlackPublishHandler(t, &captured, "1.2", nil))
+	t.Cleanup(fakeSlack.Close)
+	slackAPIBase = fakeSlack.URL
+
+	cfg := config{slackBotToken: "xoxb-test"}
+	body := `{"session_id":"gc-pl-1","conversation":{"conversation_id":"C1"},"text":"hello"}`
+	req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+	if captured.Text != "hello" {
+		t.Errorf("posted text = %q, want %q (no marker without an idempotency key)", captured.Text, "hello")
+	}
+}
+
+// TestHandlePublishOmitsReferenceMarkerForEmptyText pins the regression the
+// marker would otherwise introduce. A keyed publish carrying no text fails
+// loudly at Slack (no_text -> permanent). Stamping unconditionally turns it
+// into a marker-only message Slack accepts, so the receipt claims Delivered
+// for a payload that delivered nothing — and dedup caches that receipt, so a
+// legitimate retry replays the lie instead of re-posting.
+func TestHandlePublishOmitsReferenceMarkerForEmptyText(t *testing.T) {
+	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
+	if err != nil {
+		t.Fatalf("newIdentityRegistry: %v", err)
+	}
+
+	origBase := slackAPIBase
+	t.Cleanup(func() { slackAPIBase = origBase })
+	var captured slackPostMessageReq
+	fakeSlack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Errorf("decode Slack request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// Emulate Slack rather than accepting anything: a blank message is
+		// rejected. Without this the test could not tell "posted nothing"
+		// apart from "posted a marker-only message".
+		if captured.Text == "" {
+			_, _ = w.Write([]byte(`{"ok":false,"error":"no_text"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"ts":"1.2"}`))
+	}))
+	t.Cleanup(fakeSlack.Close)
+	slackAPIBase = fakeSlack.URL
+
+	cfg := config{slackBotToken: "xoxb-test"}
+	body := `{"session_id":"gc-pl-1","conversation":{"conversation_id":"C1"},"text":"","idempotency_key":"dr-3msk6.3-test-vector"}`
+	req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+	if captured.Text != "" {
+		t.Errorf("posted text = %q, want %q: an empty keyed publish must not become a marker-only post", captured.Text, "")
+	}
+	var receipt publishReceipt
+	if err := json.Unmarshal(rec.Body.Bytes(), &receipt); err != nil {
+		t.Fatalf("decode receipt: %v (body=%q)", err, rec.Body.String())
+	}
+	if receipt.Delivered {
+		t.Errorf("receipt.Delivered = true for an empty-text keyed publish (message_id=%q); want false, nothing was delivered",
+			receipt.MessageID)
+	}
+	if receipt.FailureKind != "permanent" {
+		t.Errorf("receipt.FailureKind = %q, want %q: the base failure must stay visible", receipt.FailureKind, "permanent")
+	}
+}
+
+// TestHandlePublishSkipsReferenceMarkerWhenItCannotFitUnderSlackCeiling pins
+// the truncation boundary. Slack truncates text past its ceiling from the end
+// and still answers ok:true, and the marker is the tail of the text — so
+// stamping past the budget would deliver a mangled partial marker that matches
+// nothing on readback, with a receipt that looks perfect. Skipping keeps the
+// caller's text whole and leaves an honest absence instead.
+func TestHandlePublishSkipsReferenceMarkerWhenItCannotFitUnderSlackCeiling(t *testing.T) {
+	const key = "dr-3msk6.3-test-vector"
+	marker := "\n\n" + referenceMarker(key)
+
+	// atCapability is the largest request text that still leaves room for the
+	// marker — the value registerAdapter advertises.
+	const atCapability = slackMaxMessageLength - referenceMarkerOverhead
+	// The rewrite case sizes itself to atCapability too, so the pre-rewrite
+	// text fits the budget and the post-rewrite text does not.
+	rewriteHead := strings.Repeat("x", atCapability-len(" @bob"))
+
+	cases := []struct {
+		name string
+		// aliases is nil everywhere but the rewrite case, matching an install
+		// that has not curated slack-user-aliases.json.
+		aliases *userAliasMap
+		text    string
+		// wantBody is the caller's content as it must reach Slack, ahead of any
+		// marker: the request text, or its rewrite. Spelled out rather than
+		// computed by calling rewrite() so a mutation to the rewrite cannot
+		// move this expectation along with the behavior it is checking.
+		wantBody   string
+		wantMarker bool
+	}{
+		{
+			name:       "at the advertised capability",
+			text:       strings.Repeat("x", atCapability),
+			wantBody:   strings.Repeat("x", atCapability),
+			wantMarker: true,
+		},
+		{
+			name:       "one byte over the advertised capability",
+			text:       strings.Repeat("x", atCapability+1),
+			wantBody:   strings.Repeat("x", atCapability+1),
+			wantMarker: false,
+		},
+		{
+			name:       "at slack's raw ceiling",
+			text:       strings.Repeat("x", slackMaxMessageLength),
+			wantBody:   strings.Repeat("x", slackMaxMessageLength),
+			wantMarker: false,
+		},
+		{
+			// The budget has to be measured on what is posted, not on what was
+			// requested. This text sits exactly at the advertised capability,
+			// so a fit check reading len(req.Text) stamps it — but "@bob" (4
+			// bytes) rewrites to "<@U012ABCDEF>" (13), and the stamped result
+			// would reach Slack at 40009 bytes, past the ceiling, where the
+			// marker is exactly what gets truncated away. Every other case
+			// passes nil aliases, which makes rewrittenText == req.Text, so
+			// this is the only row that can tell the two operands apart.
+			name:       "at the advertised capability but over it after the alias rewrite",
+			aliases:    &userAliasMap{byHandle: map[string]string{"bob": "<@U012ABCDEF>"}},
+			text:       rewriteHead + " @bob",
+			wantBody:   rewriteHead + " <@U012ABCDEF>",
+			wantMarker: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
+			if err != nil {
+				t.Fatalf("newIdentityRegistry: %v", err)
+			}
+
+			origBase := slackAPIBase
+			t.Cleanup(func() { slackAPIBase = origBase })
+			var captured slackPostMessageReq
+			fakeSlack := httptest.NewServer(newFakeSlackPublishHandler(t, &captured, "1.2", nil))
+			t.Cleanup(fakeSlack.Close)
+			slackAPIBase = fakeSlack.URL
+
+			body, err := json.Marshal(publishRequest{
+				SessionID:      "gc-pl-1",
+				Conversation:   conversationRef{ConversationID: "C1"},
+				Text:           tc.text,
+				IdempotencyKey: key,
+			})
+			if err != nil {
+				t.Fatalf("marshal publish request: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/publish", bytes.NewReader(body))
+			rec := httptest.NewRecorder()
+			cfg := config{slackBotToken: "xoxb-test"}
+			handlePublish(cfg, reg, tc.aliases, newPublishDedupCache(publishDedupTTL))(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
+			}
+			gotMarker := strings.HasSuffix(captured.Text, marker)
+			if gotMarker != tc.wantMarker {
+				t.Errorf("request text of %d bytes: marker stamped = %t, want %t (posted %d bytes)",
+					len(tc.text), gotMarker, tc.wantMarker, len(captured.Text))
+			}
+			// The caller's content is never trimmed to make room, whichever
+			// way the stamp decision went. On the rewrite case this also
+			// catches a rewrite that silently failed to apply, which would
+			// otherwise leave the row measuring nothing.
+			if !strings.HasPrefix(captured.Text, tc.wantBody) {
+				t.Errorf("request text of %d bytes: posted text does not start with the caller's content (%d bytes posted, %d expected ahead of any marker); want it preserved verbatim",
+					len(tc.text), len(captured.Text), len(tc.wantBody))
+			}
+			if len(captured.Text) > slackMaxMessageLength {
+				t.Errorf("request text of %d bytes: posted %d bytes, over Slack's %d ceiling — the marker would be truncated away",
+					len(tc.text), len(captured.Text), slackMaxMessageLength)
+			}
+		})
+	}
+}
+
+// TestSlackPostMessageRespParsesTruncationWarning pins the response_metadata
+// tags. Slack signals a delivered-but-truncated message only here, with
+// ok:true, so a wrong tag would silently discard the one wire signal that a
+// keyed delivery lost its marker.
+func TestSlackPostMessageRespParsesTruncationWarning(t *testing.T) {
+	const body = `{"ok":true,"ts":"1.2","response_metadata":{"warnings":["message_truncated"]}}`
+	var resp slackPostMessageResp
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !resp.OK || resp.TS != "1.2" {
+		t.Fatalf("resp ok=%t ts=%q, want ok with ts 1.2", resp.OK, resp.TS)
+	}
+	got := resp.ResponseMetadata.Warnings
+	if len(got) != 1 || got[0] != "message_truncated" {
+		t.Errorf("ResponseMetadata.Warnings = %#v, want [message_truncated]", got)
+	}
+}
+
+// gcWirePublishReceipt restates, with gc's own tags, the four keys of gc's
+// wirePublishReceipt (gascity internal/extmsg/http_adapter.go:140-157) that
+// this test reasons about. gc unmarshals the /publish response body into that
+// fixed six-field shim and copies its fields one by one into the public
+// PublishReceipt; every key outside the six is discarded at gc's boundary. The
+// two omitted here — `conversation` and `retry_after` — cross the same way and
+// are not at issue. Decoding into the adapter's own publishReceipt instead
+// would prove nothing about that boundary: both sides would share one set of
+// tags, so a rename or a differently-shaped field would stay green while gc
+// silently dropped the value.
+type gcWirePublishReceipt struct {
+	MessageID   string            `json:"message_id,omitempty"`
+	Delivered   bool              `json:"delivered"`
+	FailureKind string            `json:"failure_kind,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
+// TestHandlePublishSurfacesSlackTruncationOnTheReceipt witnesses the diagnosis
+// signal end to end. TestSlackPostMessageRespParsesTruncationWarning covers
+// only the decode of Slack's warning; nothing pinned what the adapter then does
+// with it, and a log line is not observable by the reconciler this marker
+// scheme exists to serve.
+func TestHandlePublishSurfacesSlackTruncationOnTheReceipt(t *testing.T) {
+	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
+	if err != nil {
+		t.Fatalf("newIdentityRegistry: %v", err)
+	}
+
+	origBase := slackAPIBase
+	t.Cleanup(func() { slackAPIBase = origBase })
+	fakeSlack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/conversations.history" {
+			// What a truncated message actually reads back as: the head of the
+			// post, with the tail Slack cut off — here the whole marker. A fake
+			// that echoed the full posted text would confirm a message Slack
+			// says it did not store intact, and the readback assertion below
+			// would be measuring nothing.
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok":       true,
+				"messages": []map[string]string{{"ts": "1.2", "text": "hi"}},
+			})
+			return
+		}
+		// Slack's delivered-but-truncated shape: ok, a real ts, and the
+		// warning as the only signal that the tail is gone.
+		_, _ = w.Write([]byte(`{"ok":true,"ts":"1.2","response_metadata":{"warnings":["message_truncated"]}}`))
+	}))
+	t.Cleanup(fakeSlack.Close)
+	slackAPIBase = fakeSlack.URL
+
+	body := `{"session_id":"gc-pl-1","conversation":{"conversation_id":"C1"},"text":"hi","idempotency_key":"dr-3msk6.3-test-vector"}`
+	req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	cfg := config{slackBotToken: "xoxb-test"}
+	handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+	var receipt gcWirePublishReceipt
+	if err := json.Unmarshal(rec.Body.Bytes(), &receipt); err != nil {
+		t.Fatalf("decode receipt through gc's shim: %v (body=%q)", err, rec.Body.String())
+	}
+	if receipt.MessageID != "1.2" {
+		t.Fatalf("receipt message_id = %q, want 1.2: Slack accepted the post and the ts is real whatever the readback then finds",
+			receipt.MessageID)
+	}
+	// Truncation used to leave Delivered true, because chat.postMessage's own
+	// answer was the only evidence. The readback is now the evidence, and a
+	// truncated message reads back as different text, so the delivery is
+	// reported unconfirmed. The two signals are complementary and both must
+	// survive: "truncated" says what Slack did to the write, Delivered says
+	// what the read API could confirm afterwards.
+	//
+	// "permanent" is the kind on the wire because that is gc's word for it: the
+	// same oversized payload truncates identically on every retry, so re-sending
+	// can only add another visible partial message. The adapter's finer-grained
+	// classification rides in metadata, which is the only additive channel gc
+	// forwards.
+	if receipt.Delivered || receipt.FailureKind != "permanent" {
+		t.Fatalf("receipt delivered=%t failure_kind=%q, want a permanent failure: the readback cannot find the text that was posted once Slack truncates it, and re-posting it truncates the same way",
+			receipt.Delivered, receipt.FailureKind)
+	}
+	if got := receipt.Metadata[receiptMetadataKeyReadback]; got != slackReadbackUnconfirmed {
+		t.Errorf("receipt metadata[%q] = %q, want %q", receiptMetadataKeyReadback, got, slackReadbackUnconfirmed)
+	}
+	if receipt.Metadata["truncated"] != "true" {
+		t.Errorf(`receipt metadata = %v, want metadata["truncated"]="true": Slack warned that it truncated the post, and the receipt is the only place a caller can see that its marker did not survive`,
+			receipt.Metadata)
+	}
+
+	// The signal must travel by the one route gc carries. A top-level
+	// "truncated" key decodes cleanly on this side and is then dropped by gc's
+	// shim, which is a wire-contract change that buys nothing.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode receipt as raw json: %v", err)
+	}
+	if _, ok := raw["truncated"]; ok {
+		t.Errorf("receipt body carries a top-level \"truncated\" key (%q); gc decodes /publish into a fixed shim that has no such field, so it is invisible there — report truncation under metadata instead",
+			rec.Body.String())
+	}
+}
+
+// TestHandlePublishStampsThreadRepliesWhichHistoryDoesNotReturn pins the half
+// of the readback contract's scan-surface rule that lives in this repo: a keyed
+// publish answering another message is posted into a thread, and Slack's
+// conversations.history does not return thread replies. A reader sweeping
+// history alone therefore cannot see this marker — the contract on
+// referenceMarker tells it to walk conversations.replies as well, and that
+// instruction is only correct while this stays true.
+func TestHandlePublishStampsThreadRepliesWhichHistoryDoesNotReturn(t *testing.T) {
+	const key = "dr-3msk6.3-test-vector"
+	const parentTS = "1699999999.000100"
+
+	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
+	if err != nil {
+		t.Fatalf("newIdentityRegistry: %v", err)
+	}
+
+	origBase := slackAPIBase
+	t.Cleanup(func() { slackAPIBase = origBase })
+	var captured slackPostMessageReq
+	// A threaded post is read back through conversations.replies, which is the
+	// scan-surface asymmetry this test exists to pin; the fake serves both
+	// endpoints so the readback cannot be what makes the assertions below move.
+	fakeSlack := httptest.NewServer(newFakeSlackPublishHandler(t, &captured, "1699999999.000200", nil))
+	t.Cleanup(fakeSlack.Close)
+	slackAPIBase = fakeSlack.URL
+
+	body, err := json.Marshal(publishRequest{
+		SessionID:        "gc-pl-1",
+		Conversation:     conversationRef{ConversationID: "C1"},
+		Text:             "threaded reply",
+		ReplyToMessageID: parentTS,
+		IdempotencyKey:   key,
+	})
+	if err != nil {
+		t.Fatalf("marshal publish request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/publish", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	cfg := config{slackBotToken: "xoxb-test"}
+	handlePublish(cfg, reg, nil, newPublishDedupCache(publishDedupTTL))(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+	if captured.ThreadTS != parentTS {
+		t.Errorf("posted thread_ts = %q, want %q: reply_to_message_id must post into the thread, which is what puts the marker outside conversations.history",
+			captured.ThreadTS, parentTS)
+	}
+	if !strings.HasSuffix(captured.Text, "\n\n"+referenceMarker(key)) {
+		t.Errorf("posted text = %q, want it to end with the reference marker: a threaded keyed delivery is stamped like any other, so the contract's replies-sweep instruction has something to find",
+			captured.Text)
+	}
+}
+
+func TestReferenceMarkerOverheadMatchesActualAppend(t *testing.T) {
+	appended := "\n\n" + referenceMarker("any-key-of-any-length-at-all")
+	if len(appended) != referenceMarkerOverhead {
+		t.Fatalf("referenceMarkerOverhead = %d, but handlePublish appends %d bytes (%q)",
+			referenceMarkerOverhead, len(appended), appended)
+	}
+	short := "\n\n" + referenceMarker("k")
+	if len(short) != len(appended) {
+		t.Fatalf("marker length varies with key length: %d vs %d", len(short), len(appended))
+	}
+}
+
+func TestAdvertisedMaxMessageLengthLeavesRoomForMarker(t *testing.T) {
+	advertised := slackMaxMessageLength - referenceMarkerOverhead
+	stamped := advertised + len("\n\n"+referenceMarker("dr-3msk6.3-test-vector"))
+	if stamped > slackMaxMessageLength {
+		t.Fatalf("a message at the advertised limit (%d) is %d after stamping, over Slack's %d ceiling",
+			advertised, stamped, slackMaxMessageLength)
+	}
+}
+
+func TestRegisterAdapterAdvertisesMarkerSafeMaxMessageLength(t *testing.T) {
+	requestCh := make(chan adapterRegisterRequest, 1)
+	gcStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var got adapterRegisterRequest
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode registration request: %v", err)
+		} else {
+			requestCh <- got
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(gcStub.Close)
+
+	cfg := config{
+		gcAPIBase: gcStub.URL,
+		cityName:  "test-city",
+		provider:  "slack",
+		accountID: "T0",
+	}
+	if err := registerAdapter(cfg); err != nil {
+		t.Fatalf("registerAdapter: %v", err)
+	}
+
+	select {
+	case got := <-requestCh:
+		want := slackMaxMessageLength - referenceMarkerOverhead
+		if got.Capabilities.MaxMessageLength != want {
+			t.Fatalf("registered MaxMessageLength = %d, want %d", got.Capabilities.MaxMessageLength, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("registerAdapter did not POST registration within 2s")
 	}
 }
 
@@ -2236,7 +2736,7 @@ func TestHandlePublishFile(t *testing.T) {
 // reading a regular file inside the upload root must succeed and return
 // the file's bytes verbatim.
 func TestReadConfinedFileReadsRealFile(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDirResolved(t)
 	path := filepath.Join(dir, "real.txt")
 	want := []byte("hello world")
 	if err := os.WriteFile(path, want, 0o600); err != nil {
@@ -2261,7 +2761,7 @@ func TestReadConfinedFileReadsRealFile(t *testing.T) {
 // ELOOP from open(2) with O_NOFOLLOW on a symlink — errors.Is unwraps
 // through *os.PathError to the underlying syscall.Errno.
 func TestReadConfinedFileRejectsSymlink(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDirResolved(t)
 	target := filepath.Join(dir, "target.txt")
 	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
