@@ -192,6 +192,46 @@ def test_since_param_is_propagated_to_events_query(
         assert "limit=200" in url
 
 
+def test_default_window_is_bounded_to_one_week(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The events endpoint walks newest-first and stops only at ``limit``
+    matches. Slack traffic is rare enough that 50 matches are never reached,
+    so an unbounded default read the whole event history and every archive
+    on every call, past the 30s client timeout (dr-1yk67)."""
+    status_mod, common = _import_modules()
+    fake, captured = _make_router({
+        "/extmsg/adapters": {"items": []},
+        "events?type=extmsg.inbound": [],
+        "events?type=extmsg.outbound": [],
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    assert status_mod.main([]) == 0
+
+    event_urls = [c["url"] for c in captured if "/events?" in c["url"]]
+    assert len(event_urls) == 2
+    for url in event_urls:
+        assert "since=168h" in url
+
+
+def test_empty_since_reads_the_full_history(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    status_mod, common = _import_modules()
+    fake, captured = _make_router({
+        "/extmsg/adapters": {"items": []},
+        "events?type=extmsg.inbound": [],
+        "events?type=extmsg.outbound": [],
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    assert status_mod.main(["--since", ""]) == 0
+
+    event_urls = [c["url"] for c in captured if "/events?" in c["url"]]
+    assert len(event_urls) == 2
+    for url in event_urls:
+        assert "since=" not in url
+
+
 def test_event_counts_include_both_directions(
         monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
     status_mod, common = _import_modules()
@@ -278,7 +318,18 @@ def test_json_output_is_machine_readable(
 def test_adapter_lookup_failure_degrades_gracefully(
         monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
     """A 500 from /extmsg/adapters shouldn't abort — status should
-    still render the events sections."""
+    still render the events sections.
+
+    This case previously asserted that the failed read rendered as
+    "(none registered", the same line an empty-but-successful read
+    produces, and returned 0. That is the defect on dr-3lhmr stated as
+    an expectation: "no adapter is registered" is a fact about the city
+    and "the adapters endpoint did not answer" is a fact about the
+    instrument, and the second was being reported as the first, in the
+    one tool a human reaches for to find out which is true. The
+    degradation the name asks for is kept and is the point of the case:
+    the events sections below it still render.
+    """
     status_mod, common = _import_modules()
     fake, _ = _make_router({
         "/extmsg/adapters": common.GCAPIError("simulated adapter API down"),
@@ -290,9 +341,91 @@ def test_adapter_lookup_failure_degrades_gracefully(
     rc = status_mod.main([])
     out = capsys.readouterr().out
 
-    assert rc == 0
-    assert "(none registered" in out
+    assert rc == 2
+    assert "UNREADABLE" in out
+    assert "simulated adapter API down" in out
+    assert "(none registered" not in out
     assert "Events" in out
+    assert "inbound:  0" in out
+
+
+def test_one_unreadable_section_does_not_suppress_the_readable_ones(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+    """The shape of the outage this bead was filed for.
+
+    collect_status reads adapters, then inbound events, then outbound
+    events, then bindings. On 2026-09-18 the inbound events read raised
+    out of the process: the adapters result was already in hand, the
+    bindings read never happened, and neither was rendered. The report
+    confirms the bindings endpoint was healthy, so a lead spent a
+    delivery leg believing their channel bindings were unreadable when
+    the only thing that could not be read was the events journal.
+    """
+    status_mod, common = _import_modules()
+    fake, _ = _make_router({
+        "/extmsg/adapters": {"items": [
+            {"provider": "slack", "account_id": "T0TESTWS", "name": "slack-adapter"}
+        ]},
+        "/extmsg/bindings?session_id=gc-846928": {"items": [
+            {"Conversation": {"conversation_id": "C0B25SS12CD", "kind": "room"},
+             "Status": "active"}
+        ]},
+        "events?type=extmsg.inbound": common.GCAPIError(
+            "GET .../events?type=extmsg.inbound timed out after 30.0s"),
+        "events?type=extmsg.outbound": common.GCAPIError(
+            "GET .../events?type=extmsg.outbound timed out after 30.0s"),
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    rc = status_mod.main(["--session", "gc-846928"])
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "slack/T0TESTWS" in out
+    assert "C0B25SS12CD" in out and "status=active" in out
+    assert out.count("UNREADABLE") == 2
+    assert "timed out after 30.0s" in out
+    assert "inbound:  0" not in out and "outbound: 0" not in out
+
+
+def test_unreadable_sections_are_named_in_json_output(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+    """--json feeds scripts, so the distinction has to survive there too,
+    keyed by section rather than folded into an empty list."""
+    status_mod, common = _import_modules()
+    fake, _ = _make_router({
+        "/extmsg/adapters": {"items": []},
+        "events?type=extmsg.inbound": common.GCAPIError("events endpoint down"),
+        "events?type=extmsg.outbound": [],
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    rc = status_mod.main(["--json"])
+    parsed = json.loads(capsys.readouterr().out)
+
+    assert rc == 2
+    assert list(parsed["unreadable"]) == ["events.inbound"]
+    assert "events endpoint down" in parsed["unreadable"]["events.inbound"]
+    assert parsed["events"]["outbound"] == []
+
+
+def test_a_fully_readable_city_reports_no_unreadable_sections(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+    """The other half of the contract: when every read succeeds the tool
+    exits 0 and claims nothing about readability, so rc 2 stays a signal."""
+    status_mod, common = _import_modules()
+    fake, _ = _make_router({
+        "/extmsg/adapters": {"items": []},
+        "events?type=extmsg.inbound": [],
+        "events?type=extmsg.outbound": [],
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    rc = status_mod.main(["--json"])
+    parsed = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert parsed["unreadable"] == {}
 
 
 def test_invalid_limit_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,40 +23,59 @@ from typing import Any
 import slack_intake_common as common
 
 
-def _events(event_type: str, limit: int, since: str) -> list[dict[str, Any]]:
-    """Fetch a slice of events. Returns [] on transport failure or empty."""
+# Every read below returns (items, error). Returning a bare [] for both "the
+# city has none of these" and "the read failed" is what made dr-3lhmr's outage
+# unreadable from its own output: a status tool reported zero inbound events
+# while the events endpoint had not answered at all, and zero is a measurement
+# nobody took. The two answers are kept apart from here to the rendered line.
+
+
+def _read(fetch) -> tuple[list[dict[str, Any]], str]:
+    """Run one API read. Returns (items, "") or ([], why it could not be read)."""
+    try:
+        res = fetch()
+    except common.GCAPIError as exc:
+        return [], str(exc)
+    return list(res.get("items") or []), ""
+
+
+def _events(event_type: str, limit: int, since: str) -> tuple[list[dict[str, Any]], str]:
+    """Fetch a slice of events. Returns (items, "") or ([], reason unreadable)."""
     qs = [f"type={event_type}", f"limit={limit}"]
     if since:
         qs.append(f"since={since}")
     url = f"{common.gc_api_base()}/v0/city/{common.gc_city_name()}/events?" + "&".join(qs)
-    try:
-        res = common._request("GET", url, csrf=False)
-    except common.GCAPIError:
-        return []
-    return list(res.get("items") or [])
+    return _read(lambda: common._request("GET", url, csrf=False))
 
 
-def _adapters() -> list[dict[str, Any]]:
-    try:
-        res = common.gc_get("/extmsg/adapters")
-    except common.GCAPIError:
-        return []
-    return list(res.get("items") or [])
+def _adapters() -> tuple[list[dict[str, Any]], str]:
+    return _read(lambda: common.gc_get("/extmsg/adapters"))
 
 
-def _bindings_for_session(session_id: str) -> list[dict[str, Any]]:
-    try:
-        res = common.gc_get(f"/extmsg/bindings?session_id={session_id}")
-    except common.GCAPIError:
-        return []
-    return list(res.get("items") or [])
+def _bindings_for_session(session_id: str) -> tuple[list[dict[str, Any]], str]:
+    return _read(lambda: common.gc_get(f"/extmsg/bindings?session_id={session_id}"))
 
 
 def collect_status(*, session: str, since: str, limit: int) -> dict[str, Any]:
     """Gather the read-only state used by both human and JSON renderers."""
-    adapters = _adapters()
-    inbound = _events("extmsg.inbound", limit, since)
-    outbound = _events("extmsg.outbound", limit, since)
+    unreadable: dict[str, str] = {}
+
+    def _section(name: str, result: tuple[list[dict[str, Any]], str]) -> list[dict[str, Any]]:
+        items, error = result
+        if error:
+            unreadable[name] = error
+        return items
+
+    # Each section is read and recorded independently, so one endpoint that
+    # cannot answer costs its own line and nothing else. Before dr-3lhmr the
+    # events read raised straight out of here: the adapters result was already
+    # in hand, the bindings read below was never reached, and the caller saw a
+    # traceback instead of either. Note the order -- adapters, inbound,
+    # outbound, bindings -- since it decides which sections a mid-walk failure
+    # discards and which it never attempts.
+    adapters = _section("adapters", _adapters())
+    inbound = _section("events.inbound", _events("extmsg.inbound", limit, since))
+    outbound = _section("events.outbound", _events("extmsg.outbound", limit, since))
 
     if session:
         inbound = [
@@ -67,7 +86,7 @@ def collect_status(*, session: str, since: str, limit: int) -> dict[str, Any]:
             e for e in outbound
             if (e.get("payload") or {}).get("session") == session
         ]
-        bindings = _bindings_for_session(session)
+        bindings = _section("bindings", _bindings_for_session(session))
     else:
         bindings = []
 
@@ -81,6 +100,7 @@ def collect_status(*, session: str, since: str, limit: int) -> dict[str, Any]:
             "inbound": inbound,
             "outbound": outbound,
         },
+        "unreadable": unreadable,
     }
 
 
@@ -97,9 +117,12 @@ def _fmt_event(direction: str, evt: dict[str, Any]) -> str:
 
 def format_status(status: dict[str, Any]) -> str:
     lines: list[str] = []
+    unreadable = status.get("unreadable") or {}
 
     adapters = status["adapters"]
-    if adapters:
+    if "adapters" in unreadable:
+        lines.append(f"Adapters:  (UNREADABLE: {unreadable['adapters']})")
+    elif adapters:
         lines.append("Adapters:")
         for a in adapters:
             provider = a.get("provider") or "?"
@@ -116,14 +139,20 @@ def format_status(status: dict[str, Any]) -> str:
     window = events["since"] or f"last {events['limit']}"
     lines.append("")
     lines.append(f"Events ({window}):")
-    lines.append(f"  inbound:  {len(inbound)}")
-    lines.append(f"  outbound: {len(outbound)}")
+    for label, key, items in (("inbound: ", "events.inbound", inbound),
+                              ("outbound:", "events.outbound", outbound)):
+        if key in unreadable:
+            lines.append(f"  {label} (UNREADABLE: {unreadable[key]})")
+        else:
+            lines.append(f"  {label} {len(items)}")
 
     if status["session"]:
         lines.append("")
         lines.append(f"Session {status['session']}:")
         bindings = status["bindings"]
-        if not bindings:
+        if "bindings" in unreadable:
+            lines.append(f"  bindings: (UNREADABLE: {unreadable['bindings']})")
+        elif not bindings:
             lines.append("  bindings: (none)")
         else:
             lines.append("  bindings:")
@@ -157,8 +186,12 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--session", default="",
                         help="Restrict bindings + activity to a single session id")
-    parser.add_argument("--since", default="",
-                        help="Event window (e.g. 5m, 1h). Default: most recent --limit events.")
+    # Bounded by default: the events endpoint walks newest-first and stops only
+    # at --limit matches, which rare Slack traffic never reaches, so an empty
+    # window read the whole history and every archive past the client timeout.
+    parser.add_argument("--since", default="168h",
+                        help="Event window (e.g. 5m, 1h). Default: 168h. "
+                             "Pass --since '' to read the full history.")
     parser.add_argument("--limit", type=int, default=50,
                         help="Max events to scan per direction. Default: 50")
     parser.add_argument("--json", dest="as_json", action="store_true",
@@ -181,7 +214,12 @@ def main(argv: list[str]) -> int:
         print(json.dumps(status, indent=2, sort_keys=True))
     else:
         print(format_status(status))
-    return 0
+
+    # 0 every section was read, 2 at least one could not be. A status tool that
+    # exits 0 while blind to a section is asserting a state it never observed;
+    # the sections it DID read are still printed above, because the failure of
+    # one read is not a reason to withhold the others.
+    return 2 if status.get("unreadable") else 0
 
 
 if __name__ == "__main__":
