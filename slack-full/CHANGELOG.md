@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Human Slack messages carrying hosted files are now ingested instead of
+  being dropped solely because Slack marks them with the `file_share` subtype.
+  Their text and authenticated local `file://` attachments reach the existing
+  inbound delivery path, while bot, edit, delete, and system subtypes remain
+  rejected. (`th-mwt3m`)
+- `gc slack reply-current` now inherits the thread from the latest
 - `gc slack reply-current` now inherits the thread from the latest
   inbound (gp-i62): a thread-reply inbound's transcript entry carries
   the Slack `thread_ts` in `ReplyToMessageID`, and the reply anchors
@@ -151,7 +157,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a named remedy instead of a raw compiler error (the default
   `GOTOOLCHAIN=auto`, which can fetch the required toolchain itself,
   warns and proceeds).
-
 ### Changed
 
 - The adapter module takes its first dependency, `golang.org/x/sys`
