@@ -1456,6 +1456,25 @@ def test_validate_methodology_flow_contract_rejects_missing_gstack_release_readi
         )
 
 
+# The guarded ancestry decision in the refinery's `rebase` step (issue 374).
+# AC-374-07 requires the formula change and this repin to land together, but the
+# repin itself was unprotected: deleting all five tuple entries left the suite at
+# the same pass count, so the static half of the guarantee could be retired in
+# silence.  Same shape as the witness pins below.
+REFINERY_REBASE_GUARD_PINS = (
+    # The decision's own dual-refspec fetch, in the unbraced spelling that keeps
+    # it string-distinct from merge-push's braced fetch.
+    'git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"',
+    # Direction-locked probe, plus the capture the case reads.
+    'git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"',
+    "ANCESTOR_RC=$?",
+    # The fail-closed family, and the skip arm anchored to its echo so no prose
+    # mention can satisfy it.
+    "cannot evaluate rebase ancestry. STOP. Do not mutate bead state.",
+    'echo "SKIP-REBASE:',
+)
+
+
 def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     contracts = gascity_pack_inference_gate.GASTOWN_BUILD_WORKFLOW_CONTRACTS
 
@@ -1479,6 +1498,11 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     assert "FAIL-SAFE: empty liveness map" in contracts["mol-witness-patrol"]
     assert "gc bd create --type=task --labels=warrant" in contracts["mol-deacon-patrol"]
     assert "gc bd dep add" in contracts["mol-idea-to-plan"]
+
+    for fragment in REFINERY_REBASE_GUARD_PINS:
+        assert fragment in contracts["mol-refinery-patrol"], (
+            f"unpinned refinery rebase-guard fragment: {fragment!r}"
+        )
 
 
 # Guards standing between a stale orphan classification and one of the witness's
