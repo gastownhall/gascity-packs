@@ -4197,6 +4197,8 @@ description = "Override sink that writes the base triage report contract."
         bead_id: str,
         extra_env: dict[str, str] | None = None,
         script_root: pathlib.Path | None = None,
+        cwd: pathlib.Path | None = None,
+        city_aware_gc: bool = False,
     ) -> subprocess.CompletedProcess:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
@@ -4222,18 +4224,45 @@ description = "Override sink that writes the base triage report contract."
             for bead, payload in beads_by_id.items():
                 (show_dir / f"{bead}.json").write_text(payload, encoding="utf-8")
             fake_gc = bin_dir / "gc"
-            fake_gc.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
-                "shift\n"
-                "case \"$1\" in\n"
-                "  version) exit 0 ;;\n"
-                "  show) cat \"$BD_SHOW_DIR/$2.json\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
+            if city_aware_gc:
+                # Refuses `show` unless invoked from a directory that itself
+                # (or an ancestor) carries .gc or city.toml -- the same
+                # discovery the real gc does, so a test can pin whether this
+                # script actually scopes its store reads to a resolved root
+                # instead of whatever directory the caller happened to be in.
+                fake_gc.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "set -euo pipefail\n"
+                    "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
+                    "shift\n"
+                    "case \"$1\" in\n"
+                    "  version) exit 0 ;;\n"
+                    "  show)\n"
+                    "    dir=\"$PWD\"\n"
+                    "    found=0\n"
+                    "    while [ \"$dir\" != \"/\" ]; do\n"
+                    "      if [ -d \"$dir/.gc\" ] || [ -e \"$dir/city.toml\" ]; then found=1; break; fi\n"
+                    "      dir=\"$(dirname \"$dir\")\"\n"
+                    "    done\n"
+                    "    [ \"$found\" -eq 1 ] || { echo 'gc: not in a city directory' >&2; exit 1; }\n"
+                    "    cat \"$BD_SHOW_DIR/$2.json\" ;;\n"
+                    "  *) exit 2 ;;\n"
+                    "esac\n",
+                    encoding="utf-8",
+                )
+            else:
+                fake_gc.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "set -euo pipefail\n"
+                    "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
+                    "shift\n"
+                    "case \"$1\" in\n"
+                    "  version) exit 0 ;;\n"
+                    "  show) cat \"$BD_SHOW_DIR/$2.json\" ;;\n"
+                    "  *) exit 2 ;;\n"
+                    "esac\n",
+                    encoding="utf-8",
+                )
             fake_gc.chmod(0o755)
 
             env = {
@@ -4246,6 +4275,7 @@ description = "Override sink that writes the base triage report contract."
             return subprocess.run(
                 [str(script)],
                 env=env,
+                cwd=str(cwd) if cwd is not None else None,
                 text=True,
                 capture_output=True,
                 check=False,
@@ -4763,6 +4793,47 @@ description = "Override sink that writes the base triage report contract."
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_scopes_store_reads_to_a_city_root(self) -> None:
+        # gc takes no scoping flag; it finds its city by walking up from its
+        # own working directory. The control dispatcher runs this check from
+        # the bead's recorded work directory, which a producer's disposable
+        # per-bead worktree or a concurrent close can leave with no city
+        # above it -- and a removed directory resolves no city either
+        # (gastownhall/gascity-packs#433). Pin that the store read is scoped
+        # to a resolved root (GC_RIG_ROOT here) rather than to wherever the
+        # process happened to start, using a fake gc that refuses `show`
+        # unless invoked from inside a directory tree carrying .gc.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            (rig_root / ".gc").mkdir(parents=True)
+            artifact = rig_root / "requirements.md"
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            no_city_cwd = tmp / "removed-worktree"
+            no_city_cwd.mkdir()
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                f'"gc.build.requirements_path": "{artifact}"'
+                "}}]"
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={"GC_RIG_ROOT": str(rig_root)},
+                cwd=no_city_cwd,
+                city_aware_gc=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("build artifact valid", result.stdout)
 
     def test_build_artifact_check_blocks_invalid_artifact_with_repair_context(self) -> None:
         with tempfile.TemporaryDirectory() as artifact_dir:

@@ -54,8 +54,46 @@ GC_ERR="$(mktemp)"
 # documented 10m dispatcher budget -- timeout kills are an expected path, not a
 # hypothetical one, so each would leak this capture file. SIGKILL leaks either way.
 trap 'rm -f "$GC_ERR"' EXIT INT TERM HUP
-SHOW_JSON="$(gc bd show "$BEAD_ID" --json 2>"$GC_ERR")" \
-  || fail "gc bd show $BEAD_ID failed: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')"
+
+# gc takes no scoping flag; it finds its city by walking up from its own
+# working directory. A producer runs in a disposable per-bead worktree, and
+# the control dispatcher runs a check from the work directory recorded on the
+# bead (cmd.Dir = env.WorkDir) -- a directory a concurrent close can remove
+# out from under this script, and a removed directory resolves no city
+# either. Read from the same durable root candidates the artifact-path
+# resolution below already trusts, so a scoping failure and a genuinely
+# missing bead stop looking identical (gastownhall/gascity-packs#433).
+INSTALLED_RIG_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+resolves_a_city() {
+  local dir="$1"
+  [ -n "$dir" ] && [ -d "$dir" ] || return 1
+  dir="$(cd "$dir" && pwd)"
+  while [ "$dir" != "/" ] && [ -n "$dir" ]; do
+    if [ -e "$dir/city.toml" ] || [ -d "$dir/.gc" ]; then
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+STORE_ROOT=""
+for candidate in "${GC_RIG_ROOT:-}" "${GC_BEADS_SCOPE_ROOT:-}" "${GC_DIR:-}" "$INSTALLED_RIG_ROOT"; do
+  if resolves_a_city "$candidate"; then
+    STORE_ROOT="$(cd "$candidate" && pwd)"
+    break
+  fi
+done
+
+bd_show_json() {
+  if [ -n "$STORE_ROOT" ]; then
+    (cd "$STORE_ROOT" && gc bd show "$1" --json) 2>"$GC_ERR"
+  else
+    gc bd show "$1" --json 2>"$GC_ERR"
+  fi
+}
+
+SHOW_JSON="$(bd_show_json "$BEAD_ID")" \
+  || fail "gc bd show $BEAD_ID failed from ${STORE_ROOT:-the current directory}: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')"
 
 SCHEMA="$(metadata_value "$SHOW_JSON" "gc.build.artifact_schema")"
 PATH_KEYS="$(metadata_value "$SHOW_JSON" "gc.build.artifact_path_keys")"
@@ -65,8 +103,8 @@ PATH_KEYS="$(metadata_value "$SHOW_JSON" "gc.build.artifact_path_keys")"
 ROOT_ID="$(metadata_value "$SHOW_JSON" "gc.root_bead_id")"
 ROOT_JSON="$SHOW_JSON"
 if [ -n "$ROOT_ID" ] && [ "$ROOT_ID" != "$BEAD_ID" ]; then
-  ROOT_JSON="$(gc bd show "$ROOT_ID" --json 2>"$GC_ERR")" \
-    || fail "gc bd show $ROOT_ID failed: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')"
+  ROOT_JSON="$(bd_show_json "$ROOT_ID")" \
+    || fail "gc bd show $ROOT_ID failed from ${STORE_ROOT:-the current directory}: $(tail -c 400 "$GC_ERR" | tr '\n' ' ')"
 fi
 
 ARTIFACT_PATH=""
@@ -95,11 +133,8 @@ case "$ARTIFACT_PATH" in
     # check from <rig>/.gc/scripts/checks, which is another durable root
     # signal. Do not use that fallback for a source-tree script.
     ARTIFACT_ROOT="${GC_RIG_ROOT:-${GC_BEADS_SCOPE_ROOT:-${GC_DIR:-}}}"
-    if [ -z "$ARTIFACT_ROOT" ]; then
-      INSTALLED_RIG_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-      if [ -d "$INSTALLED_RIG_ROOT/.gc" ]; then
-        ARTIFACT_ROOT="$INSTALLED_RIG_ROOT"
-      fi
+    if [ -z "$ARTIFACT_ROOT" ] && [ -d "$INSTALLED_RIG_ROOT/.gc" ]; then
+      ARTIFACT_ROOT="$INSTALLED_RIG_ROOT"
     fi
     if [ -n "$ARTIFACT_ROOT" ]; then
       ARTIFACT_PATH="$ARTIFACT_ROOT/$ARTIFACT_PATH"
