@@ -29,7 +29,9 @@ class FormulaSetTests(unittest.TestCase):
     """The pack ships exactly the five thin wrappers — no more, no fewer."""
 
     def test_formulas_directory_exists(self) -> None:
-        self.assertTrue(FORMULAS.is_dir(), "contributing/formulas/ must exist")
+        self.assertTrue(
+            FORMULAS.is_dir(), "contributing-to-gascity/formulas/ must exist"
+        )
 
     def test_exactly_the_expected_formulas_are_present(self) -> None:
         names = {p.name[: -len(".formula.toml")] for p in _formula_files()}
