@@ -143,4 +143,5 @@ agents/witness/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognize
 agents/witness/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
 assets/prompts/crew.template.md: bd-unknown-flag: bd create uses unrecognized flag "--rig"
 assets/prompts/crew.template.md: bd-unknown-flag: bd create uses unrecognized flag "--rig"
+assets/prompts/crew.template.md: bd-unknown-flag: bd create uses unrecognized flag "--rig"
 assets/prompts/crew.template.md: bd-unknown-flag: bd create uses unrecognized flag "--city"
