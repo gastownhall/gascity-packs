@@ -71,8 +71,8 @@ if [ -z "${GC_CITY:-}" ] || [ ! -f "$GC_CITY/city.toml" ]; then
 fi
 
 # Default window: the gastown witness does NOT self-schedule a ~60s wakeup — it
-# ends its turn with `IDLE:` and the controller's session_sleep policy restarts
-# it, bounded by the witness agent's idle_timeout of 1h. 1h is therefore the
+# ends its turn with `IDLE:` and the controller's idle_timeout (1h for the
+# witness agent) recycles it. 1h is therefore the
 # longest legitimate silence for a healthy witness, so the window sits at 1.5x
 # that. Well clear of legitimate idle, and still an order of magnitude under the
 # 14h floor of the stalls this check exists to catch. Lower it only if your
