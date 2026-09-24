@@ -204,6 +204,129 @@ Default formula routes use these qualified targets: `gc.run-operator`,
 `gc.implementation-worker`, `gc.gap-analyst`, `gc.implementation-reviewer`,
 and `gc.publisher`.
 
+## Worker workspaces
+
+The unit of isolation is the agent. A rig role agent starts in the rig root
+unless its `work_dir` says otherwise; in the standard model every role agent
+that reads or writes a rig's source has one. gc creates the `work_dir`,
+starts the session in it, exports it as `$GC_DIR`, and materializes the
+agent's skills and hooks into it (because it differs from the scope root); a
+`pre_start` command runs before the session, in `$GC_DIR`, with the session
+environment (`GC_TRIGGER_BEAD_ID` for a slung bead), and makes that
+directory a git worktree of the rig on the bead's branch. Workers never
+choose, create, or hunt for a workspace, and the rig root stays a human
+checkout that no agent touches. A role the city gave no `work_dir` still
+starts in the rig root and has no lane; the role prompt then has it create no
+worktree and write nothing there, whatever the rig's own rules say: it reads
+by `git show` and `git log` only, and a step that needs a checkout closes with
+`gc.outcome=fail` and `gc.failure_class=no-lane`, naming the fix, a lane for
+the role (the `[[patches.agent]]` entry below). No prompt-side path makes a
+workspace for an unconfigured role.
+
+This pack ships `assets/scripts/worker-worktree.sh` for the `pre_start` half.
+Copy it into the city's scripts directory, `.gc/scripts` (gc does not sync a
+pack's `assets/scripts` there), and reference it through `{{.CityRoot}}`:
+
+```sh
+cp path/to/gascity/assets/scripts/worker-worktree.sh "$CITY/.gc/scripts/"
+```
+
+Wire the roles per city with `[[patches.agent]]` in `city.toml`, the
+documented surface for overriding an imported pack agent's fields
+(`work_dir` and `pre_start` are both patchable; `rig = "*"` reaches the role
+in every rig; the bare role name matches the pack agent whatever import
+alias the city gave it). One entry per role. Give the read-only roles
+(reviewers, analysts, planners) a lane too, so no role ever starts in the
+rig root; for them the script's reuse path is a fetch and a checkout.
+
+```toml
+# city.toml — every gc role agent starts in its own lane worktree.
+[[patches.agent]]
+rig = "*"
+name = "implementation-worker"
+work_dir = ".worktrees/{{.Rig}}/lane-{{.AgentBase}}"
+pre_start = ["sh {{.CityRoot}}/.gc/scripts/worker-worktree.sh"]
+
+# Repeat the entry for the other roles this pack ships: publisher,
+# run-operator, review-synthesizer, design-author, requirements-planner,
+# task-decomposer, issue-triager, implementation-reviewer,
+# design-implementation-reviewer, design-test-risk-reviewer, gap-analyst.
+```
+
+A second role instance on another provider (an `agents/<name>/agent.toml`,
+see the repository README, "Codex code workers") carries the same two keys
+directly. `{{.AgentBase}}` is the agent identity gc resolves the session
+under. A pool slot is named `<role>-<slot>`, so concurrent sessions of one
+role get distinct lanes (`lane-gc.implementation-worker-1`,
+`lane-gc.implementation-worker-3`, …) and never share a checkout; a singleton
+agent (`max_active_sessions = 1`) keeps one lane across sessions, so the
+script's reuse path (fetch, switch to the new bead's branch) applies.
+`gc session list` shows each live session's work dir.
+
+The pack does not set these keys on its role agents by default. The
+`pre_start` half needs the script installed in the city's `.gc/scripts`, and
+a `pre_start` that fails aborts the session start by design, so a pack-level
+default would stop every role session in a city that has not installed it;
+which roles need filesystem isolation is a deployment decision in gc's
+model. `gc doctor` reports a `pre_start` script referenced via
+`{{.CityRoot}}` that is missing on disk.
+
+The script makes `$GC_DIR` a worktree of `$GC_RIG_ROOT`'s repository and
+never touches the rig root's working tree; the rig root, anything inside it,
+and any ancestor of it are refused up front. Runs on one repository are
+serialized by a lock in its git dir, so concurrent sessions cannot race on a
+branch or a lane. With a trigger bead it reuses the one branch whose name
+contains the bead id as a whole token (local or on the remote) or creates
+`<bead id>` from a resolved base: `<remote>/HEAD`, else `<remote>/main`, else
+`<remote>/master`, else the rig root's `HEAD` with a WARN (the remote is
+`origin` unless `--remote` names another; `--base` overrides); a branch
+checked out in another worktree is not stolen (the lane is left detached at
+its tip, with a WARN). Nothing is
+ever deleted: a lane with tracked modifications, or a non-empty directory
+that is not a git checkout, is moved to `<lane>.aside-<utc stamp>` first; a
+checkout of another repository is refused. Untracked files (materialized
+skills, hooks, `node_modules`) do not count as modifications. `sh
+worker-worktree.sh --help` prints the full contract.
+
+The lane is on the bead's branch when the worker claims. With a gascity that
+resolves the work branch from the session work dir (`hookClaimWorkBranchDir`,
+the companion core change), `gc hook --claim` then stamps a correct
+`gc.work_branch`; older builds read the rig root's branch, so the role prompt
+has the worker compare `gc.work_branch` with its branch after the claim and
+restamp it when they differ.
+
+Inside a formula the branch is also the handoff between lanes, under one
+lifecycle: a lane holds the item's branch only while it is writing to it and
+releases it (`git switch --detach`) when it hands off, because git allows one
+worktree per branch; every reader inspects the recorded commit detached in its
+own lane (`git switch --detach <commit>`, `git show <commit>:<path>`), so
+parallel reviewers never contend and the fix lane finds the branch free. A
+branch left held by a crashed writer is released by the operator from that
+lane, never by another agent's step. Every lane, writer or reader, proves it
+is a lane before it switches or detaches anything (the three-part boundary
+test in `do-work/prepare-worktree` step 4: the resolved top-level is `$GC_DIR`
+itself, not the rig root or inside it, and the git common dir is the rig's);
+a role with no `work_dir` starts in the rig root, and a reader there reads by
+`git show` only and never detaches the human checkout. After the fix lane
+commits it refreshes the recorded commit of the item it fixed (that source
+anchor's record in the review context file and `gc.review_commit` on that
+source anchor, never a workflow-wide key: separate drains put several items
+on independent branches, each reviewed at its own commit) before it releases
+the branch, so the next review attempt inspects the fixed code, not the
+commit the setup saw, and the other items' recorded commits stay as they
+were.
+
+Two related core behaviors complete the picture:
+
+- A bead carrying `work_dir=<absolute path>` metadata, assigned and in
+  progress, starts its next session in that directory (an existing per-bead
+  worktree wins over the agent's lane). The role prompt tells workers to stamp
+  it, with `gc.work_branch`, before closing a bead whose work continues.
+- Toolchain on the worker PATH belongs to the provider: `[providers.<name>]
+  env = { PATH = "..." }` (values expand `$VAR` against the controller
+  environment) or a command shim that prepends a directory of wrappers. The
+  role prompt does not install package managers.
+
 ## Build Methodology Contract
 
 `build-base` is the virtual full-lifecycle workflow contract. It defines the
