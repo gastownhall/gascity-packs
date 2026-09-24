@@ -54,18 +54,68 @@ If you detect Dolt trouble (commands hang/timeout, "connection refused",
 are hard to reproduce. A blind restart destroys the evidence. Always:
 
 ```bash
+# Bound a command without depending on GNU coreutils `timeout`, which is not
+# installed by default on macOS. This mirrors Gas City's Dolt runtime helper:
+# preserve normal exit codes, return 124 at the deadline, and escalate from
+# SIGTERM to SIGKILL after a short grace period. The canonical full helper is
+# the dolt pack's `doctor/check-dolt/run.sh`; this variant deliberately drops
+# its `gtimeout`/`timeout` fast path so a pasted runbook takes one code path on
+# every host — the asset test pins that absence, so don't harmonize it back in.
+# Copy notes: the bound is seconds as a bare number (`run_bounded 5 ...`), not
+# GNU suffix syntax (`5s`), and the bounded command does not inherit your stdin
+# because the helper's own script arrives there — redirect input per command if
+# it needs any. The canonical helper has that same stdin limitation whenever it
+# takes its python fallback, but not when it finds a real `timeout` binary.
+run_bounded() {
+  bound_seconds="$1"
+  shift
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf 'diagnostic: python3 not found; cannot run bounded command\n' >&2
+    return 124
+  fi
+  python3 - "$bound_seconds" "$@" <<'PY'
+import subprocess
+import sys
+
+try:
+    limit = float(sys.argv[1])
+except ValueError:
+    sys.stderr.write(
+        "diagnostic: run_bounded takes seconds as a bare number"
+        " (run_bounded 5 ...), not GNU suffix syntax (5s)\n"
+    )
+    sys.exit(124)
+command = sys.argv[2:]
+process = subprocess.Popen(command)
+try:
+    process.wait(timeout=limit)
+except subprocess.TimeoutExpired:
+    process.terminate()
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+    sys.exit(124)
+# A child killed by a signal reports a negative returncode; surface it as the
+# shell's 128+N convention (SIGTERM -> 143) so "preserve normal exit codes"
+# holds for that class too.
+sys.exit(process.returncode if process.returncode >= 0 else 128 - process.returncode)
+PY
+}
+
 # Group all four captures under one timestamp so the bundle is easy
-# to attach to the escalation note. Each timed step writes via
-# redirect (not `tee`) so timeout's exit 124 propagates to `||` and
-# the agent gets an explicit "diagnostic timed out" signal — POSIX
-# pipelines mask the upstream exit code via tee.
+# to attach to the escalation note. Each bounded step writes via redirect
+# (not `tee`) so its non-zero status propagates to `||` and the agent gets an
+# explicit "diagnostic timed out" signal — POSIX pipelines mask the upstream
+# exit code via tee.
 ts=$(date +%s)
 
 # 1. Capture live process state via SQL (non-fatal — Dolt keeps running).
 #    SHOW FULL PROCESSLIST lists active connections, the query each is
 #    running, and time-in-state. Bound the call so a wedged server can't
 #    block the diagnostic itself.
-timeout 5 gc dolt sql -q "SHOW FULL PROCESSLIST" \
+run_bounded 5 gc dolt sql -q "SHOW FULL PROCESSLIST" \
     > /tmp/dolt-hang-$ts-procs.log 2>&1 \
   || echo "(step 1 timed out or failed — see procs.log for partial output)"
 cat /tmp/dolt-hang-$ts-procs.log
@@ -86,7 +136,7 @@ cat /tmp/dolt-hang-$ts-logs.log
 #    worst-case wall time is roughly 5s + 5s × N_databases. 60s covers
 #    cities up to ~10 databases at the limit; if the timeout fires,
 #    treat it as evidence the data plane is wedged and escalate.
-timeout 60 gc dolt health --json \
+run_bounded 60 gc dolt health --json \
     > /tmp/dolt-hang-$ts-health.json 2>&1 \
   || echo "(step 3 timed out or failed — see health.json for partial output)"
 cat /tmp/dolt-hang-$ts-health.json
@@ -94,7 +144,7 @@ cat /tmp/dolt-hang-$ts-health.json
 # 4. Capture reachability + PID for the escalation note. Bound the
 #    call: `gc dolt status` probes /dev/tcp, which can stall on a
 #    server that accepts connections but never speaks MySQL.
-timeout 10 gc dolt status \
+run_bounded 10 gc dolt status \
     > /tmp/dolt-hang-$ts-status.log 2>&1 \
   || echo "(step 4 timed out or failed — see status.log for partial output)"
 cat /tmp/dolt-hang-$ts-status.log

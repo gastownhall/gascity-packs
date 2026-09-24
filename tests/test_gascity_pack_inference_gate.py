@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import inspect
 import json
 import os
 import re
@@ -1084,6 +1085,335 @@ def test_validate_gastown_orchestration_contract_rejects_missing_refinery_false_
         gascity_pack_inference_gate.validate_gastown_orchestration_contract(tmp_path / "gastown")
 
 
+def gastown_formulas_copy(tmp_path: Path) -> Path:
+    pack_source = tmp_path / "gastown"
+    shutil.copytree(
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source / "formulas",
+        pack_source / "formulas",
+    )
+    return pack_source
+
+
+def mutated_gastown_source(tmp_path: Path, old: str, new: str) -> Path:
+    """Copy the real gastown formulas into tmp_path with one mol-polecat-work edit."""
+    pack_source = tmp_path / "gastown"
+    shutil.copytree(
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source / "formulas",
+        pack_source / "formulas",
+    )
+    formula = pack_source / "formulas" / "mol-polecat-work.toml"
+    original = formula.read_text(encoding="utf-8")
+    mutated = original.replace(old, new, 1)
+    assert mutated != original, f"mutation anchor not present in the formula: {old!r}"
+    formula.write_text(mutated, encoding="utf-8")
+    return pack_source
+
+
+def test_validate_polecat_branch_content_gate_accepts_current_pack() -> None:
+    gascity_pack_inference_gate.validate_polecat_branch_content_gate(
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+    )
+
+
+def test_validate_polecat_base_ref_contract_accepts_current_pack() -> None:
+    gascity_pack_inference_gate.validate_polecat_base_ref_contract(
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+    )
+
+
+def test_validate_polecat_branch_content_gate_rejects_gate_moved_after_the_push(tmp_path) -> None:
+    pack_source = gastown_formulas_copy(tmp_path)
+    path = pack_source / "formulas" / "mol-polecat-work.toml"
+    text = path.read_text(encoding="utf-8")
+    start = text.index("**2b. Branch-content gate")
+    # Anchored on the step-3 heading PREFIX, not its title: the title is prose
+    # and has been reworded once already ("Push your branch" -> "Push gate --
+    # FAIL CLOSED, then push"), which silently turned this slice into a
+    # ValueError rather than a failed assertion.
+    end = text.index("**3. ", start)
+    gate = text[start:end]
+    remainder = text[:start] + text[end:]
+    push_line = "git push origin HEAD\n"
+    anchor = remainder.index(push_line) + len(push_line)
+    path.write_text(remainder[:anchor] + gate + remainder[anchor:], encoding="utf-8")
+
+    # A relocated gate is invisible to the fragment pins: they are containment
+    # checks over the whole file, so every one of them still passes on a gate
+    # that now runs after the push it was supposed to prevent.
+    relocated = path.read_text(encoding="utf-8")
+    for fragment in gascity_pack_inference_gate.GASTOWN_BUILD_WORKFLOW_CONTRACTS["mol-polecat-work"]:
+        assert fragment in relocated
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="before the push"):
+        gascity_pack_inference_gate.validate_polecat_branch_content_gate(pack_source)
+
+
+@pytest.mark.parametrize(
+    ("original", "replacement", "expected"),
+    [
+        pytest.param(
+            "''|*[!0-9]*) HALT_REASON=content_gate_error ;;",
+            "",
+            "unmeasurable-count arm",
+            id="deleted-fail-closed-arm",
+        ),
+        pytest.param(
+            "0) HALT_REASON=no_commits ;;",
+            "1) HALT_REASON=no_commits ;;",
+            "empty-branch arm",
+            id="inverted-empty-branch-arm",
+        ),
+        pytest.param(
+            'esac\nif [ -n "$HALT_REASON" ]; then',
+            'esac\nHALT_REASON=""\nif [ -n "$HALT_REASON" ]; then',
+            "halt guard",
+            id="disarmed-between-decision-and-halt",
+        ),
+        pytest.param(
+            'for ESCALATE_TARGET in mayor "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"; do',
+            'for ESCALATE_TARGET in mayor; do',
+            "mayor and witness escalation",
+            id="dropped-witness-escalation",
+        ),
+        # `case` takes the first match, so a catch-all ahead of an arm disarms
+        # it while leaving the arm itself -- and every other fragment -- in
+        # place. Both positions are probed: ahead of the fail-closed arm
+        # (disarms both reasons) and between the arms, which kills only
+        # `no_commits` and is the likeliest accidental edit of the two, since
+        # an explicit default arm is harmless written *after* arm 2.
+        pytest.param(
+            "    ''|*[!0-9]*) HALT_REASON=content_gate_error ;;",
+            '    *) HALT_REASON="" ;;\n'
+            "    ''|*[!0-9]*) HALT_REASON=content_gate_error ;;",
+            "case dispatch",
+            id="catch-all-arm-ahead-of-the-fail-closed-arm",
+        ),
+        pytest.param(
+            "    0) HALT_REASON=no_commits ;;",
+            '    *) HALT_REASON="" ;;\n    0) HALT_REASON=no_commits ;;',
+            "case dispatch",
+            id="catch-all-arm-between-the-two-arms",
+        ),
+        pytest.param(
+            'case "$COMMITS_AHEAD" in',
+            'case "x$COMMITS_AHEAD" in',
+            "case dispatch",
+            id="dispatch-subject-that-can-never-match",
+        ),
+        # Without `exit 1` the fence ends rc=0, so the agent goes on to the
+        # step-3 push gate and pushes a branch this gate just declared unfit,
+        # after the halt has already released the bead.
+        pytest.param(
+            "    done\n    gc runtime drain-ack\n    exit 1",
+            "    done\n    gc runtime drain-ack",
+            "halt exit",
+            id="deleted-halt-exit",
+        ),
+    ],
+)
+def test_validate_polecat_branch_content_gate_rejects_disarmed_halt_path(
+    tmp_path, original, replacement, expected
+) -> None:
+    pack_source = gastown_formulas_copy(tmp_path)
+    path = pack_source / "formulas" / "mol-polecat-work.toml"
+    text = path.read_text(encoding="utf-8")
+    assert text.count(original) == 1
+    path.write_text(text.replace(original, replacement), encoding="utf-8")
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match=expected):
+        gascity_pack_inference_gate.validate_polecat_branch_content_gate(pack_source)
+
+
+def test_validate_polecat_branch_content_gate_rejects_deleting_the_gates_own_drain_ack(
+    tmp_path,
+) -> None:
+    """The halt-path window ends at the push, so it spans the next halt too.
+
+    An unanchored ``gc runtime drain-ack`` fragment is therefore satisfied by
+    the auto_push=false halt's own copy, and deleting the branch-content gate's
+    drain-ack left the validator green. The fragment is anchored to the
+    escalation loop's ``done`` instead, which occurs only in this gate.
+    """
+    pack_source = gastown_formulas_copy(tmp_path)
+    path = pack_source / "formulas" / "mol-polecat-work.toml"
+    text = path.read_text(encoding="utf-8")
+    original = "    done\n    gc runtime drain-ack\n    exit 1"
+    assert text.count(original) == 1
+    mutated = text.replace(original, "    done\n    exit 1")
+    path.write_text(mutated, encoding="utf-8")
+
+    # The precondition that makes the rejection below meaningful: the bare
+    # fragment is still present elsewhere in the checked window, so a
+    # containment check on it alone cannot tell the two halts apart.
+    assert "gc runtime drain-ack" in mutated
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="halt exit"):
+        gascity_pack_inference_gate.validate_polecat_branch_content_gate(pack_source)
+def test_polecat_base_ref_contract_runs_in_the_gastown_gate() -> None:
+    # Every other test here calls the validator directly, so they all stay green
+    # if the gate stops invoking it. Pin the call site alongside its sibling.
+    source = inspect.getsource(gascity_pack_inference_gate.initialize_city)
+    assert "validate_gastown_orchestration_contract(pack_spec.source)" in source
+    assert "validate_polecat_base_ref_contract(pack_spec.source)" in source
+
+
+def test_polecat_base_ref_contract_rejects_bare_origin_ref_in_a_later_step(tmp_path) -> None:
+    # Finding 1's defect class: workspace-setup resolves the base, a later step
+    # reintroduces the hard-coded ref and dies on a local-only base.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'git diff --stat "$BASE_REF"...HEAD',
+        "git diff --stat origin/{{base_branch}}...HEAD",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="bare origin"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_allows_prose_mentions_of_the_bare_ref(tmp_path) -> None:
+    # Control: the rule is about executable shell. The formula has to be able to
+    # explain in prose which ref it is refusing to assume.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        "**2. Ensure worktree exists.**",
+        "Never assume origin/{{base_branch}} exists.\n\n**2. Ensure worktree exists.**",
+    )
+
+    gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_allows_shell_comment_mentions_of_the_bare_ref(tmp_path) -> None:
+    # Control: a `#` comment inside a bash fence is rationale, not a git ref.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'BASE_REF="$BASE_REMOTE"    # preferred: freshly fetched, no local drift',
+        'BASE_REF="$BASE_REMOTE"    # preferred over origin/{{base_branch}}, freshly fetched',
+    )
+
+    gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_rejects_a_substituted_base(tmp_path) -> None:
+    # gas-e6r itself: the resolution block naming a base nobody probed for.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'BASE_REF="$BASE_LOCAL"     # local-only base',
+        'BASE_REF="refs/heads/main"     # local-only base',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="substituted base"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_rejects_a_neutralised_stop_arm(tmp_path) -> None:
+    # A literal-fragment pin stays green here: every fragment is still present,
+    # the STOP just stopped stopping.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        "    gc runtime drain-ack\n"
+        "    exit 1\n"
+        "fi\n"
+        'gc bd update "$WORK_BEAD_ID" --set-metadata base_ref',
+        "    gc runtime drain-ack\n"
+        "    exit 0\n"
+        "fi\n"
+        'gc bd update "$WORK_BEAD_ID" --set-metadata base_ref',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="exit non-zero"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_rejects_a_missing_stop_arm(tmp_path) -> None:
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'else\n    echo "STOP: base branch {{base_branch}} exists neither on origin nor locally."',
+        'elif true; then\n    echo "STOP: base branch {{base_branch}} exists neither on origin nor locally."',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="no else arm"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_fails_closed_when_the_block_moves(tmp_path) -> None:
+    # If the anchored range cannot be located the lint must fail, not pass by
+    # silently measuring nothing.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'if git show-ref --verify --quiet "$BASE_REMOTE"; then',
+        'if git show-ref --verify --quiet "$BASE_REMOTE" ; then',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="resolution block anchored by"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_reports_only_the_anchor_when_the_block_moves() -> None:
+    # Fail-closed diagnosis quality, not merely noise suppression: the checks
+    # after the block lookup all read the block, so on an empty one they report
+    # "assigns no BASE_REF" and "has no else arm" -- both false, and both send a
+    # maintainer after an intact block instead of the moved anchor. The exact
+    # count is the assertion: it is what fails if the short-circuit is dropped.
+    formula = (
+        gascity_pack_inference_gate.PACK_SPECS["gastown"].source
+        / "formulas"
+        / f"{gascity_pack_inference_gate.POLECAT_WORK_FORMULA}.toml"
+    )
+    text = formula.read_text(encoding="utf-8")
+    moved = text.replace(
+        'if git show-ref --verify --quiet "$BASE_REMOTE"; then',
+        'if git show-ref --verify --quiet "$BASE_REMOTE" ; then',
+        1,
+    )
+    assert moved != text, "mutation anchor not present in the formula"
+
+    problems = gascity_pack_inference_gate.polecat_base_ref_problems(moved)
+
+    assert len(problems) == 1, problems
+    assert "resolution block anchored by" in problems[0]
+
+
+def test_polecat_base_ref_contract_rejects_a_dropped_carrier_stamp(tmp_path) -> None:
+    # Finding 1's fix is the durable carrier: without the stamp, later steps
+    # have nothing to read back and the bare-ref rule is unsatisfiable.
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'gc bd update "$WORK_BEAD_ID" --set-metadata base_ref="$BASE_REF"\n',
+        "",
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="base_ref"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_polecat_base_ref_contract_fails_closed_on_an_unbalanced_fence(tmp_path) -> None:
+    pack_source = mutated_gastown_source(
+        tmp_path,
+        'BASE_REMOTE="refs/remotes/origin/{{base_branch}}"',
+        '```\nBASE_REMOTE="refs/remotes/origin/{{base_branch}}"',
+    )
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="unterminated"):
+        gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
+
+
+def test_formula_shell_lines_excludes_prose_and_comments() -> None:
+    lines, problems = gascity_pack_inference_gate.formula_shell_lines(
+        "prose mentioning origin/{{base_branch}}\n"
+        "```bash\n"
+        "git rebase \"$BASE_REF\"   # not origin/{{base_branch}}\n"
+        "# origin/{{base_branch}}\n"
+        'echo "a # b"\n'
+        "```\n"
+        "```text\n"
+        "git rebase origin/{{base_branch}}\n"
+        "```\n"
+    )
+
+    assert problems == []
+    assert [code for _, code in lines] == ['git rebase "$BASE_REF"', 'echo "a # b"']
+
+
 def test_validate_methodology_flow_contracts_accept_current_packs() -> None:
     for pack_name in gascity_pack_inference_gate.METHODOLOGY_PACKS:
         gascity_pack_inference_gate.validate_methodology_flow_contract(
@@ -1126,6 +1456,25 @@ def test_validate_methodology_flow_contract_rejects_missing_gstack_release_readi
         )
 
 
+# The guarded ancestry decision in the refinery's `rebase` step (issue 374).
+# AC-374-07 requires the formula change and this repin to land together, but the
+# repin itself was unprotected: deleting all five tuple entries left the suite at
+# the same pass count, so the static half of the guarantee could be retired in
+# silence.  Same shape as the witness pins below.
+REFINERY_REBASE_GUARD_PINS = (
+    # The decision's own dual-refspec fetch, in the unbraced spelling that keeps
+    # it string-distinct from merge-push's braced fetch.
+    'git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"',
+    # Direction-locked probe, plus the capture the case reads.
+    'git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"',
+    "ANCESTOR_RC=$?",
+    # The fail-closed family, and the skip arm anchored to its echo so no prose
+    # mention can satisfy it.
+    "cannot evaluate rebase ancestry. STOP. Do not mutate bead state.",
+    'echo "SKIP-REBASE:',
+)
+
+
 def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     contracts = gascity_pack_inference_gate.GASTOWN_BUILD_WORKFLOW_CONTRACTS
 
@@ -1137,12 +1486,88 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
         "mol-idea-to-plan",
     }
     assert "gc session wake \"$REFINERY_TARGET\"" in contracts["mol-polecat-work"]
+    assert (
+        'COMMITS_AHEAD=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null)'
+        in contracts["mol-polecat-work"]
+    )
+    assert "''|*[!0-9]*) HALT_REASON=content_gate_error ;;" in contracts["mol-polecat-work"]
+    assert "0) HALT_REASON=no_commits ;;" in contracts["mol-polecat-work"]
     assert 'git worktree add --detach "$MERGE_WT" "origin/$TARGET"' in contracts["mol-refinery-patrol"]
     assert 'gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"' in contracts["mol-refinery-patrol"]
     assert "gc bd close $WORK --reason \"Pull request ready: $PR_URL\"" in contracts["mol-refinery-patrol"]
     assert "FAIL-SAFE: empty liveness map" in contracts["mol-witness-patrol"]
     assert "gc bd create --type=task --labels=warrant" in contracts["mol-deacon-patrol"]
     assert "gc bd dep add" in contracts["mol-idea-to-plan"]
+
+    for fragment in REFINERY_REBASE_GUARD_PINS:
+        assert fragment in contracts["mol-refinery-patrol"], (
+            f"unpinned refinery rebase-guard fragment: {fragment!r}"
+        )
+
+
+# Guards standing between a stale orphan classification and one of the witness's
+# three destructive outcomes (force-close, force-reassign, worktree deletion).
+# Each must be pinned in the gate contract AND occur exactly once in the formula.
+WITNESS_ORPHAN_GUARD_PINS = (
+    # One shared map builder that reports failure instead of returning an empty
+    # map, and a cycle-scoped watermark the per-candidate rebuild cannot reset.
+    "build_liveness_map() {",
+    "MAP_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    'CYCLE_MAP_BUILT_AT="$MAP_BUILT_AT"',
+    "elif ! build_liveness_map; then",
+    # Fail-closed pre-destruction verdict.
+    "STILL_ORPHANED=false",
+    # Staleness guard: top-level field path, truncated fraction, strict compare.
+    "jq -r '.[0].updated_at // empty'",
+    'BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"',
+    'elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then',
+    # Content test: -z and the quoted array are jointly load-bearing.
+    'done < <(git diff --name-only -z "$MERGE_BASE" "origin/$BRANCH")',
+    'elif git diff --quiet "origin/main" "origin/$BRANCH" -- "${CHANGED[@]}"; then',
+    # All three destructive sites re-state the verdict.  Step 3a skips to Step
+    # 4, so a guard placed only at the pool reset would never cover it.
+    'if [ "$STILL_ORPHANED" = "true" ] && [ "$ON_MAIN" = "true" ]; then',
+    'if [ "$STILL_ORPHANED" = "true" ] && [ "$HANDOFF_STAGE" = "target_recorded" ]'
+    ' && [ -n "$BRANCH_ON_ORIGIN" ]; then',
+    'if [ "$STILL_ORPHANED" != "true" ]; then',
+)
+
+
+def test_gastown_witness_patrol_pins_orphan_recovery_guards() -> None:
+    """Every guard on the witness's destructive paths must stay pinned.
+
+    ``recover-orphaned-beads`` force-closes beads, force-reassigns them and
+    deletes worktrees.  The formula is prose, so a guard can be removed by an
+    edit that still reads as a sensible recipe; without a pin per guard the
+    gate stays green while the recipe goes back to destroying live work.
+    Asserting the fragments here means deleting a pin fails as loudly as
+    deleting the guard it protects.
+    """
+    witness = gascity_pack_inference_gate.GASTOWN_BUILD_WORKFLOW_CONTRACTS["mol-witness-patrol"]
+
+    for fragment in WITNESS_ORPHAN_GUARD_PINS:
+        assert fragment in witness, f"unpinned witness orphan-recovery guard: {fragment!r}"
+
+
+def test_gastown_witness_patrol_guard_pins_are_present_in_the_formula() -> None:
+    """The pins must actually match the shipped formula.
+
+    A pin that matches nothing is dead — it can never fail, so it protects
+    nothing.  A guard pin that matches more than once can also be satisfied by
+    narration left behind after the guard itself is deleted, so those are held
+    to exactly one occurrence.  Both failure modes leave the gate green, so
+    check the raw formula text the gate actually reads.
+    """
+    spec = gascity_pack_inference_gate.PACK_SPECS["gastown"]
+    formula = spec.source / "formulas" / "mol-witness-patrol.toml"
+    text = formula.read_text(encoding="utf-8")
+
+    for fragment in gascity_pack_inference_gate.GASTOWN_BUILD_WORKFLOW_CONTRACTS["mol-witness-patrol"]:
+        assert fragment in text, f"dead pin, matches nothing in {formula}: {fragment!r}"
+
+    for fragment in WITNESS_ORPHAN_GUARD_PINS:
+        count = text.count(fragment)
+        assert count == 1, f"{fragment!r} occurs {count} times in {formula}, want exactly 1"
 
 
 def test_build_basic_work_item_targets_code_and_pytest() -> None:
