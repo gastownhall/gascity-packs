@@ -1,0 +1,1824 @@
+{
+  "model": "jev-1.13.0",
+  "rows": [
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.83,
+      "confirm_p_confirmed": 0.88,
+      "violate_p": 0.2
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.86,
+      "confirm_p_confirmed": 0.89,
+      "violate_p": 0.21
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 1.0,
+      "confirm_p_confirmed": 1.0,
+      "violate_p": 0.11
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.87,
+      "confirm_p_confirmed": 0.9,
+      "violate_p": 0.19
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.92,
+      "confirm_p_confirmed": 0.94,
+      "violate_p": 0.12
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.85,
+      "confirm_p_confirmed": 0.89,
+      "violate_p": 0.21
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.87,
+      "confirm_p_confirmed": 0.91,
+      "violate_p": 0.22
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 1.0,
+      "confirm_p_confirmed": 1.0,
+      "violate_p": 0.11
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.87,
+      "confirm_p_confirmed": 0.9,
+      "violate_p": 0.17
+    },
+    {
+      "variant": "V01-findall",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.83,
+      "confirm_p_confirmed": 0.88,
+      "violate_p": 0.11
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.87,
+      "confirm_p_confirmed": 0.91,
+      "violate_p": 0.18
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.76,
+      "confirm_p_confirmed": 0.82,
+      "violate_p": 0.27
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.98,
+      "confirm_p_confirmed": 0.98,
+      "violate_p": 0.11
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.92,
+      "confirm_p_confirmed": 0.94,
+      "violate_p": 0.15
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.76,
+      "confirm_p_confirmed": 0.82,
+      "violate_p": 0.17
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.87,
+      "confirm_p_confirmed": 0.9,
+      "violate_p": 0.17
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.74,
+      "confirm_p_confirmed": 0.81,
+      "violate_p": 0.27
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.99,
+      "confirm_p_confirmed": 0.99,
+      "violate_p": 0.12
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.87,
+      "confirm_p_confirmed": 0.91,
+      "violate_p": 0.16
+    },
+    {
+      "variant": "V02-split",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.68,
+      "confirm_p_confirmed": 0.77,
+      "violate_p": 0.18
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.77,
+      "confirm_p_confirmed": 0.83,
+      "violate_p": 0.35
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.69,
+      "confirm_p_confirmed": 0.77,
+      "violate_p": 0.37
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.99,
+      "confirm_p_confirmed": 1.0,
+      "violate_p": 0.12
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.95,
+      "confirm_p_confirmed": 0.96,
+      "violate_p": 0.11
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.96,
+      "confirm_p_confirmed": 0.97,
+      "violate_p": 0.12
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.8,
+      "confirm_p_confirmed": 0.85,
+      "violate_p": 0.31
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.7,
+      "confirm_p_confirmed": 0.78,
+      "violate_p": 0.34
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.99,
+      "confirm_p_confirmed": 1.0,
+      "violate_p": 0.12
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.98,
+      "confirm_p_confirmed": 0.98,
+      "violate_p": 0.12
+    },
+    {
+      "variant": "V03-loop",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.96,
+      "confirm_p_confirmed": 0.97,
+      "violate_p": 0.13
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.77,
+      "confirm_p_confirmed": 0.83,
+      "violate_p": 0.21
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.57,
+      "confirm_p_confirmed": 0.68,
+      "violate_p": 0.38
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.86,
+      "confirm_p_confirmed": 0.89,
+      "violate_p": 0.17
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.84,
+      "confirm_p_confirmed": 0.88,
+      "violate_p": 0.15
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.76,
+      "confirm_p_confirmed": 0.82,
+      "violate_p": 0.28
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.83,
+      "confirm_p_confirmed": 0.88,
+      "violate_p": 0.25
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.43,
+      "confirm_p_confirmed": 0.58,
+      "violate_p": 0.44
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.89,
+      "confirm_p_confirmed": 0.92,
+      "violate_p": 0.18
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.85,
+      "confirm_p_confirmed": 0.89,
+      "violate_p": 0.15
+    },
+    {
+      "variant": "V06-sub-strip",
+      "kind": "ok",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.68,
+      "confirm_p_confirmed": 0.76,
+      "violate_p": 0.31
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.61,
+      "confirm_p_confirmed": 0.71,
+      "violate_p": 0.45
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.83,
+      "confirm_p_confirmed": 0.87,
+      "violate_p": 0.28
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.99,
+      "confirm_p_confirmed": 0.99,
+      "violate_p": 0.12
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.73,
+      "confirm_p_confirmed": 0.8,
+      "violate_p": 0.31
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": false,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.57,
+      "confirm_p_confirmed": 0.68,
+      "violate_p": 0.44
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.61,
+      "confirm_p_confirmed": 0.71,
+      "violate_p": 0.45
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.9,
+      "confirm_p_confirmed": 0.93,
+      "violate_p": 0.27
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.99,
+      "confirm_p_confirmed": 0.99,
+      "violate_p": 0.12
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.75,
+      "confirm_p_confirmed": 0.81,
+      "violate_p": 0.35
+    },
+    {
+      "variant": "V04-unicode",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": false,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.58,
+      "confirm_p_confirmed": 0.69,
+      "violate_p": 0.5
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.34,
+      "confirm_p_confirmed": 0.51,
+      "violate_p": 0.5
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.84,
+      "confirm_p_confirmed": 0.12,
+      "violate_p": 0.86
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.86,
+      "confirm_p_confirmed": 0.9,
+      "violate_p": 0.18
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.84,
+      "confirm_p_confirmed": 0.89,
+      "violate_p": 0.22
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.64,
+      "confirm_p_confirmed": 0.27,
+      "violate_p": 0.79
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.45,
+      "confirm_p_confirmed": 0.41,
+      "violate_p": 0.55
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.87,
+      "confirm_p_confirmed": 0.1,
+      "violate_p": 0.86
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.84,
+      "confirm_p_confirmed": 0.88,
+      "violate_p": 0.22
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.82,
+      "confirm_p_confirmed": 0.87,
+      "violate_p": 0.22
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.51,
+      "confirm_p_confirmed": 0.37,
+      "violate_p": 0.76
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.73,
+      "confirm_p_confirmed": 0.8,
+      "violate_p": 0.25
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.42,
+      "confirm_p_confirmed": 0.5700000000000001,
+      "violate_p": 0.49
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": false,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.8,
+      "confirm_p_confirmed": 0.85,
+      "violate_p": 0.25
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.82,
+      "confirm_p_confirmed": 0.87,
+      "violate_p": 0.17
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.65,
+      "confirm_p_confirmed": 0.74,
+      "violate_p": 0.34
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.82,
+      "confirm_p_confirmed": 0.87,
+      "violate_p": 0.23
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.44,
+      "confirm_p_confirmed": 0.58,
+      "violate_p": 0.44
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": false,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.81,
+      "confirm_p_confirmed": 0.86,
+      "violate_p": 0.23
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.83,
+      "confirm_p_confirmed": 0.88,
+      "violate_p": 0.16
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.74,
+      "confirm_p_confirmed": 0.81,
+      "violate_p": 0.31
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.99,
+      "confirm_p_confirmed": 0.0,
+      "violate_p": 0.96
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.45,
+      "confirm_p_confirmed": 0.41,
+      "violate_p": 0.65
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.95,
+      "confirm_p_confirmed": 0.96,
+      "violate_p": 0.14
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.77,
+      "confirm_p_confirmed": 0.83,
+      "violate_p": 0.31
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.68,
+      "confirm_p_confirmed": 0.76,
+      "violate_p": 0.16
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.99,
+      "confirm_p_confirmed": 0.0,
+      "violate_p": 0.95
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.44,
+      "confirm_p_confirmed": 0.42,
+      "violate_p": 0.59
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.95,
+      "confirm_p_confirmed": 0.96,
+      "violate_p": 0.14
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.73,
+      "confirm_p_confirmed": 0.8,
+      "violate_p": 0.23
+    },
+    {
+      "variant": "V08-letters-only",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.7,
+      "confirm_p_confirmed": 0.78,
+      "violate_p": 0.16
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.94,
+      "confirm_p_confirmed": 0.05,
+      "violate_p": 0.92
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.47,
+      "confirm_p_confirmed": 0.61,
+      "violate_p": 0.42
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.91,
+      "confirm_p_confirmed": 0.9400000000000001,
+      "violate_p": 0.19
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.73,
+      "confirm_p_confirmed": 0.8,
+      "violate_p": 0.18
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.85,
+      "confirm_p_confirmed": 0.89,
+      "violate_p": 0.14
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.94,
+      "confirm_p_confirmed": 0.04,
+      "violate_p": 0.93
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.51,
+      "confirm_p_confirmed": 0.63,
+      "violate_p": 0.48
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.93,
+      "confirm_p_confirmed": 0.95,
+      "violate_p": 0.17
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.81,
+      "confirm_p_confirmed": 0.86,
+      "violate_p": 0.14
+    },
+    {
+      "variant": "V10-truncate",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.89,
+      "confirm_p_confirmed": 0.92,
+      "violate_p": 0.14
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.7,
+      "confirm_p_confirmed": 0.78,
+      "violate_p": 0.24
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.55,
+      "confirm_p_confirmed": 0.34,
+      "violate_p": 0.73
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.96,
+      "confirm_p_confirmed": 0.97,
+      "violate_p": 0.14
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.88,
+      "confirm_p_confirmed": 0.91,
+      "violate_p": 0.16
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 1,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.78,
+      "confirm_p_confirmed": 0.84,
+      "violate_p": 0.16
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C1",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.77,
+      "confirm_p_confirmed": 0.83,
+      "violate_p": 0.22
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C2",
+      "truth_holds": false,
+      "confirm_choice": "contradicted",
+      "confirm_conf": 0.58,
+      "confirm_p_confirmed": 0.31,
+      "violate_p": 0.71
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C3",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.96,
+      "confirm_p_confirmed": 0.97,
+      "violate_p": 0.15
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C4",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.88,
+      "confirm_p_confirmed": 0.91,
+      "violate_p": 0.13
+    },
+    {
+      "variant": "V11-camel",
+      "kind": "bug",
+      "receipts": {
+        "tests_unchanged": true,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "rep": 2,
+      "criterion": "C5",
+      "truth_holds": true,
+      "confirm_choice": "confirmed",
+      "confirm_conf": 0.84,
+      "confirm_p_confirmed": 0.88,
+      "violate_p": 0.17
+    },
+    {
+      "variant": "V09-tampered-tests",
+      "kind": "receipt",
+      "receipts": {
+        "tests_unchanged": false,
+        "pytest_exit": 0,
+        "pytest_tail": "3 passed in 0.00s"
+      },
+      "decided_by": "receipts",
+      "truth": {
+        "C1": true,
+        "C2": true,
+        "C3": true,
+        "C4": true,
+        "C5": true
+      }
+    }
+  ],
+  "calls": [
+    {
+      "variant": "V01-findall",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2094,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.41438008297700435,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V01-findall",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2094,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.5110427079489455,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V02-split",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2097,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.32727045798674226,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V02-split",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2097,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.31673595891334116,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V03-loop",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2130,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.3401224999688566,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V03-loop",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2130,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.30531112500466406,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V06-sub-strip",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2085,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.2950003750156611,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V06-sub-strip",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2085,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.35528541705571115,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V04-unicode",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2124,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.3114044580142945,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V04-unicode",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2124,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.3744100419571623,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2095,
+        "output_tokens": 370
+      },
+      "elapsed_s": 0.3500866669928655,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V05-fixed-seps",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2095,
+        "output_tokens": 373
+      },
+      "elapsed_s": 0.4302722499705851,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2087,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.3980199999641627,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V07-lead-hyphen",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2087,
+        "output_tokens": 364
+      },
+      "elapsed_s": 0.3747557910392061,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V08-letters-only",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2091,
+        "output_tokens": 370
+      },
+      "elapsed_s": 0.41146550001576543,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V08-letters-only",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2091,
+        "output_tokens": 370
+      },
+      "elapsed_s": 0.3813218749128282,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V10-truncate",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2101,
+        "output_tokens": 367
+      },
+      "elapsed_s": 0.32914037501905113,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V10-truncate",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2101,
+        "output_tokens": 367
+      },
+      "elapsed_s": 0.406778083066456,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V11-camel",
+      "rep": 1,
+      "usage": {
+        "input_tokens": 2121,
+        "output_tokens": 367
+      },
+      "elapsed_s": 0.326402583043091,
+      "model": "jev-1.13.0"
+    },
+    {
+      "variant": "V11-camel",
+      "rep": 2,
+      "usage": {
+        "input_tokens": 2121,
+        "output_tokens": 367
+      },
+      "elapsed_s": 0.39698162500280887,
+      "model": "jev-1.13.0"
+    }
+  ]
+}

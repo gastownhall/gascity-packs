@@ -1,0 +1,12 @@
+{
+  "attempts": [
+    {
+      "ok": false,
+      "status": 422,
+      "error": "{\"detail\":[{\"type\":\"list_type\",\"loc\":[\"body\",\"questions\",\"size\",\"score\",\"criteria\"],\"msg\":\"Input should be a valid list\",\"input\":{\"compact\":\"A small, localized change: a single focused fix, test fix, doc tweak, or config/value change, likely touching one to three files and well under a hundred changed lines, with no new concepts.\",\"standard\":\"A moderate change: several files or a few hundred changed lines, touching a few interacting components, usually with new or changed tests, but no new architecture.\",\"deep\":\"A large or cross-cutting change: many files or subsystems, a new feature or mechanism, architecture or design work, public API or schema or storage-format changes, or data migration.\"}}]}",
+      "latency_s": 0.31293095799628645,
+      "attempt": 1,
+      "at": "2026-09-24T16:25:56.421441+00:00"
+    }
+  ]
+}

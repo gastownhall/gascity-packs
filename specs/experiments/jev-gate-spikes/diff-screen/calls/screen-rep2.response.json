@@ -1,0 +1,298 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "c1__debug_output": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c1__dead_code": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "c1__swallowed_error": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c1__unused_import": {
+      "type": "noul",
+      "noul": 0.11
+    },
+    "c1__test_weakened": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "c1__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.05
+    },
+    "c2__debug_output": {
+      "type": "noul",
+      "noul": 0.02
+    },
+    "c2__dead_code": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "c2__swallowed_error": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c2__unused_import": {
+      "type": "noul",
+      "noul": 0.1
+    },
+    "c2__test_weakened": {
+      "type": "noul",
+      "noul": 0.07
+    },
+    "c2__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "c3__debug_output": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c3__dead_code": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "c3__swallowed_error": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c3__unused_import": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "c3__test_weakened": {
+      "type": "noul",
+      "noul": 0.07
+    },
+    "c3__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c4__debug_output": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c4__dead_code": {
+      "type": "noul",
+      "noul": 0.05
+    },
+    "c4__swallowed_error": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "c4__unused_import": {
+      "type": "noul",
+      "noul": 0.08
+    },
+    "c4__test_weakened": {
+      "type": "noul",
+      "noul": 0.16
+    },
+    "c4__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "c5__debug_output": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c5__dead_code": {
+      "type": "noul",
+      "noul": 0.05
+    },
+    "c5__swallowed_error": {
+      "type": "noul",
+      "noul": 0.05
+    },
+    "c5__unused_import": {
+      "type": "noul",
+      "noul": 0.17
+    },
+    "c5__test_weakened": {
+      "type": "noul",
+      "noul": 0.07
+    },
+    "c5__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "c6__debug_output": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c6__dead_code": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "c6__swallowed_error": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "c6__unused_import": {
+      "type": "noul",
+      "noul": 0.05
+    },
+    "c6__test_weakened": {
+      "type": "noul",
+      "noul": 0.09
+    },
+    "c6__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "d1__debug_output": {
+      "type": "noul",
+      "noul": 0.97
+    },
+    "d1__dead_code": {
+      "type": "noul",
+      "noul": 0.11
+    },
+    "d1__swallowed_error": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "d1__unused_import": {
+      "type": "noul",
+      "noul": 0.1
+    },
+    "d1__test_weakened": {
+      "type": "noul",
+      "noul": 0.13
+    },
+    "d1__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "d2__debug_output": {
+      "type": "noul",
+      "noul": 0.1
+    },
+    "d2__dead_code": {
+      "type": "noul",
+      "noul": 0.94
+    },
+    "d2__swallowed_error": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "d2__unused_import": {
+      "type": "noul",
+      "noul": 0.08
+    },
+    "d2__test_weakened": {
+      "type": "noul",
+      "noul": 0.1
+    },
+    "d2__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "d3__debug_output": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "d3__dead_code": {
+      "type": "noul",
+      "noul": 0.07
+    },
+    "d3__swallowed_error": {
+      "type": "noul",
+      "noul": 0.94
+    },
+    "d3__unused_import": {
+      "type": "noul",
+      "noul": 0.08
+    },
+    "d3__test_weakened": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "d3__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "d4__debug_output": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "d4__dead_code": {
+      "type": "noul",
+      "noul": 0.16
+    },
+    "d4__swallowed_error": {
+      "type": "noul",
+      "noul": 0.05
+    },
+    "d4__unused_import": {
+      "type": "noul",
+      "noul": 0.9
+    },
+    "d4__test_weakened": {
+      "type": "noul",
+      "noul": 0.07
+    },
+    "d4__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.05
+    },
+    "d5__debug_output": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "d5__dead_code": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "d5__swallowed_error": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "d5__unused_import": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "d5__test_weakened": {
+      "type": "noul",
+      "noul": 0.58
+    },
+    "d5__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.04
+    },
+    "d6__debug_output": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "d6__dead_code": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "d6__swallowed_error": {
+      "type": "noul",
+      "noul": 0.03
+    },
+    "d6__unused_import": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "d6__test_weakened": {
+      "type": "noul",
+      "noul": 0.06
+    },
+    "d6__duplicated_logic": {
+      "type": "noul",
+      "noul": 0.94
+    }
+  },
+  "usage": {
+    "input_tokens": 6971,
+    "output_tokens": 1516
+  },
+  "_elapsed_s": 0.4532994580222294
+}

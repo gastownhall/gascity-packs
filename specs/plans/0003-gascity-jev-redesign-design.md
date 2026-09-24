@@ -190,6 +190,17 @@ None.
 
 ## Open threads
 
-- Which gates the spikes select (Q5) and in what order.
+- ~~Which gates the spikes select (Q5) and in what order.~~ Settled by the
+  [gate spikes](../experiments/jev-gate-spikes/README.md), in this order:
+  1. **Review-lane gate:** receipts first (tests pass, test file unchanged),
+     then one "is there any input that violates this criterion?" Noul per
+     acceptance criterion; the lane runs only for criteria above the act band
+     (day one: P ≤ 0.15 acts).
+  2. **Smell screen:** one call with a Noul per (rule, hunk); confirmed smells
+     go straight back to the implementer, and a fully clean screen drops the
+     smell checks from the simplicity lane (design review still runs).
+  3. **Compact intake route:** size compact at confidence ≥ 0.8, no risky
+     surface and no design need send work to a compact formula; everything else
+     takes the full path. Expected coverage is about 10% of work.
 - Effort level for the Sonnet 5 workers was not specified; previous runs used
   low effort.

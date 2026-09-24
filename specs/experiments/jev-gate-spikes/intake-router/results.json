@@ -1,0 +1,4559 @@
+{
+  "protocol": "PROTOCOL.md",
+  "questions_frozen": "questions.frozen.json",
+  "runs": {
+    "pilot-2 (questions v2)": {
+      "n": 10,
+      "answered": 10,
+      "failed_calls": 0,
+      "retries": 0,
+      "gt_distribution": {
+        "compact": 1,
+        "standard": 5,
+        "deep": 4
+      },
+      "confusion_gt_rows_by_jev_size_argmax": {
+        "compact": {
+          "compact": 1,
+          "standard": 0,
+          "deep": 0,
+          "no_answer": 0
+        },
+        "standard": {
+          "compact": 4,
+          "standard": 0,
+          "deep": 1,
+          "no_answer": 0
+        },
+        "deep": {
+          "compact": 1,
+          "standard": 2,
+          "deep": 1,
+          "no_answer": 0
+        }
+      },
+      "size_argmax_accuracy": 0.2,
+      "answer_distributions": {
+        "needs_design": {
+          "no": 8,
+          "yes": 2
+        },
+        "risky_surface": {
+          "none": 3,
+          "persistence_or_migration": 2,
+          "public_api_or_schema": 4,
+          "security_or_auth": 1
+        },
+        "well_specified": {
+          "clear_acceptance_criteria": 9,
+          "partially_specified": 1
+        }
+      },
+      "tokens": {
+        "input": 15950,
+        "output": 1865
+      },
+      "latency_s": {
+        "total": 4.09,
+        "median": 0.39,
+        "max": 0.643
+      },
+      "models": [
+        "jev-1.13.0"
+      ],
+      "routing": {
+        "primary": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 3,
+            "coverage": 0.3,
+            "under_triage": 3,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 5868,
+                "title": "fix(cmd/gc): thread a live events.Recorder into the CLI worker.Factory",
+                "gt": "standard",
+                "lines": 368,
+                "files": 5,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.74,
+                  "standard": 0.26,
+                  "deep": 0.0
+                },
+                "size_conf": 0.6,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              5868,
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 2,
+            "coverage": 0.2,
+            "under_triage": 2,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 2,
+            "coverage": 0.2,
+            "under_triage": 2,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 1,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          }
+        ],
+        "with_spec": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 3,
+            "coverage": 0.3,
+            "under_triage": 3,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 5868,
+                "title": "fix(cmd/gc): thread a live events.Recorder into the CLI worker.Factory",
+                "gt": "standard",
+                "lines": 368,
+                "files": 5,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.74,
+                  "standard": 0.26,
+                  "deep": 0.0
+                },
+                "size_conf": 0.6,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              5868,
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 2,
+            "coverage": 0.2,
+            "under_triage": 2,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 2,
+            "coverage": 0.2,
+            "under_triage": 2,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 1,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          }
+        ],
+        "p_compact": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 3,
+            "coverage": 0.3,
+            "under_triage": 3,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 5868,
+                "title": "fix(cmd/gc): thread a live events.Recorder into the CLI worker.Factory",
+                "gt": "standard",
+                "lines": 368,
+                "files": 5,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.74,
+                  "standard": 0.26,
+                  "deep": 0.0
+                },
+                "size_conf": 0.6,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              5868,
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 3,
+            "coverage": 0.3,
+            "under_triage": 3,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 5868,
+                "title": "fix(cmd/gc): thread a live events.Recorder into the CLI worker.Factory",
+                "gt": "standard",
+                "lines": 368,
+                "files": 5,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.74,
+                  "standard": 0.26,
+                  "deep": 0.0
+                },
+                "size_conf": 0.6,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              5868,
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 2,
+            "coverage": 0.2,
+            "under_triage": 2,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 6424,
+                "title": "Fix reaper type-scope guard to fail closed on count errors",
+                "gt": "standard",
+                "lines": 178,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 0.88,
+                  "standard": 0.12,
+                  "deep": 0.0
+                },
+                "size_conf": 0.82,
+                "risky_surface": "none",
+                "needs_design": "no"
+              },
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              6424,
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 1,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 1.0,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": 0.0,
+            "under_triage_cases": [
+              {
+                "number": 6428,
+                "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+                "gt": "standard",
+                "lines": 125,
+                "files": 3,
+                "classes": [],
+                "size_probs": {
+                  "compact": 1.0,
+                  "standard": 0.0,
+                  "deep": 0.0
+                },
+                "size_conf": 1.0,
+                "risky_surface": "none",
+                "needs_design": "no"
+              }
+            ],
+            "routed_compact_prs": [
+              6428
+            ],
+            "over_triage_prs": [
+              5756
+            ]
+          }
+        ]
+      },
+      "dir": "calls/pilot-2",
+      "near_misses_single_guard_t0.6": [
+        {
+          "number": 5678,
+          "title": "fix(bd): reach the wisps tier on gc bd list --type=molecule (ga-bdmol)",
+          "gt": "standard",
+          "lines": 272,
+          "files": 4,
+          "only_guard_that_held": "risky_surface",
+          "size_probs": {
+            "compact": 0.74,
+            "standard": 0.26,
+            "deep": 0.0
+          },
+          "size_conf": 0.61,
+          "risky_surface": "public_api_or_schema",
+          "needs_design": "no"
+        }
+      ],
+      "per_pr": [
+        {
+          "number": 5658,
+          "title": "fix(config): make model and effort open options across all providers (ga-fyh)",
+          "gt": "deep",
+          "lines": 1572,
+          "files": 18,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4093327500158921,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.2,
+            "deep": 0.8
+          },
+          "size_score": 1.8,
+          "size_conf": 0.7,
+          "needs_design": "yes",
+          "needs_design_conf": 0.9,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.76,
+          "well_specified": "partially_specified",
+          "in_tokens": 1796,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5678,
+          "title": "fix(bd): reach the wisps tier on gc bd list --type=molecule (ga-bdmol)",
+          "gt": "standard",
+          "lines": 272,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3051647499669343,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.74,
+            "standard": 0.26,
+            "deep": 0.0
+          },
+          "size_score": 0.26,
+          "size_conf": 0.61,
+          "needs_design": "no",
+          "needs_design_conf": 0.97,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.94,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1508,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5756,
+          "title": "fix(events): fail a short single-record write instead of counting it as written",
+          "gt": "compact",
+          "lines": 53,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3752239169552922,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.83,
+            "standard": 0.17,
+            "deep": 0.0
+          },
+          "size_score": 0.17,
+          "size_conf": 0.75,
+          "needs_design": "no",
+          "needs_design_conf": 0.98,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.6,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1557,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5853,
+          "title": "fix(dolt): keep notify cadence outside evidence markers",
+          "gt": "standard",
+          "lines": 268,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.6425286669982597,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.02,
+            "deep": 0.98
+          },
+          "size_score": 1.98,
+          "size_conf": 0.97,
+          "needs_design": "yes",
+          "needs_design_conf": 0.94,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.77,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1419,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5868,
+          "title": "fix(cmd/gc): thread a live events.Recorder into the CLI worker.Factory",
+          "gt": "standard",
+          "lines": 368,
+          "files": 5,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4584162080427632,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.74,
+            "standard": 0.26,
+            "deep": 0.0
+          },
+          "size_score": 0.26,
+          "size_conf": 0.6,
+          "needs_design": "no",
+          "needs_design_conf": 0.95,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.73,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2752,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6422,
+          "title": "Fix gc status liveness for pool-named sessions",
+          "gt": "deep",
+          "lines": 383,
+          "files": 3,
+          "classes": [
+            "api_contract"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.40389837499242276,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.57,
+            "standard": 0.43,
+            "deep": 0.0
+          },
+          "size_score": 0.43,
+          "size_conf": 0.35,
+          "needs_design": "no",
+          "needs_design_conf": 0.96,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.72,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1332,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6424,
+          "title": "Fix reaper type-scope guard to fail closed on count errors",
+          "gt": "standard",
+          "lines": 178,
+          "files": 3,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3348829580936581,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.88,
+            "standard": 0.12,
+            "deep": 0.0
+          },
+          "size_score": 0.12,
+          "size_conf": 0.82,
+          "needs_design": "no",
+          "needs_design_conf": 0.99,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.53,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1414,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6428,
+          "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+          "gt": "standard",
+          "lines": 125,
+          "files": 3,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4767961249453947,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 1.0,
+            "standard": 0.0,
+            "deep": 0.0
+          },
+          "size_score": 0.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 1.0,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1414,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6430,
+          "title": "Make explicit session restarts prompt and non-blocking",
+          "gt": "deep",
+          "lines": 654,
+          "files": 12,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3186325420392677,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.83,
+            "deep": 0.17
+          },
+          "size_score": 1.17,
+          "size_conf": 0.74,
+          "needs_design": "no",
+          "needs_design_conf": 0.34,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.73,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1412,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6432,
+          "title": "Fix pool work-dir isolation without breaking MCP projection",
+          "gt": "deep",
+          "lines": 615,
+          "files": 7,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3651429589372128,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.99,
+            "deep": 0.01
+          },
+          "size_score": 1.01,
+          "size_conf": 0.97,
+          "needs_design": "no",
+          "needs_design_conf": 0.55,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.72,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1346,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        }
+      ]
+    },
+    "pilot-3 (questions v3 = frozen)": {
+      "n": 10,
+      "answered": 10,
+      "failed_calls": 0,
+      "retries": 0,
+      "gt_distribution": {
+        "compact": 1,
+        "standard": 5,
+        "deep": 4
+      },
+      "confusion_gt_rows_by_jev_size_argmax": {
+        "compact": {
+          "compact": 0,
+          "standard": 1,
+          "deep": 0,
+          "no_answer": 0
+        },
+        "standard": {
+          "compact": 1,
+          "standard": 3,
+          "deep": 1,
+          "no_answer": 0
+        },
+        "deep": {
+          "compact": 0,
+          "standard": 3,
+          "deep": 1,
+          "no_answer": 0
+        }
+      },
+      "size_argmax_accuracy": 0.4,
+      "answer_distributions": {
+        "needs_design": {
+          "no": 8,
+          "yes": 2
+        },
+        "risky_surface": {
+          "none": 2,
+          "persistence_or_migration": 3,
+          "public_api_or_schema": 4,
+          "security_or_auth": 1
+        },
+        "well_specified": {
+          "clear_acceptance_criteria": 9,
+          "partially_specified": 1
+        }
+      },
+      "tokens": {
+        "input": 16750,
+        "output": 1871
+      },
+      "latency_s": {
+        "total": 4.0,
+        "median": 0.347,
+        "max": 0.639
+      },
+      "models": [
+        "jev-1.13.0"
+      ],
+      "routing": {
+        "primary": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          }
+        ],
+        "with_spec": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          }
+        ],
+        "p_compact": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 1,
+            "gt_compact": 1,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5756
+            ]
+          }
+        ]
+      },
+      "dir": "calls/pilot-3",
+      "near_misses_single_guard_t0.6": [
+        {
+          "number": 6428,
+          "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+          "gt": "standard",
+          "lines": 125,
+          "files": 3,
+          "only_guard_that_held": "size_confidence",
+          "size_probs": {
+            "compact": 0.59,
+            "standard": 0.41,
+            "deep": 0.0
+          },
+          "size_conf": 0.38,
+          "risky_surface": "none",
+          "needs_design": "no"
+        }
+      ],
+      "per_pr": [
+        {
+          "number": 5658,
+          "title": "fix(config): make model and effort open options across all providers (ga-fyh)",
+          "gt": "deep",
+          "lines": 1572,
+          "files": 18,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3935323338955641,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.26,
+            "deep": 0.74
+          },
+          "size_score": 1.74,
+          "size_conf": 0.61,
+          "needs_design": "yes",
+          "needs_design_conf": 0.92,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.74,
+          "well_specified": "partially_specified",
+          "in_tokens": 1876,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5678,
+          "title": "fix(bd): reach the wisps tier on gc bd list --type=molecule (ga-bdmol)",
+          "gt": "standard",
+          "lines": 272,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.29876725003123283,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.01,
+            "standard": 0.99,
+            "deep": 0.0
+          },
+          "size_score": 0.99,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.97,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.92,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1588,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5756,
+          "title": "fix(events): fail a short single-record write instead of counting it as written",
+          "gt": "compact",
+          "lines": 53,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.6359697909792885,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 0.98,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.7,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1637,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5853,
+          "title": "fix(dolt): keep notify cadence outside evidence markers",
+          "gt": "standard",
+          "lines": 268,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3251202499959618,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.01,
+            "deep": 0.99
+          },
+          "size_score": 1.99,
+          "size_conf": 0.98,
+          "needs_design": "yes",
+          "needs_design_conf": 0.95,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.83,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1499,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5868,
+          "title": "fix(cmd/gc): thread a live events.Recorder into the CLI worker.Factory",
+          "gt": "standard",
+          "lines": 368,
+          "files": 5,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.39627837494481355,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.94,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.7,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2832,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6422,
+          "title": "Fix gc status liveness for pool-named sessions",
+          "gt": "deep",
+          "lines": 383,
+          "files": 3,
+          "classes": [
+            "api_contract"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.6389493340393528,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.95,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.67,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1412,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6424,
+          "title": "Fix reaper type-scope guard to fail closed on count errors",
+          "gt": "standard",
+          "lines": 178,
+          "files": 3,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.33650312502868474,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.05,
+            "standard": 0.95,
+            "deep": 0.0
+          },
+          "size_score": 0.95,
+          "size_conf": 0.92,
+          "needs_design": "no",
+          "needs_design_conf": 0.99,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.89,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1494,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6428,
+          "title": "fix(herdr): restore repository-wide vet after test helper refactor",
+          "gt": "standard",
+          "lines": 125,
+          "files": 3,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.2982992500765249,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.59,
+            "standard": 0.41,
+            "deep": 0.0
+          },
+          "size_score": 0.41,
+          "size_conf": 0.38,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 1.0,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1494,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6430,
+          "title": "Make explicit session restarts prompt and non-blocking",
+          "gt": "deep",
+          "lines": 654,
+          "files": 12,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3163702079327777,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.77,
+            "deep": 0.23
+          },
+          "size_score": 1.23,
+          "size_conf": 0.65,
+          "needs_design": "no",
+          "needs_design_conf": 0.33,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.73,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1492,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6432,
+          "title": "Fix pool work-dir isolation without breaking MCP projection",
+          "gt": "deep",
+          "lines": 615,
+          "files": 7,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.35660016699694097,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.95,
+            "deep": 0.05
+          },
+          "size_score": 1.05,
+          "size_conf": 0.93,
+          "needs_design": "no",
+          "needs_design_conf": 0.54,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.74,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1426,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        }
+      ]
+    },
+    "eval (frozen, PR+issue request)": {
+      "n": 60,
+      "answered": 60,
+      "failed_calls": 0,
+      "retries": 0,
+      "gt_distribution": {
+        "compact": 10,
+        "standard": 30,
+        "deep": 20
+      },
+      "confusion_gt_rows_by_jev_size_argmax": {
+        "compact": {
+          "compact": 7,
+          "standard": 3,
+          "deep": 0,
+          "no_answer": 0
+        },
+        "standard": {
+          "compact": 2,
+          "standard": 28,
+          "deep": 0,
+          "no_answer": 0
+        },
+        "deep": {
+          "compact": 0,
+          "standard": 10,
+          "deep": 10,
+          "no_answer": 0
+        }
+      },
+      "size_argmax_accuracy": 0.75,
+      "answer_distributions": {
+        "needs_design": {
+          "no": 49,
+          "yes": 11
+        },
+        "risky_surface": {
+          "none": 31,
+          "persistence_or_migration": 9,
+          "public_api_or_schema": 8,
+          "security_or_auth": 12
+        },
+        "well_specified": {
+          "clear_acceptance_criteria": 57,
+          "partially_specified": 3
+        }
+      },
+      "tokens": {
+        "input": 125518,
+        "output": 11139
+      },
+      "latency_s": {
+        "total": 22.37,
+        "median": 0.359,
+        "max": 0.756
+      },
+      "models": [
+        "jev-1.13.0"
+      ],
+      "routing": {
+        "primary": [
+          {
+            "threshold": 0.6,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 6,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 4,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.4,
+            "compact_recall": 0.6,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6450,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6453,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 6,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 4,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.4,
+            "compact_recall": 0.6,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6450,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6453,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 6,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 4,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.4,
+            "compact_recall": 0.6,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6450,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6453,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 6,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 4,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.4,
+            "compact_recall": 0.6,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6450,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6453,
+              6480,
+              6545
+            ]
+          }
+        ],
+        "with_spec": [
+          {
+            "threshold": 0.6,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 5,
+            "coverage": 0.083,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 5,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6450,
+              6453,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 5,
+            "coverage": 0.083,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 5,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6450,
+              6453,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 5,
+            "coverage": 0.083,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 5,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6450,
+              6453,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 5,
+            "coverage": 0.083,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 5,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6450,
+              6453,
+              6480,
+              6545
+            ]
+          }
+        ],
+        "p_compact": [
+          {
+            "threshold": 0.6,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 7,
+            "coverage": 0.117,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 3,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.3,
+            "compact_recall": 0.7,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6450,
+              6453,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 6,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 4,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.4,
+            "compact_recall": 0.6,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6450,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6453,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 6,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 4,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.4,
+            "compact_recall": 0.6,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6450,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6453,
+              6480,
+              6545
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 60,
+            "answered": 60,
+            "routed_compact": 6,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 4,
+            "gt_compact": 10,
+            "over_triage_rate_of_gt_compact": 0.4,
+            "compact_recall": 0.6,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              5871,
+              6411,
+              6436,
+              6450,
+              6455,
+              6502
+            ],
+            "over_triage_prs": [
+              5913,
+              6453,
+              6480,
+              6545
+            ]
+          }
+        ]
+      },
+      "dir": "calls/eval",
+      "near_misses_single_guard_t0.6": [
+        {
+          "number": 6460,
+          "title": "fix(session): restore safe named-session alias resolution (rebased)",
+          "gt": "standard",
+          "lines": 515,
+          "files": 3,
+          "only_guard_that_held": "risky_surface",
+          "size_probs": {
+            "compact": 0.89,
+            "standard": 0.1,
+            "deep": 0.01
+          },
+          "size_conf": 0.82,
+          "risky_surface": "security_or_auth",
+          "needs_design": "no"
+        },
+        {
+          "number": 6467,
+          "title": "test(gc): drain async start wave before TempDir cleanup",
+          "gt": "standard",
+          "lines": 140,
+          "files": 2,
+          "only_guard_that_held": "size_confidence",
+          "size_probs": {
+            "compact": 0.57,
+            "standard": 0.43,
+            "deep": 0.0
+          },
+          "size_conf": 0.35,
+          "risky_surface": "none",
+          "needs_design": "no"
+        }
+      ],
+      "per_pr": [
+        {
+          "number": 5745,
+          "title": "fix(doctor): pin custom-types checks to configured store",
+          "gt": "standard",
+          "lines": 519,
+          "files": 5,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3576675000367686,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.98,
+            "deep": 0.02
+          },
+          "size_score": 1.02,
+          "size_conf": 0.97,
+          "needs_design": "no",
+          "needs_design_conf": 0.96,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.6,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2617,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5775,
+          "title": "fix(nudge): re-fence stale queued nudges instead of dead-lettering (ga-bow)",
+          "gt": "standard",
+          "lines": 370,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.34518495795782655,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.01,
+            "standard": 0.99,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.92,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.24,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1614,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5828,
+          "title": "fix(drain): token-bind the reminder's agent-ack pin \u2014 stale pane residue must not read as an answer",
+          "gt": "deep",
+          "lines": 736,
+          "files": 11,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3279813750414178,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.71,
+            "deep": 0.29
+          },
+          "size_score": 1.29,
+          "size_conf": 0.56,
+          "needs_design": "yes",
+          "needs_design_conf": 0.42,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.5,
+          "well_specified": "partially_specified",
+          "in_tokens": 1517,
+          "out_tokens": 185,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5871,
+          "title": "fix(doltpool): bound idle connections below the server's wait_timeout",
+          "gt": "compact",
+          "lines": 48,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.32520295795984566,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.99,
+            "standard": 0.01,
+            "deep": 0.0
+          },
+          "size_score": 0.01,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.92,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1696,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5881,
+          "title": "feat(doctor): warn when the managed Dolt server log grows unbounded",
+          "gt": "standard",
+          "lines": 336,
+          "files": 9,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.36944204196333885,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.98,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.44,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1967,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5901,
+          "title": "fix(hook): gate workflow root run_target fallback on gc.workflow_expanded (#5900)",
+          "gt": "deep",
+          "lines": 305,
+          "files": 45,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3310485000256449,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.99,
+            "deep": 0.01
+          },
+          "size_score": 1.01,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.82,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.44,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2785,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5913,
+          "title": "fix(supervisor): guard the supervisor socket path against Unix domain socket length limits (#5845)",
+          "gt": "compact",
+          "lines": 63,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.35986774996854365,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.49,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2744,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5921,
+          "title": "fix(tmux): back off the process snapshot instead of re-forking it every refresh",
+          "gt": "standard",
+          "lines": 227,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.38243762496858835,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 0.87,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.98,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1887,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5931,
+          "title": "feat(reconciler): emit a counted event when a control scope has no dispatcher",
+          "gt": "deep",
+          "lines": 1418,
+          "files": 38,
+          "classes": [
+            "api_contract"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.32924016704782844,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.13,
+            "deep": 0.87
+          },
+          "size_score": 1.87,
+          "size_conf": 0.81,
+          "needs_design": "yes",
+          "needs_design_conf": 0.85,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.96,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2679,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5933,
+          "title": "fix(mail): respect cfg.Mail.RetentionTTL in the nudge-mail sweep instead of a hardcoded 60m (#5877)",
+          "gt": "standard",
+          "lines": 428,
+          "files": 12,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.35561683296691626,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.99,
+            "deep": 0.01
+          },
+          "size_score": 1.01,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.94,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.51,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2806,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5938,
+          "title": "fix(sessionlog): thread the transcript entry's own timestamp through to Fact.At instead of stamping now (#5825)",
+          "gt": "standard",
+          "lines": 279,
+          "files": 8,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4176227090647444,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.97,
+            "deep": 0.03
+          },
+          "size_score": 1.03,
+          "size_conf": 0.96,
+          "needs_design": "no",
+          "needs_design_conf": 0.84,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.45,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1786,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5939,
+          "title": "fix(nudge): add a drop verb for stale pending nudges instead of requiring manual state.json surgery (#5816)",
+          "gt": "deep",
+          "lines": 502,
+          "files": 9,
+          "classes": [
+            "schema"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3633083339082077,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.97,
+            "deep": 0.03
+          },
+          "size_score": 1.03,
+          "size_conf": 0.96,
+          "needs_design": "no",
+          "needs_design_conf": 0.98,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.37,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2178,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5980,
+          "title": "fix(nudge): close only the store the frame opened, not the storage routes' shared engine",
+          "gt": "standard",
+          "lines": 393,
+          "files": 6,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3028767079813406,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.91,
+            "deep": 0.09
+          },
+          "size_score": 1.09,
+          "size_conf": 0.86,
+          "needs_design": "no",
+          "needs_design_conf": 0.81,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.47,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2834,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5990,
+          "title": "fix(orders): dispatch due condition-triggered orders outside the per-tick rotation budget",
+          "gt": "deep",
+          "lines": 689,
+          "files": 8,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.36334629100747406,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 0.3,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.8,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2903,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5995,
+          "title": "fix(reconciler): bound a pool slot stuck in drain so its name is released",
+          "gt": "deep",
+          "lines": 2676,
+          "files": 40,
+          "classes": [
+            "api_contract"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.34244033391587436,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.6,
+            "deep": 0.4
+          },
+          "size_score": 1.4,
+          "size_conf": 0.41,
+          "needs_design": "yes",
+          "needs_design_conf": 0.59,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.38,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2263,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6020,
+          "title": "fix(graphv2): route single-session config-agent steps by gc.routed_to, leave Assignee empty",
+          "gt": "standard",
+          "lines": 405,
+          "files": 10,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3802537909941748,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.99,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.57,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1840,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6031,
+          "title": "fix(dashboard): fail closed on bd ping execution errors",
+          "gt": "deep",
+          "lines": 184,
+          "files": 3,
+          "classes": [
+            "api_contract"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.37600179109722376,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.99,
+            "deep": 0.01
+          },
+          "size_score": 1.01,
+          "size_conf": 0.98,
+          "needs_design": "no",
+          "needs_design_conf": 0.94,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.71,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1533,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6032,
+          "title": "fix(session): give drain-ack stop-pending a terminal exit \u2014 escalate wedged seats to a fenced, subreaper-aware force-termination",
+          "gt": "deep",
+          "lines": 3662,
+          "files": 57,
+          "classes": [
+            "api_contract"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3146275000181049,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.01,
+            "deep": 0.99
+          },
+          "size_score": 1.99,
+          "size_conf": 0.99,
+          "needs_design": "yes",
+          "needs_design_conf": 0.98,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.8,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2254,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6043,
+          "title": "fix(processenv): partial secrets.env parse, skip multi-line quoted blocks, redact parse errors (#5982, #6022)",
+          "gt": "standard",
+          "lines": 550,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3060187080409378,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 0.95,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.99,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2658,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6114,
+          "title": "fix(session): fence ACP startup ownership and pending-create rollback",
+          "gt": "deep",
+          "lines": 1407,
+          "files": 20,
+          "classes": [
+            "design_docs"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3674471250269562,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.38,
+            "deep": 0.62
+          },
+          "size_score": 1.62,
+          "size_conf": 0.42,
+          "needs_design": "no",
+          "needs_design_conf": 0.25,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.87,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2412,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6229,
+          "title": "fix(zcode): heartbeat the busy line while a turn is in flight",
+          "gt": "standard",
+          "lines": 380,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3943542499328032,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.99,
+            "deep": 0.01
+          },
+          "size_score": 1.01,
+          "size_conf": 0.98,
+          "needs_design": "no",
+          "needs_design_conf": 0.93,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.61,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2935,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6273,
+          "title": "feat(beads): proxied-local bd-owned Dolt by default on beads v1.3.0-rc.2",
+          "gt": "deep",
+          "lines": 27163,
+          "files": 172,
+          "classes": [
+            "design_docs",
+            "schema",
+            "security"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.5703605419257656,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.0,
+            "deep": 1.0
+          },
+          "size_score": 2.0,
+          "size_conf": 1.0,
+          "needs_design": "yes",
+          "needs_design_conf": 0.97,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.96,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2690,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6306,
+          "title": "feat(mail,supervisor): send one notification per condition, not one per interval",
+          "gt": "deep",
+          "lines": 1476,
+          "files": 14,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 1,
+          "latency_s": 0.4033841659547761,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.0,
+            "deep": 1.0
+          },
+          "size_score": 2.0,
+          "size_conf": 0.99,
+          "needs_design": "yes",
+          "needs_design_conf": 0.98,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.89,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2500,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6317,
+          "title": "fix(dolt): keep session identity out of the managed server's environment",
+          "gt": "standard",
+          "lines": 294,
+          "files": 5,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3717871669214219,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 0.95,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.48,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2787,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6401,
+          "title": "perf(gc): decline the revision snapshot in the hosted-credential probe (ga-s3cnmy)",
+          "gt": "standard",
+          "lines": 141,
+          "files": 2,
+          "classes": [
+            "security"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4355955000501126,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.35,
+            "standard": 0.65,
+            "deep": 0.0
+          },
+          "size_score": 0.65,
+          "size_conf": 0.47,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.76,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2710,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6411,
+          "title": "fix(ci): raise cmd-gc-productmetrics-testhook's timeout to fit the runner it actually gets",
+          "gt": "compact",
+          "lines": 15,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4445454999804497,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 1.0,
+            "standard": 0.0,
+            "deep": 0.0
+          },
+          "size_score": 0.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.99,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2268,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6412,
+          "title": "fix(formulas): append work-bead notes instead of replacing them",
+          "gt": "standard",
+          "lines": 96,
+          "files": 9,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3467559580458328,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.98,
+            "deep": 0.02
+          },
+          "size_score": 1.02,
+          "size_conf": 0.96,
+          "needs_design": "no",
+          "needs_design_conf": 0.99,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.63,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2610,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6436,
+          "title": "docs: preserve launcher wrappers when resuming agents",
+          "gt": "compact",
+          "lines": 5,
+          "files": 1,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3545854580588639,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.97,
+            "standard": 0.03,
+            "deep": 0.0
+          },
+          "size_score": 0.03,
+          "size_conf": 0.95,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.99,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1215,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6449,
+          "title": "Warn when an assigned sling hand-off is undeliverable",
+          "gt": "standard",
+          "lines": 462,
+          "files": 5,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.35488624998833984,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.16,
+            "standard": 0.84,
+            "deep": 0.0
+          },
+          "size_score": 0.84,
+          "size_conf": 0.76,
+          "needs_design": "no",
+          "needs_design_conf": 0.99,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.57,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1474,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6450,
+          "title": "docs: verify interactive startup for private harness homes",
+          "gt": "compact",
+          "lines": 5,
+          "files": 1,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.321324416087009,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.94,
+            "standard": 0.06,
+            "deep": 0.0
+          },
+          "size_score": 0.07,
+          "size_conf": 0.9,
+          "needs_design": "no",
+          "needs_design_conf": 0.99,
+          "risky_surface": "none",
+          "risky_surface_conf": 1.0,
+          "well_specified": "partially_specified",
+          "in_tokens": 1207,
+          "out_tokens": 183,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6451,
+          "title": "fix(reconciler): preserve adopted runtime instance tokens",
+          "gt": "standard",
+          "lines": 329,
+          "files": 3,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.31908233393915,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.06,
+            "standard": 0.94,
+            "deep": 0.0
+          },
+          "size_score": 0.94,
+          "size_conf": 0.91,
+          "needs_design": "no",
+          "needs_design_conf": 0.98,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.47,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1522,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6453,
+          "title": "docs: verify launcher liveness and preserve startup terminal output",
+          "gt": "compact",
+          "lines": 5,
+          "files": 1,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.38603762502316386,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.6,
+            "standard": 0.39,
+            "deep": 0.01
+          },
+          "size_score": 0.4,
+          "size_conf": 0.39,
+          "needs_design": "no",
+          "needs_design_conf": 0.91,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.94,
+          "well_specified": "partially_specified",
+          "in_tokens": 1232,
+          "out_tokens": 183,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6455,
+          "title": "fix: make the non-Linux Dolt lock stub lint-clean",
+          "gt": "compact",
+          "lines": 44,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3259581249440089,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.99,
+            "standard": 0.01,
+            "deep": 0.0
+          },
+          "size_score": 0.01,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.99,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1397,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6456,
+          "title": "Relaunch sessions when operator-authored environment changes",
+          "gt": "standard",
+          "lines": 314,
+          "files": 3,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.42569099995307624,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.93,
+            "deep": 0.07
+          },
+          "size_score": 1.07,
+          "size_conf": 0.9,
+          "needs_design": "no",
+          "needs_design_conf": 0.31,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.92,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1417,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6460,
+          "title": "fix(session): restore safe named-session alias resolution (rebased)",
+          "gt": "standard",
+          "lines": 515,
+          "files": 3,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.35856691701337695,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.89,
+            "standard": 0.1,
+            "deep": 0.01
+          },
+          "size_score": 0.12,
+          "size_conf": 0.82,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.61,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1946,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6467,
+          "title": "test(gc): drain async start wave before TempDir cleanup",
+          "gt": "standard",
+          "lines": 140,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3508883339818567,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.57,
+            "standard": 0.43,
+            "deep": 0.0
+          },
+          "size_score": 0.43,
+          "size_conf": 0.35,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 1.0,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1470,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6473,
+          "title": "Recover on-demand sessions with runtime-name work",
+          "gt": "standard",
+          "lines": 264,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4898808751022443,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.01,
+            "standard": 0.99,
+            "deep": 0.0
+          },
+          "size_score": 0.99,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.94,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.52,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1434,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6478,
+          "title": "Make product-metrics deadlines follow the injected clock",
+          "gt": "standard",
+          "lines": 238,
+          "files": 8,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3649402920855209,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.98,
+            "deep": 0.02
+          },
+          "size_score": 1.01,
+          "size_conf": 0.97,
+          "needs_design": "no",
+          "needs_design_conf": 0.87,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.96,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1629,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6480,
+          "title": "fix(test/doctor): read bd's stdout, not its merged stderr (ga-x5wacn)",
+          "gt": "compact",
+          "lines": 34,
+          "files": 1,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3732482079649344,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.47,
+            "standard": 0.53,
+            "deep": 0.0
+          },
+          "size_score": 0.53,
+          "size_conf": 0.3,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 1.0,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2230,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6500,
+          "title": "test(gastown): cover spawn-storm rollback and edge trigger",
+          "gt": "standard",
+          "lines": 175,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3870254580397159,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.09,
+            "standard": 0.91,
+            "deep": 0.0
+          },
+          "size_score": 0.91,
+          "size_conf": 0.87,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 1.0,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1429,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6502,
+          "title": "fix(mail): use the message type constant in dedupe queries",
+          "gt": "compact",
+          "lines": 49,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.36266900005284697,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 1.0,
+            "standard": 0.0,
+            "deep": 0.0
+          },
+          "size_score": 0.0,
+          "size_conf": 1.0,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.94,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1409,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6503,
+          "title": "chore(beads): post-merge follow-ups for the v1.3.0 pin (perm preservation, rc.2 strings)",
+          "gt": "deep",
+          "lines": 544,
+          "files": 22,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.32865691604092717,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.95,
+            "deep": 0.05
+          },
+          "size_score": 1.04,
+          "size_conf": 0.93,
+          "needs_design": "no",
+          "needs_design_conf": 0.54,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.65,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2864,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6505,
+          "title": "feat(beads): proxyendpoint package, doctor endpoint evidence and ping-count shim (native-over-proxy PR1)",
+          "gt": "deep",
+          "lines": 7976,
+          "files": 52,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3040668750181794,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.0,
+            "deep": 1.0
+          },
+          "size_score": 2.0,
+          "size_conf": 1.0,
+          "needs_design": "yes",
+          "needs_design_conf": 0.94,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.58,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2728,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6509,
+          "title": "feat: expand bazel side-by-side arm with gazelle BUILD generation",
+          "gt": "deep",
+          "lines": 9239,
+          "files": 202,
+          "classes": [
+            "api_contract",
+            "migration",
+            "security"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3745983330300078,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.02,
+            "deep": 0.98
+          },
+          "size_score": 1.98,
+          "size_conf": 0.97,
+          "needs_design": "no",
+          "needs_design_conf": 0.93,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.96,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1285,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6510,
+          "title": "test(tmux): replace the provider waiver with an executable conformance proof",
+          "gt": "standard",
+          "lines": 174,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3510769590502605,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.78,
+            "deep": 0.22
+          },
+          "size_score": 1.22,
+          "size_conf": 0.67,
+          "needs_design": "no",
+          "needs_design_conf": 0.47,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.91,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1653,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6517,
+          "title": "fix: fail closed when Dolt cleanup cannot enumerate rigs",
+          "gt": "standard",
+          "lines": 585,
+          "files": 7,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3686032920377329,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.96,
+            "deep": 0.04
+          },
+          "size_score": 1.04,
+          "size_conf": 0.94,
+          "needs_design": "no",
+          "needs_design_conf": 0.74,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.83,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1472,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6518,
+          "title": "fix: preserve fresh sessions already handling current work",
+          "gt": "deep",
+          "lines": 629,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.35807270801160485,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.88,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.9,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1424,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6519,
+          "title": "Batch closed named-session lookups during desired-state evaluation",
+          "gt": "standard",
+          "lines": 554,
+          "files": 6,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3217101669870317,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.97,
+            "deep": 0.03
+          },
+          "size_score": 1.03,
+          "size_conf": 0.95,
+          "needs_design": "no",
+          "needs_design_conf": 0.48,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.33,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1500,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6525,
+          "title": "build(bazel): side-by-side Bazel arm \u2014 full test parity, hermetic inputs, remote execution",
+          "gt": "deep",
+          "lines": 6839,
+          "files": 318,
+          "classes": [
+            "api_contract",
+            "migration",
+            "security"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 1,
+          "latency_s": 0.32984516699798405,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.0,
+            "deep": 1.0
+          },
+          "size_score": 2.0,
+          "size_conf": 1.0,
+          "needs_design": "yes",
+          "needs_design_conf": 0.86,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.34,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1800,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6526,
+          "title": "perf(gc): memoize the hosted-credential probe; fix(beads): bd subprocesses die with their parent",
+          "gt": "standard",
+          "lines": 450,
+          "files": 10,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4005830829264596,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.99,
+            "deep": 0.01
+          },
+          "size_score": 1.01,
+          "size_conf": 0.98,
+          "needs_design": "no",
+          "needs_design_conf": 0.91,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.71,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2058,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6527,
+          "title": "fix(convergence): stop reclassifying genuine gate verdicts as blind reads (post-merge #6341)",
+          "gt": "standard",
+          "lines": 450,
+          "files": 8,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3314741669455543,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.55,
+            "deep": 0.45
+          },
+          "size_score": 1.45,
+          "size_conf": 0.33,
+          "needs_design": "no",
+          "needs_design_conf": 0.76,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.4,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2763,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6533,
+          "title": "feat(beads): native reads over bd's proxy behind GC_BEADS_PROXIED_NATIVE (native-over-proxy PR2)",
+          "gt": "deep",
+          "lines": 24611,
+          "files": 110,
+          "classes": [
+            "api_contract"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3829297499032691,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.0,
+            "deep": 1.0
+          },
+          "size_score": 2.0,
+          "size_conf": 1.0,
+          "needs_design": "yes",
+          "needs_design_conf": 0.99,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.47,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2670,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6534,
+          "title": "fix(dispatch): stop passing retry attempts from aborting their scope",
+          "gt": "deep",
+          "lines": 471,
+          "files": 6,
+          "classes": [
+            "design_docs"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.7559706660686061,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.9,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.93,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2063,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6536,
+          "title": "perf(gc): reuse the loaded city config in one-shot store opens (gc ready: 8 loads -> 1)",
+          "gt": "standard",
+          "lines": 533,
+          "files": 12,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3465959170134738,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.72,
+            "deep": 0.28
+          },
+          "size_score": 1.28,
+          "size_conf": 0.58,
+          "needs_design": "yes",
+          "needs_design_conf": 0.59,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.81,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2481,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6537,
+          "title": "fix(runtime): keep secret SetMeta values out of tmux argv",
+          "gt": "standard",
+          "lines": 256,
+          "files": 8,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.33407595893368125,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.9,
+            "deep": 0.1
+          },
+          "size_score": 1.1,
+          "size_conf": 0.84,
+          "needs_design": "no",
+          "needs_design_conf": 0.9,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 1.0,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2117,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6540,
+          "title": "fix(acp): treat os.ErrClosed as an agent-exit pipe write error",
+          "gt": "standard",
+          "lines": 117,
+          "files": 3,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3546422499930486,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.32,
+            "standard": 0.68,
+            "deep": 0.0
+          },
+          "size_score": 0.68,
+          "size_conf": 0.52,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.78,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2065,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6545,
+          "title": "test(gc): wait for zombie-aware exit in provider-owned stop lifecycle test",
+          "gt": "compact",
+          "lines": 35,
+          "files": 1,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.31799808295909315,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.1,
+            "standard": 0.9,
+            "deep": 0.0
+          },
+          "size_score": 0.9,
+          "size_conf": 0.85,
+          "needs_design": "no",
+          "needs_design_conf": 1.0,
+          "risky_surface": "none",
+          "risky_surface_conf": 1.0,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2150,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6546,
+          "title": "fix(dolt): keep managed Dolt out of session orphan kills (supersedes #6317)",
+          "gt": "deep",
+          "lines": 958,
+          "files": 18,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3840710419462994,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.9,
+            "deep": 0.1
+          },
+          "size_score": 1.1,
+          "size_conf": 0.86,
+          "needs_design": "no",
+          "needs_design_conf": 0.74,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.48,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2932,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6549,
+          "title": "fix(pool): restore <template>-<beadID> runtime names without the vcjr9 leak",
+          "gt": "deep",
+          "lines": 1466,
+          "files": 19,
+          "classes": [
+            "api_contract"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.39725066698156297,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.4,
+            "deep": 0.6
+          },
+          "size_score": 1.6,
+          "size_conf": 0.41,
+          "needs_design": "yes",
+          "needs_design_conf": 0.64,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.64,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2789,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6550,
+          "title": "fix(bd): ignore a stale or relative ambient BD_BIN instead of failing closed",
+          "gt": "standard",
+          "lines": 275,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.46696862496901304,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.91,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.39,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2220,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        }
+      ]
+    },
+    "eval-issue-only (frozen, secondary arm B)": {
+      "n": 10,
+      "answered": 10,
+      "failed_calls": 0,
+      "retries": 0,
+      "gt_distribution": {
+        "compact": 2,
+        "standard": 5,
+        "deep": 3
+      },
+      "confusion_gt_rows_by_jev_size_argmax": {
+        "compact": {
+          "compact": 1,
+          "standard": 1,
+          "deep": 0,
+          "no_answer": 0
+        },
+        "standard": {
+          "compact": 1,
+          "standard": 4,
+          "deep": 0,
+          "no_answer": 0
+        },
+        "deep": {
+          "compact": 1,
+          "standard": 1,
+          "deep": 1,
+          "no_answer": 0
+        }
+      },
+      "size_argmax_accuracy": 0.6,
+      "answer_distributions": {
+        "needs_design": {
+          "no": 6,
+          "yes": 4
+        },
+        "risky_surface": {
+          "none": 3,
+          "persistence_or_migration": 2,
+          "public_api_or_schema": 1,
+          "security_or_auth": 4
+        },
+        "well_specified": {
+          "clear_acceptance_criteria": 9,
+          "partially_specified": 1
+        }
+      },
+      "tokens": {
+        "input": 24585,
+        "output": 1862
+      },
+      "latency_s": {
+        "total": 4.03,
+        "median": 0.365,
+        "max": 0.637
+      },
+      "models": [
+        "jev-1.13.0"
+      ],
+      "routing": {
+        "primary": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 2,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5913,
+              6411
+            ]
+          }
+        ],
+        "with_spec": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 2,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5913,
+              6411
+            ]
+          }
+        ],
+        "p_compact": [
+          {
+            "threshold": 0.6,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.7,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.8,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 1,
+            "coverage": 0.1,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": 0.0,
+            "over_triage": 1,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 0.5,
+            "compact_recall": 0.5,
+            "compact_precision": 1.0,
+            "under_triage_cases": [],
+            "routed_compact_prs": [
+              6411
+            ],
+            "over_triage_prs": [
+              5913
+            ]
+          },
+          {
+            "threshold": 0.9,
+            "n": 10,
+            "answered": 10,
+            "routed_compact": 0,
+            "coverage": 0.0,
+            "under_triage": 0,
+            "under_triage_deep": 0,
+            "under_triage_rate_of_routed": null,
+            "over_triage": 2,
+            "gt_compact": 2,
+            "over_triage_rate_of_gt_compact": 1.0,
+            "compact_recall": 0.0,
+            "compact_precision": null,
+            "under_triage_cases": [],
+            "routed_compact_prs": [],
+            "over_triage_prs": [
+              5913,
+              6411
+            ]
+          }
+        ]
+      },
+      "dir": "calls/eval-issue-only",
+      "near_misses_single_guard_t0.6": [],
+      "per_pr": [
+        {
+          "number": 5745,
+          "title": "fix(doctor): pin custom-types checks to configured store",
+          "gt": "standard",
+          "lines": 519,
+          "files": 5,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.6372897089459002,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.33,
+            "standard": 0.67,
+            "deep": 0.0
+          },
+          "size_score": 0.67,
+          "size_conf": 0.51,
+          "needs_design": "no",
+          "needs_design_conf": 0.71,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.5,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2523,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5901,
+          "title": "fix(hook): gate workflow root run_target fallback on gc.workflow_expanded (#5900)",
+          "gt": "deep",
+          "lines": 305,
+          "files": 45,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3726699169492349,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.65,
+            "deep": 0.35
+          },
+          "size_score": 1.35,
+          "size_conf": 0.48,
+          "needs_design": "yes",
+          "needs_design_conf": 0.95,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.37,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2706,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5913,
+          "title": "fix(supervisor): guard the supervisor socket path against Unix domain socket length limits (#5845)",
+          "gt": "compact",
+          "lines": 63,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.42888054193463176,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.02,
+            "standard": 0.98,
+            "deep": 0.0
+          },
+          "size_score": 0.98,
+          "size_conf": 0.96,
+          "needs_design": "no",
+          "needs_design_conf": 0.92,
+          "risky_surface": "public_api_or_schema",
+          "risky_surface_conf": 0.33,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1906,
+          "out_tokens": 187,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5933,
+          "title": "fix(mail): respect cfg.Mail.RetentionTTL in the nudge-mail sweep instead of a hardcoded 60m (#5877)",
+          "gt": "standard",
+          "lines": 428,
+          "files": 12,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3636002499843016,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.98,
+            "deep": 0.02
+          },
+          "size_score": 1.02,
+          "size_conf": 0.96,
+          "needs_design": "yes",
+          "needs_design_conf": 0.3,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.86,
+          "well_specified": "partially_specified",
+          "in_tokens": 2225,
+          "out_tokens": 189,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 5980,
+          "title": "fix(nudge): close only the store the frame opened, not the storage routes' shared engine",
+          "gt": "standard",
+          "lines": 393,
+          "files": 6,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.4930680840043351,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 1.0,
+            "deep": 0.0
+          },
+          "size_score": 1.0,
+          "size_conf": 0.99,
+          "needs_design": "no",
+          "needs_design_conf": 0.66,
+          "risky_surface": "persistence_or_migration",
+          "risky_surface_conf": 0.69,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2800,
+          "out_tokens": 190,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6043,
+          "title": "fix(processenv): partial secrets.env parse, skip multi-line quoted blocks, redact parse errors (#5982, #6022)",
+          "gt": "standard",
+          "lines": 550,
+          "files": 4,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3638399589108303,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "standard",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.99,
+            "deep": 0.01
+          },
+          "size_score": 1.01,
+          "size_conf": 0.98,
+          "needs_design": "yes",
+          "needs_design_conf": 0.68,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.99,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2691,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6114,
+          "title": "fix(session): fence ACP startup ownership and pending-create rollback",
+          "gt": "deep",
+          "lines": 1407,
+          "files": 20,
+          "classes": [
+            "design_docs"
+          ],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3396036250051111,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "deep",
+          "size_probs": {
+            "compact": 0.0,
+            "standard": 0.36,
+            "deep": 0.64
+          },
+          "size_score": 1.64,
+          "size_conf": 0.45,
+          "needs_design": "yes",
+          "needs_design_conf": 0.58,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.53,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1979,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6317,
+          "title": "fix(dolt): keep session identity out of the managed server's environment",
+          "gt": "standard",
+          "lines": 294,
+          "files": 5,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3180688749998808,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.59,
+            "standard": 0.41,
+            "deep": 0.0
+          },
+          "size_score": 0.41,
+          "size_conf": 0.39,
+          "needs_design": "no",
+          "needs_design_conf": 0.96,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.57,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2942,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6411,
+          "title": "fix(ci): raise cmd-gc-productmetrics-testhook's timeout to fit the runner it actually gets",
+          "gt": "compact",
+          "lines": 15,
+          "files": 2,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.343701416044496,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.87,
+            "standard": 0.13,
+            "deep": 0.0
+          },
+          "size_score": 0.13,
+          "size_conf": 0.8,
+          "needs_design": "no",
+          "needs_design_conf": 0.98,
+          "risky_surface": "none",
+          "risky_surface_conf": 0.96,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 1871,
+          "out_tokens": 184,
+          "model": "jev-1.13.0"
+        },
+        {
+          "number": 6546,
+          "title": "fix(dolt): keep managed Dolt out of session orphan kills (supersedes #6317)",
+          "gt": "deep",
+          "lines": 958,
+          "files": 18,
+          "classes": [],
+          "human_review_rounds": 0,
+          "review_comments": 0,
+          "latency_s": 0.3662023750366643,
+          "attempts": 1,
+          "ok": true,
+          "size_argmax": "compact",
+          "size_probs": {
+            "compact": 0.6,
+            "standard": 0.4,
+            "deep": 0.0
+          },
+          "size_score": 0.41,
+          "size_conf": 0.39,
+          "needs_design": "no",
+          "needs_design_conf": 0.96,
+          "risky_surface": "security_or_auth",
+          "risky_surface_conf": 0.5,
+          "well_specified": "clear_acceptance_criteria",
+          "in_tokens": 2942,
+          "out_tokens": 186,
+          "model": "jev-1.13.0"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "attempts": [
+    {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "size": {
+            "type": "score",
+            "score": 1.07,
+            "confidence": 0.9,
+            "legend": {
+              "0": "compact: A trivial change confined to one spot: a few lines such as a typo, a constant or timeout value, a one-line guard, a renamed identifier, or a sentence of documentation. It needs at most one small test adjustment. Adding a helper, restructuring a code path, or adding several regression cases is not compact.",
+              "1": "standard: A moderate change: a focused fix or improvement that edits a few files or a few hundred lines, restructures a code path or adds a helper, and adds or changes tests, but introduces no new architecture.",
+              "2": "deep: A large or cross-cutting change: many files or subsystems, a new feature or mechanism, architecture or design work, public API or schema or storage-format changes, or data migration."
+            },
+            "probabilities": {
+              "0": 0.0,
+              "1": 0.93,
+              "2": 0.07
+            }
+          },
+          "needs_design": {
+            "type": "choice",
+            "choice": "no",
+            "confidence": 0.31,
+            "probabilities": {
+              "yes": 0.46,
+              "cannot_tell": 0.01,
+              "no": 0.53
+            }
+          },
+          "risky_surface": {
+            "type": "choice",
+            "choice": "security_or_auth",
+            "confidence": 0.92,
+            "probabilities": {
+              "public_api_or_schema": 0.0,
+              "security_or_auth": 0.9400000000000001,
+              "none": 0.06,
+              "cannot_tell": 0.0,
+              "persistence_or_migration": 0.0
+            }
+          },
+          "well_specified": {
+            "type": "choice",
+            "choice": "clear_acceptance_criteria",
+            "confidence": 0.67,
+            "probabilities": {
+              "partially_specified": 0.25,
+              "cannot_tell": 0.0,
+              "underspecified": 0.0,
+              "clear_acceptance_criteria": 0.75
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 1417,
+          "output_tokens": 186
+        }
+      },
+      "latency_s": 0.42569099995307624,
+      "attempt": 1,
+      "at": "2026-09-24T16:27:35.084184+00:00"
+    }
+  ]
+}

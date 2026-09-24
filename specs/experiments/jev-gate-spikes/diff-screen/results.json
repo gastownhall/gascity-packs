@@ -1,0 +1,1033 @@
+{
+  "model": "jev-1.13.0",
+  "rows": [
+    {
+      "rep": 1,
+      "diff": "c1",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c1",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "c1",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.02
+    },
+    {
+      "rep": 1,
+      "diff": "c1",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.12
+    },
+    {
+      "rep": 1,
+      "diff": "c1",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "c1",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "c2",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c2",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "c2",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c2",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.1
+    },
+    {
+      "rep": 1,
+      "diff": "c2",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.07
+    },
+    {
+      "rep": 1,
+      "diff": "c2",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "c3",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c3",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "c3",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.02
+    },
+    {
+      "rep": 1,
+      "diff": "c3",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "c3",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "c3",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c4",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c4",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "c4",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c4",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.09
+    },
+    {
+      "rep": 1,
+      "diff": "c4",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.18
+    },
+    {
+      "rep": 1,
+      "diff": "c4",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "c5",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c5",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "c5",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "c5",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.14
+    },
+    {
+      "rep": 1,
+      "diff": "c5",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "c5",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "c6",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c6",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "c6",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "c6",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "c6",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.12
+    },
+    {
+      "rep": 1,
+      "diff": "c6",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "d1",
+      "rule": "debug_output",
+      "truth_broken": true,
+      "p": 0.98
+    },
+    {
+      "rep": 1,
+      "diff": "d1",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.11
+    },
+    {
+      "rep": 1,
+      "diff": "d1",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "d1",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.09
+    },
+    {
+      "rep": 1,
+      "diff": "d1",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.14
+    },
+    {
+      "rep": 1,
+      "diff": "d1",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "d2",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.09
+    },
+    {
+      "rep": 1,
+      "diff": "d2",
+      "rule": "dead_code",
+      "truth_broken": true,
+      "p": 0.94
+    },
+    {
+      "rep": 1,
+      "diff": "d2",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "d2",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.08
+    },
+    {
+      "rep": 1,
+      "diff": "d2",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.09
+    },
+    {
+      "rep": 1,
+      "diff": "d2",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "d3",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "d3",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "d3",
+      "rule": "swallowed_error",
+      "truth_broken": true,
+      "p": 0.94
+    },
+    {
+      "rep": 1,
+      "diff": "d3",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.08
+    },
+    {
+      "rep": 1,
+      "diff": "d3",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "d3",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "d4",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "d4",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.14
+    },
+    {
+      "rep": 1,
+      "diff": "d4",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "d4",
+      "rule": "unused_import",
+      "truth_broken": true,
+      "p": 0.89
+    },
+    {
+      "rep": 1,
+      "diff": "d4",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.08
+    },
+    {
+      "rep": 1,
+      "diff": "d4",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "d5",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "d5",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "d5",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "d5",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 1,
+      "diff": "d5",
+      "rule": "test_weakened",
+      "truth_broken": true,
+      "p": 0.59
+    },
+    {
+      "rep": 1,
+      "diff": "d5",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "d6",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 1,
+      "diff": "d6",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "d6",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 1,
+      "diff": "d6",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "d6",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 1,
+      "diff": "d6",
+      "rule": "duplicated_logic",
+      "truth_broken": true,
+      "p": 0.94
+    },
+    {
+      "rep": 2,
+      "diff": "c1",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c1",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "c1",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c1",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.11
+    },
+    {
+      "rep": 2,
+      "diff": "c1",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "c1",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 2,
+      "diff": "c2",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.02
+    },
+    {
+      "rep": 2,
+      "diff": "c2",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "c2",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c2",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.1
+    },
+    {
+      "rep": 2,
+      "diff": "c2",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.07
+    },
+    {
+      "rep": 2,
+      "diff": "c2",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "c3",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c3",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "c3",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c3",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "c3",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.07
+    },
+    {
+      "rep": 2,
+      "diff": "c3",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c4",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c4",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 2,
+      "diff": "c4",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "c4",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.08
+    },
+    {
+      "rep": 2,
+      "diff": "c4",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.16
+    },
+    {
+      "rep": 2,
+      "diff": "c4",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "c5",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c5",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 2,
+      "diff": "c5",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 2,
+      "diff": "c5",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.17
+    },
+    {
+      "rep": 2,
+      "diff": "c5",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.07
+    },
+    {
+      "rep": 2,
+      "diff": "c5",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "c6",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c6",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "c6",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "c6",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 2,
+      "diff": "c6",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.09
+    },
+    {
+      "rep": 2,
+      "diff": "c6",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "d1",
+      "rule": "debug_output",
+      "truth_broken": true,
+      "p": 0.97
+    },
+    {
+      "rep": 2,
+      "diff": "d1",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.11
+    },
+    {
+      "rep": 2,
+      "diff": "d1",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "d1",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.1
+    },
+    {
+      "rep": 2,
+      "diff": "d1",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.13
+    },
+    {
+      "rep": 2,
+      "diff": "d1",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "d2",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.1
+    },
+    {
+      "rep": 2,
+      "diff": "d2",
+      "rule": "dead_code",
+      "truth_broken": true,
+      "p": 0.94
+    },
+    {
+      "rep": 2,
+      "diff": "d2",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "d2",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.08
+    },
+    {
+      "rep": 2,
+      "diff": "d2",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.1
+    },
+    {
+      "rep": 2,
+      "diff": "d2",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "d3",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "d3",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.07
+    },
+    {
+      "rep": 2,
+      "diff": "d3",
+      "rule": "swallowed_error",
+      "truth_broken": true,
+      "p": 0.94
+    },
+    {
+      "rep": 2,
+      "diff": "d3",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.08
+    },
+    {
+      "rep": 2,
+      "diff": "d3",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "d3",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "d4",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "d4",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.16
+    },
+    {
+      "rep": 2,
+      "diff": "d4",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 2,
+      "diff": "d4",
+      "rule": "unused_import",
+      "truth_broken": true,
+      "p": 0.9
+    },
+    {
+      "rep": 2,
+      "diff": "d4",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.07
+    },
+    {
+      "rep": 2,
+      "diff": "d4",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.05
+    },
+    {
+      "rep": 2,
+      "diff": "d5",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "d5",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "d5",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "d5",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "d5",
+      "rule": "test_weakened",
+      "truth_broken": true,
+      "p": 0.58
+    },
+    {
+      "rep": 2,
+      "diff": "d5",
+      "rule": "duplicated_logic",
+      "truth_broken": false,
+      "p": 0.04
+    },
+    {
+      "rep": 2,
+      "diff": "d6",
+      "rule": "debug_output",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "d6",
+      "rule": "dead_code",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "d6",
+      "rule": "swallowed_error",
+      "truth_broken": false,
+      "p": 0.03
+    },
+    {
+      "rep": 2,
+      "diff": "d6",
+      "rule": "unused_import",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "d6",
+      "rule": "test_weakened",
+      "truth_broken": false,
+      "p": 0.06
+    },
+    {
+      "rep": 2,
+      "diff": "d6",
+      "rule": "duplicated_logic",
+      "truth_broken": true,
+      "p": 0.94
+    }
+  ],
+  "calls": [
+    {
+      "rep": 1,
+      "usage": {
+        "input_tokens": 6971,
+        "output_tokens": 1516
+      },
+      "elapsed_s": 0.4719228340545669,
+      "questions": 72
+    },
+    {
+      "rep": 2,
+      "usage": {
+        "input_tokens": 6971,
+        "output_tokens": 1516
+      },
+      "elapsed_s": 0.4532994580222294,
+      "questions": 72
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "attempts": [
+    {
+      "ok": true,
+      "status": 200,
+      "body": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "size": {
+            "type": "score",
+            "score": 0.0,
+            "confidence": 1.0,
+            "legend": {
+              "0": "compact: A small, localized change: a single focused fix, test fix, doc tweak, or config/value change, likely touching one to three files and well under a hundred changed lines, with no new concepts.",
+              "1": "standard: A moderate change: several files or a few hundred changed lines, touching a few interacting components, usually with new or changed tests, but no new architecture.",
+              "2": "deep: A large or cross-cutting change: many files or subsystems, a new feature or mechanism, architecture or design work, public API or schema or storage-format changes, or data migration."
+            },
+            "probabilities": {
+              "0": 1.0,
+              "1": 0.0,
+              "2": 0.0
+            }
+          },
+          "needs_design": {
+            "type": "choice",
+            "choice": "no",
+            "confidence": 1.0,
+            "probabilities": {
+              "no": 1.0,
+              "cannot_tell": 0.0,
+              "yes": 0.0
+            }
+          },
+          "risky_surface": {
+            "type": "choice",
+            "choice": "none",
+            "confidence": 1.0,
+            "probabilities": {
+              "public_api_or_schema": 0.0,
+              "security_or_auth": 0.0,
+              "none": 1.0,
+              "cannot_tell": 0.0,
+              "persistence_or_migration": 0.0
+            }
+          },
+          "well_specified": {
+            "type": "choice",
+            "choice": "clear_acceptance_criteria",
+            "confidence": 1.0,
+            "probabilities": {
+              "clear_acceptance_criteria": 1.0,
+              "partially_specified": 0.0,
+              "underspecified": 0.0,
+              "cannot_tell": 0.0
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 1414,
+          "output_tokens": 184
+        }
+      },
+      "latency_s": 0.4767961249453947,
+      "attempt": 1,
+      "at": "2026-09-24T16:26:05.990605+00:00"
+    }
+  ]
+}

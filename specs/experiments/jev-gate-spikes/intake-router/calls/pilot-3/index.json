@@ -1,0 +1,78 @@
+{
+  "set": "pilot",
+  "state": "request",
+  "model": "jev-1.13.0",
+  "questions_file": "questions/v3.json",
+  "calls": [
+    {
+      "number": 5868,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.39627837494481355
+    },
+    {
+      "number": 5853,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.3251202499959618
+    },
+    {
+      "number": 5678,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.29876725003123283
+    },
+    {
+      "number": 5756,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.6359697909792885
+    },
+    {
+      "number": 6432,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.35660016699694097
+    },
+    {
+      "number": 5658,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.3935323338955641
+    },
+    {
+      "number": 6430,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.3163702079327777
+    },
+    {
+      "number": 6428,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.2982992500765249
+    },
+    {
+      "number": 6424,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.33650312502868474
+    },
+    {
+      "number": 6422,
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "latency_s": 0.6389493340393528
+    }
+  ]
+}

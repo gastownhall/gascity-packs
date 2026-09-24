@@ -1,0 +1,85 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "C1_confirm": {
+      "type": "choice",
+      "choice": "contradicted",
+      "confidence": 0.94,
+      "probabilities": {
+        "contradicted": 0.95,
+        "insufficient_evidence": 0.0,
+        "confirmed": 0.05,
+        "unknown": 0.0
+      }
+    },
+    "C1_violate": {
+      "type": "noul",
+      "noul": 0.92
+    },
+    "C2_confirm": {
+      "type": "choice",
+      "choice": "confirmed",
+      "confidence": 0.47,
+      "probabilities": {
+        "contradicted": 0.39,
+        "confirmed": 0.61,
+        "insufficient_evidence": 0.0,
+        "unknown": 0.0
+      }
+    },
+    "C2_violate": {
+      "type": "noul",
+      "noul": 0.42
+    },
+    "C3_confirm": {
+      "type": "choice",
+      "choice": "confirmed",
+      "confidence": 0.91,
+      "probabilities": {
+        "contradicted": 0.06,
+        "insufficient_evidence": 0.0,
+        "confirmed": 0.9400000000000001,
+        "unknown": 0.0
+      }
+    },
+    "C3_violate": {
+      "type": "noul",
+      "noul": 0.19
+    },
+    "C4_confirm": {
+      "type": "choice",
+      "choice": "confirmed",
+      "confidence": 0.73,
+      "probabilities": {
+        "contradicted": 0.2,
+        "insufficient_evidence": 0.0,
+        "confirmed": 0.8,
+        "unknown": 0.0
+      }
+    },
+    "C4_violate": {
+      "type": "noul",
+      "noul": 0.18
+    },
+    "C5_confirm": {
+      "type": "choice",
+      "choice": "confirmed",
+      "confidence": 0.85,
+      "probabilities": {
+        "contradicted": 0.11,
+        "insufficient_evidence": 0.0,
+        "confirmed": 0.89,
+        "unknown": 0.0
+      }
+    },
+    "C5_violate": {
+      "type": "noul",
+      "noul": 0.14
+    }
+  },
+  "usage": {
+    "input_tokens": 2101,
+    "output_tokens": 367
+  },
+  "_elapsed_s": 0.32914037501905113
+}
