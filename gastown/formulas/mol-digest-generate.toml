@@ -77,6 +77,14 @@ SINCE=$(date -u -d 'yesterday 00:00' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
         date -u -v-1d -j -f '%H:%M' '00:00' +%Y-%m-%dT%H:%M:%SZ)
 UNTIL=$(date -u -d 'today 00:00' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
         date -u -j -f '%H:%M' '00:00' +%Y-%m-%dT%H:%M:%SZ)
+
+# `gc events --since` accepts a duration, not an RFC3339 timestamp. Query a
+# deliberately wider window, then filter to the exact digest boundaries below.
+case "{{period}}" in
+  daily) EVENT_LOOKBACK=48h ;;
+  weekly) EVENT_LOOKBACK=192h ;;
+  *) echo "unsupported digest period: {{period}}" >&2; exit 1 ;;
+esac
 ```
 
 Note the timestamps for the digest header.
@@ -116,8 +124,26 @@ gc bd list --label=incident --created-after=$SINCE --json
 
 a) **Session lifecycle events:**
 ```bash
-gc events --since=$SINCE --type=session.woke,session.stopped,session.crashed --json
+gc events --since="$EVENT_LOOKBACK" \
+  --type=session.woke,session.stopped,session.crashed |
+python3 -c '
+import datetime as dt
+import json
+import sys
+
+parse = lambda value: dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+since, until = map(parse, sys.argv[1:3])
+for line in sys.stdin:
+    event = json.loads(line)
+    timestamp = parse(event["ts"])
+    if since <= timestamp < until:
+        sys.stdout.write(line)
+' "$SINCE" "$UNTIL"
 ```
+
+The duration only bounds the API query. The RFC3339 parse is the authoritative
+period filter and must remain exact even when event timestamps carry a non-UTC
+offset. Do not compare timestamp strings lexicographically.
 
 b) **Escalations:**
 ```bash

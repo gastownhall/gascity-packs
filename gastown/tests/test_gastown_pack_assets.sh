@@ -44,6 +44,24 @@ test_retired_dog_formulas_are_not_reintroduced() {
         fail "gastown pack should not advertise retired dog formulas"
 }
 
+test_digest_uses_duration_query_and_exact_event_window() {
+    local formula="$GASTOWN/formulas/mol-digest-generate.toml"
+
+    parse_toml "$formula"
+    ! grep -F 'gc events --since=$SINCE' "$formula" >/dev/null ||
+        fail "digest must not pass an RFC3339 timestamp to duration-only gc events --since"
+    grep -F 'daily) EVENT_LOOKBACK=48h' "$formula" >/dev/null ||
+        fail "daily digest should query a wide duration before exact filtering"
+    grep -F 'weekly) EVENT_LOOKBACK=192h' "$formula" >/dev/null ||
+        fail "weekly digest should query a wide duration before exact filtering"
+    grep -F 'gc events --since="$EVENT_LOOKBACK"' "$formula" >/dev/null ||
+        fail "digest should call gc events with the duration lookback"
+    grep -F 'dt.datetime.fromisoformat' "$formula" >/dev/null ||
+        fail "digest should parse RFC3339 event timestamps instead of comparing offset strings"
+    grep -F 'if since <= timestamp < until:' "$formula" >/dev/null ||
+        fail "digest should enforce the exact half-open event window"
+}
+
 test_shutdown_dance_contracts_are_executable() {
     local formula="$GASTOWN/formulas/mol-shutdown-dance.toml"
 
@@ -727,6 +745,7 @@ test_prime_prompts_are_city_generic_and_compact() {
 
 test_dog_assets_are_pack_local
 test_retired_dog_formulas_are_not_reintroduced
+test_digest_uses_duration_query_and_exact_event_window
 test_shutdown_dance_contracts_are_executable
 test_shutdown_dance_lifecycle_and_audit_contracts
 test_work_bead_resolution_discriminator_is_pinned
