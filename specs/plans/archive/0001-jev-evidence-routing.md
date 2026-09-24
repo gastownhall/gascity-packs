@@ -22,7 +22,7 @@ repair passed live validation in baseline 005, which later failed on a missing
 fixture origin and timed out. The local-origin repair passes a real Git worktree
 regression, but the remaining workflow and observed latch routing still need
 validation. No full build has passed. Step 7 has a measured focused comparison at
-[RESULTS.md](../experiments/jev-evidence-routing/RESULTS.md). The classification
+[RESULTS.md](../../experiments/jev-evidence-routing/RESULTS.md). The classification
 results do not establish full-pack savings or speedup.
 
 Correction, 2026-09-23: the local patches were not fixes for new upstream bugs.
@@ -33,7 +33,7 @@ closure relates to an upstream fix not in v1.4.2 (449df7c4a) plus a pack-side
 claim/template gap. The missing-origin failure was caused by the harness; the
 gate Python failure was environmental, with its exact cause unestablished. Step 6 will resume with a harness that follows the documented
 operator path and unpatched upstream binaries. See the
-[RESULTS.md correction summary](../experiments/jev-evidence-routing/RESULTS.md).
+[RESULTS.md correction summary](../../experiments/jev-evidence-routing/RESULTS.md).
 
 ## Added scope: maintainer-city kind triage
 
@@ -41,8 +41,8 @@ Support Julian's kind-only use case before extending Jev to priority or adopt-pr
 complexity. The kind helper, opt-in issue-triage instructions, historical
 backtest and paired subscription Claude/fallback runner are implemented.
 Our own real-data comparison is complete: 31/32 raw Jev/Opus agreement and 32/32
-final agreement with seven fallbacks. See [kind results](../experiments/jev-evidence-routing/KIND-RESULTS.md)
-and [the protocol](../experiments/jev-evidence-routing/KIND-TRIAGE.md).
+final agreement with seven fallbacks. See [kind results](../../experiments/jev-evidence-routing/KIND-RESULTS.md)
+and [the protocol](../../experiments/jev-evidence-routing/KIND-TRIAGE.md).
 Broader samples, repeated measurements, independent adjudication and full
 workflow measurements remain outstanding.
 
@@ -61,6 +61,6 @@ Full-workflow performance and quality equivalence remain unestablished.
 
 The redesign that lets Jev decisions replace Claude sessions, instead of
 advising them, is settled in
-[0003-gascity-jev-redesign-design.md](0003-gascity-jev-redesign-design.md).
+[0003-gascity-jev-redesign-design.md](../0003-gascity-jev-redesign-design.md).
 The first complete full-build pair is in
-[jev-operator-path](../experiments/jev-operator-path/README.md).
+[jev-operator-path](../../experiments/jev-operator-path/README.md).

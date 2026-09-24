@@ -514,7 +514,7 @@ def main():
     p.add_argument('--repetitions',type=int,default=2)
     p.add_argument('--model',default='claude-sonnet-5')
     p.add_argument('--jev-model',default='jev-1.13.0')
-    p.add_argument('--gc-bin',default='/opt/homebrew/bin/gc')
+    p.add_argument('--gc-bin',default=shutil.which('gc') or 'gc')
     p.add_argument('--bd-bin',default='/opt/homebrew/bin/bd')
     # Baseline 005 needed ~46 minutes just to reach implementation; upstream's
     # inference gate allows 75.

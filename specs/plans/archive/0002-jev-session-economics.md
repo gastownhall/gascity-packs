@@ -1,13 +1,13 @@
 # Jev as a session router, not a cheaper judge
 
-Status: superseded by [0003](0003-gascity-jev-redesign-design.md), which
+Status: superseded by [0003](../0003-gascity-jev-redesign-design.md), which
 records the decisions taken. Kept for its cost analysis; nothing here is
 implemented.
 
 ## The observation that changes the problem
 
 In the first complete `build-basic` A/B (see
-[jev-operator-path](../experiments/jev-operator-path/README.md)), the Jev arm
+[jev-operator-path](../../experiments/jev-operator-path/README.md)), the Jev arm
 ran 14% longer even though every Jev call took under a second. Per-session
 telemetry from both runs explains why:
 
