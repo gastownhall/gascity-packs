@@ -45,8 +45,35 @@ READ_OK=0
 READ_TRY=0
 while [ "$READ_TRY" -lt 3 ]; do
   READ_TRY=$((READ_TRY + 1))
-  CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json 2>/dev/null)
-  WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end' 2>/dev/null)
+  WORK_BEAD_ID=""
+  if [ -n "${GC_BEAD_ID:-}" ]; then
+    WORK_BEAD_ID=$(gc convoy status "$GC_BEAD_ID" --json 2>/dev/null \
+      | jq -r 'if ((.children // []) | length) == 1 then .children[0].id else empty end' 2>/dev/null)
+  fi
+  # No convoy is the NORMAL case for a plain-slung bead, so fall back — but only to
+  # a bead this session OWNS, never to the dispatcher's trigger record on its own.
+  # `gc hook --claim` checks assigned work first and then falls through to the
+  # routed pool, so it routinely hands a session a different bead than it was
+  # spawned for (measured in gci-utzx's own session: GC_TRIGGER_WORK_BEAD_ID was
+  # gci-5ts6 while the claim returned gci-utzx). Reading the wrong bead HERE is
+  # not a no-op: it reports ALREADY_SUBMITTED and drains, stranding the real work
+  # committed and unpushed. `polecat_session` is stamped at claim time and
+  # survives reassignment, so it still names this session after the handoff.
+  if [ -z "$WORK_BEAD_ID" ] && [ -n "$EXPECTED_ASSIGNEE" ]; then
+    MINE_JSON=$(gc bd list --assignee="$EXPECTED_ASSIGNEE" --status=in_progress --json 2>/dev/null)
+    WORK_BEAD_ID=$(printf '%s' "$MINE_JSON" \
+      | jq -r 'if (type == "array") and (length == 1) then .[0].id else empty end' 2>/dev/null)
+  fi
+  if [ -z "$WORK_BEAD_ID" ] && [ -n "$EXPECTED_ASSIGNEE" ]; then
+    for CAND in "${GC_TRIGGER_WORK_BEAD_ID:-}" "${GC_TRIGGER_BEAD_ID:-}"; do
+      if [ -n "$CAND" ]; then
+        CAND_JSON=$(gc bd show "$CAND" --json 2>/dev/null)
+        WORK_BEAD_ID=$(printf '%s' "$CAND_JSON" | jq -r --arg me "$EXPECTED_ASSIGNEE" \
+          '.[0] | select(((.assignee // "") == $me) or ((.metadata.polecat_session // "") == $me)) | .id' 2>/dev/null)
+      fi
+      if [ -n "$WORK_BEAD_ID" ]; then break; fi
+    done
+  fi
   if [ -n "$WORK_BEAD_ID" ]; then
     WORK_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
     SHOW_CODE=$?
