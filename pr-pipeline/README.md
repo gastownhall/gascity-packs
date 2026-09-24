@@ -32,14 +32,31 @@ on demand (typically by a maintenance PL) rather than run by hand:
 | Formula | Dispatch | Purpose |
 |---------|----------|---------|
 | `mol-pr-triage`     | `gc sling <rig>/<agent> mol-pr-triage --formula` | Scan/classify open issues into a ranked work-queue |
-| `mol-pr-from-issue` | `gc sling <rig>/<agent> mol-pr-from-issue --formula --var issue_number=<N>` | Author-side macro chain: issue → plan → implement → ship gate → (optional) open PR |
+| `mol-pr-from-issue` | `gc sling <rig>/<agent> mol-pr-from-issue --formula --var issue_number=<N>` | Author-side macro chain: issue → plan → implement → ship gate → publish hand-off |
 
 `mol-pr-from-issue` is slung as a routed molecule, so its GitHub-issue
 input is named **`issue_number`** rather than `issue` — the bare `issue`
 var name is a reserved formulas-v2 alias for the routed work bead and
-would be clobbered. It defaults to halt-at-branch-ready (`auto_push`
-absent → no push, no PR); pass `--var auto_push=true` to authorize the
-eligibility-gated push.
+would be clobbered. It always ends at branch-ready with exact publish commands
+recorded for the publisher. With `auto_push` absent, it skips the readiness
+gate; `--var auto_push=true` runs that gate and records its evidence. It
+authorizes no push and no PR open.
+
+## The standard the scorecard is enforcing
+
+[`docs/testing-across-the-layer-boundary.md`](docs/testing-across-the-layer-boundary.md)
+is the reasoning behind `mol-pr-review` and `mol-pr-ship`. One sentence of it
+decides most reviews:
+
+> A fix's test must fail on the unfixed **live build** and pass on the fixed
+> live build, with the fix as the only difference.
+
+It covers the test-tier ladder (and why a bug that reproduces only against
+stubs has not been reproduced), the fidelity claim every stub owes the PR body,
+the two mutations a test has to survive, the probe-not-a-city answer for
+environment-specific bugs, and the dolt / beads / gascity / packs layer map that
+decides which layer owns a given bug. Read it before filing a bug against a
+layer you do not own.
 
 ## Scope
 
@@ -149,7 +166,10 @@ gc sling api-server/polecat mol-pr-start --formula --var issue=1234
 pr-pipeline/
 ├── pack.toml
 ├── docs/
-│   └── testing-across-the-layer-boundary.md   tier ladder + layer map
+│   └── testing-across-the-layer-boundary.md   the review standard, the
+│                                              test-tier ladder, and the
+│                                              dolt/beads/gascity/packs
+│                                              layer map
 ├── formulas/
 │   ├── mol-pr-start.formula.toml          6-step planner
 │   ├── mol-pr-blast-radius.formula.toml   5-step impact mapper

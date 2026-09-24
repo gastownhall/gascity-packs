@@ -57,6 +57,13 @@ class DiscordIntakeServiceTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self._old_environ = os.environ.copy()
+        # Strip the ambient city before pinning the fixture one — a live
+        # Gas City seat exports GC_* into every child process and this
+        # pack reads several of them ahead of the fixture's city.toml.
+        # See test_discord_intake_common.py for the full note and for
+        # the guard that keeps this prefix list covering the modules.
+        for key in [k for k in os.environ if k.startswith("GC_")]:
+            del os.environ[key]
         os.environ["GC_CITY_ROOT"] = self.tempdir.name
         # See the SEAT_ENV_OVERRIDES note in test_discord_intake_common.py.
         for name in ("GC_BIN", "GC_API_BASE_URL"):

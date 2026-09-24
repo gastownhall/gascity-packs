@@ -38,41 +38,9 @@
 # The point is that gastown, a supported pack, never again drifts from the
 # binary with nothing failing.
 
-# ---------------------------------------------------------------------------
-# 1. named_session x5: `gc lint` calls a bare cap a "pool control"
-#
-# All five templates set `max_active_sessions = 1` and nothing else: no
-# min_active_sessions, no scale_check, no namepool. That configuration spawns
-# nothing. internal/agentutil/pool.go ScaleParamsFor takes Min from
-# EffectiveMinActiveSessions(), and internal/config/session_capacity.go returns
-# 0 for it when MinActiveSessions is nil. The cap is what HOLDS the singleton.
-#
-# Three places in one binary disagree about this shape:
-#   - cmd/gc/cmd_lint.go agentHasPoolControls returns true on
-#     `MaxActiveSessions != nil`, so it fires here.
-#   - internal/doctor/checks_named_session.go (check "named-always-min-conflict")
-#     warns only when EffectiveMinActiveSessions() > 0, so it is silent here.
-#   - internal/config/session_capacity.go SupportsInstanceExpansion documents
-#     "Named-session agents (MaxActiveSessions=1 with a [[named_session]] entry,
-#     no Min/ScaleCheck)" as a shape it deliberately handles.
-#
-# Following the remediation text would delete the cap that enforces the
-# singleton. The documented escape hatch (min=0 AND max=0) is worse: at max=0
-# SupportsGenericEphemeralSessions returns false, which changes how the agent
-# can be spawned rather than annotating intent.
-#
-# Refute: grep -n 'agentHasPoolControls' <gascity checkout>/cmd/gc/cmd_lint.go
-#         grep -n 'EffectiveMinActiveSessions' <gascity checkout>/internal/doctor/checks_named_session.go
-# ---------------------------------------------------------------------------
 # @section: universal
-pack.toml: named_session "mayor" targets pool-controlled agent "mayor"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-pack.toml: named_session "deacon" targets pool-controlled agent "deacon"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-pack.toml: named_session "boot" targets pool-controlled agent "boot"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-pack.toml: named_session "witness" targets pool-controlled agent "witness"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-pack.toml: named_session "refinery" targets pool-controlled agent "refinery"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
-
 # ---------------------------------------------------------------------------
-# 2. `mol wisp` x2: the flag manifest stops one subcommand level short
+# 1. `mol wisp` x2: the flag manifest stops one subcommand level short
 #
 # The template writes `gc bd mol wisp gc --age 24h`, which is correct. --age is
 # a flag on the `mol wisp gc` subcommand, shown in that subcommand's own --help
@@ -95,7 +63,7 @@ agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized
 agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
 
 # ---------------------------------------------------------------------------
-# 3. x22, gc <= v1.4.1 only: the scanner ran past the pipe, and did not know
+# 2. x22, gc <= v1.4.1 only: the scanner ran past the pipe, and did not know
 #    about `gc bd`'s own scope flags
 #
 # Two separate scanner defects, both fixed by gascity 7724983de ("fix(bdflags):

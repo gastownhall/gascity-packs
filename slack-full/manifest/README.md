@@ -13,18 +13,25 @@ Schema reference: <https://api.slack.com/reference/manifests>
 - **`display_information`** — bot name, short/long description, brand color.
 - **`features.bot_user`** — bot display name + `always_online`.
 - **`features.app_home`** — Messages tab enabled (DM intake), Home tab off.
-- **`features.slash_commands`** — empty list. Slash commands will be
-  populated by [`gc slack sync-commands`](../README.md) (gc-cby.2) once
-  that command lands. Until then, the slack-pack does not expose any
+- **`features.slash_commands`** — **omitted, not empty.** Slack's
+  manifest validator rejects an empty array here, so a manifest
+  carrying `"slash_commands": []` fails at import
+  ([gascity-packs#63](https://github.com/gastownhall/gascity-packs/issues/63)).
+  [`gc slack sync-commands`](../README.md) (gc-cby.2) creates the key
+  when it has a command to write. Until then the slack-pack exposes no
   `/gc …` shortcuts in Slack.
 - **`oauth_config.scopes.bot`** — the minimal scope set the live
   adapter (`examples/slack-pack/adapter/main.go`) requires today.
-  Each `*:history` scope pairs with the matching `message.*` event
-  subscription below — Slack rejects an install whose subscriptions
-  exceed its scopes, so the two lists must move together. The
+  Every event subscription below pairs with a scope here —
+  `app_mention` with `app_mentions:read`, each `message.*` with the
+  matching `*:history`. Slack rejects an install whose subscriptions
+  exceed its scopes, so the two lists must move together;
+  `tests/test_slack_manifest_conformance.py` checks the pairing for
+  every manifest in the repo. The
   `*:read` scopes are the exception: they back outbound API calls, not
   event delivery, so they add no `message.*` subscription (see the
   company-rooms note under "Agent identity apps").
+  - `app_mentions:read` — receive @-mentions (pairs with `app_mention`)
   - `channels:history` — read public channel messages (pairs with
     `message.channels`)
   - `channels:read` — company rooms: verify switchboard membership of
