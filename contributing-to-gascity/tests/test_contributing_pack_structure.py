@@ -22,14 +22,14 @@ EXPECTED_SKILLS = {
 
 class PackStructureTests(unittest.TestCase):
     def test_pack_is_self_contained(self) -> None:
-        """0.2.0 is END-TO-END self-contained: it must declare no imports."""
+        """The pack is end-to-end self-contained and declares no imports."""
         text = (ROOT / "pack.toml").read_text(encoding="utf-8")
         # Only `[pack]` tables are allowed; any `[imports.*]` table breaks the
-        # self-contained contract the 0.2.0 directive requires.
+        # self-contained contract requires.
         self.assertNotRegex(
             text,
             r"(?m)^\[imports\.",
-            "contributing 0.2.0 must not import any pack — it bakes the standards in",
+            "contributing-to-gascity must not import any pack — it bakes the standards in",
         )
 
     def test_expected_skills_present(self) -> None:
