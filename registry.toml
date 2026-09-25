@@ -229,25 +229,11 @@ schema = 1
   source_kind = "git"
 
   [[pack.release]]
-    version = "0.1.0"
+    version = "0.5.0"
     ref = "main"
-    commit = "16f8297d4e62e143456bfbe4a00e0980a7d9400e"
-    hash = "sha256:8ee58fba7a87a2390fe707ccb593eec3f25b303782696d836d800e68992beeef"
-    description = "Initial contributing pack release."
-
-  [[pack.release]]
-    version = "0.2.0"
-    ref = "main"
-    commit = "7dd57dd9be7d286f19f74c27a00a4359392734a4"
-    hash = "sha256:3ba4ad08c81ab8d2cb9bd591a0f546435e14a9132b1d4d4745bde03d0feb94ad"
-    description = "Self-contained gas-city contributor lifecycle: drops the pr-pipeline import, bakes in the B-rule adoption-review audit, blast-radius dimensions, and test-tier strategy (7 skills, zero imports)."
-
-  [[pack.release]]
-    version = "0.2.1"
-    ref = "main"
-    commit = "5b7c5c1320ee6537f5b9c661d2e52712140320df"
-    hash = "sha256:3757a3dee523efb29e7cf1f9927c70c9bf491eba6d8416e147430aa6130702cf"
-    description = "YAML-safe skill front matter (0.2.0 had an unquoted colon that broke parsing) plus a durability pass — removes time-pinned references (PR-number citations, dated product names, build-timeout numbers, drift-prone counts) so the skills resist staleness. No behavior change."
+    commit = "e4356afa128a2550ce2ab3a6cdf5dab46f46e03d"
+    hash = "sha256:d3b9be891b93d099950cf8e95d510b682693b6774bf8ad530d0bd7f61b2b907e"
+    description = "Breaking rename from contributing to contributing-to-gascity, preserving the self-contained Gas City contributor lifecycle and current formula behavior."
 
 [[pack]]
   name = "oversight-rig"
