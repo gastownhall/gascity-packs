@@ -167,3 +167,37 @@ files `hooks.Install` owns. Its regression test
 fix with the same `stored=(absent)` diagnostic and passes with it. Full
 `go test ./cmd/gc/` passes (umask 022, direct network), as do
 `internal/runtime/...` and `internal/hooks/...`; `go vet` is clean.
+
+## Codex turn activity: never idle on 1.5
+
+With the drift fix, CI's Codex live jobs (run 36226514516; credential preflight
+passed) still failed with "GC startup did not become ready" on both the RC and
+the candidate. The plugin waits for the structured transcript's
+`tail_state.activity == "idle"`; GC 1.5 always reports `unknown` for Codex.
+`internal/worker/sessionlog_adapter.go` `LoadHistory` applies the Claude-shaped
+tail heuristic (`sessionlog.InferActivity` only knows `system`/`assistant`/`user`
+records), and the Codex reader discards `task_started`/`task_complete`. Running
+Codex rollouts through `LoadHistory` on `876b06123` gave `unknown` for an
+in-progress turn, a completed turn and a failed turn. `release/v1.5.0` and
+`origin/main` are unchanged. The superseded #6106 series fixed this; #6481
+dropped it.
+
+Two commits are now on `fix/claude-runtime-v1.5.0` (head `286af7a9c`):
+
+- `f9f28fcae` "fix(sessionlog): derive Codex tail activity from turn lifecycle":
+  `task_started` means in a turn; `task_complete`/`turn_aborted` for the open turn
+  means idle; an assistant message alone is not a turn boundary.
+  `TestLoadHistoryCodexTailActivityFollowsTurnLifecycle` reports `unknown` for all
+  three cases when the reader change is reverted, and passes with it.
+- `286af7a9c` "fix(sessionlog): preserve terminal Codex completion errors"
+  (cherry-picked from `04e0eb92a` on the unmerged
+  `fix/runtime-input-history-resume-main`): a `task_complete` carrying an error
+  becomes a system error entry, so a failed turn that is now `idle` still shows
+  its provider error instead of looking like a silent success.
+  `TestCodexTaskCompleteErrorHistory` fails without it and passes with it.
+
+`go vet` is clean and `go test` passes for `./internal/sessionlog/...`,
+`./internal/worker/...` and `./internal/api` (umask 022). Not changed:
+`TailActivityForProvider` (`sessionlog_adapter.go:156`, used by keyed-session
+`State()`) still uses the Claude heuristic, so Codex never shows `PhaseBusy`
+there; the plugin does not depend on it.

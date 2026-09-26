@@ -7,7 +7,7 @@ on:
         description: Exact GC candidate commit (based on the pinned 1.5 release candidate) for the candidate matrix
         required: false
         type: string
-        default: 876b0612335726a7fc2510d25e3d1261bee23973
+        default: 286af7a9c6fffd06f0a16b8c32da91d3c8c6a1ab
   pull_request:
     paths: ["bb/**", "registry.toml", ".github/workflows/bb-provider.yml"]
   push:
@@ -21,7 +21,7 @@ env:
   # commit and labels it as a development build; none of these results can
   # certify a released binary. Replace with release tarballs once 1.5.0 ships.
   GC_RC_COMMIT: 750ee90205f0496907cd4804ded06d868193d1bf # release/v1.5.0
-  GC_CANDIDATE_COMMIT: ${{ inputs.gc_commit || '876b0612335726a7fc2510d25e3d1261bee23973' }} # fix/claude-runtime-v1.5.0
+  GC_CANDIDATE_COMMIT: ${{ inputs.gc_commit || '286af7a9c6fffd06f0a16b8c32da91d3c8c6a1ab' }} # fix/claude-runtime-v1.5.0
 
 jobs:
   compatibility:
