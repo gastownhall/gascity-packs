@@ -1,0 +1,6 @@
+{
+  "model": "kimi-for-coding",
+  "source": "completion11-kimi-full/private/native.personal-proof/private/gc-turn-1-transcript.json",
+  "source_sha256": "aaf5eada1b4387c743d8762e2a6d4c6fe7bd2f37e4d8d72dec92e5f5527c24d7",
+  "verification": "Model field read independently from the native structured transcript; private transcript not copied."
+}

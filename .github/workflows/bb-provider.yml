@@ -1,0 +1,352 @@
+name: BB provider (Gas City 1.5)
+
+on:
+  workflow_dispatch:
+    inputs:
+      gc_commit:
+        description: Exact GC candidate commit (based on the pinned 1.5 release candidate) for the candidate matrix
+        required: false
+        type: string
+        default: a627404e5ff0be24d9edc77c44fd3a2bf83cc987
+  pull_request:
+    paths: ["bb/**", "registry.toml", ".github/workflows/bb-provider.yml"]
+  push:
+    paths: ["bb/**", "registry.toml", ".github/workflows/bb-provider.yml"]
+
+permissions:
+  contents: read
+
+env:
+  # Gas City 1.5 has no tagged release yet. Every job builds GC from an exact
+  # commit and labels it as a development build; none of these results can
+  # certify a released binary. Replace with release tarballs once 1.5.0 ships.
+  GC_RC_COMMIT: 750ee90205f0496907cd4804ded06d868193d1bf # release/v1.5.0
+  GC_CANDIDATE_COMMIT: ${{ inputs.gc_commit || 'a627404e5ff0be24d9edc77c44fd3a2bf83cc987' }} # fix/claude-runtime-v1.5.0
+
+jobs:
+  compatibility:
+    name: Build, fixtures and CLI (GC 1.5 RC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gastownhall/gascity
+          ref: ${{ env.GC_RC_COMMIT }}
+          path: .gc-source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: .gc-source/go.mod
+          cache-dependency-path: .gc-source/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: bb/assets/plugin/package-lock.json
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Check provider and public BB bridge conformance
+        working-directory: bb/assets/plugin
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm run build
+          npm test
+      - name: Check browser completion assertions
+        working-directory: bb/tests
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test browser_driver.test.mjs desktop_attach.test.mjs
+      - name: Build every plugin entry with released BB 0.43.3
+        run: |
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
+          "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" plugin build bb/assets/plugin
+      - name: Build the exact GC 1.5 release candidate
+        working-directory: .gc-source
+        shell: bash
+        run: |
+          sudo apt-get update && sudo apt-get install -y build-essential pkg-config libicu-dev
+          test "$(git rev-parse HEAD)" = "$GC_RC_COMMIT"
+          git merge-base --is-ancestor HEAD origin/release/v1.5.0
+          make build BUILD_DIR="$RUNNER_TEMP/gc" VERSION="1.5.0-rc.${GC_RC_COMMIT:0:12}"
+          "$RUNNER_TEMP/gc/gc" version
+          sha256sum "$RUNNER_TEMP/gc/gc"
+      - name: Load and lint the pack in the GC 1.5 CLI
+        env:
+          GC_TEST_BIN: ${{ runner.temp }}/gc/gc
+        run: python3 -m unittest discover -s bb/tests -v
+
+  live-conversations:
+    name: Live ${{ matrix.runtime }} conversations (GC 1.5 ${{ matrix.gc }})
+    runs-on: ubuntu-latest
+    # GC build, two scopes with three bounded (600 s) turns and agent-resume settlement,
+    # plus dependency setup and preservation/teardown.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [claude, codex]
+        # rc is the unmodified release candidate; candidate adds the GC fixes
+        # BB still needs. Both are required so stock 1.5 gaps stay visible.
+        gc: [rc, candidate]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Select the exact GC commit
+        shell: bash
+        env:
+          TARGET: ${{ matrix.gc }}
+        run: |
+          if [ "$TARGET" = rc ]; then commit="$GC_RC_COMMIT"; else commit="$GC_CANDIDATE_COMMIT"; fi
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo 'GC commit must be a complete lowercase 40-character SHA'; exit 1; }
+          echo "GC_COMMIT=$commit" >> "$GITHUB_ENV"
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gastownhall/gascity
+          ref: ${{ env.GC_COMMIT }}
+          path: .gc-source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: .gc-source/go.mod
+          cache-dependency-path: .gc-source/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      # A fork PR has no inference credentials. Fail visibly; never execute
+      # untrusted PR code via pull_request_target or turn a skipped run green.
+      - name: Require real runtime credentials
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          CLAUDE_KEY: ${{ secrets.BB_CLAUDE_API_KEY }}
+          CLAUDE_TOKEN: ${{ secrets.MANIFOLD_AUTH_TOKEN }}
+          CODEX_KEY: ${{ secrets.BB_CODEX_API_KEY }}
+        run: |
+          if [ "$RUNTIME" = claude ]; then
+            test -n "$CLAUDE_KEY" || test -n "$CLAUDE_TOKEN" || { echo 'Missing BB_CLAUDE_API_KEY or MANIFOLD_AUTH_TOKEN; live Claude acceptance cannot pass'; exit 1; }
+          else
+            test -n "$CODEX_KEY" || { echo 'Missing BB_CODEX_API_KEY; live Codex acceptance cannot pass'; exit 1; }
+          fi
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libicu-dev tmux jq
+      - name: Build the exact GC commit with identifiable version metadata
+        working-directory: .gc-source
+        shell: bash
+        env:
+          TARGET: ${{ matrix.gc }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GC_COMMIT"
+          git merge-base --is-ancestor "$GC_RC_COMMIT" HEAD
+          make build BUILD_DIR="$RUNNER_TEMP/gc" VERSION="1.5.0-${TARGET}.${GC_COMMIT:0:12}"
+          "$RUNNER_TEMP/gc/gc" version
+          sha256sum "$RUNNER_TEMP/gc/gc"
+      - name: Install released BB and runtime
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
+          if [ "$RUNTIME" = claude ]; then
+            npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @anthropic-ai/claude-code@2.1.263
+          else
+            npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @openai/codex@0.153.4
+          fi
+          echo "$RUNNER_TEMP/runtime/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Verify real conversations, tool output and agent resume through BB
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api
+          ANTHROPIC_API_KEY: ${{ matrix.runtime == 'claude' && secrets.BB_CLAUDE_API_KEY || '' }}
+          ANTHROPIC_AUTH_TOKEN: ${{ matrix.runtime == 'claude' && secrets.MANIFOLD_AUTH_TOKEN || '' }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_HAIKU_MODEL }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SONNET_MODEL }}
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_OPUS_MODEL }}
+          CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SUBAGENT_MODEL }}
+          OPENAI_API_KEY: ${{ matrix.runtime == 'codex' && secrets.BB_CODEX_API_KEY || '' }}
+        run: |
+          if [ "$RUNTIME" = claude ]; then
+            if [ -n "$ANTHROPIC_API_KEY" ]; then
+              # A direct Anthropic key must never be sent to the Manifold route.
+              unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN
+              unset ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL
+              unset ANTHROPIC_DEFAULT_OPUS_MODEL CLAUDE_CODE_SUBAGENT_MODEL
+            else
+              test -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" || { echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL resolved empty'; exit 1; }
+              test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo 'ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty'; exit 1; }
+              test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo 'ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty'; exit 1; }
+              test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo 'CLAUDE_CODE_SUBAGENT_MODEL resolved empty'; exit 1; }
+            fi
+          fi
+          # One real model call first: a rejected credential fails here, visibly
+          # classified, instead of as every model-dependent case.
+          python3 -u bb/tests/credential_preflight.py --runtime "$RUNTIME"
+          python3 -u bb/tests/live_acceptance.py \
+            --runtime "$RUNTIME" \
+            --gc-bin "$RUNNER_TEMP/gc/gc" \
+            --gc-commit "$GC_COMMIT" \
+            --gc-development-base 1.5.0 \
+            --bb-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" \
+            --bb-app-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb-app" \
+            --timeout 600 \
+            --report-dir "$RUNNER_TEMP/bb-live-reports"
+      - name: Upload safe acceptance reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bb-live-${{ matrix.runtime }}-gc-1.5-${{ matrix.gc }}
+          # Never upload raw provider/BB state or private command captures.
+          path: |
+            ${{ runner.temp }}/bb-live-reports/summary.json
+            ${{ runner.temp }}/bb-live-reports/global/report.json
+            ${{ runner.temp }}/bb-live-reports/rig/report.json
+          if-no-files-found: warn
+
+  candidate-e2e:
+    name: Full browser E2E ${{ matrix.runtime }} (GC 1.5 candidate, Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [claude, codex]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Require an immutable GC candidate identity
+        shell: bash
+        run: |
+          [[ "$GC_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'gc_commit must be a complete lowercase 40-character commit SHA'; exit 1; }
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gastownhall/gascity
+          ref: ${{ env.GC_CANDIDATE_COMMIT }}
+          path: .e2e-gc-candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: .e2e-gc-candidate/go.mod
+          cache-dependency-path: .e2e-gc-candidate/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: bb/tests/package-lock.json
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Require real runtime credentials
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          CLAUDE_KEY: ${{ secrets.BB_CLAUDE_API_KEY }}
+          CLAUDE_TOKEN: ${{ secrets.MANIFOLD_AUTH_TOKEN }}
+          CODEX_KEY: ${{ secrets.BB_CODEX_API_KEY }}
+        run: |
+          if [ "$RUNTIME" = claude ]; then
+            test -n "$CLAUDE_KEY" || test -n "$CLAUDE_TOKEN" || { echo 'Missing BB_CLAUDE_API_KEY or MANIFOLD_AUTH_TOKEN; full Claude E2E cannot pass'; exit 1; }
+          else
+            test -n "$CODEX_KEY" || { echo 'Missing BB_CODEX_API_KEY; full Codex E2E cannot pass'; exit 1; }
+          fi
+      - name: Install native build and runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libicu-dev tmux jq
+      - name: Build the exact GC candidate with identifiable version metadata
+        working-directory: .e2e-gc-candidate
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GC_CANDIDATE_COMMIT"
+          git merge-base --is-ancestor "$GC_RC_COMMIT" HEAD
+          make build BUILD_DIR="$RUNNER_TEMP/gc-candidate" VERSION="1.5.0-candidate.${GC_CANDIDATE_COMMIT:0:12}"
+          "$RUNNER_TEMP/gc-candidate/gc" version
+          sha256sum "$RUNNER_TEMP/gc-candidate/gc"
+      - name: Install the pinned browser and rendered BB test driver
+        working-directory: bb/tests
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install playwright install --with-deps chromium
+          node --test browser_driver.test.mjs desktop_attach.test.mjs
+      - name: Install released BB and runtime
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
+          if [ "$RUNTIME" = claude ]; then
+            npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @anthropic-ai/claude-code@2.1.270
+          else
+            npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @openai/codex@0.153.4
+          fi
+          echo "$RUNNER_TEMP/runtime/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Run the full required browser and model matrix in one retained installation
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api
+          ANTHROPIC_API_KEY: ${{ matrix.runtime == 'claude' && secrets.BB_CLAUDE_API_KEY || '' }}
+          ANTHROPIC_AUTH_TOKEN: ${{ matrix.runtime == 'claude' && secrets.MANIFOLD_AUTH_TOKEN || '' }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_HAIKU_MODEL }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SONNET_MODEL }}
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_OPUS_MODEL }}
+          CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SUBAGENT_MODEL }}
+          OPENAI_API_KEY: ${{ matrix.runtime == 'codex' && secrets.BB_CODEX_API_KEY || '' }}
+        run: |
+          if [ "$RUNTIME" = claude ]; then
+            if [ -n "$ANTHROPIC_API_KEY" ]; then
+              # Keep direct Anthropic credentials off the Manifold endpoint.
+              unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN
+              unset ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL
+              unset ANTHROPIC_DEFAULT_OPUS_MODEL CLAUDE_CODE_SUBAGENT_MODEL
+            else
+              test -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" || { echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL resolved empty'; exit 1; }
+              test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo 'ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty'; exit 1; }
+              test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo 'ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty'; exit 1; }
+              test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo 'CLAUDE_CODE_SUBAGENT_MODEL resolved empty'; exit 1; }
+            fi
+          fi
+          python3 -u bb/tests/credential_preflight.py --runtime "$RUNTIME"
+          python3 -u bb/tests/full_e2e.py \
+            --runtime "$RUNTIME" \
+            --gc-bin "$RUNNER_TEMP/gc-candidate/gc" \
+            --gc-commit "$GC_CANDIDATE_COMMIT" \
+            --gc-development-base 1.5.0 \
+            --bb-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" \
+            --bb-app-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb-app" \
+            --report-dir "$RUNNER_TEMP/bb-full-e2e-reports"
+      - name: Require a complete passing candidate ledger
+        run: |
+          jq --exit-status '
+            .status == "passed" and
+            .artifacts.verification_mode == "development" and
+            .artifacts.gc_commit == env.GC_CANDIDATE_COMMIT and
+            .counts.not_run == 0 and .counts.blocked == 0 and .counts.failed == 0
+          ' "$RUNNER_TEMP/bb-full-e2e-reports/summary.json"
+      - name: Upload only the scrubbed candidate summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bb-full-candidate-${{ matrix.runtime }}-${{ env.GC_CANDIDATE_COMMIT }}
+          # GC candidate results cannot certify released GC or the macOS
+          # desktop. Screenshots, traces, prompts and raw state remain private.
+          path: ${{ runner.temp }}/bb-full-e2e-reports/summary.json
+          if-no-files-found: error
+
+  acceptance:
+    name: BB end-to-end acceptance
+    if: always()
+    needs: [compatibility, live-conversations, candidate-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every build, RC and candidate matrix entry to pass
+        env:
+          COMPATIBILITY: ${{ needs.compatibility.result }}
+          LIVE: ${{ needs.live-conversations.result }}
+          CANDIDATE: ${{ needs.candidate-e2e.result }}
+        run: |
+          test "$COMPATIBILITY" = success
+          test "$LIVE" = success
+          test "$CANDIDATE" = success
+      - name: State the verified platform scope
+        run: |
+          echo 'This required check covers Linux browser and runtime acceptance on GC 1.5 development builds (the pinned release candidate and the candidate with GC fixes). It cannot certify a released GC binary. A passing Linux check does not certify the macOS BB desktop; its full run requires separate local evidence against the same artifact identities.' >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,42 @@
+{
+  "name": "bb-plugin-gas-city",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22",
+    "bb": ">=0.43.3 <0.44",
+    "bbPluginSdk": ">=0.4.104 <0.5"
+  },
+  "bb": {
+    "name": "Gas City",
+    "description": "Configured Gas City agents, city and rig catalogs, and durable conversations on Gas City 1.5.",
+    "branding": {
+      "icon": "Building2"
+    },
+    "server": "./server.ts",
+    "host": "./host.ts",
+    "app": "./app.tsx"
+  },
+  "keywords": [
+    "bb-plugin"
+  ],
+  "scripts": {
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js",
+    "test": "node test/run.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@get-bb/plugin-sdk": "0.4.104",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.7",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3",
+    "@types/react": "19.2.14"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}
