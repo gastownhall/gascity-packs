@@ -275,8 +275,11 @@ Raw command captures under `private/` and the separate temporary state directory
 can contain credentials and must not be uploaded. The workflow uploads only
 those three explicitly named reports.
 
-For an explicit GC development build, add `--gc-development-base 1.4.1` and
-use a binary reporting a prerelease version such as `1.4.1-bb-live.1`.
+For an explicit GC development build, add `--gc-development-base 1.5.0` and
+`--gc-commit <full source commit>`, and use a binary reporting a prerelease
+version such as `1.5.0-candidate.002016a8679a`. GC 1.5 has no tagged release
+yet, so every 1.5 build must run this way; the harness then imports the
+canonical `core` pin that 1.5's `gc init` writes.
 Reports identify this as development validation and record the binary hash;
 it does not certify the unchanged released binaries. The separate GC candidate
 CI job uses this flag; the stock release jobs do not.

@@ -2,9 +2,11 @@
 
 Experimental **0.1.0**, staged on `feat/bb-provider-gascity-1.4`. This pack
 connects unmodified [BB](https://github.com/get-bb/bb) to configured agents in
-**Gas City 1.4** through BB's public provider bridge and GC's HTTP session API.
-Current qualification targets **BB 0.43.3**, **SDK 0.4.104**, and **GC 1.4.2**.
-It is not yet a registry release.
+**Gas City 1.5** through BB's public provider bridge and GC's HTTP session API.
+It targets **BB 0.43.3**, **SDK 0.4.104**, and **GC 1.5** plus the GC runtime
+corrections on [`fix/claude-runtime-v1.5.0`](https://github.com/gastownhall/gascity/tree/fix/claude-runtime-v1.5.0),
+which are not in the 1.5 release candidate. It is not yet a registry release.
+The branch name predates the move from GC 1.4 to 1.5.
 
 Open **Gas City** in BB’s sidebar. Select a connected host, a standard BB
 project, an exact global or rig agent, and its existing workspace. Gas City
@@ -18,18 +20,22 @@ bead work is assigned; BB preserves that configured behavior. The
 [conversation test role](./tests/conversation-agent-prompt.md) provides a minimal
 example suitable for an agent's `prompt.md`.
 
-**Release status:** the pack remains a release candidate. All **40 live product
+**Release status:** the pack remains a release candidate and has **not yet
+passed on GC 1.5**. The last complete pass is historical: all **40 live product
 cases passed on Hillsboro** using Manifold's **Kimi for Coding through Claude
 CLI 2.1.270**, BB 0.43.3, and patched GC `1.4.2-bb-runtime.4f41f8285070`.
-Those exact artifacts are **deployed and verified on Hillsboro**, with global
-and mapped-rig Kimi roles available alongside the existing Claude/Codex roles.
+Those artifacts were deployed and verified on Hillsboro on 2026-09-20; since
+2026-09-24 Hillsboro runs an unqualified GC `1.5.0-dev-bb.8ab11cc90` build,
+with global and mapped-rig Kimi roles alongside the existing Claude/Codex roles.
 The [deployment verification](../specs/research/bb-hillsboro-evidence-2026-09-19/deployment-verification.json)
 checks installed artifacts, configuration, catalogs, and service health;
 model inference was tested in isolated state, not user conversations.
 The tested provider source hash is `b17e84154ec3…`; the full pins and
 [passing ledger](../specs/research/bb-hillsboro-evidence-2026-09-19/completion11-summary.json)
-are retained. Stock-GC CI, the complete native Claude and Codex matrices,
-macOS qualification, and registry publication remain separate open gates.
+are retained. GC 1.5 qualification, CI, the complete native Claude and Codex
+matrices, macOS qualification, and registry publication remain open gates.
+The [GC 1.5 fix-gap analysis](../specs/research/bb-gc-1.5-fix-gap-2026-09-26.md)
+records which GC corrections 1.5 still needs.
 Drafts: [provider pack #455](https://github.com/gastownhall/gascity-packs/pull/455)
 and [GC runtime corrections #6481](https://github.com/gastownhall/gascity/pull/6481).
 
@@ -80,8 +86,11 @@ BB cache. Wait for the ordinary refresh before selecting a new agent there.
 
 ## Prerequisites and topology
 
-- Gas City **1.4.2 with the pinned runtime corrections above**, with a running supervisor and configured agents that can
-  create sessions and produce a reliable structured transcript.
+- Gas City **1.5** (`release/v1.5.0`) with the runtime corrections on
+  `fix/claude-runtime-v1.5.0`, a running supervisor, and configured agents that
+  can create sessions and produce a reliable structured transcript. The plugin
+  refuses supervisors older than 1.5. Limitations below that name GC 1.4 were
+  observed on 1.4 and have not all been re-checked on 1.5.
 - BB **0.43.3**, using `@get-bb/plugin-sdk` **0.4.104**.
   The plugin declares BB compatibility `>=0.43.3 <0.44` and SDK compatibility
   `>=0.4.104 <0.5`; the passing live matrix pins the versions above.
@@ -334,25 +343,31 @@ npm run typecheck
 npm run build
 npm test
 cd ../../..
-GC_TEST_BIN=/absolute/path/to/gc-1.4.2 \
+GC_TEST_BIN=/absolute/path/to/gc-1.5 \
   python3 -m unittest discover -s bb/tests -v
 ```
 
-The TypeScript tests exercise a GC 1.4-shaped HTTP/SSE fixture and BB's
+The TypeScript tests exercise a GC-shaped HTTP/SSE fixture and BB's
 published bridge conformance runner: scoped discovery, exact identities,
 async creation, prompt delivery, replay, tool deltas, resume, interrupt,
 release, checkout mismatch, lost responses, and explicit approvals.
-The Python checks use the **actual released GC binary** for pack lint,
+The Python checks use the **actual GC binary** for pack lint,
 resolved configuration, command discovery, and executable entrypoints.
-The dedicated workflow pins GC 1.4.0, 1.4.1, and 1.4.2 with verified download checksums,
-and builds the server, host and frontend with released BB 0.43.3. Installer
+GC 1.5 has no tagged release yet, so the dedicated workflow builds GC from two
+pinned commits: the unmodified `release/v1.5.0` candidate, and
+`fix/claude-runtime-v1.5.0` (the candidate plus the GC corrections). Both run
+as labeled development builds and cannot certify a released binary. The
+workflow also builds the server, host and frontend with released BB 0.43.3. Installer
 tests exercise failed builds, registration rollback and retained data.
 
 `BB end-to-end acceptance` additionally requires actual Claude and Codex
-conversations through released BB and each GC version in the matrix, for global and rig
+conversations through released BB and both GC builds, for global and rig
 agents: two verified completions, retained context, a tool event and its file
 output, followed by agent suspension and a third turn proving the same provider
-conversation and memory without tools. Missing inference credentials fail the check. See
+conversation and memory without tools. Missing inference credentials fail the check.
+Each model job first makes one real call through the runtime CLI
+(`bb/tests/credential_preflight.py`) and prints only a redacted HTTP status, so a
+rejected secret fails once and visibly. See
 [live CI setup and reproduction](./docs/verification.md#ci-acceptance).
 
 `bb/tests/full_e2e.py` adds the rendered New thread and launcher journeys,
