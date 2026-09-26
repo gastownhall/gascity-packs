@@ -38,10 +38,17 @@ def agent_model(agent="global", city="test-city"):
 class SafeProviderFailureTests(unittest.TestCase):
     def test_unrecognized_failure_keeps_only_status_and_known_kinds(self):
         message = safe_provider_failure({"message": "stream error 400 invalid_request for sk-secret user@example.com"})
-        self.assertEqual(message, "BB reported a provider failure; http_status=400 error_kinds=invalid_request; inspect private evidence")
+        self.assertEqual(message, "BB reported a provider failure; http_status=400 error_kinds=invalid,invalid_request origin=provider-or-gc; inspect private evidence")
         self.assertNotIn("sk-secret", message)
         self.assertEqual(safe_provider_failure({"message": "something new"}),
-                         "BB reported a provider failure; inspect private evidence")
+                         "BB reported a provider failure; origin=provider-or-gc; inspect private evidence")
+
+    def test_plugin_authored_prefix_is_reported_without_embedded_provider_text(self):
+        message = safe_provider_failure({"message": "Gas City create failed: private provider detail sk-secret"})
+        self.assertNotIn("sk-secret", message)
+        self.assertNotIn("private provider detail", message)
+        message = safe_provider_failure({"message": "Gas City changed transcript streams during this turn; inspect the session before continuing."})
+        self.assertIn('origin="Gas City changed transcript streams during this turn; inspect the session before continuing."', message)
 
 
 class PersonalWorkspaceGuardTests(unittest.TestCase):

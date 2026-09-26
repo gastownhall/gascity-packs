@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import sys
@@ -38,11 +39,28 @@ def safe_provider_failure(payload):
         return "GC startup did not become ready; no BB prompt was sent"
     if "session is busy" in text or "needs a response" in text or "active gas city turn" in text:
         return "GC session is busy or waiting for a response"
-    # CI discards private evidence; keep only HTTP statuses and allow-listed
-    # error kinds so an unrecognized failure is still diagnosable.
+    # CI discards private evidence; keep only the plugin-authored message
+    # prefix, HTTP statuses and allow-listed error kinds, never provider text.
     detail = classify(json.dumps(payload))
     suffix = "".join(f" {key}={','.join(value)}" for key, value in detail.items() if value)
-    return "BB reported a provider failure;" + (suffix and suffix + ";") + " inspect private evidence"
+    origin = plugin_message_prefix(payload.get("message") if isinstance(payload, dict) else None)
+    suffix += f" origin={json.dumps(origin) if origin else 'provider-or-gc'}"
+    return "BB reported a provider failure;" + suffix + "; inspect private evidence"
+
+
+def plugin_message_prefix(message):
+    """Return the static plugin text a message starts with, if the plugin wrote it."""
+    if not isinstance(message, str):
+        return None
+    source = Path(__file__).resolve().parents[1] / "assets/plugin/src"
+    prefixes = set()
+    for path in source.glob("*.ts"):
+        for literal in re.findall(r'new (?:Error|ApiError)\((?:[^,()]*,\s*)?[`"]([^`"]+)', path.read_text()):
+            static = re.split(r"\$\{|: ", literal, maxsplit=1)[0].strip()
+            if len(static) >= 12:
+                prefixes.add(static)
+    matches = [prefix for prefix in prefixes if message.startswith(prefix)]
+    return max(matches, key=len) if matches else None
 
 
 def verify_prompt_frame(frame, turn, prompt):
