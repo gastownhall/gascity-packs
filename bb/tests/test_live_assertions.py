@@ -35,6 +35,15 @@ def agent_model(agent="global", city="test-city"):
     return "gc1_" + base64.urlsafe_b64encode(json.dumps(target).encode()).decode().rstrip("=")
 
 
+class SafeProviderFailureTests(unittest.TestCase):
+    def test_unrecognized_failure_keeps_only_status_and_known_kinds(self):
+        message = safe_provider_failure({"message": "stream error 400 invalid_request for sk-secret user@example.com"})
+        self.assertEqual(message, "BB reported a provider failure; http_status=400 error_kinds=invalid_request; inspect private evidence")
+        self.assertNotIn("sk-secret", message)
+        self.assertEqual(safe_provider_failure({"message": "something new"}),
+                         "BB reported a provider failure; inspect private evidence")
+
+
 class PersonalWorkspaceGuardTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

@@ -17,7 +17,9 @@ from pathlib import Path
 
 PROMPT = "Reply with exactly: pong"
 KNOWN = ("authentication_failed", "authentication_error", "permission_error", "invalid_api_key", "insufficient_quota",
-         "rate_limit", "overloaded", "billing", "quota", "Unauthorized", "Forbidden")
+         "rate_limit", "overloaded", "billing", "quota", "Unauthorized", "Forbidden",
+         "usage_limit", "invalid_request", "model_not_found", "context_length", "unsupported",
+         "stream_error", "turn_aborted", "provider_error", "timed out")
 
 
 def classify(text):

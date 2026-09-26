@@ -20,6 +20,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from credential_preflight import classify
+
 
 class AcceptanceFailure(RuntimeError):
     pass
@@ -36,7 +38,11 @@ def safe_provider_failure(payload):
         return "GC startup did not become ready; no BB prompt was sent"
     if "session is busy" in text or "needs a response" in text or "active gas city turn" in text:
         return "GC session is busy or waiting for a response"
-    return "BB reported a provider failure; inspect private evidence"
+    # CI discards private evidence; keep only HTTP statuses and allow-listed
+    # error kinds so an unrecognized failure is still diagnosable.
+    detail = classify(json.dumps(payload))
+    suffix = "".join(f" {key}={','.join(value)}" for key, value in detail.items() if value)
+    return "BB reported a provider failure;" + (suffix and suffix + ";") + " inspect private evidence"
 
 
 def verify_prompt_frame(frame, turn, prompt):
