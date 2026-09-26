@@ -1,0 +1,7 @@
+{
+  "base": "/tmp/jst-7cbm4xzr",
+  "gc_version": "1.5.0-dev-bb+8ab11cc90",
+  "python": "/usr/bin/python3",
+  "scenarios": "some,none,audit,tripped,nokey",
+  "started": "2026-09-26T03:27:15.502462+00:00"
+}

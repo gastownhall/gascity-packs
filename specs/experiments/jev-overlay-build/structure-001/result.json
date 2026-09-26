@@ -1,0 +1,12 @@
+{
+  "status": "completed",
+  "base": "/tmp/jst-7cbm4xzr",
+  "swept": [],
+  "scenarios": [
+    "some",
+    "none",
+    "audit",
+    "tripped",
+    "nokey"
+  ]
+}

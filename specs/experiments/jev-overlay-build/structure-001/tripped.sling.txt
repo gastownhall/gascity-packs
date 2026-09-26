@@ -1,0 +1,1 @@
+{"bead_id":"fi-7hn","dashboard_url":"http://127.0.0.1:39397/city/jevstruct/runs/fi-7hn","dry_run":false,"formula":"jev-build","method":"on-formula","ok":true,"queued":false,"routed":true,"schema_version":"1","success":true,"target":"fixture/gc.run-operator","workflow_id":"fi-7hn"}

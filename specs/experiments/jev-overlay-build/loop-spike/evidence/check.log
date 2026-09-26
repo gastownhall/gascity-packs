@@ -1,0 +1,4 @@
+02:22:58 CHECK key=rig-4rs attempt=1 iter=1 bead=rig-ums
+02:23:45 CHECK key=rig-4rs attempt=2 iter=2 bead=rig-pk2
+02:25:38 CHECK key=rig-owu attempt=1 iter=1 bead=rig-9u4
+02:26:22 CHECK key=rig-owu attempt=2 iter=2 bead=rig-2m3

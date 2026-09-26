@@ -1,4 +1,10 @@
 [pack]
 name = "gascity-jev"
-version = "0.1.0"
+version = "0.2.0"
 schema = 2
+
+# Overlay on the base Gas City pack: every gascity formula, prompt, check
+# script, command and skill comes from the import. This pack adds only
+# jev-prefixed formulas whose Jev gates decide whether Claude review sessions run.
+[imports.gc]
+source = "../gascity"

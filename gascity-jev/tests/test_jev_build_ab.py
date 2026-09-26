@@ -12,13 +12,35 @@ build = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
 
 
-def test_build_arms_explicitly_set_every_applicable_jev_mode():
-    # The restored baseline has no Jev variables; even off would be unknown.
+def test_build_arms_launch_build_basic_or_the_jev_intake_router(tmp_path):
     assert build.jev_variables('baseline', 'jev-1.13.0') == {}
-    variables = build.jev_variables('jev', 'jev-1.13.0')
-    assert {key: variables[key] for key in ('jev_mode', 'jev_findings_mode', 'jev_failure_mode')} == {
-        key: 'auto' for key in ('jev_mode', 'jev_findings_mode', 'jev_failure_mode')}
-    assert variables['jev_model'] == variables['jev_decision_model'] == 'jev-1.13.0'
+    variables = build.jev_variables('jev', 'jev-1.13.0', tmp_path / 'jev-state')
+    assert variables == {'jev_mode': 'auto', 'jev_model': 'jev-1.13.0', 'jev_state_dir': str(tmp_path / 'jev-state')}
+    rig = ['gc', '--city', 'c', '--rig', 'fixture']
+    baseline = build.launch_command(rig, 'baseline', 'fi-1', {'push': 'false'})
+    assert baseline[5:9] == ['sling', 'gc.run-operator', 'fi-1', '--on'] and 'build-basic' in baseline
+    jev = build.launch_command(rig, 'jev', 'fi-1', variables)
+    assert jev[5:8] == ['gc', 'jev-route', 'fi-1'] and '--var' in jev and 'build-basic' not in jev
+
+
+def test_gate_delivery_reads_the_review_gate_item():
+    beads = [{'id': 'g', 'metadata': {'jev.role': 'review-gate', 'gc.root_bead_id': 'r',
+                                      'jev.item': json.dumps({'gate': 'jev', 'acceptance': 'skip'}),
+                                      'jev.summary': json.dumps({'skipped_lanes': ['acceptance']})}},
+             {'id': 'o', 'metadata': {'jev.role': 'review-gate', 'jev.item': json.dumps({'gate': 'fail-open:no_key'}),
+                                      'jev.review_error': 'no_key'}}]
+    rows = build.gate_delivery(beads)
+    assert [r['jev_answered'] for r in rows] == [True, False]
+    assert rows[0]['summary']['skipped_lanes'] == ['acceptance'] and rows[1]['reason'] == 'no_key'
+
+
+def test_run_path_sweep_signals_only_this_runs_processes(tmp_path, monkeypatch):
+    root = tmp_path / 'gcja-1'
+    listing = f' 11 bd db-proxy-child --root {root}/w/city/.beads/dolt\n 12 dolt sql-server --config /other/x\n'
+    monkeypatch.setattr(build.subprocess, 'run', lambda *a, **k: build.subprocess.CompletedProcess(a, 0, listing, ''))
+    killed = []
+    monkeypatch.setattr(build.os, 'kill', lambda pid, sig: killed.append(pid))
+    assert [row['pid'] for row in build.sweep_run_processes(root)] == [11] and killed == [11]
 
 
 @pytest.mark.parametrize('arm, name', [('baseline', 'gascity'), ('jev', 'gascity-jev')])

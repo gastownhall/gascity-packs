@@ -1,0 +1,60 @@
+Formula: jev-build
+Description: Jev-gated build-basic.
+
+Runs build-basic unchanged through summarize-implementation, then replaces the
+starter review with a deterministic Jev gate. The gate gathers receipts (it runs
+the tests itself and compares pre-existing test files by hash), asks Jev one
+"is there any violating input?" question per acceptance criterion plus a smell
+screen, and fans out one jev-review-tail bond whose Claude review lanes run only
+where Jev is not confident. The bond owns review, finalize and publish. Every
+gate failure falls back to all lanes at full scope.
+
+
+Required vars:
+  {{artifact_root}}: Build artifact root.
+
+Optional vars:
+  {{code_review_formula}}: Code-review methodology formula used by adapters that delegate review. (default=review)
+  {{context_path}}: Optional source context bundle path. (default=)
+  {{decomposition_formula}}: Decomposition methodology formula used by adapters that delegate task creation. (default=decomposition-base)
+  {{decomposition_path}}: Task decomposition artifact path to create or reuse. (default=)
+  {{drain_policy}}: Implementation drain policy. (default=separate)
+  {{implementation_formula}}: Implementation methodology formula used by adapters that delegate implementation. (default=implement)
+  {{implementation_item_formula}}: Single-item implementation formula used by shared-drain adapters. (default=do-work-item)
+  {{implementation_target}}: Role target for implementation work. (default=gc.implementation-worker)
+  {{interaction_mode}}: Workflow interaction posture: interactive, autonomous, or headless. (default=interactive)
+  {{jev_audit_rate}}: Empty uses the adaptive audit schedule (30% until 60 audited accepts, then 10% until 300, then 5%). A number from 0 to 1 overrides it. (default=)
+  {{jev_mode}}: auto (use Jev when TYPESAFE_API_KEY is set, else run every lane) or off (always run every lane). (default=auto)
+  {{jev_model}}: Pinned Jev model. (default=jev-1.13.0)
+  {{jev_state_dir}}: Absolute gate state directory (bands, breaker, cross-run ledger). Empty uses <city>/.gc/jev-gate. (default=)
+  {{jev_test_command}}: Shell command the gate runs in each implementation worktree. Empty detects pytest, go test, cargo test or npm test. (default=)
+  {{jev_test_timeout}}: Seconds allowed for the gate's own test run. (default=600)
+  {{keep_inherited_tail}}: Leave empty. The inherited finalize and publish steps are dropped; the jev-review-tail bond owns them. (default=)
+  {{max_iterations}}: Maximum implementation/review fix attempts. (default=10)
+  {{open_pr}}: Set true to allow final PR creation after all checks pass. (default=false)
+  {{plan_path}}: Plan or design artifact path to create or reuse. (default=)
+  {{planning_formula}}: Planning methodology formula used by adapters that delegate planning. (default=planning-base)
+  {{push}}: Set true to allow final publish push after all checks pass. (default=false)
+  {{requirements_path}}: Requirements artifact path to create or reuse. (default=)
+  {{review_fix_formula}}: Review-fix methodology formula used after failed code-review findings. (default=fix-loop-base)
+  {{review_mode}}: Review authority: report, agent, or interactive. (default=agent)
+
+Steps (18):
+  ├── jev-build.prepare: Prepare build context
+  ├── jev-build.requirements.spec: Step spec for Generate requirements (spec)
+  ├── jev-build.requirements.iteration.1: Generate requirements [needs: jev-build.prepare]
+  ├── jev-build.requirements: Generate requirements [needs: jev-build.prepare, jev-build.requirements.iteration.1]
+  ├── jev-build.plan.spec: Step spec for Write implementation plan (spec)
+  ├── jev-build.plan.iteration.1: Write implementation plan [needs: jev-build.requirements]
+  ├── jev-build.plan: Write implementation plan [needs: jev-build.requirements, jev-build.plan.iteration.1]
+  ├── jev-build.plan-review: Run design review [needs: jev-build.plan]
+  ├── jev-build.decompose.spec: Step spec for Create task beads (spec)
+  ├── jev-build.decompose.iteration.1: Create task beads [needs: jev-build.plan-review]
+  ├── jev-build.decompose: Create task beads [needs: jev-build.plan-review, jev-build.decompose.iteration.1]
+  ├── jev-build.implement: Drain build implementation [needs: jev-build.decompose]
+  ├── jev-build.summarize-implementation.spec: Step spec for Write canonical implementation summary (spec)
+  ├── jev-build.summarize-implementation.iteration.1: Write canonical implementation summary [needs: jev-build.implement]
+  ├── jev-build.summarize-implementation: Write canonical implementation summary [needs: jev-build.implement, jev-build.summarize-implementation.iteration.1]
+  ├── jev-build.review: Jev review gate [needs: jev-build.summarize-implementation]
+  ├── jev-build.review-fanout: Expand fanout for Jev review gate [needs: jev-build.review]
+  └── jev-build.workflow-finalize: Finalize workflow [needs: jev-build.review-fanout]

@@ -1,0 +1,1 @@
+{"bead": "fi-3vz", "formula": "jev-build-compact", "audited": false, "decision_id": "jd-bc1f1b95d880", "facts": {"size": "compact", "size_probabilities": {"compact": 0.95, "standard": 0.025, "deep": 0.025}, "size_confidence": 0.95, "risky_surface": "none", "needs_design": "no", "well_specified": "clear_acceptance_criteria"}, "error": "", "workflow_id": "fi-7gy"}

@@ -1,3 +1,0 @@
-description = "Implementation reviewer for code, diff, branch, and PR-quality verdict reports"
-scope = "rig"
-fallback = true

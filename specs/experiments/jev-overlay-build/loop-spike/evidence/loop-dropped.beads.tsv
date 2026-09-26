@@ -1,0 +1,10 @@
+rig-6vl	closed	jev-build.prepare	-	pass	2026-09-26T02:38:28Z	1790390307.6018856	1790390307.3333573
+rig-l6m	closed	jev-build.implement	-	pass	2026-09-26T02:38:40Z	1790390319.338298	1790390319.9757876
+rig-n53	closed	jev-build.summarize-implementation	-	pass	2026-09-26T02:38:47Z	1790390325.8849592	1790390326.1569502
+rig-n1f	closed	jev-build.review	-	pass	2026-09-26T02:38:54Z	1790390333.1518734	1790390334.740708
+rig-uki	closed	jev-review-tail.jev-build.review.item.1.review-final	-	pass	2026-09-26T02:39:03Z	1790390342.1218295	1790390342.4274025
+rig-4mq	closed	jev-review-tail.jev-build.review.item.1.finalize	-	pass	2026-09-26T02:39:11Z	1790390350.2278001	1790390350.4887922
+rig-2ex	closed	jev-review-tail.jev-build.review.item.1.publish	-	pass	2026-09-26T02:39:17Z	1790390356.8377156	1790390357.1152472
+rig-5ld	closed	jev-build.review-fanout	fanout	pass	2026-09-26T02:39:21Z	-	-
+rig-chy	closed	(root)	workflow	pass	2026-09-26T02:39:25Z	-	-
+rig-7ew	closed	jev-build.workflow-finalize	workflow-finalize	pass	2026-09-26T02:39:27Z	-	-

@@ -1,7 +1,12 @@
 # Jev kind triage
 
-`github-issue-triage` defaults to `jev_kind_mode=auto`, delegating the bounded
-kind question to Jev when configured. Without access, ordinary triage applies.
+> Scope: advisory command-line helpers kept for maintainer-city triage
+> (`../REQUIREMENTS.md`, GC-JEV-BR-009). No overlay formula calls them. The
+> build gates in `jev-build` are different: they act on their own inside
+> bands, with audits and a circuit breaker.
+
+In `auto` mode the helper delegates the bounded kind question to Jev when
+configured. Without access, ordinary triage applies.
 Use `off` to disable or `assist` to explicitly attempt assistance. The helper
 also accepts the pack's PR snapshot
 format for callers such as maintainer-city. It only reads title and body;

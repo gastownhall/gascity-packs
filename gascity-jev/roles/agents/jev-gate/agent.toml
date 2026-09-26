@@ -1,0 +1,7 @@
+description = "Deterministic Jev gate worker (no LLM): claims one routed gate step, gathers receipts, asks Jev, and closes it"
+scope = "rig"
+start_command = "python3 {{.ConfigDir}}/../assets/scripts/jev_gate.py worker"
+prompt_mode = "none"
+lifecycle = "one_shot"
+process_names = ["python3"]
+max_active_sessions = 4

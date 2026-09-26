@@ -1,3 +1,0 @@
-description = "Run operator for deterministic setup, validation, gates, metadata, and finalization"
-scope = "rig"
-fallback = true

@@ -305,15 +305,74 @@ def snapshot_pack(pack, out):
     }
 
 
-def jev_variables(arm, model):
+def jev_variables(arm, model, state_dir=None):
+    """Jev-arm launch variables. The gate state (bands, breaker, ledger) is shared
+    across the experiment's Jev arms so audit counts accumulate over pairs."""
     if arm == 'baseline':
         return {}
     if arm != 'jev':
         raise ValueError(f'Unknown experiment arm: {arm}')
-    mode = 'auto'
-    return {'jev_mode': mode, 'jev_findings_mode': mode, 'jev_failure_mode': mode,
-            'jev_model': model, 'jev_decision_model': model,
-            'jev_threshold': '0.85', 'jev_decision_threshold': '0.90'}
+    variables = {'jev_mode': 'auto', 'jev_model': model}
+    if state_dir:
+        variables['jev_state_dir'] = str(state_dir)
+    return variables
+
+
+def launch_command(rig, arm, source_id, variables):
+    """Baseline slings build-basic; the Jev arm goes through the pack's intake router,
+    which slings jev-build-compact or jev-build."""
+    if arm == 'jev':
+        cmd = [*rig, 'gc', 'jev-route', source_id]
+    else:
+        cmd = [*rig, 'sling', 'gc.run-operator', source_id, '--on', 'build-basic',
+               '--title', gate.BUILD_TITLE, '--nudge', '--json']
+    for key, value in variables.items():
+        cmd += ['--var', f'{key}={value}']
+    return cmd
+
+
+def require_committed_pack(pack):
+    """`gc import add` pins a local path to its git HEAD, so uncommitted pack edits
+    would silently not be tested. Refuse to run with a dirty pack tree."""
+    paths = [str(pack.source.relative_to(ROOT))]
+    if pack.roles_source and pack.roles_source != pack.source / 'roles':
+        paths.append(str(pack.roles_source.relative_to(ROOT)))
+    if pack.name == 'gascity-jev':
+        paths.append('gascity')
+    dirty = subprocess.check_output(['git', 'status', '--porcelain', '--', *paths], cwd=ROOT, text=True)
+    if dirty.strip():
+        raise ValueError('Commit the pack before an A/B: gc import add pins the committed HEAD and would '
+                         'not test these changes:\n' + dirty)
+
+
+def sweep_run_processes(root):
+    """Last-resort cleanup: SIGTERM any process whose command line holds this run's
+    own root path (Beads proxies and Dolt servers can respawn after gc stop)."""
+    root = str(Path(root).resolve())
+    result = subprocess.run(['ps', '-eo', 'pid=,args='], capture_output=True, text=True)
+    signalled = []
+    for line in result.stdout.splitlines():
+        pid, _, args = line.strip().partition(' ')
+        if root in args and pid.isdigit() and int(pid) != os.getpid():
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+                signalled.append({'pid': int(pid), 'args': args[:160]})
+            except ProcessLookupError:
+                pass
+    return signalled
+
+
+def gate_delivery(beads):
+    """Jev-arm treatment evidence: the review gate's item and summary per workflow."""
+    rows = []
+    for bead in beads:
+        meta = bead.get('metadata') or {}
+        if meta.get('jev.role') == 'review-gate' and meta.get('jev.item'):
+            item = json.loads(meta['jev.item'])
+            rows.append({'bead': bead['id'], 'root': meta.get('gc.root_bead_id'), 'item': item,
+                         'summary': json.loads(meta.get('jev.summary') or '{}'),
+                         'jev_answered': item.get('gate') == 'jev', 'reason': meta.get('jev.review_error', '')})
+    return rows
 
 
 def final_quality(workspace, beads, out, env, original_test_hash):
@@ -353,6 +412,8 @@ def run(args, arm, out):
               'model': args.model, 'jev_model': args.jev_model, 'status': 'starting'}
     pack = pack_for_arm(arm)
     report['pack_name'] = pack.name
+    if not args.setup_only:
+        require_committed_pack(pack)
     load = host_load(args.max_load)
     save(out/'host-load-preflight.json', load)
     if load['status'] != 'passed':
@@ -420,17 +481,23 @@ def run(args, arm, out):
                 if not source_id:
                     raise ValueError('gc bd create did not report the task bead id')
                 report['source_bead_id'] = source_id
-                cmd = [*rig,'sling','gc.run-operator',source_id,'--on','build-basic',
-                       '--title',gate.BUILD_TITLE,'--nudge','--json']
                 variables = {'artifact_root':str(gate.BUILD_ARTIFACT_ROOT),'interaction_mode':'headless',
                     'review_mode':'agent','drain_policy':'separate','push':'false','open_pr':'false',
-                    'max_iterations':'2', **jev_variables(arm, args.jev_model)}
-                for k,v in variables.items(): cmd += ['--var',f'{k}={v}']
+                    'max_iterations':'2', **jev_variables(arm, args.jev_model, args.out/'jev-state')}
+                cmd = launch_command(rig, arm, source_id, variables)
                 save(out/'launch.json', {'command':cmd,'task':task,'source_bead_id':source_id})
                 dispatched = gate.run_checked(cmd,cwd=workspace.rig_dir,env=env,timeout=args.dispatch_timeout,
                                               log_output=True)
+                if arm == 'jev':
+                    routed = json.loads(dispatched.strip().splitlines()[-1])
+                    save(out/'intake-route.json', routed)
+                    report['formula'] = routed['formula']
+                    candidate = routed.get('workflow_id')
+                else:
+                    report['formula'] = 'build-basic'
+                    candidate = gate.extract_sling_root_id(dispatched)
                 root_id = gate.resolve_workflow_root_id(args.gc_bin,workspace,env=env,
-                    candidate_id=gate.extract_sling_root_id(dispatched),title=gate.BUILD_TITLE,
+                    candidate_id=candidate,title=gate.BUILD_TITLE,
                     source_title=gate.BUILD_SOURCE_TITLE,timeout=30)
                 report['root_id'] = root_id
                 root = gate.wait_for_workflow_pass(args.gc_bin,workspace,root_id,env=env,
@@ -444,13 +511,10 @@ def run(args, arm, out):
                 hidden = "import importlib.util; s=importlib.util.spec_from_file_location('subject','slugger.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); cases=[('  Hello, World!  ','hello-world'),('a---b___c','a-b-c'),('123 ABC','123-abc'),('!@#','')]; assert all(m.slugify(x)==y for x,y in cases)"
                 gate.run_checked([sys.executable,'-c',hidden],cwd=result_path,env=env,timeout=30,log_output=True)
                 report['hidden_tests_pass'] = True
-                jev_reports=[]
-                for p in workspace.rig_dir.rglob('report.json'):
-                    d=json.loads(p.read_text())
-                    if d.get('schema')=='gc.evidence-assessment.v1': jev_reports.append({'path':str(p),**d})
-                save(out/'jev-reports.json',jev_reports)
-                if arm=='jev' and not any(r.get('status')=='completed' for r in jev_reports):
-                    raise ValueError('Treatment not delivered: no completed Jev assessment; fallback is not a Jev result')
+                delivery = gate_delivery(beads)
+                save(out/'jev-gate-delivery.json', delivery)
+                if arm=='jev' and not any(row['jev_answered'] for row in delivery):
+                    raise ValueError('Treatment not delivered: the review gate failed open; fallback is not a Jev result')
         except (Exception, KeyboardInterrupt) as e:
             if isinstance(e, subprocess.TimeoutExpired):
                 for label, value in [('stdout', e.stdout), ('stderr', e.stderr)]:
@@ -469,9 +533,12 @@ def run(args, arm, out):
                 gate.stop_city(args.gc_bin,workspace,env=env)
                 report['cleanup'] = stop_disposable_dolt(workspace.city_dir, workspace.rig_dir)
                 # A late bd call from a stopping worker can respawn the 1.5
-                # Beads proxy seconds after the first sweep; sweep once more.
+                # Beads proxy seconds after the first sweep; sweep once more,
+                # then sweep anything else still holding this run's own paths.
                 time.sleep(20)
                 report['cleanup_resweep'] = stop_disposable_dolt(workspace.city_dir, workspace.rig_dir)
+                time.sleep(25)
+                report['cleanup_path_sweep'] = sweep_run_processes(workspace.root)
             finally:
                 report['otel_usage'] = collector.close()
                 report['otel_usage']['coverage'] = 'Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals.'
@@ -480,23 +547,11 @@ def run(args, arm, out):
             report['independent_quality'] = final_quality(workspace, final_beads, out, env, original_test_hash)
         except Exception as error:
             report['independent_quality_error'] = f'{type(error).__name__}: {error}'
-        records, seen, scan_errors = [], set(), []
-        search_roots = [workspace.rig_dir, *gate.build_result_candidates(workspace.rig_dir, final_beads)]
-        for path in (p for root in search_roots for p in root.rglob('report.json')):
-            if path.resolve() in seen:
-                continue
-            seen.add(path.resolve())
-            try:
-                data = json.loads(path.read_text())
-                if isinstance(data, dict) and data.get('schema') in ('gc.evidence-assessment.v1','gc.workflow-decisions.v1','gc.duplicate-ranking.v1'):
-                    records.append({'path':str(path), **data})
-            except (ValueError, OSError) as error:
-                scan_errors.append({'path':str(path), 'error':f'{type(error).__name__}: {error}'})
-        save(out/'all-jev-reports.json', records)
-        report['jev_report_scan_errors'] = scan_errors
-        report['jev_feature_delivery'] = {task:sum(r.get('status')=='completed' and
-            (r.get('task')==task if task!='evidence' else r.get('schema')=='gc.evidence-assessment.v1') for r in records)
-            for task in ('evidence','findings','failure')}
+        report['jev_gate_delivery'] = gate_delivery(final_beads)
+        logs = sorted(str(p) for p in workspace.rig_dir.rglob('jev/decisions.jsonl'))
+        for index, path in enumerate(logs):
+            shutil.copy(path, out/f'decisions-{index:02d}.jsonl')
+        report['jev_decision_logs'] = logs
     report['elapsed_seconds'] = time.monotonic()-started
     projects=real_claude/'projects'
     try:
@@ -515,7 +570,7 @@ def main():
     p.add_argument('--model',default='claude-sonnet-5')
     p.add_argument('--jev-model',default='jev-1.13.0')
     p.add_argument('--gc-bin',default=shutil.which('gc') or 'gc')
-    p.add_argument('--bd-bin',default='/opt/homebrew/bin/bd')
+    p.add_argument('--bd-bin',default=shutil.which('bd') or 'bd')
     # Baseline 005 needed ~46 minutes just to reach implementation; upstream's
     # inference gate allows 75.
     p.add_argument('--timeout',type=float,default=4500)
@@ -545,6 +600,13 @@ def main():
         except Exception as e:
             result={'status':'failed','arm':a,'scope':'full-build-basic','error':f'{type(e).__name__}: {e}'}
             save(args.out/(name+'-setup-failure.json'),result)
+        finally:
+            # Nothing from this arm may outlive it into the next arm's timing.
+            runtime = args.out/name/'runtime-path.json'
+            if runtime.exists():
+                swept = sweep_run_processes(Path(json.loads(runtime.read_text())['root']).parent)
+                if swept:
+                    save(args.out/(name+'-final-sweep.json'), swept)
         error_summary = result.get('error','').splitlines()[0][:500] if result.get('error') else ''
         print(f'[{i}/{len(schedule)}] {result["status"]}: {error_summary}',flush=True)
         failed = failed or result['status']=='failed'

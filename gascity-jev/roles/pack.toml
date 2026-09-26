@@ -1,7 +1,9 @@
 [pack]
 name = "gascity-jev-roles"
-version = "0.1.0"
+version = "0.2.0"
 schema = 2
 
+# The base Gas City roles, plus the deterministic jev-gate script worker.
+# Import this pack at rig scope as `gc` so every role resolves as gc.<role>.
 [imports.gc]
-source = ".."
+source = "../../gascity/roles"

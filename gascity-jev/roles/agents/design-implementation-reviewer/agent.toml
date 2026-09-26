@@ -1,3 +1,0 @@
-description = "Design reviewer focused on implementation realism, API fit, and module boundaries"
-scope = "rig"
-fallback = true

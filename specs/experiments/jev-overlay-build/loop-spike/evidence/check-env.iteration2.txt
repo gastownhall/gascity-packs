@@ -1,0 +1,16 @@
+BEADS_DIR=/tmp/jl-Ke2A/rig/.beads
+BEADS_DOLT_AUTO_START=0
+GC_ARTIFACT_DIR=/tmp/jl-Ke2A/city/.gc/molecules/rig-4rs/artifacts/rig-pk2
+GC_BEAD_ID=rig-pk2
+GC_CITY=/tmp/jl-Ke2A/city
+GC_CITY_PATH=/tmp/jl-Ke2A/city
+GC_CITY_RUNTIME_DIR=/tmp/jl-Ke2A/city/.gc/runtime
+GC_CONTROL_DISPATCHER_TRACE_DEFAULT=/tmp/jl-Ke2A/city/.gc/runtime/control-dispatcher-trace.log
+GC_CUMULATIVE_DURATION_MS=0
+GC_HOME=/tmp/jl-Ke2A/gc-home
+GC_ITERATION=2
+GC_ITERATION_DURATION_MS=0
+GC_MAX_ITERATIONS=0
+GC_MOLECULE_DIR=/tmp/jl-Ke2A/city/.gc/molecules/rig-4rs
+GC_STORE_PATH=/tmp/jl-Ke2A/rig
+GC_WISP_ID=

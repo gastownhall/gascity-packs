@@ -1,0 +1,74 @@
+formula = "jev-review-tail"
+description = "Bond: gated check-with-children review loop -> review-final -> finalize -> publish."
+type = "expansion"
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars]
+acceptance = "skip"
+test_evidence = "skip"
+simplicity = "skip"
+loop = "run"
+
+[[template]]
+id = "{target}.review-loop"
+title = "Review loop until approved"
+condition = "{{loop}} == run"
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "loop" }
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = "/tmp/jl-Ke2A/jbase/assets/scripts/check-loop.sh"
+timeout = "1m"
+
+[[template.children]]
+id = "{target}.acceptance-review"
+title = "Lane: acceptance"
+condition = "{{acceptance}} == run"
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "lane", "spike.sleep" = "2" }
+
+[[template.children]]
+id = "{target}.test-evidence-review"
+title = "Lane: test evidence"
+condition = "{{test_evidence}} == run"
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "lane", "spike.sleep" = "4" }
+
+[[template.children]]
+id = "{target}.simplicity-review"
+title = "Lane: simplicity"
+condition = "{{simplicity}} == run"
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "lane", "spike.sleep" = "3" }
+
+[[template.children]]
+id = "{target}.synthesize"
+title = "Synthesize review"
+needs = ["{target}.acceptance-review", "{target}.test-evidence-review", "{target}.simplicity-review"]
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "synthesize" }
+
+[[template.children]]
+id = "{target}.apply"
+title = "Apply review findings"
+needs = ["{target}.synthesize"]
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "apply" }
+
+[[template]]
+id = "{target}.review-final"
+title = "Write review report"
+needs = ["{target}.review-loop"]
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "review-final" }
+
+[[template]]
+id = "{target}.finalize"
+title = "Finalize build"
+needs = ["{target}.review-final"]
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "finalize" }
+
+[[template]]
+id = "{target}.publish"
+title = "Publish build"
+needs = ["{target}.finalize"]
+metadata = { "gc.run_target" = "jover.scripter", "spike.role" = "publish" }

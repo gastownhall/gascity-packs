@@ -1,3 +1,0 @@
-description = "Task decomposer for bead plans, dependency boundaries, and convoy creation"
-scope = "rig"
-fallback = true

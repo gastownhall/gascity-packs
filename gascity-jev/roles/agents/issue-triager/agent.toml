@@ -1,3 +1,0 @@
-description = "Issue triager for GitHub issue evidence, repro analysis, and triage reports"
-scope = "rig"
-fallback = true

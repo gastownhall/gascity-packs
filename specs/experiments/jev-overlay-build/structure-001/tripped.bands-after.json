@@ -1,0 +1,13 @@
+{
+  "note": "breaker tripped for review.criterion",
+  "types": {
+    "review.criterion": {
+      "tripped": true,
+      "tripped_at": "2026-09-26T03:38:29+00:00",
+      "tripped_by": "jd-08f758a91ce2",
+      "tripped_reason": "audited act-band decision contradicted by acceptance lane"
+    }
+  },
+  "updated_at": "2026-09-26T03:38:29+00:00",
+  "version": 1
+}

@@ -1,0 +1,13 @@
+{
+  "status": "completed",
+  "base": "/tmp/jst-ju0abckv",
+  "swept": [
+    "/home/ubuntu/.local/share/beads/1.3.0/bd db-proxy-child --root /tmp/jst-ju0abckv/fixture/.beads/dolt --port 0 --idle-tim",
+    "/usr/local/bin/dolt sql-server --config /tmp/jst-ju0abckv/fixture/.beads/dolt/config.yaml",
+    "/home/ubuntu/.local/share/beads/1.3.0/bd db-proxy-child --root /tmp/jst-ju0abckv/city/.beads/dolt --port 0 --idle-timeou",
+    "/usr/local/bin/dolt sql-server --config /tmp/jst-ju0abckv/city/.beads/dolt/config.yaml"
+  ],
+  "scenarios": [
+    "compact"
+  ]
+}

@@ -1,3 +1,0 @@
-description = "Publisher for authorized pushes, PR creation, and publication surfaces"
-scope = "rig"
-fallback = true

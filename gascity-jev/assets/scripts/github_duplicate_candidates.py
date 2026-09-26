@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Read-only repository search producing an auditable Jev candidate input."""
-import argparse,json,re
+import argparse,json,re,sys
 from pathlib import Path
 from urllib.parse import urlencode
+# github_api lives in the imported base pack; resolve it from the sibling checkout.
+sys.path.append(str(Path(__file__).resolve().parents[3]/'gascity/assets/scripts'))
 import github_api
 import jev_kind
 import jev_evidence

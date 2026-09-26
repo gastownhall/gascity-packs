@@ -1,5 +1,10 @@
 # Jev workflow decisions
 
+> Scope: advisory command-line helpers kept for maintainer-city triage
+> (`../REQUIREMENTS.md`, GC-JEV-BR-009). No overlay formula calls them. The
+> build gates in `jev-build` are different: they act on their own inside
+> bands, with audits and a circuit breaker.
+
 Use `assets/scripts/jev_tasks.py` for kind, findings and failure decisions inside
 the current workflow step. Duplicate ordering uses `jev_rank.py` below. `auto` uses
 Jev when `TYPESAFE_API_KEY` is configured; without it, the helper records

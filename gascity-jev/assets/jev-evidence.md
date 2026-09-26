@@ -1,7 +1,12 @@
 # Jev evidence assistance
 
-`build-basic` defaults `jev_mode` to `auto`, using Jev in the existing
-test-evidence lane when a credential is configured. Without access, record the
+> Scope: advisory command-line helpers kept for maintainer-city triage
+> (`../REQUIREMENTS.md`, GC-JEV-BR-009). No overlay formula calls them. The
+> build gates in `jev-build` are different: they act on their own inside
+> bands, with audits and a circuit breaker.
+
+Used in `auto` mode, the helper asks Jev about a test-evidence bundle when a
+credential is configured. Without access, record the
 skipped assistance and perform ordinary review. `off` disables assistance;
 `assist` explicitly attempts it and records failures. It does not replace the acceptance or simplicity lanes,
 waive proof commands, or grant approval. It requires `TYPESAFE_API_KEY` in the

@@ -1,6 +1,9 @@
 # gascity-jev redesign: Jev replaces Claude work
 
-Status: design settled in a grill session on 2026-09-24; nothing implemented yet.
+Status: design settled in a grill session on 2026-09-24. Implemented on
+2026-09-26 as the `gascity-jev` v2 overlay; the gated graph is proven with stub
+workers ([structural evidence](../experiments/jev-overlay-build/README.md)).
+The paired A/B has not run yet.
 
 `gascity-jev` becomes an overlay on `gascity` whose Jev gates decide, from
 deterministic receipts, whether Claude sessions run at all. Jev acts on its own

@@ -1,0 +1,326 @@
+{
+  "label": "audit",
+  "root": "fi-ego",
+  "root_status": "closed",
+  "root_outcome": "pass",
+  "root_closed_at": "2026-09-26T03:39:10Z",
+  "publish_closed_at": [
+    "2026-09-26T03:39:06Z"
+  ],
+  "root_closed_after_publish": true,
+  "gate_item": {
+    "acceptance": "run",
+    "test_evidence": "run",
+    "simplicity": "run",
+    "synth": "run",
+    "loop": "run",
+    "acceptance_scope": "AC-1, AC-2, AC-3, AC-4",
+    "simplicity_scope": "full",
+    "forwarded_smells": "none",
+    "gate": "jev"
+  },
+  "gate_summary": {
+    "lanes": {
+      "acceptance": "run",
+      "test_evidence": "run",
+      "simplicity": "run"
+    },
+    "skipped_lanes": [],
+    "synth": "run",
+    "loop": "run",
+    "gate": "jev",
+    "audits": [
+      "review.test_evidence:receipts",
+      "review.criterion:AC-1",
+      "review.criterion:AC-2",
+      "review.criterion:AC-3",
+      "review.criterion:AC-4",
+      "smell.clean:screen"
+    ],
+    "decisions": 6
+  },
+  "gate_notes": {
+    "jev.close_reason": "Jev gate: jev; skipped lanes: none",
+    "jev.decision_ids": "[\"jd-80d753d116c7\", \"jd-03b5b9267ce3\", \"jd-08f758a91ce2\", \"jd-5eaf00b8423d\", \"jd-6d7e47ef57ca\", \"jd-22df96ca2536\"]",
+    "jev.decision_log_path": "/tmp/jst-7cbm4xzr/fixture/.gc/jev-structure/audit/jev/decisions.jsonl",
+    "jev.gate_seconds": 4.77,
+    "jev.jev_seconds": 0.015,
+    "jev.receipt_problems": "[]",
+    "jev.review_error": "",
+    "jev.role": "review-gate",
+    "jev.smell_error": ""
+  },
+  "lane_beads": [
+    [
+      "acceptance",
+      "1"
+    ],
+    [
+      "apply",
+      "1"
+    ],
+    [
+      "simplicity",
+      "1"
+    ],
+    [
+      "synthesize",
+      "1"
+    ],
+    [
+      "test_evidence",
+      "1"
+    ]
+  ],
+  "review_report_bead": "pass",
+  "review_report_valid": true,
+  "review_report_validator": "{\"ok\": true, \"schema\": \"gc.build.review.v1\"}",
+  "decision_records": 6,
+  "outcome_records": [
+    {
+      "type": "review.test_evidence",
+      "label": "approve",
+      "audited": true,
+      "miss": false,
+      "band": "act"
+    },
+    {
+      "type": "review.criterion",
+      "label": "holds",
+      "audited": true,
+      "miss": false,
+      "band": "act"
+    },
+    {
+      "type": "review.criterion",
+      "label": "violated",
+      "audited": true,
+      "miss": true,
+      "band": "act"
+    },
+    {
+      "type": "review.criterion",
+      "label": "holds",
+      "audited": true,
+      "miss": false,
+      "band": "act"
+    },
+    {
+      "type": "review.criterion",
+      "label": "holds",
+      "audited": true,
+      "miss": false,
+      "band": "act"
+    },
+    {
+      "type": "smell.clean",
+      "label": "clean",
+      "audited": true,
+      "miss": false,
+      "band": "act"
+    }
+  ],
+  "audited_decisions": [
+    "review.test_evidence:receipts",
+    "review.criterion:AC-1",
+    "review.criterion:AC-2",
+    "review.criterion:AC-3",
+    "review.criterion:AC-4",
+    "smell.clean:screen"
+  ],
+  "closed_order": [
+    [
+      "jev-build.prepare",
+      "2026-09-26T03:35:00Z",
+      "pass"
+    ],
+    [
+      "requirements.iteration.1",
+      "2026-09-26T03:35:15Z",
+      "pass"
+    ],
+    [
+      "jev-build.requirements",
+      "2026-09-26T03:35:18Z",
+      "pass"
+    ],
+    [
+      "plan.iteration.1",
+      "2026-09-26T03:35:27Z",
+      "pass"
+    ],
+    [
+      "jev-build.plan",
+      "2026-09-26T03:35:30Z",
+      "pass"
+    ],
+    [
+      "jev-build.plan-review",
+      "2026-09-26T03:35:38Z",
+      "pass"
+    ],
+    [
+      "decompose.iteration.1",
+      "2026-09-26T03:35:53Z",
+      "pass"
+    ],
+    [
+      "jev-build.decompose",
+      "2026-09-26T03:35:57Z",
+      "pass"
+    ],
+    [
+      "(root)",
+      "2026-09-26T03:36:38Z",
+      "pass"
+    ],
+    [
+      "jev-build.implement",
+      "2026-09-26T03:36:49Z",
+      "pass"
+    ],
+    [
+      "summarize-implementation.iteration.1",
+      "2026-09-26T03:36:56Z",
+      "pass"
+    ],
+    [
+      "jev-build.summarize-implementation",
+      "2026-09-26T03:37:00Z",
+      "pass"
+    ],
+    [
+      "jev-build.review",
+      "2026-09-26T03:37:13Z",
+      "pass"
+    ],
+    [
+      "jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.test-evidence-review",
+      "2026-09-26T03:37:29Z",
+      "pass"
+    ],
+    [
+      "jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.acceptance-review",
+      "2026-09-26T03:37:29Z",
+      "pass"
+    ],
+    [
+      "jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.simplicity-review",
+      "2026-09-26T03:37:29Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.simplicity-review-scope-check",
+      "2026-09-26T03:37:30Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.acceptance-review-scope-check",
+      "2026-09-26T03:37:34Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.test-evidence-review-scope-check",
+      "2026-09-26T03:37:35Z",
+      "pass"
+    ],
+    [
+      "jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.synthesize-review",
+      "2026-09-26T03:37:56Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.synthesize-review-scope-check",
+      "2026-09-26T03:37:58Z",
+      "pass"
+    ],
+    [
+      "jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.apply-review-findings",
+      "2026-09-26T03:38:15Z",
+      "pass"
+    ],
+    [
+      "jev-build.review.item.1.review-loop.iteration.1",
+      "2026-09-26T03:38:18Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-loop.iteration.1.jev-build.review.item.1.apply-review-findings-scope-check",
+      "2026-09-26T03:38:19Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-loop",
+      "2026-09-26T03:38:23Z",
+      "pass"
+    ],
+    [
+      "jev-build.review.item.1.review-report.iteration.1",
+      "2026-09-26T03:38:30Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-report",
+      "2026-09-26T03:38:34Z",
+      "pass"
+    ],
+    [
+      "jev-build.review.item.1.finalize.iteration.1",
+      "2026-09-26T03:38:53Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.finalize",
+      "2026-09-26T03:38:56Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.publish",
+      "2026-09-26T03:39:06Z",
+      "pass"
+    ],
+    [
+      "jev-build.review-fanout",
+      "2026-09-26T03:39:07Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-loop.spec",
+      "2026-09-26T03:39:12Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.finalize.spec",
+      "2026-09-26T03:39:12Z",
+      "pass"
+    ],
+    [
+      "jev-review-tail.jev-build.review.item.1.review-report.spec",
+      "2026-09-26T03:39:12Z",
+      "pass"
+    ],
+    [
+      "jev-build.summarize-implementation.spec",
+      "2026-09-26T03:39:12Z",
+      "pass"
+    ],
+    [
+      "jev-build.requirements.spec",
+      "2026-09-26T03:39:12Z",
+      "pass"
+    ],
+    [
+      "jev-build.plan.spec",
+      "2026-09-26T03:39:12Z",
+      "pass"
+    ],
+    [
+      "jev-build.decompose.spec",
+      "2026-09-26T03:39:12Z",
+      "pass"
+    ]
+  ],
+  "open_members": [
+    "jev-build.workflow-finalize"
+  ]
+}

@@ -1,3 +1,0 @@
-description = "Review synthesizer for merging findings, producing verdicts, and applying review updates"
-scope = "rig"
-fallback = true

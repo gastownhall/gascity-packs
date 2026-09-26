@@ -229,10 +229,11 @@ Rules for that shape:
   checks, because nothing is inherited into a bond.
 - Use role-alias targets (`gc.run-operator` and similar) or other
   binding-qualified targets in the bond, never bare agent names (gotcha 1).
-- Untested: build-basic's review loop is a `[template.check]` whose template
-  also has `[[template.children]]`, rerunning lanes until approved. A
-  plain `check` step inside a bond works; a check-with-children loop inside a
-  runtime bond was not run. Test it before relying on "gate once, then loop".
+- Build-basic's review loop is a `[template.check]` whose template also has
+  `[[template.children]]`, rerunning lanes until approved. This spike ran only a
+  plain `check` inside a bond; the check-with-children loop inside a runtime
+  bond was tested later and works, including gated children and a dropped loop
+  ([loop spike](../../jev-overlay-build/README.md#the-check-with-children-loop-inside-a-bond-loop-spike)).
 
 ## Gotchas and errors hit
 
