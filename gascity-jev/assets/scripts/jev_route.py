@@ -78,6 +78,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('bead')
     parser.add_argument('--target', default='gc.run-operator')
+    parser.add_argument('--title', default='', help='workflow root title passed to gc sling')
     parser.add_argument('--var', action='append', default=[], help='sling variable key=value (repeatable)')
     parser.add_argument('--state-dir', default='')
     parser.add_argument('--model', default=jev_client.DEFAULT_MODEL)
@@ -113,7 +114,8 @@ def main(argv=None) -> int:
     if not args.dry_run:
         variables.setdefault('jev_state_dir', str(state.path))
         variables['jev_intake_decision'] = record['decision_id']
-        cmd = ['sling', args.target, args.bead, '--on', formula, '--json']
+        cmd = ['sling', args.target, args.bead, '--on', formula, '--json',
+               *(['--title', args.title] if args.title else [])]
         for key, value in variables.items():
             cmd += ['--var', f'{key}={value}']
         out = gc.run(*cmd, timeout=600)

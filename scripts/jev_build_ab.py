@@ -344,7 +344,7 @@ def launch_command(rig, arm, source_id, variables):
     """Baseline slings build-basic; the Jev arm goes through the pack's intake router,
     which slings jev-build-compact or jev-build."""
     if arm == 'jev':
-        cmd = [*rig, 'gc', 'jev-route', source_id]
+        cmd = [*rig, 'gc', 'jev-route', source_id, '--title', gate.BUILD_TITLE]
     else:
         cmd = [*rig, 'sling', 'gc.run-operator', source_id, '--on', 'build-basic',
                '--title', gate.BUILD_TITLE, '--nudge', '--json']

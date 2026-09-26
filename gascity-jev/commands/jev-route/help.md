@@ -1,7 +1,7 @@
 Route one task bead through the Jev intake router, then sling the chosen build.
 
 Usage:
-  gc <binding> jev-route <bead-id> [--var key=value ...] [--dry-run]
+  gc <binding> jev-route <bead-id> [--var key=value ...] [--title <root title>] [--dry-run]
 
 The router asks Jev the frozen intake questions about the bead's title and
 description. It slings `jev-build-compact` only when the most likely size is
