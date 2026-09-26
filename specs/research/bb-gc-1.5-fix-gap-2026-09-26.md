@@ -133,3 +133,37 @@ gained `BB_CLAUDE_CODE_EXECUTABLE=/home/ubuntu/.local/share/gascity-tools/claude
 No retained 40-case ledger or production-verifier run for `8ab11cc90` was found; that build is
 unqualified until one exists. Its fix content equals the new branch except for the older
 `release/v1.5.0` base (32 commits behind `750ee9020`).
+
+## Additional 1.5 regression: fresh Codex sessions drained for config drift
+
+Found after the analysis above, when CI's Codex live jobs failed on both the RC and
+the candidate with "GC startup did not become ready; no BB prompt was sent" (run
+36219869688; the Codex credential preflight passed). A local reproduction showed GC
+draining its own new session about one second after start:
+
+```
+config-drift s-gc-5: ... drifted fields: CopyFiles
+  [+] ../workspaces/global/.codex/hooks.json  stored=(absent)  current=a468b4ee (probed)
+Draining session 's-gc-5': config-drift
+```
+
+Cause: #3919 (`2c99b57b8`, in `release/v1.5.0`, not in v1.4.2) made the
+pre-fingerprint overlay staging in `cmd/gc/build_desired_state.go` skip every
+mergeable hook file, assuming `hooks.Install` writes them. `hooks.Install` only runs
+for providers in `install_agent_hooks`, so for a Codex agent without it,
+`.codex/hooks.json` is absent when `stageHookFiles` fingerprints CopyFiles, then
+session-start staging writes it and the next reconcile drains the session. Any
+first start of such an agent in a workspace without the file triggers it; work_dir
+location, custom commands and API creation do not matter. A GC-only reproduction
+(`gc session new`, plain `builtin:codex`) drained on the RC and stayed active on
+1.4.2 and on the fixed build. No upstream issue or fix was found on `origin/main`
+`2d7d33954`.
+
+Fix `876b06123` ("fix(hooks): stage overlay-only codex hooks before fingerprinting")
+is now on `fix/claude-runtime-v1.5.0`. It still stages the fingerprinted hook files
+whose provider is not in `install_agent_hooks`, keeping #3919's protection for
+files `hooks.Install` owns. Its regression test
+`TestResolveTemplatePrepared_CodexOverlayHookNoFirstStartDrift` fails without the
+fix with the same `stored=(absent)` diagnostic and passes with it. Full
+`go test ./cmd/gc/` passes (umask 022, direct network), as do
+`internal/runtime/...` and `internal/hooks/...`; `go vet` is clean.
