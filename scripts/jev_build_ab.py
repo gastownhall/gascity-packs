@@ -218,12 +218,17 @@ def add_rig_roles_import(config, rig_name, roles_source):
     config.write_text('\n'.join(lines[:end] + block + lines[end:]).rstrip('\n') + '\n')
 
 
-def initialize_operator_city(gc_bin, workspace, pack, env, *, config_file, setup_timeout):
-    """Create the city exactly as the gascity README quick start describes."""
+def initialize_operator_city(gc_bin, workspace, pack, env, *, config_file, setup_timeout,
+                             skip_provider_readiness=False):
+    """Create the city exactly as the gascity README quick start describes.
+
+    skip_provider_readiness passes gc's documented override when gc's own probe
+    cannot verify a wrapped Claude CLI; the harness verifies the login itself."""
     city = ['--city', str(workspace.city_dir)]
     gate.write_supervisor_config(workspace.gc_home)
     gate.run_checked([gc_bin, 'init', '--file', str(config_file), '--name', workspace.city_name,
-                      '--yes', str(workspace.city_dir)], env=env, timeout=setup_timeout, log_output=True)
+                      '--yes', *(['--skip-provider-readiness'] if skip_provider_readiness else []),
+                      str(workspace.city_dir)], env=env, timeout=setup_timeout, log_output=True)
     gate.run_checked([gc_bin, *city, 'import', 'add', '--name', 'gc', str(pack.source)],
                      env=env, timeout=300, log_output=True)
     gate.run_checked([gc_bin, *city, 'rig', 'add', str(workspace.rig_dir), '--name', workspace.rig_name],
@@ -532,7 +537,8 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
                                   for p in workload.protected_tests}
             save(out/'original-test-hash.json', original_test_hash)
             initialize_operator_city(args.gc_bin, workspace, pack, env,
-                                     config_file=config_file, setup_timeout=args.setup_timeout)
+                                     config_file=config_file, setup_timeout=args.setup_timeout,
+                                     skip_provider_readiness=getattr(args, 'skip_provider_readiness', False))
             report['setup_seconds'] = time.monotonic() - started
             if args.setup_only:
                 report['status'] = 'setup_only'
@@ -652,6 +658,8 @@ def main():
     p.add_argument('--claude-command',default='claude',help='Claude CLI the city launches for every role.')
     p.add_argument('--claude-auth',default='claude.ai',
                    help='Comma-separated accepted `auth status` methods (claude.ai = subscription).')
+    p.add_argument('--skip-provider-readiness',action='store_true',
+                   help="Pass gc init's documented override when gc cannot probe a wrapped Claude CLI.")
     p.add_argument('--claude-projects-dir',default='',
                    help='Transcript projects directory (default: <claude config>/projects).')
     p.add_argument('--continue-on-failure', action='store_true',
