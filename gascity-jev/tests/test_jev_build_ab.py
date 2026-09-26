@@ -119,12 +119,13 @@ def test_independent_quality_rejects_stub_even_when_edited_tests_pass(tmp_path, 
     (rig/'tests/test_slugger.py').write_text('def test_placeholder():\n    assert True\n')
     monkeypatch.setattr(build.gate,'build_result_candidates',lambda *a:[rig])
     out=tmp_path/'out';out.mkdir()
-    rows=build.final_quality(SimpleNamespace(rig_dir=rig),[],out,dict(os.environ),build.hashlib.sha256(original).hexdigest())
+    hashes={'tests/test_slugger.py': build.hashlib.sha256(original).hexdigest()}
+    rows=build.final_quality(SimpleNamespace(rig_dir=rig),[],out,dict(os.environ),hashes,build.workloads.SLUGIFY)
     assert len(rows)==1
     assert rows[0]['original_tests_unchanged'] is False
     assert rows[0]['pytest_exit']==0
     assert rows[0]['hidden_exit']==1
-    assert all(not row['pass'] for row in json.loads((out/'quality-000/hidden.txt').read_text()))
+    assert rows[0]['hidden']['failed'] and all(not r['pass'] for r in rows[0]['hidden']['failed'])
 
 
 def test_transcript_usage_deduplicates_chunks_and_excludes_adjacent_city(tmp_path):
@@ -282,7 +283,8 @@ def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch, ar
         def close(self):events.append('collector_close');return {'status':'missing'}
     monkeypatch.setattr(build.usage,'Collector',Collector)
     args=SimpleNamespace(gc_bin=build.shutil.which('true'),bd_bin=build.shutil.which('true'),model='unused',
-        jev_model='unused',setup_only=True,setup_timeout=1,max_load=None)
+        jev_model='unused',setup_only=True,setup_timeout=1,max_load=None,claude_command='claude',
+        claude_auth='claude.ai',claude_projects_dir='')
     try:
         try:result=build.run(args,arm,tmp_path/'run')
         except KeyboardInterrupt:pytest.fail('Interrupt escaped before saving terminal result')
@@ -319,3 +321,23 @@ def test_fixture_is_a_clone_whose_origin_supports_detached_worktrees(tmp_path):
     assert (worktree/'tests/test_slugger.py').read_bytes()==(rig/'tests/test_slugger.py').read_bytes()
     with pytest.raises(ValueError, match='reuse'):
         build.prepare_fixture_repo(workspace,pack,env)
+
+
+def test_bd_wrapper_that_execs_from_home_is_unwrapped(tmp_path, monkeypatch):
+    wrapper = tmp_path/'bd'
+    wrapper.write_text('#!/bin/sh\nexec "$HOME/.local/share/beads/1.3.0/bd" "$@"\n')
+    monkeypatch.setattr(build.Path, 'home', lambda: tmp_path/'home')
+    assert build.unwrap_bd(wrapper) == str(tmp_path/'home/.local/share/beads/1.3.0/bd')
+    real = tmp_path/'real-bd'
+    real.write_bytes(b'\x7fELF' + b'0' * 5000)
+    assert build.unwrap_bd(real) == str(real.resolve())
+
+
+def test_compact_route_skips_planning_artifacts(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(build.gate, 'run_checked', lambda cmd, **k: calls.append(cmd[3]))
+    meta = {key: str(tmp_path/key) for key, _ in build.gate.BUILD_BASIC_ARTIFACT_CONTRACTS}
+    workspace = SimpleNamespace(rig_dir=tmp_path)
+    checked = build.validate_artifacts({'metadata': meta}, workspace, {}, None, 'jev-build-compact')
+    assert [c['schema'] for c in checked] == ['gc.build.review.v1', 'gc.build.final-report.v1']
+    assert len(build.validate_artifacts({'metadata': meta}, workspace, {}, None, 'jev-build')) == 6

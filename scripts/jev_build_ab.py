@@ -37,6 +37,8 @@ spec = importlib.util.spec_from_file_location('inference_gate', ROOT/'scripts/ga
 gate = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = gate
 spec.loader.exec_module(gate)
+sys.path.insert(0, str(ROOT/'scripts'))
+import jev_ab_workloads as workloads  # noqa: E402
 usage_spec = importlib.util.spec_from_file_location('jev_claude_usage', ROOT/'scripts/jev_claude_usage.py')
 usage = importlib.util.module_from_spec(usage_spec)
 usage_spec.loader.exec_module(usage)
@@ -151,7 +153,7 @@ def new_runtime_workspace(pack, name):
     return workspace
 
 
-def write_city_config(workspace, *, model, collector_env, claude_config_dir=None):
+def write_city_config(workspace, *, model, collector_env, claude_config_dir=None, claude_command=None):
     """The city.toml handed to `gc init --file`; only provider and env choices."""
     env = {'CLAUDE_CODE_EFFORT_LEVEL': 'low',
            # Expanded at session launch; the value is never written to disk.
@@ -162,6 +164,7 @@ def write_city_config(workspace, *, model, collector_env, claude_config_dir=None
     lines = ['[workspace]', 'provider = "claude"', '', '[workspace.env]',
              *(f'{k} = {gate.toml_string(v)}' for k, v in env.items()), '',
              '[providers.claude]', 'base = "builtin:claude"',
+             *([f'command = {gate.toml_string(claude_command)}'] if claude_command else []),
              'args_append = '+json.dumps(['--model', model, '--effort', 'low',
                                           '--setting-sources', 'project,local']), '',
              '[session]', '# Claude CLI cold starts can exceed the 60s default on a loaded host.',
@@ -171,7 +174,7 @@ def write_city_config(workspace, *, model, collector_env, claude_config_dir=None
     return path
 
 
-def prepare_fixture_repo(workspace, pack, env):
+def prepare_fixture_repo(workspace, pack, env, workload=workloads.SLUGIFY):
     """Clone the rig from a local origin, as the documented path clones a repo.
 
     do-work's worktree stage requires origin/HEAD; a clone provides it without
@@ -182,7 +185,7 @@ def prepare_fixture_repo(workspace, pack, env):
         raise ValueError('Refusing to reuse an existing experiment fixture')
     seed.mkdir()
     gate.materialize_pack_check_scripts(pack.validator_source, seed)
-    gate.write_build_basic_fixture(seed)
+    workload.seed(seed)
     gate.initialize_rig_git(seed, env=env)
     def git(*arguments, cwd=workspace.root):
         return gate.run_checked(['git', *arguments], cwd=cwd, env=env, timeout=60).strip()
@@ -240,6 +243,17 @@ def host_load(max_load):
             'logical_cpus': cpus, 'max_load': limit}
 
 
+def unwrap_bd(path):
+    """Check gates run with HOME set to the city, so a small wrapper that execs
+    `$HOME/...` would break there; resolve it to the real binary."""
+    path = Path(path).resolve()
+    if path.stat().st_size < 4096:
+        found = re.search(r'exec "\$HOME(/[^"]+)"', path.read_text(errors='ignore'))
+        if found:
+            return str(Path.home()) + found.group(1)
+    return str(path)
+
+
 def install_gate_toolchain(env, workspace, *, python_bin, bd_bin):
     """Keep the selected Python available in the SDK's restricted gate PATH."""
     directory = workspace.gc_home/'bin'
@@ -247,6 +261,7 @@ def install_gate_toolchain(env, workspace, *, python_bin, bd_bin):
     bd_target = shutil.which(bd_bin, path=env.get('PATH'))
     if not bd_target:
         raise ValueError(f'Beads executable not found: {bd_bin}')
+    bd_target = unwrap_bd(bd_target)
     (directory/'bd').symlink_to(Path(bd_target).resolve())
     # Do not resolve the Python symlink: that would discard virtualenv identity.
     python = directory/'python3'
@@ -305,7 +320,7 @@ def snapshot_pack(pack, out):
     }
 
 
-def jev_variables(arm, model, state_dir=None):
+def jev_variables(arm, model, state_dir=None, test_command=None):
     """Jev-arm launch variables. The gate state (bands, breaker, ledger) is shared
     across the experiment's Jev arms so audit counts accumulate over pairs."""
     if arm == 'baseline':
@@ -315,6 +330,8 @@ def jev_variables(arm, model, state_dir=None):
     variables = {'jev_mode': 'auto', 'jev_model': model}
     if state_dir:
         variables['jev_state_dir'] = str(state_dir)
+    if test_command:
+        variables['jev_test_command'] = test_command
     return variables
 
 
@@ -375,40 +392,86 @@ def gate_delivery(beads):
     return rows
 
 
-def final_quality(workspace, beads, out, env, original_test_hash):
+COMPACT_SKIPS = {'gc.build.requirements_path', 'gc.build.plan_path', 'gc.build.decomposition_path',
+                 'gc.build.implementation_summary_path'}
+
+
+def validate_artifacts(root, workspace, env, pack, formula):
+    """Validate every build artifact the formula produces; the compact route has no
+    requirements, plan, decomposition or canonical summary stage."""
+    validator = ROOT/'gascity/assets/scripts/validate_build_artifact.py'
+    checked = []
+    for key, schema in gate.BUILD_BASIC_ARTIFACT_CONTRACTS:
+        if formula == 'jev-build-compact' and key in COMPACT_SKIPS:
+            continue
+        raw = (root.get('metadata') or {}).get(key)
+        if not raw:
+            raise ValueError(f'workflow root is missing {key}')
+        path = gate.resolve_artifact_path(raw, base=workspace.rig_dir)
+        gate.run_checked([sys.executable, str(validator), '--schema', schema, '--path', str(path)],
+                         env=env, timeout=60, log_output=True)
+        checked.append({'key': key, 'schema': schema, 'path': str(path)})
+    return checked
+
+
+def result_candidates(workspace, beads, workload):
+    return [c for c in gate.build_result_candidates(workspace.rig_dir, beads) if (c/workload.module).is_file()]
+
+
+def validate_result(workspace, beads, workload, env):
+    """The first candidate whose module no longer holds the stub and whose visible tests pass."""
+    failures = []
+    for candidate in result_candidates(workspace, beads, workload):
+        if workload.stub_marker in (candidate/workload.module).read_text(errors='replace') and workload.kind == 'planted':
+            failures.append(f'{candidate}: {workload.module} still contains the stub')
+            continue
+        proc = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *workload.test_paths],
+                              cwd=candidate, env=env, capture_output=True, text=True, timeout=300)
+        if proc.returncode:
+            failures.append(f'{candidate}: visible tests exit {proc.returncode}')
+            continue
+        if workload.kind == 'backlog':
+            base = subprocess.run(['git', 'diff', '--quiet', 'origin/HEAD', '--', workload.module], cwd=candidate)
+            if base.returncode == 0:
+                failures.append(f'{candidate}: {workload.module} unchanged')
+                continue
+        return candidate
+    raise ValueError('No passing implementation result:\n' + '\n'.join(failures or ['no candidates']))
+
+
+def final_quality(workspace, beads, out, env, original_test_hashes, workload=workloads.SLUGIFY):
     """Evaluate unfinished runs too; never substitute a successful stage for proof."""
     rows = []
-    for index, candidate in enumerate(gate.build_result_candidates(workspace.rig_dir, beads)):
-        if not (candidate/'slugger.py').is_file():
-            continue
+    for index, candidate in enumerate(result_candidates(workspace, beads, workload)):
         directory = out/f'quality-{index:03d}'
         directory.mkdir()
-        row = {'worktree':str(candidate)}
-        for name in ('slugger.py', 'tests/test_slugger.py'):
-            path = candidate/name
-            if path.is_file():
-                data = path.read_bytes()
-                (directory/path.name).write_bytes(data)
-                if name.startswith('tests/'):
-                    row['original_tests_unchanged'] = hashlib.sha256(data).hexdigest() == original_test_hash
-        commands = {
-            'pytest': [sys.executable, '-m', 'pytest', '-q', 'tests/test_slugger.py'],
-            'hidden': [sys.executable, '-c', "import importlib.util,json; s=importlib.util.spec_from_file_location('subject','slugger.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); cases=[('  Hello, World!  ','hello-world'),('a---b___c','a-b-c'),('123 ABC','123-abc'),('!@#','')]; results=[]\nfor x,y in cases:\n try: actual=m.slugify(x); results.append({'input':x,'expected':y,'actual':actual,'pass':actual==y})\n except Exception as e: results.append({'input':x,'expected':y,'pass':False,'error':type(e).__name__})\nprint(json.dumps(results)); raise SystemExit(0 if all(r['pass'] for r in results) else 1)"]}
-        for label, command in commands.items():
-            try:
-                proc = subprocess.run(command, cwd=candidate, env=env, capture_output=True, text=True, timeout=60)
-                (directory/(label+'.txt')).write_text(proc.stdout+proc.stderr)
-                row[label+'_exit'] = proc.returncode
-            except subprocess.TimeoutExpired:
-                row[label+'_timeout'] = True
+        row = {'worktree': str(candidate)}
+        shutil.copy(candidate/workload.module, directory/Path(workload.module).name)
+        if original_test_hashes:
+            row['original_tests_unchanged'] = all(
+                (candidate/path).is_file() and hashlib.sha256((candidate/path).read_bytes()).hexdigest() == digest
+                for path, digest in original_test_hashes.items())
+        try:
+            proc = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *workload.test_paths],
+                                  cwd=candidate, env=env, capture_output=True, text=True, timeout=300)
+            (directory/'pytest.txt').write_text(proc.stdout + proc.stderr)
+            row['pytest_exit'] = proc.returncode
+        except subprocess.TimeoutExpired:
+            row['pytest_timeout'] = True
+        try:
+            row['hidden'] = workload.hidden(candidate, directory, env)
+            row['hidden_exit'] = 0 if row['hidden']['pass'] else 1
+        except Exception as error:  # noqa: BLE001
+            row['hidden_error'] = f'{type(error).__name__}: {error}'
         rows.append(row)
     return rows
 
 
-def run(args, arm, out):
+def run(args, arm, out, workload=workloads.SLUGIFY):
     out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
-    report = {'arm': arm, 'scope': 'full-build-basic', 'started_at': datetime.now(timezone.utc).isoformat(),
+    report = {'arm': arm, 'scope': 'full-build', 'workload': workload.name, 'workload_kind': workload.kind,
+              'started_at': datetime.now(timezone.utc).isoformat(),
               'model': args.model, 'jev_model': args.jev_model, 'status': 'starting'}
     pack = pack_for_arm(arm)
     report['pack_name'] = pack.name
@@ -443,28 +506,31 @@ def run(args, arm, out):
     if arm == 'jev' and not args.setup_only:
         env['TYPESAFE_API_KEY'] = os.environ['TYPESAFE_API_KEY']
     if not args.setup_only:
-        auth = subprocess.run(['claude','auth','status','--json'],env=env,capture_output=True,text=True,timeout=60)
-        status = json.loads(auth.stdout)
+        auth = subprocess.run([args.claude_command,'auth','status','--json'],env=env,capture_output=True,text=True,timeout=120)
+        status = json.loads(auth.stdout[auth.stdout.index('{'):]) if '{' in auth.stdout else {}
         safe_status = {k:status.get(k) for k in ('loggedIn','authMethod','apiProvider','subscriptionType')}
         save(out/'subscription-preflight.json',safe_status)
-        if auth.returncode or not status.get('loggedIn') or status.get('authMethod') != 'claude.ai':
-            raise ValueError('Claude subscription login unavailable in worker environment')
+        if auth.returncode or not status.get('loggedIn') or status.get('authMethod') not in args.claude_auth.split(','):
+            raise ValueError(f"Claude login {safe_status} is not one of the accepted methods {args.claude_auth}")
     versions = {name: subprocess.check_output(cmd, text=True).strip() for name,cmd in
-                [('gc',[args.gc_bin,'version','--long']),('bd',[args.bd_bin,'version']),('claude',['claude','--version']),('bash',['bash','--version'])]}
+                [('gc',[args.gc_bin,'version','--long']),('bd',[args.bd_bin,'version']),('claude',[args.claude_command,'--version']),('bash',['bash','--version'])]}
     save(out/'manifest.json', {'argv': sys.argv, 'versions': versions, 'model': args.model,
+         'workload': {'name': workload.name, 'kind': workload.kind, 'task': workload.task(), **workload.notes},
          'jev_model': args.jev_model, 'arm': arm, 'setup': 'operator-path',
          **snapshot_pack(pack, out)})
     (out/'jev_build_ab.py').write_bytes(Path(__file__).read_bytes())
     collector = usage.Collector(out/'otel-usage.jsonl')
     env.update(collector.env)
     config_file = write_city_config(workspace, model=args.model, collector_env=collector.env,
-                                    claude_config_dir=real_claude if custom_claude else None)
+                                    claude_config_dir=real_claude if custom_claude else None,
+                                    claude_command=args.claude_command)
     final_beads, original_test_hash = [], None
     with (out/'run.log').open('x', buffering=1) as log, redirect_stdout(log), redirect_stderr(log):
         try:
-            save(out/'fixture-origin-preflight.json', prepare_fixture_repo(workspace, pack, env))
-            original_test_hash = hashlib.sha256((workspace.rig_dir/'tests/test_slugger.py').read_bytes()).hexdigest()
-            save(out/'original-test-hash.json', {'sha256':original_test_hash})
+            save(out/'fixture-origin-preflight.json', prepare_fixture_repo(workspace, pack, env, workload))
+            original_test_hash = {p: hashlib.sha256((workspace.rig_dir/p).read_bytes()).hexdigest()
+                                  for p in workload.protected_tests}
+            save(out/'original-test-hash.json', original_test_hash)
             initialize_operator_city(args.gc_bin, workspace, pack, env,
                                      config_file=config_file, setup_timeout=args.setup_timeout)
             report['setup_seconds'] = time.monotonic() - started
@@ -473,7 +539,7 @@ def run(args, arm, out):
             else:
                 gate.start_city(args.gc_bin, workspace, env=env)
                 rig = [args.gc_bin,'--city',str(workspace.city_dir),'--rig',workspace.rig_name]
-                task = gate.build_basic_work_item()
+                task = workload.task()
                 title, description = task.split('\n', 1)
                 created = gate.run_checked([*rig,'bd','create',title,'--description',description.strip(),'--json'],
                                            cwd=workspace.rig_dir,env=env,timeout=120,log_output=True)
@@ -483,7 +549,7 @@ def run(args, arm, out):
                 report['source_bead_id'] = source_id
                 variables = {'artifact_root':str(gate.BUILD_ARTIFACT_ROOT),'interaction_mode':'headless',
                     'review_mode':'agent','drain_policy':'separate','push':'false','open_pr':'false',
-                    'max_iterations':'2', **jev_variables(arm, args.jev_model, args.out/'jev-state')}
+                    'max_iterations':'2', **jev_variables(arm, args.jev_model, args.out/'jev-state', workload.test_command('python3'))}
                 cmd = launch_command(rig, arm, source_id, variables)
                 save(out/'launch.json', {'command':cmd,'task':task,'source_bead_id':source_id})
                 dispatched = gate.run_checked(cmd,cwd=workspace.rig_dir,env=env,timeout=args.dispatch_timeout,
@@ -504,13 +570,15 @@ def run(args, arm, out):
                                                   timeout=args.timeout,poll_interval=15)
                 beads = gate.list_beads(args.gc_bin,workspace,env=env)
                 save(out/'beads.json',beads)
-                gate.validate_build_basic_artifacts(root,rig_dir=workspace.rig_dir,env=env,validator_source=pack.source)
-                result_path = gate.validate_build_basic_result(workspace.rig_dir,[root,*beads],env=env,timeout=120)
-                report.update(status='completed',fixture_tests_pass=True,result_path=str(result_path))
-                # Hidden checks evaluate the produced function without trusting edited tests.
-                hidden = "import importlib.util; s=importlib.util.spec_from_file_location('subject','slugger.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); cases=[('  Hello, World!  ','hello-world'),('a---b___c','a-b-c'),('123 ABC','123-abc'),('!@#','')]; assert all(m.slugify(x)==y for x,y in cases)"
-                gate.run_checked([sys.executable,'-c',hidden],cwd=result_path,env=env,timeout=30,log_output=True)
-                report['hidden_tests_pass'] = True
+                report['artifacts'] = validate_artifacts(root, workspace, env, pack, report['formula'])
+                result_path = validate_result(workspace, [root, *beads], workload, env)
+                report.update(status='completed', fixture_tests_pass=True, result_path=str(result_path))
+                # Hidden checks evaluate the produced code without trusting edited tests.
+                hidden_dir = out/'hidden-result'
+                hidden_dir.mkdir()
+                hidden = workload.hidden(result_path, hidden_dir, env)
+                report['hidden'] = hidden
+                report['hidden_tests_pass'] = hidden['pass']
                 delivery = gate_delivery(beads)
                 save(out/'jev-gate-delivery.json', delivery)
                 if arm=='jev' and not any(row['jev_answered'] for row in delivery):
@@ -544,7 +612,7 @@ def run(args, arm, out):
                 report['otel_usage']['coverage'] = 'Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals.'
     if not args.setup_only:
         try:
-            report['independent_quality'] = final_quality(workspace, final_beads, out, env, original_test_hash)
+            report['independent_quality'] = final_quality(workspace, final_beads, out, env, original_test_hash, workload)
         except Exception as error:
             report['independent_quality_error'] = f'{type(error).__name__}: {error}'
         report['jev_gate_delivery'] = gate_delivery(final_beads)
@@ -553,7 +621,7 @@ def run(args, arm, out):
             shutil.copy(path, out/f'decisions-{index:02d}.jsonl')
         report['jev_decision_logs'] = logs
     report['elapsed_seconds'] = time.monotonic()-started
-    projects=real_claude/'projects'
+    projects=Path(args.claude_projects_dir) if args.claude_projects_dir else real_claude/'projects'
     try:
         report['llm_usage'] = transcript_usage(projects,workspace.root,out) if projects.exists() else {'status':'missing'}
     except Exception as e:
@@ -579,6 +647,13 @@ def main():
     p.add_argument('--max-load',type=float,default=None,
                    help='Refuse to start an arm above this 1-minute load average (default: logical CPU count).')
     p.add_argument('--setup-only',action='store_true')
+    p.add_argument('--workloads',default='slugify',
+                   help='Comma-separated workloads from scripts/jev_ab_workloads.py; repetition r uses workload r mod n.')
+    p.add_argument('--claude-command',default='claude',help='Claude CLI the city launches for every role.')
+    p.add_argument('--claude-auth',default='claude.ai',
+                   help='Comma-separated accepted `auth status` methods (claude.ai = subscription).')
+    p.add_argument('--claude-projects-dir',default='',
+                   help='Transcript projects directory (default: <claude config>/projects).')
     p.add_argument('--continue-on-failure', action='store_true',
                    help='Retain failed arms and still run the predeclared paired schedule.')
     args=p.parse_args()
@@ -586,17 +661,18 @@ def main():
         p.error('Live Jev requires TYPESAFE_API_KEY')
     if args.repetitions<1:p.error('repetitions must be positive')
     args.out=args.out.resolve();args.out.mkdir(parents=True,exist_ok=False)
+    selected=[workloads.WORKLOADS[name] for name in args.workloads.split(',')]
     schedule=[]
     for r in range(args.repetitions):
         arms=(['baseline','jev'] if r%2==0 else ['jev','baseline']) if args.arms=='both' else [args.arms]
-        schedule.extend((r,a) for a in arms)
-    save(args.out/'schedule.json',[{'repetition':r,'arm':a} for r,a in schedule])
+        schedule.extend((r,a,selected[r%len(selected)]) for a in arms)
+    save(args.out/'schedule.json',[{'repetition':r,'arm':a,'workload':w.name} for r,a,w in schedule])
     failed = False
-    for i,(r,a) in enumerate(schedule,1):
-        name=f'run-{i:03d}-{a}'
+    for i,(r,a,w) in enumerate(schedule,1):
+        name=f'run-{i:03d}-{a}-{w.name}'
         print(f'[{i}/{len(schedule)}] {name} starting; log: {args.out/name/"run.log"}',flush=True)
         try:
-            result=run(args,a,args.out/name)
+            result=run(args,a,args.out/name,w)
         except Exception as e:
             result={'status':'failed','arm':a,'scope':'full-build-basic','error':f'{type(e).__name__}: {e}'}
             save(args.out/(name+'-setup-failure.json'),result)
