@@ -1,13 +1,13 @@
-name: BB provider (Gas City 1.4)
+name: BB provider (Gas City 1.5)
 
 on:
   workflow_dispatch:
     inputs:
       gc_commit:
-        description: Exact GC 1.4.2-based candidate commit for the separate development E2E matrix
+        description: Exact GC candidate commit (based on the pinned 1.5 release candidate) for the candidate matrix
         required: false
         type: string
-        default: 4f41f8285070d3509dae94cd97509eb562f2f068
+        default: 002016a8679a71703ff65ed2129a9c20dcbadcb3
   pull_request:
     paths: ["bb/**", "registry.toml", ".github/workflows/bb-provider.yml"]
   push:
@@ -16,23 +16,31 @@ on:
 permissions:
   contents: read
 
+env:
+  # Gas City 1.5 has no tagged release yet. Every job builds GC from an exact
+  # commit and labels it as a development build; none of these results can
+  # certify a released binary. Replace with release tarballs once 1.5.0 ships.
+  GC_RC_COMMIT: 750ee90205f0496907cd4804ded06d868193d1bf # release/v1.5.0
+  GC_CANDIDATE_COMMIT: ${{ inputs.gc_commit || '002016a8679a71703ff65ed2129a9c20dcbadcb3' }} # fix/claude-runtime-v1.5.0
+
 jobs:
   compatibility:
-    name: Build, fixtures and CLI (${{ matrix.gc }})
+    name: Build, fixtures and CLI (GC 1.5 RC)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - gc: "1.4.0"
-            sha256: f6bd0bfaf2acc141642227629394dd3279761df4e1800235551af24d98b9cae0
-          - gc: "1.4.1"
-            sha256: 8d8c8b511db3fc44931445aab5cb9f212509c0867105c880d6c3d0e6e5d33e42
-          - gc: "1.4.2"
-            sha256: e67216ec7ea8a09677fd74f90286ef2069655994fac8a7681a7c43c62d08ede4
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gastownhall/gascity
+          ref: ${{ env.GC_RC_COMMIT }}
+          path: .gc-source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: .gc-source/go.mod
+          cache-dependency-path: .gc-source/go.sum
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
@@ -57,43 +65,55 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
           "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" plugin build bb/assets/plugin
-      - name: Fetch and verify released Gas City
-        env:
-          GC_VERSION: ${{ matrix.gc }}
-          GC_SHA256: ${{ matrix.sha256 }}
+      - name: Build the exact GC 1.5 release candidate
+        working-directory: .gc-source
+        shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/gc14"
-          curl --fail --location --retry 3 \
-            "https://github.com/gastownhall/gascity/releases/download/v${GC_VERSION}/gascity_${GC_VERSION}_linux_amd64.tar.gz" \
-            --output "$RUNNER_TEMP/gc14/gascity.tar.gz"
-          cd "$RUNNER_TEMP/gc14"
-          echo "$GC_SHA256  gascity.tar.gz" | sha256sum --check
-          tar --extract --gzip --no-same-owner --file gascity.tar.gz gc
-      - name: Load and lint the pack in the released CLI
+          sudo apt-get update && sudo apt-get install -y build-essential pkg-config libicu-dev
+          test "$(git rev-parse HEAD)" = "$GC_RC_COMMIT"
+          git merge-base --is-ancestor HEAD origin/release/v1.5.0
+          make build BUILD_DIR="$RUNNER_TEMP/gc" VERSION="1.5.0-rc.${GC_RC_COMMIT:0:12}"
+          "$RUNNER_TEMP/gc/gc" version
+          sha256sum "$RUNNER_TEMP/gc/gc"
+      - name: Load and lint the pack in the GC 1.5 CLI
         env:
-          GC_TEST_BIN: ${{ runner.temp }}/gc14/gc
+          GC_TEST_BIN: ${{ runner.temp }}/gc/gc
         run: python3 -m unittest discover -s bb/tests -v
 
   live-conversations:
-    name: Live ${{ matrix.runtime }} conversations (GC ${{ matrix.gc }})
+    name: Live ${{ matrix.runtime }} conversations (GC 1.5 ${{ matrix.gc }})
     runs-on: ubuntu-latest
-    # Two scopes, each with three bounded turns and agent-resume settlement,
+    # GC build, two scopes with three bounded turns and agent-resume settlement,
     # plus dependency setup and preservation/teardown.
-    timeout-minutes: 40
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
         runtime: [claude, codex]
-        gc: ["1.4.0", "1.4.1", "1.4.2"]
-        include:
-          - gc: "1.4.0"
-            sha256: f6bd0bfaf2acc141642227629394dd3279761df4e1800235551af24d98b9cae0
-          - gc: "1.4.1"
-            sha256: 8d8c8b511db3fc44931445aab5cb9f212509c0867105c880d6c3d0e6e5d33e42
-          - gc: "1.4.2"
-            sha256: e67216ec7ea8a09677fd74f90286ef2069655994fac8a7681a7c43c62d08ede4
+        # rc is the unmodified release candidate; candidate adds the GC fixes
+        # BB still needs. Both are required so stock 1.5 gaps stay visible.
+        gc: [rc, candidate]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Select the exact GC commit
+        shell: bash
+        env:
+          TARGET: ${{ matrix.gc }}
+        run: |
+          if [ "$TARGET" = rc ]; then commit="$GC_RC_COMMIT"; else commit="$GC_CANDIDATE_COMMIT"; fi
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo 'GC commit must be a complete lowercase 40-character SHA'; exit 1; }
+          echo "GC_COMMIT=$commit" >> "$GITHUB_ENV"
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gastownhall/gascity
+          ref: ${{ env.GC_COMMIT }}
+          path: .gc-source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: .gc-source/go.mod
+          cache-dependency-path: .gc-source/go.sum
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
@@ -115,7 +135,18 @@ jobs:
             test -n "$CODEX_KEY" || { echo 'Missing BB_CODEX_API_KEY; live Codex acceptance cannot pass'; exit 1; }
           fi
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y tmux jq
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libicu-dev tmux jq
+      - name: Build the exact GC commit with identifiable version metadata
+        working-directory: .gc-source
+        shell: bash
+        env:
+          TARGET: ${{ matrix.gc }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GC_COMMIT"
+          git merge-base --is-ancestor "$GC_RC_COMMIT" HEAD
+          make build BUILD_DIR="$RUNNER_TEMP/gc" VERSION="1.5.0-${TARGET}.${GC_COMMIT:0:12}"
+          "$RUNNER_TEMP/gc/gc" version
+          sha256sum "$RUNNER_TEMP/gc/gc"
       - name: Install released BB and runtime
         env:
           RUNTIME: ${{ matrix.runtime }}
@@ -127,18 +158,6 @@ jobs:
             npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @openai/codex@0.153.4
           fi
           echo "$RUNNER_TEMP/runtime/node_modules/.bin" >> "$GITHUB_PATH"
-      - name: Fetch and verify released Gas City
-        env:
-          GC_VERSION: ${{ matrix.gc }}
-          GC_SHA256: ${{ matrix.sha256 }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/gc14"
-          curl --fail --location --retry 3 \
-            "https://github.com/gastownhall/gascity/releases/download/v${GC_VERSION}/gascity_${GC_VERSION}_linux_amd64.tar.gz" \
-            --output "$RUNNER_TEMP/gc14/gascity.tar.gz"
-          cd "$RUNNER_TEMP/gc14"
-          echo "$GC_SHA256  gascity.tar.gz" | sha256sum --check
-          tar --extract --gzip --no-same-owner --file gascity.tar.gz gc
       - name: Verify real conversations, tool output and agent resume through BB
         env:
           RUNTIME: ${{ matrix.runtime }}
@@ -164,9 +183,14 @@ jobs:
               test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo 'CLAUDE_CODE_SUBAGENT_MODEL resolved empty'; exit 1; }
             fi
           fi
+          # One real model call first: a rejected credential fails here, visibly
+          # classified, instead of as every model-dependent case.
+          python3 -u bb/tests/credential_preflight.py --runtime "$RUNTIME"
           python3 -u bb/tests/live_acceptance.py \
             --runtime "$RUNTIME" \
-            --gc-bin "$RUNNER_TEMP/gc14/gc" \
+            --gc-bin "$RUNNER_TEMP/gc/gc" \
+            --gc-commit "$GC_COMMIT" \
+            --gc-development-base 1.5.0 \
             --bb-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" \
             --bb-app-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb-app" \
             --report-dir "$RUNNER_TEMP/bb-live-reports"
@@ -174,7 +198,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: bb-live-${{ matrix.runtime }}-gc-${{ matrix.gc }}
+          name: bb-live-${{ matrix.runtime }}-gc-1.5-${{ matrix.gc }}
           # Never upload raw provider/BB state or private command captures.
           path: |
             ${{ runner.temp }}/bb-live-reports/summary.json
@@ -183,15 +207,13 @@ jobs:
           if-no-files-found: warn
 
   candidate-e2e:
-    name: Full browser E2E ${{ matrix.runtime }} (GC candidate, Linux)
+    name: Full browser E2E ${{ matrix.runtime }} (GC 1.5 candidate, Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         runtime: [claude, codex]
-    env:
-      GC_CANDIDATE_COMMIT: ${{ inputs.gc_commit || '4f41f8285070d3509dae94cd97509eb562f2f068' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Require an immutable GC candidate identity
@@ -236,8 +258,8 @@ jobs:
         shell: bash
         run: |
           test "$(git rev-parse HEAD)" = "$GC_CANDIDATE_COMMIT"
-          git merge-base --is-ancestor d4582166367aa687c1b62b296247ba0fb0a7e094 HEAD
-          make build BUILD_DIR="$RUNNER_TEMP/gc-candidate" VERSION="1.4.2-bb-runtime.${GC_CANDIDATE_COMMIT:0:12}"
+          git merge-base --is-ancestor "$GC_RC_COMMIT" HEAD
+          make build BUILD_DIR="$RUNNER_TEMP/gc-candidate" VERSION="1.5.0-candidate.${GC_CANDIDATE_COMMIT:0:12}"
           "$RUNNER_TEMP/gc-candidate/gc" version
           sha256sum "$RUNNER_TEMP/gc-candidate/gc"
       - name: Install the pinned browser and rendered BB test driver
@@ -282,11 +304,12 @@ jobs:
               test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo 'CLAUDE_CODE_SUBAGENT_MODEL resolved empty'; exit 1; }
             fi
           fi
+          python3 -u bb/tests/credential_preflight.py --runtime "$RUNTIME"
           python3 -u bb/tests/full_e2e.py \
             --runtime "$RUNTIME" \
             --gc-bin "$RUNNER_TEMP/gc-candidate/gc" \
             --gc-commit "$GC_CANDIDATE_COMMIT" \
-            --gc-development-base 1.4.2 \
+            --gc-development-base 1.5.0 \
             --bb-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" \
             --bb-app-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb-app" \
             --report-dir "$RUNNER_TEMP/bb-full-e2e-reports"
@@ -303,7 +326,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bb-full-candidate-${{ matrix.runtime }}-${{ env.GC_CANDIDATE_COMMIT }}
-          # GC candidate results cannot certify stock releases or the macOS
+          # GC candidate results cannot certify released GC or the macOS
           # desktop. Screenshots, traces, prompts and raw state remain private.
           path: ${{ runner.temp }}/bb-full-e2e-reports/summary.json
           if-no-files-found: error
@@ -314,7 +337,7 @@ jobs:
     needs: [compatibility, live-conversations, candidate-e2e]
     runs-on: ubuntu-latest
     steps:
-      - name: Require every build, stock runtime and candidate browser matrix entry to pass
+      - name: Require every build, RC and candidate matrix entry to pass
         env:
           COMPATIBILITY: ${{ needs.compatibility.result }}
           LIVE: ${{ needs.live-conversations.result }}
@@ -325,4 +348,4 @@ jobs:
           test "$CANDIDATE" = success
       - name: State the verified platform scope
         run: |
-          echo 'This required check covers Linux browser and runtime acceptance. Stock-release and GC-candidate results remain separate. A passing Linux check does not certify the macOS BB desktop; its full run requires separate local evidence against the same artifact identities.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This required check covers Linux browser and runtime acceptance on GC 1.5 development builds (the pinned release candidate and the candidate with GC fixes). It cannot certify a released GC binary. A passing Linux check does not certify the macOS BB desktop; its full run requires separate local evidence against the same artifact identities.' >> "$GITHUB_STEP_SUMMARY"

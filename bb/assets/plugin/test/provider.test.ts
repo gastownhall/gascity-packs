@@ -247,7 +247,7 @@ for (const settlement of ["completed", "failed"] as const) for (const intent of 
   });
 }
 
-test("published BB bridge conformance against the GC 1.4 fixture", async () => {
+test("published BB bridge conformance against the GC 1.5 fixture", async () => {
   const f = await fixture(); let messages: any[] = [];
   const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal: new Journal(join(f.cwd, "conformance")) });
   try {

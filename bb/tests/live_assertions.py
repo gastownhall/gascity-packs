@@ -210,9 +210,19 @@ class LiveAssertions:
         # Do not let stale server responses satisfy a later turn.
         return [row for row in rows if isinstance(row.get("seq"), int) and row["seq"] > after]
 
-    def verify_destination(self):
-        state = self.command("thread", "show", self.thread_id, "--json")
-        thread, environment = state.get("thread", {}), state.get("environment") or {}
+    def verify_destination(self, attach_timeout=60):
+        # BB attaches a spawned thread's environment asynchronously: spawn
+        # returns no environmentId and the first show can still be "starting"
+        # without one. Judge the destination only once BB has attached it.
+        deadline = time.monotonic() + attach_timeout
+        while True:
+            state = self.command("thread", "show", self.thread_id, "--json")
+            thread, environment = state.get("thread", {}), state.get("environment") or {}
+            if environment.get("hostId") or thread.get("status") != "starting":
+                break
+            if time.monotonic() >= deadline:
+                raise AcceptanceFailure("BB did not attach an environment to the thread")
+            time.sleep(1)
         if thread.get("providerId") != "gas-city" or thread.get("projectId") != self.project:
             raise AcceptanceFailure("BB selected a different provider or project")
         if environment.get("hostId") != self.host:

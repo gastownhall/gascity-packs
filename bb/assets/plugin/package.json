@@ -10,7 +10,7 @@
   },
   "bb": {
     "name": "Gas City",
-    "description": "Configured Gas City agents, city and rig catalogs, and durable conversations on Gas City 1.4.",
+    "description": "Configured Gas City agents, city and rig catalogs, and durable conversations on Gas City 1.5.",
     "branding": {
       "icon": "Building2"
     },

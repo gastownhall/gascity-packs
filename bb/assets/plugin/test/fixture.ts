@@ -27,7 +27,7 @@ export async function fixture() {
     calls.push({ method: req.method!, path, body, headers: req.headers });
     const json = (value: unknown, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(value)); };
     const sse = (event: string, value: unknown, id = "1") => res.write(`event: ${event}\nid: ${id}\ndata: ${JSON.stringify(value)}\n\n`);
-    if (path === "/health") return json({ status: "ok", version: "1.4.0" });
+    if (path === "/health") return json({ status: "ok", version: "1.5.0" });
     if (path === "/v0/cities") return json({ items: [{ name: "alpha", running: true }, { name: "beta", running: true }, { name: "off", running: false }], total: 3 });
     if (path.endsWith("/providers/public")) return json({ items: providers, total: providers.length });
     if (path.endsWith("/config")) return json({ workspace: { name: path.includes("alpha") ? "alpha" : "beta", suspended: false }, rigs: [{ name: "web", path: cwd }, { name: "api", path: cwd }], agents: [

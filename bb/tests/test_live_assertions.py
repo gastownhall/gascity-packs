@@ -66,6 +66,24 @@ class PersonalWorkspaceGuardTests(unittest.TestCase):
                 with self.assertRaisesRegex(AcceptanceFailure, "personal workspace"):
                     harness.verify_destination()
 
+    def test_destination_waits_for_bb_to_attach_the_environment(self):
+        harness = self.harness()
+        starting = {"thread": {"providerId": "gas-city", "projectId": harness.project, "status": "starting"},
+                    "environment": None}
+        attached = self.destination(harness)
+        with patch.object(harness, "command", side_effect=[starting, starting, attached]) as command, \
+                patch("live_assertions.time.sleep"):
+            harness.verify_destination()
+        self.assertEqual(command.call_count, 3)
+        with patch.object(harness, "command", return_value=starting), patch("live_assertions.time.sleep"):
+            with self.assertRaisesRegex(AcceptanceFailure, "did not attach an environment"):
+                harness.verify_destination(attach_timeout=0)
+        # A started thread without its environment is still a wrong destination, not a wait.
+        started = {**starting, "thread": {**starting["thread"], "status": "idle"}}
+        with patch.object(harness, "command", return_value=started):
+            with self.assertRaisesRegex(AcceptanceFailure, "different host"):
+                harness.verify_destination()
+
     def test_personal_rig_cannot_bypass_project_binding(self):
         with self.assertRaisesRegex(AcceptanceFailure, "global agent"):
             self.harness(agent="sample/rig")

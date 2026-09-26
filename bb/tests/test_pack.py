@@ -1,4 +1,4 @@
-"""Load the installed pack through the actual GC 1.4 CLI, without inference."""
+"""Load the installed pack through the actual GC 1.5 CLI, without inference."""
 import json
 import os
 from pathlib import Path
@@ -16,9 +16,9 @@ class PackIntegration(unittest.TestCase):
     def setUpClass(cls):
         cls.gc = os.environ.get("GC_TEST_BIN")
         if not cls.gc:
-            raise unittest.SkipTest("Set GC_TEST_BIN to a Gas City 1.4 executable")
+            raise unittest.SkipTest("Set GC_TEST_BIN to a Gas City 1.5 executable")
         cls.gc = str(Path(cls.gc).resolve())
-        cls.scratch = tempfile.TemporaryDirectory(prefix="bb-pack-gc14-")
+        cls.scratch = tempfile.TemporaryDirectory(prefix="bb-pack-gc15-")
         cls.root = Path(cls.scratch.name)
         cls.city = cls.root / "city"
         (cls.city / ".gc").mkdir(parents=True)
@@ -33,7 +33,7 @@ class PackIntegration(unittest.TestCase):
         return subprocess.run([self.gc, *args], cwd=self.city, env=self.env, text=True, capture_output=True, timeout=30)
     def test_exact_release_and_lint(self):
         version=self.run_gc('version')
-        self.assertRegex(version.stdout, r'^1\.4\.')
+        self.assertRegex(version.stdout, r'^1\.5\.')
         result=self.run_gc('lint', str(PACK), '--json')
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         self.assertTrue(json.loads(result.stdout)['passed'])

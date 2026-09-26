@@ -30,7 +30,11 @@ CORE_COMMITS = {
     "1.4.0": "a7297c511d637a3609947386f3389d76ddb2f23b",
     "1.4.1": "58ef17e3bd685fd5cf7f21286277b208d3324590",
     "1.4.2": "d4582166367aa687c1b62b296247ba0fb0a7e094",
+    # 1.5 is not tagged yet. Use the canonical bundled pin that 1.5's `gc init`
+    # writes (config.BundledPackImportVersion); the binary pre-seeds it.
+    "1.5.0": "f895c0ff47d6ee9334ed282a416387eb5b084d24",
 }
+CORE_SOURCE_REFS = {"1.5.0": "main"}
 
 
 class GateError(Exception):
@@ -276,6 +280,9 @@ def main():
         core_release = args.gc_development_base or gc_version
         if core_release not in CORE_COMMITS:
             raise GateError("Live acceptance requires a declared released GC core version")
+        if core_release in CORE_SOURCE_REFS and not args.gc_development_base:
+            # Its core pin is not a GC release commit, so it cannot identify the binary.
+            raise GateError(f"GC {core_release} has no tagged release; use --gc-development-base with --gc-commit")
         if args.gc_development_base:
             if not gc_version.startswith(args.gc_development_base + "-"):
                 raise GateError("Development GC must carry an explicit prerelease version based on --gc-development-base")
@@ -327,7 +334,7 @@ def main():
         (city / "pack.toml").write_text(
             '[pack]\nname = "bb-live-acceptance"\nschema = 2\n'
             f'[imports.bb]\nsource = {json.dumps(str(PACK))}\n'
-            f'[imports.core]\nsource = "https://github.com/gastownhall/gascity/tree/v{core_release}/internal/bootstrap/packs/core"\n'
+            f'[imports.core]\nsource = "https://github.com/gastownhall/gascity/tree/{CORE_SOURCE_REFS.get(core_release, "v" + core_release)}/internal/bootstrap/packs/core"\n'
             f'version = "sha:{CORE_COMMITS[core_release]}"\n')
         (city / "city.toml").write_text(
             f'[workspace]\nprovider = "{args.runtime}"\n[beads]\nprovider = "file"\n'

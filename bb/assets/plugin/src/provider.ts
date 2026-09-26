@@ -111,7 +111,7 @@ export class GasCityProvider {
         if (ready?.status === "fulfilled") version = ready.value.version;
         else throw new Error("No configured Gas City supervisor is reachable; run gc bb status.");
       } catch (error) { problem = (error as Error).message; }
-      return { supported: true, health: { status: problem ? "error" : "ready", statusMessage: problem, accountEmail: null, planLabel: null, installedVersion: version, minimumSupportedVersion: "1.4.0", canInstall: false, canUpdate: false, loginCommand: null } };
+      return { supported: true, health: { status: problem ? "error" : "ready", statusMessage: problem, accountEmail: null, planLabel: null, installedVersion: version, minimumSupportedVersion: "1.5.0", canInstall: false, canUpdate: false, loginCommand: null } };
     }
     if (method === "thread/start") {
       const args = threadStartParamsSchema.parse(input);
@@ -238,7 +238,7 @@ export class GasCityProvider {
     return session;
   }
   private text(input: readonly PromptInput[]) {
-    if (input.some(i => i.type !== "text")) throw new Error("The GC 1.4 submit API accepts text. Use a same-host file path in your prompt; inline attachments and BB skill injection are not supported in v1.");
+    if (input.some(i => i.type !== "text")) throw new Error("The GC submit API accepts text. Use a same-host file path in your prompt; inline attachments and BB skill injection are not supported in v1.");
     const text = input.map(i => i.type === "text" ? i.text : "").join("\n");
     if (!text.trim()) throw new Error("A nonempty prompt is required");
     return text;

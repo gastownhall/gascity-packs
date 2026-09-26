@@ -46,7 +46,7 @@ export class Transcript {
   }
   get waitingForPrompt() { return this.bootstrapPrompt !== undefined; }
   private assertFrame(frame: Frame, allowMissingHistory = false) {
-    if (frame.schema_version !== "session.structured.v1" || !frame.history || !Array.isArray(frame.structured_messages)) throw new Error("Gas City did not return its 1.4 structured transcript contract");
+    if (frame.schema_version !== "session.structured.v1" || !frame.history || !Array.isArray(frame.structured_messages)) throw new Error("Gas City did not return its structured transcript contract");
     if (frame.history.tail_state.degraded && !allowMissingHistory) throw new Error("Gas City has no reliable structured transcript for this runtime; inspect the session in Gas City before retrying.");
   }
   apply(frame: Frame): ThreadDelta[] {
@@ -64,7 +64,7 @@ export class Transcript {
       for (const message of frame.structured_messages.slice(0, first + 1)) this.base.add(message.id);
       this.bootstrapPrompt = undefined;
     }
-    if (frame.history.tail_state.activity === "unknown") throw new Error("Gas City cannot report reliable turn activity for this runtime. Completion cannot be verified; inspect the session in Gas City. GC 1.4 Codex transcripts have this limitation.");
+    if (frame.history.tail_state.activity === "unknown") throw new Error("Gas City cannot report reliable turn activity for this runtime. Completion cannot be verified; inspect the session in Gas City.");
     if (this.stream && frame.history.transcript_stream_id !== this.stream) throw new Error("Gas City changed transcript streams during this turn; inspect the session before continuing.");
     this.stream = frame.history.transcript_stream_id;
     if (frame.operation === "reset" && this.messages.size) throw new Error("Gas City rewrote the transcript during this turn. The bridge stopped replay to avoid duplicate or misleading history.");
