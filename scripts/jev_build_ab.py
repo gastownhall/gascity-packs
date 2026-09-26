@@ -153,7 +153,8 @@ def new_runtime_workspace(pack, name):
     return workspace
 
 
-def write_city_config(workspace, *, model, collector_env, claude_config_dir=None, claude_command=None):
+def write_city_config(workspace, *, model, collector_env, claude_config_dir=None, claude_command=None,
+                      setting_sources='project,local'):
     """The city.toml handed to `gc init --file`; only provider and env choices."""
     env = {'CLAUDE_CODE_EFFORT_LEVEL': 'low',
            # Expanded at session launch; the value is never written to disk.
@@ -165,8 +166,10 @@ def write_city_config(workspace, *, model, collector_env, claude_config_dir=None
              *(f'{k} = {gate.toml_string(v)}' for k, v in env.items()), '',
              '[providers.claude]', 'base = "builtin:claude"',
              *([f'command = {gate.toml_string(claude_command)}'] if claude_command else []),
+             # Manifold's native launcher refuses --setting-sources: it gives
+             # every launch a fresh managed config home instead.
              'args_append = '+json.dumps(['--model', model, '--effort', 'low',
-                                          '--setting-sources', 'project,local']), '',
+                                          *(['--setting-sources', setting_sources] if setting_sources else [])]), '',
              '[session]', '# Claude CLI cold starts can exceed the 60s default on a loaded host.',
              'startup_timeout = "3m"', '']
     path = workspace.root/'city.toml.in'
@@ -528,7 +531,8 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
     env.update(collector.env)
     config_file = write_city_config(workspace, model=args.model, collector_env=collector.env,
                                     claude_config_dir=real_claude if custom_claude else None,
-                                    claude_command=args.claude_command)
+                                    claude_command=args.claude_command,
+                                    setting_sources=getattr(args, 'claude_setting_sources', 'project,local'))
     final_beads, original_test_hash = [], None
     with (out/'run.log').open('x', buffering=1) as log, redirect_stdout(log), redirect_stderr(log):
         try:
@@ -658,6 +662,8 @@ def main():
     p.add_argument('--claude-command',default='claude',help='Claude CLI the city launches for every role.')
     p.add_argument('--claude-auth',default='claude.ai',
                    help='Comma-separated accepted `auth status` methods (claude.ai = subscription).')
+    p.add_argument('--claude-setting-sources',default='project,local',
+                   help='Value for --setting-sources; empty omits it (Manifold refuses the option).')
     p.add_argument('--skip-provider-readiness',action='store_true',
                    help="Pass gc init's documented override when gc cannot probe a wrapped Claude CLI.")
     p.add_argument('--claude-projects-dir',default='',
