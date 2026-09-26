@@ -7,7 +7,7 @@ on:
         description: Exact GC candidate commit (based on the pinned 1.5 release candidate) for the candidate matrix
         required: false
         type: string
-        default: 286af7a9c6fffd06f0a16b8c32da91d3c8c6a1ab
+        default: a627404e5ff0be24d9edc77c44fd3a2bf83cc987
   pull_request:
     paths: ["bb/**", "registry.toml", ".github/workflows/bb-provider.yml"]
   push:
@@ -21,7 +21,7 @@ env:
   # commit and labels it as a development build; none of these results can
   # certify a released binary. Replace with release tarballs once 1.5.0 ships.
   GC_RC_COMMIT: 750ee90205f0496907cd4804ded06d868193d1bf # release/v1.5.0
-  GC_CANDIDATE_COMMIT: ${{ inputs.gc_commit || '286af7a9c6fffd06f0a16b8c32da91d3c8c6a1ab' }} # fix/claude-runtime-v1.5.0
+  GC_CANDIDATE_COMMIT: ${{ inputs.gc_commit || 'a627404e5ff0be24d9edc77c44fd3a2bf83cc987' }} # fix/claude-runtime-v1.5.0
 
 jobs:
   compatibility:
@@ -83,9 +83,9 @@ jobs:
   live-conversations:
     name: Live ${{ matrix.runtime }} conversations (GC 1.5 ${{ matrix.gc }})
     runs-on: ubuntu-latest
-    # GC build, two scopes with three bounded turns and agent-resume settlement,
+    # GC build, two scopes with three bounded (600 s) turns and agent-resume settlement,
     # plus dependency setup and preservation/teardown.
-    timeout-minutes: 50
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -193,6 +193,7 @@ jobs:
             --gc-development-base 1.5.0 \
             --bb-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" \
             --bb-app-bin "$RUNNER_TEMP/bb-release/node_modules/.bin/bb-app" \
+            --timeout 600 \
             --report-dir "$RUNNER_TEMP/bb-live-reports"
       - name: Upload safe acceptance reports
         if: always()

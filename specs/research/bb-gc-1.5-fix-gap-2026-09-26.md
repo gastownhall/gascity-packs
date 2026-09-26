@@ -201,3 +201,41 @@ Two commits are now on `fix/claude-runtime-v1.5.0` (head `286af7a9c`):
 `TailActivityForProvider` (`sessionlog_adapter.go:156`, used by keyed-session
 `State()`) still uses the Claude heuristic, so Codex never shows `PhaseBusy`
 there; the plugin does not depend on it.
+
+## Codex structured-stream identity and late usage
+
+With the activity fixes, CI run 36231919917 got Codex through GC 1.5 for the
+first time: the rig scope's first turn passed. Two failures remained. Both were
+reproduced locally with real Codex 0.153.4 against a mock Responses API.
+
+- Global scope, turn 1: "Gas City changed transcript streams during this turn".
+  `opaqueTranscriptStreamID` (`internal/api/session_structured_types.go:384`) and
+  the resume-token stream hash (`session_structured_stream.go:207`) include
+  `LogicalConversationID`, which is `SessionKey` or else the bead ID. Codex's
+  SessionStart hook writes the key out of band (`cmd/gc/cmd_prime.go:874`); it can
+  become visible after startup is already idle, so the identity flips mid-turn on
+  the same rollout file. Fix `7ebc90f5b` derives both identities from the
+  transcript path and provider session ID only (the logical and GC IDs still
+  update, as an upsert). `TestStructuredStreamIdentitySurvivesLateSessionKey`
+  fails without it and passes with it.
+- Parallel tool calls: "Gas City rewrote the transcript". Codex writes
+  `token_count` after `function_call_output`, and
+  `attachTailUsageToAssistantEntries` (`internal/worker/sessionlog_adapter.go:515`)
+  then adds usage/model to an entry the client already has, which the prefix-hash
+  check (`session_structured_stream.go:88`) treats as a rewrite. Fix `a627404e5`
+  leaves model/usage out of the delivered-prefix hash; content edits still reset.
+  `TestStructuredStreamUpsertsLateCodexToolCallUsage` fails without it and passes
+  with it.
+
+Both are unchanged on `origin/main` and `release/v1.5.0`. With them the branch
+head is `a627404e5`; `go vet` is clean and `internal/api/...`, `internal/worker/...`,
+`internal/session/...` and `internal/sessionlog/...` pass (umask 022).
+
+Still open: the rig scope's second (tool) turn in CI reached no verified
+completion within 240 s. Sequential exec, apply_patch and parallel tool turns all
+complete locally against the mock, so the cause is not established. BB's "agent
+default" reasoning resolves to GC's Codex default `xhigh`
+(`internal/worker/builtin/profiles.go:315`); the live CI jobs now allow 600 s per
+turn to test whether this is only latency. Also open, not fixed: before a new
+Codex session has its key, `internal/session/chat.go:1270` falls back to the
+newest rollout in the work directory, which can briefly select an older session.
