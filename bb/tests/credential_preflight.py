@@ -79,14 +79,17 @@ def main():
     parser.add_argument("--timeout", type=int, default=180)
     args = parser.parse_args()
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE_CONFIG_DIR", "CODEX_HOME"))}
-    with tempfile.TemporaryDirectory(prefix="bb-credential-preflight-") as scratch:
+    # Codex keeps cloning plugins into its home in the background after exec
+    # returns; cleanup must not turn that race into a failed preflight.
+    with tempfile.TemporaryDirectory(prefix="bb-credential-preflight-", ignore_cleanup_errors=True) as scratch:
         home = Path(scratch)
         os.chmod(home, 0o700)
         workdir = home / "work"
         workdir.mkdir()
         os.chdir(workdir)
         ok, detail = (claude if args.runtime == "claude" else codex)(env, home, args.timeout)
-    print(json.dumps({"runtime": args.runtime, "credential_works": ok, **detail}, sort_keys=True))
+        print(json.dumps({"runtime": args.runtime, "credential_works": ok, **detail}, sort_keys=True), flush=True)
+        os.chdir("/")
     return 0 if ok else 1
 
 
