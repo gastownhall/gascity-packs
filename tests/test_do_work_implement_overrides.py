@@ -29,6 +29,19 @@ REQUIRED_FRAGMENTS = (
     "leave the source anchor open",
 )
 
+# Only an explicit instruction to commit satisfies these; asking to record a
+# "focused commit hash" does not make the implementer create the commit.
+COMMIT_INSTRUCTION_FRAGMENTS = (
+    "make a focused commit in the worktree",
+    "`git commit`",
+)
+
+# Prompts that still only ask for a commit hash. Removed by the follow-up PR
+# "fix(packs): tell compound and bmad implementers to commit".
+MISSING_COMMIT_INSTRUCTION = frozenset(
+    {"compound-engineering/formulas/compound-work.formula.toml"}
+)
+
 
 SINGLE_STEP_IMPLEMENT_FORMULAS = (
     "gstack/formulas/gstack-work.formula.toml",
@@ -59,9 +72,13 @@ class DoWorkImplementOverrideTests(unittest.TestCase):
 
     def test_overrides_require_a_focused_worktree_commit(self) -> None:
         for formula, prompt in implement_overrides().items():
+            rel = formula.relative_to(REPO_ROOT).as_posix()
             text = prompt.read_text(encoding="utf-8").lower()
-            for fragment in REQUIRED_FRAGMENTS:
-                with self.subTest(formula=str(formula.relative_to(REPO_ROOT)), fragment=fragment):
+            fragments = REQUIRED_FRAGMENTS
+            if rel not in MISSING_COMMIT_INSTRUCTION:
+                fragments += COMMIT_INSTRUCTION_FRAGMENTS
+            for fragment in fragments:
+                with self.subTest(formula=rel, fragment=fragment):
                     self.assertIn(fragment, text)
 
 
