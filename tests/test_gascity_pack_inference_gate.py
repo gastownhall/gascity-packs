@@ -413,7 +413,7 @@ def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -
     assert "GATE_TIMEOUT: ${{ github.event.inputs.timeout || matrix.gate_timeout }}" in workflow
     assert '--timeout "$GATE_TIMEOUT"' in workflow
     assert 'DOLT_VERSION: "2.1.7"' in workflow
-    assert 'BD_VERSION: "v1.1.0"' in workflow
+    assert 'BD_VERSION: "v1.3.0"' in workflow
     assert 'go-version: "1.26.5"' in workflow
     assert "ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api" in workflow
     assert "ANTHROPIC_AUTH_TOKEN: ${{ secrets.MANIFOLD_AUTH_TOKEN }}" in workflow
@@ -465,7 +465,7 @@ def test_dispatch_inference_workflow_is_manual_or_external_only() -> None:
     assert "\n  push:" not in workflow
     assert "runs-on: blacksmith-32vcpu-ubuntu-2404" in workflow
     assert 'DOLT_VERSION: "2.1.7"' in workflow
-    assert 'BD_VERSION: "v1.1.0"' in workflow
+    assert 'BD_VERSION: "v1.3.0"' in workflow
     assert 'go-version: "1.26.5"' in workflow
     assert "include-hidden-files: true" in workflow
     assert "ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api" in workflow
@@ -1866,3 +1866,124 @@ trace:
 
 {body}
 """
+
+
+def fake_gascity_source(root: Path) -> Path:
+    for rel in (("internal", "bootstrap", "packs", "core"), ("examples", "bd")):
+        pack_dir = root.joinpath(*rel)
+        pack_dir.mkdir(parents=True)
+        (pack_dir / "pack.toml").write_text("[pack]\n", encoding="utf-8")
+    return root
+
+
+def test_resolve_gascity_source_root_requires_an_explicit_choice(tmp_path) -> None:
+    for value in (None, "", "  "):
+        with pytest.raises(gascity_pack_inference_gate.GateError, match="--gascity-source-root"):
+            gascity_pack_inference_gate.resolve_gascity_source_root(value)
+
+
+def test_resolve_gascity_source_root_accepts_remote_opt_in() -> None:
+    assert gascity_pack_inference_gate.resolve_gascity_source_root("remote") is None
+    sources = gascity_pack_inference_gate.builtin_pack_sources(None)
+    assert sources["core"] == f"{gascity_pack_inference_gate.GASCITY_REMOTE_SOURCE}//internal/bootstrap/packs/core"
+    assert sources["bd"] == f"{gascity_pack_inference_gate.GASCITY_REMOTE_SOURCE}//examples/bd"
+
+
+def test_resolve_gascity_source_root_rejects_non_gascity_tree(tmp_path) -> None:
+    (tmp_path / "examples" / "bd").mkdir(parents=True)
+    (tmp_path / "examples" / "bd" / "pack.toml").write_text("[pack]\n", encoding="utf-8")
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="not a gascity source tree.*packs/core/pack.toml"):
+        gascity_pack_inference_gate.resolve_gascity_source_root(tmp_path)
+
+
+def test_explicit_gascity_source_root_feeds_builtin_imports(tmp_path) -> None:
+    source_root = gascity_pack_inference_gate.resolve_gascity_source_root(fake_gascity_source(tmp_path / "gascity"))
+    pack_source = tmp_path / "repo" / "gascity"
+    roles_source = pack_source / "roles"
+    roles_source.mkdir(parents=True)
+
+    workspace = gascity_pack_inference_gate.write_gate_workspace(
+        tmp_path / "gate",
+        pack_source=pack_source,
+        roles_source=roles_source,
+        gascity_source_root=source_root,
+        city_name="inference-city",
+        rig_name="fixture",
+    )
+
+    pack_toml = (workspace.city_dir / "pack.toml").read_text(encoding="utf-8")
+    assert f'[imports.core]\nsource = "{source_root / "internal" / "bootstrap" / "packs" / "core"}"' in pack_toml
+    assert f'[imports.bd]\nsource = "{source_root / "examples" / "bd"}"' in pack_toml
+
+
+def test_parser_reads_gascity_source_root_from_env(monkeypatch) -> None:
+    monkeypatch.delenv("GASCITY_SOURCE_ROOT", raising=False)
+    monkeypatch.delenv("GASCITY_REPO_ROOT", raising=False)
+    assert gascity_pack_inference_gate.build_parser().parse_args([]).gascity_source_root is None
+
+    monkeypatch.setenv("GASCITY_REPO_ROOT", "/src/repo-root")
+    assert gascity_pack_inference_gate.build_parser().parse_args([]).gascity_source_root == "/src/repo-root"
+    monkeypatch.setenv("GASCITY_SOURCE_ROOT", "/src/source-root")
+    assert gascity_pack_inference_gate.build_parser().parse_args([]).gascity_source_root == "/src/source-root"
+    args = gascity_pack_inference_gate.build_parser().parse_args(["--gascity-source-root", "remote"])
+    assert args.gascity_source_root == "remote"
+
+
+def test_build_gate_env_passes_bd_env_through_and_isolates_dolt_server(tmp_path) -> None:
+    workspace = gate_workspace(tmp_path)
+    workspace.gc_home.mkdir(parents=True)
+    inherited = {
+        "PATH": "/usr/bin",
+        "HOME": str(tmp_path / "home"),
+        "BD_DOLT_SHARED_SERVER": "true",
+        "BD_EXAMPLE_SETTING": "kept",
+        "BD_EMPTY": "",
+        "NOT_BD_SETTING": "dropped",
+    }
+
+    env = gascity_pack_inference_gate.build_gate_env("/usr/bin/gc", workspace, inherited=inherited)
+    assert env["BD_DOLT_SHARED_SERVER"] == "true"
+    assert env["BD_EXAMPLE_SETTING"] == "kept"
+    assert "BD_EMPTY" not in env
+    assert "NOT_BD_SETTING" not in env
+
+    del inherited["BD_DOLT_SHARED_SERVER"]
+    env = gascity_pack_inference_gate.build_gate_env("/usr/bin/gc", workspace, inherited=inherited)
+    assert env["BD_DOLT_SHARED_SERVER"] == "false"
+
+
+def test_initialize_rig_git_gives_fixture_a_bare_origin_with_default_branch(tmp_path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is required")
+    rig_dir = tmp_path / "fixture"
+    rig_dir.mkdir()
+    (rig_dir / "README.md").write_text("fixture\n", encoding="utf-8")
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(tmp_path / "home"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+
+    gascity_pack_inference_gate.initialize_rig_git(rig_dir, env=env)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=rig_dir, env=env, text=True, capture_output=True, check=True
+        ).stdout.strip()
+
+    origin = gascity_pack_inference_gate.rig_origin_path(rig_dir)
+    assert git("remote", "get-url", "origin") == str(origin)
+    assert git("symbolic-ref", "refs/remotes/origin/HEAD") == "refs/remotes/origin/main"
+    assert git("rev-parse", "refs/remotes/origin/main") == git("rev-parse", "HEAD")
+    assert git("rev-parse", "--abbrev-ref", "main@{upstream}") == "origin/main"
+    assert not origin.is_relative_to(rig_dir)
+
+
+def test_inference_workflows_pin_gascity_source_root_to_installed_gc() -> None:
+    for name in ("supported-pack-nightly.yml", "gascity-pack-inference.yml"):
+        workflow = (gascity_pack_inference_gate.REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        assert 'go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}"' in workflow, name
+        assert 'go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"' in workflow, name
+        assert 'echo "GASCITY_SOURCE_ROOT=${gascity_dir}" >> "$GITHUB_ENV"' in workflow, name
+        assert 'cmd/gc@${GASCITY_REF}"' not in workflow, name

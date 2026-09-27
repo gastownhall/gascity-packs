@@ -618,6 +618,11 @@ INHERITED_ENV_KEYS = (
     INFERENCE_EXPECTED_MODEL_ENV,
     "OLLAMA_API_KEY",
 )
+# bd's own configuration env (BD_DOLT_SHARED_SERVER and friends) is passed
+# through by prefix. Dropping it silently lets owner-level bd config (for
+# example `dolt.shared-server: true` in ~/.beads/config.yaml) rebind the
+# disposable gate city to a shared Dolt server the caller tried to opt out of.
+INHERITED_ENV_PREFIXES = ("BD_",)
 REQUIRED_INFERENCE_ENV_KEYS = (
     "OLLAMA_API_KEY",
     "ANTHROPIC_BASE_URL",
@@ -829,12 +834,22 @@ def toml_string(value: str | Path) -> str:
     return f'"{escaped}"'
 
 
-def builtin_pack_sources() -> dict[str, str | Path]:
-    gascity_root = discover_gascity_source_root()
-    if gascity_root is not None:
+GASCITY_SOURCE_ROOT_ENV_KEYS = ("GASCITY_SOURCE_ROOT", "GASCITY_REPO_ROOT")
+GASCITY_REMOTE_SOURCE_ROOT = "remote"
+
+
+def builtin_pack_sources(gascity_source_root: Path | None = None) -> dict[str, str | Path]:
+    """Import sources for gc's builtin `core` and `bd` packs.
+
+    With a source root they come from that checkout, which must be the same
+    gascity revision as --gc-bin. Without one they come from the gascity git
+    remote, which is only correct when --gc-bin was built from its default
+    branch.
+    """
+    if gascity_source_root is not None:
         return {
-            "core": gascity_root / "internal" / "bootstrap" / "packs" / "core",
-            "bd": gascity_root / "examples" / "bd",
+            "core": gascity_source_root / "internal" / "bootstrap" / "packs" / "core",
+            "bd": gascity_source_root / "examples" / "bd",
         }
     return {
         "core": f"{GASCITY_REMOTE_SOURCE}//internal/bootstrap/packs/core",
@@ -842,25 +857,46 @@ def builtin_pack_sources() -> dict[str, str | Path]:
     }
 
 
-def discover_gascity_source_root() -> Path | None:
-    candidates: list[Path] = []
-    env_root = os.environ.get("GASCITY_SOURCE_ROOT") or os.environ.get("GASCITY_REPO_ROOT")
-    if env_root:
-        candidates.append(Path(env_root))
-    candidates.extend(
-        [
-            REPO_ROOT / ".gascity-ci",
-            REPO_ROOT.parent / "gascity",
-            Path("/data/projects/gascity"),
-        ]
-    )
-    for candidate in candidates:
-        root = candidate.expanduser().resolve()
-        if (
-            (root / "internal" / "bootstrap" / "packs" / "core" / "pack.toml").is_file()
-            and (root / "examples" / "bd" / "pack.toml").is_file()
-        ):
-            return root
+def resolve_gascity_source_root(value: str | Path | None) -> Path | None:
+    """Validate the explicitly selected gascity source for the builtin packs.
+
+    There is deliberately no discovery. Guessing a sibling or well-known
+    checkout silently paired a release-candidate gc with whatever branch that
+    checkout had out, and the core/bd packs it imported were not the ones the
+    binary under test ships. Returns None for the explicit `remote` opt-in.
+    """
+    if value is None or not str(value).strip():
+        raise GateError(
+            "no gascity source root: pass --gascity-source-root (or set "
+            f"{' / '.join(GASCITY_SOURCE_ROOT_ENV_KEYS)}) to the gascity checkout or module "
+            "directory --gc-bin was built from, so the builtin core and bd packs match the "
+            f"binary under test; pass {GASCITY_REMOTE_SOURCE_ROOT!r} to import them from "
+            f"{GASCITY_REMOTE_SOURCE} instead"
+        )
+    if str(value).strip() == GASCITY_REMOTE_SOURCE_ROOT:
+        return None
+    root = Path(value).expanduser().resolve()
+    missing = [
+        rel
+        for rel in (
+            Path("internal") / "bootstrap" / "packs" / "core" / "pack.toml",
+            Path("examples") / "bd" / "pack.toml",
+        )
+        if not (root / rel).is_file()
+    ]
+    if missing:
+        raise GateError(
+            f"gascity source root {root} is not a gascity source tree; missing "
+            + ", ".join(str(rel) for rel in missing)
+        )
+    return root
+
+
+def default_gascity_source_root() -> str | None:
+    for key in GASCITY_SOURCE_ROOT_ENV_KEYS:
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
     return None
 
 
@@ -907,6 +943,7 @@ def write_gate_workspace(
     pack_name: str = GASCITY_PACK,
     gastown: bool = False,
     include_pack_at_city_scope: bool = True,
+    gascity_source_root: Path | None = None,
     city_name: str,
     rig_name: str,
 ) -> GateWorkspace:
@@ -1001,7 +1038,7 @@ def write_gate_workspace(
         "schema = 2",
         "",
     ]
-    for binding, source in builtin_pack_sources().items():
+    for binding, source in builtin_pack_sources(gascity_source_root).items():
         pack_lines.extend([f"[imports.{binding}]", f"source = {toml_string(source)}", ""])
     if include_pack_at_city_scope:
         pack_lines.extend([f"[imports.{pack_binding}]", f"source = {toml_string(pack_source)}", ""])
@@ -1175,6 +1212,13 @@ def build_gate_env(
 ) -> dict[str, str]:
     source = dict(inherited or os.environ)
     env = {key: source[key] for key in INHERITED_ENV_KEYS if source.get(key)}
+    env.update(
+        {
+            key: value
+            for key, value in source.items()
+            if value and key.startswith(INHERITED_ENV_PREFIXES)
+        }
+    )
     if not env.get("HOME"):
         env["HOME"] = str(Path.home())
 
@@ -1195,6 +1239,11 @@ def build_gate_env(
     env.setdefault("CLAUDE_CODE_EFFORT_LEVEL", "auto")
     env.setdefault("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
     env.setdefault(INFERENCE_EXPECTED_MODEL_ENV, DEFAULT_INFERENCE_MODEL)
+    # The gate city is disposable and must own its stores. Supervisors inherit
+    # the real HOME, so without this a user-level bd `dolt.shared-server: true`
+    # moves the city and fixture stores into ~/.beads/shared-server, where they
+    # collide with every other city on the host. A caller may still override.
+    env.setdefault("BD_DOLT_SHARED_SERVER", "false")
     write_dolt_global_config(workspace.gc_home)
 
     if env.get("OLLAMA_API_KEY"):
@@ -1475,6 +1524,31 @@ def initialize_rig_git(rig_dir: Path, *, env: Mapping[str, str]) -> None:
     run_checked(["git", "config", "user.name", "Gas City Pack Gate"], cwd=rig_dir, env=env)
     run_checked(["git", "add", "."], cwd=rig_dir, env=env)
     run_checked(["git", "commit", "-m", "Add inference gate fixtures"], cwd=rig_dir, env=env)
+    initialize_rig_origin(rig_dir, env=env)
+
+
+def rig_origin_path(rig_dir: Path) -> Path:
+    return rig_dir.parent / f"{rig_dir.name}-origin.git"
+
+
+def initialize_rig_origin(rig_dir: Path, *, env: Mapping[str, str]) -> None:
+    """Give the fixture rig a local bare `origin` with a resolvable default branch.
+
+    do-work's prepare-worktree bases every implementation worktree on the
+    remote default branch (refs/remotes/origin/HEAD) and fails closed with
+    missing_remote_default_branch when there is none; it deliberately refuses
+    to fall back to local HEAD. A fixture rig with no remote therefore fails
+    every build gate before any implementation runs.
+    """
+    origin = rig_origin_path(rig_dir)
+    try:
+        run_checked(["git", "init", "--bare", "-b", "main", str(origin)], env=env)
+    except subprocess.CalledProcessError:
+        run_checked(["git", "init", "--bare", str(origin)], env=env)
+        run_checked(["git", "symbolic-ref", "HEAD", "refs/heads/main"], cwd=origin, env=env)
+    run_checked(["git", "remote", "add", "origin", str(origin)], cwd=rig_dir, env=env)
+    run_checked(["git", "push", "--quiet", "--set-upstream", "origin", "main"], cwd=rig_dir, env=env)
+    run_checked(["git", "remote", "set-head", "origin", "--auto"], cwd=rig_dir, env=env)
 
 
 def should_validate_gastown_orchestration_contract(gates: Sequence[str]) -> bool:
@@ -3355,6 +3429,12 @@ def run_gate(args: argparse.Namespace, *, pack_name: str | None = None, workdir:
     bd_bin = resolve_binary(args.bd_bin)
     selected_pack = pack_name or args.pack
     pack_spec = resolve_pack_spec(args, selected_pack)
+    gascity_source_root = resolve_gascity_source_root(args.gascity_source_root)
+    print(
+        "builtin core/bd packs from: "
+        + (str(gascity_source_root) if gascity_source_root else GASCITY_REMOTE_SOURCE),
+        flush=True,
+    )
 
     gates = expand_gate_selection(args.gate, pack_spec)
     timeout = parse_duration(args.timeout)
@@ -3379,6 +3459,7 @@ def run_gate(args: argparse.Namespace, *, pack_name: str | None = None, workdir:
         pack_name=pack_spec.name,
         gastown=pack_spec.gastown,
         include_pack_at_city_scope=not (pack_spec.gastown and SMOKE_GATE in gates),
+        gascity_source_root=gascity_source_root,
         city_name=city_name_for_pack(args, pack_spec),
         rig_name=args.rig_name,
     )
@@ -3487,6 +3568,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--validator-source",
         type=Path,
         help="override local pack root that provides build artifact validators and schemas",
+    )
+    parser.add_argument(
+        "--gascity-source-root",
+        default=default_gascity_source_root(),
+        help=(
+            "required: gascity source tree (checkout or Go module dir) matching --gc-bin, used for the "
+            "builtin core and bd pack imports; defaults to $GASCITY_SOURCE_ROOT or $GASCITY_REPO_ROOT; "
+            f"{GASCITY_REMOTE_SOURCE_ROOT!r} imports them from the gascity git remote"
+        ),
     )
     parser.add_argument("--workdir", type=Path, help="directory for the disposable gate city and rig")
     parser.add_argument("--keep-workdir", action="store_true", help="keep the generated workdir after success")

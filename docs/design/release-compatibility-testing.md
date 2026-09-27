@@ -55,6 +55,23 @@ imports the selected pack at city scope, imports `gascity/roles` at rig scope
 when the pack needs the shared run roles, and launches real formulas against
 known fixtures.
 
+The runner imports gc's builtin `core` and `bd` packs from an explicit gascity
+source tree, which must be the same revision `--gc-bin` was built from. Pass it
+with `--gascity-source-root` (or `GASCITY_SOURCE_ROOT` / `GASCITY_REPO_ROOT`):
+a gascity checkout or the Go module directory of the installed gc. The runner
+does not guess a sibling checkout; `--gascity-source-root remote` imports the
+packs from the gascity git remote, which is only correct for a gc built from
+its default branch. The inference workflows resolve the gascity ref once with
+`go mod download -json`, install gc at that exact version, and export the
+module directory as `GASCITY_SOURCE_ROOT`.
+
+The fixture rig gets a local bare `origin` (next to the rig, as
+`<rig>-origin.git`) with `origin/HEAD` set, because build formulas base
+implementation worktrees on the remote default branch. The gate also passes
+`BD_*` settings through to the city and defaults `BD_DOLT_SHARED_SERVER=false`
+so a user-level bd shared-server setting cannot rebind the disposable city's
+stores.
+
 The `review` gate launches the selected pack's real review formula against a
 known-bad Python diff. It passes only when:
 
@@ -205,7 +222,8 @@ Run the supported-pack inference gate setup path locally without requiring
 Ollama credentials:
 
 ```sh
-python3 scripts/gascity_pack_inference_gate.py --setup-only --skip-inference-env-check --pack all-supported --gate all
+python3 scripts/gascity_pack_inference_gate.py --setup-only --skip-inference-env-check --pack all-supported --gate all \
+  --gascity-source-root /path/to/gascity
 ```
 
 Run the static flow-contract suite locally:
@@ -218,11 +236,13 @@ Run only a code-writing build gate when the Ollama-backed Claude environment
 variables are present:
 
 ```sh
-python3 scripts/gascity_pack_inference_gate.py --pack superpowers --gate build --gc-bin "$(command -v gc)"
+python3 scripts/gascity_pack_inference_gate.py --pack superpowers --gate build --gc-bin "$(command -v gc)" \
+  --gascity-source-root /path/to/gascity
 ```
 
 Run the full inference gate set:
 
 ```sh
-python3 scripts/gascity_pack_inference_gate.py --pack all-supported --gc-bin "$(command -v gc)"
+python3 scripts/gascity_pack_inference_gate.py --pack all-supported --gc-bin "$(command -v gc)" \
+  --gascity-source-root /path/to/gascity
 ```
