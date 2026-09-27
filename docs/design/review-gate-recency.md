@@ -26,7 +26,7 @@ resolve an update-order dispute.
 On 2026-09-27, the installed `gc 1.4.1` returned 38 closed members of an Apicity
 workflow with no `updated_at` fields. The exact same read with
 `GC_BEADS_FORCE_FALLBACK=1` returned the same 38 rows with 38 timestamps. Both
-`bd show` and `gc bd show` returned an update time for a recently updated member.
+The direct Beads CLI and `gc bd show` returned an update time for a recently updated member.
 The override was applied to one command, without changing city configuration.
 
 In Gas City source commit `cfea984`, the difference is in the adapters:
