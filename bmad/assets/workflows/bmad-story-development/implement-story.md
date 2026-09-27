@@ -16,7 +16,11 @@ Implement the story, run focused tests from inside the worktree, update task
 completion evidence, then make a focused commit in the worktree (`git add` the
 changed files and `git commit`). Do-work's `close-source-anchor` step fails
 closed when the worktree has no implementation commit, so uncommitted edits are
-a failed implementation, not a pass. Write an implementation summary to
+a failed implementation, not a pass. Commit only when `git status --porcelain`
+shows changes, and never use `git commit --allow-empty`. This step re-runs on
+every story loop iteration: if the story is already committed and nothing
+changed, do not commit again; record the existing `HEAD` commit hash instead.
+Write an implementation summary to
 `{{artifact_root}}/task-<source-anchor-id>-summary.md` after resolving the
 source anchor. Record the summary path, focused commit hash, changed files, and
 verification result on the story-development step before closing it. Leave the

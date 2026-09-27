@@ -39,6 +39,20 @@ IMPLEMENTING_STEPS = (
     ("bmad/formulas/bmad-story-development.formula.toml", "implement-story"),
 )
 
+# Steps that may commit follow-up fixes in the same worktree, possibly from a
+# different session than the implementer: they must resolve and stay in the
+# source-anchor worktree and never commit in the launcher checkout.
+FIX_STEPS = (("bmad/formulas/bmad-story-development.formula.toml", "apply-story-findings"),)
+
+FIX_STEP_FRAGMENTS = (
+    "read `work_dir` from the source anchor",
+    'cd "$worktree"',
+    "do not edit, test, or commit in the launcher checkout",
+    "`git commit`",
+    "commit only when `git status --porcelain` shows changes",
+    "never use `git commit --allow-empty`",
+)
+
 
 def iter_steps(steps: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
     for step in steps:
@@ -46,10 +60,10 @@ def iter_steps(steps: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
         yield from iter_steps(step.get("children") or [])
 
 
-def implementing_prompts() -> dict[str, Path]:
-    """Formula file -> the prompt of the step that implements do-work's work."""
+def step_prompts(step_refs: tuple[tuple[str, str], ...]) -> dict[str, Path]:
+    """Formula file -> the prompt of the named step in that formula."""
     prompts: dict[str, Path] = {}
-    for rel, step_id in IMPLEMENTING_STEPS:
+    for rel, step_id in step_refs:
         formula = REPO_ROOT / rel
         data = tomllib.loads(formula.read_text(encoding="utf-8"))
         if "do-work" not in (data.get("extends") or []):
@@ -67,12 +81,18 @@ def implementing_prompts() -> dict[str, Path]:
 
 class DoWorkImplementOverrideTests(unittest.TestCase):
 
-    def test_implementing_prompts_require_a_focused_worktree_commit(self) -> None:
-        for rel, prompt in implementing_prompts().items():
+    def assert_prompts_contain(self, step_refs: tuple[tuple[str, str], ...], fragments: tuple[str, ...]) -> None:
+        for rel, prompt in step_prompts(step_refs).items():
             text = " ".join(prompt.read_text(encoding="utf-8").lower().split())
-            for fragment in REQUIRED_FRAGMENTS:
-                with self.subTest(formula=rel, fragment=fragment):
+            for fragment in fragments:
+                with self.subTest(formula=rel, prompt=prompt.name, fragment=fragment):
                     self.assertIn(fragment, text)
+
+    def test_implementing_prompts_require_a_focused_worktree_commit(self) -> None:
+        self.assert_prompts_contain(IMPLEMENTING_STEPS, REQUIRED_FRAGMENTS)
+
+    def test_fix_prompts_commit_only_real_changes_in_the_worktree(self) -> None:
+        self.assert_prompts_contain(FIX_STEPS, FIX_STEP_FRAGMENTS)
 
 
 if __name__ == "__main__":
