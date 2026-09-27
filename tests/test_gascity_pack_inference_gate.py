@@ -2014,6 +2014,7 @@ def gascity_source_with_scripts(root: Path, *, executable: bool) -> Path:
         '[order]\nexec = "$PACK_DIR/assets/scripts/gate-sweep.sh"\n', encoding="utf-8"
     )
     write_executable(core / "assets" / "scripts" / "gate-sweep.sh", executable=executable)
+    write_executable(core / "assets" / "scripts" / "escalate.sh", executable=executable)
     dolt = root / "examples" / "bd" / "dolt"
     dolt.mkdir()
     (dolt / "pack.toml").write_text("[pack]\n", encoding="utf-8")
@@ -2041,6 +2042,7 @@ def test_resolve_gascity_source_root_rejects_mode_stripped_module_dir(tmp_path) 
         Path("examples/bd/doctor/check-bd/run.sh"),
         Path("examples/bd/dolt/assets/scripts/backup.sh"),
         Path("examples/bd/dolt/commands/status/run.sh"),
+        Path("internal/bootstrap/packs/core/assets/scripts/escalate.sh"),
         Path("internal/bootstrap/packs/core/assets/scripts/gate-sweep.sh"),
     ]
     with pytest.raises(gascity_pack_inference_gate.GateError, match="not executable.*exit 126.*git checkout"):

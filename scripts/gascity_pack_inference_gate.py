@@ -904,16 +904,20 @@ BUILTIN_PACK_RELS = (
     Path("examples") / "bd",
 )
 PACK_DIR_REFERENCE_RE = re.compile(r"\$(?:PACK_DIR|\{PACK_DIR\})/([A-Za-z0-9_./-]+)")
+# Helpers that pack scripts exec (not source) by path, so no pack TOML names
+# them: reaper.sh, jsonl-export.sh and dolt's _notify.sh run escalate.sh.
+EXECUTED_HELPER_SCRIPTS = (BUILTIN_PACK_RELS[0] / "assets" / "scripts" / "escalate.sh",)
 
 
 def non_executable_pack_scripts(root: Path) -> list[Path]:
     """Scripts in the builtin core/bd packs that gc execs but lack an exec bit.
 
     gc imports a local-path pack in place and runs `$PACK_DIR/...` order
-    scripts and `run.sh` entry points of pack commands and doctor checks
-    directly, so each must be executable in the source tree.
+    scripts, `run.sh` entry points of pack commands and doctor checks, and
+    helpers other scripts exec directly, so each must be executable in the
+    source tree.
     """
-    required: set[Path] = set()
+    required: set[Path] = {root / rel for rel in EXECUTED_HELPER_SCRIPTS}
     for pack_rel in BUILTIN_PACK_RELS:
         builtin_root = root / pack_rel
         for toml_path in builtin_root.rglob("*.toml"):

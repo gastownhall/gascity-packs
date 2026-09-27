@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       gascity_ref:
-        description: "Gas City module ref/version to install, such as latest, main, or v1.2.1."
+        description: "Gas City module ref/version to install: latest, main, a tag such as v1.2.1, or a commit SHA. Not a branch name with a slash (release/v1.5.0 is rejected by go); pass its tag or commit SHA."
         required: false
         default: latest
       gascity_setup_ref:
