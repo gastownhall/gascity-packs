@@ -1937,15 +1937,17 @@ def test_build_gate_env_passes_bd_env_through_and_isolates_dolt_server(tmp_path)
         "PATH": "/usr/bin",
         "HOME": str(tmp_path / "home"),
         "BD_DOLT_SHARED_SERVER": "true",
-        "BD_EXAMPLE_SETTING": "kept",
-        "BD_EMPTY": "",
+        "BD_DOLT_EXAMPLE_SETTING": "kept",
+        "BD_DOLT_EMPTY": "",
+        "BD_ACTOR": "dropped",
         "NOT_BD_SETTING": "dropped",
     }
 
     env = gascity_pack_inference_gate.build_gate_env("/usr/bin/gc", workspace, inherited=inherited)
     assert env["BD_DOLT_SHARED_SERVER"] == "true"
-    assert env["BD_EXAMPLE_SETTING"] == "kept"
-    assert "BD_EMPTY" not in env
+    assert env["BD_DOLT_EXAMPLE_SETTING"] == "kept"
+    assert "BD_DOLT_EMPTY" not in env
+    assert "BD_ACTOR" not in env
     assert "NOT_BD_SETTING" not in env
 
     del inherited["BD_DOLT_SHARED_SERVER"]
@@ -1985,5 +1987,61 @@ def test_inference_workflows_pin_gascity_source_root_to_installed_gc() -> None:
         workflow = (gascity_pack_inference_gate.REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert 'go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}"' in workflow, name
         assert 'go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"' in workflow, name
-        assert 'echo "GASCITY_SOURCE_ROOT=${gascity_dir}" >> "$GITHUB_ENV"' in workflow, name
+        assert 'gascity_commit="$(jq -er .Origin.Hash <<<"$gascity_module")"' in workflow, name
+        assert (
+            'git -C "$gascity_src" fetch --quiet --depth 1 https://github.com/gastownhall/gascity.git "$gascity_commit"'
+            in workflow
+        ), name
+        assert 'echo "GASCITY_SOURCE_ROOT=${gascity_src}" >> "$GITHUB_ENV"' in workflow, name
         assert 'cmd/gc@${GASCITY_REF}"' not in workflow, name
+        # The module cache dir is read-only and mode-stripped; importing core/bd
+        # from it makes every pack script gc execs fail with exit 126.
+        assert "jq -er .Dir" not in workflow, name
+        assert "go env GOMODCACHE" not in workflow, name
+
+
+def write_executable(path: Path, *, executable: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755 if executable else 0o644)
+
+
+def gascity_source_with_scripts(root: Path, *, executable: bool) -> Path:
+    fake_gascity_source(root)
+    core = root / "internal" / "bootstrap" / "packs" / "core"
+    (core / "orders").mkdir()
+    (core / "orders" / "gate-sweep.toml").write_text(
+        '[order]\nexec = "$PACK_DIR/assets/scripts/gate-sweep.sh"\n', encoding="utf-8"
+    )
+    write_executable(core / "assets" / "scripts" / "gate-sweep.sh", executable=executable)
+    dolt = root / "examples" / "bd" / "dolt"
+    dolt.mkdir()
+    (dolt / "pack.toml").write_text("[pack]\n", encoding="utf-8")
+    (dolt / "orders").mkdir()
+    (dolt / "orders" / "backup.toml").write_text(
+        '[order]\nexec = "${PACK_DIR}/assets/scripts/backup.sh"\n', encoding="utf-8"
+    )
+    write_executable(dolt / "assets" / "scripts" / "backup.sh", executable=executable)
+    write_executable(dolt / "commands" / "status" / "run.sh", executable=executable)
+    write_executable(root / "examples" / "bd" / "doctor" / "check-bd" / "run.sh", executable=executable)
+    # Sourced helper libraries are not exec'd and may stay 0644.
+    write_executable(dolt / "assets" / "scripts" / "runtime.sh", executable=False)
+    return root
+
+
+def test_resolve_gascity_source_root_accepts_executable_pack_scripts(tmp_path) -> None:
+    root = gascity_source_with_scripts(tmp_path / "gascity", executable=True)
+    assert gascity_pack_inference_gate.resolve_gascity_source_root(root) == root.resolve()
+
+
+def test_resolve_gascity_source_root_rejects_mode_stripped_module_dir(tmp_path) -> None:
+    root = gascity_source_with_scripts(tmp_path / "gascity", executable=False)
+
+    assert [path.relative_to(root) for path in gascity_pack_inference_gate.non_executable_pack_scripts(root)] == [
+        Path("examples/bd/doctor/check-bd/run.sh"),
+        Path("examples/bd/dolt/assets/scripts/backup.sh"),
+        Path("examples/bd/dolt/commands/status/run.sh"),
+        Path("internal/bootstrap/packs/core/assets/scripts/gate-sweep.sh"),
+    ]
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="not executable.*exit 126.*git checkout"):
+        gascity_pack_inference_gate.resolve_gascity_source_root(root)

@@ -58,12 +58,16 @@ known fixtures.
 The runner imports gc's builtin `core` and `bd` packs from an explicit gascity
 source tree, which must be the same revision `--gc-bin` was built from. Pass it
 with `--gascity-source-root` (or `GASCITY_SOURCE_ROOT` / `GASCITY_REPO_ROOT`):
-a gascity checkout or the Go module directory of the installed gc. The runner
-does not guess a sibling checkout; `--gascity-source-root remote` imports the
-packs from the gascity git remote, which is only correct for a gc built from
-its default branch. The inference workflows resolve the gascity ref once with
-`go mod download -json`, install gc at that exact version, and export the
-module directory as `GASCITY_SOURCE_ROOT`.
+a git checkout of the gascity commit gc was built from. Do not point it at the
+Go module cache directory: module zips drop file modes, so every pack script gc
+execs (order scripts, pack command and doctor `run.sh`) would fail with exit
+126. The runner rejects a source root whose exec'd pack scripts are not
+executable. It does not guess a sibling checkout; `--gascity-source-root
+remote` imports the packs from the gascity git remote, which is only correct
+for a gc built from its default branch. The inference workflows resolve the
+gascity ref once with `go mod download -json`, install gc at that exact
+version, check out the module's `.Origin.Hash` commit as a shallow git tree,
+and export that checkout as `GASCITY_SOURCE_ROOT`.
 
 The fixture rig gets a local bare `origin` (next to the rig, as
 `<rig>-origin.git`) with `origin/HEAD` set, because build formulas base

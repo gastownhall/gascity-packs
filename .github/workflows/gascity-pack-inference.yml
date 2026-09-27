@@ -125,10 +125,17 @@ jobs:
           # imports (GASCITY_SOURCE_ROOT) come from the same gascity revision.
           gascity_module="$(go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}")"
           gascity_version="$(jq -er .Version <<<"$gascity_module")"
-          gascity_dir="$(jq -er .Dir <<<"$gascity_module")"
+          gascity_commit="$(jq -er .Origin.Hash <<<"$gascity_module")"
           go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"
-          echo "GASCITY_SOURCE_ROOT=${gascity_dir}" >> "$GITHUB_ENV"
-          echo "gascity ${GASCITY_REF} resolved to ${gascity_version} at ${gascity_dir}"
+          # Import core/bd from a git checkout of that commit, never the module
+          # cache directory: module zips drop file modes, so every pack script gc
+          # execs would fail with exit 126.
+          gascity_src="${RUNNER_TEMP}/gascity-src"
+          git init --quiet "$gascity_src"
+          git -C "$gascity_src" fetch --quiet --depth 1 https://github.com/gastownhall/gascity.git "$gascity_commit"
+          git -C "$gascity_src" checkout --quiet --detach FETCH_HEAD
+          echo "GASCITY_SOURCE_ROOT=${gascity_src}" >> "$GITHUB_ENV"
+          echo "gascity ${GASCITY_REF} resolved to ${gascity_version} (${gascity_commit}) at ${gascity_src}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           "$(go env GOPATH)/bin/gc" version
 

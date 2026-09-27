@@ -618,11 +618,12 @@ INHERITED_ENV_KEYS = (
     INFERENCE_EXPECTED_MODEL_ENV,
     "OLLAMA_API_KEY",
 )
-# Beads configuration env (BD_DOLT_SHARED_SERVER and friends) is passed
+# Beads Dolt configuration env (BD_DOLT_SHARED_SERVER and friends) is passed
 # through by prefix. Dropping it silently lets owner-level beads settings, for
 # example `dolt.shared-server: true` in ~/.beads/config.yaml, rebind the
 # disposable gate city to a shared Dolt server the caller tried to opt out of.
-INHERITED_ENV_PREFIXES = ("BD_",)
+# Other bd settings (actor, backups, ...) stay out of the disposable city.
+INHERITED_ENV_PREFIXES = ("BD_DOLT_",)
 REQUIRED_INFERENCE_ENV_KEYS = (
     "OLLAMA_API_KEY",
     "ANTHROPIC_BASE_URL",
@@ -868,8 +869,8 @@ def resolve_gascity_source_root(value: str | Path | None) -> Path | None:
     if value is None or not str(value).strip():
         raise GateError(
             "no gascity source root: pass --gascity-source-root (or set "
-            f"{' / '.join(GASCITY_SOURCE_ROOT_ENV_KEYS)}) to the gascity checkout or module "
-            "directory --gc-bin was built from, so the builtin core and bd packs match the "
+            f"{' / '.join(GASCITY_SOURCE_ROOT_ENV_KEYS)}) to the gascity checkout "
+            "--gc-bin was built from, so the builtin core and bd packs match the "
             f"binary under test; pass {GASCITY_REMOTE_SOURCE_ROOT!r} to import them from "
             f"{GASCITY_REMOTE_SOURCE} instead"
         )
@@ -877,19 +878,55 @@ def resolve_gascity_source_root(value: str | Path | None) -> Path | None:
         return None
     root = Path(value).expanduser().resolve()
     missing = [
-        rel
-        for rel in (
-            Path("internal") / "bootstrap" / "packs" / "core" / "pack.toml",
-            Path("examples") / "bd" / "pack.toml",
-        )
-        if not (root / rel).is_file()
+        pack_rel / "pack.toml"
+        for pack_rel in BUILTIN_PACK_RELS
+        if not (root / pack_rel / "pack.toml").is_file()
     ]
     if missing:
         raise GateError(
             f"gascity source root {root} is not a gascity source tree; missing "
             + ", ".join(str(rel) for rel in missing)
         )
+    not_executable = non_executable_pack_scripts(root)
+    if not_executable:
+        raise GateError(
+            f"gascity source root {root} has pack scripts gc must exec that are not executable "
+            f"({', '.join(str(path.relative_to(root)) for path in not_executable[:5])}"
+            f"{', ...' if len(not_executable) > 5 else ''}); orders and pack commands would exit 126. "
+            "Use a git checkout of the gascity revision, not a Go module cache directory "
+            "(module zips drop file modes)"
+        )
     return root
+
+
+BUILTIN_PACK_RELS = (
+    Path("internal") / "bootstrap" / "packs" / "core",
+    Path("examples") / "bd",
+)
+PACK_DIR_REFERENCE_RE = re.compile(r"\$(?:PACK_DIR|\{PACK_DIR\})/([A-Za-z0-9_./-]+)")
+
+
+def non_executable_pack_scripts(root: Path) -> list[Path]:
+    """Scripts in the builtin core/bd packs that gc execs but lack an exec bit.
+
+    gc imports a local-path pack in place and runs `$PACK_DIR/...` order
+    scripts and `run.sh` entry points of pack commands and doctor checks
+    directly, so each must be executable in the source tree.
+    """
+    required: set[Path] = set()
+    for pack_rel in BUILTIN_PACK_RELS:
+        builtin_root = root / pack_rel
+        for toml_path in builtin_root.rglob("*.toml"):
+            pack_dir = next(
+                (parent for parent in toml_path.parents if (parent / "pack.toml").is_file()),
+                builtin_root,
+            )
+            text = toml_path.read_text(encoding="utf-8")
+            for match in PACK_DIR_REFERENCE_RE.finditer(text):
+                required.add(pack_dir / match.group(1))
+        for kind in ("commands", "doctor"):
+            required.update(builtin_root.rglob(f"{kind}/*/run.sh"))
+    return sorted(path for path in required if path.is_file() and not os.access(path, os.X_OK))
 
 
 def default_gascity_source_root() -> str | None:
@@ -3573,7 +3610,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--gascity-source-root",
         default=default_gascity_source_root(),
         help=(
-            "required: gascity source tree (checkout or Go module dir) matching --gc-bin, used for the "
+            "required: gascity git checkout matching --gc-bin (not a Go module cache dir), used for the "
             "builtin core and bd pack imports; defaults to $GASCITY_SOURCE_ROOT or $GASCITY_REPO_ROOT; "
             f"{GASCITY_REMOTE_SOURCE_ROOT!r} imports them from the gascity git remote"
         ),
