@@ -618,9 +618,9 @@ INHERITED_ENV_KEYS = (
     INFERENCE_EXPECTED_MODEL_ENV,
     "OLLAMA_API_KEY",
 )
-# bd's own configuration env (BD_DOLT_SHARED_SERVER and friends) is passed
-# through by prefix. Dropping it silently lets owner-level bd config (for
-# example `dolt.shared-server: true` in ~/.beads/config.yaml) rebind the
+# Beads configuration env (BD_DOLT_SHARED_SERVER and friends) is passed
+# through by prefix. Dropping it silently lets owner-level beads settings, for
+# example `dolt.shared-server: true` in ~/.beads/config.yaml, rebind the
 # disposable gate city to a shared Dolt server the caller tried to opt out of.
 INHERITED_ENV_PREFIXES = ("BD_",)
 REQUIRED_INFERENCE_ENV_KEYS = (
