@@ -6,6 +6,11 @@ requirements/spec artifact and any companion brainstorming notes needed to
 resolve them. Preserve traceability to the original target and do not add
 unrequested scope.
 
+Edit the requirements artifact in place and keep it valid for
+`gc.build.requirements.v1`: preserve its YAML front matter (starting on the
+first line), keep `trace.coverage` and the Markdown coverage table in sync, and
+keep the required sections.
+
 For every attempt, write an apply summary and, when the artifact changed, a
 diff. Before closing, update the exact claimed bead id with the lane metadata:
 
