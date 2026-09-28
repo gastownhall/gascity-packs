@@ -48,6 +48,8 @@ write, so publish the review report explicitly before closing:
 - Resolve the review report path: use workflow root metadata
   `gc.build.review_report_path` when it is set; otherwise use the synthesized report
   path from `gc.build.code_review_report_path`.
+- If the resolved review report path is relative, resolve it against
+  `$GC_RIG_ROOT` before copying and recording it.
 - If the review report path differs from the synthesized report path, copy the
   synthesized report to it with `mkdir -p "$(dirname "<review report path>")"`
   and `cp -f "<synthesized report path>" "<review report path>"`.

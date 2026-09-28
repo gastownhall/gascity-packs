@@ -53,7 +53,7 @@ methodology:
 producer:
   formula: superpowers-brainstorming
   stage: write-requirements-spec
-  attempt: <positive integer>
+  attempt: 1
 status: approved
 trace:
   upstream:
@@ -74,7 +74,7 @@ trace:
 - Coverage statuses are not artifact statuses: use `covered`,
   `not_applicable`, `deferred`, `blocked`, `out_of_scope`, or `superseded`,
   never `approved`.
-- Include these required sections as Markdown headings: Problem Statement,
+- Include these required sections as `##` headings, in this order: Problem Statement,
   W6H, User Stories, Technical Stories, Behavior Requirements, Example
   Mapping, Acceptance Criteria, Out Of Scope, and Open Questions.
 
