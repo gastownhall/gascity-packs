@@ -22,8 +22,8 @@ lifecycle with retries, persistence, and observable per-stage artifacts.
   the vendored `ce-compound` skill.
 - **Pick a different pack when...** you want strict per-task TDD with approval
   gates (`superpowers`), document-first story decomposition (`bmad`),
-  founder/PM-flavored QA and release gates (`gstack`), or the fewest moving
-  parts (`build-basic` in the base `gascity` pack).
+  lightweight direct delivery policy and optional specialist skills (`gstack`),
+  or the fewest moving parts (`build-basic` in the base `gascity` pack).
 
 ## Quick start
 

@@ -31,20 +31,18 @@ durable artifacts and live report are complete.
 
 ## Artifacts and publication
 
-The initial brief must provide `rig`, `rig_root`, `plan_slug`, `report_slug`,
-`report_title`, and evidence requirements. Maintain source artifacts under
-`<rig_root>/plans/<plan_slug>/` (or the repository's established planning
-directory).
+The initial brief must provide `rig`, `rig_root`, `plan_slug`, `report_root`,
+`report_base_url`, `report_slug`, `report_title`, and evidence requirements.
+Maintain source artifacts under `<rig_root>/plans/<plan_slug>/` (or the
+repository's established planning directory).
 
 Every user-facing research engagement must also:
 
 1. publish a finished HTML/CSS bundle at
-   `/home/nvidia/gascity/reports/<rig>/<report_slug>/index.html`;
-2. add an active card linking it from
-   `/home/nvidia/gascity/reports/index.html`;
-3. verify
-   `https://gascity.tail96374b.ts.net/reports/<rig>/<report_slug>/` returns the
-   finished report; and
+   `<report_root>/<rig>/<report_slug>/index.html`;
+2. add an active card linking it from `<report_root>/index.html`;
+3. verify `<report_base_url>/<rig>/<report_slug>/` returns the finished report;
+   and
 4. record the source paths, published paths, and live URL in the final session
    result.
 

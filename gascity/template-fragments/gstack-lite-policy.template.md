@@ -18,8 +18,8 @@ wall-clock/rework accounting.
   are complete. Use `gc sling ... --no-formula` only for explicitly background
   work. Cap the lane at one active session in the city and every rig.
 - Every user-facing research engagement must publish an HTML/CSS report under
-  `/home/nvidia/gascity/reports/<rig>/<slug>/`, add it to the active reports
-  library, and verify the live tailnet URL before completion.
+  the report root named in its durable brief, add it to that active library,
+  and verify the configured public report URL before completion.
 - Never launch a retired delivery graph. Do not mention retired workflow names
   to the user unless they ask about history or a live violation is detected.
 - Add gstack planning, design, QA, security, migration, documentation, or

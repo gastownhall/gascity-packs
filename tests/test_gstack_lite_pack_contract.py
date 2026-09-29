@@ -206,12 +206,38 @@ def test_audit_rejects_retired_formula_names(monkeypatch, tmp_path: Path) -> Non
     monkeypatch.setattr(
         audit,
         "active_formula_names",
-        lambda _city: ({"mol-do-work", "gstack-build", "build-basic"}, None),
+        lambda _city: ({"mol-do-work", "gstack-build", "complete-delivery"}, None),
     )
 
     errors, _notes = audit.audit(city, False)
 
     assert any(
+        "strict Gstack Lite profile excludes active formulas" in error
+        for error in errors
+    )
+
+
+def test_audit_allows_gascity_builtin_formula_catalog(monkeypatch, tmp_path: Path) -> None:
+    audit = load_audit_module()
+    city = tmp_path / "city"
+    city.mkdir()
+    (city / "pack.toml").write_text(
+        "[pack]\nname='city'\nschema=2\n[imports.gstack]\nsource='gstack'\n",
+        encoding="utf-8",
+    )
+    (city / "city.toml").write_text(
+        "[agent_defaults]\nappend_fragments=['gstack-lite-policy']\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        audit,
+        "active_formula_names",
+        lambda _city: ({"build-base", "build-basic", "build-basic-review"}, None),
+    )
+
+    errors, _notes = audit.audit(city, False)
+
+    assert not any(
         "strict Gstack Lite profile excludes active formulas" in error
         for error in errors
     )
@@ -231,6 +257,18 @@ def test_audit_rejects_rig_without_singleton_research_planner_patch(
         """
 [agent_defaults]
 append_fragments = ["gstack-lite-policy"]
+
+[providers.sol-research]
+base = "provider:codex"
+[providers.sol-research.option_defaults]
+model = "gpt-5.6-sol"
+effort = "max"
+
+[providers.astra-research]
+base = "provider:codex"
+[providers.astra-research.option_defaults]
+model = "gpt-6-astra"
+effort = "high"
 
 [[rigs]]
 name = "one"
@@ -257,7 +295,7 @@ max = 1
 [[patches.agent]]
 name = "gc.research-planner"
 dir = "one"
-provider = "sol-research"
+provider = "astra-research"
 max_active_sessions = 1
 """.strip()
         + "\n",
@@ -268,6 +306,27 @@ max_active_sessions = 1
     errors, _notes = audit.audit(city, False)
 
     assert (
-        "current rigs need exactly one singleton Sol/max gc.research-planner patch: two"
+        "current rigs need exactly one singleton high-effort gc.research-planner patch: two"
         in errors
     )
+
+
+def test_audit_accepts_configured_high_effort_research_provider() -> None:
+    audit = load_audit_module()
+
+    providers = {
+        "sol-research": {
+            "option_defaults": {"model": "gpt-5.6-sol", "effort": "max"}
+        },
+        "astra-research": {
+            "option_defaults": {"model": "gpt-6-astra", "effort": "high"}
+        },
+        "astra-work": {
+            "option_defaults": {"model": "gpt-6-astra", "effort": "medium"}
+        },
+    }
+
+    assert audit.research_provider_names(providers) == {
+        "sol-research",
+        "astra-research",
+    }

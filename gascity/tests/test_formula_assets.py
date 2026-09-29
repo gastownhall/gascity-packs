@@ -1219,6 +1219,7 @@ class FormulaAssetTests(unittest.TestCase):
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
+                "GC_TEMPLATE": "",
                 "GC_TEST_CALLS": str(calls),
                 "PATH": f"{bin_dir}:/usr/bin:/bin",
             }

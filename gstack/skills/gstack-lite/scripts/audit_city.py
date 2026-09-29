@@ -22,13 +22,11 @@ REQUIRED_PROVIDERS = {
     "sol-rescue",
 }
 STRICT_PROFILE_EXCLUDED_FORMULAS = {
-    "build-base",
-    "build-basic",
-    "build-basic-review",
     "complete-delivery",
     "complete-delivery-pr-gate",
 }
 STRICT_PROFILE_EXCLUDED_PREFIXES = ("gstack-",)
+RESEARCH_EFFORTS = {"high", "xhigh", "max"}
 
 
 def load_toml(path: Path) -> dict:
@@ -94,6 +92,25 @@ def active_formula_names(city: Path) -> tuple[set[str], str | None]:
         if isinstance(item, dict) and item.get("name")
     }
     return names, None
+
+
+def research_provider_names(providers: object) -> set[str]:
+    """Return explicitly configured, high-effort research provider aliases."""
+    if not isinstance(providers, dict):
+        return set()
+    approved: set[str] = set()
+    for name, provider in providers.items():
+        if not str(name).endswith("-research") or not isinstance(provider, dict):
+            continue
+        options = provider.get("option_defaults", {})
+        if (
+            isinstance(options, dict)
+            and isinstance(options.get("model"), str)
+            and bool(options["model"].strip())
+            and options.get("effort") in RESEARCH_EFFORTS
+        ):
+            approved.add(str(name))
+    return approved
 
 
 def audit(city: Path, fix_stale_skills: bool) -> tuple[list[str], list[str]]:
@@ -242,19 +259,20 @@ def audit(city: Path, fix_stale_skills: bool) -> tuple[list[str], list[str]]:
         if isinstance(patch, dict) and patch.get("name") == "gc.research-planner"
     ]
     research_scopes = {rig.get("name", "<unnamed>") for rig in rigs}
+    configured_research_providers = research_provider_names(providers)
     unsafe_research_scopes = []
     for scope in research_scopes:
         matching = [patch for patch in research_patches if patch.get("dir") == scope]
         if (
             len(matching) != 1
-            or matching[0].get("provider") != "sol-research"
+            or matching[0].get("provider") not in configured_research_providers
             or type(matching[0].get("max_active_sessions")) is not int
             or matching[0]["max_active_sessions"] != 1
         ):
             unsafe_research_scopes.append(scope)
     if unsafe_research_scopes:
         errors.append(
-            "current rigs need exactly one singleton Sol/max "
+            "current rigs need exactly one singleton high-effort "
             "gc.research-planner patch: "
             + ", ".join(sorted(unsafe_research_scopes))
         )

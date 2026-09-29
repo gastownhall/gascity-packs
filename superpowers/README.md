@@ -25,9 +25,9 @@ maps that process onto Gas City's `build-base` workflow contract as the
   pack) is the default factory with the fewest gates;
   [compound-engineering](../compound-engineering) trades approval gates for
   the widest reviewer-persona fanout; [bmad](../bmad) is document-first
-  (PRD/architecture/stories); [gstack](../gstack) adds founder/PM-flavored QA
-  and release-readiness stages. Pick superpowers when up-front spec rigor and
-  per-task TDD matter most.
+  (PRD/architecture/stories); [gstack](../gstack) provides lightweight direct
+  delivery policy and optional specialist skills. Pick superpowers when
+  up-front spec rigor and per-task TDD matter most.
 
 ## Quick start
 

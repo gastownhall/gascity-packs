@@ -171,15 +171,15 @@ manual or release dispatch can override that timeout when deliberately needed:
 - `compound-engineering`: review plus build, including selector-driven review
   fanout, plan review, implementation drain, compound resolution, and
   finalization
-- `gstack`: review plus build, including office-hours planning, plan review,
-  implementation drain, staff/QA/security review, QA fanout, release
-  readiness, finalization, and optional publish surface
 - `bmad`: review plus build, including PRD, architecture, epics/stories,
   implementation readiness, story development, and adversarial review fanout
 - `gastown`: orchestration startup, rig-scoped agents, bounded polecat
   `mol-review-leg`, plus static build-orchestration contracts for polecat
   handoff, refinery merge/PR handling, witness recovery, deacon health checks,
   and idea-to-plan fanout
+
+The skills-only `gstack` pack has no inference workflow. Its delivery-policy,
+audit, and specialist-skill contracts are covered by repository static tests.
 
 The static contracts are deliberately part of the live runner initialization:
 nightly fails before spending inference budget if a high-value flow loses an

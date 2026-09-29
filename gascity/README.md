@@ -13,7 +13,7 @@ publish. It ships three things:
   the right formula for you.
 - **The `build-base` contract** — the virtual stage sequence that the
   methodology packs in this repository (bmad, compound-engineering,
-  superpowers, gstack) extend and override.
+  and superpowers) extend and override.
 
 ## Quick Start: your first build
 
@@ -241,10 +241,12 @@ Third-party methodology packs can extend `build-base` and override only the
 stages they need. For implementation, packs should keep the Gas City drain
 lifecycle and point the two static drain steps at pack-specific item formulas
 that extend `do-work` and `do-work-item`. The repository currently ships
-concrete vendored implementations for Compound Engineering, Superpowers, BMAD
-Method, and garrytan/gstack. Those packs import this pack as `gc` internally,
-so users can import one methodology pack at city scope while keeping the
-existing `gc.*` role override surface for rig agents.
+concrete vendored implementations for Compound Engineering, Superpowers, and
+BMAD Method. Those packs import this pack as `gc` internally, so users can
+import one methodology pack at city scope while keeping the existing `gc.*`
+role override surface for rig agents. The sibling Gstack pack is skills-only
+and provides lightweight delivery policy rather than a `build-base` formula
+implementation.
 
 Third-party packs should treat upstream agent definitions, prompts, and skills
 as vendored methodology inputs, not as runtime authority. When an upstream

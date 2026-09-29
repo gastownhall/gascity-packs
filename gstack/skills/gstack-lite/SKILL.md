@@ -77,9 +77,10 @@ close it only after approved artifacts and the live report are complete. Use
 `gc sling <scope>/gc.research-planner <bead-id> --no-formula` only for explicitly
 background or report-only work.
 
-Keep `gc.research-planner` bound to provider `sol-research` with
-`max_active_sessions = 1` in every current rig. `audit_city.py` must fail when
-a new rig lacks the singleton patch.
+Keep `gc.research-planner` singleton-bound in every current rig. The standard
+`sol-research` alias is Sol/max; an alternate city-defined `*-research` alias
+must name a model and use high, xhigh, or max effort. `audit_city.py` must fail
+when a new rig lacks the singleton patch.
 
 Pass the verbatim request, relevant context, settled constraints, expected
 artifact, and evidence/citation requirements. The Mayor validates and presents
@@ -87,13 +88,12 @@ the result instead of independently recreating the analysis. Incidental planning
 inside an implementation task does not trigger this lane. The lane does not
 implement, review its own work, or become rescue capacity.
 
-Every user-facing research engagement publishes an HTML/CSS bundle at
-`/home/nvidia/gascity/reports/<rig>/<slug>/`, adds an active card to
-`/home/nvidia/gascity/reports/index.html`, and returns the live
-`https://gascity.tail96374b.ts.net/reports/<rig>/<slug>/` URL. The durable brief
-must name the slug, title, source-plan directory, expected local bundle, and
-evidence/citation requirements. The Mayor verifies both the library link and a
-successful live HTTP response before reporting completion.
+Every user-facing research engagement publishes an HTML/CSS bundle beneath the
+city-configured report root, adds an active card to that library, and returns a
+URL beneath the configured public report base. The durable brief must name both
+configured destinations, slug, title, source-plan directory, expected local
+bundle, and evidence/citation requirements. The Mayor verifies both the library
+link and a successful live HTTP response before reporting completion.
 
 ## Deliver in six stages
 
@@ -238,7 +238,7 @@ non-ephemeral product beads count; only `blocking_failed > 0` blocks launch.
 For changes to Gas City itself, run `scripts/audit_city.py --city <city-root>`
 from this skill directory. Use `--fix-stale-skills` only to remove exact stale
 `complete-delivery.complete-delivery` symlinks after the active import is gone.
-The script enforces this city's strict Gstack Lite profile, so it also rejects
-explicit legacy `build-basic` imports. A separate city may intentionally use
-that legacy pack, but it is not compliant with this lightweight profile. The
-script must pass before calling a Gstack Lite city configuration coherent.
+The script rejects active Complete Delivery imports and retired `gstack-*`
+formulas. The required `gascity` import may still catalog its built-in build
+formulas for other delivery styles; their presence is not a Gstack Lite policy
+violation. The script must pass before calling city configuration coherent.
