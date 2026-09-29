@@ -302,6 +302,99 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         find_publish.assert_not_called()
         self.assertEqual(result, {"reply_to_message_id": "", "reply_to_quote": ""})
 
+    def test_resolve_reply_reference_prefers_our_own_publish_record_over_rest(self) -> None:
+        # A reply to one of our own messages resolves from disk; no network call.
+        message = {"channel_id": "222", "message_reference": {"message_id": "msg-5"}}
+        with mock.patch.object(gateway_service, "fetch_message_via_rest") as fetch, mock.patch.object(
+            common,
+            "find_chat_publish_by_remote_message_id",
+            return_value={"remote_message_id": "msg-5", "body": "our own earlier reply"},
+        ):
+            result = gateway_service.resolve_reply_reference(message)
+
+        fetch.assert_not_called()
+        self.assertEqual(result["reply_to_quote"], "our own earlier reply")
+
+    def test_resolve_reply_reference_rest_failure_leaves_quote_empty(self) -> None:
+        # The quote is optional context; a Discord hiccup must not fail ingress.
+        message = {"channel_id": "222", "message_reference": {"message_id": "msg-6"}}
+        with mock.patch.object(
+            gateway_service, "fetch_message_via_rest", side_effect=TimeoutError("read timed out")
+        ), mock.patch.object(common, "find_chat_publish_by_remote_message_id", return_value=None):
+            result = gateway_service.resolve_reply_reference(message)
+
+        self.assertEqual(result["reply_to_message_id"], "msg-6")
+        self.assertEqual(result["reply_to_quote"], "")
+
+    def test_rejected_ingress_receipt_never_fetches_the_replied_to_message(self) -> None:
+        # Rejection receipts are written on the gateway receive loop (queue full,
+        # shutdown); a REST call there could stall heartbeats.
+        message = {
+            "id": "106",
+            "channel_id": "55",
+            "content": "a reply while overloaded",
+            "message_reference": {"message_id": "msg-7"},
+            "author": {"id": "u-1", "username": "alice"},
+        }
+        with mock.patch.object(gateway_service, "fetch_message_via_rest") as fetch:
+            gateway_service.save_rejected_ingress_receipt(
+                message,
+                "999",
+                status="rejected_queue_full",
+                reason="queue_full",
+            )
+
+        fetch.assert_not_called()
+        receipt = common.load_chat_ingress("in-106")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_message_id"], "msg-7")
+        self.assertEqual(receipt["reply_to_quote"], "")
+
+    def test_named_app_inbound_reply_fetches_with_that_apps_token(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "999", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "reply-204",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> yes, that one",
+            "mentions": [{"id": "999"}],
+            "message_reference": {"message_id": "msg-8"},
+            "author": {"id": "u-2", "username": "alice"},
+        }
+        seen: dict[str, Any] = {}
+
+        def capturing_fetch(channel_id: str, message_id: str, *, bot_token: str | None = None) -> dict[str, Any]:
+            seen["bot_token"] = bot_token
+            return {"id": message_id, "content": "which one should I take?"}
+
+        with mock.patch.object(common, "load_bot_token", return_value="tok-app"), mock.patch.object(
+            gateway_service, "fetch_message_via_rest", capturing_fetch
+        ), mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"teams.lead": {"session_name": "teams.lead", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(seen["bot_token"], "tok-app")
+        receipt = common.load_chat_ingress("in-reply-204-app-ollie")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_quote"], "which one should I take?")
+
     def test_build_room_launch_envelope_surfaces_reply_reference_when_present(self) -> None:
         envelope = gateway_service.build_room_launch_envelope(
             launcher={"id": "launch-room:22"},

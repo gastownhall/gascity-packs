@@ -269,16 +269,21 @@ def resolve_reply_reference(
     message: dict[str, Any],
     *,
     bot_token: str | None = None,
+    allow_network: bool = True,
 ) -> dict[str, str]:
     """Resolve what an inbound reply is replying to: the target id and a
     short quote of it, so a reader does not have to chase a raw snowflake.
 
     Three tiers, cheapest first, stopping at the first that yields text:
     the gateway's own inline ``referenced_message`` (Discord supplies this on
-    most MESSAGE_CREATE reply events); a REST fetch for the rarer case it is
-    missing; our own chat-publish record, when the reply targets a message we
-    sent ourselves, so no network call is needed at all. A message that is
-    not a reply (no ``message_reference``) costs nothing beyond that check.
+    most MESSAGE_CREATE reply events); our own chat-publish record, when the
+    reply targets a message we sent ourselves, so no network call is needed;
+    a REST fetch for the rarer case neither has it. A message that is not a
+    reply (no ``message_reference``) costs nothing beyond that check.
+
+    The quote is optional context, so the REST tier is fail-soft: any error
+    leaves the quote empty rather than failing ingress. ``allow_network=False``
+    skips the REST tier entirely, for callers on the gateway receive loop.
     """
     reply_to_id = referenced_message_id(message)
     if not reply_to_id:
@@ -288,19 +293,22 @@ def resolve_reply_reference(
     if isinstance(inline, dict) and str(inline.get("id", "")).strip() == reply_to_id:
         quote = raw_message_content(inline).strip()
     if not quote:
+        publish_record = common.find_chat_publish_by_remote_message_id(reply_to_id)
+        if publish_record:
+            quote = str(publish_record.get("body", "")).strip()
+    if not quote and allow_network:
         channel_id = str(message.get("channel_id", "")).strip()
         # Pass the keyword only when there is a token. fetch_message_via_rest()
         # gained bot_token upstream, and a base that predates it (the live
         # gateway's) raises TypeError on ANY bot_token= keyword, even None, which
         # would take down inbound handling for every reply that reaches this tier.
         rest_kwargs = {"bot_token": bot_token} if bot_token is not None else {}
-        fetched = fetch_message_via_rest(channel_id, reply_to_id, **rest_kwargs)
+        try:
+            fetched = fetch_message_via_rest(channel_id, reply_to_id, **rest_kwargs)
+        except Exception:
+            fetched = {}
         if fetched:
             quote = raw_message_content(fetched).strip()
-    if not quote:
-        publish_record = common.find_chat_publish_by_remote_message_id(reply_to_id)
-        if publish_record:
-            quote = str(publish_record.get("body", "")).strip()
     if quote:
         quote = summarize_body_detail(quote, limit=REPLY_QUOTE_PREVIEW_LIMIT)[0]
     return {"reply_to_message_id": reply_to_id, "reply_to_quote": quote}
@@ -355,7 +363,13 @@ def ingress_preview(message: dict[str, Any], bot_user_id: str) -> str:
     return summarize_body(strip_bot_mentions(str(message.get("content", "")), bot_user_id))
 
 
-def ingress_body_fields(message: dict[str, Any], bot_user_id: str) -> dict[str, Any]:
+def ingress_body_fields(
+    message: dict[str, Any],
+    bot_user_id: str,
+    *,
+    bot_token: str | None = None,
+    allow_network: bool = True,
+) -> dict[str, Any]:
     """Body fields for a chat-ingress record.
 
     ``body`` is the whole message — the bot's own mention stripped, everything
@@ -382,7 +396,7 @@ def ingress_body_fields(message: dict[str, Any], bot_user_id: str) -> dict[str, 
         "body_length": len(body),
         "body_preview": preview,
         "body_truncated": truncated,
-        **resolve_reply_reference(message),
+        **resolve_reply_reference(message, bot_token=bot_token, allow_network=allow_network),
     }
 
 
@@ -1402,7 +1416,7 @@ def save_rejected_ingress_receipt(
             "binding_id": "",
             "from_user_id": str((message.get("author") or {}).get("id", "")).strip(),
             "from_display": display_name_from_message(message),
-            **ingress_body_fields(message, bot_user_id),
+            **ingress_body_fields(message, bot_user_id, allow_network=False),
             "status": status,
             "reason": reason,
             "message_debug": dict(message_debug or {}),
@@ -1615,7 +1629,11 @@ def process_room_launch_message(
             ),
             "from_user_id": str((message.get("author") or {}).get("id", "")).strip(),
             "from_display": display_name_from_message(message),
-            **ingress_body_fields(message, bot_user_id),
+            # The reply was already resolved into base_receipt; reuse it rather
+            # than fetching the replied-to message a second time.
+            **ingress_body_fields(message, bot_user_id, allow_network=False),
+            "reply_to_message_id": str(base_receipt.get("reply_to_message_id", "")),
+            "reply_to_quote": str(base_receipt.get("reply_to_quote", "")),
         }
     )
     try:
@@ -1964,7 +1982,7 @@ def process_inbound_message(
             ):
                 preloaded_binding = None
 
-    body_fields = ingress_body_fields(message, bot_user_id)
+    body_fields = ingress_body_fields(message, bot_user_id, bot_token=recovery_token)
     claimed, base_receipt = common.save_chat_ingress_if_absent(
         {
             "ingress_id": ingress_id,
