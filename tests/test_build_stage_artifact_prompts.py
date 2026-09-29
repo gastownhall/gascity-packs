@@ -17,6 +17,11 @@ Contract gaps surfaced in the gc v1.5.0 RC inference runs:
 * superpowers' requirements artifact lacked YAML front matter, and the
   requirements `{target}` repair attempts never read the validator errors in
   `gc.attempt_log`, so every repair closed without touching the file.
+* gstack's apply-plan-review-findings lane set the plan's front-matter status
+  to `reviewed`, which gc.build.plan.v1 rejects, and closed without running the
+  validator; nothing re-validated the plan until the gate's final check. Every
+  apply-findings lane that edits a build artifact in place had the same gap,
+  and the plan-review `{target}` steps were unchecked.
 """
 
 from __future__ import annotations
@@ -260,6 +265,88 @@ class SuperpowersRequirementsContractTests(unittest.TestCase):
         for fragment in REQUIREMENTS_FEEDBACK_FRAGMENTS:
             with self.subTest(fragment=fragment):
                 self.assertIn(normalize(fragment), text)
+
+
+# (pack, build formula, build stage, lane suffix under the stage's expansion,
+# schemas of the build artifacts that lane may edit in place).
+APPLY_LANES = (
+    ("gstack", "gstack-build", "plan-review", "apply-plan-review-findings", ("plan",)),
+    ("compound-engineering", "compound-build", "plan-review", "apply-plan-findings", ("requirements", "plan")),
+    ("superpowers", "superpowers-build", "plan-review", "apply-plan-feedback", ("requirements", "plan")),
+    ("superpowers", "superpowers-build", "requirements", "apply-spec-feedback", ("requirements",)),
+    ("bmad", "bmad-build", "review", "apply-bmad-review-findings", ("implementation-summary", "review")),
+    ("compound-engineering", "compound-build", "review", "apply-review-findings", ("implementation-summary", "review")),
+    ("gstack", "gstack-build", "review", "apply-review-findings", ("implementation-summary", "review")),
+)
+
+# Stages whose expansion lets a fix lane edit the plan: the `{target}` must
+# re-validate it before the stage passes.
+PLAN_REVIEW_BUILDS = (
+    ("compound-engineering", "compound-build"),
+    ("gstack", "gstack-build"),
+    ("superpowers", "superpowers-build"),
+)
+
+APPLY_LANE_FRAGMENTS = (
+    "preserve its yaml front matter",
+    "do not invent statuses such as `reviewed`",
+    "before closing with `gc.outcome=pass`, from `$gc_rig_root`, re-run the validator",
+    "read the validator errors from `gc.attempt_log`",
+)
+
+PLAN_TARGET_FRAGMENTS = (
+    f"gc_bead_id=<claimed-step-id> .gc/scripts/checks/{CHECK_SCRIPT}",
+    "fix any error before setting `gc.outcome=pass`",
+    "read the validator errors from `gc.attempt_log` on the validation loop control bead",
+    "keep its yaml front matter intact",
+)
+
+
+def allowed_statuses(artifact: str) -> list[str]:
+    return VALIDATOR.load_schema(f"gc.build.{artifact}.v1")["allowed_statuses"]
+
+
+class ApplyFindingsFrontMatterTests(unittest.TestCase):
+
+    def test_validator_ships_beside_the_check_script(self) -> None:
+        # Prompts call `.gc/scripts/validate_build_artifact.py`; the check lives
+        # at `.gc/scripts/checks/build-artifact-valid.sh`, both from gascity/assets/scripts.
+        scripts = REPO_ROOT / "gascity" / "assets" / "scripts"
+        self.assertTrue((scripts / "validate_build_artifact.py").is_file())
+        self.assertTrue((scripts / "checks" / CHECK_SCRIPT).is_file())
+
+    def test_apply_lanes_keep_edited_artifacts_schema_valid(self) -> None:
+        for pack, build, stage, lane, artifacts in APPLY_LANES:
+            build_path, build_data = load_formula(pack, build)
+            exp_path, exp_data = load_formula(pack, find_step(build_data, stage, "steps")["expand"])
+            text = prompt_text(exp_path, find_step(exp_data, f"{{target}}.{lane}", "template"))
+            for fragment in APPLY_LANE_FRAGMENTS:
+                with self.subTest(pack=pack, lane=lane, fragment=fragment):
+                    self.assertIn(normalize(fragment), text)
+            for artifact in artifacts:
+                schema_id = f"gc.build.{artifact}.v1"
+                with self.subTest(pack=pack, lane=lane, schema=schema_id):
+                    self.assertIn(f"python3 .gc/scripts/validate_build_artifact.py --schema {schema_id} --path", text)
+                for status in allowed_statuses(artifact):
+                    with self.subTest(pack=pack, lane=lane, schema=schema_id, status=status):
+                        self.assertIn(f"`{status}`", text)
+
+    def test_plan_review_targets_revalidate_the_plan(self) -> None:
+        for pack, build in PLAN_REVIEW_BUILDS:
+            exp_path, _, _, target = expansion_target(pack, build, "plan-review")
+            metadata = target["metadata"]
+            with self.subTest(pack=pack, check="metadata"):
+                self.assertEqual(metadata.get("gc.build.artifact_schema"), "gc.build.plan.v1")
+                keys = [key.strip() for key in metadata.get("gc.build.artifact_path_keys", "").split(",")]
+                self.assertEqual(keys[0], "gc.build.plan_path")
+                self.assertIn("gc.build.plan_path", [k for k, _ in gascity_pack_inference_gate.BUILD_BASIC_ARTIFACT_CONTRACTS])
+            text = prompt_text(exp_path, target)
+            for fragment in PLAN_TARGET_FRAGMENTS:
+                with self.subTest(pack=pack, fragment=fragment):
+                    self.assertIn(normalize(fragment), text)
+            for status in allowed_statuses("plan"):
+                with self.subTest(pack=pack, status=status):
+                    self.assertIn(f"`{status}`", text)
 
 
 if __name__ == "__main__":
