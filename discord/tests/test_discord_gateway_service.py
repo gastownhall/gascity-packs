@@ -183,6 +183,131 @@ class DiscordGatewayServiceTests(unittest.TestCase):
             "first paragraph second paragraph",
         )
 
+    # gm-52178u: reply-to context (message_reference / referenced_message)
+
+    def test_ingress_body_fields_has_no_reply_fields_for_a_non_reply(self) -> None:
+        fields = gateway_service.ingress_body_fields({"content": "no reply here"}, "999")
+
+        self.assertEqual(fields["reply_to_message_id"], "")
+        self.assertEqual(fields["reply_to_quote"], "")
+
+    def test_ingress_body_fields_captures_reply_reference_from_inline_referenced_message(self) -> None:
+        message = {
+            "content": "just merge with that red",
+            "message_reference": {"message_id": "msg-1"},
+            "referenced_message": {"id": "msg-1", "content": "which PR should I merge?"},
+        }
+        fields = gateway_service.ingress_body_fields(message, "999")
+
+        self.assertEqual(fields["reply_to_message_id"], "msg-1")
+        self.assertEqual(fields["reply_to_quote"], "which PR should I merge?")
+
+    def test_resolve_reply_reference_ignores_an_unrelated_inline_referenced_message(self) -> None:
+        # Discord's contract is that referenced_message.id matches
+        # message_reference.message_id; guard the mismatch defensively so a
+        # stale/wrong inline payload cannot mislabel a different quote.
+        message = {
+            "message_reference": {"message_id": "msg-1"},
+            "referenced_message": {"id": "msg-OTHER", "content": "wrong message"},
+        }
+        with mock.patch.object(gateway_service, "fetch_message_via_rest", return_value={}), mock.patch.object(
+            common, "find_chat_publish_by_remote_message_id", return_value=None
+        ):
+            result = gateway_service.resolve_reply_reference(message)
+
+        self.assertEqual(result["reply_to_message_id"], "msg-1")
+        self.assertEqual(result["reply_to_quote"], "")
+
+    def test_resolve_reply_reference_falls_back_to_rest_fetch(self) -> None:
+        message = {"channel_id": "222", "message_reference": {"message_id": "msg-2"}}
+        with mock.patch.object(
+            gateway_service,
+            "fetch_message_via_rest",
+            return_value={"id": "msg-2", "content": "fetched via REST"},
+        ) as fetch:
+            result = gateway_service.resolve_reply_reference(message)
+
+        fetch.assert_called_once_with("222", "msg-2", bot_token=None)
+        self.assertEqual(result["reply_to_message_id"], "msg-2")
+        self.assertEqual(result["reply_to_quote"], "fetched via REST")
+
+    def test_resolve_reply_reference_falls_back_to_our_own_chat_publish_record(self) -> None:
+        message = {"channel_id": "222", "message_reference": {"message_id": "msg-3"}}
+        with mock.patch.object(gateway_service, "fetch_message_via_rest", return_value={}), mock.patch.object(
+            common,
+            "find_chat_publish_by_remote_message_id",
+            return_value={"remote_message_id": "msg-3", "body": "our own earlier reply"},
+        ) as find_publish:
+            result = gateway_service.resolve_reply_reference(message)
+
+        find_publish.assert_called_once_with("msg-3")
+        self.assertEqual(result["reply_to_message_id"], "msg-3")
+        self.assertEqual(result["reply_to_quote"], "our own earlier reply")
+
+    def test_resolve_reply_reference_clips_a_long_quote(self) -> None:
+        long_content = "y" * (gateway_service.REPLY_QUOTE_PREVIEW_LIMIT + 50)
+        message = {
+            "message_reference": {"message_id": "msg-4"},
+            "referenced_message": {"id": "msg-4", "content": long_content},
+        }
+        result = gateway_service.resolve_reply_reference(message)
+
+        self.assertTrue(result["reply_to_quote"].endswith("..."))
+        self.assertEqual(
+            len(result["reply_to_quote"]),
+            gateway_service.REPLY_QUOTE_PREVIEW_LIMIT + len("..."),
+        )
+
+    def test_resolve_reply_reference_costs_nothing_for_a_non_reply(self) -> None:
+        with mock.patch.object(gateway_service, "fetch_message_via_rest") as fetch, mock.patch.object(
+            common, "find_chat_publish_by_remote_message_id"
+        ) as find_publish:
+            result = gateway_service.resolve_reply_reference({"content": "no reply"})
+
+        fetch.assert_not_called()
+        find_publish.assert_not_called()
+        self.assertEqual(result, {"reply_to_message_id": "", "reply_to_quote": ""})
+
+    def test_build_room_launch_envelope_surfaces_reply_reference_when_present(self) -> None:
+        envelope = gateway_service.build_room_launch_envelope(
+            launcher={"id": "launch-room:22"},
+            launch={
+                "launch_id": "room-launch:222",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+                "participants": {},
+            },
+            message={"id": "300", "guild_id": "1", "channel_id": "22", "author": {"id": "u-300", "username": "alice"}},
+            body="what's next?",
+            mentioned_handles=[],
+            ingress_id="in-300",
+            reply_to_id="msg-1",
+            reply_to_quote="earlier question",
+        )
+
+        self.assertIn("reply_to_discord_message_id: msg-1", envelope)
+        self.assertIn('reply_to_quote_json: "earlier question"', envelope)
+
+    def test_build_room_launch_envelope_reply_fields_default_empty(self) -> None:
+        envelope = gateway_service.build_room_launch_envelope(
+            launcher={"id": "launch-room:22"},
+            launch={
+                "launch_id": "room-launch:222",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+                "participants": {},
+            },
+            message={"id": "301", "guild_id": "1", "channel_id": "22", "author": {"id": "u-301", "username": "alice"}},
+            body="hello",
+            mentioned_handles=[],
+            ingress_id="in-301",
+        )
+
+        self.assertIn("reply_to_discord_message_id: \n", envelope)
+        self.assertIn('reply_to_quote_json: ""', envelope)
+
     def test_process_inbound_dm_records_a_long_body_without_loss(self) -> None:
         common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
         # Long enough to clip, and split across lines so a flattening bug shows up
@@ -1641,6 +1766,88 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         receipt = common.load_chat_ingress("in-212a")
         assert receipt is not None
         self.assertEqual(receipt["routing_mode"], "reply_to")
+
+    def test_process_inbound_room_launch_thread_reply_captures_reference_and_quote(self) -> None:
+        # gm-52178u: the operator replies to a specific Discord message to
+        # disambiguate which of several pending asks they are answering. The
+        # ingress receipt and the deferred envelope both need the replied-to
+        # id and a short quote, not just routing that happens to use it.
+        common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:222",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "222",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-123-sky",
+                        "session_name": "dc-sky",
+                        "session_id": "gc-sky",
+                    },
+                    "corp/alex": {
+                        "qualified_handle": "corp/alex",
+                        "session_alias": "dc-456-alex",
+                        "session_name": "dc-alex",
+                        "session_id": "gc-alex",
+                    },
+                },
+                "message_targets": {"msg-agent-1": "corp/alex"},
+                "thread_id": "222",
+                "state": "active",
+            }
+        )
+        message = {
+            "id": "212b",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "merge; ... just merge with that red",
+            "message_reference": {"message_id": "msg-agent-1"},
+            "referenced_message": {
+                "id": "msg-agent-1",
+                "content": "two pending asks: (1) merge the red PR, (2) hold the green one",
+            },
+            "author": {"id": "u-212b", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "ensure_room_launch_session_for_handle",
+            return_value=(
+                common.load_room_launch("room-launch:222") or {},
+                {
+                    "qualified_handle": "corp/alex",
+                    "session_alias": "dc-456-alex",
+                    "session_name": "dc-alex",
+                    "session_id": "gc-alex",
+                },
+            ),
+        ), mock.patch.object(common, "set_room_launch_last_addressed"), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted"},
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("reply_to_discord_message_id: msg-agent-1", envelope)
+        self.assertIn(
+            'reply_to_quote_json: "two pending asks: (1) merge the red PR, (2) hold the green one"',
+            envelope,
+        )
+        receipt = common.load_chat_ingress("in-212b")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_message_id"], "msg-agent-1")
+        self.assertEqual(
+            receipt["reply_to_quote"],
+            "two pending asks: (1) merge the red PR, (2) hold the green one",
+        )
 
     def test_process_inbound_room_launch_thread_uses_last_addressed_fallback(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
