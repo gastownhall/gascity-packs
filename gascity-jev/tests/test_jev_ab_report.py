@@ -15,6 +15,8 @@ def test_step_refs_normalize_to_stages():
     assert report.stage_of('do-work.prepare-worktree') == 'implement'
     assert report.stage_of('jev-review-tail.jev-build.review.item.1.finalize') == 'review'
     assert report.stage_of('summarize-implementation.iteration.1') == 'summarize'
+    assert report.stage_of('finalize.iteration.1') == 'review'
+    assert report.stage_of('build-basic.publish') == 'publish'
     assert report.stage_of('') == 'other'
 
 
@@ -35,8 +37,10 @@ def write_run(run: Path, transcripts: Path):
     (run/'transcript-usage-records.json').write_text(json.dumps(sessions))
     (run/'result.json').write_text(json.dumps({
         'arm': 'jev', 'workload': 'slugify', 'status': 'passed', 'formula': 'jev-build', 'elapsed_seconds': 600,
-        'independent_quality': [{'pytest_exit': 0, 'hidden_exit': 0, 'original_tests_unchanged': True}],
-        'jev_gate_delivery': [{'summary': {'skipped_lanes': ['test_evidence']}}]}))
+        'fixture_tests_pass': True, 'hidden_tests_pass': True,
+        # A stray candidate passing hidden checks must not count.
+        'independent_quality': [{'pytest_exit': 0, 'hidden_exit': 0, 'worktree': '/elsewhere'}],
+        'jev_gate_delivery': [{'item': {'gate': 'jev'}, 'summary': {'skipped_lanes': ['test_evidence']}}]}))
 
 
 def test_sessions_are_attributed_by_first_bead_and_chunks_deduplicated(tmp_path):
@@ -52,5 +56,18 @@ def test_sessions_are_attributed_by_first_bead_and_chunks_deduplicated(tmp_path)
     assert run['stages']['helpers']['sessions'] == 1
     assert run['total']['requests'] == 4 and run['hidden_pass'] and run['skipped_lanes'] == ['test_evidence']
     text = report.render([run])
-    assert '| run-001-jev-slugify | jev | slugify | passed | jev-build | yes | 10.0 | 4 |' in text
-    assert '| plan | 2.0 | 16 |' in text
+    assert '| run-001-jev-slugify | jev | slugify | completed | passed | jev | yes | 10.0 | 4 |' in text
+    assert '| plan | 2.0 | 16 |' in text and 'per stage, - workloads' in text
+
+
+def test_hidden_pass_is_the_harness_verdict_and_gate_escalations_show(tmp_path):
+    transcripts = tmp_path/'transcripts'
+    transcripts.mkdir()
+    run_dir = tmp_path/'exp/run-006-jev-legacy'
+    write_run(run_dir, transcripts)
+    result = json.loads((run_dir/'result.json').read_text())
+    result.update(status='failed', hidden_tests_pass=False,
+                  jev_gate_delivery=[{'item': {'gate': 'escalate:receipts'}, 'jev_answered': False}])
+    (run_dir/'result.json').write_text(json.dumps(result))
+    [run] = report.collect(tmp_path/'exp')
+    assert run['build_completed'] and not run['hidden_pass'] and run['gate'] == 'escalate:receipts'

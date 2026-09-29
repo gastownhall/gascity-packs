@@ -19,7 +19,7 @@ from pathlib import Path
 
 TOKEN_KEYS = ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens')
 STAGES = ('prepare', 'requirements', 'plan', 'plan-review', 'decompose', 'implement', 'summarize', 'review',
-          'helpers', 'other')
+          'publish', 'helpers', 'other')
 
 
 def stage_of(step_ref: str) -> str:
@@ -27,7 +27,8 @@ def stage_of(step_ref: str) -> str:
     ref = re.sub(r'\.iter(ation)?\b.*$', '', ref)
     for prefix, stage in (('prepare', 'prepare'), ('requirements', 'requirements'), ('plan-review', 'plan-review'),
                           ('plan', 'plan'), ('decompose', 'decompose'), ('do-work', 'implement'),
-                          ('implement', 'implement'), ('summarize', 'summarize'), ('review', 'review')):
+                          ('implement', 'implement'), ('summarize', 'summarize'), ('review', 'review'),
+                          ('finalize', 'review'), ('publish', 'publish')):
         if ref.startswith(prefix):
             return stage
     return 'other'
@@ -79,10 +80,17 @@ def run_stages(run: Path) -> dict[str, dict]:
 
 
 def quality(result: dict) -> dict:
-    rows = result.get('independent_quality') or []
-    passing = [r for r in rows if r.get('hidden_exit') == 0 and r.get('pytest_exit') == 0
-               and r.get('original_tests_unchanged', True)]
-    return {'hidden_pass': bool(passing), 'candidates': len(rows)}
+    """The harness's verdict on the result it selected; other candidates are diagnostics only."""
+    return {'build_completed': result.get('fixture_tests_pass') is True,
+            'hidden_pass': result.get('hidden_tests_pass') is True}
+
+
+def gate(result: dict) -> str:
+    """How the Jev review gate decided: `jev` when Jev answered, else its escalation."""
+    rows = result.get('jev_gate_delivery') or []
+    if not rows:
+        return '-'
+    return ', '.join(sorted({(r.get('item') or {}).get('gate') or '?' for r in rows}))
 
 
 def collect(experiment: Path) -> list[dict]:
@@ -91,8 +99,9 @@ def collect(experiment: Path) -> list[dict]:
         result = json.loads((run/'result.json').read_text())
         stages = run_stages(run)
         runs.append({'run': run.name, 'arm': result.get('arm'), 'workload': result.get('workload'),
+                     'kind': result.get('workload_kind') or '-',
                      'status': result.get('status'), 'formula': result.get('formula'),
-                     'elapsed_seconds': result.get('elapsed_seconds'), **quality(result),
+                     'elapsed_seconds': result.get('elapsed_seconds'), **quality(result), 'gate': gate(result),
                      'skipped_lanes': sorted({lane for d in result.get('jev_gate_delivery') or []
                                               for lane in (d.get('summary') or {}).get('skipped_lanes', [])}),
                      'stages': stages,
@@ -113,10 +122,11 @@ def fmt(value, digits=0):
 
 def render(runs: list[dict]) -> str:
     lines = ['# Jev build A/B report', '', '## Runs', '',
-             '| Run | Arm | Workload | Status | Formula | Hidden pass | Minutes | Requests | Output tokens | Skipped lanes |',
-             '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
+             '| Run | Arm | Workload | Build | Harness status | Review gate | Hidden pass | Minutes | Requests | Output tokens | Skipped lanes |',
+             '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for r in runs:
-        lines.append(f"| {r['run']} | {r['arm']} | {r['workload']} | {r['status']} | {r['formula'] or '-'} | "
+        lines.append(f"| {r['run']} | {r['arm']} | {r['workload']} | {'completed' if r['build_completed'] else 'incomplete'} | "
+                     f"{r['status']} | {r['gate']} | "
                      f"{'yes' if r['hidden_pass'] else 'no'} | {fmt((r['elapsed_seconds'] or 0) / 60, 1)} | "
                      f"{r['total']['requests']} | {fmt(r['total']['output_tokens'])} | {', '.join(r['skipped_lanes']) or '-'} |")
     groups = defaultdict(list)
@@ -132,17 +142,19 @@ def render(runs: list[dict]) -> str:
                      f"{fmt(mean([r['total']['requests'] for r in rows]), 1)} | {fmt(mean(inputs))} | "
                      f"{fmt(mean([r['total']['output_tokens'] for r in rows]))} |")
     arms = sorted({r['arm'] for r in runs})
-    lines += ['', '## Mean requests and output tokens per stage, all workloads', '',
-              '| Stage | ' + ' | '.join(f'{a} requests | {a} output' for a in arms) + ' |',
-              '| --- |' + ' --- | --- |' * len(arms)]
-    for stage in STAGES:
-        cells = []
-        for arm in arms:
-            rows = [r for r in runs if r['arm'] == arm]
-            cells += [fmt(mean([r['stages'].get(stage, {}).get('requests', 0) for r in rows]), 1),
-                      fmt(mean([r['stages'].get(stage, {}).get('output_tokens', 0) for r in rows]))]
-        if any(c not in ('0.0', '0') for c in cells):
-            lines.append(f'| {stage} | ' + ' | '.join(cells) + ' |')
+    for kind in sorted({r['kind'] for r in runs}):
+        lines += ['', f'## Mean requests and output tokens per stage, {kind} workloads', '',
+                  '| Stage | ' + ' | '.join(f'{a} requests | {a} output' for a in arms) + ' |',
+                  '| --- |' + ' --- | --- |' * len(arms)]
+        for stage in (*STAGES, 'total'):
+            cells = []
+            for arm in arms:
+                rows = [r for r in runs if r['arm'] == arm and r['kind'] == kind]
+                pick = (lambda r, k: r['total'][k]) if stage == 'total' else (lambda r, k: r['stages'].get(stage, {}).get(k, 0))
+                cells += [fmt(mean([pick(r, 'requests') for r in rows]), 1),
+                          fmt(mean([pick(r, 'output_tokens') for r in rows]))]
+            if any(c not in ('0.0', '0', '-') for c in cells):
+                lines.append(f'| {stage} | ' + ' | '.join(cells) + ' |')
     return '\n'.join(lines) + '\n'
 
 
