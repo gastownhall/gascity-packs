@@ -1,0 +1,374 @@
+"""Benchmark accounting and cleanup must not misattribute work or stop other cities."""
+import importlib.util
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location('jev_build_ab', ROOT/'scripts/jev_build_ab.py')
+build = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(build)
+
+
+def test_build_arms_launch_build_basic_or_the_jev_intake_router(tmp_path):
+    assert build.jev_variables('baseline', 'jev-1.13.0') == {}
+    variables = build.jev_variables('jev', 'jev-1.13.0', tmp_path / 'jev-state')
+    assert variables == {'jev_mode': 'auto', 'jev_model': 'jev-1.13.0', 'jev_state_dir': str(tmp_path / 'jev-state')}
+    rig = ['gc', '--city', 'c', '--rig', 'fixture']
+    baseline = build.launch_command(rig, 'baseline', 'fi-1', {'push': 'false'})
+    assert baseline[5:9] == ['sling', 'gc.run-operator', 'fi-1', '--on'] and 'build-basic' in baseline
+    jev = build.launch_command(rig, 'jev', 'fi-1', variables)
+    assert jev[5:8] == ['gc', 'jev-route', 'fi-1'] and '--var' in jev and 'build-basic' not in jev
+
+
+def test_gate_delivery_reads_the_review_gate_item():
+    beads = [{'id': 'g', 'metadata': {'jev.role': 'review-gate', 'gc.root_bead_id': 'r',
+                                      'jev.item': json.dumps({'gate': 'jev', 'acceptance': 'skip'}),
+                                      'jev.summary': json.dumps({'skipped_lanes': ['acceptance']})}},
+             {'id': 'o', 'metadata': {'jev.role': 'review-gate', 'jev.item': json.dumps({'gate': 'fail-open:no_key'}),
+                                      'jev.review_error': 'no_key'}}]
+    rows = build.gate_delivery(beads)
+    assert [r['jev_answered'] for r in rows] == [True, False]
+    assert rows[0]['summary']['skipped_lanes'] == ['acceptance'] and rows[1]['reason'] == 'no_key'
+
+
+def test_run_path_sweep_signals_only_this_runs_processes(tmp_path, monkeypatch):
+    root = tmp_path / 'gcja-1'
+    listing = f' 11 bd db-proxy-child --root {root}/w/city/.beads/dolt\n 12 dolt sql-server --config /other/x\n'
+    monkeypatch.setattr(build.subprocess, 'run', lambda *a, **k: build.subprocess.CompletedProcess(a, 0, listing, ''))
+    killed = []
+    monkeypatch.setattr(build.os, 'kill', lambda pid, sig: killed.append(pid))
+    assert [row['pid'] for row in build.sweep_run_processes(root)] == [11] and killed == [11]
+
+
+@pytest.mark.parametrize('arm, name', [('baseline', 'gascity'), ('jev', 'gascity-jev')])
+def test_build_arm_installs_its_own_pack_roles_and_preserves_source_provenance(tmp_path, arm, name):
+    pack = build.pack_for_arm(arm)
+    assert pack.name == name
+    assert pack.source == ROOT / name
+    assert pack.roles_source == pack.source / 'roles'
+    assert pack.validator_source == ROOT / 'gascity'
+    assert pack.binding == 'gc'
+    out = tmp_path / 'provenance'
+    out.mkdir()
+    provenance = build.snapshot_pack(pack, out)
+    assert provenance['pack_name'] == name
+    assert provenance['pack_source'] == str(pack.source)
+    assert provenance['roles_source'] == str(pack.roles_source)
+    assert provenance['validator_source'] == str(pack.validator_source)
+    hashes = json.loads((out / 'source-hashes.json').read_text())
+    assert f'{name}/pack.toml' in hashes
+    other = 'gascity-jev' if name == 'gascity' else 'gascity'
+    assert not any(path.startswith(other + '/') for path in hashes)
+    snapshot = out / 'pack-snapshot'
+    assert (snapshot / 'pack.toml').read_bytes() == (pack.source / 'pack.toml').read_bytes()
+    assert (snapshot / 'assets/scripts/jev_evidence.py').exists() == (arm == 'jev')
+    assert hashes[f'{name}/pack.toml'] == build.hashlib.sha256((snapshot / 'pack.toml').read_bytes()).hexdigest()
+
+
+def test_city_config_keeps_gas_city_defaults(tmp_path):
+    import tomllib
+    workspace = SimpleNamespace(root=tmp_path)
+    path = build.write_city_config(workspace, model='claude-sonnet-5',
+                                   collector_env={'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://127.0.0.1:1'})
+    config = tomllib.loads(path.read_text())
+    # No rigs, imports, HOME override or patrol interval: gc init, gc import add
+    # and gc rig add own those, and the daemon keeps its documented defaults.
+    assert 'rigs' not in config and 'daemon' not in config
+    assert 'HOME' not in config['workspace']['env']
+    assert config['workspace']['env']['TYPESAFE_API_KEY'] == '$TYPESAFE_API_KEY'
+    assert config['workspace']['env']['OTEL_EXPORTER_OTLP_ENDPOINT'] == 'http://127.0.0.1:1'
+    assert config['providers']['claude']['args_append'][:2] == ['--model', 'claude-sonnet-5']
+
+
+def test_rig_roles_import_binds_gc_to_the_added_rig_only(tmp_path):
+    import tomllib
+    config = tmp_path / 'city.toml'
+    config.write_text('[workspace]\nprovider = "claude"\n\n[[rigs]]\nname = "other"\n\n'
+                      '[[rigs]]\nname = "fixture"\ndefault_branch = "main"\n\n[session]\nstartup_timeout = "3m"\n')
+    build.add_rig_roles_import(config, 'fixture', Path('/packs/gascity/roles'))
+    parsed = tomllib.loads(config.read_text())
+    rigs = {rig['name']: rig for rig in parsed['rigs']}
+    assert rigs['fixture']['imports']['gc']['source'] == '/packs/gascity/roles'
+    assert rigs['fixture']['default_branch'] == 'main'
+    assert 'imports' not in rigs['other']
+    assert parsed['session']['startup_timeout'] == '3m'
+
+
+def test_rig_roles_import_requires_the_rig_gc_added(tmp_path):
+    config = tmp_path / 'city.toml'
+    config.write_text('[workspace]\nprovider = "claude"\n')
+    with pytest.raises(ValueError, match='fixture'):
+        build.add_rig_roles_import(config, 'fixture', Path('/roles'))
+
+
+def test_busy_host_is_refused(monkeypatch):
+    monkeypatch.setattr(build.os, 'getloadavg', lambda: (40.0, 30.0, 20.0))
+    monkeypatch.setattr(build.os, 'cpu_count', lambda: 18)
+    assert build.host_load(None)['status'] == 'failed'
+    assert build.host_load(50)['status'] == 'passed'
+
+
+def test_independent_quality_rejects_stub_even_when_edited_tests_pass(tmp_path, monkeypatch):
+    import os
+    rig=tmp_path/'fixture'; (rig/'tests').mkdir(parents=True)
+    (rig/'slugger.py').write_text('def slugify(value):\n    raise NotImplementedError\n')
+    original=b'def test_original():\n    assert False\n'
+    (rig/'tests/test_slugger.py').write_text('def test_placeholder():\n    assert True\n')
+    monkeypatch.setattr(build.gate,'build_result_candidates',lambda *a:[rig])
+    out=tmp_path/'out';out.mkdir()
+    hashes={'tests/test_slugger.py': build.hashlib.sha256(original).hexdigest()}
+    rows=build.final_quality(SimpleNamespace(rig_dir=rig),[],out,dict(os.environ),hashes,build.workloads.SLUGIFY)
+    assert len(rows)==1
+    assert rows[0]['original_tests_unchanged'] is False
+    assert rows[0]['pytest_exit']==0
+    assert rows[0]['hidden_exit']==1
+    assert rows[0]['hidden']['failed'] and all(not r['pass'] for r in rows[0]['hidden']['failed'])
+
+
+def test_transcript_usage_deduplicates_chunks_and_excludes_adjacent_city(tmp_path):
+    workspace = tmp_path/'city'
+    projects = tmp_path/'projects'
+    encoded = build.re.sub(r'[^a-zA-Z0-9]', '-', str(workspace))
+    selected = projects/(encoded+'-rig')
+    unrelated = projects/(encoded+'other')
+    selected.mkdir(parents=True)
+    unrelated.mkdir()
+    def row(output):
+        return {'type':'assistant','sessionId':'session','message':{
+            'id':'message','model':'sonnet','usage':{'input_tokens':2,
+            'output_tokens':output,'cache_read_input_tokens':100,'cache_creation_input_tokens':5}}}
+    (selected/'session.jsonl').write_text('\n'.join(json.dumps(row(n)) for n in [3,7,7]))
+    (unrelated/'session.jsonl').write_text(json.dumps(row(99)))
+    result = build.transcript_usage(projects,workspace,tmp_path)
+    assert result['message_count']==1
+    assert result['totals']=={'input_tokens':2,'output_tokens':7,
+                             'cache_read_input_tokens':100,'cache_creation_input_tokens':5}
+
+
+def test_missing_transcript_usage_remains_unknown(tmp_path):
+    projects=tmp_path/'projects'; projects.mkdir()
+    result=build.transcript_usage(projects,tmp_path/'workspace',tmp_path)
+    assert result['status']=='missing' and result['totals'] is None
+
+
+def test_cleanup_only_signals_exact_disposable_server(tmp_path, monkeypatch):
+    city=tmp_path/'city'
+    config=city/'.gc/runtime/packs/dolt/dolt-config.yaml'
+    listing=f'1 dolt sql-server --config /another/city/config.yaml\n2 dolt sql-server --config {config}\n3 /bin/sh -c dolt sql-server --config {config}\n'
+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))
+    signals=[]
+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:signals.append((pid,sig)))
+    result=build.stop_disposable_dolt(city)
+    assert result['pids']==[2]
+    assert signals==[(2,build.signal.SIGTERM)]
+
+
+def test_cleanup_stops_this_citys_beads_proxy_before_its_server(tmp_path, monkeypatch):
+    city=tmp_path/'city'
+    root=city/'.beads/dolt'
+    listing=(f'7 /x/bd db-proxy-child --root /other/city/.beads/dolt --port 0\n'
+             f'8 dolt sql-server --config {root}/config.yaml\n'
+             f'9 /x/bd db-proxy-child --root {root} --port 0 --idle-timeout -1ns\n')
+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))
+    signals=[]
+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:signals.append(pid))
+    assert build.stop_disposable_dolt(city)['pids']==[9,8]
+    assert signals==[9,8]
+
+
+def test_cleanup_includes_the_rigs_own_beads_store(tmp_path, monkeypatch):
+    city, rig = tmp_path/'city', tmp_path/'fixture'
+    listing=(f'4 /x/bd db-proxy-child --root {rig}/.beads/dolt --port 0\n'
+             f'5 dolt sql-server --config {rig}/.beads/dolt/config.yaml\n'
+             f'6 dolt sql-server --config {tmp_path}/other/.beads/dolt/config.yaml\n')
+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))
+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:None)
+    assert build.stop_disposable_dolt(city)['pids']==[]
+    assert build.stop_disposable_dolt(city, rig)['pids']==[4,5]
+
+
+def test_cleanup_reports_when_process_inspection_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=1,stdout='',stderr='denied'))
+    monkeypatch.setattr(build.os,'kill',lambda *a:pytest.fail('must not signal without ownership evidence'))
+    assert build.stop_disposable_dolt(tmp_path)['status']=='unverified'
+
+
+def test_cleanup_resolves_config_path_aliases(tmp_path, monkeypatch):
+    actual=tmp_path/'actual'; actual.mkdir()
+    alias=tmp_path/'alias'; alias.symlink_to(actual, target_is_directory=True)
+    config=alias/'city/.gc/runtime/packs/dolt/dolt-config.yaml'
+    listing=f'12 dolt sql-server --config {config}\n'
+    monkeypatch.setattr(build.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing,stderr=''))
+    signals=[]
+    monkeypatch.setattr(build.os,'kill',lambda pid,sig:signals.append(pid))
+    assert build.stop_disposable_dolt(actual/'city')['pids']==[12]
+
+
+def test_experiment_env_retains_home_and_separates_mutable_config(tmp_path):
+    workspace=SimpleNamespace(gc_home=tmp_path/'h')
+    env={'HOME':str(tmp_path/'wrong'),'PATH':'/bin','BD_ALLOW_REMOTE_MIGRATE':'1'}
+    result=build.configure_experiment_env(env,workspace,real_home=Path('/Users/example'))
+    assert result['HOME']=='/Users/example'
+    assert result['GIT_CONFIG_GLOBAL']==str(workspace.gc_home/'gitconfig')
+    assert result['DOLT_ROOT_PATH']==str(workspace.gc_home)
+    assert 'BD_ALLOW_REMOTE_MIGRATE' not in result
+
+
+def test_workspace_is_standalone_and_socket_path_fits(tmp_path):
+    workspace = build.new_runtime_workspace(SimpleNamespace(name='test'), 'unit')
+    try:
+        assert len(str(workspace.gc_home/'supervisor.sock').encode()) < 100
+        # gc init and gc rig add create these; nothing may pre-register them.
+        assert not workspace.city_dir.exists() and not workspace.rig_dir.exists()
+    finally:
+        build.shutil.rmtree(workspace.root.parent)
+
+
+def test_default_claude_login_does_not_set_config_override(tmp_path):
+    workspace=SimpleNamespace(gc_home=tmp_path/'h')
+    result=build.configure_experiment_env({'CLAUDE_CONFIG_DIR':str(tmp_path/'scratch')},workspace,real_home=Path('/Users/example'))
+    assert 'CLAUDE_CONFIG_DIR' not in result
+
+
+def test_explicit_claude_profile_is_preserved(tmp_path):
+    workspace=SimpleNamespace(gc_home=tmp_path/'h')
+    result=build.configure_experiment_env({},workspace,real_home=Path('/Users/example'),claude_config_dir='/profiles/benchmark')
+    assert result['CLAUDE_CONFIG_DIR']=='/profiles/benchmark'
+
+
+def test_gate_toolchain_preserves_virtualenv_python(tmp_path):
+    import os
+    import subprocess
+    import venv
+    venv.EnvBuilder(with_pip=False).create(tmp_path/'venv')
+    python = tmp_path/'venv/bin/python'
+    bd = tmp_path/'real-bd'
+    bd.write_text('#!/bin/sh\nexit 0\n')
+    bd.chmod(0o755)
+    workspace = SimpleNamespace(gc_home=tmp_path/'home')
+    env = build.install_gate_toolchain({'PATH':os.defpath}, workspace,
+        python_bin=str(python), bd_bin=str(bd))
+    # Model the SDK's narrowed PATH using only the directory of its selected bd.
+    safe_path = str(Path(build.shutil.which('bd', path=env['PATH'])).parent) + ':' + os.defpath
+    actual = subprocess.check_output(['python3','-c','import sys; print(sys.prefix)'],
+        env={'PATH':safe_path,'HOME':str(tmp_path)},text=True).strip()
+    assert Path(actual) == tmp_path/'venv'
+
+
+@pytest.mark.parametrize('arm', ['baseline', 'jev'])
+def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch, arm):
+    events=[]
+    selected_pack=build.pack_for_arm(arm)
+    workspace=build.new_runtime_workspace(selected_pack,'interrupt-test')
+    monkeypatch.setattr(build,'new_runtime_workspace',lambda *a:workspace)
+    real_output=build.subprocess.check_output
+    def output(cmd,**kw):
+        return real_output(cmd,**kw) if cmd[0]=='git' else 'test-version\n'
+    monkeypatch.setattr(build.subprocess,'check_output',output)
+    def interrupt(gc_bin,workspace,pack,env,**kw):
+        assert pack == selected_pack
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(build,'initialize_operator_city',interrupt)
+    monkeypatch.setattr(build,'host_load',lambda limit:{'status':'passed'})
+    monkeypatch.setattr(build.gate,'stop_city',lambda *a,**kw:events.append('stop'))
+    monkeypatch.setattr(build,'stop_disposable_dolt',lambda *a:{'status':'not_started'})
+    monkeypatch.setattr(build.time,'sleep',lambda seconds:None)
+    monkeypatch.setattr(build,'transcript_usage',lambda *a:{'status':'missing'})
+    class Collector:
+        env={}
+        def __init__(self,*a):pass
+        def close(self):events.append('collector_close');return {'status':'missing'}
+    monkeypatch.setattr(build.usage,'Collector',Collector)
+    args=SimpleNamespace(gc_bin=build.shutil.which('true'),bd_bin=build.shutil.which('true'),model='unused',
+        jev_model='unused',setup_only=True,setup_timeout=1,max_load=None,claude_command='claude',
+        claude_auth='claude.ai',claude_projects_dir='')
+    try:
+        try:result=build.run(args,arm,tmp_path/'run')
+        except KeyboardInterrupt:pytest.fail('Interrupt escaped before saving terminal result')
+        assert result['status']=='aborted'
+        assert result['pack_name']==selected_pack.name
+        manifest=json.loads((tmp_path/'run/manifest.json').read_text())
+        assert manifest['pack_name']==selected_pack.name
+        assert manifest['pack_source']==str(selected_pack.source)
+        assert manifest['roles_source']==str(selected_pack.roles_source)
+        assert manifest['validator_source']==str(selected_pack.validator_source)
+        assert json.loads((tmp_path/'run/result.json').read_text())['status']=='aborted'
+        assert events==['stop','collector_close']
+    finally:
+        build.shutil.rmtree(workspace.root.parent)
+
+
+@pytest.mark.parametrize('arm', ['baseline', 'jev'])
+def test_fixture_is_a_clone_whose_origin_supports_detached_worktrees(tmp_path, arm):
+    import os
+    env={**os.environ,'GIT_CONFIG_GLOBAL':os.devnull,'GIT_CONFIG_NOSYSTEM':'1'}
+    workspace=SimpleNamespace(root=tmp_path,rig_dir=tmp_path/'fixture')
+    pack=build.pack_for_arm(arm)
+    result=build.prepare_fixture_repo(workspace,pack,env)
+    rig=workspace.rig_dir
+    def git(*args):
+        return build.subprocess.check_output(['git','-C',str(rig),*args],env=env,text=True).strip()
+    assert result['default_branch']=='origin/main'
+    assert git('rev-parse','origin/HEAD')==result['initial_head']
+    assert Path(git('remote','get-url','origin'))==tmp_path/'fixture-origin.git'
+    assert (rig/'.gc/scripts/checks/build-artifact-valid.sh').is_file()
+    assert git('status','--porcelain')==''
+    worktree=tmp_path/'implementation'
+    git('fetch','--prune','origin','main')
+    git('worktree','add',str(worktree),'--detach',result['default_branch'])
+    assert (worktree/'tests/test_slugger.py').read_bytes()==(rig/'tests/test_slugger.py').read_bytes()
+    with pytest.raises(ValueError, match='reuse'):
+        build.prepare_fixture_repo(workspace,pack,env)
+
+
+def test_gc_env_file_is_sourced_without_the_callers_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv('LEAKED_FROM_CALLER', '1')
+    env_file = tmp_path/'gc.env'
+    env_file.write_text('export ANTHROPIC_BASE_URL="https://gateway.example/api"\nPLAIN=\'two words\'\n')
+    assert build.load_env_file(env_file) == {'ANTHROPIC_BASE_URL': 'https://gateway.example/api', 'PLAIN': 'two words'}
+
+
+def test_claude_login_accepts_any_logged_in_method_unless_restricted(tmp_path):
+    fake = tmp_path/'claude'
+    fake.write_text('#!/bin/sh\necho \'{"loggedIn": true, "authMethod": "oauth_token"}\'\n')
+    fake.chmod(0o755)
+    assert build.check_claude_login(str(fake), '', {})['authMethod'] == 'oauth_token'
+    assert build.check_claude_login(str(fake), 'claude.ai,oauth_token', {})['loggedIn'] is True
+    with pytest.raises(ValueError, match='accepted method claude.ai'):
+        build.check_claude_login(str(fake), 'claude.ai', {})
+    fake.write_text('#!/bin/sh\necho \'{"loggedIn": false, "authMethod": "none"}\'\n')
+    with pytest.raises(ValueError, match='not logged in'):
+        build.check_claude_login(str(fake), '', {})
+
+
+@pytest.mark.parametrize('names', [['a'], ['a', 'b'], ['a', 'b', 'c', 'd']])
+def test_paired_schedule_alternates_arm_order_within_each_workload(names):
+    selected = [SimpleNamespace(name=n) for n in names]
+    schedule = build.paired_schedule(2 * len(names), 'both', selected)
+    for name in names:
+        firsts = [a for i, (r, a, w) in enumerate(schedule) if w.name == name and i % 2 == 0]
+        assert sorted(firsts) == ['baseline', 'jev']
+    assert [a for _, a, _ in build.paired_schedule(2, 'jev', selected)] == ['jev', 'jev']
+
+
+def test_bd_wrapper_that_execs_from_home_is_unwrapped(tmp_path, monkeypatch):
+    wrapper = tmp_path/'bd'
+    wrapper.write_text('#!/bin/sh\nexec "$HOME/.local/share/beads/1.3.0/bd" "$@"\n')
+    monkeypatch.setattr(build.Path, 'home', lambda: tmp_path/'home')
+    assert build.unwrap_bd(wrapper) == str(tmp_path/'home/.local/share/beads/1.3.0/bd')
+    real = tmp_path/'real-bd'
+    real.write_bytes(b'\x7fELF' + b'0' * 5000)
+    assert build.unwrap_bd(real) == str(real.resolve())
+
+
+def test_compact_route_skips_planning_artifacts(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(build.gate, 'run_checked', lambda cmd, **k: calls.append(cmd[3]))
+    meta = {key: str(tmp_path/key) for key, _ in build.gate.BUILD_BASIC_ARTIFACT_CONTRACTS}
+    workspace = SimpleNamespace(rig_dir=tmp_path)
+    checked = build.validate_artifacts({'metadata': meta}, workspace, {}, None, 'jev-build-compact')
+    assert [c['schema'] for c in checked] == ['gc.build.review.v1', 'gc.build.final-report.v1']
+    assert len(build.validate_artifacts({'metadata': meta}, workspace, {}, None, 'jev-build')) == 6

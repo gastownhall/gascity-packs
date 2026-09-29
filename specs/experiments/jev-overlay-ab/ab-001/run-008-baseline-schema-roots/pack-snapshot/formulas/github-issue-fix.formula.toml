@@ -1,0 +1,26 @@
+description = """
+Public GitHub issue fix adapter.
+
+This wrapper inherits the base adapter stack from `github-issue-fix-base`.
+Override formulas should extend that base formula directly and replace only the
+step or steps they customize.
+
+Launch inputs:
+- github_issue_url: {{github_issue_url}}
+- artifact_root: {{artifact_root}} (optional override; empty resolves to the
+  rig artifact root with the pack artifact helper)
+- mode: {{mode}} (backward-compatible alias for interaction_mode)
+- interaction_mode: {{interaction_mode}} (empty means normalize from mode)
+- review_mode: {{review_mode}}
+- pr_mode: {{pr_mode}}
+- drain_policy: {{drain_policy}}
+"""
+formula = "github-issue-fix"
+extends = ["github-issue-fix-base"]
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[catalog]
+name = "github-issue-fix"
+description = "Fix a GitHub issue through triage, planning, build, review, and optional PR publication."

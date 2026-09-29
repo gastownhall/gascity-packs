@@ -1,0 +1,514 @@
++ git init -b main
++ git config user.email gascity-pack-gate@example.invalid
++ git config user.name 'Gas City Pack Gate'
++ git add .
++ git commit -m 'Add inference gate fixtures'
++ git clone --bare --no-hardlinks /tmp/gcja-d9u4t9xv/w/fixture-seed /tmp/gcja-d9u4t9xv/w/fixture-origin.git
++ git clone /tmp/gcja-d9u4t9xv/w/fixture-origin.git /tmp/gcja-d9u4t9xv/w/fixture
++ git config user.name 'Gas City Pack Gate'
++ git config user.email gascity-pack-gate@example.invalid
++ git symbolic-ref --short refs/remotes/origin/HEAD
++ git rev-parse HEAD
++ git rev-parse origin/HEAD
++ /home/ubuntu/.local/bin/gc init --file /tmp/gcja-d9u4t9xv/w/city.toml.in --name jev-gcja-d9u4t9xv-run-012-jev-durations --yes --skip-provider-readiness /tmp/gcja-d9u4t9xv/w/city
+Welcome to Gas City!
+Initialized city "jev-gcja-d9u4t9xv-run-012-jev-durations" from city.toml.in.
+Skipping provider readiness checks.
+Registered city 'jev-gcja-d9u4t9xv-run-012-jev-durations' (/tmp/gcja-d9u4t9xv/w/city)
+Supervisor started (PID 3107062)
+Dashboard:  http://127.0.0.1:51061/
+Waiting for supervisor to start city...
+  Starting agents...
+  Adopting sessions...
+gc supervisor install: per-user systemd instance is not available (systemctl --user could not reach the user manager). Either enable lingering for this account ('sudo loginctl enable-linger ubuntu'), log in via a PAM session that starts user-systemd, or run the supervisor detached (e.g. 'gc supervisor start' without service install).
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city import add --name gc /home/ubuntu/code/gastownhall/gascity-packs-jev/gascity-jev
+Added import "gc" from file:///home/ubuntu/code/gastownhall/gascity-packs-jev//gascity-jev
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city rig add /tmp/gcja-d9u4t9xv/w/fixture --name fixture
+Adding rig 'fixture'...
+  Detected git repo at /tmp/gcja-d9u4t9xv/w/fixture
+  Prefix: fi
+  Default branch: main (from origin/HEAD)
+  Initialized beads database
+  Generated routes.jsonl for cross-rig routing
+Rig added.
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city import install
+Installed 3 remote import(s) into /tmp/gcja-d9u4t9xv/w/gc-home/cache/repos
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city import check
+Import state OK: 3 remote import(s) checked
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city config show
+# Provider inheritance chains (as resolved at config load):
+#   claude               claude → builtin:claude
+#
+[workspace]
+name = "jev-gcja-d9u4t9xv-run-012-jev-durations"
+provider = "claude"
+[workspace.env]
+CLAUDE_CODE_EFFORT_LEVEL = "low"
+CLAUDE_CODE_ENABLE_TELEMETRY = "1"
+OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = "http://127.0.0.1:43905/v1/logs"
+OTEL_EXPORTER_OTLP_LOGS_PROTOCOL = "http/json"
+OTEL_LOGS_EXPORTER = "otlp"
+OTEL_LOGS_EXPORT_INTERVAL = "1000"
+OTEL_METRICS_EXPORTER = "none"
+TYPESAFE_API_KEY = "$TYPESAFE_API_KEY"
+
+[providers]
+[providers.claude]
+base = "builtin:claude"
+args_append = ["--model", "claude-sonnet-5", "--effort", "low", "--setting-sources", "project,local"]
+command = "claude"
+ready_delay_ms = 0
+
+[imports]
+[imports.bd]
+source = "https://github.com/gastownhall/gascity/tree/main/examples/bd"
+version = "sha:f895c0ff47d6ee9334ed282a416387eb5b084d24"
+[imports.core]
+source = "https://github.com/gastownhall/gascity/tree/main/internal/bootstrap/packs/core"
+version = "sha:f895c0ff47d6ee9334ed282a416387eb5b084d24"
+[imports.gc]
+source = "file:///home/ubuntu/code/gastownhall/gascity-packs-jev//gascity-jev"
+version = "sha:d0b457ec60d91453be29d87e53ed517bda76ff36"
+
+[[agent]]
+name = "dog"
+work_dir = ".gc/agents/{{.AgentBase}}"
+scope = "city"
+prompt_template = "/tmp/gcja-d9u4t9xv/w/gc-home/cache/repos/44a73d488501f9f8912ba4622388d865846a7384ef04a11ea32721834b5cdb55/examples/bd/dolt/agents/dog/prompt.template.md"
+nudge = "Check your hook for Dolt maintenance work."
+max_active_sessions = 2
+min_active_sessions = 0
+idle_timeout = "2h"
+
+[[agent]]
+name = "control-dispatcher"
+description = "Deterministic compiler-v2 workflow control worker"
+start_command = "sh -c 'export GC_WORKFLOW_TRACE=\"${GC_WORKFLOW_TRACE:-${GC_CONTROL_DISPATCHER_TRACE_DEFAULT:-${GC_CITY}/.gc/runtime/control-dispatcher-trace.log}}\"; trace_dir=\"${GC_WORKFLOW_TRACE%/*}\"; if [ \"$trace_dir\" = \"$GC_WORKFLOW_TRACE\" ]; then trace_dir=\".\"; elif [ -z \"$trace_dir\" ]; then trace_dir=\"/\"; fi; mkdir -p \"$trace_dir\"; exec \"${GC_BIN:-gc}\" convoy control --serve --follow {{.Agent}}'"
+prompt_mode = "none"
+process_names = ["gc"]
+max_active_sessions = 1
+
+[[agent]]
+name = "control-dispatcher"
+description = "Deterministic compiler-v2 workflow control worker"
+dir = "fixture"
+start_command = "sh -c 'export GC_WORKFLOW_TRACE=\"${GC_WORKFLOW_TRACE:-${GC_CONTROL_DISPATCHER_TRACE_DEFAULT:-${GC_CITY}/.gc/runtime/control-dispatcher-trace.log}}\"; trace_dir=\"${GC_WORKFLOW_TRACE%/*}\"; if [ \"$trace_dir\" = \"$GC_WORKFLOW_TRACE\" ]; then trace_dir=\".\"; elif [ -z \"$trace_dir\" ]; then trace_dir=\"/\"; fi; mkdir -p \"$trace_dir\"; exec \"${GC_BIN:-gc}\" convoy control --serve --follow {{.Agent}}'"
+prompt_mode = "none"
+process_names = ["gc"]
+max_active_sessions = 1
+
+[[agent]]
+name = "design-author"
+description = "Design author for repo-grounded engineering design documents"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/design-author/prompt.template.md"
+
+[[agent]]
+name = "design-implementation-reviewer"
+description = "Design reviewer focused on implementation realism, API fit, and module boundaries"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/design-implementation-reviewer/prompt.template.md"
+
+[[agent]]
+name = "design-test-risk-reviewer"
+description = "Design reviewer focused on test strategy, edge cases, and delivery risk"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/design-test-risk-reviewer/prompt.template.md"
+
+[[agent]]
+name = "feature-refiner"
+description = "Intake compile worker: anchors-only template compilation for mol-feature-refine (never invents decisions; decision-waits on gaps)"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/feature-refiner/prompt.template.md"
+
+[[agent]]
+name = "gap-analyst"
+description = "Gap analyst for comparing implementation results against approved requirements and design"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/gap-analyst/prompt.template.md"
+
+[[agent]]
+name = "implementation-reviewer"
+description = "Implementation reviewer for code, diff, branch, and PR-quality verdict reports"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/implementation-reviewer/prompt.template.md"
+
+[[agent]]
+name = "implementation-worker"
+description = "Implementation worker for source changes, verification, CI repair, and remediation"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/implementation-worker/prompt.template.md"
+
+[[agent]]
+name = "issue-triager"
+description = "Issue triager for GitHub issue evidence, repro analysis, and triage reports"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/issue-triager/prompt.template.md"
+
+[[agent]]
+name = "publisher"
+description = "Publisher for authorized pushes, PR creation, and publication surfaces"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/publisher/prompt.template.md"
+
+[[agent]]
+name = "quality-judge"
+description = "Quality-gate judgment worker: fixed-prompt rubric evaluation for mol-ac-quality-gate (validated verdicts; uncertainty fails the gate)"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/quality-judge/prompt.template.md"
+
+[[agent]]
+name = "requirements-planner"
+description = "Requirements planner for repo-aware problem framing and acceptance criteria"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/requirements-planner/prompt.template.md"
+
+[[agent]]
+name = "review-synthesizer"
+description = "Review synthesizer for merging findings, producing verdicts, and applying review updates"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/review-synthesizer/prompt.template.md"
+
+[[agent]]
+name = "run-operator"
+description = "Run operator for deterministic setup, validation, gates, metadata, and finalization"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/run-operator/prompt.template.md"
+
+[[agent]]
+name = "task-decomposer"
+description = "Task decomposer for bead plans, dependency boundaries, and convoy creation"
+dir = "fixture"
+scope = "rig"
+prompt_template = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles/agents/task-decomposer/prompt.template.md"
+
+[[agent]]
+name = "jev-gate"
+description = "Deterministic Jev gate worker (no LLM): claims one routed gate step, gathers receipts, asks Jev, and closes it"
+dir = "fixture"
+scope = "rig"
+start_command = "python3 {{.ConfigDir}}/../assets/scripts/jev_gate.py worker"
+lifecycle = "one_shot"
+prompt_mode = "none"
+process_names = ["python3"]
+max_active_sessions = 4
+
+[[agent]]
+name = "claude"
+prompt_template = "/tmp/gcja-d9u4t9xv/w/gc-home/cache/repos/44a73d488501f9f8912ba4622388d865846a7384ef04a11ea32721834b5cdb55/internal/bootstrap/packs/core/assets/prompts/pool-worker.template.md"
+provider = "claude"
+default_sling_formula = "mol-do-work"
+
+[[agent]]
+name = "claude"
+dir = "fixture"
+prompt_template = "/tmp/gcja-d9u4t9xv/w/gc-home/cache/repos/44a73d488501f9f8912ba4622388d865846a7384ef04a11ea32721834b5cdb55/internal/bootstrap/packs/core/assets/prompts/pool-worker.template.md"
+provider = "claude"
+default_sling_formula = "mol-do-work"
+
+[[rigs]]
+name = "fixture"
+path = "/tmp/gcja-d9u4t9xv/w/fixture"
+default_branch = "main"
+[rigs.imports]
+[rigs.imports.gc]
+source = "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity-jev/roles"
+
+[beads]
+[beads.policies]
+[beads.policies.order_tracking]
+delete_after_close = "7d"
+
+[session]
+startup_timeout = "3m"
+gc config show: warning: agent "core.control-dispatcher": max_active_sessions=1 creates a canonical singleton that drains when scale_check returns 0; declare [[named_session]] only if you need a session that survives empty-demand windows
+gc config show: warning: agent "fixture/core.control-dispatcher": max_active_sessions=1 creates a canonical singleton that drains when scale_check returns 0; declare [[named_session]] only if you need a session that survives empty-demand windows
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture formula show build-basic
+Formula: build-basic
+Description: Default Gas City implementation of build-base.
+
+This concrete workflow uses the built-in Gas City requirement, design review,
+decomposition, implementation, review, and publish helpers while preserving the
+same full-lifecycle stage contract exposed by build-base.
+
+
+Required vars:
+  {{artifact_root}}: Build artifact root.
+
+Optional vars:
+  {{code_review_formula}}: Code-review methodology formula used by adapters that delegate review. (default=review)
+  {{context_path}}: Optional source context bundle path. (default=)
+  {{decomposition_formula}}: Decomposition methodology formula used by adapters that delegate task creation. (default=decomposition-base)
+  {{decomposition_path}}: Task decomposition artifact path to create or reuse. (default=)
+  {{drain_policy}}: Implementation drain policy. (default=separate)
+  {{implementation_formula}}: Implementation methodology formula used by adapters that delegate implementation. (default=implement)
+  {{implementation_item_formula}}: Single-item implementation formula used by shared-drain adapters. (default=do-work-item)
+  {{implementation_target}}: Role target for implementation work. (default=gc.implementation-worker)
+  {{interaction_mode}}: Workflow interaction posture: interactive, autonomous, or headless. (default=interactive)
+  {{max_iterations}}: Maximum implementation/review fix attempts. (default=10)
+  {{open_pr}}: Set true to allow final PR creation after all checks pass. (default=false)
+  {{plan_path}}: Plan or design artifact path to create or reuse. (default=)
+  {{planning_formula}}: Planning methodology formula used by adapters that delegate planning. (default=planning-base)
+  {{push}}: Set true to allow final publish push after all checks pass. (default=false)
+  {{requirements_path}}: Requirements artifact path to create or reuse. (default=)
+  {{review_fix_formula}}: Review-fix methodology formula used after failed code-review findings. (default=fix-loop-base)
+  {{review_mode}}: Review authority: report, agent, or interactive. (default=agent)
+
+Steps (37):
+  ├── build-basic.prepare: Prepare build context
+  ├── build-basic.requirements.spec: Step spec for Generate requirements (spec)
+  ├── build-basic.requirements.iteration.1: Generate requirements [needs: build-basic.prepare]
+  ├── build-basic.requirements: Generate requirements [needs: build-basic.prepare, build-basic.requirements.iteration.1]
+  ├── build-basic.plan.spec: Step spec for Write implementation plan (spec)
+  ├── build-basic.plan.iteration.1: Write implementation plan [needs: build-basic.requirements]
+  ├── build-basic.plan: Write implementation plan [needs: build-basic.requirements, build-basic.plan.iteration.1]
+  ├── build-basic.plan-review: Run design review [needs: build-basic.plan]
+  ├── build-basic.decompose.spec: Step spec for Create task beads (spec)
+  ├── build-basic.decompose.iteration.1: Create task beads [needs: build-basic.plan-review]
+  ├── build-basic.decompose: Create task beads [needs: build-basic.plan-review, build-basic.decompose.iteration.1]
+  ├── build-basic.implement: Drain build implementation [needs: build-basic.decompose]
+  ├── build-basic.summarize-implementation.spec: Step spec for Write canonical implementation summary (spec)
+  ├── build-basic.summarize-implementation.iteration.1: Write canonical implementation summary [needs: build-basic.implement]
+  ├── build-basic.summarize-implementation: Write canonical implementation summary [needs: build-basic.implement, build-basic.summarize-implementation.iteration.1]
+  ├── build-basic.review.setup-build-basic-review: Prepare build-basic starter review [needs: build-basic.summarize-implementation]
+  ├── build-basic.review.build-basic-review-loop.spec: Step spec for Run build-basic starter review until approved (spec)
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.acceptance-review: Starter review: acceptance and correctness [needs: build-basic.review.setup-build-basic-review]
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.test-evidence-review: Starter review: test evidence [needs: build-basic.review.setup-build-basic-review]
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.simplicity-review: Starter review: simplicity and maintainability [needs: build-basic.review.setup-build-basic-review]
+  ├── build-basic.review.spec: Step spec for Finalize build-basic starter review (spec)
+  ├── build-basic.finalize.spec: Step spec for Finalize build-basic (spec)
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.acceptance-review-scope-check: Finalize scope for Starter review: acceptance and correctness [needs: build-basic.review.build-basic-review-loop.iteration.1.review.acceptance-review]
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.test-evidence-review-scope-check: Finalize scope for Starter review: test evidence [needs: build-basic.review.build-basic-review-loop.iteration.1.review.test-evidence-review]
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.simplicity-review-scope-check: Finalize scope for Starter review: simplicity and maintainability [needs: build-basic.review.build-basic-review-loop.iteration.1.review.simplicity-review]
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.synthesize-review: Synthesize starter review [needs: build-basic.review.build-basic-review-loop.iteration.1.review.acceptance-review-scope-check, build-basic.review.build-basic-review-loop.iteration.1.review.test-evidence-review-scope-check, build-basic.review.build-basic-review-loop.iteration.1.review.simplicity-review-scope-check, build-basic.review.setup-build-basic-review]
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.synthesize-review-scope-check: Finalize scope for Synthesize starter review [needs: build-basic.review.build-basic-review-loop.iteration.1.review.synthesize-review]
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.apply-review-findings: Apply starter review findings [needs: build-basic.review.build-basic-review-loop.iteration.1.review.synthesize-review-scope-check, build-basic.review.setup-build-basic-review]
+  ├── build-basic.review.build-basic-review-loop.iteration.1: Run build-basic starter review until approved [needs: build-basic.review.build-basic-review-loop.iteration.1.review.acceptance-review, build-basic.review.build-basic-review-loop.iteration.1.review.test-evidence-review, build-basic.review.build-basic-review-loop.iteration.1.review.simplicity-review, build-basic.review.build-basic-review-loop.iteration.1.review.synthesize-review, build-basic.review.build-basic-review-loop.iteration.1.review.apply-review-findings]
+  ├── build-basic.review.build-basic-review-loop: Run build-basic starter review until approved [needs: build-basic.review.setup-build-basic-review, build-basic.review.build-basic-review-loop.iteration.1]
+  ├── build-basic.review.iteration.1: Finalize build-basic starter review [needs: build-basic.review.build-basic-review-loop]
+  ├── build-basic.review: Finalize build-basic starter review [needs: build-basic.review.build-basic-review-loop, build-basic.review.iteration.1]
+  ├── build-basic.finalize.iteration.1: Finalize build-basic [needs: build-basic.review]
+  ├── build-basic.finalize: Finalize build-basic [needs: build-basic.review, build-basic.finalize.iteration.1]
+  ├── build-basic.publish: Optionally publish build-basic [needs: build-basic.finalize]
+  ├── build-basic.review.build-basic-review-loop.iteration.1.review.apply-review-findings-scope-check: Finalize scope for Apply starter review findings [needs: build-basic.review.build-basic-review-loop.iteration.1.review.apply-review-findings]
+  └── build-basic.workflow-finalize: Finalize workflow [needs: build-basic.review.build-basic-review-loop, build-basic.publish, build-basic.review.build-basic-review-loop.iteration.1.review.apply-review-findings-scope-check]
++ /home/ubuntu/.local/bin/gc start /tmp/gcja-d9u4t9xv/w/city --verbose
+Supervisor: pid=3107062 exe=/home/ubuntu/bb-gascity/releases/1.5.0-dev-bb.8ab11cc90/gc buildID=8ab11cc90 started=just now
+Registered city 'jev-gcja-d9u4t9xv-run-012-jev-durations' (/tmp/gcja-d9u4t9xv/w/city)
+[8/8] Waiting for supervisor to start city
+City started under supervisor.
+gc supervisor install: per-user systemd instance is not available (systemctl --user could not reach the user manager). Either enable lingering for this account ('sudo loginctl enable-linger ubuntu'), log in via a PAM session that starts user-systemd, or run the supervisor detached (e.g. 'gc supervisor start' without service install).
+gc-start: pid=3107062 binary=/home/ubuntu/bb-gascity/releases/1.5.0-dev-bb.8ab11cc90/gc build=8ab11cc90 drift=unknown warnings=0 fatal=
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd create 'Implement parse_duration in the fixture repository' --description 'Implement `parse_duration(text)` in `durations.py`. It returns the total number
+of seconds as an int.
+
+Expected behavior:
+- The input is one or more groups of a non-negative integer followed by a unit:
+  `h` (hours), `m` (minutes) or `s` (seconds). Examples: "1h30m" is 5400,
+  "45s" is 45, "2h5s" is 7205, "0s" is 0.
+- Units appear in h, m, s order and each unit at most once: "30m1h" and
+  "1m1m" raise ValueError.
+- Leading and trailing whitespace is ignored (" 5m " is 300); whitespace
+  inside the value ("1h 30m") raises ValueError.
+- An empty string, an unknown unit ("5x"), a unit without a number ("h"), a
+  negative number ("-5s") and an uppercase unit ("5S") raise ValueError.
+
+Constraints:
+- Do not change tests/test_durations.py.
+- Standard library only.
+- Run `python3 -m pytest -q` from the repository root and record that proof.' --json
+{
+  "created_at": "2026-09-29T21:07:44.995513317Z",
+  "created_by": "Gas City Pack Gate",
+  "description": "Implement `parse_duration(text)` in `durations.py`. It returns the total number\nof seconds as an int.\n\nExpected behavior:\n- The input is one or more groups of a non-negative integer followed by a unit:\n  `h` (hours), `m` (minutes) or `s` (seconds). Examples: \"1h30m\" is 5400,\n  \"45s\" is 45, \"2h5s\" is 7205, \"0s\" is 0.\n- Units appear in h, m, s order and each unit at most once: \"30m1h\" and\n  \"1m1m\" raise ValueError.\n- Leading and trailing whitespace is ignored (\" 5m \" is 300); whitespace\n  inside the value (\"1h 30m\") raises ValueError.\n- An empty string, an unknown unit (\"5x\"), a unit without a number (\"h\"), a\n  negative number (\"-5s\") and an uppercase unit (\"5S\") raise ValueError.\n\nConstraints:\n- Do not change tests/test_durations.py.\n- Standard library only.\n- Run `python3 -m pytest -q` from the repository root and record that proof.",
+  "id": "fi-0mk",
+  "issue_type": "task",
+  "owner": "gascity-pack-gate@example.invalid",
+  "priority": 2,
+  "schema_version": 1,
+  "status": "open",
+  "title": "Implement parse_duration in the fixture repository",
+  "updated_at": "2026-09-29T21:07:44.995513317Z"
+}
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture gc jev-route fi-0mk --title 'gascity pack inference gate: build-basic' --var artifact_root=.gc/inference-gate/build-basic --var interaction_mode=headless --var review_mode=agent --var drain_policy=separate --var push=false --var open_pr=false --var max_iterations=2 --var jev_mode=auto --var jev_model=jev-1.13.0 --var jev_state_dir=/home/ubuntu/code/gastownhall/gascity-packs-jev/specs/experiments/jev-overlay-ab/ab-001/jev-state --var 'jev_test_command=python3 -m pytest -q -p no:cacheprovider tests'
+{"bead": "fi-0mk", "formula": "jev-build", "audited": false, "decision_id": "jd-e50909c727dc", "facts": {"size": "standard", "size_probabilities": {"compact": 0.19, "standard": 0.81, "deep": 0.0}, "size_confidence": 0.7, "risky_surface": "none", "needs_design": "no", "well_specified": "clear_acceptance_criteria"}, "error": "", "workflow_id": "fi-dyx"}
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd list --all --json --limit 1000
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=in_progress outcome=<unset>
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd show fi-dyx --json --include-comments
+workflow fi-dyx: status=closed outcome=pass
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd list --all --json --limit 1000
++ /tmp/jevvenv/bin/python /home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/scripts/validate_build_artifact.py --schema gc.build.requirements.v1 --path /tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/requirements.md
+{"ok": true, "schema": "gc.build.requirements.v1"}
++ /tmp/jevvenv/bin/python /home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/scripts/validate_build_artifact.py --schema gc.build.plan.v1 --path /tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/implementation-plan.md
+{"ok": true, "schema": "gc.build.plan.v1"}
++ /tmp/jevvenv/bin/python /home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/scripts/validate_build_artifact.py --schema gc.build.decomposition.v1 --path /tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/decomposition.md
+{"ok": true, "schema": "gc.build.decomposition.v1"}
++ /tmp/jevvenv/bin/python /home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/scripts/validate_build_artifact.py --schema gc.build.implementation-summary.v1 --path /tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/implementation-summary.md
+{"ok": true, "schema": "gc.build.implementation-summary.v1"}
++ /tmp/jevvenv/bin/python /home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/scripts/validate_build_artifact.py --schema gc.build.review.v1 --path /tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/review-report.md
+{"ok": true, "schema": "gc.build.review.v1"}
++ /tmp/jevvenv/bin/python /home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/scripts/validate_build_artifact.py --schema gc.build.final-report.v1 --path /tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/factory-run.md
+{"ok": true, "schema": "gc.build.final-report.v1"}
++ /home/ubuntu/.local/bin/gc --city /tmp/gcja-d9u4t9xv/w/city --rig fixture bd list --all --json --limit 1000
++ /home/ubuntu/.local/bin/gc stop /tmp/gcja-d9u4t9xv/w/city --force --timeout 30s
++ /home/ubuntu/.local/bin/gc supervisor stop --wait --wait-timeout 30s

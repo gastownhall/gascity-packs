@@ -1,0 +1,36 @@
+[
+  {
+    "bead": "fi-o6l",
+    "root": "fi-i66",
+    "item": {
+      "acceptance": "run",
+      "test_evidence": "skip",
+      "simplicity": "run",
+      "synth": "run",
+      "loop": "run",
+      "acceptance_scope": "REQ-002, REQ-004, REQ-005",
+      "simplicity_scope": "design",
+      "forwarded_smells": "none",
+      "gate": "jev"
+    },
+    "summary": {
+      "lanes": {
+        "acceptance": "run",
+        "test_evidence": "skip",
+        "simplicity": "run"
+      },
+      "skipped_lanes": [
+        "test_evidence"
+      ],
+      "synth": "run",
+      "loop": "run",
+      "gate": "jev",
+      "audits": [
+        "review.criterion:REQ-004"
+      ],
+      "decisions": 7
+    },
+    "jev_answered": true,
+    "reason": ""
+  }
+]

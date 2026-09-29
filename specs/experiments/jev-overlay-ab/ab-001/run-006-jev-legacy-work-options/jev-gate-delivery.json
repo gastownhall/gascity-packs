@@ -1,0 +1,32 @@
+[
+  {
+    "bead": "fi-j7c",
+    "root": "fi-hpb",
+    "item": {
+      "acceptance": "run",
+      "test_evidence": "run",
+      "simplicity": "run",
+      "synth": "run",
+      "loop": "run",
+      "acceptance_scope": "all",
+      "simplicity_scope": "full",
+      "forwarded_smells": "none",
+      "gate": "escalate:receipts"
+    },
+    "summary": {
+      "lanes": {
+        "acceptance": "run",
+        "test_evidence": "run",
+        "simplicity": "run"
+      },
+      "skipped_lanes": [],
+      "synth": "run",
+      "loop": "run",
+      "gate": "escalate:receipts",
+      "audits": [],
+      "decisions": 9
+    },
+    "jev_answered": false,
+    "reason": ""
+  }
+]

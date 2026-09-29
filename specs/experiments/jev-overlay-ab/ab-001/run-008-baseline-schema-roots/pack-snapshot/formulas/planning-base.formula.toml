@@ -1,0 +1,81 @@
+description = """
+Virtual planning methodology contract.
+
+This methodology contract turns request/context input into approved
+requirements and implementation-plan artifacts. Concrete methodology packs
+override these steps to use their own planning process while preserving the
+artifact paths consumed by entrypoint adapters.
+"""
+formula = "planning-base"
+version = 1
+contract = "graph.v2"
+target_required = false
+internal = true
+
+[vars]
+[vars.artifact_root]
+description = "Build or adapter artifact root."
+required = true
+
+[vars.context_path]
+description = "Optional source context bundle path."
+default = ""
+
+[vars.requirements_path]
+description = "Requirements artifact path to create or reuse."
+default = ""
+
+[vars.plan_path]
+description = "Implementation plan artifact path to create or reuse."
+default = ""
+
+[vars.interaction_mode]
+description = "Planning interaction posture: interactive, autonomous, or headless."
+default = "interactive"
+
+[vars.review_mode]
+description = "Plan-review authority: report, agent, or interactive."
+default = "report"
+
+[[steps]]
+id = "prepare-planning"
+title = "Prepare planning context"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/planning-base/prepare-planning.md"
+
+[[steps]]
+id = "requirements"
+title = "Produce approved requirements"
+needs = ["prepare-planning"]
+metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+description_file = "../assets/workflows/planning-base/requirements.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "plan"
+title = "Produce implementation plan"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+description_file = "../assets/workflows/planning-base/plan.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "plan-review"
+title = "Approve implementation plan"
+needs = ["plan"]
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+description_file = "../assets/workflows/planning-base/plan-review.md"

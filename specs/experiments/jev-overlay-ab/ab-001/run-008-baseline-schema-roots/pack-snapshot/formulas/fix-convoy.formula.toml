@@ -1,0 +1,42 @@
+description = """
+Internal helper that converts failed verdict reports into validated fix convoys.
+
+Launch inputs:
+- input_convoy: {{convoy_id}}
+- report_path: {{report_path}}
+- context_path: {{context_path}} (empty means no extra context bundle)
+"""
+formula = "fix-convoy"
+version = 1
+contract = "graph.v2"
+target_required = true
+internal = true
+
+[vars]
+[vars.report_path]
+description = "Failed gap-analysis or review report path."
+required = true
+
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[[steps]]
+id = "synthesize-fix-plan"
+title = "Synthesize fix convoy payload"
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+description_file = "../assets/workflows/fix-convoy/synthesize-fix-plan.md"
+
+[[steps]]
+id = "validate-fix-plan"
+title = "Validate generated fix payload"
+needs = ["synthesize-fix-plan"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/fix-convoy/validate-fix-plan.md"
+
+[[steps]]
+id = "create-fix-convoy"
+title = "Create fix convoy"
+needs = ["validate-fix-plan"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/fix-convoy/create-fix-convoy.md"

@@ -1,0 +1,14 @@
+{
+  "loggedIn": true,
+  "authMethod": "oauth_token",
+  "apiProvider": "firstParty",
+  "subscriptionType": null,
+  "gc_env_file": "/home/ubuntu/.cache/gascity/gasworks-gasworks.env",
+  "gc_env_names": [
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "BAO_ADDR",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL"
+  ]
+}

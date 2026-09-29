@@ -1,0 +1,20 @@
+{
+  "bead": "fi-dek",
+  "formula": "jev-build",
+  "audited": false,
+  "decision_id": "jd-5d01acd1f90e",
+  "facts": {
+    "size": "standard",
+    "size_probabilities": {
+      "compact": 0.0,
+      "standard": 1.0,
+      "deep": 0.0
+    },
+    "size_confidence": 0.99,
+    "risky_surface": "public_api_or_schema",
+    "needs_design": "no",
+    "well_specified": "clear_acceptance_criteria"
+  },
+  "error": "",
+  "workflow_id": "fi-ayh"
+}

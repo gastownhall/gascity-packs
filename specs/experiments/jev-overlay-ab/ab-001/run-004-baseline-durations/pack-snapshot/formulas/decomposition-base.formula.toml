@@ -1,0 +1,39 @@
+description = """
+Virtual decomposition methodology contract.
+
+This methodology contract converts an approved plan into an implementation
+convoy. Concrete methodology packs override the decomposition step when their
+native output uses stories, cards, or another task shape.
+"""
+formula = "decomposition-base"
+version = 1
+contract = "graph.v2"
+target_required = false
+internal = true
+
+[vars]
+[vars.context_path]
+description = "Optional source context bundle path."
+default = ""
+
+[vars.plan_path]
+description = "Approved implementation plan artifact path."
+required = true
+
+[vars.decomposition_path]
+description = "Task decomposition artifact path to create or reuse."
+default = ""
+
+[[steps]]
+id = "decompose"
+title = "Create implementation convoy"
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+description_file = "../assets/workflows/decomposition-base/decompose.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

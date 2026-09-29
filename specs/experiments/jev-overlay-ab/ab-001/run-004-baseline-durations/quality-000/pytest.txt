@@ -1,0 +1,58 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+____________________________ test_hours_and_minutes ____________________________
+
+    def test_hours_and_minutes() -> None:
+>       assert parse_duration("1h30m") == 5400
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_durations.py:7: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '1h30m'
+
+    def parse_duration(text: str) -> int:
+        """Return the number of seconds described by text, for example "1h30m"."""
+>       raise NotImplementedError("parse_duration is intentionally missing")
+E       NotImplementedError: parse_duration is intentionally missing
+
+durations.py:6: NotImplementedError
+______________________________ test_seconds_only _______________________________
+
+    def test_seconds_only() -> None:
+>       assert parse_duration("45s") == 45
+               ^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_durations.py:11: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '45s'
+
+    def parse_duration(text: str) -> int:
+        """Return the number of seconds described by text, for example "1h30m"."""
+>       raise NotImplementedError("parse_duration is intentionally missing")
+E       NotImplementedError: parse_duration is intentionally missing
+
+durations.py:6: NotImplementedError
+________________________ test_unknown_unit_is_rejected _________________________
+
+    def test_unknown_unit_is_rejected() -> None:
+        with pytest.raises(ValueError):
+>           parse_duration("5x")
+
+tests/test_durations.py:16: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '5x'
+
+    def parse_duration(text: str) -> int:
+        """Return the number of seconds described by text, for example "1h30m"."""
+>       raise NotImplementedError("parse_duration is intentionally missing")
+E       NotImplementedError: parse_duration is intentionally missing
+
+durations.py:6: NotImplementedError
+=========================== short test summary info ============================
+FAILED tests/test_durations.py::test_hours_and_minutes - NotImplementedError:...
+FAILED tests/test_durations.py::test_seconds_only - NotImplementedError: pars...
+FAILED tests/test_durations.py::test_unknown_unit_is_rejected - NotImplemente...
+3 failed in 0.01s

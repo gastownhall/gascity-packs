@@ -1,0 +1,20 @@
+{
+  "bead": "fi-y5q",
+  "formula": "jev-build",
+  "audited": false,
+  "decision_id": "jd-b5c9474d5322",
+  "facts": {
+    "size": "compact",
+    "size_probabilities": {
+      "compact": 0.59,
+      "standard": 0.41,
+      "deep": 0.0
+    },
+    "size_confidence": 0.38,
+    "risky_surface": "none",
+    "needs_design": "no",
+    "well_specified": "clear_acceptance_criteria"
+  },
+  "error": "",
+  "workflow_id": "fi-hjk"
+}

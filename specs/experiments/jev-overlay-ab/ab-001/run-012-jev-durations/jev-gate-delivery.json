@@ -1,0 +1,36 @@
+[
+  {
+    "bead": "fi-8i2",
+    "root": "fi-dyx",
+    "item": {
+      "acceptance": "run",
+      "test_evidence": "skip",
+      "simplicity": "run",
+      "synth": "run",
+      "loop": "run",
+      "acceptance_scope": "AC-2, AC-3, AC-4, AC-5",
+      "simplicity_scope": "full",
+      "forwarded_smells": "none",
+      "gate": "jev"
+    },
+    "summary": {
+      "lanes": {
+        "acceptance": "run",
+        "test_evidence": "skip",
+        "simplicity": "run"
+      },
+      "skipped_lanes": [
+        "test_evidence"
+      ],
+      "synth": "run",
+      "loop": "run",
+      "gate": "jev",
+      "audits": [
+        "smell.clean:screen"
+      ],
+      "decisions": 7
+    },
+    "jev_answered": true,
+    "reason": ""
+  }
+]

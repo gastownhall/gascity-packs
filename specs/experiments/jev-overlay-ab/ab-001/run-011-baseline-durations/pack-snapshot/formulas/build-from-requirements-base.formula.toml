@@ -1,0 +1,52 @@
+description = """
+Virtual build continuation contract from initial requirements work.
+
+This suffix starts when requirements still need to be produced. It writes or
+validates requirements, then hands off to `build-from-plan-base` through the
+inherited `prepare-plan` step.
+"""
+formula = "build-from-requirements-base"
+version = 1
+contract = "graph.v2"
+extends = ["build-from-plan-base"]
+target_required = false
+internal = true
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.requirements_path]
+description = "Requirements artifact path to create or reuse."
+default = ""
+
+[[steps]]
+id = "prepare-requirements"
+title = "Validate requirements continuation inputs"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-requirements-base/prepare-requirements.md"
+
+[[steps]]
+id = "requirements"
+title = "Produce requirements"
+needs = ["prepare-requirements"]
+metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+description_file = "../assets/workflows/build-from-requirements-base/requirements.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "prepare-plan"
+title = "Validate plan continuation inputs"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-requirements-base/prepare-plan.md"

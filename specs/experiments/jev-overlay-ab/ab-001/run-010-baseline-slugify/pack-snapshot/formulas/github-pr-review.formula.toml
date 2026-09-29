@@ -1,0 +1,104 @@
+description = """
+Targetless GitHub PR review adapter.
+
+This formula accepts only a full canonical GitHub pull request URL. It
+snapshots the PR through the pack wrapper, keys review attempts by PR head SHA,
+delegates judgment to the generic targetless `review` formula, renders one
+sticky normal PR comment, and never mutates code or submits formal GitHub review
+events.
+
+Launch inputs:
+- github_pr_url: {{github_pr_url}}
+- artifact_root: {{artifact_root}} (optional override; empty resolves to the
+  rig artifact root with the pack artifact helper)
+- context_path: {{context_path}} (empty means no extra context bundle)
+- code_review_formula: {{code_review_formula}}
+- interaction_mode: {{interaction_mode}}
+- review_mode: {{review_mode}}
+- post_mode: {{post_mode}}
+"""
+formula = "github-pr-review"
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[catalog]
+name = "github-pr-review"
+description = "Review a GitHub pull request through the GitHub PR adapter workflow."
+
+[vars]
+[vars.github_pr_url]
+description = "Full GitHub PR URL: https://github.com/<owner>/<repo>/pull/<number>."
+required = true
+
+[vars.artifact_root]
+description = "Optional artifact root override. Empty resolves to the rig artifact root through assets/scripts/artifacts.py."
+default = ""
+
+[vars.context_path]
+description = "Optional context bundle path to pass through to the generic review formula."
+default = ""
+
+[vars.code_review_formula]
+description = "Code-review methodology formula to launch after the PR snapshot is prepared."
+default = "review"
+
+[vars.interaction_mode]
+description = "Adapter interaction posture: interactive, autonomous, or headless. Headless runs must not require the human comment gate."
+default = "interactive"
+
+[vars.review_mode]
+description = "Review authority requested from the selected code-review formula: report, agent, or interactive. The PR adapter itself never mutates code."
+default = "report"
+
+[vars.post_mode]
+description = "Comment posting policy: human_gate or auto."
+default = "human_gate"
+
+[[steps]]
+id = "snapshot"
+title = "Snapshot GitHub PR"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-pr-review/snapshot.md"
+
+[[steps]]
+id = "reuse-current-head"
+title = "Reuse current head-SHA review when present"
+needs = ["snapshot"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-pr-review/reuse-current-head.md"
+
+[[steps]]
+id = "run-review"
+title = "Run generic review"
+needs = ["reuse-current-head"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-pr-review/run-review.md"
+
+[[steps]]
+id = "render-comment"
+title = "Render sticky PR comment"
+needs = ["run-review"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-pr-review/render-comment.md"
+
+[[steps]]
+id = "human-gate-comment"
+title = "Gate PR review comment"
+needs = ["render-comment"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-pr-review/human-gate-comment.md"
+
+[[steps]]
+id = "post-comment"
+title = "Create or update sticky PR comment"
+needs = ["render-comment", "human-gate-comment"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-pr-review/post-comment.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize PR review result"
+needs = ["post-comment"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/github-pr-review/finalize.md"

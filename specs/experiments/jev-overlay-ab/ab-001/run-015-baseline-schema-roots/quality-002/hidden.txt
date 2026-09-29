@@ -1,0 +1,32 @@
+...........................F.       [100%]
+=================================== FAILURES ===================================
+_ BuildArtifactSchemaRootsTests.test_missing_or_blank_extra_roots_are_skipped __
+
+self = <test_validators.BuildArtifactSchemaRootsTests testMethod=test_missing_or_blank_extra_roots_are_skipped>
+
+    def test_missing_or_blank_extra_roots_are_skipped(self) -> None:
+        bogus = os.pathsep.join(["", "  ", "/nonexistent/schema/root"])
+        with mock.patch.dict(os.environ, {"GC_BUILD_SCHEMA_ROOTS": bogus}):
+>           self.assertEqual(
+                build_artifact_validator.schema_roots(),
+                [build_artifact_validator.SCHEMA_ROOT],
+            )
+E           AssertionError: Lists differ: [Posi[41 chars]uild'), PosixPath('  '), PosixPath('/nonexistent/schema/root')] != [Posi[41 chars]uild')]
+E           
+E           First list contains 2 additional elements.
+E           First extra element 1:
+E           PosixPath('  ')
+E           
+E           - [PosixPath('/tmp/tmpwdliifrq/gascity/schemas/build'),
+E           ?                                                     ^
+E           
+E           + [PosixPath('/tmp/tmpwdliifrq/gascity/schemas/build')]
+E           ?                                                     ^
+E           
+E           -  PosixPath('  '),
+E           -  PosixPath('/nonexistent/schema/root')]
+
+gascity/tests/test_validators.py:599: AssertionError
+=========================== short test summary info ============================
+FAILED gascity/tests/test_validators.py::BuildArtifactSchemaRootsTests::test_missing_or_blank_extra_roots_are_skipped
+1 failed, 28 passed, 37 subtests passed in 0.16s

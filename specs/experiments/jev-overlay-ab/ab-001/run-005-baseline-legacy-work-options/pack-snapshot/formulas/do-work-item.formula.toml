@@ -1,0 +1,38 @@
+description = """
+Single-lane item implementation formula used only inside core shared drain.
+
+Launch inputs:
+- input_convoy: {{convoy_id}}
+- context_path: {{context_path}} (empty means no extra context bundle)
+- implementation_target: {{implementation_target}}
+"""
+formula = "do-work-item"
+version = 1
+contract = "graph.v2"
+extends = ["implementation-item-base"]
+target_required = true
+internal = true
+single_lane = true
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[vars.implementation_target]
+description = "Role target for implementation work."
+default = "gc.implementation-worker"
+
+[[steps]]
+id = "implement-item"
+title = "Implement shared-drain item"
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path" }
+description_file = "../assets/workflows/do-work-item/implement-item.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

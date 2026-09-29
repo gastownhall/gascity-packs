@@ -1,0 +1,255 @@
+{
+  "arm": "jev",
+  "scope": "full-build",
+  "workload": "durations",
+  "workload_kind": "planted",
+  "started_at": "2026-09-29T21:07:32.684458+00:00",
+  "model": "claude-sonnet-5",
+  "jev_model": "jev-1.13.0",
+  "status": "completed",
+  "pack_name": "gascity-jev",
+  "setup_seconds": 11.902720398036763,
+  "source_bead_id": "fi-0mk",
+  "formula": "jev-build",
+  "root_id": "fi-dyx",
+  "artifacts": [
+    {
+      "key": "gc.build.requirements_path",
+      "schema": "gc.build.requirements.v1",
+      "path": "/tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/requirements.md"
+    },
+    {
+      "key": "gc.build.plan_path",
+      "schema": "gc.build.plan.v1",
+      "path": "/tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/implementation-plan.md"
+    },
+    {
+      "key": "gc.build.decomposition_path",
+      "schema": "gc.build.decomposition.v1",
+      "path": "/tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/decomposition.md"
+    },
+    {
+      "key": "gc.build.implementation_summary_path",
+      "schema": "gc.build.implementation-summary.v1",
+      "path": "/tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/implementation-summary.md"
+    },
+    {
+      "key": "gc.build.review_report_path",
+      "schema": "gc.build.review.v1",
+      "path": "/tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/review-report.md"
+    },
+    {
+      "key": "gc.build.final_report_path",
+      "schema": "gc.build.final-report.v1",
+      "path": "/tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/factory-run.md"
+    }
+  ],
+  "fixture_tests_pass": true,
+  "result_path": "/tmp/gcja-d9u4t9xv/w/fixture/worktrees/fi-9nj",
+  "hidden": {
+    "pass": true,
+    "cases": 16,
+    "failed": []
+  },
+  "hidden_tests_pass": true,
+  "cleanup": {
+    "status": "no_leftover_server",
+    "pids": []
+  },
+  "cleanup_resweep": {
+    "status": "no_leftover_server",
+    "pids": []
+  },
+  "cleanup_path_sweep": [],
+  "otel_usage": {
+    "status": "observed",
+    "request_count": 288,
+    "models": [
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 71050,
+      "output_tokens": 84638,
+      "cache_read_tokens": 19795633,
+      "cache_creation_tokens": 1369698,
+      "total_tokens": 21321019
+    },
+    "collector_errors": 0,
+    "coverage": "Local Claude API-request events; validate delivery and auxiliary coverage before comparing totals."
+  },
+  "independent_quality": [
+    {
+      "worktree": "/tmp/gcja-d9u4t9xv/w/fixture",
+      "original_tests_unchanged": true,
+      "pytest_exit": 1,
+      "hidden": {
+        "pass": false,
+        "cases": 16,
+        "failed": [
+          {
+            "input": "1h30m",
+            "expected": 5400,
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "45s",
+            "expected": 45,
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "2h5s",
+            "expected": 7205,
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "0s",
+            "expected": 0,
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": " 5m ",
+            "expected": 300,
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "1h1m1s",
+            "expected": 3661,
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "10m",
+            "expected": 600,
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "30m1h",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "1m1m",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "1h 30m",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "5x",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "h",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "-5s",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "5S",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          },
+          {
+            "input": "1.5h",
+            "expected": "ValueError",
+            "pass": false,
+            "error": "NotImplementedError"
+          }
+        ]
+      },
+      "hidden_exit": 1
+    },
+    {
+      "worktree": "/tmp/gcja-d9u4t9xv/w/fixture/worktrees/fi-9nj",
+      "original_tests_unchanged": true,
+      "pytest_exit": 0,
+      "hidden": {
+        "pass": true,
+        "cases": 16,
+        "failed": []
+      },
+      "hidden_exit": 0
+    }
+  ],
+  "jev_gate_delivery": [
+    {
+      "bead": "fi-8i2",
+      "root": "fi-dyx",
+      "item": {
+        "acceptance": "run",
+        "test_evidence": "skip",
+        "simplicity": "run",
+        "synth": "run",
+        "loop": "run",
+        "acceptance_scope": "AC-2, AC-3, AC-4, AC-5",
+        "simplicity_scope": "full",
+        "forwarded_smells": "none",
+        "gate": "jev"
+      },
+      "summary": {
+        "lanes": {
+          "acceptance": "run",
+          "test_evidence": "skip",
+          "simplicity": "run"
+        },
+        "skipped_lanes": [
+          "test_evidence"
+        ],
+        "synth": "run",
+        "loop": "run",
+        "gate": "jev",
+        "audits": [
+          "smell.clean:screen"
+        ],
+        "decisions": 7
+      },
+      "jev_answered": true,
+      "reason": ""
+    }
+  ],
+  "jev_decision_logs": [
+    "/tmp/gcja-d9u4t9xv/w/fixture/.gc/inference-gate/build-basic/jev/decisions.jsonl"
+  ],
+  "elapsed_seconds": 1195.4365178141743,
+  "llm_usage": {
+    "status": "observed",
+    "coverage": "Recorded assistant messages only; auxiliary CLI calls may not appear in transcripts.",
+    "message_count": 259,
+    "models": [
+      "claude-sonnet-5"
+    ],
+    "totals": {
+      "input_tokens": 518,
+      "output_tokens": 84130,
+      "cache_read_input_tokens": 19225882,
+      "cache_creation_input_tokens": 1368659
+    }
+  }
+}

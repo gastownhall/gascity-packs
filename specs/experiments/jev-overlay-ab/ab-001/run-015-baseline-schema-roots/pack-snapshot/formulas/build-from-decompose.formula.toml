@@ -1,0 +1,23 @@
+description = """
+Default Gas City build continuation from an approved plan.
+
+This cataloged entrypoint extends `build-from-decompose-base` with the built-in
+Gas City methodology defaults. Methodology packs can expose their own
+cataloged continuation by extending the same base and overriding only formula
+selectors, routes, drains, or review expansions they need.
+"""
+formula = "build-from-decompose"
+version = 1
+contract = "graph.v2"
+extends = ["build-from-decompose-base"]
+target_required = false
+
+[catalog]
+name = "build-from-decompose"
+description = "Continue a build from approved requirements and plan artifacts through decompose, implementation, review, and optional publish."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]

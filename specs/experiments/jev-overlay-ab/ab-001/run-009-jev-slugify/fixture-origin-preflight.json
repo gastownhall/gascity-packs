@@ -1,0 +1,8 @@
+{
+  "status": "passed",
+  "remote": "/tmp/gcja-co8nn2wi/w/fixture-origin.git",
+  "default_branch": "origin/main",
+  "initial_head": "e99606d31ac6327c244fd3357237d3b4b1cf08d5",
+  "remote_head": "e99606d31ac6327c244fd3357237d3b4b1cf08d5",
+  "network_remote": false
+}

@@ -1,0 +1,36 @@
+description = """
+Virtual shared-drain implementation item methodology contract.
+
+This methodology contract executes exactly one source item inside a shared
+single-lane drain. Concrete methodology packs override it to add their native
+per-item procedure while keeping shared-drain sequencing stable.
+"""
+formula = "implementation-item-base"
+version = 1
+contract = "graph.v2"
+target_required = true
+internal = true
+single_lane = true
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[vars.implementation_target]
+description = "Role target for implementation work."
+default = "gc.implementation-worker"
+
+[[steps]]
+id = "implement-item"
+title = "Implement shared-drain item"
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path" }
+description_file = "../assets/workflows/implementation-item-base/implement-item.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

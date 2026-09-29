@@ -1,0 +1,138 @@
+description = """
+Virtual build continuation contract from implementation evidence.
+
+This suffix starts when implementation evidence already exists. It validates
+review prerequisites, runs the selected review/fix loop, finalizes the build
+result, and optionally publishes. Higher suffixes extend this base and hand off
+to `prepare-review` after producing implementation evidence.
+"""
+formula = "build-from-review-base"
+version = 1
+contract = "graph.v2"
+target_required = false
+internal = true
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.artifact_root]
+description = "Build artifact root containing or receiving continuation artifacts."
+required = true
+
+[vars.context_path]
+description = "Optional source context bundle path."
+default = ""
+
+[vars.requirements_path]
+description = "Approved requirements artifact path."
+required = true
+
+[vars.plan_path]
+description = "Approved implementation plan artifact path."
+required = true
+
+[vars.plan_review_path]
+description = "Approved plan-review artifact path when available."
+default = ""
+
+[vars.decomposition_path]
+description = "Task decomposition artifact path."
+required = true
+
+[vars.implementation_summary_path]
+description = "Implementation summary or evidence artifact path."
+default = ""
+
+[vars.interaction_mode]
+description = "Continuation interaction posture: interactive, autonomous, or headless."
+default = "interactive"
+
+[vars.review_mode]
+description = "Review authority: report, agent, or interactive."
+default = "agent"
+
+[vars.implementation_target]
+description = "Role target for implementation or review-fix work."
+default = "gc.implementation-worker"
+
+[vars.implementation_formula]
+description = "Implementation methodology formula used by review-fix passes."
+default = "implement"
+
+[vars.implementation_item_formula]
+description = "Single-item implementation formula used by shared-drain adapters."
+default = "do-work-item"
+
+[vars.code_review_formula]
+description = "Code-review methodology formula used after implementation."
+default = "review"
+
+[vars.review_fix_formula]
+description = "Review-fix methodology formula used after failed code-review findings."
+default = "fix-loop-base"
+
+[vars.max_iterations]
+description = "Maximum implementation/review fix attempts."
+default = "10"
+
+[vars.push]
+description = "Set true to allow final publish push after all checks pass."
+default = "false"
+
+[vars.open_pr]
+description = "Set true to allow final PR creation after all checks pass."
+default = "false"
+
+[[steps]]
+id = "prepare-review"
+title = "Validate review continuation inputs"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-review-base/prepare-review.md"
+
+[[steps]]
+id = "review"
+title = "Review continuation implementation"
+needs = ["prepare-review"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+description_file = "../assets/workflows/build-from-review-base/review.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "repair-review"
+title = "Repair or block continuation review findings"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-review-base/repair-review.md"
+
+[[steps]]
+id = "finalize"
+title = "Finalize continuation result"
+needs = ["repair-review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/build-from-review-base/finalize.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "publish"
+title = "Optionally publish continuation result"
+needs = ["finalize"]
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/build-from-review-base/publish.md"

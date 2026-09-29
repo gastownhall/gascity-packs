@@ -1,0 +1,24 @@
+description = """
+Public GitHub issue triage adapter.
+
+This wrapper inherits the base adapter stack from `github-issue-triage-base`.
+Override formulas should extend that base formula directly and replace only the
+step or steps they customize.
+
+Launch inputs:
+- github_issue_url: {{github_issue_url}}
+- artifact_root: {{artifact_root}} (optional override; empty resolves to the
+  rig artifact root with the pack artifact helper)
+- post_mode: {{post_mode}}
+- triage_rubric_path: {{triage_rubric_path}} (optional Markdown rubric/prompt
+  for report behavior; empty uses the base rubric)
+"""
+formula = "github-issue-triage"
+extends = ["github-issue-triage-base"]
+version = 1
+contract = "graph.v2"
+target_required = false
+
+[catalog]
+name = "github-issue-triage"
+description = "Triage a GitHub issue through the GitHub issue adapter workflow."

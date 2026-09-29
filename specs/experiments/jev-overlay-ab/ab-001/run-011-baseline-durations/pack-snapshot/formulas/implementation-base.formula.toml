@@ -1,0 +1,54 @@
+description = """
+Virtual implementation methodology contract.
+
+This methodology contract executes one implementation convoy or one
+drain-member source anchor and records the result. Concrete methodology packs
+override the implement step or add process-specific checks while preserving the
+source-anchor close contract.
+"""
+formula = "implementation-base"
+version = 1
+contract = "graph.v2"
+target_required = true
+internal = true
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[vars.implementation_target]
+description = "Role target for implementation work."
+default = "gc.implementation-worker"
+
+[vars.summary_path]
+description = "Optional per-item summary path."
+default = ""
+
+[[steps]]
+id = "prepare-worktree"
+title = "Prepare item worktree"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/implementation-base/prepare-worktree.md"
+
+[[steps]]
+id = "implement"
+title = "Implement owned work"
+needs = ["prepare-worktree"]
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.build.artifact_schema" = "gc.build.implementation-summary.v1", "gc.build.artifact_path_keys" = "gc.implementation.summary_path,gc.build.implementation_summary_path,gc.var.summary_path" }
+description_file = "../assets/workflows/implementation-base/implement.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[steps]]
+id = "close-source-anchor"
+title = "Close owned source anchor"
+needs = ["implement"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/implementation-base/close-source-anchor.md"

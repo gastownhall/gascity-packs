@@ -1,0 +1,20 @@
+{
+  "bead": "fi-rtd",
+  "formula": "jev-build",
+  "audited": false,
+  "decision_id": "jd-3998261208ed",
+  "facts": {
+    "size": "standard",
+    "size_probabilities": {
+      "compact": 0.19,
+      "standard": 0.81,
+      "deep": 0.0
+    },
+    "size_confidence": 0.7,
+    "risky_surface": "none",
+    "needs_design": "no",
+    "well_specified": "clear_acceptance_criteria"
+  },
+  "error": "",
+  "workflow_id": "fi-u2q"
+}

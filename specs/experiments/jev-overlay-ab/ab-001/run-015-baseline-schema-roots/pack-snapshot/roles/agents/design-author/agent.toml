@@ -1,0 +1,3 @@
+description = "Design author for repo-grounded engineering design documents"
+scope = "rig"
+fallback = true

@@ -1,0 +1,42 @@
+{
+  "argv": [
+    "scripts/jev_build_ab.py",
+    "--out",
+    "specs/experiments/jev-overlay-ab/ab-001",
+    "--arms",
+    "both",
+    "--repetitions",
+    "8",
+    "--workloads",
+    "slugify,durations,legacy-work-options,schema-roots",
+    "--gc-env-file",
+    "/home/ubuntu/.cache/gascity/gasworks-gasworks.env",
+    "--skip-provider-readiness",
+    "--continue-on-failure",
+    "--timeout",
+    "3600"
+  ],
+  "versions": {
+    "gc": "1.5.0-dev-bb+8ab11cc90 (commit: 8ab11cc90, built: 2026-09-24T14:22:25-07:00)",
+    "bd": "bd version 1.3.0 (Enterprise dev, Observer unknown; 9b46dcaa8: experiment/jev-evidence-routing@9b46dcaa867b)",
+    "claude": "2.1.280 (Claude Code)",
+    "bash": "GNU bash, version 5.3.9(1)-release (x86_64-pc-linux-gnu)\nCopyright (C) 2025 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n\nThis is free software; you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law."
+  },
+  "model": "claude-sonnet-5",
+  "workload": {
+    "name": "legacy-work-options",
+    "kind": "backlog",
+    "task": "Normalize legacy work option metadata in task bead creation\n\nReal backlog item (gascity-packs #68).\n\n`gascity/assets/scripts/create_beads_from_tasks.py` turns a task plan into\nbead metadata. Older plans still carry legacy work option keys:\n`gc.model`, `gc.reasoning` and `gc.effort`. Gas City now reads the canonical\n`opt_model` and `opt_effort` keys, so tasks written with the legacy keys lose\ntheir model and effort settings.\n\nAcceptance criteria:\n- Task metadata `gc.model` is emitted as `opt_model`.\n- Task metadata `gc.reasoning` or `gc.effort` is emitted as `opt_effort`.\n- When a task sets both a legacy key and its canonical key, the explicit\n  canonical `opt_model` / `opt_effort` value wins.\n- The legacy keys no longer appear in the emitted metadata.\n- Add regression coverage in `gascity/tests/test_create_beads_from_tasks.py`\n  and keep every existing test passing.\n\nVerify with `python3 -m pytest -q gascity/tests`.\n",
+    "upstream": "gastownhall/gascity-packs#68",
+    "commit": "99464ed"
+  },
+  "jev_model": "jev-1.13.0",
+  "arm": "baseline",
+  "setup": "operator-path",
+  "pack_name": "gascity",
+  "pack_source": "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity",
+  "roles_source": "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/roles",
+  "validator_source": "/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity",
+  "pack_git_head": "d0b457ec60d91453be29d87e53ed517bda76ff36",
+  "pack_diff": ""
+}

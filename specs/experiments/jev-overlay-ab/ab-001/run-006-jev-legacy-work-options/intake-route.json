@@ -1,0 +1,20 @@
+{
+  "bead": "fi-g78",
+  "formula": "jev-build",
+  "audited": false,
+  "decision_id": "jd-2f903b9412eb",
+  "facts": {
+    "size": "standard",
+    "size_probabilities": {
+      "compact": 0.04,
+      "standard": 0.96,
+      "deep": 0.0
+    },
+    "size_confidence": 0.94,
+    "risky_surface": "public_api_or_schema",
+    "needs_design": "no",
+    "well_specified": "clear_acceptance_criteria"
+  },
+  "error": "",
+  "workflow_id": "fi-hpb"
+}

@@ -1,0 +1,82 @@
+[
+  {
+    "repetition": 0,
+    "arm": "baseline",
+    "workload": "slugify"
+  },
+  {
+    "repetition": 0,
+    "arm": "jev",
+    "workload": "slugify"
+  },
+  {
+    "repetition": 1,
+    "arm": "jev",
+    "workload": "durations"
+  },
+  {
+    "repetition": 1,
+    "arm": "baseline",
+    "workload": "durations"
+  },
+  {
+    "repetition": 2,
+    "arm": "baseline",
+    "workload": "legacy-work-options"
+  },
+  {
+    "repetition": 2,
+    "arm": "jev",
+    "workload": "legacy-work-options"
+  },
+  {
+    "repetition": 3,
+    "arm": "jev",
+    "workload": "schema-roots"
+  },
+  {
+    "repetition": 3,
+    "arm": "baseline",
+    "workload": "schema-roots"
+  },
+  {
+    "repetition": 4,
+    "arm": "jev",
+    "workload": "slugify"
+  },
+  {
+    "repetition": 4,
+    "arm": "baseline",
+    "workload": "slugify"
+  },
+  {
+    "repetition": 5,
+    "arm": "baseline",
+    "workload": "durations"
+  },
+  {
+    "repetition": 5,
+    "arm": "jev",
+    "workload": "durations"
+  },
+  {
+    "repetition": 6,
+    "arm": "jev",
+    "workload": "legacy-work-options"
+  },
+  {
+    "repetition": 6,
+    "arm": "baseline",
+    "workload": "legacy-work-options"
+  },
+  {
+    "repetition": 7,
+    "arm": "baseline",
+    "workload": "schema-roots"
+  },
+  {
+    "repetition": 7,
+    "arm": "jev",
+    "workload": "schema-roots"
+  }
+]

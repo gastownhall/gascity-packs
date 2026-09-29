@@ -1,0 +1,66 @@
+description = """
+Virtual review-fix methodology contract.
+
+This methodology contract turns failed review findings into implementation
+fixes and a follow-up review. Entrypoint adapters own publication and external
+state; concrete methodology packs override this loop to use their native fix
+discipline.
+"""
+formula = "fix-loop-base"
+version = 1
+contract = "graph.v2"
+target_required = false
+internal = true
+
+[vars]
+[vars.context_path]
+description = "Optional context bundle path."
+default = ""
+
+[vars.findings_path]
+description = "Review findings report path to fix."
+required = true
+
+[vars.implementation_formula]
+description = "Implementation formula used for fix work."
+default = "implement"
+
+[vars.implementation_target]
+description = "Role target for implementation work."
+default = "gc.implementation-worker"
+
+[vars.code_review_formula]
+description = "Review formula used after fixes."
+default = "review"
+
+[vars.max_iterations]
+description = "Maximum fix/review attempts."
+default = "10"
+
+[[steps]]
+id = "plan-fixes"
+title = "Plan review fixes"
+metadata = { "gc.run_target" = "gc.review-synthesizer" }
+description_file = "../assets/workflows/fix-loop-base/plan-fixes.md"
+
+[[steps]]
+id = "apply-fixes"
+title = "Apply review fixes"
+needs = ["plan-fixes"]
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/fix-loop-base/apply-fixes.md"
+
+[[steps]]
+id = "re-review"
+title = "Re-review fixed work"
+needs = ["apply-fixes"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+description_file = "../assets/workflows/fix-loop-base/re-review.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

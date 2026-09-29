@@ -1,0 +1,99 @@
+description = """
+Compact jev-build for small, well-specified work (chosen by jev_route.py).
+
+Keeps prepare, drains the sling's own input convoy (the task bead) through the
+ordinary implementation formula in one worktree, then runs the same Jev review
+gate and gated review tail as jev-build. Requirements, plan, plan review,
+decomposition and the implementation-summary stage are dropped; the gate takes
+acceptance criteria from the task text and the review context from the
+implementation item's own summary. Only the intake router should launch this.
+"""
+formula = "jev-build-compact"
+version = 1
+contract = "graph.v2"
+extends = ["jev-build"]
+target_required = true
+
+[catalog]
+name = "jev-build-compact"
+description = "Compact Jev-gated build: one implementation drain, the Jev review gate, finalize and publish."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars.keep_full_stages]
+description = "Leave empty. The planning stages and the implementation-summary stage are dropped."
+default = ""
+
+[[steps]]
+id = "requirements"
+title = "Requirements (dropped by jev-build-compact)"
+condition = "{{keep_full_stages}}"
+
+[[steps]]
+id = "plan"
+title = "Plan (dropped by jev-build-compact)"
+condition = "{{keep_full_stages}}"
+
+[[steps]]
+id = "plan-review"
+title = "Plan review (dropped by jev-build-compact)"
+condition = "{{keep_full_stages}}"
+
+[[steps]]
+id = "decompose"
+title = "Decompose (dropped by jev-build-compact)"
+condition = "{{keep_full_stages}}"
+
+[[steps]]
+id = "summarize-implementation"
+title = "Implementation summary (dropped by jev-build-compact)"
+condition = "{{keep_full_stages}}"
+
+# The drain now starts from prepare and drains the sling's input convoy, which
+# tracks the task bead itself.
+[[steps]]
+id = "implement"
+title = "Drain the task in one separate session"
+needs = ["prepare"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/jev-build-compact/implement.md"
+
+[steps.drain]
+context = "separate"
+formula = "do-work"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Drain the task in one shared session"
+needs = ["prepare"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/jev-build-compact/implement.md"
+
+[steps.drain]
+context = "shared"
+formula = "do-work-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+# Restated whole (replacement is whole-step): the gate now follows the drain.
+[[steps]]
+id = "review"
+title = "Jev review gate"
+needs = ["implement", "implement-same-session"]
+metadata = { "gc.run_target" = "gc.jev-gate", "jev.role" = "review-gate" }
+description_file = "../assets/workflows/jev-build/review-gate.md"
+
+[steps.on_complete]
+for_each = "output.items"
+bond = "jev-review-tail"
+vars = { acceptance = "{item.acceptance}", test_evidence = "{item.test_evidence}", simplicity = "{item.simplicity}", synth = "{item.synth}", loop = "{item.loop}", acceptance_scope = "{item.acceptance_scope}", simplicity_scope = "{item.simplicity_scope}", forwarded_smells = "{item.forwarded_smells}", gate = "{item.gate}", implementation_target = "{{implementation_target}}" }

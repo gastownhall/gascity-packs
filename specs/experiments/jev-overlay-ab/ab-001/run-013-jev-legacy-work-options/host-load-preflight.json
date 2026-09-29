@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "load_average": [
+    2.37890625,
+    3.09716796875,
+    3.11669921875
+  ],
+  "logical_cpus": 24,
+  "max_load": 24
+}

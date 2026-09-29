@@ -1,0 +1,56 @@
+import importlib.util
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location('jev_ab_report', ROOT/'scripts/jev_ab_report.py')
+report = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(report)
+
+
+def test_step_refs_normalize_to_stages():
+    assert report.stage_of('jev-build.plan') == 'plan'
+    assert report.stage_of('plan.iteration.1') == 'plan'
+    assert report.stage_of('jev-build.plan-review') == 'plan-review'
+    assert report.stage_of('do-work.prepare-worktree') == 'implement'
+    assert report.stage_of('jev-review-tail.jev-build.review.item.1.finalize') == 'review'
+    assert report.stage_of('summarize-implementation.iteration.1') == 'summarize'
+    assert report.stage_of('') == 'other'
+
+
+def write_run(run: Path, transcripts: Path):
+    run.mkdir(parents=True)
+    beads = [{'id': 'fi-abc', 'metadata': {'gc.step_ref': 'plan.iteration.1'}},
+             {'id': 'fi-def', 'metadata': {'gc.step_ref': 'implement.iteration.1'}}]
+    (run/'final-beads.json').write_text(json.dumps(beads))
+    sessions = []
+    for name, prompt, messages in (('plan', 'Work bead fi-abc now', ['m1', 'm1', 'm2']),
+                                   ('impl', 'Claim fi-def', ['m3']), ('dog', 'Run your patrol', ['m4'])):
+        path = transcripts/f'{name}.jsonl'
+        path.write_text(json.dumps({'type': 'user', 'message': {'content': prompt}}) + '\n')
+        sessions.append({'source': str(path), 'records': [
+            {'session_id': name, 'message_id': m, 'usage': {'input_tokens': 1, 'output_tokens': 10 if m != 'm1' else i + 5,
+                                                          'cache_read_input_tokens': 100, 'cache_creation_input_tokens': 0}}
+            for i, m in enumerate(messages)]})
+    (run/'transcript-usage-records.json').write_text(json.dumps(sessions))
+    (run/'result.json').write_text(json.dumps({
+        'arm': 'jev', 'workload': 'slugify', 'status': 'passed', 'formula': 'jev-build', 'elapsed_seconds': 600,
+        'independent_quality': [{'pytest_exit': 0, 'hidden_exit': 0, 'original_tests_unchanged': True}],
+        'jev_gate_delivery': [{'summary': {'skipped_lanes': ['test_evidence']}}]}))
+
+
+def test_sessions_are_attributed_by_first_bead_and_chunks_deduplicated(tmp_path):
+    transcripts = tmp_path/'transcripts'
+    transcripts.mkdir()
+    write_run(tmp_path/'exp/run-001-jev-slugify', transcripts)
+    [run] = report.collect(tmp_path/'exp')
+    # m1 appears twice: counted once with its largest counters.
+    assert run['stages']['plan'] == {'requests': 2, 'sessions': 1, 'input_tokens': 2,
+                                     'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 200,
+                                     'output_tokens': 16}
+    assert run['stages']['implement']['requests'] == 1
+    assert run['stages']['helpers']['sessions'] == 1
+    assert run['total']['requests'] == 4 and run['hidden_pass'] and run['skipped_lanes'] == ['test_evidence']
+    text = report.render([run])
+    assert '| run-001-jev-slugify | jev | slugify | passed | jev-build | yes | 10.0 | 4 |' in text
+    assert '| plan | 2.0 | 16 |' in text
