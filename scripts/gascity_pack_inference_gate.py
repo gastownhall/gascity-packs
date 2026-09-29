@@ -2263,6 +2263,12 @@ def resolve_artifact_path(value: str, *, base: Path) -> Path:
 def build_result_candidates(rig_dir: Path, beads: Sequence[Mapping[str, Any]]) -> list[Path]:
     candidates: list[Path] = []
     rig_root_from_implementation_summary = False
+
+    def anchored(value: str) -> Path:
+        # Agents may record paths relative to the rig; never resolve them against our cwd.
+        path = Path(value.strip())
+        return path if path.is_absolute() else rig_dir / path
+
     for bead in beads:
         metadata = bead.get("metadata")
         if not isinstance(metadata, dict):
@@ -2270,12 +2276,12 @@ def build_result_candidates(rig_dir: Path, beads: Sequence[Mapping[str, Any]]) -
         for key in ("work_dir", "gc.work_dir", "gc.build.work_dir", "gc.implementation.work_dir"):
             value = metadata.get(key)
             if isinstance(value, str) and value.strip():
-                candidates.append(Path(value.strip()))
+                candidates.append(anchored(value))
         for key in ("gc.implementation.summary_path", "gc.build.implementation_summary_path"):
             value = metadata.get(key)
             if not isinstance(value, str) or not value.strip():
                 continue
-            for ancestor in Path(value.strip()).parents:
+            for ancestor in anchored(value).parents:
                 if ancestor.name == ".gc":
                     implementation_root = ancestor.parent
                     candidates.append(implementation_root)

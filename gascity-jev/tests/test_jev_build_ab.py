@@ -354,6 +354,20 @@ def test_paired_schedule_alternates_arm_order_within_each_workload(names):
     assert [a for _, a, _ in build.paired_schedule(2, 'jev', selected)] == ['jev', 'jev']
 
 
+def test_relative_result_paths_resolve_inside_the_rig_not_the_cwd(tmp_path, monkeypatch):
+    rig = tmp_path/'fixture'
+    (rig/'.gc/inference-gate').mkdir(parents=True)
+    (rig/'worktrees/fi-a').mkdir(parents=True)
+    elsewhere = tmp_path/'caller'
+    (elsewhere/'.gc').mkdir(parents=True)
+    monkeypatch.chdir(elsewhere)
+    beads = [{'id': 'fi-r', 'metadata': {'gc.build.implementation_summary_path': '.gc/inference-gate/summary.md'}},
+             {'id': 'fi-a', 'metadata': {'work_dir': 'worktrees/fi-a'}}]
+    got = build.gate.build_result_candidates(rig, beads)
+    assert got == [rig.resolve(), (rig/'worktrees/fi-a').resolve()]
+    assert elsewhere.resolve() not in got
+
+
 def test_bd_wrapper_that_execs_from_home_is_unwrapped(tmp_path, monkeypatch):
     wrapper = tmp_path/'bd'
     wrapper.write_text('#!/bin/sh\nexec "$HOME/.local/share/beads/1.3.0/bd" "$@"\n')
