@@ -300,6 +300,25 @@ def check_gate_python(env, workspace):
         'stdout':result.stdout,'stderr':result.stderr}
 
 
+def load_env_file(path):
+    """Variables a Gas City env file defines, sourced the way a gc supervisor unit does."""
+    proc = subprocess.run(['sh', '-c', 'set -a; . "$1"; env -0', 'sh', str(path)], env={},
+                          capture_output=True, text=True, timeout=30, check=True)
+    pairs = (item.split('=', 1) for item in proc.stdout.split('\0') if '=' in item)
+    return {k: v for k, v in pairs if k not in ('PWD', 'SHLVL', '_', 'OLDPWD')}
+
+
+def check_claude_login(command, accepted, env):
+    """Require a logged-in Claude and record how; an empty accepted list takes any method."""
+    auth = subprocess.run([command,'auth','status','--json'],env=env,capture_output=True,text=True,timeout=120)
+    status = json.loads(auth.stdout[auth.stdout.index('{'):]) if '{' in auth.stdout else {}
+    safe_status = {k:status.get(k) for k in ('loggedIn','authMethod','apiProvider','subscriptionType')}
+    methods = [m for m in accepted.split(',') if m]
+    if auth.returncode or not status.get('loggedIn') or (methods and status.get('authMethod') not in methods):
+        raise ValueError(f"Claude login {safe_status} is not logged in with an accepted method {accepted or '(any)'}")
+    return safe_status
+
+
 def pack_for_arm(arm):
     """Compare separate base and Jev packs through compatible gc role bindings."""
     baseline = gate.PACK_SPECS['gascity']
@@ -495,7 +514,8 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
     workspace = new_runtime_workspace(pack, out.name)
     save(out/'runtime-path.json', {'root': str(workspace.root), 'retained': True})
     env = gate.build_gate_env(args.gc_bin, workspace, bd_bin=args.bd_bin)
-    # Isolate the supervisor's state. Workers use the existing subscription login.
+    # Isolate the supervisor's state. Workers reach Claude through the city's own
+    # Gas City environment (--gc-env-file), never through the caller's shell.
     real_home = Path.home()
     custom_claude = os.environ.get('CLAUDE_CONFIG_DIR') or None
     real_claude = Path(custom_claude or real_home/'.claude').expanduser().resolve()
@@ -512,16 +532,14 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
                 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY',
                 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'):
         env.pop(key, None)
+    gc_env = load_env_file(args.gc_env_file) if getattr(args, 'gc_env_file', '') else {}
+    env.update(gc_env)
     env.pop('TYPESAFE_API_KEY', None)
     if arm == 'jev' and not args.setup_only:
         env['TYPESAFE_API_KEY'] = os.environ['TYPESAFE_API_KEY']
     if not args.setup_only:
-        auth = subprocess.run([args.claude_command,'auth','status','--json'],env=env,capture_output=True,text=True,timeout=120)
-        status = json.loads(auth.stdout[auth.stdout.index('{'):]) if '{' in auth.stdout else {}
-        safe_status = {k:status.get(k) for k in ('loggedIn','authMethod','apiProvider','subscriptionType')}
-        save(out/'subscription-preflight.json',safe_status)
-        if auth.returncode or not status.get('loggedIn') or status.get('authMethod') not in args.claude_auth.split(','):
-            raise ValueError(f"Claude login {safe_status} is not one of the accepted methods {args.claude_auth}")
+        save(out/'subscription-preflight.json', {**check_claude_login(args.claude_command, args.claude_auth, env),
+             'gc_env_file': getattr(args, 'gc_env_file', ''), 'gc_env_names': sorted(gc_env)})
     versions = {name: subprocess.check_output(cmd, text=True).strip() for name,cmd in
                 [('gc',[args.gc_bin,'version','--long']),('bd',[args.bd_bin,'version']),('claude',[args.claude_command,'--version']),('bash',['bash','--version'])]}
     save(out/'manifest.json', {'argv': sys.argv, 'versions': versions, 'model': args.model,
@@ -662,8 +680,10 @@ def main():
     p.add_argument('--workloads',default='slugify',
                    help='Comma-separated workloads from scripts/jev_ab_workloads.py; repetition r uses workload r mod n.')
     p.add_argument('--claude-command',default='claude',help='Claude CLI the city launches for every role.')
-    p.add_argument('--claude-auth',default='claude.ai',
-                   help='Comma-separated accepted `auth status` methods (claude.ai = subscription).')
+    p.add_argument('--claude-auth',default='',
+                   help='Comma-separated accepted `auth status` methods; empty accepts any logged-in method.')
+    p.add_argument('--gc-env-file',default='',
+                   help="Env file the city's gc loads, as a gc supervisor unit sources one (e.g. provider routes).")
     p.add_argument('--claude-setting-sources',default='project,local',
                    help='Value for --setting-sources; empty omits it (Manifold refuses the option).')
     p.add_argument('--skip-provider-readiness',action='store_true',

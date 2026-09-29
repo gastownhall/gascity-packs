@@ -324,6 +324,26 @@ def test_fixture_is_a_clone_whose_origin_supports_detached_worktrees(tmp_path, a
         build.prepare_fixture_repo(workspace,pack,env)
 
 
+def test_gc_env_file_is_sourced_without_the_callers_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv('LEAKED_FROM_CALLER', '1')
+    env_file = tmp_path/'gc.env'
+    env_file.write_text('export ANTHROPIC_BASE_URL="https://gateway.example/api"\nPLAIN=\'two words\'\n')
+    assert build.load_env_file(env_file) == {'ANTHROPIC_BASE_URL': 'https://gateway.example/api', 'PLAIN': 'two words'}
+
+
+def test_claude_login_accepts_any_logged_in_method_unless_restricted(tmp_path):
+    fake = tmp_path/'claude'
+    fake.write_text('#!/bin/sh\necho \'{"loggedIn": true, "authMethod": "oauth_token"}\'\n')
+    fake.chmod(0o755)
+    assert build.check_claude_login(str(fake), '', {})['authMethod'] == 'oauth_token'
+    assert build.check_claude_login(str(fake), 'claude.ai,oauth_token', {})['loggedIn'] is True
+    with pytest.raises(ValueError, match='accepted method claude.ai'):
+        build.check_claude_login(str(fake), 'claude.ai', {})
+    fake.write_text('#!/bin/sh\necho \'{"loggedIn": false, "authMethod": "none"}\'\n')
+    with pytest.raises(ValueError, match='not logged in'):
+        build.check_claude_login(str(fake), '', {})
+
+
 def test_bd_wrapper_that_execs_from_home_is_unwrapped(tmp_path, monkeypatch):
     wrapper = tmp_path/'bd'
     wrapper.write_text('#!/bin/sh\nexec "$HOME/.local/share/beads/1.3.0/bd" "$@"\n')
