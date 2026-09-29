@@ -198,19 +198,27 @@ def strip_front_matter(text: str) -> str:
 ID_PATTERN = re.compile(r'^\W*((?:AC|REQ|FR|NFR|C|R)-?\d+[a-z]?)\b[\W_]*', re.IGNORECASE)
 
 
+COVERAGE_COLUMNS = {'status', 'coverage', 'covered', 'result'}
+
+
 def parse_criteria(text: str) -> list[dict]:
     """Acceptance criteria as [{'id', 'text'}] from a Markdown section or list.
 
     Accepts list items (nested lines fold into their parent), table rows, and
-    sub-headings. Items without an explicit id get C1, C2, ...
+    sub-headings. Items without an explicit id get C1, C2, ... Tables with a
+    status or coverage column report on criteria rather than state them, so
+    their rows are skipped.
     """
     items: list[str] = []
     lines = text.splitlines()
     top_indent = None
     in_table_header = False
+    coverage_table = False
     for index, line in enumerate(lines):
         if not line.strip():
             continue
+        if not line.strip().startswith('|'):
+            coverage_table = False
         heading = re.match(r'^#{2,6}\s+(.*)$', line)
         bullet = re.match(r'^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$', line)
         if line.strip().startswith('|'):
@@ -221,8 +229,9 @@ def parse_criteria(text: str) -> list[dict]:
             nxt = lines[index + 1] if index + 1 < len(lines) else ''
             if re.match(r'^\s*\|?\s*:?-{3,}', nxt):
                 in_table_header = True
+                coverage_table = any(c.lower() in COVERAGE_COLUMNS for c in cells)
                 continue
-            if not in_table_header:
+            if not in_table_header and not coverage_table:
                 items.append(' — '.join(c for c in cells if c))
             continue
         if heading:

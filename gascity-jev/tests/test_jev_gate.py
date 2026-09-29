@@ -93,6 +93,17 @@ def test_parse_criteria_lists_tables_nesting_and_generated_ids():
     assert gate.parse_criteria('### AC-3 Handles unicode\n\n### AC-4 Handles digits')[1]['id'] == 'AC-4'
 
 
+def test_parse_criteria_skips_coverage_tables():
+    # Shape seen in a real build: a coverage table ahead of the criteria list.
+    text = ('| ID | Status |\n| --- | --- |\n| REQ-001 | covered |\n| REQ-002 | covered |\n\n'
+            '- REQ-001: Lowercase output.\n- REQ-002: Collapses separators.\n')
+    got = gate.parse_criteria(text)
+    assert [c['id'] for c in got] == ['REQ-001', 'REQ-002']
+    assert got[0]['text'] == 'Lowercase output.'
+    after = '| ID | Criterion |\n| --- | --- |\n| AC-1 | Kept |\n\n| AC | Coverage |\n| --- | --- |\n| AC-1 | yes |\n'
+    assert [c['id'] for c in gate.parse_criteria(after)] == ['AC-1']
+
+
 def test_criteria_from_requirements_reads_only_the_acceptance_section():
     text = ('---\nschema: gc.build.requirements.v1\n---\n# Req\n\n## Behavior Requirements\n\n- REQ-1: x\n\n'
             '## Acceptance Criteria\n\n- AC-1: first\n- AC-2: second\n\n## Out Of Scope\n\n- nothing\n')
