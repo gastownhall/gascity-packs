@@ -1,0 +1,86 @@
+description = """
+Jev-gated build-basic.
+
+Runs build-basic unchanged through summarize-implementation, then replaces the
+starter review with a deterministic Jev gate. The gate gathers receipts (it runs
+the tests itself and compares pre-existing test files by hash), asks Jev one
+"is there any violating input?" question per acceptance criterion plus a smell
+screen, and fans out one jev-review-tail bond whose Claude review lanes run only
+where Jev is not confident. The bond owns review, finalize and publish. Every
+gate failure falls back to all lanes at full scope.
+"""
+formula = "jev-build"
+version = 1
+contract = "graph.v2"
+extends = ["build-basic"]
+target_required = true
+
+[catalog]
+name = "jev-build"
+description = "Run build-basic with a Jev review gate that skips Claude review lanes Jev is confident about."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars.jev_mode]
+description = "auto (use Jev when TYPESAFE_API_KEY is set, else run every lane) or off (always run every lane)."
+default = "auto"
+
+[vars.jev_model]
+description = "Pinned Jev model."
+default = "jev-1.13.0"
+
+[vars.jev_state_dir]
+description = "Absolute gate state directory (bands, breaker, cross-run ledger). Empty uses <city>/.gc/jev-gate."
+default = ""
+
+[vars.jev_test_command]
+description = "Shell command the gate runs in each implementation worktree. Empty detects pytest, go test, cargo test or npm test."
+default = ""
+
+[vars.jev_test_timeout]
+description = "Seconds allowed for the gate's own test run."
+default = "600"
+
+[vars.jev_audit_rate]
+description = "Empty uses the adaptive audit schedule (30% until 60 audited accepts, then 10% until 300, then 5%). A number from 0 to 1 overrides it."
+default = ""
+
+[vars.jev_intake_decision]
+description = "Set by jev_route.py: the intake decision id the review report labels from the finished diff."
+default = ""
+
+[vars.keep_inherited_tail]
+description = "Leave empty. The inherited finalize and publish steps are dropped; the jev-review-tail bond owns them."
+default = ""
+
+# Replace build-basic's review stage (by id) with the gate. The replacement is
+# whole-step: the inherited expand, metadata and checks are gone, and the bond
+# restates the review, finalize and publish contracts.
+[[steps]]
+id = "review"
+title = "Jev review gate"
+needs = ["summarize-implementation"]
+metadata = { "gc.run_target" = "gc.jev-gate", "jev.role" = "review-gate" }
+description_file = "../assets/workflows/jev-build/review-gate.md"
+
+[steps.on_complete]
+for_each = "output.items"
+bond = "jev-review-tail"
+vars = { acceptance = "{item.acceptance}", test_evidence = "{item.test_evidence}", simplicity = "{item.simplicity}", synth = "{item.synth}", loop = "{item.loop}", acceptance_scope = "{item.acceptance_scope}", simplicity_scope = "{item.simplicity_scope}", forwarded_smells = "{item.forwarded_smells}", gate = "{item.gate}", implementation_target = "{{implementation_target}}" }
+
+# Drop the inherited tail: a whole-step replacement whose condition is always
+# false removes the step and its edges. Dropping only finalize would start
+# publish immediately, so both go.
+[[steps]]
+id = "finalize"
+title = "Finalize (owned by the jev-review-tail bond)"
+condition = "{{keep_inherited_tail}}"
+
+[[steps]]
+id = "publish"
+title = "Publish (owned by the jev-review-tail bond)"
+condition = "{{keep_inherited_tail}}"

@@ -1,0 +1,151 @@
+description = """
+Gated review tail bonded by the jev-build review gate (one instance per gate item).
+
+Review lanes run only when the gate item says `run`. Synthesis runs only when at
+least two lanes run, and the whole review loop is dropped when no lane runs. A
+script step then writes the gc.build.review.v1 report and labels the gate's
+decisions from the lane verdicts; finalize and publish follow. Nothing is
+inherited into a bond, so the review, finalize and publish contracts are
+restated here.
+"""
+formula = "jev-review-tail"
+type = "expansion"
+version = 1
+contract = "graph.v2"
+
+[vars.acceptance]
+description = "run or skip the acceptance lane."
+default = "run"
+
+[vars.test_evidence]
+description = "run or skip the test-evidence lane."
+default = "run"
+
+[vars.simplicity]
+description = "run or skip the simplicity lane."
+default = "run"
+
+[vars.synth]
+description = "run or skip synthesis (skipped when at most one lane runs)."
+default = "run"
+
+[vars.loop]
+description = "run or skip the whole review loop (skipped when no lane runs)."
+default = "run"
+
+[vars.acceptance_scope]
+description = "Criterion ids the acceptance lane must review, or all."
+default = "all"
+
+[vars.simplicity_scope]
+description = "full (smell and design checks) or design (the smell screen was clean)."
+default = "full"
+
+[vars.forwarded_smells]
+description = "Smells Jev confirmed; they go straight to the fix lane."
+default = "none"
+
+[vars.gate]
+description = "How the gate decided: jev, escalate:<reason> or fail-open:<reason>."
+default = "fail-open:unknown"
+
+[vars.implementation_target]
+description = "Role target used to apply review findings."
+default = "gc.implementation-worker"
+
+[[template]]
+id = "{target}.review-loop"
+title = "Run the Jev-gated review until approved"
+condition = "{{loop}} == run"
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/jev-review-tail/review-loop.md"
+
+[template.check]
+max_attempts = 6
+
+[template.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/implementation-review-approved.sh"
+timeout = "10m"
+
+[[template.children]]
+id = "{target}.acceptance-review"
+title = "Jev-gated review: acceptance and correctness"
+condition = "{{acceptance}} == run"
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "jev.lane" = "acceptance", "jev.scope" = "{acceptance_scope}" }
+description_file = "../assets/workflows/jev-review-tail/acceptance-review.md"
+
+[[template.children]]
+id = "{target}.test-evidence-review"
+title = "Jev-gated review: test evidence"
+condition = "{{test_evidence}} == run"
+metadata = { "gc.run_target" = "gc.gap-analyst", "jev.lane" = "test_evidence" }
+description_file = "../assets/workflows/jev-review-tail/test-evidence-review.md"
+
+[[template.children]]
+id = "{target}.simplicity-review"
+title = "Jev-gated review: simplicity and maintainability"
+condition = "{{simplicity}} == run"
+metadata = { "gc.run_target" = "gc.design-implementation-reviewer", "jev.lane" = "simplicity", "jev.scope" = "{simplicity_scope}" }
+description_file = "../assets/workflows/jev-review-tail/simplicity-review.md"
+
+[[template.children]]
+id = "{target}.synthesize-review"
+title = "Synthesize the Jev-gated review"
+condition = "{{synth}} == run"
+needs = [
+  "{target}.acceptance-review",
+  "{target}.test-evidence-review",
+  "{target}.simplicity-review",
+]
+metadata = { "gc.run_target" = "gc.review-synthesizer", "jev.lane" = "synthesize" }
+description_file = "../assets/workflows/jev-review-tail/synthesize-review.md"
+
+[[template.children]]
+id = "{target}.apply-review-findings"
+title = "Apply Jev-gated review findings"
+needs = [
+  "{target}.acceptance-review",
+  "{target}.test-evidence-review",
+  "{target}.simplicity-review",
+  "{target}.synthesize-review",
+]
+metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group" = "jev-review-fixes", "jev.lane" = "apply" }
+description_file = "../assets/workflows/jev-review-tail/apply-review-findings.md"
+
+[[template]]
+id = "{target}.review-report"
+title = "Write the review report and label Jev decisions"
+needs = ["{target}.review-loop"]
+metadata = { "gc.run_target" = "gc.jev-gate", "jev.role" = "review-report", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+description_file = "../assets/workflows/jev-review-tail/review-report.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[template]]
+id = "{target}.finalize"
+title = "Finalize jev-build"
+needs = ["{target}.review-report"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+description_file = "../assets/workflows/jev-review-tail/finalize.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"
+
+[[template]]
+id = "{target}.publish"
+title = "Optionally publish jev-build"
+needs = ["{target}.finalize"]
+metadata = { "gc.run_target" = "gc.publisher" }
+description_file = "../assets/workflows/jev-review-tail/publish.md"

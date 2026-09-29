@@ -1,0 +1,34 @@
+[
+  {
+    "bead": "fi-cfe",
+    "root": "fi-mgm",
+    "item": {
+      "acceptance": "run",
+      "test_evidence": "skip",
+      "simplicity": "run",
+      "synth": "run",
+      "loop": "run",
+      "acceptance_scope": "REQ-001, REQ-005",
+      "simplicity_scope": "design",
+      "forwarded_smells": "none",
+      "gate": "jev"
+    },
+    "summary": {
+      "lanes": {
+        "acceptance": "run",
+        "test_evidence": "skip",
+        "simplicity": "run"
+      },
+      "skipped_lanes": [
+        "test_evidence"
+      ],
+      "synth": "run",
+      "loop": "run",
+      "gate": "jev",
+      "audits": [],
+      "decisions": 7
+    },
+    "jev_answered": true,
+    "reason": ""
+  }
+]
