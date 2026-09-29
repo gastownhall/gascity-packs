@@ -227,9 +227,43 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         ) as fetch:
             result = gateway_service.resolve_reply_reference(message)
 
-        fetch.assert_called_once_with("222", "msg-2", bot_token=None)
+        # No bot_token keyword when there is no token: a fetch_message_via_rest()
+        # that predates the parameter (the live gateway's) rejects it even as None.
+        fetch.assert_called_once_with("222", "msg-2")
         self.assertEqual(result["reply_to_message_id"], "msg-2")
         self.assertEqual(result["reply_to_quote"], "fetched via REST")
+
+    def test_resolve_reply_reference_rest_tier_works_with_a_fetcher_that_takes_no_bot_token(self) -> None:
+        # The live gateway's fetch_message_via_rest(channel_id, message_id) predates
+        # the bot_token keyword that upstream added. Passing bot_token=None to it
+        # raised TypeError and took down inbound handling for ANY reply that reached
+        # the REST tier (a message_reference with no inline referenced_message).
+        # Found only by running this suite against the live branch's base.
+        def narrow_fetch(channel_id: str, message_id: str) -> dict[str, Any]:
+            return {"id": message_id, "content": "fetched by the narrow signature"}
+
+        message = {"channel_id": "55", "message_reference": {"message_id": "msg-9"}}
+        with mock.patch.object(gateway_service, "fetch_message_via_rest", narrow_fetch):
+            result = gateway_service.resolve_reply_reference(message)
+
+        self.assertEqual(result["reply_to_message_id"], "msg-9")
+        self.assertEqual(result["reply_to_quote"], "fetched by the narrow signature")
+
+    def test_resolve_reply_reference_forwards_a_bot_token_when_one_is_given(self) -> None:
+        # The other half: not passing the keyword by default must not lose it where
+        # a token exists (a multi-bot app fetching under its own identity).
+        seen: dict[str, Any] = {}
+
+        def capturing_fetch(channel_id: str, message_id: str, *, bot_token: str | None = None) -> dict[str, Any]:
+            seen["bot_token"] = bot_token
+            return {"id": message_id, "content": "fetched with a token"}
+
+        message = {"channel_id": "55", "message_reference": {"message_id": "msg-9"}}
+        with mock.patch.object(gateway_service, "fetch_message_via_rest", capturing_fetch):
+            result = gateway_service.resolve_reply_reference(message, bot_token="tok-1")
+
+        self.assertEqual(seen["bot_token"], "tok-1")
+        self.assertEqual(result["reply_to_quote"], "fetched with a token")
 
     def test_resolve_reply_reference_falls_back_to_our_own_chat_publish_record(self) -> None:
         message = {"channel_id": "222", "message_reference": {"message_id": "msg-3"}}

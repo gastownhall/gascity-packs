@@ -289,7 +289,12 @@ def resolve_reply_reference(
         quote = raw_message_content(inline).strip()
     if not quote:
         channel_id = str(message.get("channel_id", "")).strip()
-        fetched = fetch_message_via_rest(channel_id, reply_to_id, bot_token=bot_token)
+        # Pass the keyword only when there is a token. fetch_message_via_rest()
+        # gained bot_token upstream, and a base that predates it (the live
+        # gateway's) raises TypeError on ANY bot_token= keyword, even None, which
+        # would take down inbound handling for every reply that reaches this tier.
+        rest_kwargs = {"bot_token": bot_token} if bot_token is not None else {}
+        fetched = fetch_message_via_rest(channel_id, reply_to_id, **rest_kwargs)
         if fetched:
             quote = raw_message_content(fetched).strip()
     if not quote:
