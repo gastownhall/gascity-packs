@@ -102,11 +102,14 @@ this is the shortest path. Each step is copy-pasteable; swap names to taste.
 | [bmad](./bmad) (`bmad-build`) | PRD → architecture → epics/stories → readiness gate → story-by-story implementation with self-check and acceptance audit → adversarial review | You want disciplined document-first delivery with explicit story decomposition and readiness checks. |
 | [compound-engineering](./compound-engineering) (`compound-build`) | Brainstorm/plan → plan review → implement → the widest reviewer-persona fanout → resolution | Review depth matters most: correctness, security, performance, migrations, and API contracts each get their own reviewer lane. |
 | [superpowers](./superpowers) (`superpowers-build`) | Brainstorm → written spec approval → per-task test-driven development → spec-compliance then code-quality review | You want hard approval gates before code and strict TDD per task. |
-| [gstack](./gstack) (`gstack-build`) | Office-hours intake → multi-perspective plan review → build → staff review → QA → security → release readiness | You want founder/PM-flavored gates and explicit QA + release-readiness stages before shipping. |
 
-All five expose the same launch variables (`interaction_mode`, `review_mode`,
+All four expose the same launch variables (`interaction_mode`, `review_mode`,
 `drain_policy`, `push`, `open_pr`, …), so switching methodology is a one-word
 change to the formula name.
+
+[gstack](./gstack) is a skills-only Gstack Lite delivery pack. Import it when
+you want its focused planning, review, QA, security, shipping, and delivery
+skills without adding another build formula or workflow graph.
 
 ## Using a pack
 

@@ -24,12 +24,15 @@ def normalized_text(path: Path) -> str:
 
 def test_gstack_pack_is_skills_only() -> None:
     manifest = tomllib.loads((GSTACK_ROOT / "pack.toml").read_text(encoding="utf-8"))
+    root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
     assert manifest["pack"]["name"] == "gstack"
     assert "imports" not in manifest
     for retired_surface in ("agents", "commands", "formulas"):
         assert not (GSTACK_ROOT / retired_surface).exists()
     assert (GSTACK_ROOT / "skills/gstack-lite/SKILL.md").is_file()
+    assert "(`gstack-build`)" not in root_readme
+    assert "skills-only Gstack Lite delivery pack" in root_readme
 
 
 def test_gc_roles_pack_inherits_public_worker_and_adds_lightweight_policy() -> None:
@@ -42,8 +45,11 @@ def test_gc_roles_pack_inherits_public_worker_and_adds_lightweight_policy() -> N
         REPO_ROOT / "gascity/template-fragments/gc-role-worker.template.md"
     ).is_file()
     assert (
-        roles / "template-fragments/gstack-lite-policy.template.md"
+        REPO_ROOT / "gascity/template-fragments/gstack-lite-policy.template.md"
     ).is_file()
+    assert not (
+        roles / "template-fragments/gstack-lite-policy.template.md"
+    ).exists()
     assert (roles / "agents/research-planner/agent.toml").is_file()
     assert (roles / "agents/research-planner/prompt.template.md").is_file()
 
@@ -84,7 +90,7 @@ def test_gstack_lite_consolidates_every_review_surface_before_repair() -> None:
     requirements = normalized_text(GSTACK_ROOT / "REQUIREMENTS.md")
     readme = normalized_text(GSTACK_ROOT / "README.md")
     role_fragment = normalized_text(
-        REPO_ROOT / "gascity/roles/template-fragments/gstack-lite-policy.template.md"
+        REPO_ROOT / "gascity/template-fragments/gstack-lite-policy.template.md"
     )
 
     assert (
@@ -208,4 +214,60 @@ def test_audit_rejects_retired_formula_names(monkeypatch, tmp_path: Path) -> Non
     assert any(
         "strict Gstack Lite profile excludes active formulas" in error
         for error in errors
+    )
+
+
+def test_audit_rejects_rig_without_singleton_research_planner_patch(
+    monkeypatch, tmp_path: Path
+) -> None:
+    audit = load_audit_module()
+    city = tmp_path / "city"
+    city.mkdir()
+    (city / "pack.toml").write_text(
+        "[pack]\nname='city'\nschema=2\n[imports.gstack]\nsource='gstack'\n",
+        encoding="utf-8",
+    )
+    (city / "city.toml").write_text(
+        """
+[agent_defaults]
+append_fragments = ["gstack-lite-policy"]
+
+[[rigs]]
+name = "one"
+suspended_on_start = true
+max_active_sessions = 1
+[rigs.imports.gc]
+source = "gc"
+[[rigs.patches]]
+agent = "polecat"
+[rigs.patches.pool]
+max = 1
+
+[[rigs]]
+name = "two"
+suspended_on_start = true
+max_active_sessions = 1
+[rigs.imports.gc]
+source = "gc"
+[[rigs.patches]]
+agent = "polecat"
+[rigs.patches.pool]
+max = 1
+
+[[patches.agent]]
+name = "gc.research-planner"
+dir = "one"
+provider = "sol-research"
+max_active_sessions = 1
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(audit, "active_formula_names", lambda _city: (set(), None))
+
+    errors, _notes = audit.audit(city, False)
+
+    assert (
+        "current rigs need exactly one singleton Sol/max gc.research-planner patch: two"
+        in errors
     )
