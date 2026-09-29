@@ -188,6 +188,8 @@ def prepare_fixture_repo(workspace, pack, env, workload=workloads.SLUGIFY):
         raise ValueError('Refusing to reuse an existing experiment fixture')
     seed.mkdir()
     gate.materialize_pack_check_scripts(pack.validator_source, seed)
+    if not (seed/'.gc/scripts/checks/build-artifact-valid.sh').is_file():
+        raise ValueError(f'No formula check scripts installed from {pack.validator_source}')
     workload.seed(seed)
     gate.initialize_rig_git(seed, env=env)
     def git(*arguments, cwd=workspace.root):
@@ -306,8 +308,8 @@ def pack_for_arm(arm):
     if arm != 'jev':
         raise ValueError(f'Unknown experiment arm: {arm}')
     source = ROOT / 'gascity-jev'
-    return replace(baseline, name='gascity-jev', source=source,
-                   roles_source=source/'roles', validator_source=source)
+    # The overlay imports its check scripts and validator from the base pack.
+    return replace(baseline, name='gascity-jev', source=source, roles_source=source/'roles')
 
 
 def snapshot_pack(pack, out):

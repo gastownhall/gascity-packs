@@ -49,7 +49,7 @@ def test_build_arm_installs_its_own_pack_roles_and_preserves_source_provenance(t
     assert pack.name == name
     assert pack.source == ROOT / name
     assert pack.roles_source == pack.source / 'roles'
-    assert pack.validator_source == pack.source
+    assert pack.validator_source == ROOT / 'gascity'
     assert pack.binding == 'gc'
     out = tmp_path / 'provenance'
     out.mkdir()
@@ -301,11 +301,12 @@ def test_interrupt_retains_terminal_report_and_cleanup(tmp_path, monkeypatch, ar
         build.shutil.rmtree(workspace.root.parent)
 
 
-def test_fixture_is_a_clone_whose_origin_supports_detached_worktrees(tmp_path):
+@pytest.mark.parametrize('arm', ['baseline', 'jev'])
+def test_fixture_is_a_clone_whose_origin_supports_detached_worktrees(tmp_path, arm):
     import os
     env={**os.environ,'GIT_CONFIG_GLOBAL':os.devnull,'GIT_CONFIG_NOSYSTEM':'1'}
     workspace=SimpleNamespace(root=tmp_path,rig_dir=tmp_path/'fixture')
-    pack=build.pack_for_arm('baseline')
+    pack=build.pack_for_arm(arm)
     result=build.prepare_fixture_repo(workspace,pack,env)
     rig=workspace.rig_dir
     def git(*args):
