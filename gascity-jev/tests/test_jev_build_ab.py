@@ -344,6 +344,16 @@ def test_claude_login_accepts_any_logged_in_method_unless_restricted(tmp_path):
         build.check_claude_login(str(fake), '', {})
 
 
+@pytest.mark.parametrize('names', [['a'], ['a', 'b'], ['a', 'b', 'c', 'd']])
+def test_paired_schedule_alternates_arm_order_within_each_workload(names):
+    selected = [SimpleNamespace(name=n) for n in names]
+    schedule = build.paired_schedule(2 * len(names), 'both', selected)
+    for name in names:
+        firsts = [a for i, (r, a, w) in enumerate(schedule) if w.name == name and i % 2 == 0]
+        assert sorted(firsts) == ['baseline', 'jev']
+    assert [a for _, a, _ in build.paired_schedule(2, 'jev', selected)] == ['jev', 'jev']
+
+
 def test_bd_wrapper_that_execs_from_home_is_unwrapped(tmp_path, monkeypatch):
     wrapper = tmp_path/'bd'
     wrapper.write_text('#!/bin/sh\nexec "$HOME/.local/share/beads/1.3.0/bd" "$@"\n')

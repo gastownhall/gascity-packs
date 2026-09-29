@@ -660,6 +660,16 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
     return report
 
 
+def paired_schedule(repetitions, arms, selected):
+    """Repetition r runs workload r mod n; each workload alternates which arm goes first."""
+    schedule = []
+    for r in range(repetitions):
+        first_jev = (r % len(selected) + r // len(selected)) % 2
+        order = (['jev', 'baseline'] if first_jev else ['baseline', 'jev']) if arms == 'both' else [arms]
+        schedule.extend((r, a, selected[r % len(selected)]) for a in order)
+    return schedule
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--out',type=Path,required=True)
@@ -698,10 +708,7 @@ def main():
     if args.repetitions<1:p.error('repetitions must be positive')
     args.out=args.out.resolve();args.out.mkdir(parents=True,exist_ok=False)
     selected=[workloads.WORKLOADS[name] for name in args.workloads.split(',')]
-    schedule=[]
-    for r in range(args.repetitions):
-        arms=(['baseline','jev'] if r%2==0 else ['jev','baseline']) if args.arms=='both' else [args.arms]
-        schedule.extend((r,a,selected[r%len(selected)]) for a in arms)
+    schedule=paired_schedule(args.repetitions, args.arms, selected)
     save(args.out/'schedule.json',[{'repetition':r,'arm':a,'workload':w.name} for r,a,w in schedule])
     failed = False
     for i,(r,a,w) in enumerate(schedule,1):
