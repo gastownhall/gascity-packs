@@ -306,6 +306,12 @@ def allowed_statuses(artifact: str) -> list[str]:
     return VALIDATOR.load_schema(f"gc.build.{artifact}.v1")["allowed_statuses"]
 
 
+def status_sentence(artifact: str) -> str:
+    """The exact allowed-status sentence, in schema order, built from the schema file."""
+    statuses = [f"`{status}`" for status in allowed_statuses(artifact)]
+    return normalize(f"`status` must be one of {', '.join(statuses[:-1])}, or {statuses[-1]}.")
+
+
 class ApplyFindingsFrontMatterTests(unittest.TestCase):
 
     def test_validator_ships_beside_the_check_script(self) -> None:
@@ -327,9 +333,8 @@ class ApplyFindingsFrontMatterTests(unittest.TestCase):
                 schema_id = f"gc.build.{artifact}.v1"
                 with self.subTest(pack=pack, lane=lane, schema=schema_id):
                     self.assertIn(f"python3 .gc/scripts/validate_build_artifact.py --schema {schema_id} --path", text)
-                for status in allowed_statuses(artifact):
-                    with self.subTest(pack=pack, lane=lane, schema=schema_id, status=status):
-                        self.assertIn(f"`{status}`", text)
+                with self.subTest(pack=pack, lane=lane, schema=schema_id, check="allowed statuses"):
+                    self.assertIn(status_sentence(artifact), text)
 
     def test_plan_review_targets_revalidate_the_plan(self) -> None:
         for pack, build in PLAN_REVIEW_BUILDS:
@@ -344,9 +349,8 @@ class ApplyFindingsFrontMatterTests(unittest.TestCase):
             for fragment in PLAN_TARGET_FRAGMENTS:
                 with self.subTest(pack=pack, fragment=fragment):
                     self.assertIn(normalize(fragment), text)
-            for status in allowed_statuses("plan"):
-                with self.subTest(pack=pack, status=status):
-                    self.assertIn(f"`{status}`", text)
+            with self.subTest(pack=pack, check="allowed statuses"):
+                self.assertIn(status_sentence("plan"), text)
 
 
 if __name__ == "__main__":

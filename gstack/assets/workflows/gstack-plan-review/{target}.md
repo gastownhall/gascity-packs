@@ -19,7 +19,7 @@ edit the plan in place, so re-validate it here before closing:
   `GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh`.
 - Repair the plan in place and keep its YAML front matter intact. Its
   front-matter `status` must be one of `draft`, `questions`, `approved`,
-  `changes_required`, `blocked`, or `superseded`; replace any other value
+  `changes_required`, `blocked`, or `superseded`. Replace any other value
   (for example `reviewed`) with the allowed status that matches the review
   outcome (`approved` for an approved plan).
 - On repair attempts (`gc.attempt` greater than 1), first read the validator
