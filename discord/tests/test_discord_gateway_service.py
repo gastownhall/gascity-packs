@@ -308,6 +308,110 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertIn("reply_to_discord_message_id: \n", envelope)
         self.assertIn('reply_to_quote_json: ""', envelope)
 
+    # gm-52178u, the bound-DM half. The operator's messages arrive on the
+    # bound-DM path, whose deferred envelope is build_human_envelope() -- not the
+    # two room-launch builders above -- so the reply context has to be threaded
+    # through it too or the operator's own replies would still arrive bare.
+    def test_build_human_envelope_surfaces_reply_reference_when_present(self) -> None:
+        envelope = gateway_service.build_human_envelope(
+            binding={"id": "dm:55"},
+            message={"id": "400", "channel_id": "55", "author": {"id": "u-400", "username": "alice"}},
+            channel_info={},
+            body="just merge it",
+            mentioned_aliases=[],
+            delivery="targeted",
+            ingress_id="in-400",
+            reply_to_id="msg-agent-1",
+            reply_to_quote="two pending asks",
+        )
+
+        self.assertIn("reply_to_discord_message_id: msg-agent-1", envelope)
+        self.assertIn('reply_to_quote_json: "two pending asks"', envelope)
+
+    def test_build_human_envelope_reply_fields_default_empty(self) -> None:
+        envelope = gateway_service.build_human_envelope(
+            binding={"id": "dm:55"},
+            message={"id": "401", "channel_id": "55", "author": {"id": "u-401", "username": "alice"}},
+            channel_info={},
+            body="hello",
+            mentioned_aliases=[],
+            delivery="targeted",
+            ingress_id="in-401",
+        )
+
+        self.assertIn("reply_to_discord_message_id: \n", envelope)
+        self.assertIn('reply_to_quote_json: ""', envelope)
+
+    def test_process_inbound_dm_reply_carries_reference_and_quote_in_envelope_and_receipt(self) -> None:
+        # The operator replies, in their DM, to one of two pending asks. Both the
+        # deferred envelope the session reads and the persisted receipt must name
+        # the replied-to message and quote it.
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        message = {
+            "id": "102",
+            "channel_id": "55",
+            "content": "merge; ... just merge with that red",
+            "message_reference": {"message_id": "msg-agent-9"},
+            "referenced_message": {
+                "id": "msg-agent-9",
+                "content": "two pending asks: (1) merge the red PR, (2) hold the green one",
+            },
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "suspended"}}), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-1"},
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("reply_to_discord_message_id: msg-agent-9", envelope)
+        self.assertIn(
+            'reply_to_quote_json: "two pending asks: (1) merge the red PR, (2) hold the green one"',
+            envelope,
+        )
+        # The new field names the message being ANSWERED. Where OUR reply goes is
+        # still the operator's own message, and threading the new field through
+        # must not have moved it.
+        self.assertIn("publish_reply_to_discord_message_id: 102", envelope)
+        self.assertIn("--reply-to 102 --body-file <path>", envelope)
+        receipt = common.load_chat_ingress("in-102")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_message_id"], "msg-agent-9")
+        self.assertEqual(receipt["reply_to_quote"], "two pending asks: (1) merge the red PR, (2) hold the green one")
+
+    def test_process_inbound_dm_non_reply_carries_empty_reply_fields(self) -> None:
+        # The control for the case above: the same path, no reply. Empty fields,
+        # present in both the envelope and the receipt, so a reader never has to
+        # tell "not a reply" from "field missing".
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        message = {
+            "id": "103",
+            "channel_id": "55",
+            "content": "a fresh question, not a reply",
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "suspended"}}), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-1"},
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("reply_to_discord_message_id: \n", envelope)
+        self.assertIn('reply_to_quote_json: ""', envelope)
+        self.assertIn("publish_reply_to_discord_message_id: 103", envelope)
+        receipt = common.load_chat_ingress("in-103")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_message_id"], "")
+        self.assertEqual(receipt["reply_to_quote"], "")
+
     def test_process_inbound_dm_records_a_long_body_without_loss(self) -> None:
         common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
         # Long enough to clip, and split across lines so a flattening bug shows up

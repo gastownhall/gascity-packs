@@ -892,6 +892,8 @@ def build_human_envelope(
     mentioned_aliases: list[str],
     delivery: str,
     ingress_id: str,
+    reply_to_id: str = "",
+    reply_to_quote: str = "",
 ) -> str:
     conversation_value, conversation_key = conversation_fields(message, channel_info)
     binding_id = str(binding.get("id", "")).strip()
@@ -909,6 +911,11 @@ def build_human_envelope(
         f"from_display: {display_name_from_message(message)}",
         f"from_user_id: {str((message.get('author') or {}).get('id', '')).strip()}",
         f"delivery: {delivery}",
+        # gm-52178u: same two lines, same names, as the room-launch builders. Both
+        # are empty for a message that is not a reply, so a reader never has to
+        # tell "not a reply" from "field missing".
+        f"reply_to_discord_message_id: {reply_to_id}",
+        f"reply_to_quote_json: {json.dumps(reply_to_quote)}",
         f"mentioned_aliases_json: {json.dumps(mentioned_aliases)}",
         f"untrusted_body_json: {json.dumps(body)}",
         f"publish_binding_id: {binding_id}",
@@ -2217,6 +2224,10 @@ def process_inbound_message(
             mentioned_aliases=mentioned_aliases,
             delivery=delivery,
             ingress_id=ingress_id,
+            # body_fields is the same dict the receipt above was saved from, so
+            # the envelope can never disagree with the persisted record.
+            reply_to_id=str(body_fields.get("reply_to_message_id", "")),
+            reply_to_quote=str(body_fields.get("reply_to_quote", "")),
         )
         receipt = persist_ingress_receipt(
             {
