@@ -9,7 +9,7 @@ the stage override.
 
 Contract gaps surfaced in the gc v1.5.0 RC inference runs:
 
-* bmad and superpowers (and, by inspection, compound-engineering and gstack)
+* bmad and superpowers (and, by inspection, compound-engineering)
   code-review flows never told the agent to record
   `gc.build.review_report_path` on the workflow root, so the review artifact
   check passed or failed depending on whether the model happened to do it.
@@ -17,10 +17,7 @@ Contract gaps surfaced in the gc v1.5.0 RC inference runs:
 * superpowers' requirements artifact lacked YAML front matter, and the
   requirements `{target}` repair attempts never read the validator errors in
   `gc.attempt_log`, so every repair closed without touching the file.
-* gstack's apply-plan-review-findings lane set the plan's front-matter status
-  to `reviewed`, which gc.build.plan.v1 rejects, and closed without running the
-  validator; nothing re-validated the plan until the gate's final check. Every
-  apply-findings lane that edits a build artifact in place had the same gap,
+* Apply-findings lanes that edit a build artifact in place had the same gap,
   and the plan-review `{target}` steps were unchecked.
 """
 
@@ -49,7 +46,6 @@ YAML_BLOCK_RE = re.compile(r"^```yaml\n(?P<body>.*?)^```$", re.DOTALL | re.MULTI
 REVIEW_BUILDS = (
     ("bmad", "bmad-build"),
     ("compound-engineering", "compound-build"),
-    ("gstack", "gstack-build"),
     ("superpowers", "superpowers-build"),
 )
 
@@ -270,20 +266,17 @@ class SuperpowersRequirementsContractTests(unittest.TestCase):
 # (pack, build formula, build stage, lane suffix under the stage's expansion,
 # schemas of the build artifacts that lane may edit in place).
 APPLY_LANES = (
-    ("gstack", "gstack-build", "plan-review", "apply-plan-review-findings", ("plan",)),
     ("compound-engineering", "compound-build", "plan-review", "apply-plan-findings", ("requirements", "plan")),
     ("superpowers", "superpowers-build", "plan-review", "apply-plan-feedback", ("requirements", "plan")),
     ("superpowers", "superpowers-build", "requirements", "apply-spec-feedback", ("requirements",)),
     ("bmad", "bmad-build", "review", "apply-bmad-review-findings", ("implementation-summary", "review")),
     ("compound-engineering", "compound-build", "review", "apply-review-findings", ("implementation-summary", "review")),
-    ("gstack", "gstack-build", "review", "apply-review-findings", ("implementation-summary", "review")),
 )
 
 # Stages whose expansion lets a fix lane edit the plan: the `{target}` must
 # re-validate it before the stage passes.
 PLAN_REVIEW_BUILDS = (
     ("compound-engineering", "compound-build"),
-    ("gstack", "gstack-build"),
     ("superpowers", "superpowers-build"),
 )
 

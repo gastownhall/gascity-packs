@@ -24,9 +24,9 @@ class PackImportsTests(unittest.TestCase):
         self.assertEqual(imports["gc"]["source"], "../gascity")
 
     def test_import_alias_matches_sibling_derived_packs(self) -> None:
-        # bmad/compound-engineering/gstack/superpowers all bind gascity to `gc`;
+        # bmad/compound-engineering/superpowers all bind gascity to `gc`;
         # a different alias would silently break every gc.* run target.
-        for sibling in ("bmad", "compound-engineering", "gstack", "superpowers"):
+        for sibling in ("bmad", "compound-engineering", "superpowers"):
             data = tomllib.loads((REPO_ROOT / sibling / "pack.toml").read_text(encoding="utf-8"))
             self.assertEqual(data["imports"]["gc"]["source"], "../gascity")
 

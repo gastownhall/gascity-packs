@@ -8,8 +8,8 @@ implementer to commit fails every drain item even when the code is right
 (observed for gstack in the gc v1.5.0 RC build gate).
 
 Each entry names the step whose prompt does the implementation itself: the
-`implement` override for gstack and compound-engineering, and the
-`implement-story` child of bmad's `implement` loop. superpowers commits in its
+`implement` override for compound-engineering and the `implement-story` child
+of bmad's `implement` loop. superpowers commits in its
 record-item-result child step and is covered by its own tests.
 """
 
@@ -34,7 +34,6 @@ REQUIRED_FRAGMENTS = (
 )
 
 IMPLEMENTING_STEPS = (
-    ("gstack/formulas/gstack-work.formula.toml", "implement"),
     ("compound-engineering/formulas/compound-work.formula.toml", "implement"),
     ("bmad/formulas/bmad-story-development.formula.toml", "implement-story"),
 )
