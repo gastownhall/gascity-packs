@@ -1,0 +1,9 @@
+{
+  "status": "completed",
+  "base": "/tmp/jst-u4pyrxib",
+  "swept": [],
+  "scenarios": [
+    "compact",
+    "direct"
+  ]
+}

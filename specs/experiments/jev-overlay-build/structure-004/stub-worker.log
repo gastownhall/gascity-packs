@@ -1,0 +1,61 @@
+1790742496.792 2795605 claim fi-e7x jev-build-compact.prepare agent=fixture--gc__run-operator-1-pool
+1790742497.900 2795605 done fi-e7x prepare
+1790742508.279 2801955 claim fi-yw5 do-work.prepare-worktree agent=fixture--gc__run-operator-1-pool
+1790742508.794 2801958 released latch fi-p39 kind=workflow
+1790742509.989 2801955 done fi-yw5 prepare-worktree
+1790742511.110 2801958 released latch fi-p39 kind=workflow
+1790742513.389 2801958 claim fi-fho implement.iteration.1 agent=fixture--gc__implementation-worker-1-pool
+1790742515.202 2801958 done fi-fho implement
+1790742516.044 2808215 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742524.637 2813620 claim fi-yfa do-work.close-source-anchor agent=fixture--gc__run-operator-1-pool
+1790742525.059 2813622 released latch fi-p39 kind=workflow
+1790742526.332 2813620 done fi-yfa close-source-anchor
+1790742527.262 2813622 released latch fi-p39 kind=workflow
+1790742529.441 2813622 released latch fi-p39 kind=workflow
+1790742560.125 2839687 claim fi-8s7 jev-build-compact.review.item.1.review-loop.iteration.1.jev-build-compact.review.item.1.simplicity-review agent=fixture--gc__design-implementation-reviewer-1-pool
+1790742560.826 2839687 done fi-8s7 simplicity-review
+1790742570.503 2845539 claim fi-zwr jev-build-compact.review.item.1.review-loop.iteration.1.jev-build-compact.review.item.1.apply-review-findings agent=fixture--gc__implementation-worker-1-pool
+1790742570.521 2845537 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742571.236 2845539 done fi-zwr apply-review-findings
+1790742579.501 2852260 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742579.637 2852262 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742590.473 2861320 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742590.478 2861322 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742602.959 2872209 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742614.254 2879530 claim fi-j0x jev-build-compact.review.item.1.finalize.iteration.1 agent=fixture--gc__run-operator-1-pool
+1790742615.387 2879530 done fi-j0x finalize
+1790742621.931 2887177 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742630.504 2894066 claim fi-ety jev-review-tail.jev-build-compact.review.item.1.publish agent=fixture--gc__publisher-1-pool
+1790742631.437 2894066 done fi-ety publish
+1790742638.741 2901079 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742663.131 2921105 claim fi-9kl jev-build-direct.prepare agent=fixture--gc__run-operator-1-pool
+1790742664.285 2921105 done fi-9kl prepare
+1790742674.195 2929020 claim fi-h8o requirements.iteration.1 agent=fixture--gc__requirements-planner-1-pool
+1790742674.345 2929018 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742674.948 2929020 done fi-h8o requirements
+1790742686.281 2939355 claim fi-a5a decompose.iteration.1 agent=fixture--gc__task-decomposer-1-pool
+1790742688.457 2939355 done fi-a5a decompose
+1790742705.406 2953552 claim fi-z4n do-work.prepare-worktree agent=fixture--gc__run-operator-1-pool
+1790742705.895 2953554 released latch fi-1r5 kind=workflow
+1790742707.167 2953552 done fi-z4n prepare-worktree
+1790742708.263 2953554 released latch fi-1r5 kind=workflow
+1790742710.664 2953554 claim fi-8zi implement.iteration.1 agent=fixture--gc__implementation-worker-1-pool
+1790742712.597 2953554 done fi-8zi implement
+1790742713.463 2961606 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742726.341 2970808 claim fi-x2g do-work.close-source-anchor agent=fixture--gc__run-operator-1-pool
+1790742727.988 2970808 done fi-x2g close-source-anchor
+1790742734.732 2978112 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742747.443 2989856 claim fi-chm summarize-implementation.iteration.1 agent=fixture--gc__run-operator-1-pool
+1790742748.607 2989856 done fi-chm summarize-implementation
+1790742775.123 3010731 claim fi-rdq jev-build-direct.review.item.1.review-loop.iteration.1.jev-build-direct.review.item.1.simplicity-review agent=fixture--gc__design-implementation-reviewer-1-pool
+1790742775.837 3010731 done fi-rdq simplicity-review
+1790742787.016 3019644 claim fi-9w4 jev-build-direct.review.item.1.review-loop.iteration.1.jev-build-direct.review.item.1.apply-review-findings agent=fixture--gc__implementation-worker-1-pool
+1790742787.069 3019647 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742787.709 3019644 done fi-9w4 apply-review-findings
+1790742819.344 3045849 claim fi-qg4 jev-build-direct.review.item.1.finalize.iteration.1 agent=fixture--gc__run-operator-1-pool
+1790742820.430 3045849 done fi-qg4 finalize
+1790742827.018 3053394 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742835.712 3059367 claim fi-2kq jev-review-tail.jev-build-direct.review.item.1.publish agent=fixture--gc__publisher-1-pool
+1790742836.373 3059367 done fi-2kq publish
+1790742842.994 3064680 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1790742849.495 3070694 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru

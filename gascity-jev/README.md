@@ -13,8 +13,13 @@ skill is available unchanged, and it adds:
 - **`jev-build-compact`** — for small, well-specified tasks: one implementation
   drain, the same review gate, finalize and publish. No requirements, plan,
   plan review, decomposition or summary stages.
-- **`gc gc jev-route <bead>`** — the intake router: asks Jev whether the task is
-  compact and slings `jev-build-compact` or `jev-build`.
+- **`jev-build-direct`** — `jev-build` without the plan and plan review stages,
+  for work whose approach Jev judges evident: decomposition works from the
+  requirements alone.
+- **`gc gc jev-route <bead>`** — the intake router: asks Jev how large the task
+  is, whether it spans modules, hides scope, needs design or touches a risky
+  surface, and slings `jev-build-compact`, `jev-build-direct` or `jev-build`
+  (rules and evidence: [intake-v4 study](../specs/experiments/jev-intake-v4/RESULTS.md)).
 - **`gc.jev-gate`** — a deterministic script worker (no LLM) that runs the gate
   and the review-report step.
 
@@ -62,7 +67,7 @@ gate fails open to the ordinary path.
 
 ```sh
 gc bd create "Add a --json flag to the export command"
-# Let the intake router pick the compact or full build:
+# Let the intake router pick the compact, direct or full build:
 gc gc jev-route <bead-id> --var artifact_root=plans/json-flag/build
 # Or always take the full gated build:
 gc sling gc.run-operator <bead-id> --on jev-build --var artifact_root=plans/json-flag/build

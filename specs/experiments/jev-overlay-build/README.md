@@ -111,3 +111,13 @@ host is set up.
   decisions.
 - Review-loop iterations with real findings: the stub apply lane always
   returned `done`.
+
+## structure-004 — September 30, 2026: three-tier intake routing
+
+[structure-004](structure-004/) ran the intake router's `compact` and new
+`direct` routes end to end with stub workers and a stub Jev, at commit
+`59a9ce2`. Routed with size compact, the router slung `jev-build-compact`
+(prepare → implement → review). Routed with size standard and no design need,
+it slung `jev-build-direct`, whose graph was prepare → requirements →
+decompose → implement → summarize-implementation → review, with no plan or
+plan-review beads. Both roots closed `pass`; `swept: []`.

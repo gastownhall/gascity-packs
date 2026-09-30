@@ -1,0 +1,3816 @@
+$ git clone -q --bare /tmp/jst-u4pyrxib/seed /tmp/jst-u4pyrxib/origin.git
+[0] 
+$ git clone -q /tmp/jst-u4pyrxib/origin.git /tmp/jst-u4pyrxib/fixture
+[0] 
+$ /home/ubuntu/.local/bin/gc init --file /tmp/jst-u4pyrxib/city.toml.in --name jevstruct --yes --skip-provider-readiness /tmp/jst-u4pyrxib/city
+[0] Welcome to Gas City!
+Initialized city "jevstruct" from city.toml.in.
+Skipping provider readiness checks.
+Registered city 'jevstruct' (/tmp/jst-u4pyrxib/city)
+Supervisor started (PID 2784955)
+Dashboard:  http://127.0.0.1:35927/
+Waiting for supervisor to start city...
+  Starting agents...
+  Adopting sessions...
+gc supervisor install: per-user systemd instance is not available (systemctl --user could not reach the user manager). Either enable lingering for this account ('sudo loginctl enable-linger ubuntu'), log in via a PAM session that starts user-systemd, or run the supervisor detached (e.g. 'gc supervisor start' without service install).
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city rig add /tmp/jst-u4pyrxib/fixture --name fixture
+[0] Adding rig 'fixture'...
+  Detected git repo at /tmp/jst-u4pyrxib/fixture
+  Prefix: fi
+  Default branch: main (from origin/HEAD)
+  Initialized beads database
+  Generated routes.jsonl for cross-rig routing
+Rig added.
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city import install
+[0] Installed 2 remote import(s) into /tmp/jst-u4pyrxib/gc-home/cache/repos
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city import check
+[0] Import state OK: 2 remote import(s) checked
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city agent list
+[0] Agents in /tmp/jst-u4pyrxib/city:
+  bd.dog                   suspended
+  claude                   suspended
+  core.control-dispatcher  active
+  fixture/claude           suspended
+  fixture/core.control-dispatcher active
+  fixture/gc.design-author active
+  fixture/gc.design-implementation-reviewer active
+  fixture/gc.design-test-risk-reviewer active
+  fixture/gc.feature-refiner active
+  fixture/gc.gap-analyst   active
+  fixture/gc.implementation-reviewer active
+  fixture/gc.implementation-worker active
+  fixture/gc.issue-triager active
+  fixture/gc.jev-gate      active
+  fixture/gc.publisher     active
+  fixture/gc.quality-judge active
+  fixture/gc.requirements-planner active
+  fixture/gc.review-synthesizer active
+  fixture/gc.run-operator  active
+  fixture/gc.task-decomposer active
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture formula show jev-build
+[0] s pass. (default=false)
+  {{requirements_path}}: Requirements artifact path to create or reuse. (default=)
+  {{review_fix_formula}}: Review-fix methodology formula used after failed code-review findings. (default=fix-loop-base)
+  {{review_mode}}: Review authority: report, agent, or interactive. (default=agent)
+
+Steps (18):
+  ├── jev-build.prepare: Prepare build context
+  ├── jev-build.requirements.spec: Step spec for Generate requirements (spec)
+  ├── jev-build.requirements.iteration.1: Generate requirements [needs: jev-build.prepare]
+  ├── jev-build.requirements: Generate requirements [needs: jev-build.prepare, jev-build.requirements.iteration.1]
+  ├── jev-build.plan.spec: Step spec for Write implementation plan (spec)
+  ├── jev-build.plan.iteration.1: Write implementation plan [needs: jev-build.requirements]
+  ├── jev-build.plan: Write implementation plan [needs: jev-build.requirements, jev-build.plan.iteration.1]
+  ├── jev-build.plan-review: Run design review [needs: jev-build.plan]
+  ├── jev-build.decompose.spec: Step spec for Create task beads (spec)
+  ├── jev-build.decompose.iteration.1: Create task beads [needs: jev-build.plan-review]
+  ├── jev-build.decompose: Create task beads [needs: jev-build.plan-review, jev-build.decompose.iteration.1]
+  ├── jev-build.implement: Drain build implementation [needs: jev-build.decompose]
+  ├── jev-build.summarize-implementation.spec: Step spec for Write canonical implementation summary (spec)
+  ├── jev-build.summarize-implementation.iteration.1: Write canonical implementation summary [needs: jev-build.implement]
+  ├── jev-build.summarize-implementation: Write canonical implementation summary [needs: jev-build.implement, jev-build.summarize-implementation.iteration.1]
+  ├── jev-build.review: Jev review gate [needs: jev-build.summarize-implementation]
+  ├── jev-build.review-fanout: Expand fanout for Jev review gate [needs: jev-build.review]
+  └── jev-build.workflow-finalize: Finalize workflow [needs: jev-build.review-fanout]
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture formula show jev-build-direct
+[0] ning methodology formula used by adapters that delegate planning. (default=planning-base)
+  {{push}}: Set true to allow final publish push after all checks pass. (default=false)
+  {{requirements_path}}: Requirements artifact path to create or reuse. (default=)
+  {{review_fix_formula}}: Review-fix methodology formula used after failed code-review findings. (default=fix-loop-base)
+  {{review_mode}}: Review authority: report, agent, or interactive. (default=agent)
+
+Steps (14):
+  ├── jev-build-direct.prepare: Prepare build context
+  ├── jev-build-direct.requirements.spec: Step spec for Generate requirements (spec)
+  ├── jev-build-direct.requirements.iteration.1: Generate requirements [needs: jev-build-direct.prepare]
+  ├── jev-build-direct.requirements: Generate requirements [needs: jev-build-direct.prepare, jev-build-direct.requirements.iteration.1]
+  ├── jev-build-direct.decompose.spec: Step spec for Create task beads (spec)
+  ├── jev-build-direct.decompose.iteration.1: Create task beads [needs: jev-build-direct.requirements]
+  ├── jev-build-direct.decompose: Create task beads [needs: jev-build-direct.requirements, jev-build-direct.decompose.iteration.1]
+  ├── jev-build-direct.implement: Drain build implementation [needs: jev-build-direct.decompose]
+  ├── jev-build-direct.summarize-implementation.spec: Step spec for Write canonical implementation summary (spec)
+  ├── jev-build-direct.summarize-implementation.iteration.1: Write canonical implementation summary [needs: jev-build-direct.implement]
+  ├── jev-build-direct.summarize-implementation: Write canonical implementation summary [needs: jev-build-direct.implement, jev-build-direct.summarize-implementation.iteration.1]
+  ├── jev-build-direct.review: Jev review gate [needs: jev-build-direct.summarize-implementation]
+  ├── jev-build-direct.review-fanout: Expand fanout for Jev review gate [needs: jev-build-direct.review]
+  └── jev-build-direct.workflow-finalize: Finalize workflow [needs: jev-build-direct.review-fanout]
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture formula show jev-review-tail
+[0] eration.1.main.acceptance-review-scope-check, jev-review-tail.main.review-loop.iteration.1.main.test-evidence-review-scope-check, jev-review-tail.main.review-loop.iteration.1.main.simplicity-review-scope-check, jev-review-tail.main.review-loop.iteration.1.main.synthesize-review-scope-check]
+  ├── jev-review-tail.main.review-loop.iteration.1: Run the Jev-gated review until approved [needs: jev-review-tail.main.review-loop.iteration.1.main.acceptance-review, jev-review-tail.main.review-loop.iteration.1.main.test-evidence-review, jev-review-tail.main.review-loop.iteration.1.main.simplicity-review, jev-review-tail.main.review-loop.iteration.1.main.synthesize-review, jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings]
+  ├── jev-review-tail.main.review-loop: Run the Jev-gated review until approved [needs: jev-review-tail.main.review-loop.iteration.1]
+  ├── jev-review-tail.main.review-report.iteration.1: Write the review report and label Jev decisions [needs: jev-review-tail.main.review-loop]
+  ├── jev-review-tail.main.review-report: Write the review report and label Jev decisions [needs: jev-review-tail.main.review-loop, jev-review-tail.main.review-report.iteration.1]
+  ├── jev-review-tail.main.finalize.iteration.1: Finalize jev-build [needs: jev-review-tail.main.review-report]
+  ├── jev-review-tail.main.finalize: Finalize jev-build [needs: jev-review-tail.main.review-report, jev-review-tail.main.finalize.iteration.1]
+  ├── jev-review-tail.main.publish: Optionally publish jev-build [needs: jev-review-tail.main.finalize]
+  ├── jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings-scope-check: Finalize scope for Apply Jev-gated review findings [needs: jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings]
+  └── jev-review-tail.workflow-finalize: Finalize workflow [needs: jev-review-tail.main.review-loop, jev-review-tail.main.publish, jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings-scope-check]
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd create Structural compact --description Implement slugify and make pytest pass
+
+The repository contains a deliberately failing Python fixture. Implement
+`slugify` in `slugger.py` so the existing tests pass.
+
+Expected behavior:
+- Lowercase ASCII alphanumeric words.
+- Treat any run of non-alphanumeric characters as a separator.
+- Join non-empty groups with single hyphens.
+- Return an empty string when the input contains no alphanumeric characters.
+
+Constraints:
+- Do not change tests/test_slugger.py.
+- Keep the implementation small and deterministic.
+- Run `python3 -m pytest -q` from the repository root and record that proof.
+ --json
+[0] {
+  "created_at": "2026-09-30T04:28:03.788474775Z",
+  "created_by": "Jev Structure",
+  "description": "Implement slugify and make pytest pass\n\nThe repository contains a deliberately failing Python fixture. Implement\n`slugify` in `slugger.py` so the existing tests pass.\n\nExpected behavior:\n- Lowercase ASCII alphanumeric words.\n- Treat any run of non-alphanumeric characters as a separator.\n- Join non-empty groups with single hyphens.\n- Return an empty string when the input contains no alphanumeric characters.\n\nConstraints:\n- Do not change tests/test_slugger.py.\n- Keep the implementation small and deterministic.\n- Run `python3 -m pytest -q` from the repository root and record that proof.\n",
+  "id": "fi-g7x",
+  "issue_type": "task",
+  "owner": "jev@example.invalid",
+  "priority": 2,
+  "schema_version": 1,
+  "status": "open",
+  "title": "Structural compact",
+  "updated_at": "2026-09-30T04:28:03.788474775Z"
+}
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture gc jev-route fi-g7x --audit-rate 0 --var artifact_root=.gc/jev-structure/compact --var interaction_mode=headless --var review_mode=agent --var push=false --var open_pr=false --var jev_state_dir=/tmp/jst-u4pyrxib/jev-state --var jev_audit_rate=0 --var jev_test_command=/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider
+[0] {"bead": "fi-g7x", "formula": "jev-build-compact", "audited": false, "decision_id": "jd-763697f5855c", "facts": {"size": "compact", "size_probabilities": {"compact": 0.95, "standard": 0.025, "deep": 0.025}, "size_confidence": 0.95, "p_compact": 0.95, "p_deep": 0.025, "spans_modules": 0.05, "hidden_scope": 0.05, "risky_surface": "none", "needs_design": "no", "p_no_design": 0.95, "well_specified": "clear_acceptance_criteria"}, "error": "", "workflow_id": "fi-7va"}
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] entation_formula": "implement",
+      "gc.var.implementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-1273612467587936652"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] entation_formula": "implement",
+      "gc.var.implementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-1273612467587936652"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-763697f5855c",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-7733964017535673972"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] ate",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 5,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] te",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3169470336886104141"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] e",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-1142519062151916523"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] e",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-1142519062151916523"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] e",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-1142519062151916523"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] e",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-1142519062151916523"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-7va --json
+[0] e",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"C1\", \"text\": \"Lowercase ASCII alphanumeric words.\"}, {\"id\": \"C2\", \"text\": \"Treat any run of non-alphanumeric characters as a separator.\"}, {\"id\": \"C3\", \"text\": \"Join non-empty groups with single hyphens.\"}, {\"id\": \"C4\", \"text\": \"Return an empty string when the input contains no alphanumeric characters.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-pw2",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:28:07Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:28:08Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-compact.review-fanout\"]",
+          "gc.root_bead_id": "fi-7va",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:28:07Z",
+          "gc.step_id": "jev-build-compact.workflow-finalize",
+          "gc.step_ref": "jev-build-compact.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 19,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-8303834688573000644"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd list --all --json --limit 0
+[0] omment_count": 0
+  },
+  {
+    "id": "fi-21i",
+    "title": "input convoy for fi-g7x",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "convoy",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-09-30T04:28:05Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-09-30T04:28:05Z",
+    "metadata": {
+      "gc.synthetic": "true"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-21i",
+        "depends_on_id": "fi-g7x",
+        "type": "tracks",
+        "created_at": "2026-09-30T04:28:05Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-g7x",
+    "title": "Structural compact",
+    "description": "Implement slugify and make pytest pass\n\nThe repository contains a deliberately failing Python fixture. Implement\n`slugify` in `slugger.py` so the existing tests pass.\n\nExpected behavior:\n- Lowercase ASCII alphanumeric words.\n- Treat any run of non-alphanumeric characters as a separator.\n- Join non-empty groups with single hyphens.\n- Return an empty string when the input contains no alphanumeric characters.\n\nConstraints:\n- Do not change tests/test_slugger.py.\n- Keep the implementation small and deterministic.\n- Run `python3 -m pytest -q` from the repository root and record that proof.\n",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-09-30T04:28:04Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-09-30T04:28:53Z",
+    "closed_at": "2026-09-30T04:28:46Z",
+    "metadata": {
+      "gc.exclusive_drain_reservation": "",
+      "gc.execution_routed_to": "fixture/gc.run-operator",
+      "gc.outcome": "pass",
+      "stub.close_reason": "stub: source anchor done",
+      "work_dir": "/tmp/jst-u4pyrxib/fixture/worktrees/fi-g7x"
+    },
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd create Structural direct --description Implement slugify and make pytest pass
+
+The repository contains a deliberately failing Python fixture. Implement
+`slugify` in `slugger.py` so the existing tests pass.
+
+Expected behavior:
+- Lowercase ASCII alphanumeric words.
+- Treat any run of non-alphanumeric characters as a separator.
+- Join non-empty groups with single hyphens.
+- Return an empty string when the input contains no alphanumeric characters.
+
+Constraints:
+- Do not change tests/test_slugger.py.
+- Keep the implementation small and deterministic.
+- Run `python3 -m pytest -q` from the repository root and record that proof.
+ --json
+[0] {
+  "created_at": "2026-09-30T04:30:46.900594711Z",
+  "created_by": "Jev Structure",
+  "description": "Implement slugify and make pytest pass\n\nThe repository contains a deliberately failing Python fixture. Implement\n`slugify` in `slugger.py` so the existing tests pass.\n\nExpected behavior:\n- Lowercase ASCII alphanumeric words.\n- Treat any run of non-alphanumeric characters as a separator.\n- Join non-empty groups with single hyphens.\n- Return an empty string when the input contains no alphanumeric characters.\n\nConstraints:\n- Do not change tests/test_slugger.py.\n- Keep the implementation small and deterministic.\n- Run `python3 -m pytest -q` from the repository root and record that proof.\n",
+  "id": "fi-zgn",
+  "issue_type": "task",
+  "owner": "jev@example.invalid",
+  "priority": 2,
+  "schema_version": 1,
+  "status": "open",
+  "title": "Structural direct",
+  "updated_at": "2026-09-30T04:30:46.900594711Z"
+}
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture gc jev-route fi-zgn --audit-rate 0 --var artifact_root=.gc/jev-structure/direct --var interaction_mode=headless --var review_mode=agent --var push=false --var open_pr=false --var jev_state_dir=/tmp/jst-u4pyrxib/jev-state --var jev_audit_rate=0 --var jev_test_command=/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider
+[0] {"bead": "fi-zgn", "formula": "jev-build-direct", "audited": false, "decision_id": "jd-54f36a80b426", "facts": {"size": "standard", "size_probabilities": {"compact": 0.025, "standard": 0.95, "deep": 0.025}, "size_confidence": 0.95, "p_compact": 0.025, "p_deep": 0.025, "spans_modules": 0.05, "hidden_scope": 0.05, "risky_surface": "none", "needs_design": "no", "p_no_design": 0.95, "well_specified": "clear_acceptance_criteria"}, "error": "", "workflow_id": "fi-edz"}
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] ementation_formula": "implement",
+      "gc.var.implementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4909488608984844428"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] ementation_formula": "implement",
+      "gc.var.implementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4909488608984844428"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] ementation_formula": "implement",
+      "gc.var.implementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4909488608984844428"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-2864811600209136570"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-2864811600209136570"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-2864811600209136570"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-2864811600209136570"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] plementation_item_formula": "do-work-item",
+      "gc.var.implementation_target": "gc.implementation-worker",
+      "gc.var.interaction_mode": "headless",
+      "gc.var.jev_audit_rate": "0",
+      "gc.var.jev_intake_decision": "jd-54f36a80b426",
+      "gc.var.jev_mode": "auto",
+      "gc.var.jev_model": "jev-1.13.0",
+      "gc.var.jev_state_dir": "/tmp/jst-u4pyrxib/jev-state",
+      "gc.var.jev_test_command": "/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 14,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4247035223830498926"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "3980183993538444410"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] evvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "7228803593604533711"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] vvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4038758574552429145"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] vvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4038758574552429145"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] vvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4038758574552429145"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] vvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4038758574552429145"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd show fi-edz --json
+[0] vvenv/bin/python -m pytest -q -p no:cacheprovider",
+      "gc.var.jev_test_timeout": "600",
+      "gc.var.max_iterations": "10",
+      "gc.var.open_pr": "false",
+      "gc.var.planning_formula": "planning-base",
+      "gc.var.push": "false",
+      "gc.var.review_fix_formula": "fix-loop-base",
+      "gc.var.review_mode": "agent",
+      "gc.var.rig_name": "fixture",
+      "gc.work_dir": "/tmp/jst-u4pyrxib/fixture",
+      "gc.workflow_expanded": "true",
+      "jev.criteria": "[{\"id\": \"AC-1\", \"text\": \"slugify lowercases ASCII alphanumeric words.\"}, {\"id\": \"AC-2\", \"text\": \"Any run of non-alphanumeric characters acts as one separator.\"}, {\"id\": \"AC-3\", \"text\": \"Non-empty groups are joined with single hyphens, with no leading or trailing hyphen.\"}, {\"id\": \"AC-4\", \"text\": \"Input without alphanumeric characters returns an empty string.\"}]"
+    },
+    "dependencies": [
+      {
+        "id": "fi-vfa",
+        "title": "Finalize workflow",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "owner": "jev@example.invalid",
+        "created_at": "2026-09-30T04:30:50Z",
+        "created_by": "Jev Structure",
+        "updated_at": "2026-09-30T04:30:53Z",
+        "metadata": {
+          "gc.execution_rig_context": "fixture",
+          "gc.execution_routed_to": "fixture/gc.run-operator",
+          "gc.kind": "workflow-finalize",
+          "gc.native_step_dependencies.v1": "[\"jev-build-direct.review-fanout\"]",
+          "gc.root_bead_id": "fi-edz",
+          "gc.root_store_ref": "rig:fixture",
+          "gc.routed_to": "fixture/core.control-dispatcher",
+          "gc.step_defined_emitted": "2026-09-30T04:30:52Z",
+          "gc.step_id": "jev-build-direct.workflow-finalize",
+          "gc.step_ref": "jev-build-direct.workflow-finalize"
+        },
+        "dependency_type": "tracks"
+      }
+    ],
+    "dependent_count": 28,
+    "dependency_count": 1,
+    "comment_count": 0,
+    "revision": "-4276749348166127432"
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc --city /tmp/jst-u4pyrxib/city --rig fixture bd list --all --json --limit 0
+[0] omment_count": 0
+  },
+  {
+    "id": "fi-21i",
+    "title": "input convoy for fi-g7x",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "convoy",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-09-30T04:28:05Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-09-30T04:28:05Z",
+    "metadata": {
+      "gc.synthetic": "true"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-21i",
+        "depends_on_id": "fi-g7x",
+        "type": "tracks",
+        "created_at": "2026-09-30T04:28:05Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-g7x",
+    "title": "Structural compact",
+    "description": "Implement slugify and make pytest pass\n\nThe repository contains a deliberately failing Python fixture. Implement\n`slugify` in `slugger.py` so the existing tests pass.\n\nExpected behavior:\n- Lowercase ASCII alphanumeric words.\n- Treat any run of non-alphanumeric characters as a separator.\n- Join non-empty groups with single hyphens.\n- Return an empty string when the input contains no alphanumeric characters.\n\nConstraints:\n- Do not change tests/test_slugger.py.\n- Keep the implementation small and deterministic.\n- Run `python3 -m pytest -q` from the repository root and record that proof.\n",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-09-30T04:28:04Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-09-30T04:28:53Z",
+    "closed_at": "2026-09-30T04:28:46Z",
+    "metadata": {
+      "gc.exclusive_drain_reservation": "",
+      "gc.execution_routed_to": "fixture/gc.run-operator",
+      "gc.outcome": "pass",
+      "stub.close_reason": "stub: source anchor done",
+      "work_dir": "/tmp/jst-u4pyrxib/fixture/worktrees/fi-g7x"
+    },
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  }
+]
+gc bd: answering from the rig "fixture" store
+
+$ /home/ubuntu/.local/bin/gc stop /tmp/jst-u4pyrxib/city --force
+[0] Reconciliation triggered.
+Unregistered city 'jevstruct' (/tmp/jst-u4pyrxib/city)
+City stopped.
+
+$ /home/ubuntu/.local/bin/gc supervisor stop --wait
+[0] Supervisor stopping...
+Supervisor stopped.
+
