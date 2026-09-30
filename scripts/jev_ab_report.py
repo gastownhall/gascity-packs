@@ -14,7 +14,7 @@ import argparse
 import json
 import re
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 TOKEN_KEYS = ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens')
@@ -93,6 +93,25 @@ def gate(result: dict) -> str:
     return ', '.join(sorted({(r.get('item') or {}).get('gate') or '?' for r in rows}))
 
 
+def decisions(run: Path) -> dict:
+    """{type: counts} from the run's Jev decision logs: bands, labeled outcomes, Jev right/wrong, misses."""
+    counts: dict[str, Counter] = defaultdict(Counter)
+    for path in sorted(run.glob('decisions-*.jsonl')):
+        for line in path.read_text().splitlines():
+            row = json.loads(line) if line.strip() else {}
+            kind = row.get('type')
+            if not kind:
+                continue
+            if row.get('record') == 'decision':
+                counts[kind][row.get('band') or 'none'] += 1
+            elif row.get('record') == 'outcome':
+                counts[kind]['labeled'] += 1
+                counts[kind]['jev_right' if row.get('jev_correct') is True else
+                             'jev_wrong' if row.get('jev_correct') is False else 'unscored'] += 1
+                counts[kind]['miss'] += bool(row.get('miss'))
+    return {kind: dict(c) for kind, c in counts.items()}
+
+
 def collect(experiment: Path) -> list[dict]:
     runs = []
     for run in sorted(p for p in experiment.glob('run-*') if (p/'result.json').is_file()):
@@ -104,7 +123,7 @@ def collect(experiment: Path) -> list[dict]:
                      'elapsed_seconds': result.get('elapsed_seconds'), **quality(result), 'gate': gate(result),
                      'skipped_lanes': sorted({lane for d in result.get('jev_gate_delivery') or []
                                               for lane in (d.get('summary') or {}).get('skipped_lanes', [])}),
-                     'stages': stages,
+                     'stages': stages, 'decisions': decisions(run),
                      'total': {k: sum(s[k] for s in stages.values()) for k in ('requests', *TOKEN_KEYS)}})
     return runs
 
@@ -155,6 +174,19 @@ def render(runs: list[dict]) -> str:
                           fmt(mean([pick(r, 'output_tokens') for r in rows]))]
             if any(c not in ('0.0', '0', '-') for c in cells):
                 lines.append(f'| {stage} | ' + ' | '.join(cells) + ' |')
+    kinds = sorted({k for r in runs for k in r.get('decisions', {})})
+    if kinds:
+        lines += ['', '## Jev decisions, all runs', '',
+                  'Act means Jev decided alone; confirm and escalate left the call to Claude or the full path. '
+                  'Right and wrong count labeled act decisions checked against a lane verdict or the finished diff.', '',
+                  '| Decision | Act | Confirm | Escalate | Labeled | Jev right | Jev wrong | Misses |',
+                  '| --- | --- | --- | --- | --- | --- | --- | --- |']
+        for kind in kinds:
+            c = Counter()
+            for r in runs:
+                c.update(r.get('decisions', {}).get(kind, {}))
+            lines.append(f"| {kind} | {c['act']} | {c['confirm']} | {c['escalate']} | {c['labeled']} | "
+                         f"{c['jev_right']} | {c['jev_wrong']} | {c['miss']} |")
     return '\n'.join(lines) + '\n'
 
 

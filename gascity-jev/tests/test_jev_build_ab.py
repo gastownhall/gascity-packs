@@ -81,6 +81,11 @@ def test_city_config_keeps_gas_city_defaults(tmp_path):
     assert config['workspace']['env']['TYPESAFE_API_KEY'] == '$TYPESAFE_API_KEY'
     assert config['workspace']['env']['OTEL_EXPORTER_OTLP_ENDPOINT'] == 'http://127.0.0.1:1'
     assert config['providers']['claude']['args_append'][:2] == ['--model', 'claude-sonnet-5']
+    # The bd pack's Dolt maintenance dogs are suspended in both arms unless kept.
+    assert config['patches']['agent'] == [{'name': 'bd.dog', 'suspended': True}]
+    assert config['orders']['skip'] == ['mol-dog-stale-db']
+    kept = tomllib.loads(build.write_city_config(workspace, model='m', collector_env={}, suspend_helpers=False).read_text())
+    assert 'patches' not in kept and 'orders' not in kept
 
 
 def test_rig_roles_import_binds_gc_to_the_added_rig_only(tmp_path):
@@ -386,3 +391,5 @@ def test_compact_route_skips_planning_artifacts(tmp_path, monkeypatch):
     checked = build.validate_artifacts({'metadata': meta}, workspace, {}, None, 'jev-build-compact')
     assert [c['schema'] for c in checked] == ['gc.build.review.v1', 'gc.build.final-report.v1']
     assert len(build.validate_artifacts({'metadata': meta}, workspace, {}, None, 'jev-build')) == 6
+    direct = build.validate_artifacts({'metadata': meta}, workspace, {}, None, 'jev-build-direct')
+    assert 'gc.build.plan.v1' not in [c['schema'] for c in direct] and len(direct) == 5

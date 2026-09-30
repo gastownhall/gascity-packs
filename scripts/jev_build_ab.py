@@ -154,7 +154,7 @@ def new_runtime_workspace(pack, name):
 
 
 def write_city_config(workspace, *, model, collector_env, claude_config_dir=None, claude_command=None,
-                      setting_sources='project,local'):
+                      setting_sources='project,local', suspend_helpers=True):
     """The city.toml handed to `gc init --file`; only provider and env choices."""
     env = {'CLAUDE_CODE_EFFORT_LEVEL': 'low',
            # Expanded at session launch; the value is never written to disk.
@@ -172,6 +172,11 @@ def write_city_config(workspace, *, model, collector_env, claude_config_dir=None
                                           *(['--setting-sources', setting_sources] if setting_sources else [])]), '',
              '[session]', '# Claude CLI cold starts can exceed the 60s default on a loaded host.',
              'startup_timeout = "3m"', '']
+    if suspend_helpers:
+        # The bd pack's Dolt maintenance dogs are Claude sessions that do no
+        # build work; in a disposable city they only add cost to both arms.
+        lines += ['[orders]', 'skip = ["mol-dog-stale-db"]', '',
+                  '[[patches.agent]]', 'name = "bd.dog"', 'suspended = true', '']
     path = workspace.root/'city.toml.in'
     path.write_text('\n'.join(lines))
     return path
@@ -421,17 +426,20 @@ def gate_delivery(beads):
     return rows
 
 
-COMPACT_SKIPS = {'gc.build.requirements_path', 'gc.build.plan_path', 'gc.build.decomposition_path',
-                 'gc.build.implementation_summary_path'}
+ARTIFACT_SKIPS = {
+    'jev-build-compact': {'gc.build.requirements_path', 'gc.build.plan_path', 'gc.build.decomposition_path',
+                          'gc.build.implementation_summary_path'},
+    'jev-build-direct': {'gc.build.plan_path'},
+}
 
 
 def validate_artifacts(root, workspace, env, pack, formula):
     """Validate every build artifact the formula produces; the compact route has no
-    requirements, plan, decomposition or canonical summary stage."""
+    requirements, plan, decomposition or canonical summary stage, the direct route no plan."""
     validator = ROOT/'gascity/assets/scripts/validate_build_artifact.py'
     checked = []
     for key, schema in gate.BUILD_BASIC_ARTIFACT_CONTRACTS:
-        if formula == 'jev-build-compact' and key in COMPACT_SKIPS:
+        if key in ARTIFACT_SKIPS.get(formula, ()):
             continue
         raw = (root.get('metadata') or {}).get(key)
         if not raw:
@@ -552,7 +560,8 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
     config_file = write_city_config(workspace, model=args.model, collector_env=collector.env,
                                     claude_config_dir=real_claude if custom_claude else None,
                                     claude_command=args.claude_command,
-                                    setting_sources=getattr(args, 'claude_setting_sources', 'project,local'))
+                                    setting_sources=getattr(args, 'claude_setting_sources', 'project,local'),
+                                    suspend_helpers=not getattr(args, 'keep_helpers', False))
     final_beads, original_test_hash = [], None
     with (out/'run.log').open('x', buffering=1) as log, redirect_stdout(log), redirect_stderr(log):
         try:
@@ -692,6 +701,8 @@ def main():
     p.add_argument('--claude-command',default='claude',help='Claude CLI the city launches for every role.')
     p.add_argument('--claude-auth',default='',
                    help='Comma-separated accepted `auth status` methods; empty accepts any logged-in method.')
+    p.add_argument('--keep-helpers',action='store_true',
+                   help="Leave the bd pack's Dolt maintenance dogs running (suspended by default in both arms).")
     p.add_argument('--gc-env-file',default='',
                    help="Env file the city's gc loads, as a gc supervisor unit sources one (e.g. provider routes).")
     p.add_argument('--claude-setting-sources',default='project,local',

@@ -71,3 +71,21 @@ def test_hidden_pass_is_the_harness_verdict_and_gate_escalations_show(tmp_path):
     (run_dir/'result.json').write_text(json.dumps(result))
     [run] = report.collect(tmp_path/'exp')
     assert run['build_completed'] and not run['hidden_pass'] and run['gate'] == 'escalate:receipts'
+
+
+def test_decision_logs_count_bands_and_labeled_accuracy(tmp_path):
+    transcripts = tmp_path/'transcripts'
+    transcripts.mkdir()
+    run_dir = tmp_path/'exp/run-002-jev-slugify'
+    write_run(run_dir, transcripts)
+    rows = [{'record': 'decision', 'type': 'intake.direct', 'band': 'act'},
+            {'record': 'outcome', 'type': 'intake.direct', 'jev_correct': True, 'miss': False},
+            {'record': 'decision', 'type': 'review.criterion', 'band': 'act'},
+            {'record': 'decision', 'type': 'review.criterion', 'band': 'confirm'},
+            {'record': 'outcome', 'type': 'review.criterion', 'jev_correct': False, 'miss': True},
+            {'record': 'outcome', 'type': 'review.criterion', 'jev_correct': None, 'miss': False}]
+    (run_dir/'decisions-00.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+    [run] = report.collect(tmp_path/'exp')
+    assert run['decisions']['intake.direct'] == {'act': 1, 'labeled': 1, 'jev_right': 1, 'miss': 0}
+    assert run['decisions']['review.criterion']['jev_wrong'] == 1 and run['decisions']['review.criterion']['miss'] == 1
+    assert '| review.criterion | 1 | 1 | 0 | 2 | 0 | 1 | 1 |' in report.render([run])
