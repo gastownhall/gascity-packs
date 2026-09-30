@@ -552,6 +552,76 @@ def receipt_problems(trees: list[Worktree]) -> list[str]:
 # Jev questions and states
 
 
+def changed_lines(tree: Worktree, path: str) -> set[int]:
+    """Line numbers of the current file that the diff against base added or changed."""
+    lines: set[int] = set()
+    for header in re.finditer(r'^@@ -\S+ \+(\d+)(?:,(\d+))? @@', git(tree.path, 'diff', '-U0', tree.base, '--', path),
+                              re.MULTILINE):
+        start, count = int(header.group(1)), int(header.group(2) or 1)
+        lines.update(range(start, start + max(count, 1)))
+    return lines
+
+
+def python_excerpt(text: str, touched: set[int], limit: int) -> str | None:
+    """The full source of every definition the change touched, smallest enclosing first.
+
+    A class larger than half the budget is opened up to its methods. Changed
+    module-level lines outside any definition are kept as they are.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    source = text.splitlines()
+    spans: list[tuple[int, int]] = []
+
+    def visit(body: list) -> None:
+        for node in body:
+            start = min([node.lineno, *(d.lineno for d in getattr(node, 'decorator_list', []))])
+            end = node.end_lineno or node.lineno
+            if not touched & set(range(start, end + 1)):
+                continue
+            size = sum(len(line) + 1 for line in source[start - 1:end])
+            if isinstance(node, ast.ClassDef) and size > limit // 2:
+                spans.append((start, node.body[0].lineno - 1 if node.body else end))  # class header
+                visit(node.body)
+            else:
+                spans.append((start, end))
+
+    visit(tree.body)
+    covered = {n for a, b in spans for n in range(a, b + 1)}
+    spans += [(n, n) for n in sorted(touched - covered) if n <= len(source)]
+    parts, last = [], 0
+    for a, b in sorted(set(spans)):
+        if a <= last:
+            a = last + 1
+        if a > b:
+            continue
+        if a > last + 1:
+            parts.append(f'# ... lines {last + 1}-{a - 1} unchanged, omitted ...')
+        parts.extend(source[a - 1:b])
+        last = b
+    if last < len(source):
+        parts.append(f'# ... lines {last + 1}-{len(source)} unchanged, omitted ...')
+    return '\n'.join(parts) + '\n'
+
+
+def file_view(tree: Worktree, row: dict, text: str, limit: int) -> str:
+    """The whole file when it fits; otherwise only what the change touched."""
+    if len(text.encode()) <= limit:
+        return text
+    view = None
+    if not row.get('untracked') and row['status'] != 'A':
+        touched = changed_lines(tree, row['path'])
+        if row['path'].endswith('.py'):
+            view = python_excerpt(text, touched, limit)
+        if view is None or len(view.encode()) > limit:
+            view = git(tree.path, 'diff', '--no-color', '-U20', tree.base, '--', row['path'])
+    if view is None or len(view.encode()) > limit:
+        raise GateError('file_too_large', row['path'])
+    return f'# Excerpt of {row["path"]} ({len(text.encode())} bytes): changed definitions only.\n' + view
+
+
 def review_state(task: str, criteria: list[dict], trees: list[Worktree]) -> dict:
     implementation, tests = {}, {}
     stems = set()
@@ -566,9 +636,7 @@ def review_state(task: str, criteria: list[dict], trees: list[Worktree]) -> dict
                 continue
             target = tests if is_test_path(row['path']) else implementation
             limit = MAX_TEST_BYTES if target is tests else MAX_SOURCE_BYTES
-            if len(text.encode()) > limit:
-                raise GateError('file_too_large', row['path'])
-            target[row['path']] = text
+            target[row['path']] = file_view(tree, row, text, limit)
             stems.add(Path(row['path']).stem)
     if not implementation:
         raise GateError('no_source_changes', 'only tests or deletions changed')

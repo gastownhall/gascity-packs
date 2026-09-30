@@ -528,6 +528,38 @@ def test_python_tests_extended_only_allows_new_tests_and_flags_any_weakening(new
     assert gate.python_tests_extended_only(EXISTING, new) is extended
 
 
+def test_python_excerpt_keeps_touched_definitions_and_opens_large_classes():
+    text = ('import os\n\n\ndef untouched():\n    return 1\n\n\ndef changed(x):\n    y = x + 1\n    return y\n\n\n'
+            'class Big:\n    """doc"""\n\n    def keep(self):\n' + '        pass\n' * 40 +
+            '\n    def edit(self):\n        return 2\n')
+    lines = text.splitlines()
+    touched = {lines.index('    y = x + 1') + 1, lines.index('        return 2') + 1}
+    view = gate.python_excerpt(text, touched, limit=400)
+    assert 'def changed(x):' in view and 'return y' in view
+    assert 'class Big:' in view and 'def edit(self):' in view
+    assert 'def untouched' not in view and 'def keep' not in view and '# ... lines' in view
+
+
+def test_file_view_sends_small_files_whole_and_large_ones_as_excerpts(tmp_path):
+    fake, rig = build_city(tmp_path)
+    tree = gate.Worktree(anchor='rig-task', path=rig / 'worktrees/rig-task')
+    tree.base = gate.base_commit(tree.path)
+    row = {'status': 'M', 'path': 'tests/test_slugger.py'}
+    text = (tree.path / row['path']).read_text()
+    assert gate.file_view(tree, row, text, limit=10_000) == text
+    padded = text + ''.join(f'\n\ndef test_pad_{i}():\n    assert True\n' for i in range(200))
+    (tree.path / row['path']).write_text(padded)
+    git(tree.path, 'commit', '-qam', 'pad')
+    tree.base = subprocess.check_output(['git', '-C', str(tree.path), 'rev-parse', 'HEAD'], text=True).strip()
+    grown = padded + '\n\ndef test_new_case():\n    assert slugify("a b") == "a-b"\n'
+    (tree.path / row['path']).write_text(grown)
+    view = gate.file_view(tree, row, grown, limit=2_000)
+    assert view.startswith('# Excerpt of tests/test_slugger.py') and 'def test_new_case' in view
+    assert 'def test_pad_5' not in view
+    with pytest.raises(gate.GateError, match='file_too_large'):
+        gate.file_view(tree, row, grown, limit=20)
+
+
 def test_gate_crash_still_emits_exactly_one_full_item(tmp_path, monkeypatch):
     fake, _ = build_city(tmp_path)
     monkeypatch.setattr(gate, 'source_anchors', lambda ctx: 1 / 0)

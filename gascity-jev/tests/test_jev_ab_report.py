@@ -17,6 +17,8 @@ def test_step_refs_normalize_to_stages():
     assert report.stage_of('summarize-implementation.iteration.1') == 'summarize'
     assert report.stage_of('finalize.iteration.1') == 'review'
     assert report.stage_of('build-basic.publish') == 'publish'
+    assert report.stage_of('jev-review-tail.jev-build-direct.review.item.1.review-loop') == 'review'
+    assert report.stage_of('jev-build-compact.implement') == 'implement'
     assert report.stage_of('') == 'other'
 
 

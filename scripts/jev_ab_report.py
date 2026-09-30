@@ -23,7 +23,7 @@ STAGES = ('prepare', 'requirements', 'plan', 'plan-review', 'decompose', 'implem
 
 
 def stage_of(step_ref: str) -> str:
-    ref = re.sub(r'^(jev-review-tail\.)?(jev-build|build-basic)\.', '', step_ref or '')
+    ref = re.sub(r'^(jev-review-tail\.)?(jev-build(-direct|-compact)?|build-basic)\.', '', step_ref or '')
     ref = re.sub(r'\.iter(ation)?\b.*$', '', ref)
     for prefix, stage in (('prepare', 'prepare'), ('requirements', 'requirements'), ('plan-review', 'plan-review'),
                           ('plan', 'plan'), ('decompose', 'decompose'), ('do-work', 'implement'),
