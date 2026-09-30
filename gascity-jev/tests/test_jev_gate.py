@@ -480,6 +480,54 @@ def test_gate_escalates_when_a_preexisting_test_changes(tmp_path, monkeypatch):
     assert problems == ['rig-task: pre-existing test tests/test_slugger.py modified']
 
 
+def test_gate_asks_jev_when_a_preexisting_test_file_only_gains_tests(tmp_path, monkeypatch):
+    stub = StubJev(noul_reply(lambda q: 0.05))
+    monkeypatch.setenv('JEV_API_URL', stub.url)
+    monkeypatch.setenv('TYPESAFE_API_KEY', 'stub-key')
+    added = TESTS + '\n\ndef test_punctuation_runs():\n    assert slugify("a--b") == "a-b"\n'
+    try:
+        fake, _ = build_city(tmp_path, test_text=added)
+        item, _ = run_gate(fake)
+    finally:
+        stub.close()
+    assert item['gate'] == 'jev' and stub.requests
+    assert json.loads(fake.beads['rig-gate']['metadata'].get('jev.receipt_problems', '[]')) == []
+
+
+EXISTING = """import pytest
+from slugger import slugify
+
+
+class TestSlug:
+    def test_basic(self):
+        assert slugify("Hello, World!") == "hello-world"
+
+
+def test_empty():
+    assert slugify("") == ""
+"""
+
+
+@pytest.mark.parametrize('new, extended', [
+    (EXISTING + '\n\ndef test_digits():\n    assert slugify("a1") == "a1"\n', True),
+    ('import re\n' + EXISTING, True),
+    (EXISTING.replace('        assert slugify("Hello, World!") == "hello-world"\n',
+                      '        assert slugify("Hello, World!") == "hello-world"\n\n'
+                      '    def test_more(self):\n        assert slugify("A B") == "a-b"\n'), True),
+    (EXISTING.replace('# nothing', ''), True),
+    (EXISTING.replace('== ""', 'is not None'), False),
+    (EXISTING.replace('def test_empty', '@pytest.mark.skip\ndef test_empty'), False),
+    (EXISTING + '\n\ndef test_empty():\n    pass\n', False),
+    (EXISTING + '\npytestmark = pytest.mark.skip\n', False),
+    (EXISTING.replace('def test_empty():\n    assert slugify("") == ""\n', ''), False),
+    (EXISTING.replace('    def test_basic(self):\n', '    def test_basic(self):\n        return\n'), False),
+    (EXISTING.replace('class TestSlug:', '@pytest.mark.skip\nclass TestSlug:'), False),
+    (EXISTING + '\ndef broken(:\n', False),
+])
+def test_python_tests_extended_only_allows_new_tests_and_flags_any_weakening(new, extended):
+    assert gate.python_tests_extended_only(EXISTING, new) is extended
+
+
 def test_gate_crash_still_emits_exactly_one_full_item(tmp_path, monkeypatch):
     fake, _ = build_city(tmp_path)
     monkeypatch.setattr(gate, 'source_anchors', lambda ctx: 1 / 0)

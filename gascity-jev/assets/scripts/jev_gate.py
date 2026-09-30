@@ -19,6 +19,7 @@ scope and records why. It never emits an empty item list.
 from __future__ import annotations
 
 import argparse
+import ast
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -359,9 +360,60 @@ def changed_files(worktree: Path, base: str) -> list[dict]:
     return rows
 
 
+def _defs(body: list) -> dict | None:
+    """Named definitions in a body, or None when a name is defined twice (shadowing)."""
+    names = [n.name for n in body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    if len(names) != len(set(names)):
+        return None
+    return {n.name: n for n in body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+
+
+def _body_extended_only(old: list, new: list, *, allow_imports: bool) -> bool:
+    """Every old statement survives unchanged; new ones are only new definitions (and imports)."""
+    old_defs, new_defs = _defs(old), _defs(new)
+    if old_defs is None or new_defs is None:
+        return False
+    others = [ast.dump(n) for n in new if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    for node in old:
+        if isinstance(node, ast.ClassDef):
+            now = new_defs.get(node.name)
+            if not isinstance(now, ast.ClassDef) or [ast.dump(d) for d in node.decorator_list] != \
+                    [ast.dump(d) for d in now.decorator_list] or [ast.dump(b) for b in node.bases] != \
+                    [ast.dump(b) for b in now.bases] or not _body_extended_only(node.body, now.body, allow_imports=False):
+                return False
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name not in new_defs or ast.dump(new_defs[node.name]) != ast.dump(node):
+                return False
+        elif ast.dump(node) in others:
+            others.remove(ast.dump(node))
+        else:
+            return False
+    added = [n for n in new if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+             and ast.dump(n) in others]
+    return all(allow_imports and isinstance(n, (ast.Import, ast.ImportFrom)) for n in added)
+
+
+def python_tests_extended_only(old_source: str, new_source: str) -> bool:
+    """True when a Python test file only gained new tests, helpers or imports.
+
+    Adding regression coverage to an existing file is ordinary work; editing,
+    decorating, removing or shadowing an existing test, or adding any other
+    module-level statement (a `pytestmark`, a monkeypatch), is not.
+    """
+    try:
+        old, new = ast.parse(old_source), ast.parse(new_source)
+    except SyntaxError:
+        return False
+    return _body_extended_only(old.body, new.body, allow_imports=True)
+
+
 def test_hashes(worktree: Path, base: str) -> dict:
-    """Compare every pre-existing test file with its base blob by hash."""
-    changed = []
+    """Compare every pre-existing test file with its base blob.
+
+    A changed Python test file that only gained new tests is recorded as
+    extended, not changed; any other change is recorded by hash.
+    """
+    changed, extended = [], []
     for line in git(worktree, 'ls-tree', '-r', base).splitlines():
         info, path = line.split('\t', 1)
         mode, kind, blob = info.split()
@@ -372,9 +424,19 @@ def test_hashes(worktree: Path, base: str) -> dict:
             changed.append({'path': path, 'change': 'deleted'})
             continue
         now_blob = git(worktree, 'hash-object', str(current)).strip()
-        if now_blob != blob:
-            changed.append({'path': path, 'change': 'modified', 'base': blob, 'now': now_blob})
-    return {'preexisting_tests_changed': changed}
+        if now_blob == blob:
+            continue
+        row = {'path': path, 'change': 'modified', 'base': blob, 'now': now_blob}
+        if path.endswith('.py'):
+            try:
+                old_source = git(worktree, 'cat-file', 'blob', blob)
+                if python_tests_extended_only(old_source, current.read_text()):
+                    extended.append({**row, 'change': 'extended'})
+                    continue
+            except (OSError, UnicodeDecodeError, GateError):
+                pass
+        changed.append(row)
+    return {'preexisting_tests_changed': changed, 'preexisting_tests_extended': extended}
 
 
 def full_diff(worktree: Path, base: str, files: list[dict]) -> str:
@@ -796,7 +858,9 @@ def write_review_context(ctx: Context, trees: list[Worktree], item: dict, criter
                   f'- base commit: `{tree.base}`; head: `{tree.head}`',
                   '- changed files: ' + (', '.join(f"`{r['path']}` ({r['status']})" for r in tree.files) or 'none'),
                   f"- proof command: `{tree.test_run.get('command')}` -> exit {tree.test_run.get('exit_code')}",
-                  f"- pre-existing test files changed: {len(tree.tests.get('preexisting_tests_changed', []))}", '']
+                  f"- pre-existing test files changed: {len(tree.tests.get('preexisting_tests_changed', []))}",
+                  f"- pre-existing test files extended with new tests only: "
+                  f"{len(tree.tests.get('preexisting_tests_extended', []))}", '']
     lines += ['## Jev Gate Scope', '',
               f"- acceptance lane: {item['acceptance']} (criteria: {item['acceptance_scope']})",
               f"- test-evidence lane: {item['test_evidence']}",

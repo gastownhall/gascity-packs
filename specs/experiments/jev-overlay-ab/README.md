@@ -80,14 +80,15 @@ Per stage (mean requests per build):
    `failed` ("treatment not delivered"); they are counted here as jev results
    because escalation is what the overlay does on this work. Cost was then
    level with baseline.
-3. **The escalated jev review missed a stated criterion that baseline met.**
-   On `legacy-work-options` both jev builds left the legacy `gc.model` key in
-   the emitted metadata, violating the requirement that legacy keys never
-   appear, and failed 1 of 21 merged tests. In both, the escalated acceptance
-   lane recorded every criterion as `holds`. Both baseline builds passed. So
-   the overlay's full-review fallback is not equivalent to the base pack's
-   review. Two runs per arm is a small sample; this needs a direct look at the
-   acceptance lane's prompt and inputs.
+3. **`legacy-work-options` split by arm, but not because of review.** Both jev
+   builds left the legacy `gc.model` key in the emitted metadata, violating
+   the requirement that legacy keys never appear, and failed 1 of 21 merged
+   tests; both baseline builds passed. In all four runs every review lane
+   approved on its first pass and changed nothing, so the difference was made
+   by the implementation, not the review: baseline's review never faced the
+   defect. The jev acceptance lane did record the violated criterion as
+   `holds`, a real review miss. With two runs per arm, a 2–0 split has about a
+   1-in-6 chance of happening with no arm effect.
 4. **`schema-roots` failed in both arms** (one of 29 merged tests, not the same
    one each time), so it does not separate the arms.
 
