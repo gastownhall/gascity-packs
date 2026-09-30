@@ -9,7 +9,7 @@ PACK = ROOT / 'gascity-jev'
 sys.path.insert(0, str(PACK / 'assets/scripts'))
 import jev_gate  # noqa: E402
 
-FORMULAS = {'jev-build', 'jev-build-compact', 'jev-review-tail'}
+FORMULAS = {'jev-build', 'jev-build-compact', 'jev-build-direct', 'jev-review-tail'}
 
 
 def formula(name):
@@ -115,6 +115,21 @@ def test_compact_route_drops_planning_and_drains_after_prepare():
     assert s['review']['metadata']['gc.run_target'] == 'gc.jev-gate'
 
 
+def test_direct_route_drops_only_the_plan_stages_and_keeps_decomposition_checked():
+    data = formula('jev-build-direct')
+    assert data['extends'] == ['jev-build']
+    s = steps(data)
+    assert set(s) == {'plan', 'plan-review', 'decompose'}
+    for name in ('plan', 'plan-review'):
+        assert s[name]['condition'] == '{{keep_plan_stages}}'
+    base = steps(tomllib.loads((ROOT / 'gascity/formulas/build-basic.formula.toml').read_text()))['decompose']
+    assert s['decompose']['needs'] == ['requirements']
+    assert s['decompose']['metadata'] == base['metadata'] and s['decompose']['check'] == base['check']
+    prompt = (PACK / 'formulas' / s['decompose']['description_file']).resolve().read_text()
+    assert prompt.startswith('This build has no plan stage')
+    assert (ROOT / 'gascity/assets/workflows/build-basic/decompose.md').read_text() in prompt
+
+
 def test_every_description_file_exists():
     for name in FORMULAS:
         data = formula(name)
@@ -128,7 +143,7 @@ def test_every_description_file_exists():
 def test_route_command_and_intake_questions_ship():
     assert (PACK / 'commands/jev-route/run.sh').stat().st_mode & 0o111
     assert 'jev_route.py' in (PACK / 'commands/jev-route/run.sh').read_text()
-    frozen = (ROOT / 'specs/experiments/jev-gate-spikes/intake-router/questions.frozen.json').read_text()
+    frozen = (ROOT / 'specs/experiments/jev-intake-v4/questions/v4.json').read_text()
     assert (PACK / 'assets/jev-intake-questions.json').read_text() == frozen
 
 

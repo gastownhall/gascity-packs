@@ -15,6 +15,8 @@ Scenarios (run in order in one city, then a no-key phase after a restart):
           the review.criterion breaker trips
 - tripped after the trip: every criterion is folded into confirm
 - nokey   TYPESAFE_API_KEY removed: the gate fails open to every lane
+- compact routed with size compact: jev-build-compact
+- direct  routed with size standard and no design need: jev-build-direct
 
 Evidence lands in --out. The city lives under a short /tmp path and is torn
 down (gc stop, supervisor stop, two scoped process sweeps) at the end.
@@ -54,6 +56,8 @@ SCENARIOS = {
     'audit': {'p': {}, 'audit_rate': '1', 'violated': ['AC-2']},
     'tripped': {'p': {}, 'audit_rate': '0'},
     'compact': {'p': {}, 'audit_rate': '0', 'route': True, 'size': 0},
+    # Size standard, no design need, guards low: the router picks jev-build-direct.
+    'direct': {'p': {}, 'audit_rate': '0', 'route': True, 'size': 1},
     'nokey': {'p': {}, 'audit_rate': '0', 'nokey': True},
 }
 
@@ -202,6 +206,7 @@ class City:
         (self.city / 'city.toml').write_text(text + self.rig_patches())
         for cmd in (('import', 'install'), ('import', 'check'), ('agent', 'list'),
                     ('--rig', 'fixture', 'formula', 'show', 'jev-build'),
+                    ('--rig', 'fixture', 'formula', 'show', 'jev-build-direct'),
                     ('--rig', 'fixture', 'formula', 'show', 'jev-review-tail')):
             (self.out / ('setup-' + '-'.join(c for c in cmd if not c.startswith('-')) + '.txt')).write_text(
                 self.gc('--city', str(self.city), *cmd))

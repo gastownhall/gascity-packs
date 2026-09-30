@@ -44,9 +44,13 @@ DAY_ONE_BANDS = {
     # Simplicity design review: day one always runs (plan 0003). A refit or an
     # operator may set skip_when_screen_clean once audits support it.
     'simplicity.design': {'skip_when_screen_clean': False},
-    # Intake route: compact only at size confidence >= min_confidence with no
-    # risky surface and no design need.
-    'intake.compact': {'min_confidence': 0.8},
+    # Intake routes (intake-v4 study). Compact: P(size = compact) >= min_p_compact,
+    # spans-modules and hidden-scope nouls <= max_guard, no risky surface, no
+    # design need. Direct (no plan stage): P(no design) >= min_p_no_design,
+    # P(size = deep) <= max_p_deep, spans-modules noul <= max_spans_modules, and
+    # no security or persistence surface.
+    'intake.compact': {'min_p_compact': 0.8, 'max_guard': 0.3},
+    'intake.direct': {'min_p_no_design': 0.9, 'max_p_deep': 0.1, 'max_spans_modules': 0.5},
 }
 
 # Adaptive audit schedule per decision type (plan 0003, Q7).
@@ -271,12 +275,14 @@ def refit(records: list[dict], bands: dict) -> tuple[dict, list[str]]:
         notes.append(f"smell.confirmed: confirmed_min_p {entry['confirmed_min_p']} -> {target}")
         entry['confirmed_min_p'] = target
 
-    intake = [r for r in rows if r['type'] == 'intake.compact' and r['outcome'].get('miss')]
-    if intake:
-        entry = new['intake.compact']
-        worst = max(float((r.get('answer') or {}).get('size_confidence', 0)) for r in intake)
-        entry['min_confidence'] = round(min(1.0, max(entry['min_confidence'], worst + REFIT_MARGIN)), 3)
-        notes.append(f"intake.compact: min_confidence -> {entry['min_confidence']}")
+    for kind, key, fact in (('intake.compact', 'min_p_compact', 'p_compact'),
+                            ('intake.direct', 'min_p_no_design', 'p_no_design')):
+        missed = [r for r in rows if r['type'] == kind and r['outcome'].get('miss')]
+        if missed:
+            entry = new[kind]
+            worst = max(float((r.get('answer') or {}).get(fact, 0)) for r in missed)
+            entry[key] = round(min(1.0, max(entry[key], worst + REFIT_MARGIN)), 3)
+            notes.append(f'{kind}: {key} -> {entry[key]}')
 
     evidence = [r for r in rows if r['type'] == 'review.test_evidence' and r['outcome'].get('audited')]
     misses = sum(bool(r['outcome'].get('miss')) for r in evidence)

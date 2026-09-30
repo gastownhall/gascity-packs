@@ -1,0 +1,72 @@
+{
+  "id": "pr6689",
+  "questions": "questions/v4.json",
+  "ok": true,
+  "status": 200,
+  "body": {
+    "model": "jev-1.13.0",
+    "answers": {
+      "size": {
+        "type": "score",
+        "score": 1.14,
+        "confidence": 0.79,
+        "legend": {
+          "0": "compact: A local change: fix or implement one function or one small piece of logic in a single module, together with its tests. Roughly under 80 changed lines across at most three files, including tests. Adding a small helper or a few regression tests still counts. No new mechanism, no change other modules must adapt to.",
+          "1": "standard: A focused change that edits several functions or files, restructures a code path, or needs coordinated edits in more than one module, with tests, but introduces no new architecture.",
+          "2": "deep: A large or cross-cutting change: many files or subsystems, a new feature or mechanism, architecture or design work, public API, schema or storage-format changes, or data migration."
+        },
+        "probabilities": {
+          "0": 0.0,
+          "1": 0.86,
+          "2": 0.14
+        }
+      },
+      "spans_modules": {
+        "type": "noul",
+        "noul": 0.96
+      },
+      "hidden_scope": {
+        "type": "noul",
+        "noul": 0.13
+      },
+      "needs_design": {
+        "type": "choice",
+        "choice": "yes",
+        "confidence": 0.36,
+        "probabilities": {
+          "no": 0.43,
+          "yes": 0.57,
+          "cannot_tell": 0.0
+        }
+      },
+      "risky_surface": {
+        "type": "choice",
+        "choice": "persistence_or_migration",
+        "confidence": 1.0,
+        "probabilities": {
+          "security_or_auth": 0.0,
+          "none": 0.0,
+          "persistence_or_migration": 1.0,
+          "public_api_or_schema": 0.0,
+          "cannot_tell": 0.0
+        }
+      },
+      "well_specified": {
+        "type": "choice",
+        "choice": "clear_acceptance_criteria",
+        "confidence": 1.0,
+        "probabilities": {
+          "clear_acceptance_criteria": 1.0,
+          "underspecified": 0.0,
+          "partially_specified": 0.0,
+          "cannot_tell": 0.0
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 2974,
+      "output_tokens": 225
+    }
+  },
+  "latency_s": 0.0845253390725702
+}

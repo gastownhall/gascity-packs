@@ -1,0 +1,56 @@
+description = """
+Direct jev-build for work whose approach is evident (chosen by jev_route.py).
+
+Jev judged that no design step is needed, the change is not large, not
+multi-module and not security or persistence work. Keeps prepare,
+requirements, decomposition, the implementation drain, the implementation
+summary and the Jev review gate and tail of jev-build; drops the plan and the
+plan review. Decomposition works from the requirements artifact alone. Only
+the intake router should launch this.
+"""
+formula = "jev-build-direct"
+version = 1
+contract = "graph.v2"
+extends = ["jev-build"]
+target_required = true
+
+[catalog]
+name = "jev-build-direct"
+description = "Direct Jev-gated build: requirements, decomposition, implementation and the Jev review gate, without a plan stage."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars.keep_plan_stages]
+description = "Leave empty. The plan and plan review stages are dropped."
+default = ""
+
+[[steps]]
+id = "plan"
+title = "Plan (dropped by jev-build-direct)"
+condition = "{{keep_plan_stages}}"
+
+[[steps]]
+id = "plan-review"
+title = "Plan review (dropped by jev-build-direct)"
+condition = "{{keep_plan_stages}}"
+
+# Restated whole (replacement is whole-step): decomposition now follows
+# requirements, and its prompt says there is no plan artifact.
+[[steps]]
+id = "decompose"
+title = "Create task beads"
+needs = ["requirements"]
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+description_file = "../assets/workflows/jev-build-direct/decompose.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

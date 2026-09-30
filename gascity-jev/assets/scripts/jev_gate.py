@@ -468,6 +468,16 @@ def compact_proxy(receipts: dict) -> bool:
     return len(set(files)) <= 3 and lines <= 80 and not any(RISKY_PATH.search(f) for f in files)
 
 
+DEEP_PATH = re.compile(r'(^|/)(api|openapi|schemas?|migrations?|design|engdocs|specs)(/|\.|_|$)', re.IGNORECASE)
+
+
+def deep_proxy(receipts: dict) -> bool:
+    """Intake-router deep proxy: > 15 files, > 600 changed lines, or a design, API, schema or migration path."""
+    files = {f['path'] for r in receipts.values() for f in r.get('files', [])}
+    lines = sum(r.get('diff_lines', 0) for r in receipts.values())
+    return len(files) > 15 or lines > 600 or any(DEEP_PATH.search(f) for f in files)
+
+
 def split_hunks(diff: str) -> list[dict]:
     """[{'id': 'h1', 'path', 'text'}] with the file header on every hunk."""
     hunks, path, header = [], None, ''
@@ -1028,11 +1038,16 @@ def label_decisions(ctx: Context, members: list[dict]) -> list[dict]:
         intake = next((r for r in ctx.state.records() if r.get('record') == 'decision'
                        and r.get('decision_id') == intake_id), None)
         if intake:
-            compact = compact_proxy(receipts)
+            if intake['type'] == 'intake.direct':
+                fits = not deep_proxy(receipts)
+                label = 'not_deep' if fits else 'deep'
+            else:
+                fits = compact_proxy(receipts)
+                label = 'compact' if fits else 'not_compact'
             ctx.log.write([{**intake, 'workflow_root': ctx.root_id}])
             outcomes.append(ctx.log.outcome(
-                {**intake, 'workflow_root': ctx.root_id}, label='compact' if compact else 'not_compact',
-                jev_correct=compact if intake['band'] == 'act' else None, source='finished diff proxy',
+                {**intake, 'workflow_root': ctx.root_id}, label=label,
+                jev_correct=fits if intake['band'] == 'act' else None, source='finished diff proxy',
                 always_labeled=True))
     return outcomes
 

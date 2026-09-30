@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
-"""Intake router for jev-build: send small, well-specified work to jev-build-compact.
+"""Intake router for jev-build: pick how many planning stages a task needs.
 
-Reads the task bead, asks Jev the frozen intake questions from the intake-router
-spike (assets/jev-intake-questions.json) about the request text, and routes to
-`jev-build-compact` only when the most likely size is compact at confidence
->= the band (day one 0.8), the risky surface is `none`, and no design step is
-needed. Everything else, every uncertain answer, and every Jev failure takes
-the full `jev-build` path. Audited compact decisions also take the full path.
+Reads the task bead, asks Jev the intake questions frozen by the intake-v4
+study (assets/jev-intake-questions.json) about the request text, and picks one
+of three formulas:
 
-The decision is logged to the gate state ledger and passed to the build as
-`jev_intake_decision`; the build's review-report step labels it from the
-finished diff (at most 3 files and 80 changed lines, no risky path).
+- `jev-build-compact` (no requirements, plan, plan review, decomposition or
+  summary) when P(size = compact) >= the band (0.8), the spans-modules and
+  hidden-scope nouls are <= 0.3, the risky surface is `none` and no design step
+  is needed;
+- `jev-build-direct` (no plan or plan review) when P(no design needed) >= the
+  band (0.9), P(size = deep) <= 0.1, the spans-modules noul is <= 0.5 and the
+  risky surface is not security or persistence;
+- `jev-build` otherwise, and on every Jev failure or tripped breaker.
+
+Audited compact and direct decisions take the full path so misses can be
+measured. The decision is logged to the gate state ledger and passed to the
+build as `jev_intake_decision`; the build's review-report step labels it from
+the finished diff (compact: at most 3 files and 80 changed lines, no risky
+path; direct: not deep).
 
 Usage:
   jev_route.py <bead-id> [--dry-run] [--var key=value ...] [--target gc.run-operator]
@@ -40,29 +48,48 @@ def request_text(bead: dict) -> str:
     return (f"{bead.get('title', '')}\n\n{bead.get('description', '')}").strip()[:MAX_REQUEST]
 
 
+TIERS = {'intake.compact': 'jev-build-compact', 'intake.direct': 'jev-build-direct'}
+
+
 def classify(answers: dict) -> dict:
     size = answers['size']
     probabilities = {SIZE_LEVELS[int(k)]: v for k, v in size['probabilities'].items()}
     return {'size': max(probabilities, key=probabilities.get), 'size_probabilities': probabilities,
-            'size_confidence': size['confidence'], 'risky_surface': answers['risky_surface']['choice'],
+            'size_confidence': size['confidence'], 'p_compact': probabilities['compact'],
+            'p_deep': probabilities['deep'], 'spans_modules': answers['spans_modules']['noul'],
+            'hidden_scope': answers['hidden_scope']['noul'],
+            'risky_surface': answers['risky_surface']['choice'],
             'needs_design': answers['needs_design']['choice'],
+            'p_no_design': answers['needs_design']['probabilities'].get('no', 0.0),
             'well_specified': answers['well_specified']['choice']}
 
 
-def route(answers: dict | None, band: dict, accepted: int, rng: random.Random,
-          audit_override: float | None = None) -> tuple[str, bool, dict]:
-    """Return (formula, audited, classification). Pure; tested with recorded answers."""
+def tier(facts: dict, bands: dict) -> str | None:
+    """The decision type whose act band these facts fall in, or None for the full path."""
+    compact, direct = bands['intake.compact'], bands['intake.direct']
+    if (not compact.get('tripped') and facts['p_compact'] >= compact['min_p_compact']
+            and facts['spans_modules'] <= compact['max_guard'] and facts['hidden_scope'] <= compact['max_guard']
+            and facts['risky_surface'] == 'none' and facts['needs_design'] == 'no'):
+        return 'intake.compact'
+    if (not direct.get('tripped') and facts['p_no_design'] >= direct['min_p_no_design']
+            and facts['p_deep'] <= direct['max_p_deep'] and facts['spans_modules'] <= direct['max_spans_modules']
+            and facts['risky_surface'] not in ('security_or_auth', 'persistence_or_migration')):
+        return 'intake.direct'
+    return None
+
+
+def route(answers: dict | None, bands: dict, accepted: dict, rng: random.Random,
+          audit_override: float | None = None) -> tuple[str, str, bool, dict]:
+    """Return (formula, decision type, audited, classification). Pure; tested with recorded answers."""
     if answers is None:
-        return 'jev-build', False, {}
+        return 'jev-build', 'intake.compact', False, {}
     facts = classify(answers)
-    compact = (facts['size'] == 'compact' and facts['size_confidence'] >= band['min_confidence']
-               and facts['risky_surface'] == 'none' and facts['needs_design'] == 'no'
-               and not band.get('tripped'))
-    if not compact:
-        return 'jev-build', False, facts
-    rate = audit_override if audit_override is not None else audit_rate(accepted)
+    kind = tier(facts, bands)
+    if kind is None:
+        return 'jev-build', 'intake.compact', False, facts
+    rate = audit_override if audit_override is not None else audit_rate(accepted.get(kind, 0))
     audited = rng.random() < rate
-    return ('jev-build' if audited else 'jev-build-compact'), audited, facts
+    return ('jev-build' if audited else TIERS[kind]), kind, audited, facts
 
 
 def state_dir(explicit: str) -> StateDir:
@@ -97,16 +124,18 @@ def main(argv=None) -> int:
         answers, usage, model = reply['answers'], reply['usage'], reply['model']
     except JevUnavailable as exc:
         error = exc.reason
-    band = state.bands()['intake.compact']
-    formula, audited, facts = route(answers, band, state.accepted_audits().get('intake.compact', 0),
-                                    random.Random(), args.audit_rate)
-    act = formula == 'jev-build-compact' or audited  # an audited compact decision is still act band
-    record = decision('intake.compact', workflow_root='', step_bead=args.bead, subject=args.bead,
+    bands = state.bands()
+    formula, kind, audited, facts = route(answers, bands, state.accepted_audits(), random.Random(), args.audit_rate)
+    act = formula in TIERS.values() or audited  # an audited act decision is still act band
+    tripped = [k for k in TIERS if bands[k].get('tripped')]
+    record = decision(kind, workflow_root='', step_bead=args.bead, subject=args.bead,
                       band='act' if act else ('escalate' if answers is None else 'confirm'),
-                      action=formula, audit=audited, question='frozen intake questions v3',
-                      answer=facts or None, p=facts.get('size_confidence'),
-                      thresholds={'min_confidence': band['min_confidence']},
-                      reason=f'jev unavailable: {error}' if error else ('breaker tripped' if band.get('tripped') else ''),
+                      action=formula, audit=audited, question='frozen intake questions v4',
+                      answer=facts or None,
+                      p=facts.get('p_no_design' if kind == 'intake.direct' else 'p_compact'),
+                      thresholds={k: {n: v for n, v in bands[k].items() if n != 'tripped'} for k in TIERS},
+                      reason=f'jev unavailable: {error}' if error else
+                      (f"breaker tripped: {', '.join(tripped)}" if tripped else ''),
                       model=model, usage=usage)
     state.append([record])
     result = {'bead': args.bead, 'formula': formula, 'audited': audited, 'decision_id': record['decision_id'],

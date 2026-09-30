@@ -1,0 +1,72 @@
+{
+  "id": "pr6786",
+  "questions": "questions/v4.json",
+  "ok": true,
+  "status": 200,
+  "body": {
+    "model": "jev-1.13.0",
+    "answers": {
+      "size": {
+        "type": "score",
+        "score": 0.99,
+        "confidence": 0.95,
+        "legend": {
+          "0": "compact: A local change: fix or implement one function or one small piece of logic in a single module, together with its tests. Roughly under 80 changed lines across at most three files, including tests. Adding a small helper or a few regression tests still counts. No new mechanism, no change other modules must adapt to.",
+          "1": "standard: A focused change that edits several functions or files, restructures a code path, or needs coordinated edits in more than one module, with tests, but introduces no new architecture.",
+          "2": "deep: A large or cross-cutting change: many files or subsystems, a new feature or mechanism, architecture or design work, public API, schema or storage-format changes, or data migration."
+        },
+        "probabilities": {
+          "0": 0.02,
+          "1": 0.97,
+          "2": 0.01
+        }
+      },
+      "spans_modules": {
+        "type": "noul",
+        "noul": 0.95
+      },
+      "hidden_scope": {
+        "type": "noul",
+        "noul": 0.14
+      },
+      "needs_design": {
+        "type": "choice",
+        "choice": "no",
+        "confidence": 0.86,
+        "probabilities": {
+          "cannot_tell": 0.0,
+          "no": 0.9,
+          "yes": 0.1
+        }
+      },
+      "risky_surface": {
+        "type": "choice",
+        "choice": "none",
+        "confidence": 0.94,
+        "probabilities": {
+          "cannot_tell": 0.0,
+          "none": 0.95,
+          "public_api_or_schema": 0.04,
+          "security_or_auth": 0.01,
+          "persistence_or_migration": 0.0
+        }
+      },
+      "well_specified": {
+        "type": "choice",
+        "choice": "clear_acceptance_criteria",
+        "confidence": 1.0,
+        "probabilities": {
+          "underspecified": 0.0,
+          "cannot_tell": 0.0,
+          "partially_specified": 0.0,
+          "clear_acceptance_criteria": 1.0
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 2206,
+      "output_tokens": 219
+    }
+  },
+  "latency_s": 0.1412494508549571
+}

@@ -580,29 +580,48 @@ def test_review_report_is_valid_and_labels_an_audited_miss(tmp_path, monkeypatch
 import jev_route  # noqa: E402
 
 
-def recorded_intake(pr):
-    data = json.loads((SPIKES / f'intake-router/calls/eval/{pr}.response.json').read_text())
-    return data['attempts'][-1]['body']['answers']
+def recorded_intake(record):
+    """Recorded jev-1.13.0 answers to the v4 intake questions (intake-v4 study, development set)."""
+    data = json.loads((ROOT / f'specs/experiments/jev-intake-v4/calls/dev-v4/{record}.json').read_text())
+    return data['body']['answers']
 
 
-def test_router_sends_recorded_compact_pr_to_compact_formula():
-    formula, audited, facts = jev_route.route(recorded_intake(6411), bands()['intake.compact'], 0, Never())
-    assert (formula, audited) == ('jev-build-compact', False)
-    assert facts['size'] == 'compact' and facts['risky_surface'] == 'none' and facts['needs_design'] == 'no'
+def test_router_sends_a_recorded_compact_task_to_the_compact_formula():
+    formula, kind, audited, facts = jev_route.route(recorded_intake('ab-slugify'), bands(), {}, Never())
+    assert (formula, kind, audited) == ('jev-build-compact', 'intake.compact', False)
+    assert facts['p_compact'] >= 0.8 and facts['risky_surface'] == 'none' and facts['needs_design'] == 'no'
 
 
-def test_router_keeps_the_near_miss_on_the_full_path():
-    # #6460: size compact at P 0.89 / confidence 0.82, stopped only by security_or_auth.
-    formula, audited, facts = jev_route.route(recorded_intake(6460), bands()['intake.compact'], 0, Never())
-    assert formula == 'jev-build' and facts['risky_surface'] != 'none'
+def test_router_skips_only_the_plan_for_a_clear_public_api_change():
+    formula, kind, _, facts = jev_route.route(recorded_intake('ab-legacy-work-options'), bands(), {}, Never())
+    assert (formula, kind) == ('jev-build-direct', 'intake.direct')
+    assert facts['risky_surface'] == 'public_api_or_schema' and facts['p_no_design'] >= 0.9
+
+
+def test_router_keeps_security_and_multi_module_work_on_the_full_path():
+    # #6460: 515 lines, compact-looking size, security surface. #5939: 9 files, spans modules.
+    for record in ('pr6460', 'pr5939'):
+        formula, _, _, facts = jev_route.route(recorded_intake(record), bands(), {}, Never())
+        assert formula == 'jev-build', record
+    assert jev_route.classify(recorded_intake('pr6460'))['risky_surface'] == 'security_or_auth'
 
 
 def test_router_audits_tripped_and_unavailable_paths():
-    answers = recorded_intake(6411)
-    assert jev_route.route(answers, bands()['intake.compact'], 0, Always())[:2] == ('jev-build', True)
-    tripped = {**bands()['intake.compact'], 'tripped': True}
-    assert jev_route.route(answers, tripped, 0, Never())[:2] == ('jev-build', False)
-    assert jev_route.route(None, bands()['intake.compact'], 0, Never()) == ('jev-build', False, {})
+    answers = recorded_intake('ab-slugify')
+    assert jev_route.route(answers, bands(), {}, Always())[:3] == ('jev-build', 'intake.compact', True)
+    tripped = {**bands(), 'intake.compact': {**bands()['intake.compact'], 'tripped': True}}
+    # A tripped compact band falls through to the next tier, not straight to full.
+    assert jev_route.route(answers, tripped, {}, Never())[:2] == ('jev-build-direct', 'intake.direct')
+    both = {**tripped, 'intake.direct': {**bands()['intake.direct'], 'tripped': True}}
+    assert jev_route.route(answers, both, {}, Never())[0] == 'jev-build'
+    assert jev_route.route(None, bands(), {}, Never()) == ('jev-build', 'intake.compact', False, {})
+
+
+def test_deep_proxy_flags_size_and_design_paths_only():
+    assert gate.deep_proxy({'a': {'files': [{'path': 'x.py'}], 'diff_lines': 500}}) is False
+    assert gate.deep_proxy({'a': {'files': [{'path': 'x.py'}], 'diff_lines': 601}}) is True
+    assert gate.deep_proxy({'a': {'files': [{'path': 'internal/auth/token.go'}], 'diff_lines': 9}}) is False
+    assert gate.deep_proxy({'a': {'files': [{'path': 'schemas/build/plan.v1.yaml'}], 'diff_lines': 9}}) is True
 
 
 def test_compact_proxy_matches_the_spike_ground_truth():
