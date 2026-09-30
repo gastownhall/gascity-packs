@@ -259,14 +259,22 @@ POLECAT_BRANCH_CONTENT_GATE_HALT_PATH = (
     ("halt_reason stamp", '--set-metadata halt_reason="$HALT_REASON"'),
     ("mayor and witness escalation", 'for ESCALATE_TARGET in mayor "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"; do'),
     ("escalation nudge", 'gc session nudge "$ESCALATE_TARGET"'),
-    # Anchored to the escalation loop's `done`, which occurs only in this gate.
-    # The checked window runs to the push, so it also spans the auto_push=false
-    # halt further down: a bare "gc runtime drain-ack" fragment is satisfied by
-    # that sibling's copy, and stayed green with this gate's own copy deleted.
-    # The same anchor pins the `exit 1` -- without it the fence ends rc=0 and
-    # the agent walks on to the push it just refused, having already released
-    # the bead.
-    ("halt exit", "    done\n    gc runtime drain-ack\n    exit 1"),
+    # The halt closes its own step before it acks: drain-ack hands back every
+    # claim the session still holds, and a step left claimed is run again.
+    # Anchored to the escalation loop's `done`, which occurs only in this gate,
+    # so the close cannot move ahead of the escalation and skip it.
+    ("halt close after escalation", "    done\n    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1"),
+    # Anchored to this gate's own close, whose `gc.failure_reason="$HALT_REASON"`
+    # occurs only here. The checked window runs to the push, so it also spans
+    # the auto_push=false halt further down: a bare "gc runtime drain-ack"
+    # fragment is satisfied by that sibling's copy, and stayed green with this
+    # gate's own copy deleted. The same anchor pins the `exit 1` -- without it
+    # the fence ends rc=0 and the agent walks on to the push it just refused,
+    # having already released the bead.
+    (
+        "halt exit",
+        'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    gc runtime drain-ack\n    exit 1',
+    ),
 )
 # mol-polecat-work resolves its base branch once (remote-first, local fallback,
 # else STOP) and carries the result forward. A literal-fragment pin catches

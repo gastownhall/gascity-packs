@@ -1204,10 +1204,20 @@ def test_validate_polecat_branch_content_gate_rejects_gate_moved_after_the_push(
         # step-3 push gate and pushes a branch this gate just declared unfit,
         # after the halt has already released the bead.
         pytest.param(
-            "    done\n    gc runtime drain-ack\n    exit 1",
-            "    done\n    gc runtime drain-ack",
+            'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    gc runtime drain-ack\n    exit 1',
+            'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    gc runtime drain-ack',
             "halt exit",
             id="deleted-halt-exit",
+        ),
+        # The halt closes its own step straight after the escalation loop. A
+        # statement wedged between them (an early exit, say) lets the gate halt
+        # without the close, and a close moved ahead of the loop breaks the
+        # same adjacency.
+        pytest.param(
+            "    done\n    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1",
+            "    done\n    true\n    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1",
+            "halt close after escalation",
+            id="statement-between-the-escalation-and-the-close",
         ),
     ],
 )
@@ -1231,15 +1241,16 @@ def test_validate_polecat_branch_content_gate_rejects_deleting_the_gates_own_dra
 
     An unanchored ``gc runtime drain-ack`` fragment is therefore satisfied by
     the auto_push=false halt's own copy, and deleting the branch-content gate's
-    drain-ack left the validator green. The fragment is anchored to the
-    escalation loop's ``done`` instead, which occurs only in this gate.
+    drain-ack left the validator green. The fragment is anchored to this gate's
+    own close instead, whose ``gc.failure_reason="$HALT_REASON"`` occurs only
+    in this gate.
     """
     pack_source = gastown_formulas_copy(tmp_path)
     path = pack_source / "formulas" / "mol-polecat-work.toml"
     text = path.read_text(encoding="utf-8")
-    original = "    done\n    gc runtime drain-ack\n    exit 1"
+    original = 'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    gc runtime drain-ack\n    exit 1'
     assert text.count(original) == 1
-    mutated = text.replace(original, "    done\n    exit 1")
+    mutated = text.replace(original, 'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    exit 1')
     path.write_text(mutated, encoding="utf-8")
 
     # The precondition that makes the rejection below meaningful: the bare

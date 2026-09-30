@@ -443,6 +443,10 @@ if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
     echo "  - Re-run submit-and-exit"
     echo ""
     echo "Do NOT proceed past this gate."
+    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+    STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+    printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+    gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=branch_shape_gate --status=closed || exit 1
     gc runtime drain-ack
     exit 1
 fi
@@ -557,6 +561,10 @@ BODY
       gc session nudge "$ESCALATE_TARGET" "POLECAT HANDOFF HALT ($HALT_REASON): $WORK_BEAD_ID on $EXPECTED_BRANCH — no handoff stamped; bead returned to the pool open and unassigned. Needs a coordinator decision." \
         || echo "WARNING: could not nudge $ESCALATE_TARGET about $WORK_BEAD_ID; escalate by hand."
     done
+    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+    STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+    printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+    gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason="$HALT_REASON" --status=closed || exit 1
     gc runtime drain-ack
     exit 1
 fi
@@ -701,6 +709,10 @@ Resolve: check the ledger is healthy, then record the decision as metadata —
   gc bd update $WORK_BEAD_ID --set-metadata auto_push=false   # confirm the halt
   gc bd update $WORK_BEAD_ID --set-metadata auto_push=true    # authorise the push
 and re-sling. Use --set-metadata so branch and gc.routed_to survive."
+  STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+  STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+  printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+  gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=metadata_unreadable --status=closed || exit 1
   gc runtime drain-ack
   exit 0
 fi
@@ -718,6 +730,10 @@ if [ "$AUTO_PUSH" = "false" ]; then
     --set-metadata halt_reason=auto_push_false \
     --set-metadata gc.routed_to="" \
     --append-notes "Branch ready: auto_push=false (no push, no refinery handoff)"
+  STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+  STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+  printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+  gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=auto_push_false --status=closed || exit 1
   gc runtime drain-ack
   exit 0
 fi
@@ -821,6 +837,10 @@ Resolve: read the rail, then record the decision as metadata —
   gc bd update $WORK_BEAD_ID --set-metadata auto_push=false   # confirm the halt
   gc bd update $WORK_BEAD_ID --set-metadata auto_push=true    # authorise the push
 and re-sling. Use --set-metadata so branch and gc.routed_to survive."
+    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+    STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+    printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+    gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=no_push_rail_unresolved --status=closed || exit 1
     gc runtime drain-ack
     exit 0
   fi
@@ -847,6 +867,10 @@ if ! git show-ref --verify --quiet "refs/remotes/origin/{{base_branch}}"; then
     --set-metadata gc.routed_to="" \
     --append-notes "Branch ready: base branch {{base_branch}} does not exist on origin, so the refinery cannot merge it. Push the base branch, then re-run submit-and-exit."
   gc mail send "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness" -s "polecat halted: base_branch_local_only ($WORK_BEAD_ID)" -m "Work is committed on branch $BRANCH, but base branch {{base_branch}} does not exist on origin, so the refinery cannot merge it. Push the base branch, then re-run submit-and-exit for $WORK_BEAD_ID."
+  STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+  STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+  printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+  gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=base_branch_local_only --status=closed || exit 1
   gc runtime drain-ack
   exit 0
 fi
@@ -858,6 +882,10 @@ if [ $PUSH_EXIT -ne 0 ]; then
     echo "Aborting handoff — bead stays with polecat."
     echo ""
     echo "Diagnose the push failure (network, auth, force-needed?) and re-run submit-and-exit."
+    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+    STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+    printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+    gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=push_failed --status=closed || exit 1
     gc runtime drain-ack
     exit 1
 fi
@@ -868,6 +896,10 @@ if [ -z "$REMOTE_REF" ]; then
     echo "PUSH VERIFICATION FAILED"
     echo "  git push exited 0 but 'git ls-remote' returned no ref for '$CURRENT_BRANCH' on origin."
     echo "  Branch is local-only. Aborting handoff."
+    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+    STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+    printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+    gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=push_verify_failed --status=closed || exit 1
     gc runtime drain-ack
     exit 1
 fi
@@ -876,6 +908,10 @@ if [ "$REMOTE_REF" != "$LOCAL_HEAD" ]; then
     echo "  origin/$CURRENT_BRANCH = $REMOTE_REF"
     echo "  local HEAD             = $LOCAL_HEAD"
     echo "  Branch tip on origin does not match local HEAD. Aborting handoff."
+    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+    STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+    printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+    gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=push_verify_failed --status=closed || exit 1
     gc runtime drain-ack
     exit 1
 fi
@@ -968,6 +1004,10 @@ the work on its next poll.
 
 **8. Signal reconciler and exit.**
 ```bash
+STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed || exit 1
 gc runtime drain-ack
 exit
 ```
@@ -976,4 +1016,4 @@ exit
 reconciler only restarts you if the pool check command finds more work.
 You are GONE. Done means gone. There is no idle state.
 
-**Exit criteria:** Branch pushed, metadata set, bead reassigned, refinery signaled, drain acknowledged, session exited."""
+**Exit criteria:** Branch pushed, metadata set, bead reassigned, refinery signaled, this step closed, drain acknowledged, session exited."""
