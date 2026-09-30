@@ -134,14 +134,14 @@ def configure_experiment_env(env, workspace, *, real_home, claude_config_dir=Non
     return env
 
 
-def new_runtime_workspace(pack, name):
+def new_runtime_workspace(pack, name, work_root='/tmp'):
     """Lay out a standalone city and a fixture cloned from its own origin.
 
     Nothing is registered here: `gc init` and `gc rig add` do that later, the
     same way an operator would.
     """
     # macOS sockaddr_un cannot hold paths under the artifact directory.
-    root = Path(tempfile.mkdtemp(prefix='gcja-', dir='/tmp'))/'w'
+    root = Path(tempfile.mkdtemp(prefix='gcja-', dir=work_root))/'w'
     workspace = gate.GateWorkspace(root=root.resolve(), city_dir=root.resolve()/'city',
         rig_dir=root.resolve()/'fixture', gc_home=root.resolve()/'gc-home',
         runtime_dir=root.resolve()/'runtime', claude_config_dir=root.resolve()/'gc-home/.claude',
@@ -519,7 +519,7 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
     if load['status'] != 'passed':
         raise ValueError(f"Host load {load['load_average'][0]:.1f} exceeds {load['max_load']}; "
                          'timings from a saturated host are not comparable')
-    workspace = new_runtime_workspace(pack, out.name)
+    workspace = new_runtime_workspace(pack, out.name, getattr(args, 'work_root', '/tmp'))
     save(out/'runtime-path.json', {'root': str(workspace.root), 'retained': True})
     env = gate.build_gate_env(args.gc_bin, workspace, bd_bin=args.bd_bin)
     # Isolate the supervisor's state. Workers reach Claude through the city's own
@@ -701,6 +701,8 @@ def main():
     p.add_argument('--claude-command',default='claude',help='Claude CLI the city launches for every role.')
     p.add_argument('--claude-auth',default='',
                    help='Comma-separated accepted `auth status` methods; empty accepts any logged-in method.')
+    p.add_argument('--work-root',default='/tmp',
+                   help='Short directory for disposable run workspaces (kept after each run); /tmp may be a shared tmpfs.')
     p.add_argument('--keep-helpers',action='store_true',
                    help="Leave the bd pack's Dolt maintenance dogs running (suspended by default in both arms).")
     p.add_argument('--gc-env-file',default='',
