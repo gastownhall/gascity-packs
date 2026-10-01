@@ -83,6 +83,8 @@ class GcMock:
         self._calls: list[GcCall] = []
         self._lock = threading.Lock()
         self._bindings: dict[str, list[dict[str, Any]]] = {}
+        self._sessions: list[dict[str, str]] = []
+        self._agent_binding_beads: list[dict[str, Any]] = []
         self._inbound_events: list[dict[str, Any]] = []
         # transcripts[(provider, conversation_id, kind)] = list of entries
         # in chronological order. Each entry mirrors gc's transcript shape:
@@ -154,6 +156,21 @@ class GcMock:
         }
         with self._lock:
             self._bindings.setdefault(session_id, []).append(entry)
+
+    def register_agent_binding(self, session_id: str, agent_name: str,
+                               conversation_id: str) -> None:
+        with self._lock:
+            self._sessions.append({"id": session_id, "alias": agent_name})
+            self._agent_binding_beads.append({
+                "status": "open",
+                "labels": [f"extmsg:binding:agent:v1:{agent_name}"],
+                "metadata": {
+                    "agent_name": agent_name, "session_id": "", "provider": "slack",
+                    "scope_id": self.city_name, "account_id": "T0TESTWS",
+                    "conversation_id": conversation_id, "conversation_kind": "room",
+                    "bound_at": "2026-09-13T16:13:07Z", "expires_at": "",
+                },
+            })
 
     def register_inbound_event(
         self,
@@ -289,6 +306,20 @@ class GcMock:
 
         if method == "GET" and suffix == "/extmsg/bindings":
             self._handle_bindings_lookup(req, query)
+            return
+
+        if method == "GET" and suffix in ("/sessions", "/beads"):
+            with self._lock:
+                entries = list(self._sessions) if suffix == "/sessions" else [
+                    bead for bead in self._agent_binding_beads
+                    if query.get("label") in bead["labels"]
+                    and bead["status"] == query.get("status")]
+            resp = json.dumps({"items": entries, "total": len(entries)}).encode()
+            req.send_response(200)
+            req.send_header("Content-Type", "application/json")
+            req.send_header("Content-Length", str(len(resp)))
+            req.end_headers()
+            req.wfile.write(resp)
             return
 
         if method == "POST" and suffix == "/extmsg/outbound":

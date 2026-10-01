@@ -184,6 +184,13 @@ def main(argv: list[str]) -> int:
         "via": args.via,
         "result": result,
     }, indent=2))
+    delivered, failure_kind = common.interpret_publish_receipt(result)
+    if not delivered:
+        print(
+            f"slack upload failed: delivered=false failure_kind={failure_kind or 'unknown'}",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
