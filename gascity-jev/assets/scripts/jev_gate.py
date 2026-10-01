@@ -103,10 +103,10 @@ class Gc:
         return data
 
     def update(self, bead_id: str, metadata: dict[str, str]) -> None:
-        args = ['bd', 'update', bead_id]
+        flags = []
         for key, value in metadata.items():
-            args += ['--set-metadata', f'{key}={value}']
-        self.run(*args)
+            flags += ['--set-metadata', f'{key}={value}']
+        self.run('bd', 'update', bead_id, *flags)
 
     def close(self, bead_id: str, reason: str) -> None:
         # A one-shot script session's claim assigns the bead to the session id,

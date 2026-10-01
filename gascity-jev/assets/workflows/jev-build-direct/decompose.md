@@ -29,12 +29,12 @@ The validator only recognizes a Markdown table with an `ID` column and a
 | REQ-001 | covered |
 
 Use mapping objects for front matter; do not use scalar shortcuts such as
-`workflow: build-basic`. The top-level YAML shape must be:
+`workflow: jev-build-direct`. The top-level YAML shape must be:
 
 - `schema: gc.build.decomposition.v1`
-- `workflow: {id: <workflow-root-id>, formula: build-basic}`
-- `methodology: {pack: gascity, name: build-basic}`
-- `producer: {formula: build-basic, stage: decompose, attempt: <positive integer>}`
+- `workflow: {id: <workflow-root-id>, formula: <root gc.formula_name, normally jev-build-direct>}`
+- `methodology: {pack: gascity-jev, name: jev-build}`
+- `producer: {formula: jev-build-direct, stage: decompose, attempt: <positive integer>}`
 - `status: approved` or another schema-allowed status
 - `trace: {upstream: [...], coverage: [...]}`
 

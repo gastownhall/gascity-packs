@@ -127,7 +127,8 @@ def test_direct_route_drops_only_the_plan_stages_and_keeps_decomposition_checked
     assert s['decompose']['metadata'] == base['metadata'] and s['decompose']['check'] == base['check']
     prompt = (PACK / 'formulas' / s['decompose']['description_file']).resolve().read_text()
     assert prompt.startswith('This build has no plan stage')
-    assert (ROOT / 'gascity/assets/workflows/build-basic/decompose.md').read_text() in prompt
+    assert 'methodology: {pack: gascity-jev, name: jev-build}' in prompt and 'build-basic' not in prompt
+    assert 'gc.build.decomposition_path' in prompt and 'gc convoy create' in prompt
 
 
 def test_every_description_file_exists():

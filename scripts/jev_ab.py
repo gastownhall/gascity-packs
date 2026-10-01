@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -218,7 +219,9 @@ def main():
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=False)
     versions = {}
-    for name, cmd in [('gc', ['gc', 'version']), ('bd', ['bd', 'version']), ('claude', ['claude', '--version'])]:
+    # `gc bd version` needs a city; the version query touches no bead store.
+    tools = {'gc': ['gc', 'version'], 'bd': [shutil.which('bd') or 'bd', 'version'], 'claude': ['claude', '--version']}
+    for name, cmd in tools.items():
         versions[name] = subprocess.check_output(cmd, text=True).strip()
     save(args.out / 'manifest.json', {'at': stamp(), 'scope': 'evidence-assessment',
          'argv': sys.argv, 'versions': versions, 'base': jev.git_head(ROOT),

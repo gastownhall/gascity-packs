@@ -73,18 +73,17 @@ def show(bead_id: str) -> dict:
 
 
 def update(bead_id: str, **metadata: str) -> None:
-    args = ['bd', 'update', bead_id]
+    flags = []
     for key, value in metadata.items():
-        args += ['--set-metadata', f'{key.replace("__", ".")}={value}']
-    gc(*args)
+        flags += ['--set-metadata', f'{key.replace("__", ".")}={value}']
+    gc('bd', 'update', bead_id, *flags)
 
 
 def close(bead_id: str, reason: str, outcome: str = 'pass', **metadata: str) -> None:
-    args = ['bd', 'update', bead_id, '--set-metadata', f'gc.outcome={outcome}',
-            '--set-metadata', f'stub.close_reason={reason}']
+    flags = ['--set-metadata', f'gc.outcome={outcome}', '--set-metadata', f'stub.close_reason={reason}']
     for key, value in metadata.items():
-        args += ['--set-metadata', f'{key.replace("__", ".")}={value}']
-    gc(*args, '--status', 'closed')
+        flags += ['--set-metadata', f'{key.replace("__", ".")}={value}']
+    gc('bd', 'update', bead_id, *flags, '--status', 'closed')
 
 
 def scenario() -> dict:

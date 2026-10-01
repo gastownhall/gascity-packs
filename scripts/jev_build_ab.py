@@ -286,11 +286,13 @@ def install_gate_toolchain(env, workspace, *, python_bin, bd_bin):
     return {**env, 'PATH':str(directory)+os.pathsep+env.get('PATH','')}
 
 
-def check_gate_python(env, workspace):
+def check_gate_python(env, workspace, bd_bin):
     # Replay v1.4.2 conditionPATH/ConditionEnv. The real RunCondition boundary
     # is separately verified in diagnosis/gate-python, including red and green.
+    # gc's restricted check-gate PATH: the directories of the beads, gc, dolt and
+    # jq executables, in that order.
     directories=[]
-    for name in ('bd','gc','dolt','jq'):
+    for name in (bd_bin, 'gc', 'dolt', 'jq'):
         path=shutil.which(name,path=env['PATH'])
         if path and str(Path(path).parent) not in directories:
             directories.append(str(Path(path).parent))
@@ -532,7 +534,7 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
     env['CLAUDE_CODE_EFFORT_LEVEL'] = 'low'
     env['PATH'] = str(Path(sys.executable).parent) + os.pathsep + env['PATH']
     env = install_gate_toolchain(env,workspace,python_bin=sys.executable,bd_bin=args.bd_bin)
-    python_preflight = check_gate_python(env,workspace)
+    python_preflight = check_gate_python(env,workspace,args.bd_bin)
     save(out/'gate-python-preflight.json',python_preflight)
     if python_preflight['status'] != 'passed':
         raise ValueError('Gate Python dependency preflight failed: '+python_preflight['stderr'])
@@ -549,7 +551,8 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
         save(out/'subscription-preflight.json', {**check_claude_login(args.claude_command, args.claude_auth, env),
              'gc_env_file': getattr(args, 'gc_env_file', ''), 'gc_env_names': sorted(gc_env)})
     versions = {name: subprocess.check_output(cmd, text=True).strip() for name,cmd in
-                [('gc',[args.gc_bin,'version','--long']),('bd',[args.bd_bin,'version']),('claude',[args.claude_command,'--version']),('bash',['bash','--version'])]}
+                {'gc': [args.gc_bin,'version','--long'], 'bd': [args.bd_bin,'version'],
+                 'claude': [args.claude_command,'--version'], 'bash': ['bash','--version']}.items()}
     save(out/'manifest.json', {'argv': sys.argv, 'versions': versions, 'model': args.model,
          'workload': {'name': workload.name, 'kind': workload.kind, 'task': workload.task(), **workload.notes},
          'jev_model': args.jev_model, 'arm': arm, 'setup': 'operator-path',
