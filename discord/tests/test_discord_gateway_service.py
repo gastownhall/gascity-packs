@@ -131,6 +131,145 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "delivered")
         self.assertEqual(receipt["app"], "")
 
+    def test_summarize_body_detail_reports_whether_it_clipped(self) -> None:
+        short, clipped = gateway_service.summarize_body_detail("well within the limit")
+        self.assertEqual(short, "well within the limit")
+        self.assertFalse(clipped)
+
+        exact, clipped = gateway_service.summarize_body_detail("x" * gateway_service.MAX_STATUS_PREVIEW)
+        self.assertEqual(exact, "x" * gateway_service.MAX_STATUS_PREVIEW)
+        self.assertFalse(clipped)
+
+        over, clipped = gateway_service.summarize_body_detail("x" * (gateway_service.MAX_STATUS_PREVIEW + 1))
+        self.assertTrue(clipped)
+        self.assertTrue(over.endswith("..."))
+
+    def test_ingress_body_fields_keeps_the_whole_message(self) -> None:
+        # 467 chars is the length of the operator message that went out clipped
+        # on 2026-07-25 and started gm-pbejk.
+        content = "A" * 467
+        fields = gateway_service.ingress_body_fields({"content": content}, "999")
+
+        self.assertEqual(fields["body"], content)
+        self.assertEqual(fields["body_length"], 467)
+        self.assertTrue(fields["body_truncated"])
+        self.assertEqual(len(fields["body_preview"]), gateway_service.MAX_STATUS_PREVIEW + len("..."))
+
+    def test_ingress_body_fields_marks_a_short_message_untruncated(self) -> None:
+        fields = gateway_service.ingress_body_fields({"content": "<@999> ship it"}, "999")
+
+        self.assertEqual(fields["body"], "ship it")
+        self.assertEqual(fields["body_preview"], "ship it")
+        self.assertFalse(fields["body_truncated"])
+        self.assertEqual(fields["body_length"], len("ship it"))
+
+    def test_ingress_body_fields_preserves_paragraphs_the_preview_flattens(self) -> None:
+        fields = gateway_service.ingress_body_fields({"content": "<@999> do this\n\n- then this\n- and this"}, "999")
+
+        self.assertEqual(fields["body"], "do this\n\n- then this\n- and this")
+        self.assertEqual(fields["body_preview"], "do this - then this - and this")
+        self.assertFalse(fields["body_truncated"])
+
+    def test_ingress_body_fields_keeps_paragraphs_after_an_embedded_mention(self) -> None:
+        content = "first paragraph <@999>\n\nsecond paragraph"
+        fields = gateway_service.ingress_body_fields({"content": content}, "999")
+
+        self.assertIn("\n\n", fields["body"])
+        self.assertTrue(fields["body"].startswith("first paragraph"))
+        self.assertTrue(fields["body"].endswith("second paragraph"))
+        # routing keeps the flattened form it always had
+        self.assertEqual(
+            gateway_service.strip_bot_mentions(content, "999"),
+            "first paragraph second paragraph",
+        )
+
+    def test_process_inbound_dm_records_a_long_body_without_loss(self) -> None:
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        # Long enough to clip, and split across lines so a flattening bug shows up
+        # as a content difference rather than only a length one.
+        content = ("Delegating this one to you.\n\n" + "Detail line. " * 40).strip()
+        self.assertGreater(len(content), gateway_service.MAX_STATUS_PREVIEW)
+        message = {
+            "id": "104",
+            "channel_id": "55",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "suspended"}}
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted", "id": "gc-1"}):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        receipt = common.load_chat_ingress("in-104")
+        assert receipt is not None
+        self.assertEqual(receipt["body"], content)
+        self.assertEqual(receipt["body_length"], len(content))
+        self.assertTrue(receipt["body_truncated"])
+        self.assertTrue(receipt["body_preview"].endswith("..."))
+
+    def test_rejected_ingress_receipt_records_the_full_body(self) -> None:
+        # A message the gateway refuses is still a message the operator sent; the
+        # rejection paths write their own receipts and must not drop it either.
+        content = "B" * 400
+        message = {
+            "id": "105",
+            "channel_id": "55",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        gateway_service.save_rejected_ingress_receipt(
+            message,
+            "999",
+            status="rejected_shutting_down",
+            reason="service_shutting_down",
+        )
+
+        receipt = common.load_chat_ingress("in-105")
+        assert receipt is not None
+        self.assertEqual(receipt["body"], content)
+        self.assertTrue(receipt["body_truncated"])
+
+    def test_room_launch_record_keeps_the_whole_body(self) -> None:
+        # The launch record is the launcher room's own copy of the message, and
+        # a reader browsing launches sees it instead of the ingress receipt.
+        # Same loss, same fix: it must carry the body, not just the preview.
+        self._configure_discord_app()
+        common.set_room_launcher(common.load_config(), "1", "22")
+        content = ("@@corp/sky take this one.\n\n" + "Detail line. " * 40).strip()
+        self.assertGreater(len(content), gateway_service.MAX_STATUS_PREVIEW)
+        message = {
+            "id": "106",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common, "resolve_existing_session_for_handle", return_value={"session_name": "sky"}
+        ), mock.patch.object(
+            common, "ensure_room_launch_session", side_effect=lambda launch, **kwargs: launch
+        ), mock.patch.object(
+            gateway_service, "resume_ingress_delivery", side_effect=lambda receipt, **kwargs: receipt
+        ):
+            gateway_service.process_room_launch_message(
+                base_receipt={"ingress_id": "in-106", "discord_message_id": "106"},
+                launcher={"id": "launcher:1:22"},
+                message=message,
+                bot_user_id="999",
+                ingress_id="in-106",
+            )
+
+        launch = common.load_room_launch(common.room_launch_record_id("106"))
+        assert launch is not None
+        self.assertEqual(launch["body"], content)
+        self.assertEqual(launch["body_length"], len(content))
+        self.assertTrue(launch["body_truncated"])
+        self.assertTrue(launch["body_preview"].endswith("..."))
+
     def test_process_inbound_room_message_targets_only_named_alias(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["sky", "lawrence"], guild_id="1")
         message = {

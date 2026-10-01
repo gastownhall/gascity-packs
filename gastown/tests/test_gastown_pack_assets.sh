@@ -600,6 +600,43 @@ if verify >= metadata:
 PY
 }
 
+# The refinery formula and its prompt are one contract surface (the paired pin
+# in test_work_bead_resolution_discriminator_is_pinned loops both paths for the
+# same reason), so the prompt must not contradict the formula's guarded rebase.
+# Issue 374 made `git rebase origin/$TARGET` conditional on an ancestry probe,
+# which turned two previously-correct prompt lines wrong: a one-liner under a
+# column header titled "Correct command", and a categorical rebase MUST. Both
+# are what an agent copies instead of re-reading the step.
+test_refinery_rebase_guidance_matches_the_guarded_step() {
+    local refinery refinery_prompt probe path unguarded
+    refinery="$GASTOWN/formulas/mol-refinery-patrol.toml"
+    refinery_prompt="$GASTOWN/agents/refinery/prompt.template.md"
+    probe='git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"'
+
+    # The formula decides and the prompt may only describe the decision, so the
+    # probe has to be present in both: dropping it from either half is what let
+    # the two descriptions drift apart in the first place.
+    for path in "$refinery" "$refinery_prompt"; do
+        grep -F -- "$probe" "$path" >/dev/null ||
+            fail "the refinery rebase is an ancestry decision, not an unconditional rebase; the probe is missing from $path"
+    done
+
+    # Every quick-reference row naming the rebase must name the probe in the
+    # same row.  Counting unguarded rows rather than pinning one exact row keeps
+    # this from freezing the row's wording.  Scoped to table rows (lines opening
+    # with `|`), because file-wide it also reds prose that legitimately names the
+    # bare rebase -- describing the rc=1 arm, for instance.  The cheat-sheet
+    # one-liner this exists to catch is a table row by construction.
+    unguarded="$(grep -E '^\|' "$refinery_prompt" | grep -F 'git rebase origin/$TARGET' | grep -c -v -F -- "$probe" || true)"
+    [[ "${unguarded:-0}" -eq 0 ]] ||
+        fail "the refinery prompt publishes 'git rebase origin/\$TARGET' as a Correct command without the ancestry probe in the same row (${unguarded} row(s)); a bare cheat-sheet one-liner overrides the guarded step"
+
+    # The Sequential Rebase Protocol's MUST is the other half. Scoped to the
+    # diverged case it agrees with the step; categorical it forbids the skip arm.
+    ! grep -F 'Next branch MUST rebase on new baseline.' "$refinery_prompt" >/dev/null ||
+        fail "the refinery prompt's Sequential Rebase Protocol still states a categorical rebase MUST; scope it to the diverged case so it cannot override the rebase step's skip arm"
+}
+
 test_prime_prompts_are_city_generic_and_compact() {
     local mayor propulsion awareness
     mayor="$GASTOWN/agents/mayor/prompt.template.md"
@@ -703,5 +740,6 @@ test_boot_wisp_queries_pin_include_infra
 test_boot_patrol_burn_resolves_current_wisp
 test_boot_deacon_observation_query_sees_wisps_tier
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
+test_refinery_rebase_guidance_matches_the_guarded_step
 
 echo "gastown pack asset tests passed"

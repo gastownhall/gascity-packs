@@ -2063,6 +2063,10 @@ def redact_chat_ingress_record(payload: dict[str, Any]) -> dict[str, Any]:
         body["from_display"] = "[redacted]"
     if body.get("from_user_id"):
         body["from_user_id"] = "[redacted]"
+    # "body" carries the whole message and "body_preview" its first 160 chars.
+    # Both are the human's words; the admin page is tenant-visible.
+    if body.get("body"):
+        body["body"] = "[redacted]"
     if body.get("body_preview"):
         body["body_preview"] = "[redacted]"
     return body
@@ -2081,6 +2085,8 @@ def redact_room_launch_record(payload: dict[str, Any]) -> dict[str, Any]:
         body["from_display"] = "[redacted]"
     if body.get("from_user_id"):
         body["from_user_id"] = "[redacted]"
+    if body.get("body"):
+        body["body"] = "[redacted]"
     if body.get("body_preview"):
         body["body_preview"] = "[redacted]"
     return body

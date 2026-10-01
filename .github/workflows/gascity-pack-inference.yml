@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       gascity_ref:
-        description: "Gas City module ref/version to install, such as latest, main, or v1.2.1."
+        description: "Gas City module ref/version to install: latest, main, a tag such as v1.2.1, or a commit SHA. Not a branch name with a slash (release/v1.5.0 is rejected by go); pass its tag or commit SHA."
         required: false
         default: latest
       gascity_setup_ref:
@@ -55,7 +55,7 @@ permissions:
 
 env:
   DOLT_VERSION: "2.1.7"
-  BD_VERSION: "v1.1.0"
+  BD_VERSION: "v1.3.0"
   CLAUDE_VERSION: "2.1.123"
   # Claude Code appends /v1/messages itself, so this base URL intentionally
   # does not end in /v1.
@@ -121,7 +121,21 @@ jobs:
         env:
           GASCITY_REF: ${{ github.event.client_payload.gascity_ref || github.event.inputs.gascity_ref || 'latest' }}
         run: |
-          go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_REF}"
+          # Resolve the ref once so gc and the builtin core/bd packs the gate
+          # imports (GASCITY_SOURCE_ROOT) come from the same gascity revision.
+          gascity_module="$(go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}")"
+          gascity_version="$(jq -er .Version <<<"$gascity_module")"
+          gascity_commit="$(jq -er .Origin.Hash <<<"$gascity_module")"
+          go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"
+          # Import core/bd from a git checkout of that commit, never the module
+          # cache directory: module zips drop file modes, so every pack script gc
+          # execs would fail with exit 126.
+          gascity_src="${RUNNER_TEMP}/gascity-src"
+          git init --quiet "$gascity_src"
+          git -C "$gascity_src" fetch --quiet --depth 1 https://github.com/gastownhall/gascity.git "$gascity_commit"
+          git -C "$gascity_src" checkout --quiet --detach FETCH_HEAD
+          echo "GASCITY_SOURCE_ROOT=${gascity_src}" >> "$GITHUB_ENV"
+          echo "gascity ${GASCITY_REF} resolved to ${gascity_version} (${gascity_commit}) at ${gascity_src}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           "$(go env GOPATH)/bin/gc" version
 

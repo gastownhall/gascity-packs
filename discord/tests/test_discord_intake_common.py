@@ -3814,6 +3814,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 "ingress_id": "in-1",
                 "from_display": "alice",
                 "from_user_id": "u-1",
+                "body": "super secret body, at whatever length the human typed it",
                 "body_preview": "super secret body",
                 "status": "delivered",
             }
@@ -3838,7 +3839,26 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(snapshot["recent_chat_ingress"][0]["from_display"], "[redacted]")
         self.assertEqual(snapshot["recent_chat_ingress"][0]["from_user_id"], "[redacted]")
         self.assertEqual(snapshot["recent_chat_ingress"][0]["body_preview"], "[redacted]")
+        # The full body is the same human's words as the preview, and the admin
+        # page this snapshot feeds is tenant-visible.
+        self.assertEqual(snapshot["recent_chat_ingress"][0]["body"], "[redacted]")
         self.assertEqual(snapshot["recent_chat_publishes"][0]["body"], "[redacted]")
+
+    def test_redact_room_launch_record_hides_full_body(self) -> None:
+        redacted = common.redact_room_launch_record(
+            {
+                "launch_id": "room-launch:1",
+                "from_display": "alice",
+                "from_user_id": "u-1",
+                "body": "the whole launch instruction",
+                "body_preview": "the whole launch",
+            }
+        )
+
+        self.assertEqual(redacted["from_display"], "[redacted]")
+        self.assertEqual(redacted["from_user_id"], "[redacted]")
+        self.assertEqual(redacted["body"], "[redacted]")
+        self.assertEqual(redacted["body_preview"], "[redacted]")
 
     def test_list_recent_requests_skips_invalid_json_files(self) -> None:
         common.save_request({"request_id": "dc-valid"})
