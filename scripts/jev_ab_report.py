@@ -192,10 +192,11 @@ def render(runs: list[dict]) -> str:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('experiment', type=Path)
+    parser.add_argument('experiment', type=Path, nargs='+', help='One or more experiment directories (e.g. a run and its reruns).')
     parser.add_argument('--json', type=Path, help='Also write the per-run data as JSON.')
     args = parser.parse_args(argv)
-    runs = collect(args.experiment)
+    runs = [run if len(args.experiment) == 1 else {**run, 'run': f"{experiment.name}/{run['run']}"}
+            for experiment in args.experiment for run in collect(experiment)]
     if args.json:
         args.json.write_text(json.dumps(runs, indent=2) + '\n')
     print(render(runs), end='')

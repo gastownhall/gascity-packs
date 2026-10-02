@@ -27,7 +27,18 @@ command line: `gc gc jev-route <bead>` (jev) or
   workload ran once with each arm first.
 - Hidden pass is the harness's verdict on the result it selected.
 
-## Evidence
+## Experiments
+
+| A/B | Pack | What it measured | Requests, Jev vs baseline | Hidden pass, baseline → Jev |
+| --- | --- | --- | --- | --- |
+| ab-001 (this page) | gate-only overlay | the first overlay: Jev decides only which Claude review lanes run | −17% planted, ±0 backlog | 6/8 → 4/8 |
+| [ab-002](ab-002/README.md) | three-tier routing, gate fixes | 32 builds with the 30% day-one audit schedule | −26% overall; −46% compact, −38% direct | 9/16 → 11/16 |
+| [ab-003](ab-003/README.md) | ab-002 plus fixes, 5% audits | 16-build confirmation run with the routes running as designed | **−43%** (time −42%, tokens −44–48%) | 6/8 → 6/8 |
+
+ab-001's evidence is committed in full; from ab-002 on, only each A/B's
+write-up and report are tracked and the raw runs stay on the host.
+
+## ab-001 evidence
 
 - [smoke-002](smoke-002/): one jev `slugify` build that passed end to end
   before the A/B.

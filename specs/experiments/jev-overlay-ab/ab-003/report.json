@@ -1,0 +1,1507 @@
+[
+  {
+    "run": "ab-003/run-001-baseline-slugify",
+    "arm": "baseline",
+    "workload": "slugify",
+    "kind": "planted",
+    "status": "completed",
+    "formula": "build-basic",
+    "elapsed_seconds": 1727.7291360439267,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "-",
+    "skipped_lanes": [],
+    "stages": {
+      "summarize": {
+        "requests": 28,
+        "sessions": 1,
+        "input_tokens": 56,
+        "cache_creation_input_tokens": 123927,
+        "cache_read_input_tokens": 2414704,
+        "output_tokens": 7326
+      },
+      "plan": {
+        "requests": 12,
+        "sessions": 1,
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 76394,
+        "cache_read_input_tokens": 808497,
+        "output_tokens": 3234
+      },
+      "helpers": {
+        "requests": 3,
+        "sessions": 2,
+        "input_tokens": 6,
+        "cache_creation_input_tokens": 132157,
+        "cache_read_input_tokens": 65977,
+        "output_tokens": 261
+      },
+      "review": {
+        "requests": 63,
+        "sessions": 7,
+        "input_tokens": 126,
+        "cache_creation_input_tokens": 337900,
+        "cache_read_input_tokens": 4445422,
+        "output_tokens": 14239
+      },
+      "requirements": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 85091,
+        "cache_read_input_tokens": 586933,
+        "output_tokens": 2679
+      },
+      "implement": {
+        "requests": 45,
+        "sessions": 3,
+        "input_tokens": 90,
+        "cache_creation_input_tokens": 175713,
+        "cache_read_input_tokens": 3239276,
+        "output_tokens": 8967
+      },
+      "publish": {
+        "requests": 4,
+        "sessions": 1,
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 11087,
+        "cache_read_input_tokens": 266369,
+        "output_tokens": 877
+      },
+      "decompose": {
+        "requests": 17,
+        "sessions": 1,
+        "input_tokens": 34,
+        "cache_creation_input_tokens": 161018,
+        "cache_read_input_tokens": 1156110,
+        "output_tokens": 3539
+      },
+      "prepare": {
+        "requests": 10,
+        "sessions": 1,
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 74359,
+        "cache_read_input_tokens": 643128,
+        "output_tokens": 1717
+      },
+      "plan-review": {
+        "requests": 7,
+        "sessions": 1,
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 75145,
+        "cache_read_input_tokens": 432641,
+        "output_tokens": 963
+      }
+    },
+    "decisions": {},
+    "total": {
+      "requests": 198,
+      "input_tokens": 396,
+      "cache_creation_input_tokens": 1252791,
+      "cache_read_input_tokens": 14059057,
+      "output_tokens": 43802
+    }
+  },
+  {
+    "run": "ab-003/run-002-jev-slugify",
+    "arm": "jev",
+    "workload": "slugify",
+    "kind": "planted",
+    "status": "completed",
+    "formula": "jev-build-compact",
+    "elapsed_seconds": 858.7173908930272,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "jev",
+    "skipped_lanes": [
+      "test_evidence"
+    ],
+    "stages": {
+      "review": {
+        "requests": 54,
+        "sessions": 6,
+        "input_tokens": 108,
+        "cache_creation_input_tokens": 294818,
+        "cache_read_input_tokens": 3745519,
+        "output_tokens": 12669
+      },
+      "implement": {
+        "requests": 52,
+        "sessions": 4,
+        "input_tokens": 104,
+        "cache_creation_input_tokens": 220571,
+        "cache_read_input_tokens": 3771248,
+        "output_tokens": 10201
+      },
+      "prepare": {
+        "requests": 10,
+        "sessions": 1,
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 78775,
+        "cache_read_input_tokens": 672103,
+        "output_tokens": 2391
+      }
+    },
+    "decisions": {
+      "review.test_evidence": {
+        "act": 1
+      },
+      "review.criterion": {
+        "confirm": 1,
+        "act": 3,
+        "labeled": 1,
+        "unscored": 1,
+        "miss": 0
+      },
+      "smell.clean": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      },
+      "intake.compact": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      }
+    },
+    "total": {
+      "requests": 116,
+      "input_tokens": 232,
+      "cache_creation_input_tokens": 594164,
+      "cache_read_input_tokens": 8188870,
+      "output_tokens": 25261
+    }
+  },
+  {
+    "run": "ab-003/run-003-jev-durations",
+    "arm": "jev",
+    "workload": "durations",
+    "kind": "planted",
+    "status": "completed",
+    "formula": "jev-build-compact",
+    "elapsed_seconds": 767.8177824739832,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "jev",
+    "skipped_lanes": [
+      "test_evidence"
+    ],
+    "stages": {
+      "implement": {
+        "requests": 58,
+        "sessions": 4,
+        "input_tokens": 116,
+        "cache_creation_input_tokens": 254147,
+        "cache_read_input_tokens": 4280503,
+        "output_tokens": 10935
+      },
+      "review": {
+        "requests": 60,
+        "sessions": 6,
+        "input_tokens": 120,
+        "cache_creation_input_tokens": 104550,
+        "cache_read_input_tokens": 4406076,
+        "output_tokens": 14802
+      },
+      "prepare": {
+        "requests": 11,
+        "sessions": 1,
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 43588,
+        "cache_read_input_tokens": 795472,
+        "output_tokens": 1956
+      }
+    },
+    "decisions": {
+      "review.test_evidence": {
+        "act": 1
+      },
+      "review.criterion": {
+        "confirm": 4,
+        "labeled": 4,
+        "unscored": 4,
+        "miss": 0
+      },
+      "smell.clean": {
+        "act": 1
+      },
+      "intake.compact": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      }
+    },
+    "total": {
+      "requests": 129,
+      "input_tokens": 258,
+      "cache_creation_input_tokens": 402285,
+      "cache_read_input_tokens": 9482051,
+      "output_tokens": 27693
+    }
+  },
+  {
+    "run": "ab-003/run-004-baseline-durations",
+    "arm": "baseline",
+    "workload": "durations",
+    "kind": "planted",
+    "status": "completed",
+    "formula": "build-basic",
+    "elapsed_seconds": 1834.6837216140702,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "-",
+    "skipped_lanes": [],
+    "stages": {
+      "implement": {
+        "requests": 104,
+        "sessions": 8,
+        "input_tokens": 208,
+        "cache_creation_input_tokens": 268855,
+        "cache_read_input_tokens": 7662772,
+        "output_tokens": 24329
+      },
+      "review": {
+        "requests": 88,
+        "sessions": 8,
+        "input_tokens": 176,
+        "cache_creation_input_tokens": 403296,
+        "cache_read_input_tokens": 6685965,
+        "output_tokens": 24573
+      },
+      "plan-review": {
+        "requests": 8,
+        "sessions": 1,
+        "input_tokens": 16,
+        "cache_creation_input_tokens": 18030,
+        "cache_read_input_tokens": 579700,
+        "output_tokens": 975
+      },
+      "plan": {
+        "requests": 14,
+        "sessions": 1,
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 78696,
+        "cache_read_input_tokens": 977452,
+        "output_tokens": 4931
+      },
+      "helpers": {
+        "requests": 1,
+        "sessions": 1,
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 65956,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 52
+      },
+      "requirements": {
+        "requests": 11,
+        "sessions": 1,
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 79953,
+        "cache_read_input_tokens": 750028,
+        "output_tokens": 3785
+      },
+      "decompose": {
+        "requests": 22,
+        "sessions": 1,
+        "input_tokens": 44,
+        "cache_creation_input_tokens": 25147,
+        "cache_read_input_tokens": 1729428,
+        "output_tokens": 4757
+      },
+      "prepare": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 73480,
+        "cache_read_input_tokens": 567727,
+        "output_tokens": 1647
+      },
+      "publish": {
+        "requests": 4,
+        "sessions": 1,
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 70674,
+        "cache_read_input_tokens": 206298,
+        "output_tokens": 697
+      },
+      "summarize": {
+        "requests": 15,
+        "sessions": 1,
+        "input_tokens": 30,
+        "cache_creation_input_tokens": 25326,
+        "cache_read_input_tokens": 1155159,
+        "output_tokens": 4723
+      }
+    },
+    "decisions": {},
+    "total": {
+      "requests": 276,
+      "input_tokens": 552,
+      "cache_creation_input_tokens": 1109413,
+      "cache_read_input_tokens": 20314529,
+      "output_tokens": 70469
+    }
+  },
+  {
+    "run": "ab-003/run-007-jev-schema-roots",
+    "arm": "jev",
+    "workload": "schema-roots",
+    "kind": "backlog",
+    "status": "completed",
+    "formula": "jev-build-direct",
+    "elapsed_seconds": 1894.2549673661124,
+    "build_completed": true,
+    "hidden_pass": false,
+    "gate": "jev",
+    "skipped_lanes": [
+      "test_evidence"
+    ],
+    "stages": {
+      "summarize": {
+        "requests": 11,
+        "sessions": 1,
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 24278,
+        "cache_read_input_tokens": 834561,
+        "output_tokens": 3289
+      },
+      "review": {
+        "requests": 56,
+        "sessions": 6,
+        "input_tokens": 108,
+        "cache_creation_input_tokens": 318987,
+        "cache_read_input_tokens": 3965275,
+        "output_tokens": 12152
+      },
+      "implement": {
+        "requests": 51,
+        "sessions": 4,
+        "input_tokens": 102,
+        "cache_creation_input_tokens": 142676,
+        "cache_read_input_tokens": 3969422,
+        "output_tokens": 13242
+      },
+      "helpers": {
+        "requests": 1,
+        "sessions": 1,
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 6209,
+        "cache_read_input_tokens": 59775,
+        "output_tokens": 67
+      },
+      "decompose": {
+        "requests": 18,
+        "sessions": 1,
+        "input_tokens": 36,
+        "cache_creation_input_tokens": 85153,
+        "cache_read_input_tokens": 1338624,
+        "output_tokens": 4196
+      },
+      "requirements": {
+        "requests": 24,
+        "sessions": 2,
+        "input_tokens": 48,
+        "cache_creation_input_tokens": 115671,
+        "cache_read_input_tokens": 1802292,
+        "output_tokens": 6465
+      },
+      "prepare": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 75755,
+        "cache_read_input_tokens": 577060,
+        "output_tokens": 2129
+      }
+    },
+    "decisions": {
+      "review.test_evidence": {
+        "act": 1
+      },
+      "review.criterion": {
+        "confirm": 3,
+        "act": 3,
+        "labeled": 4,
+        "unscored": 3,
+        "miss": 0,
+        "jev_right": 1
+      },
+      "smell.clean": {
+        "confirm": 1,
+        "labeled": 1,
+        "unscored": 1,
+        "miss": 0
+      },
+      "intake.direct": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      }
+    },
+    "total": {
+      "requests": 170,
+      "input_tokens": 336,
+      "cache_creation_input_tokens": 768729,
+      "cache_read_input_tokens": 12547009,
+      "output_tokens": 41540
+    }
+  },
+  {
+    "run": "ab-003/run-009-jev-slugify",
+    "arm": "jev",
+    "workload": "slugify",
+    "kind": "planted",
+    "status": "completed",
+    "formula": "jev-build-compact",
+    "elapsed_seconds": 790.7600753868464,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "jev",
+    "skipped_lanes": [
+      "test_evidence"
+    ],
+    "stages": {
+      "review": {
+        "requests": 65,
+        "sessions": 6,
+        "input_tokens": 130,
+        "cache_creation_input_tokens": 122079,
+        "cache_read_input_tokens": 5010228,
+        "output_tokens": 13417
+      },
+      "implement": {
+        "requests": 43,
+        "sessions": 3,
+        "input_tokens": 86,
+        "cache_creation_input_tokens": 302146,
+        "cache_read_input_tokens": 2914024,
+        "output_tokens": 8637
+      },
+      "helpers": {
+        "requests": 2,
+        "sessions": 1,
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 66202,
+        "cache_read_input_tokens": 65957,
+        "output_tokens": 276
+      },
+      "prepare": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 79102,
+        "cache_read_input_tokens": 595114,
+        "output_tokens": 2030
+      }
+    },
+    "decisions": {
+      "review.test_evidence": {
+        "act": 1
+      },
+      "review.criterion": {
+        "confirm": 1,
+        "act": 3,
+        "labeled": 1,
+        "unscored": 1,
+        "miss": 0
+      },
+      "smell.clean": {
+        "act": 1
+      },
+      "intake.compact": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      }
+    },
+    "total": {
+      "requests": 119,
+      "input_tokens": 238,
+      "cache_creation_input_tokens": 569529,
+      "cache_read_input_tokens": 8585323,
+      "output_tokens": 24360
+    }
+  },
+  {
+    "run": "ab-003/run-010-baseline-slugify",
+    "arm": "baseline",
+    "workload": "slugify",
+    "kind": "planted",
+    "status": "completed",
+    "formula": "build-basic",
+    "elapsed_seconds": 1348.2715514150914,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "-",
+    "skipped_lanes": [],
+    "stages": {
+      "review": {
+        "requests": 73,
+        "sessions": 8,
+        "input_tokens": 146,
+        "cache_creation_input_tokens": 299111,
+        "cache_read_input_tokens": 5277597,
+        "output_tokens": 18324
+      },
+      "implement": {
+        "requests": 55,
+        "sessions": 4,
+        "input_tokens": 110,
+        "cache_creation_input_tokens": 131502,
+        "cache_read_input_tokens": 4064812,
+        "output_tokens": 10042
+      },
+      "requirements": {
+        "requests": 10,
+        "sessions": 1,
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 77246,
+        "cache_read_input_tokens": 660740,
+        "output_tokens": 3330
+      },
+      "summarize": {
+        "requests": 12,
+        "sessions": 1,
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 22397,
+        "cache_read_input_tokens": 906360,
+        "output_tokens": 2822
+      },
+      "prepare": {
+        "requests": 11,
+        "sessions": 1,
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 23713,
+        "cache_read_input_tokens": 770602,
+        "output_tokens": 2131
+      },
+      "publish": {
+        "requests": 4,
+        "sessions": 1,
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 11091,
+        "cache_read_input_tokens": 266455,
+        "output_tokens": 842
+      },
+      "plan": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 15858,
+        "cache_read_input_tokens": 641936,
+        "output_tokens": 2492
+      },
+      "plan-review": {
+        "requests": 6,
+        "sessions": 1,
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 15054,
+        "cache_read_input_tokens": 419684,
+        "output_tokens": 747
+      },
+      "decompose": {
+        "requests": 18,
+        "sessions": 1,
+        "input_tokens": 36,
+        "cache_creation_input_tokens": 149354,
+        "cache_read_input_tokens": 1256410,
+        "output_tokens": 3794
+      }
+    },
+    "decisions": {},
+    "total": {
+      "requests": 198,
+      "input_tokens": 396,
+      "cache_creation_input_tokens": 745326,
+      "cache_read_input_tokens": 14264596,
+      "output_tokens": 44524
+    }
+  },
+  {
+    "run": "ab-003/run-011-baseline-durations",
+    "arm": "baseline",
+    "workload": "durations",
+    "kind": "planted",
+    "status": "completed",
+    "formula": "build-basic",
+    "elapsed_seconds": 1866.9724247050472,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "-",
+    "skipped_lanes": [],
+    "stages": {
+      "plan": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 23507,
+        "cache_read_input_tokens": 643324,
+        "output_tokens": 3195
+      },
+      "publish": {
+        "requests": 4,
+        "sessions": 1,
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 70776,
+        "cache_read_input_tokens": 206330,
+        "output_tokens": 808
+      },
+      "implement": {
+        "requests": 57,
+        "sessions": 4,
+        "input_tokens": 114,
+        "cache_creation_input_tokens": 197819,
+        "cache_read_input_tokens": 4167102,
+        "output_tokens": 11740
+      },
+      "review": {
+        "requests": 78,
+        "sessions": 8,
+        "input_tokens": 156,
+        "cache_creation_input_tokens": 303803,
+        "cache_read_input_tokens": 5660302,
+        "output_tokens": 22426
+      },
+      "prepare": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 89406,
+        "cache_read_input_tokens": 558097,
+        "output_tokens": 2072
+      },
+      "summarize": {
+        "requests": 11,
+        "sessions": 1,
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 84396,
+        "cache_read_input_tokens": 762064,
+        "output_tokens": 5509
+      },
+      "helpers": {
+        "requests": 1,
+        "sessions": 1,
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 14655,
+        "cache_read_input_tokens": 51301,
+        "output_tokens": 52
+      },
+      "decompose": {
+        "requests": 19,
+        "sessions": 1,
+        "input_tokens": 38,
+        "cache_creation_input_tokens": 90684,
+        "cache_read_input_tokens": 1421592,
+        "output_tokens": 4989
+      },
+      "plan-review": {
+        "requests": 6,
+        "sessions": 1,
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 19878,
+        "cache_read_input_tokens": 408942,
+        "output_tokens": 739
+      },
+      "requirements": {
+        "requests": 12,
+        "sessions": 1,
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 34652,
+        "cache_read_input_tokens": 870496,
+        "output_tokens": 3837
+      }
+    },
+    "decisions": {},
+    "total": {
+      "requests": 206,
+      "input_tokens": 412,
+      "cache_creation_input_tokens": 929576,
+      "cache_read_input_tokens": 14749550,
+      "output_tokens": 55367
+    }
+  },
+  {
+    "run": "ab-003/run-012-jev-durations",
+    "arm": "jev",
+    "workload": "durations",
+    "kind": "planted",
+    "status": "completed",
+    "formula": "jev-build-compact",
+    "elapsed_seconds": 765.5099909689743,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "jev",
+    "skipped_lanes": [
+      "test_evidence"
+    ],
+    "stages": {
+      "review": {
+        "requests": 55,
+        "sessions": 6,
+        "input_tokens": 110,
+        "cache_creation_input_tokens": 157878,
+        "cache_read_input_tokens": 3934087,
+        "output_tokens": 13539
+      },
+      "implement": {
+        "requests": 48,
+        "sessions": 4,
+        "input_tokens": 96,
+        "cache_creation_input_tokens": 73501,
+        "cache_read_input_tokens": 3521912,
+        "output_tokens": 9947
+      },
+      "prepare": {
+        "requests": 10,
+        "sessions": 1,
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 55851,
+        "cache_read_input_tokens": 698449,
+        "output_tokens": 2363
+      }
+    },
+    "decisions": {
+      "review.test_evidence": {
+        "act": 1
+      },
+      "review.criterion": {
+        "confirm": 4,
+        "labeled": 4,
+        "unscored": 4,
+        "miss": 0
+      },
+      "smell.clean": {
+        "act": 1
+      },
+      "intake.compact": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      }
+    },
+    "total": {
+      "requests": 113,
+      "input_tokens": 226,
+      "cache_creation_input_tokens": 287230,
+      "cache_read_input_tokens": 8154448,
+      "output_tokens": 25849
+    }
+  },
+  {
+    "run": "ab-003/run-013-jev-legacy-work-options",
+    "arm": "jev",
+    "workload": "legacy-work-options",
+    "kind": "backlog",
+    "status": "completed",
+    "formula": "jev-build-direct",
+    "elapsed_seconds": 1211.020648808917,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "jev",
+    "skipped_lanes": [
+      "test_evidence"
+    ],
+    "stages": {
+      "review": {
+        "requests": 51,
+        "sessions": 6,
+        "input_tokens": 102,
+        "cache_creation_input_tokens": 193656,
+        "cache_read_input_tokens": 3813841,
+        "output_tokens": 12373
+      },
+      "summarize": {
+        "requests": 16,
+        "sessions": 1,
+        "input_tokens": 32,
+        "cache_creation_input_tokens": 100105,
+        "cache_read_input_tokens": 1270710,
+        "output_tokens": 4761
+      },
+      "decompose": {
+        "requests": 36,
+        "sessions": 2,
+        "input_tokens": 72,
+        "cache_creation_input_tokens": 76445,
+        "cache_read_input_tokens": 2784962,
+        "output_tokens": 8257
+      },
+      "requirements": {
+        "requests": 29,
+        "sessions": 2,
+        "input_tokens": 58,
+        "cache_creation_input_tokens": 54950,
+        "cache_read_input_tokens": 2195736,
+        "output_tokens": 6145
+      },
+      "helpers": {
+        "requests": 3,
+        "sessions": 2,
+        "input_tokens": 6,
+        "cache_creation_input_tokens": 27319,
+        "cache_read_input_tokens": 170851,
+        "output_tokens": 288
+      },
+      "implement": {
+        "requests": 49,
+        "sessions": 3,
+        "input_tokens": 98,
+        "cache_creation_input_tokens": 155891,
+        "cache_read_input_tokens": 3832281,
+        "output_tokens": 13634
+      },
+      "prepare": {
+        "requests": 7,
+        "sessions": 1,
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 22821,
+        "cache_read_input_tokens": 476936,
+        "output_tokens": 1711
+      }
+    },
+    "decisions": {
+      "review.test_evidence": {
+        "act": 1
+      },
+      "review.criterion": {
+        "confirm": 5,
+        "act": 2,
+        "labeled": 5,
+        "unscored": 5,
+        "miss": 0
+      },
+      "smell.clean": {
+        "act": 1
+      },
+      "intake.direct": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      }
+    },
+    "total": {
+      "requests": 191,
+      "input_tokens": 382,
+      "cache_creation_input_tokens": 631187,
+      "cache_read_input_tokens": 14545317,
+      "output_tokens": 47169
+    }
+  },
+  {
+    "run": "ab-003/run-014-baseline-legacy-work-options",
+    "arm": "baseline",
+    "workload": "legacy-work-options",
+    "kind": "backlog",
+    "status": "completed",
+    "formula": "build-basic",
+    "elapsed_seconds": 1760.2350031579845,
+    "build_completed": true,
+    "hidden_pass": false,
+    "gate": "-",
+    "skipped_lanes": [],
+    "stages": {
+      "review": {
+        "requests": 127,
+        "sessions": 11,
+        "input_tokens": 254,
+        "cache_creation_input_tokens": 273737,
+        "cache_read_input_tokens": 9768350,
+        "output_tokens": 30782
+      },
+      "requirements": {
+        "requests": 18,
+        "sessions": 1,
+        "input_tokens": 36,
+        "cache_creation_input_tokens": 30417,
+        "cache_read_input_tokens": 1424379,
+        "output_tokens": 5774
+      },
+      "implement": {
+        "requests": 109,
+        "sessions": 8,
+        "input_tokens": 218,
+        "cache_creation_input_tokens": 422383,
+        "cache_read_input_tokens": 8513317,
+        "output_tokens": 28651
+      },
+      "publish": {
+        "requests": 6,
+        "sessions": 1,
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 12180,
+        "cache_read_input_tokens": 410239,
+        "output_tokens": 894
+      },
+      "summarize": {
+        "requests": 17,
+        "sessions": 1,
+        "input_tokens": 34,
+        "cache_creation_input_tokens": 163819,
+        "cache_read_input_tokens": 1335152,
+        "output_tokens": 6004
+      },
+      "plan-review": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 76657,
+        "cache_read_input_tokens": 589593,
+        "output_tokens": 1610
+      },
+      "decompose": {
+        "requests": 20,
+        "sessions": 1,
+        "input_tokens": 40,
+        "cache_creation_input_tokens": 26341,
+        "cache_read_input_tokens": 1598340,
+        "output_tokens": 4836
+      },
+      "helpers": {
+        "requests": 1,
+        "sessions": 1,
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 14666,
+        "cache_read_input_tokens": 51301,
+        "output_tokens": 72
+      },
+      "prepare": {
+        "requests": 8,
+        "sessions": 1,
+        "input_tokens": 16,
+        "cache_creation_input_tokens": 75307,
+        "cache_read_input_tokens": 500616,
+        "output_tokens": 1314
+      },
+      "plan": {
+        "requests": 12,
+        "sessions": 1,
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 86531,
+        "cache_read_input_tokens": 832632,
+        "output_tokens": 4753
+      }
+    },
+    "decisions": {},
+    "total": {
+      "requests": 327,
+      "input_tokens": 654,
+      "cache_creation_input_tokens": 1182038,
+      "cache_read_input_tokens": 25023919,
+      "output_tokens": 84690
+    }
+  },
+  {
+    "run": "ab-003/run-015-baseline-schema-roots",
+    "arm": "baseline",
+    "workload": "schema-roots",
+    "kind": "backlog",
+    "status": "completed",
+    "formula": "build-basic",
+    "elapsed_seconds": 2429.4256359359715,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "-",
+    "skipped_lanes": [],
+    "stages": {
+      "helpers": {
+        "requests": 16,
+        "sessions": 2,
+        "input_tokens": 32,
+        "cache_creation_input_tokens": 15246,
+        "cache_read_input_tokens": 1056555,
+        "output_tokens": 2779
+      },
+      "review": {
+        "requests": 71,
+        "sessions": 7,
+        "input_tokens": 142,
+        "cache_creation_input_tokens": 251649,
+        "cache_read_input_tokens": 5509299,
+        "output_tokens": 19508
+      },
+      "implement": {
+        "requests": 109,
+        "sessions": 6,
+        "input_tokens": 218,
+        "cache_creation_input_tokens": 350102,
+        "cache_read_input_tokens": 8744014,
+        "output_tokens": 29851
+      },
+      "plan": {
+        "requests": 12,
+        "sessions": 1,
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 87267,
+        "cache_read_input_tokens": 873321,
+        "output_tokens": 4762
+      },
+      "requirements": {
+        "requests": 21,
+        "sessions": 1,
+        "input_tokens": 42,
+        "cache_creation_input_tokens": 111174,
+        "cache_read_input_tokens": 1564134,
+        "output_tokens": 5770
+      },
+      "publish": {
+        "requests": 6,
+        "sessions": 1,
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 12104,
+        "cache_read_input_tokens": 410030,
+        "output_tokens": 984
+      },
+      "plan-review": {
+        "requests": 7,
+        "sessions": 1,
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 84182,
+        "cache_read_input_tokens": 435239,
+        "output_tokens": 1485
+      },
+      "prepare": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 22748,
+        "cache_read_input_tokens": 620767,
+        "output_tokens": 2036
+      },
+      "decompose": {
+        "requests": 13,
+        "sessions": 1,
+        "input_tokens": 26,
+        "cache_creation_input_tokens": 91251,
+        "cache_read_input_tokens": 940437,
+        "output_tokens": 3970
+      },
+      "summarize": {
+        "requests": 28,
+        "sessions": 1,
+        "input_tokens": 56,
+        "cache_creation_input_tokens": 43191,
+        "cache_read_input_tokens": 2482861,
+        "output_tokens": 11248
+      }
+    },
+    "decisions": {},
+    "total": {
+      "requests": 292,
+      "input_tokens": 584,
+      "cache_creation_input_tokens": 1068914,
+      "cache_read_input_tokens": 22636657,
+      "output_tokens": 82393
+    }
+  },
+  {
+    "run": "ab-003/run-016-jev-schema-roots",
+    "arm": "jev",
+    "workload": "schema-roots",
+    "kind": "backlog",
+    "status": "completed",
+    "formula": "jev-build-direct",
+    "elapsed_seconds": 1392.2162744819652,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "jev",
+    "skipped_lanes": [
+      "test_evidence"
+    ],
+    "stages": {
+      "review": {
+        "requests": 67,
+        "sessions": 7,
+        "input_tokens": 134,
+        "cache_creation_input_tokens": 372797,
+        "cache_read_input_tokens": 5014164,
+        "output_tokens": 15968
+      },
+      "summarize": {
+        "requests": 17,
+        "sessions": 1,
+        "input_tokens": 34,
+        "cache_creation_input_tokens": 87601,
+        "cache_read_input_tokens": 1308733,
+        "output_tokens": 4942
+      },
+      "decompose": {
+        "requests": 19,
+        "sessions": 1,
+        "input_tokens": 38,
+        "cache_creation_input_tokens": 25405,
+        "cache_read_input_tokens": 1487782,
+        "output_tokens": 4853
+      },
+      "prepare": {
+        "requests": 10,
+        "sessions": 1,
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 25277,
+        "cache_read_input_tokens": 707355,
+        "output_tokens": 2032
+      },
+      "implement": {
+        "requests": 64,
+        "sessions": 4,
+        "input_tokens": 128,
+        "cache_creation_input_tokens": 262267,
+        "cache_read_input_tokens": 4961483,
+        "output_tokens": 15447
+      },
+      "requirements": {
+        "requests": 15,
+        "sessions": 1,
+        "input_tokens": 30,
+        "cache_creation_input_tokens": 96795,
+        "cache_read_input_tokens": 1068125,
+        "output_tokens": 5225
+      }
+    },
+    "decisions": {
+      "review.test_evidence": {
+        "act": 1
+      },
+      "review.criterion": {
+        "confirm": 4,
+        "act": 4,
+        "labeled": 4,
+        "unscored": 4,
+        "miss": 0
+      },
+      "smell.clean": {
+        "confirm": 1,
+        "labeled": 1,
+        "unscored": 1,
+        "miss": 0
+      },
+      "intake.direct": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      }
+    },
+    "total": {
+      "requests": 192,
+      "input_tokens": 384,
+      "cache_creation_input_tokens": 870142,
+      "cache_read_input_tokens": 14547642,
+      "output_tokens": 48467
+    }
+  },
+  {
+    "run": "ab-003-rerun-legacy/run-001-baseline-legacy-work-options",
+    "arm": "baseline",
+    "workload": "legacy-work-options",
+    "kind": "backlog",
+    "status": "completed",
+    "formula": "build-basic",
+    "elapsed_seconds": 2427.9495419349987,
+    "build_completed": true,
+    "hidden_pass": false,
+    "gate": "-",
+    "skipped_lanes": [],
+    "stages": {
+      "prepare": {
+        "requests": 9,
+        "sessions": 1,
+        "input_tokens": 18,
+        "cache_creation_input_tokens": 89540,
+        "cache_read_input_tokens": 558355,
+        "output_tokens": 2160
+      },
+      "review": {
+        "requests": 99,
+        "sessions": 8,
+        "input_tokens": 198,
+        "cache_creation_input_tokens": 537999,
+        "cache_read_input_tokens": 7631897,
+        "output_tokens": 29977
+      },
+      "publish": {
+        "requests": 4,
+        "sessions": 1,
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 10852,
+        "cache_read_input_tokens": 266001,
+        "output_tokens": 625
+      },
+      "implement": {
+        "requests": 121,
+        "sessions": 7,
+        "input_tokens": 242,
+        "cache_creation_input_tokens": 356518,
+        "cache_read_input_tokens": 10063467,
+        "output_tokens": 30543
+      },
+      "summarize": {
+        "requests": 14,
+        "sessions": 1,
+        "input_tokens": 28,
+        "cache_creation_input_tokens": 28123,
+        "cache_read_input_tokens": 1093144,
+        "output_tokens": 4803
+      },
+      "plan": {
+        "requests": 30,
+        "sessions": 2,
+        "input_tokens": 60,
+        "cache_creation_input_tokens": 118316,
+        "cache_read_input_tokens": 2179734,
+        "output_tokens": 8655
+      },
+      "requirements": {
+        "requests": 13,
+        "sessions": 1,
+        "input_tokens": 26,
+        "cache_creation_input_tokens": 19468,
+        "cache_read_input_tokens": 957735,
+        "output_tokens": 4329
+      },
+      "helpers": {
+        "requests": 2,
+        "sessions": 1,
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 6496,
+        "cache_read_input_tokens": 125771,
+        "output_tokens": 304
+      },
+      "decompose": {
+        "requests": 22,
+        "sessions": 1,
+        "input_tokens": 44,
+        "cache_creation_input_tokens": 33825,
+        "cache_read_input_tokens": 1774939,
+        "output_tokens": 6775
+      },
+      "plan-review": {
+        "requests": 7,
+        "sessions": 1,
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 81292,
+        "cache_read_input_tokens": 457155,
+        "output_tokens": 1032
+      }
+    },
+    "decisions": {},
+    "total": {
+      "requests": 321,
+      "input_tokens": 642,
+      "cache_creation_input_tokens": 1282429,
+      "cache_read_input_tokens": 25108198,
+      "output_tokens": 89203
+    }
+  },
+  {
+    "run": "ab-003-rerun-legacy/run-002-jev-legacy-work-options",
+    "arm": "jev",
+    "workload": "legacy-work-options",
+    "kind": "backlog",
+    "status": "completed",
+    "formula": "jev-build-direct",
+    "elapsed_seconds": 1103.0303261480294,
+    "build_completed": true,
+    "hidden_pass": false,
+    "gate": "jev",
+    "skipped_lanes": [],
+    "stages": {
+      "review": {
+        "requests": 65,
+        "sessions": 7,
+        "input_tokens": 130,
+        "cache_creation_input_tokens": 367450,
+        "cache_read_input_tokens": 4652604,
+        "output_tokens": 14798
+      },
+      "implement": {
+        "requests": 62,
+        "sessions": 4,
+        "input_tokens": 124,
+        "cache_creation_input_tokens": 228725,
+        "cache_read_input_tokens": 5308572,
+        "output_tokens": 15839
+      },
+      "decompose": {
+        "requests": 18,
+        "sessions": 1,
+        "input_tokens": 36,
+        "cache_creation_input_tokens": 23282,
+        "cache_read_input_tokens": 1383734,
+        "output_tokens": 4301
+      },
+      "prepare": {
+        "requests": 12,
+        "sessions": 1,
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 93074,
+        "cache_read_input_tokens": 725056,
+        "output_tokens": 2636
+      },
+      "helpers": {
+        "requests": 1,
+        "sessions": 1,
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 65960,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 52
+      },
+      "summarize": {
+        "requests": 15,
+        "sessions": 1,
+        "input_tokens": 30,
+        "cache_creation_input_tokens": 23734,
+        "cache_read_input_tokens": 1161377,
+        "output_tokens": 4749
+      },
+      "requirements": {
+        "requests": 12,
+        "sessions": 1,
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 28378,
+        "cache_read_input_tokens": 873502,
+        "output_tokens": 4008
+      }
+    },
+    "decisions": {
+      "review.test_evidence": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      },
+      "review.criterion": {
+        "confirm": 3,
+        "act": 2,
+        "labeled": 3,
+        "unscored": 3,
+        "miss": 0
+      },
+      "smell.clean": {
+        "act": 1
+      },
+      "intake.direct": {
+        "act": 1,
+        "labeled": 1,
+        "jev_right": 1,
+        "miss": 0
+      }
+    },
+    "total": {
+      "requests": 185,
+      "input_tokens": 368,
+      "cache_creation_input_tokens": 830603,
+      "cache_read_input_tokens": 14104845,
+      "output_tokens": 46383
+    }
+  },
+  {
+    "run": "ab-003-rerun-schema/run-001-baseline-schema-roots",
+    "arm": "baseline",
+    "workload": "schema-roots",
+    "kind": "backlog",
+    "status": "completed",
+    "formula": "build-basic",
+    "elapsed_seconds": 1869.3324682230595,
+    "build_completed": true,
+    "hidden_pass": true,
+    "gate": "-",
+    "skipped_lanes": [],
+    "stages": {
+      "implement": {
+        "requests": 113,
+        "sessions": 6,
+        "input_tokens": 226,
+        "cache_creation_input_tokens": 278099,
+        "cache_read_input_tokens": 9356417,
+        "output_tokens": 32479
+      },
+      "plan-review": {
+        "requests": 6,
+        "sessions": 1,
+        "input_tokens": 12,
+        "cache_creation_input_tokens": 24807,
+        "cache_read_input_tokens": 423607,
+        "output_tokens": 1018
+      },
+      "review": {
+        "requests": 89,
+        "sessions": 8,
+        "input_tokens": 178,
+        "cache_creation_input_tokens": 336282,
+        "cache_read_input_tokens": 6744672,
+        "output_tokens": 24537
+      },
+      "summarize": {
+        "requests": 15,
+        "sessions": 1,
+        "input_tokens": 30,
+        "cache_creation_input_tokens": 21230,
+        "cache_read_input_tokens": 1140631,
+        "output_tokens": 2823
+      },
+      "plan": {
+        "requests": 19,
+        "sessions": 1,
+        "input_tokens": 38,
+        "cache_creation_input_tokens": 88812,
+        "cache_read_input_tokens": 1476754,
+        "output_tokens": 5675
+      },
+      "helpers": {
+        "requests": 8,
+        "sessions": 2,
+        "input_tokens": 16,
+        "cache_creation_input_tokens": 73405,
+        "cache_read_input_tokens": 458199,
+        "output_tokens": 1068
+      },
+      "prepare": {
+        "requests": 10,
+        "sessions": 1,
+        "input_tokens": 20,
+        "cache_creation_input_tokens": 75628,
+        "cache_read_input_tokens": 650679,
+        "output_tokens": 2678
+      },
+      "decompose": {
+        "requests": 24,
+        "sessions": 1,
+        "input_tokens": 48,
+        "cache_creation_input_tokens": 121486,
+        "cache_read_input_tokens": 1848475,
+        "output_tokens": 6128
+      },
+      "requirements": {
+        "requests": 16,
+        "sessions": 1,
+        "input_tokens": 32,
+        "cache_creation_input_tokens": 35623,
+        "cache_read_input_tokens": 1244837,
+        "output_tokens": 5244
+      },
+      "publish": {
+        "requests": 4,
+        "sessions": 1,
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 11167,
+        "cache_read_input_tokens": 266476,
+        "output_tokens": 836
+      }
+    },
+    "decisions": {},
+    "total": {
+      "requests": 304,
+      "input_tokens": 608,
+      "cache_creation_input_tokens": 1066539,
+      "cache_read_input_tokens": 23610747,
+      "output_tokens": 82486
+    }
+  }
+]

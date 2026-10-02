@@ -36,3 +36,12 @@ __pycache__/
 /specs/experiments/jev-all-enabled/**/fixture/
 /specs/experiments/jev-all-enabled/**/pack-snapshot/
 /specs/experiments/jev-all-enabled/**/raw-transcripts/
+
+# Jev build A/B raw evidence stays on the host; only each experiment's
+# write-up and report (the numbers) are tracked.
+/specs/experiments/jev-overlay-ab/ab-00[2-9]*/*
+!/specs/experiments/jev-overlay-ab/ab-00[2-9]*/README.md
+!/specs/experiments/jev-overlay-ab/ab-00[2-9]*/report.md
+!/specs/experiments/jev-overlay-ab/ab-00[2-9]*/report.json
+/specs/experiments/jev-overlay-ab/smoke-001/
+/specs/experiments/jev-overlay-ab/smoke-003/
