@@ -92,6 +92,14 @@ def route(answers: dict | None, bands: dict, accepted: dict, rng: random.Random,
     return ('jev-build' if audited else TIERS[kind]), kind, audited, facts
 
 
+def audit_override(cli_rate: float | None, variables: dict) -> float | None:
+    """--audit-rate wins; otherwise the build's own jev_audit_rate var governs the route
+    as it does the review gate. None keeps the adaptive schedule."""
+    if cli_rate is not None:
+        return cli_rate
+    return float(variables['jev_audit_rate']) if variables.get('jev_audit_rate') else None
+
+
 def state_dir(explicit: str) -> StateDir:
     if explicit:
         return StateDir(Path(explicit))
@@ -125,7 +133,8 @@ def main(argv=None) -> int:
     except JevUnavailable as exc:
         error = exc.reason
     bands = state.bands()
-    formula, kind, audited, facts = route(answers, bands, state.accepted_audits(), random.Random(), args.audit_rate)
+    formula, kind, audited, facts = route(answers, bands, state.accepted_audits(), random.Random(),
+                                          audit_override(args.audit_rate, variables))
     act = formula in TIERS.values() or audited  # an audited act decision is still act band
     tripped = [k for k in TIERS if bands[k].get('tripped')]
     record = decision(kind, workflow_root='', step_bead=args.bead, subject=args.bead,

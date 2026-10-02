@@ -651,6 +651,13 @@ def test_router_keeps_security_and_multi_module_work_on_the_full_path():
     assert jev_route.classify(recorded_intake('pr6460'))['risky_surface'] == 'security_or_auth'
 
 
+def test_router_audit_rate_follows_the_cli_then_the_build_var():
+    assert jev_route.audit_override(0.5, {'jev_audit_rate': '0.05'}) == 0.5
+    assert jev_route.audit_override(None, {'jev_audit_rate': '0.05'}) == 0.05
+    assert jev_route.audit_override(None, {'jev_audit_rate': ''}) is None
+    assert jev_route.audit_override(None, {}) is None
+
+
 def test_router_audits_tripped_and_unavailable_paths():
     answers = recorded_intake('ab-slugify')
     assert jev_route.route(answers, bands(), {}, Always())[:3] == ('jev-build', 'intake.compact', True)

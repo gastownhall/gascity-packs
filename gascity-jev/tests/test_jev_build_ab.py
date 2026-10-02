@@ -14,6 +14,8 @@ spec.loader.exec_module(build)
 
 def test_build_arms_launch_build_basic_or_the_jev_intake_router(tmp_path):
     assert build.jev_variables('baseline', 'jev-1.13.0') == {}
+    assert build.jev_variables('jev', 'm', audit_rate='0.05')['jev_audit_rate'] == '0.05'
+    assert 'jev_audit_rate' not in build.jev_variables('jev', 'm')
     variables = build.jev_variables('jev', 'jev-1.13.0', tmp_path / 'jev-state')
     assert variables == {'jev_mode': 'auto', 'jev_model': 'jev-1.13.0', 'jev_state_dir': str(tmp_path / 'jev-state')}
     rig = ['gc', '--city', 'c', '--rig', 'fixture']

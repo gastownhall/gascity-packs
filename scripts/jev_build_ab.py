@@ -356,7 +356,7 @@ def snapshot_pack(pack, out):
     }
 
 
-def jev_variables(arm, model, state_dir=None, test_command=None):
+def jev_variables(arm, model, state_dir=None, test_command=None, audit_rate=''):
     """Jev-arm launch variables. The gate state (bands, breaker, ledger) is shared
     across the experiment's Jev arms so audit counts accumulate over pairs."""
     if arm == 'baseline':
@@ -368,6 +368,9 @@ def jev_variables(arm, model, state_dir=None, test_command=None):
         variables['jev_state_dir'] = str(state_dir)
     if test_command:
         variables['jev_test_command'] = test_command
+    if audit_rate:
+        # One rate for the intake router and the review gate; empty keeps the adaptive schedule.
+        variables['jev_audit_rate'] = audit_rate
     return variables
 
 
@@ -591,7 +594,8 @@ def run(args, arm, out, workload=workloads.SLUGIFY):
                 report['source_bead_id'] = source_id
                 variables = {'artifact_root':str(gate.BUILD_ARTIFACT_ROOT),'interaction_mode':'headless',
                     'review_mode':'agent','drain_policy':'separate','push':'false','open_pr':'false',
-                    'max_iterations':'2', **jev_variables(arm, args.jev_model, args.out/'jev-state', workload.test_command('python3'))}
+                    'max_iterations':'2', **jev_variables(arm, args.jev_model, args.out/'jev-state', workload.test_command('python3'),
+                                                   getattr(args, 'jev_audit_rate', ''))}
                 cmd = launch_command(rig, arm, source_id, variables)
                 save(out/'launch.json', {'command':cmd,'task':task,'source_bead_id':source_id})
                 dispatched = gate.run_checked(cmd,cwd=workspace.rig_dir,env=env,timeout=args.dispatch_timeout,
@@ -704,6 +708,8 @@ def main():
     p.add_argument('--claude-command',default='claude',help='Claude CLI the city launches for every role.')
     p.add_argument('--claude-auth',default='',
                    help='Comma-separated accepted `auth status` methods; empty accepts any logged-in method.')
+    p.add_argument('--jev-audit-rate',default='',
+                   help='Audit rate (0-1) for the Jev intake router and review gate; empty uses the adaptive schedule.')
     p.add_argument('--work-root',default='/tmp',
                    help='Short directory for disposable run workspaces (kept after each run); /tmp may be a shared tmpfs.')
     p.add_argument('--keep-helpers',action='store_true',
