@@ -560,6 +560,19 @@ def test_file_view_sends_small_files_whole_and_large_ones_as_excerpts(tmp_path):
         gate.file_view(tree, row, grown, limit=20)
 
 
+def test_changed_files_ignore_workflow_artifacts_and_bytecode(tmp_path):
+    fake, rig = build_city(tmp_path)
+    tree = rig / 'worktrees/rig-task'
+    (tree / '.gc').mkdir()
+    (tree / '.gc/implementation-summary.md').write_text('# Summary\n' + 'line\n' * 100)
+    (tree / '__pycache__').mkdir()
+    (tree / '__pycache__/slugger.cpython-314.pyc').write_bytes(b'\0')
+    (tree / 'helper.py').write_text('X = 1\n')
+    rows = gate.changed_files(tree, gate.base_commit(tree))
+    assert sorted(r['path'] for r in rows) == ['helper.py', 'slugger.py']
+    assert gate.compact_proxy({'t': {'files': rows, 'diff_lines': 9}}) is True
+
+
 def test_gate_crash_still_emits_exactly_one_full_item(tmp_path, monkeypatch):
     fake, _ = build_city(tmp_path)
     monkeypatch.setattr(gate, 'source_anchors', lambda ctx: 1 / 0)

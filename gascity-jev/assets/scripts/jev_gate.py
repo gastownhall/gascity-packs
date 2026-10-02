@@ -344,7 +344,13 @@ def run_tests(worktree: Path, command: list[str], timeout: float) -> dict:
             'tail': output[-15:], 'seconds': round(time.monotonic() - started, 2)}
 
 
+# Build debris, not part of the change: Gas City's own workflow artifacts and
+# Python bytecode left untracked by test runs.
+ARTIFACT_PATH = re.compile(r'(^|/)(\.gc|__pycache__|\.pytest_cache)(/|$)|\.py[co]$')
+
+
 def changed_files(worktree: Path, base: str) -> list[dict]:
+    """The change against base: tracked edits plus untracked files, without build debris."""
     rows = []
     for line in git(worktree, 'diff', '--name-status', '-M', base).splitlines():
         parts = line.split('\t')
@@ -357,7 +363,7 @@ def changed_files(worktree: Path, base: str) -> list[dict]:
     for path in git(worktree, 'ls-files', '--others', '--exclude-standard').splitlines():
         if path.strip():
             rows.append({'status': 'A', 'path': path.strip(), 'untracked': True})
-    return rows
+    return [row for row in rows if not ARTIFACT_PATH.search(row['path'])]
 
 
 def _defs(body: list) -> dict | None:
