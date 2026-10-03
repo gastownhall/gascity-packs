@@ -637,6 +637,25 @@ test_refinery_rebase_guidance_matches_the_guarded_step() {
         fail "the refinery prompt's Sequential Rebase Protocol still states a categorical rebase MUST; scope it to the diverged case so it cannot override the rebase step's skip arm"
 }
 
+test_refinery_source_branch_cleanup_is_executable() {
+    local formula="$GASTOWN/formulas/mol-refinery-patrol.toml"
+
+    python3 - "$formula" <<'PY' || fail "refinery source-branch cleanup must be guarded inside the executable cleanup fence"
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text()
+cleanup = text.split("**2. Cleanup:**", 1)[1].split('**If MERGE_STRATEGY = "mr":**', 1)[0]
+expected = '''if [ "{{delete_merged_branches}}" = "true" ]; then
+  git push origin --delete "$BRANCH" || true
+fi'''
+if expected not in cleanup:
+    raise SystemExit(1)
+if 'If delete_merged_branches = "true":' in cleanup:
+    raise SystemExit(1)
+PY
+}
+
 test_prime_prompts_are_city_generic_and_compact() {
     local mayor propulsion awareness
     mayor="$GASTOWN/agents/mayor/prompt.template.md"
@@ -741,5 +760,6 @@ test_boot_patrol_burn_resolves_current_wisp
 test_boot_deacon_observation_query_sees_wisps_tier
 test_refinery_direct_merge_is_worktree_safe_and_fail_closed
 test_refinery_rebase_guidance_matches_the_guarded_step
+test_refinery_source_branch_cleanup_is_executable
 
 echo "gastown pack asset tests passed"
