@@ -796,6 +796,32 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(agent=agent_name):
                 self.assertEqual(prompt.read_text(encoding="utf-8"), f"{include}\n")
 
+    def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
+        close = text[text.index("## Close") : text.index("## Continue")]
+
+        for required in (
+            "Never merge a pull request yourself unless the bead explicitly",
+            "canonical PR URL",
+            "PR or publish metadata the bead's result contract requests",
+            "If the bead or its formula names a handoff",
+            "never invent a recipient",
+            "do not claim a handoff",
+            "`gc.outcome=fail`",
+            "`gc.failure_class=pr_handoff_failed`",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, close)
+
+        # The fragment is shared by every graph.v2 worker in gascity and the
+        # derived packs. A hard-coded coordinator recipient, or a mail send
+        # chained in front of the close, strands the claimed bead whenever that
+        # recipient does not resolve or the mail store is unavailable.
+        self.assertNotRegex(close, r"gc mail send\s+mayor")
+        self.assertNotRegex(close, r"&&\s*(?:\\\s*)?gc bd close")
+        self.assertNotIn("MERGE REQUEST", close)
+
     def test_city_claim_command_verifies_and_normalizes_claim(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         command = root / "commands" / "claim" / "run.sh"

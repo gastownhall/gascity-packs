@@ -1275,8 +1275,8 @@ def test_polecat_base_ref_contract_allows_prose_mentions_of_the_bare_ref(tmp_pat
     # explain in prose which ref it is refusing to assume.
     pack_source = mutated_gastown_source(
         tmp_path,
-        "**2. Ensure worktree exists.**",
-        "Never assume origin/{{base_branch}} exists.\n\n**2. Ensure worktree exists.**",
+        "**2. Ensure a safe per-bead artifact worktree exists.**",
+        "Never assume origin/{{base_branch}} exists.\n\n**2. Ensure a safe per-bead artifact worktree exists.**",
     )
 
     gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
@@ -1494,7 +1494,8 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     assert "0) HALT_REASON=no_commits ;;" in contracts["mol-polecat-work"]
     assert 'git worktree add --detach "$MERGE_WT" "origin/$TARGET"' in contracts["mol-refinery-patrol"]
     assert 'gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"' in contracts["mol-refinery-patrol"]
-    assert "gc bd close $WORK --reason \"Pull request ready: $PR_URL\"" in contracts["mol-refinery-patrol"]
+    assert "gc gastown pr-merge-reconcile record" in contracts["mol-refinery-patrol"]
+    assert "closure happens only in" in contracts["mol-refinery-patrol"]
     assert "FAIL-SAFE: empty liveness map" in contracts["mol-witness-patrol"]
     assert "gc bd create --type=task --labels=warrant" in contracts["mol-deacon-patrol"]
     assert "gc bd dep add" in contracts["mol-idea-to-plan"]
