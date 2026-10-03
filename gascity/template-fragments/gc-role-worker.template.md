@@ -24,6 +24,9 @@ Read its single JSON result:
   - `bead_id` as `CLAIMED_BEAD_ID`
   - `root_bead_id` as `CLAIMED_ROOT_BEAD_ID`
   - `continuation_group` as `CLAIMED_CONTINUATION_GROUP`
+  - A raw `gc hook --claim --drain-ack --json` line may omit `root_bead_id`
+    and `continuation_group` when they are empty; the claim wrapper prints
+    both. An absent key is an empty value, never a failed claim.
 - `action=drain`: already drain-acked. Exit now.
 - Non-zero exit or malformed result: report failure. Do not search, hand-repair
   assignment, or retry forever. Do not drain or mutate claim state; the command
@@ -37,6 +40,46 @@ A successful claim is authorization to execute immediately.
 Never ask a human whether to proceed after a successful claim. Do not stop for
 confirmation in a headless workflow. If required task input is missing, record
 the bead's failure contract and close it instead of idling.
+
+## Workspace
+
+Work in the directory your session started in (`$GC_DIR`). gc chose it from
+the agent's `work_dir`, created it, ran the agent's `pre_start` in it, and
+materialized your skills and hooks there. You never pick, create, or hunt for
+a workspace, and you never work in the rig root: the rig root is a human
+checkout. When the `pre_start` was this pack's `worker-worktree.sh`, the
+directory is a git worktree of the rig on a branch named for the claimed
+bead, or detached (no trigger bead, or that branch is checked out in another
+worktree; WARN in the pre_start log): if `git branch --show-current` prints
+nothing, create your branch in this directory before committing.
+
+A session outside a gc-made lane has no lane: this role has no `work_dir` in
+your city. Prove the lane before you write, with the three-part boundary test
+(every path resolved through symlinks, `pwd -P`): `git -C "$GC_DIR" rev-parse
+--show-toplevel` is `$GC_DIR` itself; that top-level is neither the rig root
+(`$GC_RIG_ROOT`) nor inside it; `git -C "$GC_DIR" rev-parse --git-common-dir`
+is the rig root's `.git`. When any part fails (`$GC_DIR` is the rig root, a
+directory inside it, or a checkout of another repository), create no
+worktree and write nothing into the rig checkout: no `switch`, no detach, no
+branch, no commit there. Read the item by `git -C "$GC_DIR" show
+<commit>:<path>` and `git -C "$GC_DIR" log -1 <commit>` only; a step that
+needs a checkout closes the item with `gc.outcome=fail` and
+`gc.failure_class=no-lane`, and its close reason says in one line that the
+city must give this role a lane (`[[patches.agent]]` with `work_dir` and
+`pre_start` in `city.toml`; README, Worker workspaces). A formula step whose
+own text creates the item's worktree (`do-work/prepare-worktree` in the rig
+root) runs unchanged.
+
+After the claim, compare the bead's `gc.work_branch` with your branch and
+restamp it when they differ (older `gc` builds stamp the rig root's branch).
+Before closing a bead whose work continues elsewhere, stamp its workspace so
+the next session starts there:
+
+```bash
+gc bd update "$CLAIMED_BEAD_ID" \
+  --set-metadata 'work_dir=<absolute worktree path>' \
+  --set-metadata 'gc.work_branch=<branch>'
+```
 
 ## Close
 
