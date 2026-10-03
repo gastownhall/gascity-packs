@@ -143,8 +143,10 @@ latest release against `gc@latest`.
 
 `.github/workflows/gascity-pack-inference.yml` is the dispatchable
 model-backed behavior gate for all first-class supported packs. It installs
-`bd`, Dolt, Claude Code, and the requested Gas City ref, then runs the
-selected pack gates through the same Ollama-backed Claude environment shape
+Dolt, Claude Code, and the requested Gas City ref, then the `bd` built from the
+same beads module that `gc` embeds (`scripts/install_bd_matching_gc.sh`; `bd`
+is never pinned separately, because the gate refuses a gc/bd beads mismatch),
+then runs the selected pack gates through the same Ollama-backed Claude environment shape
 used by Gas City's Tier C nightly:
 
 - `ANTHROPIC_BASE_URL=https://ollama.com`

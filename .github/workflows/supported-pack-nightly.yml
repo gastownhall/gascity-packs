@@ -51,7 +51,6 @@ permissions:
 
 env:
   DOLT_VERSION: "2.1.7"
-  BD_VERSION: "v1.3.0"
   CLAUDE_VERSION: "2.1.123"
 
 jobs:
@@ -232,7 +231,6 @@ jobs:
         if: steps.subset.outputs.run_gate == 'true'
         run: |
           .gascity-ci/.github/scripts/install-dolt-archive.sh "${DOLT_VERSION}" --cache
-          .gascity-ci/.github/scripts/install-bd-archive.sh "${BD_VERSION}" --cache
           .gascity-ci/.github/scripts/install-claude-native.sh "${CLAUDE_VERSION}" --cache
 
       - name: Install Python test dependencies
@@ -261,6 +259,14 @@ jobs:
           echo "gascity ${GASCITY_REF} resolved to ${gascity_version} (${gascity_commit}) at ${gascity_src}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           "$(go env GOPATH)/bin/gc" version
+
+      # bd must embed the same beads module as gc (the gate refuses a
+      # mismatch), so derive it from the gc just installed instead of pinning it.
+      - name: Install bd matching gc's beads module
+        if: steps.subset.outputs.run_gate == 'true'
+        run: |
+          scripts/install_bd_matching_gc.sh "$(go env GOPATH)/bin/gc" \
+            .gascity-ci/.github/scripts/install-bd-archive.sh
 
       - name: Validate Manifold Claude configuration
         if: steps.subset.outputs.run_gate == 'true'

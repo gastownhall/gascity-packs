@@ -413,7 +413,7 @@ def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -
     assert "GATE_TIMEOUT: ${{ github.event.inputs.timeout || matrix.gate_timeout }}" in workflow
     assert '--timeout "$GATE_TIMEOUT"' in workflow
     assert 'DOLT_VERSION: "2.1.7"' in workflow
-    assert 'BD_VERSION: "v1.3.0"' in workflow
+    assert "BD_VERSION" not in workflow
     assert 'go-version: "1.26.5"' in workflow
     assert "ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api" in workflow
     assert "ANTHROPIC_AUTH_TOKEN: ${{ secrets.MANIFOLD_AUTH_TOKEN }}" in workflow
@@ -465,7 +465,7 @@ def test_dispatch_inference_workflow_is_manual_or_external_only() -> None:
     assert "\n  push:" not in workflow
     assert "runs-on: blacksmith-32vcpu-ubuntu-2404" in workflow
     assert 'DOLT_VERSION: "2.1.7"' in workflow
-    assert 'BD_VERSION: "v1.3.0"' in workflow
+    assert "BD_VERSION" not in workflow
     assert 'go-version: "1.26.5"' in workflow
     assert "include-hidden-files: true" in workflow
     assert "ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api" in workflow
@@ -1981,6 +1981,20 @@ def test_initialize_rig_git_gives_fixture_a_bare_origin_with_default_branch(tmp_
     assert git("rev-parse", "refs/remotes/origin/main") == git("rev-parse", "HEAD")
     assert git("rev-parse", "--abbrev-ref", "main@{upstream}") == "origin/main"
     assert not origin.is_relative_to(rig_dir)
+
+
+def test_inference_workflows_install_bd_matching_installed_gc() -> None:
+    # A bd pin independent of the gascity ref drifts whenever gascity bumps
+    # beads, and the gate then refuses to start (gc/bd beads module mismatch).
+    for name in ("supported-pack-nightly.yml", "gascity-pack-inference.yml"):
+        workflow = (gascity_pack_inference_gate.REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        install_gc = workflow.index('go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"')
+        install_bd = workflow.index('scripts/install_bd_matching_gc.sh "$(go env GOPATH)/bin/gc"')
+        run_gate = workflow.index("python3 scripts/gascity_pack_inference_gate.py")
+        assert install_gc < install_bd < run_gate, name
+        assert ".gascity-ci/.github/scripts/install-bd-archive.sh" in workflow[install_bd:run_gate], name
+        assert workflow.count("install-bd-archive.sh") == 1, name
+        assert "--bd-bin" not in workflow, name  # the gate reads GC_BEADS_BIN exported by the install step
 
 
 def test_inference_workflows_pin_gascity_source_root_to_installed_gc() -> None:
