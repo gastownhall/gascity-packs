@@ -244,7 +244,7 @@ def test_build_gate_env_uses_nightly_ollama_auth_shape(tmp_path) -> None:
 
     assert env["ANTHROPIC_BASE_URL"] == "https://ollama.com"
     assert env["ANTHROPIC_AUTH_TOKEN"] == "ollama-secret"
-    assert env["GC_INFERENCE_EXPECTED_MODEL"] == "kimi-k2.7-code"
+    assert env["GC_INFERENCE_EXPECTED_MODEL"] == "kimi-k3"
     assert env["HOME"] == str(tmp_path / "home")
     assert "ANTHROPIC_API_KEY" not in env
     assert "GC_SESSION" not in env
@@ -308,11 +308,11 @@ def inference_env(**overrides: str) -> dict[str, str]:
         "OLLAMA_API_KEY": "ollama-secret",
         "ANTHROPIC_BASE_URL": "https://works.gascity.com/manifold-api",
         "ANTHROPIC_AUTH_TOKEN": "manifold-secret",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-k2.7-code",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k2.7-code",
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k2.7-code",
-        "CLAUDE_CODE_SUBAGENT_MODEL": "kimi-k2.7-code",
-        "GC_INFERENCE_EXPECTED_MODEL": "kimi-k2.7-code",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-k3",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k3",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k3",
+        "CLAUDE_CODE_SUBAGENT_MODEL": "kimi-k3",
+        "GC_INFERENCE_EXPECTED_MODEL": "kimi-k3",
     }
     env.update(overrides)
     return env
@@ -334,17 +334,17 @@ def test_validate_inference_env_rejects_an_anthropic_model_as_the_expected_model
         CLAUDE_CODE_SUBAGENT_MODEL="claude-fable-5",
     )
 
-    with pytest.raises(gascity_pack_inference_gate.GateError, match="GC_INFERENCE_EXPECTED_MODEL must be kimi-k2.7-code"):
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="GC_INFERENCE_EXPECTED_MODEL must be kimi-k3"):
         gascity_pack_inference_gate.validate_inference_env(env)
 
 
 def test_preflight_inference_model_accepts_the_requested_model_usage(monkeypatch) -> None:
-    expected = "kimi-k2.7-code"
+    expected = "kimi-k3"
     calls: list[tuple[list[str], dict[str, str]]] = []
 
     def fake_run_checked(command, *, env, **_kwargs) -> str:
         calls.append((list(command), dict(env)))
-        return 'notice\n{"type":"result","is_error":false,"modelUsage":{"kimi-k2.7-code[1m]":{"inputTokens":1}}}'
+        return 'notice\n{"type":"result","is_error":false,"modelUsage":{"kimi-k3[1m]":{"inputTokens":1}}}'
 
     monkeypatch.setattr(gascity_pack_inference_gate, "run_checked", fake_run_checked)
 
@@ -365,7 +365,7 @@ def test_preflight_inference_model_rejects_a_successful_fallback_model(monkeypat
     monkeypatch.setattr(gascity_pack_inference_gate, "run_checked", fake_run_checked)
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="reported modelUsage.*claude-fable-5"):
-        gascity_pack_inference_gate.preflight_inference_model("kimi-k2.7-code", env=inference_env())
+        gascity_pack_inference_gate.preflight_inference_model("kimi-k3", env=inference_env())
 
 
 def test_preflight_inference_model_surfaces_a_json_error_from_claude(monkeypatch) -> None:
@@ -379,7 +379,7 @@ def test_preflight_inference_model_surfaces_a_json_error_from_claude(monkeypatch
     monkeypatch.setattr(gascity_pack_inference_gate, "run_checked", fake_run_checked)
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="rejected model.*gc-models entitlement"):
-        gascity_pack_inference_gate.preflight_inference_model("kimi-k2.7-code", env=inference_env())
+        gascity_pack_inference_gate.preflight_inference_model("kimi-k3", env=inference_env())
 
 
 def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -> None:
