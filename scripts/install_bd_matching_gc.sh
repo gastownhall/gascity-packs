@@ -68,4 +68,4 @@ fi
 if [[ -n "${GITHUB_PATH:-}" ]]; then
   echo "$bin_dir" >> "$GITHUB_PATH"
 fi
-echo "bd $bd_bin matches gc beads module $module@$version"
+echo "installed $bd_bin; it matches gc beads module $module@$version"
