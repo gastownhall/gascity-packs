@@ -1,5 +1,6 @@
 
-Resolve `<source-anchor-id>` using the same rules as `prepare-worktree`. For a
+Resolve `<source-anchor-id>` as described below: the root's stamped
+`gc.source_anchor_id`, else the same rules as `prepare-worktree`. For a
 synthetic drain-unit convoy, the source anchor is the original drain member in
 `gc.drain_member_id`, not the synthetic convoy id. Read `work_dir` from the source anchor, never read `work_dir` from the synthetic drain-unit convoy,
 validate that it is an absolute existing git worktree, set `WORKTREE` to that
@@ -8,13 +9,21 @@ path, then `cd "$WORKTREE"` before reading or editing source files. If
 
 Do not infer the source anchor from dependency ids such as the
 `prepare-worktree` step. Read the claimed step bead's `gc.root_bead_id`, read
-that do-work root with `gc bd show <root-bead-id> --json`, then read the root
-metadata `gc.input_convoy_id`. Read that input convoy with `gc bd show
-<input-convoy-id> --json`; if the JSON output is a one-element list, unwrap the
-first element before reading metadata. If the input convoy has
+that do-work root with `gc bd show <root-bead-id> --json`;
+if the JSON output is a one-element list, unwrap the first element before
+reading metadata. If the
+root has `gc.source_anchor_id`, `prepare-worktree` already resolved the anchor
+and stamped it there: use exactly that id and do not re-derive it. Only when
+the root has no `gc.source_anchor_id` (a workflow started before the stamp
+existed), read the root metadata `gc.input_convoy_id` and read that input
+convoy with `gc bd show <input-convoy-id> --json`. If the input convoy has
 `gc.synthetic_kind=drain-unit-convoy`, use its `gc.drain_member_id` as the
-source anchor. Otherwise use the input convoy id as the source anchor. Then
-read the source anchor and use only its `work_dir` metadata as `WORKTREE`.
+source anchor. Else if it has `gc.synthetic=true`, use its single tracked member
+from `gc convoy status <input-convoy-id> --json`. Otherwise use the input
+convoy id as the source anchor. Then read the source anchor and use only its
+`work_dir` metadata as `WORKTREE`; for an unstamped root whose resolved member
+has no `work_dir`, a pre-stamp `prepare-worktree` persisted it on the
+`gc.synthetic=true` input convoy, so read `work_dir` from that convoy instead.
 
 `gc.work_dir` is the launcher rig root, not the implementation worktree. Use
 `gc.work_dir` only later to run `.gc/scripts/checks/build-artifact-valid.sh`.

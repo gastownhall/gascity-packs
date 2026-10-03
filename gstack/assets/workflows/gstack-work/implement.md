@@ -5,8 +5,9 @@ implementation bead, the approved plan, and any context bundle before editing.
 Use the gstack discipline: ship the narrowest complete slice, test it, review
 your own diff, and record proof.
 
-Resolve the source anchor with the same rules as the inherited
-`prepare-worktree` step, read `work_dir` from the source anchor, validate that
+Resolve the source anchor as the workflow root's stamped `gc.source_anchor_id`
+(only when the root has none, use the same rules as the inherited
+`prepare-worktree` step), read `work_dir` from the source anchor, validate that
 it is an absolute existing git worktree, set `WORKTREE` to that path, and
 `cd "$WORKTREE"` before reading or editing source files. If `work_dir` is
 missing, invalid, or points at the launcher checkout, fail before editing.

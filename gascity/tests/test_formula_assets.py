@@ -3684,6 +3684,95 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(pack="superpowers", fragment=fragment):
                 self.assertIn(fragment, close_source)
 
+    def test_do_work_source_anchor_is_stamped_once_and_read_back(self) -> None:
+        """prepare-worktree is the only resolver; later steps read its stamp.
+
+        Covers the three resolution paths every source-anchor consumer must
+        handle: the stamped id, the unstamped (legacy / shared-drain item)
+        fallback, and the missing-anchor fail-closed path.
+        """
+        gascity_root = pathlib.Path(__file__).resolve().parents[1]
+        repo_root = gascity_root.parent
+
+        def flat(text: str) -> str:
+            return " ".join(text.split())
+
+        do_work = resolve_formula(gascity_root, "do-work")
+        steps = {step["id"]: step for step in do_work["steps"]}
+        prepare = flat(node_description(gascity_root, steps["prepare-worktree"]))
+        implement = flat(node_description(gascity_root, steps["implement"]))
+        close_source = flat(node_description(gascity_root, steps["close-source-anchor"]))
+
+        sp_formulas = [gascity_root / "formulas", repo_root / "superpowers" / "formulas"]
+        sp_closes = {
+            name: flat(
+                node_description(
+                    repo_root / "superpowers",
+                    {s["id"]: s for s in resolve_formula_from_dirs(sp_formulas, name)["steps"]}[
+                        "close-source-anchor"
+                    ],
+                )
+            )
+            for name in ("superpowers-development", "superpowers-development-item")
+        }
+
+        # Stamped path: prepare-worktree writes the stamp, idempotently, and
+        # verifies it; every downstream step reads exactly that id.
+        for fragment in (
+            "gc bd update <root-bead-id> --set-metadata gc.source_anchor_id=<source-anchor-id>",
+            "If the root already has `gc.source_anchor_id` (a retry), it must equal the id resolved above; hard-fail on a mismatch instead of overwriting it",
+            "the root now has `gc.source_anchor_id=<source-anchor-id>` before closing this step",
+        ):
+            with self.subTest(path="stamped", step="prepare-worktree", fragment=fragment):
+                self.assertIn(fragment, prepare)
+        with self.subTest(path="stamped", step="implement"):
+            self.assertIn("If the root has `gc.source_anchor_id`", implement)
+            self.assertIn("use exactly that id and do not re-derive it", implement)
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="stamped", step="close-source-anchor", formula=name):
+                self.assertIn("read that root's `gc.source_anchor_id` metadata", text)
+                self.assertIn("DO NOT re-derive it", text)
+        for rel in (
+            "bmad/assets/workflows/bmad-story-development/implement-story.md",
+            "bmad/assets/workflows/bmad-story-development/apply-story-findings.md",
+            "gstack/assets/workflows/gstack-work/implement.md",
+            "superpowers/assets/workflows/superpowers-development/implement.md",
+        ):
+            with self.subTest(path="stamped", prompt=rel):
+                self.assertIn(
+                    "Resolve the source anchor as the workflow root's stamped `gc.source_anchor_id`",
+                    flat((repo_root / rel).read_text(encoding="utf-8")),
+                )
+
+        # A single-item sling wraps the item in a `gc.synthetic=true` input
+        # convoy; the item, never the wrapper, is the source anchor.
+        for name, text in {"prepare-worktree": prepare, "implement": implement, "do-work close": close_source, **sp_closes}.items():
+            with self.subTest(path="single-item-wrapper", step=name):
+                self.assertIn("`gc.synthetic=true`", text)
+                self.assertIn("gc convoy status <input-convoy-id> --json", text)
+        self.assertIn("Never use the synthetic wrapper convoy id as `<source-anchor-id>`", prepare)
+
+        # Fallback path: unstamped roots (pre-stamp in-flight runs, the shared
+        # drain item lane) derive the anchor with prepare-worktree's rules and
+        # still find a pre-stamp work_dir on the wrapper convoy.
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="fallback", formula=name):
+                self.assertIn("FALLBACK — only if the root has NO `gc.source_anchor_id`", text)
+                self.assertIn("gc.synthetic_kind=drain-unit-convoy", text)
+                self.assertIn("gc.drain_member_id", text)
+                self.assertIn("read `work_dir` from that convoy", text)
+                self.assertIn("still close the member", text)
+        self.assertIn("superpowers-development-item` lane, which has no `prepare-worktree`", sp_closes["superpowers-development-item"])
+        self.assertIn("read `work_dir` from that convoy instead", implement)
+
+        # Missing-anchor / wrong-bead path: fail closed before closing anything.
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="missing-anchor", formula=name):
+                self.assertIn("if it is missing too, fail this step without closing any bead", text)
+                self.assertIn("gc.synthetic=true", text)
+                self.assertRegex(text, r"fail this step without closing any bead (if it does not hold|unless)")
+                self.assertIn("do not close it again", text)
+
     def test_wrapper_formulas_route_role_agents(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
 

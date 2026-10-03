@@ -3,7 +3,8 @@ Implement the BMAD story with the installed `bmad-quick-dev` and
 
 Treat BMAD's "hand to a sub-agent/task" instruction as this Gas City lane.
 
-Resolve the source anchor with the same rules as the do-work `prepare-worktree`
+Resolve the source anchor as the workflow root's stamped `gc.source_anchor_id`;
+only when the root has none, use the same rules as the do-work `prepare-worktree`
 step (for a shared-drain item, the drain member in `gc.drain_member_id`), read
 `work_dir` from the source anchor, validate that it is an absolute existing git
 worktree, set `WORKTREE` to that path, and `cd "$WORKTREE"` before reading or
