@@ -4303,6 +4303,10 @@ description = "Override sink that writes the base triage report contract."
             parent_show_path.write_text(parent_show_json or show_json, encoding="utf-8")
             list_path.write_text(list_json, encoding="utf-8")
             write_check_gc_stub(bin_dir, parent_show=True)
+            # Gastown's design gate reads its context through plain bd.
+            fake_bd = bin_dir / "bd"
+            fake_bd.write_text('#!/usr/bin/env bash\nexec gc bd "$@"\n', encoding="utf-8")
+            fake_bd.chmod(0o755)
 
             env = {
                 **os.environ,
@@ -4446,6 +4450,119 @@ description = "Override sink that writes the base triage report contract."
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Implementation review report mode satisfied", result.stdout)
+
+    def test_review_residual_lane_selection_is_id_independent(self) -> None:
+        show = json.dumps([{"id": "loop", "metadata": {
+            "gc.root_bead_id": "root", "gc.step_id": "review-loop",
+        }}])
+        for lane in ("acceptance", "test_evidence", "simplicity"):
+            for label, old_date, new_date, old, new, expected in (
+                ("new approval", "2026-09-01", "2026-09-02", "iterate", "approve", 0),
+                ("new rejection", "2026-09-01", "2026-09-02", "approve", "iterate", 1),
+                ("tie", "2026-09-01", "2026-09-01", "iterate", "approve", 1),
+                ("undated", None, None, "iterate", "approve", 1),
+                ("mixed dates", None, "2026-09-02", "iterate", "approve", 1),
+                ("reverse mixed dates", "2026-09-01", None, "iterate", "approve", 1),
+                ("undated approvals", None, None, "PASS", "Approve", 0),
+            ):
+                for ids in (("aaa", "zzz"), ("zzz", "aaa")):
+                    with self.subTest(lane=lane, case=label, ids=ids):
+                        common = {"gc.root_bead_id": "root", "gc.attempt": "1",
+                                  "gc.ralph_step_id": "review-loop"}
+                        # Each other lane has its own later timestamp. It must
+                        # neither hide this lane nor decide its freshness.
+                        rows = [{"id": "others", "updated_at": "2026-09-03",
+                                 "metadata": {**common, **{
+                                     f"code_review.{other}_verdict": "approve"
+                                     for other in ("acceptance", "test_evidence", "simplicity")
+                                     if other != lane
+                                 }}}]
+                        for bead_id, date, verdict in zip(ids, (old_date, new_date), (old, new)):
+                            row = {"id": bead_id, "metadata": {
+                                **common, f"code_review.{lane}_verdict": verdict,
+                            }}
+                            if date is not None:
+                                row["updated_at"] = date
+                            rows.append(row)
+                        result = self._run_implementation_review_check(
+                            show_json=show, list_json=json.dumps(rows),
+                        )
+                        self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+
+    def test_review_residual_report_path_selection_is_id_independent(self) -> None:
+        show = json.dumps([{"id": "loop", "metadata": {
+            "gc.root_bead_id": "root", "gc.var.review_mode": "report",
+        }}])
+        for label, old_date, new_date, paths, expected in (
+            ("new path", "2026-09-01", "2026-09-02", ("old.md", "new.md"), "new.md"),
+            ("tie", "2026-09-01", "2026-09-01", ("old.md", "new.md"), None),
+            ("undated", None, None, ("old.md", "new.md"), None),
+            ("mixed dates", None, "2026-09-02", ("old.md", "new.md"), None),
+            ("reverse mixed dates", "2026-09-01", None, ("old.md", "new.md"), None),
+            ("same path", None, None, ("same.md", "same.md"), "same.md"),
+        ):
+            for ids in (("aaa", "zzz"), ("zzz", "aaa")):
+                with self.subTest(case=label, ids=ids):
+                    rows = []
+                    for bead_id, date, path in zip(ids, (old_date, new_date), paths):
+                        row = {"id": bead_id, "metadata": {
+                            "gc.root_bead_id": "root", "gc.attempt": "1",
+                            "code_review.report_path": path,
+                        }}
+                        if date is not None:
+                            row["updated_at"] = date
+                        rows.append(row)
+                    # An unrelated empty carrier must not disable recency.
+                    rows.append({"id": "empty", "metadata": {"gc.attempt": "1"}})
+                    result = self._run_implementation_review_check(
+                        show_json=show, list_json=json.dumps(rows),
+                    )
+                    self.assertEqual(result.returncode, 0 if expected else 1,
+                                     result.stdout + result.stderr)
+                    if expected:
+                        self.assertIn(f"satisfied: {expected}", result.stdout)
+                    else:
+                        self.assertIn("unambiguous", result.stdout)
+
+    def test_review_residual_gastown_design_selection(self) -> None:
+        repo = pathlib.Path(__file__).resolve().parents[2]
+        script = repo / "gastown/assets/scripts/checks/design-review-approved.sh"
+        show = json.dumps([{"id": "loop", "metadata": {
+            "gc.root_bead_id": "root", "gc.attempt": "1",
+        }}])
+        ref = "mol-personal-work-v2.design-review-loop.run.1.apply-design-changes"
+        for label, dates, verdicts, expected in (
+            ("new approval", ("2026-09-01", "2026-09-02"), ("iterate", "Approve"), 0),
+            ("new rejection", ("2026-09-01", "2026-09-02"), ("done", "iterate"), 1),
+            ("tie", ("2026-09-01", "2026-09-01"), ("iterate", "done"), 1),
+            ("undated", (None, None), ("iterate", "done"), 1),
+            ("mixed dates", (None, "2026-09-02"), ("iterate", "done"), 1),
+            ("reverse mixed dates", ("2026-09-01", None), ("iterate", "done"), 1),
+            ("approval vocabulary", (None, None), ("APPROVE", "pass"), 0),
+            ("unknown blocks", (None, None), ("unknown", "done"), 1),
+        ):
+            for ids in (("aaa", "zzz"), ("zzz", "aaa")):
+                with self.subTest(case=label, ids=ids):
+                    rows = []
+                    for index, (bead_id, date, verdict) in enumerate(zip(ids, dates, verdicts)):
+                        row = {"id": bead_id, "created_at": f"2026-08-0{index + 1}",
+                               "metadata": {"gc.root_bead_id": "root", "gc.step_ref": ref,
+                                            "design_review.verdict": verdict}}
+                        if date is not None:
+                            row["updated_at"] = date
+                        rows.append(row)
+                    # Other roots and attempts must not contribute conflicts.
+                    rows.extend([
+                        {"id": "other-root", "metadata": {"gc.root_bead_id": "other",
+                         "gc.step_ref": ref, "design_review.verdict": "iterate"}},
+                        {"id": "other-attempt", "metadata": {"gc.root_bead_id": "root",
+                         "gc.step_ref": ref.replace("run.1.", "run.2."),
+                         "design_review.verdict": "iterate"}},
+                    ])
+                    result = self._run_implementation_review_check(
+                        show_json=show, list_json=json.dumps(rows), script=script,
+                    )
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
 
     def test_methodology_code_review_expansions_are_report_mode_aware(self) -> None:
         repo = pathlib.Path(__file__).resolve().parents[2]
@@ -4887,9 +5004,9 @@ description = "Override sink that writes the base triage report contract."
         is also the *newer* row; the owner's `done` must still win, because the
         lane is dropped before recency is ever consulted.
 
-        `updated_at` is real: it is `omitempty` on the reader's bead struct,
-        absent only on a bead never updated since creation, which no verdict
-        carrier can be. The fixtures carry it because the reader emits it.
+        These fixtures cover readers that emit `updated_at`. Other deployments
+        omit it even for updated verdict carriers; separate undated fixtures
+        ensure ownership and conflict handling do not depend on its presence.
         """
         show_json = json.dumps(
             [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
