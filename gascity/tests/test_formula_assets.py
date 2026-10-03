@@ -417,7 +417,7 @@ THIRD_PARTY_BUILD_PACKS = {
             "review": "bmad-code-review-flow",
         },
         "review_expansion": "bmad-code-review-flow",
-        "gap_analysis_target": "bmad.story-self-checker",
+        "gap_analysis_target": "bmad.acceptance-auditor",
         "review_fix_asset": "assets/workflows/bmad-code-review-flow/{target}.apply-bmad-review-findings.md",
     },
     "gstack": {
