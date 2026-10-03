@@ -5,6 +5,16 @@ unnecessary abstractions, accidental broad changes, and obvious future
 maintenance risk. Keep this lane beginner-friendly: flag only concrete issues
 that a new factory user can understand and act on.
 
+Before inspecting files, read `gc.build.code_review_context_path` from the
+workflow root bead and use its `## Implementation Worktrees` section as the
+authority for code under review. `gc.work_dir` is the launcher rig root, not the
+implementation worktree. Do not inspect or edit the launcher checkout. Resolve
+relative file paths against the listed implementation worktree, run
+`cd "$WORKTREE"`, and verify `pwd -P` equals that worktree before running any
+command.
+
+Contract: `gc.work_dir` is the launcher rig root, not the implementation worktree.
+
 Write findings under the build artifact root. Required findings must be tied to
 specific changed files or artifacts and must explain the smallest useful fix.
 

@@ -92,11 +92,12 @@ with formula_path.open("rb") as handle:
     formula = tomllib.load(handle)
 workspace = next(step for step in formula["steps"] if step["id"] == "workspace-setup")
 blocks = re.findall(r"```bash\n(.*?)```", workspace["description"], re.DOTALL)
-if len(blocks) < 4:
-    raise SystemExit(f"workspace-setup has {len(blocks)} bash blocks; expected at least 4")
-script = "\n".join(blocks[:4])
+if len(blocks) < 5:
+    raise SystemExit(f"workspace-setup has {len(blocks)} bash blocks; expected at least 5")
+script = "\n".join(blocks[:5])
 script = script.replace("{{convoy_id}}", "convoy-test")
 script = script.replace("{{base_branch}}", "main")
+script = script.replace("{{binding_prefix}}", "gastown.")
 if "{{" in script:
     raise SystemExit("workspace creation extraction retained an unresolved template")
 output_path.write_text(script, encoding="utf-8")
@@ -149,6 +150,10 @@ test_workspace_creation_uses_canonical_sibling() {
                 "$bd_subcommand update ac-safe1 --set-metadata artifact_dir="*)
                     return 0
                     ;;
+                "$bd_subcommand update ac-safe1 --unset-metadata handoff_stage" | \
+                "$bd_subcommand update ac-safe1 --set-metadata base_ref="*)
+                    return 0
+                    ;;
                 "runtime drain-ack")
                     fail "canonical workspace creation unexpectedly drain-acked"
                     ;;
@@ -175,6 +180,10 @@ test_workspace_creation_uses_canonical_sibling() {
         "$bd_subcommand update ac-safe1 --set-metadata artifact_dir=$canonical --unset-metadata work_dir" \
         "$calls" ||
         fail "formula did not record the exact canonical artifact_dir"
+    grep -qxF "$bd_subcommand update ac-safe1 --set-metadata base_ref=refs/remotes/origin/main" "$calls" ||
+        fail "formula did not resolve and record the remote-first base ref"
+    [[ "$(git -C "$canonical" rev-parse HEAD)" == "$(git -C "$rig" rev-parse refs/remotes/origin/main)" ]] ||
+        fail "canonical task worktree was not created at the resolved base ref"
 }
 
 test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores() {
@@ -562,6 +571,13 @@ test_workspace_metadata_reads_fail_closed_without_pipefail() {
                     "runtime drain-ack")
                         return 0
                         ;;
+                    # Step 1's stage-marker clear and base_ref record run
+                    # before the artifact metadata read by design; neither
+                    # names an artifact path.
+                    "$bd_subcommand update ac-safe1 --unset-metadata handoff_stage" | \
+                    "$bd_subcommand update ac-safe1 --set-metadata base_ref=refs/remotes/origin/main")
+                        return 0
+                        ;;
                     "$bd_subcommand update "*)
                         fail "metadata read mode $mode reached a metadata update"
                         ;;
@@ -582,7 +598,10 @@ test_workspace_metadata_reads_fail_closed_without_pipefail() {
 
         [[ ! -e "$canonical" ]] ||
             fail "metadata read mode $mode created a replacement artifact"
-        if grep -q "^${bd_subcommand} update " "$calls"; then
+        if grep "^${bd_subcommand} update " "$calls" |
+            grep -v -x -e "${bd_subcommand} update ac-safe1 --unset-metadata handoff_stage" \
+                -e "${bd_subcommand} update ac-safe1 --set-metadata base_ref=refs/remotes/origin/main" |
+            grep -q .; then
             fail "metadata read mode $mode mutated work bead metadata"
         fi
         rm -rf "$tmp"
@@ -1446,7 +1465,7 @@ required_workspace = (
     'cd -- "$WORKTREE"',
     'ARTIFACT_HOME="$CITY_ROOT/.gc/worktrees/$GC_RIG/artifacts"',
     'EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"',
-    'git merge-base --is-ancestor HEAD "origin/{{base_branch}}"',
+    'git merge-base --is-ancestor HEAD "$BASE_REF"',
     "Canonical artifact_dir is missing or unsafe",
     'rig_namespace="$city_root/.gc/worktrees/$rig_name"',
     'provider_root" = "$rig_namespace_real/polecats',

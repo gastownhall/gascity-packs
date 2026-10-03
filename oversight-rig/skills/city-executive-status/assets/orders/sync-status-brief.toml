@@ -1,0 +1,9 @@
+# Run after a composition window following request-status-updates. Replace
+# /path/to/city-executive-status with the copied or materialized skill directory.
+[order]
+description = "Twice daily: validate owner inputs and refresh the executive brief."
+trigger = "cron"
+schedule = "10 10,17 * * *"
+exec = "python3 /path/to/city-executive-status/scripts/executive_status_sync.py"
+timeout = "3m"
+idempotent = true

@@ -55,7 +55,9 @@ work units. Do not reuse the source or launch convoy from `gc.var.convoy_id`.
 Use the convoy creation flow exactly:
 
 1. Create each work item with `gc bd create ...` and capture the returned work-item
-   bead IDs.
+   bead IDs. Do not use `gc bd create --root-bead`; `--root-bead` is not a
+   create flag. Attach the workflow root relationship with metadata such as
+   `gc.root_bead_id=<workflow-root-id>`.
 2. Create and link the implementation convoy in one command:
    `gc convoy create <name> <work-item-id...> --json`.
 3. Parse `<implementation-convoy-id>` from that JSON response, then verify the

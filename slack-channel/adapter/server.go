@@ -56,6 +56,7 @@ type server struct {
 
 	httpClient *http.Client
 	now        func() time.Time
+	timings    socketTimings // Socket Mode connection-lifecycle timers; see socketmode.go
 
 	dedup *postDedupCache // idempotent-replay cache for outbound posts (gpk-bm3f)
 }
@@ -69,6 +70,7 @@ func newServer(cfg config) (*server, error) {
 		lastInbound: map[string]inboundRef{},
 		httpClient:  &http.Client{},
 		now:         func() time.Time { return time.Now() },
+		timings:     defaultSocketTimings(),
 		dedup:       newPostDedupCache(postDedupTTL),
 	}
 	if err := s.loadRegistries(); err != nil {

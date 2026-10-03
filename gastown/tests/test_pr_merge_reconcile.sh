@@ -898,7 +898,7 @@ test_formula_uses_pending_merge_gate() {
     local reconcile_line cleanup_line search_line
     reconcile_line=$(grep -nF 'if ! gc gastown pr-merge-reconcile; then' "$FORMULA" | head -n1 | cut -d: -f1)
     cleanup_line=$(grep -nF 'if ! gc gastown task-artifact-cleanup; then' "$FORMULA" | head -n1 | cut -d: -f1)
-    search_line=$(grep -nF 'Search for work beads assigned to you with branch metadata:' "$FORMULA" | head -n1 | cut -d: -f1)
+    search_line=$(grep -nF 'Search for work beads assigned to you' "$FORMULA" | head -n1 | cut -d: -f1)
     [[ "$reconcile_line" -lt "$cleanup_line" && "$cleanup_line" -lt "$search_line" ]] ||
         fail "find-work must order reconciliation, bounded cleanup, then normal work search"
     grep -F 'Do not invoke task-artifact cleanup on this publication path.' "$FORMULA" >/dev/null ||

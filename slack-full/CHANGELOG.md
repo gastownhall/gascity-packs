@@ -8,8 +8,177 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `gc slack reply-current` now inherits the thread from the latest
+  inbound (gp-i62): a thread-reply inbound's transcript entry carries
+  the Slack `thread_ts` in `ReplyToMessageID`, and the reply anchors
+  there by default — including when `--conversation-id` names the same
+  conversation explicitly, which previously always posted at channel
+  level (live burns 2026-08-09, #gastown + #fundraising). An unthreaded
+  inbound keeps the channel-level reply; an explicit target naming a
+  *different* conversation never borrows the inbound's thread anchor;
+  a failed lookup degrades to channel level with a stderr warning
+  (`--via adapter` must survive a gc outage). New `--no-thread` flag
+  forces a channel-level post. `--thread-current` now anchors at the
+  thread ROOT when the latest inbound was itself a thread reply —
+  Slack threads hang off the parent ts, so anchoring at the child
+  stranded the reply. Retires the fleet-memory workaround of routing
+  threaded replies through `publish-to-channel --thread-ts`.
+  `reply-current` now also reports the anchor it used —
+  `reply_to_message_id` in the result JSON, plus an `inheriting thread
+  <ts> from inbound <mid>` line on stderr when inheritance fires — so a
+  reply that lands in an unexpected thread can be traced to the inbound
+  that donated the anchor. The inherited anchor is the conversation's
+  newest inbound, not provably the message being answered (nothing on
+  the wire identifies which inbound woke the session); the limitation
+  and its `--reply-to` escape hatch are documented in
+  `commands/reply-current/help.md`.
+- `gc slack upload --thread-current` anchors at the thread ROOT too,
+  matching the parity its help text promises with `gc slack
+  reply-current`. It consumed a message-id-only lookup that dropped the
+  thread root, so a file uploaded in answer to a thread reply anchored
+  at the child ts and stranded outside the thread.
+- A *wedged* gc (connection accepted, then stalled) no longer crashes
+  callers whose degrade guards catch `GCAPIError`: the HTTP helper
+  wraps `TimeoutError` — raised bare out of `resp.read()`, an `OSError`
+  rather than a `URLError` — so a stalled lookup degrades like a
+  refused one instead of killing the reply with a traceback. The wrap
+  covers the stall's siblings too: a gc killed mid-response sends an
+  RST and `resp.read()` raises `ConnectionResetError`, so every
+  transport `OSError` now reaches callers in that same currency.
+
+### Added
+
+- Accidental-mrkdwn guard on the send path (gp-o42): `gc slack
+  reply-current` (legacy and company paths), `publish`,
+  `publish-to-channel`, `upload --initial-comment`, and `delegate` now
+  neutralize tildes that would pair into unintended Slack strikethrough
+  ("~$58.5k … ~$16.5k" rendered half a runway summary struck through).
+  Slack mrkdwn has no escape sequence, so accidental delimiter tildes
+  are substituted with the visually identical U+223C TILDE OPERATOR —
+  but only on lines where a pair could actually form: lone tildes keep
+  their ASCII byte (`cd ~/repo` survives copy-paste), code spans are
+  never touched, a tilde before an optionally-signed digit/currency
+  (`~$5k`, `~-$13.5k`, `~9/2`) is never a delimiter, and deliberate
+  tight-wrapped `~word~` strikethrough still renders. `*bold*`,
+  `_italics_`, and bullets are unaffected. New `--raw` flag on all five
+  commands sends the body verbatim. Pure script-side change — no
+  adapter restart needed.
+
+  Two limits worth knowing. "Lone tilde" is per rendered line, so two
+  home-relative paths on one line (`rsync ~/a ~/b`) are a pairable pair
+  and both get substituted; wrap twin paths in a code span, or use
+  `--raw`, when the exact bytes matter. And `gc slack post-message` is
+  deliberately out of scope: its milestone summary, field values, and
+  rollup items are rendered as mrkdwn by the Go Block Kit renderer,
+  downstream of this Python guard, so a payload carrying
+  "~$58.5k … ~$16.5k" still strikes through (titles are `plain_text`
+  and unaffected). That surface predates this change and guarding it
+  would need a second implementation of the heuristic in Go plus a
+  `gc-slack-cli` rebuild; tracked as gp-x5bdy.
+
+  Scope is this pack only. The sibling packs `slack-channel` (same
+  `publish` / `publish-to-channel` / `reply-current` verbs) and
+  `slack-mini` (`post-message`) carry no guard, so the same `gc slack`
+  verb behaves differently depending on which pack a city installed.
+  Porting was left out deliberately to keep this change script-side
+  with no adapter rebuild; guard-port vs. documented exclusion is
+  tracked as gp-cbxzk.
+
+### Fixed
+
+- The adapter builds and its tests pass on darwin again. The confined-open
+  walk called `syscall.Openat`, which exists only on Linux — darwin's
+  libSystem-based `syscall` package exports neither `Openat` nor
+  `SYS_OPENAT` — so the entire adapter failed to compile on macOS. The
+  walk now binds `golang.org/x/sys/unix`; every flag constant and syscall
+  it swaps is a value-identical mirror on Linux, so behavior there is
+  unchanged. Three `readConfinedFile` tests also failed on macOS, where
+  `TMPDIR` lives under `/var`, itself a symlink to `/private/var`:
+  `confineFileUploadPath` EvalSymlinks-resolves only the *root* and
+  documents the path as caller-pre-resolved, so a fixture handing it a
+  raw `t.TempDir()` broke that contract and made every path — including
+  genuinely in-root ones — read as an escape. The fixtures now resolve
+  their temp dir once through `tempDirResolved`. A harness defect, not a
+  confinement one: no production behavior changed.
+- Inbound files recorded inside Slack itself — voice clips (file subtype
+  `slack_audio`) and video clips (`slack_video`) — arrive with an empty
+  `mimetype` AND `filetype`, which the adapter passed through verbatim.
+  The inbound payload then omitted `mime_type`, a REQUIRED property of
+  gc's `extmsg.ExternalAttachment`, so gc rejected the whole message
+  with 422 and the recording plus its text caption silently never
+  reached the bound session. The adapter now derives a media type for
+  every inbound file (Slack's `mimetype` → file-name extension → Slack
+  `filetype` code → Slack-native subtype → `application/octet-stream`)
+  and always serializes `mime_type` (no longer `omitempty`), so a
+  payload can never again be rejected for a missing key.
+  Scope: this covers the legacy `/extmsg/inbound` delivery path. Files
+  shared in a company/multi-bot room take the company hydration path,
+  which never posts to `/extmsg/inbound` and still renders Slack's raw
+  `filetype`, so a Slack-native recording there is unchanged by this fix
+  and still lists an empty filetype.
+- The `[[service]]` proxy_process command pointed straight at
+  `adapter/gc-slack-adapter`, a gitignored build artifact — but
+  `gc import install` re-materializes the pack cache git-only, so every
+  pack pin bump wiped the binary and left the slack service dead until
+  someone rebuilt it by hand. The service command is now
+  `adapter/run.sh` (checked in, survives every materialization): it
+  sources the secrets env file, execs an existing binary untouched,
+  and on a missing binary finds a Go toolchain (PATH plus
+  Homebrew/system fallbacks for minimal supervisor environments),
+  rebuilds from the colocated sources with loud stderr logging,
+  publishes via PID-suffixed temp file + atomic `mv` (safe under
+  concurrent supervisor restarts), and execs.
+
+  Env-file handling distinguishes the two cases. An absent *default*
+  (`~/.config/gc-slack-adapter/env`) warns and continues, since
+  supervised deployments legitimately inject the env another way and
+  the adapter fail-fasts on missing required keys itself. An absent
+  path you set *explicitly* in `GC_SLACK_ADAPTER_ENV` is fatal: the
+  adapter validates that credentials are present, never where they
+  came from, so continuing would boot it against whatever Slack token
+  happens to be in the ambient environment.
+
+  Because the rebuild now sits on the service startup path, it is
+  hardened for the minimal supervisor environments it targets: the
+  toolchain search also covers `/usr/bin/go` and `/bin/go` (where a
+  distro Go lands, and which a restricted PATH hides); `GOCACHE` and
+  `GOPATH` are defaulted under `TMPDIR` when HOME, `XDG_CACHE_HOME`
+  and `GOCACHE` are all unset, which `go build` otherwise rejects
+  outright; and the toolchain is checked against `go.mod`'s `go`
+  directive up front, so a too-old Go under `GOTOOLCHAIN=local` fails
+  with a named remedy instead of a raw compiler error (the default
+  `GOTOOLCHAIN=auto`, which can fetch the required toolchain itself,
+  warns and proceeds).
+
 ### Changed
 
+- The adapter module takes its first dependency, `golang.org/x/sys`
+  (hash-pinned in `adapter/go.sum`), because it is the only maintained
+  source of a darwin-capable `Openat`. The module's zero-dependency
+  property was traded away deliberately; the rejected alternatives and
+  the reason are recorded in `adapter/confined_open.go`. One
+  operator-visible consequence: `adapter/run.sh`'s build-on-missing
+  self-heal used to rebuild the binary with no module downloads at all,
+  and now needs either a warm module cache or GOPROXY egress the first
+  time it builds. On a host behind an egress allowlist, pre-warm with
+  `go mod download` in `slack-full/adapter/` before relying on the
+  self-heal — a cold cache there fails the rebuild with `module lookup
+  disabled by GOPROXY=off`, and the remedy `run.sh` prints on failure
+  hits the same wall.
+- **Behavior change on upgrade:** the slack service now *exits 1 at
+  startup* when `GC_SLACK_ADAPTER_ENV` is set to a path that does not
+  exist, where it previously logged one warning and started on the
+  ambient environment. Pointing the variable at a nonexistent path is
+  this pack's own established idiom for "no env file", so a unit file or
+  wrapper using it that way for the **service** will stop starting after
+  this pin bump. Audit before upgrading with
+  `grep -r GC_SLACK_ADAPTER_ENV` across your unit files and wrappers, and
+  either create the file or unset the variable to fall back to the
+  default. The strict rule is service-only: `slack_chat_*` commands
+  (`scripts/slack_intake_common.py`) still treat a missing path as "no
+  env file".
 - Renamed the pack directory from `slack-pack/` to `slack-full/` and the
   `pack.toml` name from `slack` to `slack-full` as part of the Slack pack
   tiering split (`gc-yrw`). This pack is now **Tier 3** of the Slack
@@ -36,6 +205,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Outbound publishes carrying an idempotency key are stamped with a
+  low-visibility reference marker (`_ref:<12 hex>_`) so a later reader can
+  find the exact message in Slack. The in-process dedup cache only lives
+  for its TTL and does not survive a restart, so it cannot provide durable
+  delivery evidence; the marker can. The readback contract — what a marker's
+  absence does and does not mean, and where a reader has to look — is stated
+  normatively in the `referenceMarker` doc comment in `adapter/main.go`, and
+  this entry deliberately does not restate it, so there is one place to edit.
+  Two properties worth knowing without opening the source: absence always
+  means UNKNOWN, never undelivered (all history predating this change is
+  unmarked); and a marker on a threaded reply is not reachable from
+  `conversations.history`, which does not return thread replies.
+
+  Note on Slack's ceiling, since the obvious assumption is wrong: Slack does
+  not reject text over 40,000 — it truncates from the end and still answers
+  `ok:true`. The marker is the tail of the text, so an oversized post would
+  deliver a mangled partial marker under a receipt that looks perfect. The
+  advertised `MaxMessageLength` therefore reserves the marker's 20 bytes, and
+  `handlePublish` enforces the same budget itself rather than trusting an
+  advertisement nothing in gc reads today. Over the budget the caller's text
+  is posted **unstamped** rather than trimmed: the message is the caller's,
+  the bookkeeping is ours, and an honest absence is already something the
+  contract requires readers to tolerate. When Slack reports a truncation
+  anyway, the publish receipt carries `metadata["truncated"]="true"`
+  (`dr-3msk6.3`).
 - `gc slack retry-peer-fanout` — operational recovery for peer-fanout.
   Walks recent `extmsg.peer_fanout_failed` events (added in this change
   too), filters by `--since` / `--conversation` / `--max`, deduplicates

@@ -275,6 +275,13 @@ schema = 1
     hash = "sha256:cb81d9e35fe4ca2263922e901eac34aec6183d92832aa0695e43ff038462087d"
     description = "First registry release of the BMAD build factory."
 
+  [[pack.release]]
+    version = "0.1.1"
+    ref = "main"
+    commit = "390cac1a8a0478b6dfde603dae00a43ed9748d13"
+    hash = "sha256:f59ebe28181a208086a7018d1c6df4396894c22be9bd272e025312feb7879a0a"
+    description = "Implementer commits in the source-anchor worktree (only real changes); code review records a validated review report on the workflow root; apply-findings keeps artifacts schema-valid; picks up newer gascity pack commits (do-work now needs an origin remote)."
+
 [[pack]]
   name = "compound-engineering"
   description = "Every Inc.'s Compound Engineering methodology as a Gas City build factory, with the widest reviewer-persona fanout in the catalog."
@@ -287,6 +294,13 @@ schema = 1
     commit = "636fdfaaf54195b293e8e56d5e9c30e4b8d5a9ef"
     hash = "sha256:7981abfa28021a99accacc097d32a04e2d28c344f09ebf17e3f0ca51768140af"
     description = "First registry release of the Compound Engineering build factory."
+
+  [[pack.release]]
+    version = "0.1.1"
+    ref = "main"
+    commit = "390cac1a8a0478b6dfde603dae00a43ed9748d13"
+    hash = "sha256:12bf7fbd2ab86d0fc2a866ac7562bc957908eae408c779e539af3c3d14ede4b9"
+    description = "Implementer commits in the source-anchor worktree; code review and compound resolution record validated report paths on the workflow root; apply-findings keeps artifacts schema-valid and the plan is re-validated after plan review; picks up newer gascity pack commits (do-work now needs an origin remote)."
 
 [[pack]]
   name = "gstack"
@@ -301,6 +315,13 @@ schema = 1
     hash = "sha256:4f180f1327933239a29918e661c0cd3a54ff3de84ab981324665e776de2eff8f"
     description = "First registry release of the gstack build factory."
 
+  [[pack.release]]
+    version = "0.1.1"
+    ref = "main"
+    commit = "390cac1a8a0478b6dfde603dae00a43ed9748d13"
+    hash = "sha256:ed74c2b288875a5f563d2b0d2a5afffab048a4136b237fb94d6e7baf60031cba"
+    description = "Implementer commits in the source-anchor worktree; code review records a validated review report on the workflow root; apply-findings keeps artifacts schema-valid and the plan is re-validated after plan review; picks up newer gascity pack commits (do-work now needs an origin remote)."
+
 [[pack]]
   name = "superpowers"
   description = "obra/superpowers TDD-first skill library as a Gas City build factory."
@@ -313,6 +334,13 @@ schema = 1
     commit = "636fdfaaf54195b293e8e56d5e9c30e4b8d5a9ef"
     hash = "sha256:ba0428bf51627bf465a693f2426cf6be0cef70ae81b043fce3ce6761a4772290"
     description = "First registry release of the superpowers build factory."
+
+  [[pack.release]]
+    version = "0.1.1"
+    ref = "main"
+    commit = "390cac1a8a0478b6dfde603dae00a43ed9748d13"
+    hash = "sha256:4358803ef87a4209a90f0c000fdcc58d7f92d04a9db471474d0b0ce2f0054223"
+    description = "Requirements spec carries requirements.v1 front matter and repairs from validator errors; code review records a validated review report on the workflow root; plan re-validated after plan review; vendors systematic-debugging; picks up newer gascity pack commits (do-work now needs an origin remote)."
 
 [[pack]]
   name = "runtime-cloudflare"
