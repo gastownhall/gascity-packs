@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Binding-based Slack commands now fall back to the session's durable
+  agent/alias binding when no active session binding exists. They select
+  the newest unexpired Slack binding through the city API, so restarting
+  a named seat no longer breaks `publish`, `upload`, or the binding fallback
+  in `reply-current` (gp-jshby).
+- Delivery checks require a boolean receipt, rejecting transcript-only
+  responses and malformed truthy values such as `"false"`. `upload` now
+  applies the same delivery check as `reply-current` and `publish`.
+
 - `gc slack reply-current` now inherits the thread from the latest
   inbound (gp-i62): a thread-reply inbound's transcript entry carries
   the Slack `thread_ts` in `ReplyToMessageID`, and the reply anchors

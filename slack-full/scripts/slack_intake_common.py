@@ -15,6 +15,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -323,7 +324,9 @@ def interpret_publish_receipt(result: Any) -> tuple[bool, str]:
     if not isinstance(result, dict):
         return False, "non_dict_response"
     if "delivered" in result:
-        delivered = bool(result.get("delivered"))
+        delivered = result.get("delivered")
+        if not isinstance(delivered, bool):
+            return False, "schema_mismatch"
         kind = str(result.get("failure_kind", "")) if not delivered else ""
         return delivered, kind
     receipt = result.get("Receipt") if isinstance(result.get("Receipt"), dict) else None
@@ -331,11 +334,15 @@ def interpret_publish_receipt(result: Any) -> tuple[bool, str]:
         receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else None
     if isinstance(receipt, dict):
         if "Delivered" in receipt:
-            delivered = bool(receipt.get("Delivered"))
+            delivered = receipt.get("Delivered")
+            if not isinstance(delivered, bool):
+                return False, "schema_mismatch"
             kind = str(receipt.get("FailureKind", "")) if not delivered else ""
             return delivered, kind
         if "delivered" in receipt:
-            delivered = bool(receipt.get("delivered"))
+            delivered = receipt.get("delivered")
+            if not isinstance(delivered, bool):
+                return False, "schema_mismatch"
             kind = str(receipt.get("failure_kind", "")) if not delivered else ""
             return delivered, kind
     return False, "schema_mismatch"
@@ -881,11 +888,83 @@ def upload_via_adapter(
         raise AdapterError(str(exc)) from exc
 
 
+def _agent_name_for_session(session_id: str) -> str:
+    """Resolve the seat identity without borrowing another session's env."""
+    if session_id == os.environ.get("GC_SESSION_ID", "").strip():
+        name = (os.environ.get("GC_ALIAS") or os.environ.get("GC_AGENT") or "").strip()
+        if name:
+            return name
+    for entry in gc_get("/sessions").get("items", []):
+        if entry.get("id") == session_id:
+            return (entry.get("alias") or entry.get("agent_name") or
+                    entry.get("template") or "").strip()
+    return ""
+
+
+def _binding_timestamp(value: str) -> datetime:
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            raise ValueError("missing timezone")
+        return stamp
+    except ValueError as exc:
+        raise GCAPIError(f"invalid extmsg binding timestamp: {value!r}") from exc
+
+
 def look_up_binding(session_id: str) -> dict[str, Any] | None:
-    """Resolve a session's most recent active extmsg binding."""
-    res = gc_get(f"/extmsg/bindings?session_id={session_id}")
-    items = res.get("items", [])
-    for entry in reversed(items):
-        if entry.get("Status") == "active":
-            return entry.get("Conversation") or {}
-    return None
+    """Prefer a session binding, then the seat's newest unexpired Slack binding.
+
+    /extmsg/bindings currently accepts session_id only. Durable agent
+    bindings survive session restarts and have no session_id, so resolve
+    the seat and read its binding beads through the city API. No rebind or
+    local database access is needed.
+    """
+    query = urllib.parse.urlencode({"session_id": session_id})
+    for entry in reversed(gc_get(f"/extmsg/bindings?{query}").get("items", [])):
+        conversation = entry.get("Conversation") or {}
+        if entry.get("Status") == "active" and conversation.get("provider") == "slack":
+            return conversation
+
+    agent_name = _agent_name_for_session(session_id)
+    if not agent_name:
+        return None
+    now = datetime.now(timezone.utc)
+    candidates = []
+    cursor = ""
+    while True:
+        query = urllib.parse.urlencode({
+            "label": f"extmsg:binding:agent:v1:{agent_name}",
+            "status": "open", "limit": 100, "cursor": cursor,
+        })
+        result = gc_get(f"/beads?{query}")
+        if result.get("partial"):
+            raise GCAPIError("agent binding lookup returned an incomplete bead list")
+        items = result.get("items", [])
+        for bead in items:
+            meta = bead.get("metadata") or {}
+            if (bead.get("status") != "open" or meta.get("agent_name") != agent_name
+                    or meta.get("session_id") or meta.get("provider") != "slack"):
+                continue
+            expires_at = meta.get("expires_at", "")
+            if expires_at and _binding_timestamp(expires_at) <= now:
+                continue
+            if not meta.get("conversation_id"):
+                continue
+            candidates.append(meta)
+        next_cursor = result.get("next_cursor", "")
+        if not next_cursor:
+            break
+        if not items or next_cursor == cursor:
+            raise GCAPIError("agent binding lookup returned a non-advancing cursor")
+        cursor = next_cursor
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda meta: _binding_timestamp(meta.get("bound_at", "")))
+    return {
+        "scope_id": latest.get("scope_id", ""),
+        "provider": "slack",
+        "account_id": latest.get("account_id", ""),
+        "conversation_id": latest["conversation_id"],
+        "parent_conversation_id": latest.get("parent_conversation_id", ""),
+        "kind": latest.get("conversation_kind", "dm"),
+    }

@@ -315,3 +315,19 @@ def test_via_adapter_branch_is_guarded_too(
     assert exit_code == 0
     assert captured["body"]["initial_comment"] == \
         _RUNWAY_LINE.replace("~", slack_mrkdwn.TILDE_SUBSTITUTE)
+
+
+@pytest.mark.parametrize('via,result', [
+    ('gc', {'Receipt': {'Delivered': False, 'FailureKind': 'auth'}}),
+    ('adapter', {'delivered': False, 'failure_kind': 'auth'}),
+    ('gc', {'CreatedAt': '2026-09-30T02:37:00Z'}),
+    ('gc', {'Receipt': {'Delivered': 'false'}}),
+])
+def test_upload_fails_without_confirmed_delivery(monkeypatch, tmp_path, capsys, via, result):
+    upload, common = _import_modules()
+    monkeypatch.setattr(common, 'look_up_binding', lambda _: _fake_binding())
+    helper = 'upload_via_adapter' if via == 'adapter' else 'upload_via_gc_outbound_file'
+    monkeypatch.setattr(common, helper, lambda **_: result)
+    assert upload.main(['--file', str(_make_file(tmp_path)), '--session', 'new-session',
+                        '--via', via]) == 1
+    assert 'delivered=false' in capsys.readouterr().err
