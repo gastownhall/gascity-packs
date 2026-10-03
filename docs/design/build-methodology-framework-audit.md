@@ -1,7 +1,8 @@
 # Build Methodology Framework Audit
 
-This audit compares the vendored Superpowers, Compound Engineering, BMAD
-Method, and garrytan/gstack workflows against the Gas City build methodology
+This audit compares the vendored Superpowers, Compound Engineering, and BMAD
+Method workflows against the Gas City build methodology implementation. The
+Gstack sibling is now a skills-only delivery-policy pack, not a derived formula
 implementation.
 
 ## Core Rule
@@ -18,13 +19,12 @@ convoys, drains, and expansion children.
 | Superpowers | Design/spec approval before implementation, TDD task execution, spec-compliance review before code-quality review. | `superpowers-brainstorming` preserves design and written-spec approval loops. `superpowers-development` and `superpowers-development-item` run TDD per task. `superpowers-task-review` now converts per-task spec-compliance and code-quality reviewer handoffs into graph lanes. | Mode vocabulary still lives partly in toolkit-specific vars such as `brainstorming_approval_mode`; direct interactive defaults and adapter-safe autonomous defaults should converge on `interaction_mode`. |
 | Compound Engineering | Wide persona review roster, cheap selector gates, structured review synthesis, and different human/agent review modes. | `compound-code-review` maps always-on, conditional, stack-specific, gap-analysis, synthesis, and apply-fix lanes into one review expansion. `compound-plan-review` provides a multi-lane plan review loop. | Planning parity is still thin: output format, resume behavior, and interactive/headless prompt behavior should become first-class planning vars/assets. Review authority should converge on `review_mode`. |
 | BMAD Method | Disciplined PRD -> architecture -> epics/stories -> readiness -> story implementation lifecycle with step-file execution and adversarial review. | `bmad-build` maps the full lifecycle onto `build-base`. `bmad-story-development` converts quick-dev handoffs into implementation, self-check, acceptance-audit, and fix lanes. `bmad-code-review-flow` preserves adversarial review fanout. | BMAD activation/config/customization, language settings, frontmatter progress, and menu/checkpoint behavior are still mostly prompt guidance rather than explicit bootstrap/step formulas. |
-| garrytan/gstack | A founder-friendly sprint: office-hours intake, CEO/design/eng/DX plan review, staff review, QA, CSO security, document-release, ship, and deploy readiness. | `gstack-build` maps Think -> Plan -> Build -> Review -> Test -> Ship -> Reflect onto `build-base`, with explicit `gstack-plan-review`, `gstack-code-review`, `gstack-qa-review`, and `gstack-release-readiness` fanouts. | Browser/runtime-specific tools such as GStack Browser, taste memory, and cross-agent browser pairing remain reference behavior for now. The beginner pack should stay focused on one approachable factory path before adding those advanced surfaces. |
 
 ## GC-METH-012 Disposition
 
 `GC-METH-012` (external implementation compatibility) was deferred while no
 concrete derived-pack implementations existed in the scanned evidence set. That
-deferral is now resolved: all four derived packs carry pack-local compatibility
+deferral is now resolved: all three derived packs carry pack-local compatibility
 ledgers, and a dedicated test module proves the compatibility contract for
 every pack.
 
@@ -33,10 +33,9 @@ every pack.
 | Compound Engineering ledger | `compound-engineering/REQUIREMENTS.md` |
 | Superpowers ledger | `superpowers/REQUIREMENTS.md` |
 | BMAD ledger | `bmad/REQUIREMENTS.md` |
-| gstack ledger | `gstack/REQUIREMENTS.md` |
 | Compatibility tests | `gascity/tests/test_derived_pack_compatibility.py` |
 
-The test module inspects all four packs for: `imports.gc.source = "../gascity"`
+The test module inspects all three packs for: `imports.gc.source = "../gascity"`
 in `pack.toml`; a top-level formula that extends `build-base` with the base
 anchors in order; `[metadata.gc.methodology]` restricted to the allowed
 vocabulary; selector defaults for planning, decomposition, implementation,
@@ -46,7 +45,7 @@ providerless agents; the shared claim protocol in every agent prompt; no
 provider-native subagent/task-tool dispatch in prompt assets; and pack-local
 ledgers anchoring `GC-METH-012`.
 
-All four packs pass, so the `GC-METH-012` rows in `gascity/REQUIREMENTS.md`
+All three packs pass, so the `GC-METH-012` rows in `gascity/REQUIREMENTS.md`
 (Scenario Ledger and Deferred Follow-Up Requirements) record the requirement as
 covered. Reproduce with:
 
@@ -67,9 +66,8 @@ pack passes again.
 
 2. **Add a beginner-friendly methodology quickstart.**
    Add a README table with three copy-paste launch commands:
-   `gstack-build` for founder-to-release sprint shape, `superpowers-build`
-   for design/TDD discipline, `compound-build` for heavy review fanout, and
-   `bmad-build` for product-to-story structure.
+   `superpowers-build` for design/TDD discipline, `compound-build` for heavy
+   review fanout, and `bmad-build` for product-to-story structure.
 
 3. **Promote structured prompt files into small formulas.**
    BMAD step-file workflows and Compound planning/resume flows should become
@@ -98,11 +96,10 @@ pack passes again.
 ## Good First Demo Path
 
 For a first introduction to automated software factories, start with
-`gstack-build` because it mirrors a startup sprint in plain language:
-office-hours, plan review, build, code review, QA, release readiness, finalize.
-Then show `superpowers-build` for design/TDD discipline, `compound-build` on
-the same task to demonstrate review fanout, and `bmad-build` to demonstrate
-product-to-story decomposition.
+`build-basic`, then show `superpowers-build` for design/TDD discipline,
+`compound-build` on the same task to demonstrate review fanout, and
+`bmad-build` to demonstrate product-to-story decomposition. Present Gstack Lite
+separately as direct-delivery policy and optional specialist skills.
 
 The demo should avoid provider-native subagents entirely. Every visible
 parallelism point should be a Gas City fanout with beads the user can inspect.

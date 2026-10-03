@@ -252,7 +252,6 @@ def test_plain_gastown_polecat_sling_starts_default_graph_workflow(
             "superpowers.implementer",
             "# Superpowers Implementer",
         ),
-        ("gstack", "gstack", "gstack.implementer", "# gstack Implementer"),
         (
             "compound-engineering",
             "compound-engineering",
@@ -325,6 +324,8 @@ def test_registered_claim_command_dispatches_store_aware_show_and_normalizes_jso
         **workspace.env,
         "BEADS_ACTOR": "worker",
         "GC_AGENT": "gc.implementation-worker",
+        # The hosting worker's route is unrelated to this hermetic fixture.
+        "GC_TEMPLATE": "",
         "GC_TEST_CALLS": str(calls),
         "PATH": f"{fake_bin}:/usr/bin:/bin",
     }

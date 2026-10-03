@@ -304,7 +304,7 @@ schema = 1
 
 [[pack]]
   name = "gstack"
-  description = "garrytan/gstack founder sprint (office hours, autoplan, QA, security, release readiness) as a Gas City build factory."
+  description = "Skills-only lightweight delivery policy with optional planning, QA, security, and release specialists."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/gstack"
   source_kind = "git"
 

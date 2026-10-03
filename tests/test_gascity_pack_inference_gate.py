@@ -406,7 +406,7 @@ def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -
     assert "if: steps.subset.outputs.run_gate == 'true'" in workflow
     assert "if: always() && steps.subset.outputs.run_gate == 'true'" in workflow
     assert "model-smoke)" in workflow
-    assert "superpowers|compound-engineering|gstack|bmad)" in workflow
+    assert "superpowers|compound-engineering|bmad)" in workflow
     assert "max-parallel: 2" in workflow
     assert "runs-on: blacksmith-2vcpu-ubuntu-2404" in workflow
     assert "runs-on: blacksmith-32vcpu-ubuntu-2404" in workflow
@@ -439,7 +439,7 @@ def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -
     assert re.search(r"(?m)^\s*gate: build$", gascity)
     assert re.search(r"(?m)^\s*timeout_minutes: 30$", gascity)
     assert re.search(r"(?m)^\s*gate_timeout: 30m$", gascity)
-    for pack in ("superpowers", "compound-engineering", "gstack", "bmad", "gastown"):
+    for pack in ("superpowers", "compound-engineering", "bmad", "gastown"):
         entry = matrix_entry(pack)
         assert re.search(r"(?m)^\s*gate: smoke$", entry)
         assert re.search(r"(?m)^\s*timeout_minutes: 25$", entry)
@@ -863,11 +863,10 @@ def test_expand_pack_selection_supports_supported_pack_groups() -> None:
     )
 
 
-def test_model_smoke_selection_covers_the_five_non_canary_packs() -> None:
+def test_model_smoke_selection_covers_the_four_non_canary_packs() -> None:
     assert gascity_pack_inference_gate.expand_pack_selection("model-smoke") == [
         "superpowers",
         "compound-engineering",
-        "gstack",
         "bmad",
         "gastown",
     ]
@@ -1435,22 +1434,6 @@ def test_validate_methodology_flow_contract_rejects_missing_specialist_review_la
     )
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="superpowers.code-quality-reviewer"):
-        gascity_pack_inference_gate.validate_methodology_flow_contract(
-            replace(spec, source=pack_source)
-        )
-
-
-def test_validate_methodology_flow_contract_rejects_missing_gstack_release_readiness(tmp_path) -> None:
-    spec = gascity_pack_inference_gate.PACK_SPECS["gstack"]
-    pack_source = tmp_path / "gstack"
-    shutil.copytree(spec.source / "formulas", pack_source / "formulas")
-    build_formula = pack_source / "formulas" / "gstack-build.formula.toml"
-    build_formula.write_text(
-        build_formula.read_text(encoding="utf-8").replace('id = "release-readiness"', 'id = "release-check"'),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(gascity_pack_inference_gate.GateError, match="release-readiness"):
         gascity_pack_inference_gate.validate_methodology_flow_contract(
             replace(spec, source=pack_source)
         )

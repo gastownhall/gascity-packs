@@ -58,6 +58,7 @@ ROLE_AGENTS = {
     "issue-triager",
     "publisher",
     "quality-judge",
+    "research-planner",
     "requirements-planner",
     "review-synthesizer",
     "run-operator",
@@ -204,7 +205,6 @@ TOP_LEVEL_BUILD_FORMULA_PACKS = {
     "compound-build": "compound-engineering",
     "superpowers-build": "superpowers",
     "bmad-build": "bmad",
-    "gstack-build": "gstack",
 }
 
 # Mode selector vars and their pinned defaults per formula
@@ -419,53 +419,6 @@ THIRD_PARTY_BUILD_PACKS = {
         "review_expansion": "bmad-code-review-flow",
         "gap_analysis_target": "bmad.story-self-checker",
         "review_fix_asset": "assets/workflows/bmad-code-review-flow/{target}.apply-bmad-review-findings.md",
-    },
-    "gstack": {
-        "formula": "gstack-build",
-        "base_import_binding": "gc",
-        "base_import_source": "../gascity",
-        "vendor": "gstack",
-        "upstream": "https://github.com/garrytan/gstack",
-        "commit": "1626d4857bfe30da2690dd6a3217961934aa3192",
-        "implementation_target": "gstack.implementer",
-        "planning_formula": "gstack-planning",
-        "decomposition_formula": "gstack-decomposition",
-        "implementation_entry_formula": "gstack-implementation",
-        "implementation_formula": "gstack-work",
-        "implementation_item_formula": "gstack-work-item",
-        "code_review_entry_formula": "gstack-review",
-        "review_fix_formula": "gstack-fix-loop",
-        "skills": {
-            "requirements": "office-hours",
-            "plan": "autoplan",
-            "plan-review": "plan-eng-review",
-            "implement": "ship",
-            "review": "review",
-            "finalize": "land-and-deploy",
-        },
-        "extra_steps": ["qa", "release-readiness"],
-        "expansions": {
-            "plan-review": "gstack-plan-review",
-            "review": "gstack-code-review",
-            "qa": "gstack-qa-review",
-            "release-readiness": "gstack-release-readiness",
-        },
-        "review_expansion": "gstack-code-review",
-        "review_expand_vars": {
-            "review_mode": "{{review_mode}}",
-        },
-        "gap_analysis_target": "gstack.staff-reviewer",
-        "review_fix_asset": "assets/workflows/gstack-code-review/{target}.apply-review-findings.md",
-        "prompt_assets": {
-            "skills/plan-ceo-review/SKILL.md",
-            "skills/plan-design-review/SKILL.md",
-            "skills/plan-devex-review/SKILL.md",
-            "skills/qa/SKILL.md",
-            "skills/cso/SKILL.md",
-            "skills/document-release/SKILL.md",
-            "skills/investigate/SKILL.md",
-            "skills/spec/SKILL.md",
-        },
     },
 }
 
@@ -757,7 +710,10 @@ class FormulaAssetTests(unittest.TestCase):
         for path in paths:
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(data["scope"], "rig")
-            self.assertTrue(data["fallback"])
+            if path.parent.name == "research-planner":
+                self.assertFalse(data["fallback"])
+            else:
+                self.assertTrue(data["fallback"])
             self.assertNotIn("provider", data, f"{path} must inherit the city/workspace provider by default")
             self.assertTrue((path.parent / "prompt.template.md").is_file())
         self.assertIn(root / "roles" / "agents" / "run-operator" / "agent.toml", paths)
@@ -794,7 +750,10 @@ class FormulaAssetTests(unittest.TestCase):
         for agent_name in ROLE_AGENTS:
             prompt = root / "roles" / "agents" / agent_name / "prompt.template.md"
             with self.subTest(agent=agent_name):
-                self.assertEqual(prompt.read_text(encoding="utf-8"), f"{include}\n")
+                if agent_name == "research-planner":
+                    self.assertNotIn(include, prompt.read_text(encoding="utf-8"))
+                else:
+                    self.assertEqual(prompt.read_text(encoding="utf-8"), f"{include}\n")
 
     def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -1286,6 +1245,7 @@ class FormulaAssetTests(unittest.TestCase):
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
+                "GC_TEMPLATE": "",
                 "GC_TEST_CALLS": str(calls),
                 "PATH": f"{bin_dir}:/usr/bin:/bin",
             }
@@ -2690,156 +2650,6 @@ class FormulaAssetTests(unittest.TestCase):
                     expected["implementation_target"],
                 )
 
-    def test_gstack_build_pack_models_garrytan_sprint_with_gascity_fanouts(self) -> None:
-        gascity_root = pathlib.Path(__file__).resolve().parents[1]
-        packs_root = gascity_root.parent
-        pack_root = packs_root / "gstack"
-        formula_dirs = [gascity_root / "formulas", pack_root / "formulas"]
-
-        build = load_formula(pack_root, "gstack-build")
-        resolved = resolve_formula_from_dirs(formula_dirs, "gstack-build")
-        step_by_id = {step["id"]: step for step in build["steps"]}
-
-        self.assertEqual(build["extends"], ["build-base"])
-        self.assertEqual([step["id"] for step in resolved["steps"]], BUILD_BASE_STEPS + ["qa", "release-readiness"])
-        self.assertEqual(build["vars"]["interaction_mode"]["default"], "interactive")
-        self.assertEqual(build["vars"]["review_mode"]["default"], "interactive")
-        self.assertEqual(step_by_id["requirements"]["metadata"]["gc.run_target"], "gstack.office-hours")
-        self.assertEqual(step_by_id["plan-review"]["expand"], "gstack-plan-review")
-        self.assertEqual(step_by_id["qa"]["expand"], "gstack-qa-review")
-        self.assertEqual(step_by_id["release-readiness"]["expand"], "gstack-release-readiness")
-        self.assertEqual(step_by_id["finalize"]["needs"], ["release-readiness"])
-
-        plan_review = load_formula(pack_root, "gstack-plan-review")
-        plan_loop = {
-            template["id"]: template
-            for template in plan_review["template"]
-        }["{target}.gstack-plan-review-loop"]
-        self.assertEqual(
-            [child["id"] for child in plan_loop["children"]],
-            [
-                "{target}.founder-scope-review",
-                "{target}.design-plan-review",
-                "{target}.engineering-plan-review",
-                "{target}.devex-plan-review",
-                "{target}.synthesize-plan-review",
-                "{target}.apply-plan-review-findings",
-            ],
-        )
-        for target in (
-            "gstack.founder-reviewer",
-            "gstack.design-reviewer",
-            "gstack.eng-reviewer",
-            "gstack.devex-reviewer",
-        ):
-            with self.subTest(expansion="plan-review", target=target):
-                self.assertIn(
-                    target,
-                    [child["metadata"]["gc.run_target"] for child in plan_loop["children"] if "gc.run_target" in child["metadata"]],
-                )
-        self.assertEqual(
-            plan_loop["children"][-1]["metadata"]["gc.continuation_group"],
-            "gstack-plan-review-fixes",
-        )
-
-        code_review = load_formula(pack_root, "gstack-code-review")
-        code_loop = {
-            template["id"]: template
-            for template in code_review["template"]
-        }["{target}.gstack-code-review-loop"]
-        self.assertEqual(
-            [child["id"] for child in code_loop["children"]],
-            [
-                "{target}.staff-code-review",
-                "{target}.qa-evidence-review",
-                "{target}.security-review",
-                "{target}.gap-analysis-review",
-                "{target}.synthesize-code-review",
-                "{target}.apply-review-findings",
-            ],
-        )
-        for target in (
-            "gstack.staff-reviewer",
-            "gstack.qa-lead",
-            "gstack.security-officer",
-        ):
-            with self.subTest(expansion="code-review", target=target):
-                self.assertIn(
-                    target,
-                    [child["metadata"]["gc.run_target"] for child in code_loop["children"] if "gc.run_target" in child["metadata"]],
-                )
-
-        qa = load_formula(pack_root, "gstack-qa-review")
-        qa_loop = {
-            template["id"]: template
-            for template in qa["template"]
-        }["{target}.gstack-qa-loop"]
-        self.assertEqual(
-            [child["id"] for child in qa_loop["children"]],
-            [
-                "{target}.browser-qa",
-                "{target}.regression-test-review",
-                "{target}.qa-fix-findings",
-                "{target}.synthesize-qa",
-            ],
-        )
-        self.assertEqual(
-            qa_loop["children"][2]["metadata"]["gc.continuation_group"],
-            "gstack-qa-fixes",
-        )
-
-        release = load_formula(pack_root, "gstack-release-readiness")
-        release_loop = {
-            template["id"]: template
-            for template in release["template"]
-        }["{target}.gstack-release-readiness-loop"]
-        self.assertEqual(
-            [child["id"] for child in release_loop["children"]],
-            [
-                "{target}.document-release",
-                "{target}.ship-readiness",
-                "{target}.deployment-readiness",
-                "{target}.synthesize-release-readiness",
-            ],
-        )
-
-        asset_text = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted((pack_root / "assets" / "workflows").glob("**/*.md"))
-        )
-        for fragment in (
-            "garrytan/gstack",
-            "Think -> Plan -> Build -> Review -> Test -> Ship -> Reflect",
-            "office-hours",
-            "plan-ceo-review",
-            "plan-eng-review",
-            "plan-design-review",
-            "plan-devex-review",
-            "review",
-            "qa",
-            "cso",
-            "ship",
-            "land-and-deploy",
-            "document-release",
-            "interaction_mode",
-            "review_mode",
-            "Do not invoke provider-native subagents",
-        ):
-            with self.subTest(fragment=fragment):
-                self.assertIn(fragment, asset_text)
-
-        readme = (pack_root / "README.md").read_text(encoding="utf-8")
-        for fragment in (
-            "garrytan/gstack",
-            "`gstack-build`",
-            "Think -> Plan -> Build -> Review -> Test -> Ship -> Reflect",
-            "Gas City fanouts",
-            "`interaction_mode`",
-            "`review_mode`",
-        ):
-            with self.subTest(readme=fragment):
-                self.assertIn(fragment, readme)
-
     def test_github_adapter_methodology_selector_matrix_covers_all_toolkits(self) -> None:
         gascity_root = pathlib.Path(__file__).resolve().parents[1]
         packs_root = gascity_root.parent
@@ -3422,11 +3232,6 @@ class FormulaAssetTests(unittest.TestCase):
                 "BMAD structured steps",
                 "step-file discipline",
                 "fanout lanes",
-            ),
-            "gstack": (
-                "garrytan/gstack sprint",
-                "`gstack-build`",
-                "Gas City fanouts",
             ),
         }
         for pack_name, fragments in pack_expectations.items():
@@ -4467,15 +4272,6 @@ description = "Override sink that writes the base triage report contract."
                 "fix_child": "{target}.apply-review-findings",
                 "synthesis": "compound-code-review/{target}.synthesize-code-review.md",
                 "finalize": "compound-code-review/{target}.md",
-            },
-            "gstack": {
-                "pack_dir": repo / "gstack",
-                "review_formula": "gstack-review",
-                "build_formula": "gstack-build",
-                "expansion": "gstack-code-review",
-                "fix_child": "{target}.apply-review-findings",
-                "synthesis": "gstack-code-review/{target}.synthesize-code-review.md",
-                "finalize": "gstack-code-review/{target}.md",
             },
             "superpowers": {
                 "pack_dir": repo / "superpowers",
