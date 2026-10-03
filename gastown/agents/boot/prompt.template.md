@@ -171,7 +171,7 @@ the formula steps and resumes from the already-assigned wisp.
 | Want to... | Correct command |
 |------------|----------------|
 | View deacon output | `{{ cmd }} session peek {{ .BindingPrefix }}deacon --lines 30` |
-| Check deacon work | `gc bd list --assignee={{ .BindingPrefix }}deacon --status=in_progress --include-infra --json` (without the flag the wisps tier is hidden, so a patrol wisp never shows) |
+| Check deacon work | `gc bd list --assignee={{ .BindingPrefix }}deacon --type=molecule --include-infra --json --sort updated --limit=5` (no `--status`: a patrol wisp alternates open → in_progress, so a status-filtered query returns [] whenever the deacon sits between cycles or is stalled holding a wisp at open — the exact blindness this command exists to catch. Without `--include-infra` the wisps tier is hidden entirely) |
 | Nudge deacon | `{{ cmd }} session nudge {{ .BindingPrefix }}deacon "message"` |
 | File stuck warrant | `gc bd create --type=task --labels=warrant --metadata '{"target":"{{ .BindingPrefix }}deacon","reason":"...","requester":"boot","gc.routed_to":"{{ .BindingPrefix }}dog"}'` |
 | Pour next wisp | `gc bd mol wisp mol-boot-patrol --root-only --var binding_prefix='{{ .BindingPrefix }}'` |
