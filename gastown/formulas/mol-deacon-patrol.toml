@@ -392,7 +392,8 @@ Parse the JSON output (HealthReport schema):
 - `applicable`: false when this city has no Dolt data plane at all
 - `server`: running, reachable, pid, port, latency_ms
 - `databases[]`: name, commits, open_beads
-- `backups`: dolt_freshness, dolt_age_seconds, dolt_stale
+- `backups`: aggregate `dolt_freshness`, `dolt_age_sec`, `dolt_stale`, plus
+  per-database `dolt_databases[]` records with name, age_sec, freshness, stale
 - `processes`: zombie_count, zombie_pids
 - `orphans[]`: name, size
 
@@ -421,12 +422,34 @@ is evaluated normally, exactly as before.
 
 **Step 2: Evaluate thresholds** (only when `applicable` is not false)
 
+Backup freshness is database-scoped. The top-level `backups.dolt_*` values are
+the worst case across every discovered backup artifact, including legacy and
+test databases that may no longer be active city stores. Build the active set
+from `databases[].name`, then join stale records from
+`backups.dolt_databases[]` by the same `name`:
+
+```bash
+gc dolt health --json | jq -r '
+  [.databases[].name] as $active |
+  .backups.dolt_databases[]? |
+  select(.stale == true and (.name as $name | $active | index($name))) |
+  [.name, .freshness] | @tsv
+'
+```
+
+Never combine a commit count from one `databases[]` record with the aggregate
+backup age or with a differently named backup record. In particular, a large
+`hq` commit count does not make the oldest legacy backup the `hq` backup age.
+If an older health payload omits `dolt_databases[]` while the aggregate says
+stale, record the exact state as `aggregate backup stale; database unknown`
+and inspect the backup artifacts before attributing the alert to any database.
+
 | Signal | Threshold | Meaning |
 |--------|-----------|---------|
 | `server.reachable == false` | — | Dolt server is down or unresponsive (CRITICAL) |
 | `server.latency_ms > 5000` | 5 s | Server may be overloaded |
 | `databases[].commits > 50000` | 50 k | Compactor dog may have stalled |
-| `backups.dolt_stale == true` | >30 min | Backup dog may have failed |
+| active DB's matching `backups.dolt_databases[].stale == true` | >30 min | Backup dog may have failed for that named DB |
 | `processes.zombie_count > 0` | any | Zombie Dolt servers detected |
 | `orphans` non-empty | any | Advisory only — NEVER act on this count directly; verify with `gc dolt-cleanup` (hyphen, dry-run) first |
 
@@ -449,11 +472,19 @@ gc session nudge dog/ "Compactor needed: <db_name> has <count> commits"
 ```
 
 **Stale backups:**
-The backup dog (`mol-dog-backup`) may have failed. Same pattern — log and
-nudge if order hasn't self-healed:
+For each stale per-database record whose name is also present in
+`databases[].name`, the backup dog (`mol-dog-backup`) may have failed. Log the
+exact database name and its own freshness, then nudge if the order has not
+self-healed:
 ```bash
-gc session nudge dog/ "Backup needed: dolt backup is <age> old"
+gc session nudge dog/ "Backup needed: <db_name> backup is <age> old"
 ```
+
+Stale records that do not match an active `databases[]` name are a separate
+legacy/test backup inventory advisory. Do not report them as a failure of an
+active database, do not join them to another database's commit count, and do
+not delete anything from this signal. Use the rig-protected
+`gc dolt-cleanup --json` dry-run described below if cleanup is warranted.
 
 **Zombie processes:**
 Kill zombie Dolt servers not on the expected port:
