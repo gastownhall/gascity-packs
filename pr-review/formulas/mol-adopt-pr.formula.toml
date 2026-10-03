@@ -10,18 +10,25 @@ notes via `gc bd update <root-id> --notes "key: value"`. No separate tracking
 bead needed.
 
 **Polecat publish authority (hard rule):** The polecat NEVER runs `gh pr merge`,
-`git push`, `gh pr create`, or `gh pr comment` on paths B/C/D. The `finalize`
+`git push`, `gh pr create`, or `gh pr comment` on ANY path. The `finalize`
 step resolves the merge path, prepares all local artifacts (squash, rebase,
-branch, cherry-pick, synthesis body), then for paths B/C/D records a
-*branch-ready handoff bundle* (`status: ready-for-publish` plus the resolved
-publish + comment + merge commands) in the root bead, and mails mayor. The
-finalize cleanup ends the chain. Mayor performs publish (push + optionally
+branch, cherry-pick, synthesis body), then records a handoff bundle
+(`status: ready-for-merge` on Path A, `ready-for-publish` on B/C/D, plus the
+resolved push + comment + merge commands) in the root bead, and mails mayor.
+The finalize cleanup ends the chain. Mayor performs publish (push + optionally
 `gh pr create`), posts the synthesis comment (`gh pr comment`), waits for CI,
 and merges asynchronously per the per-action approval rule, independent of the
-polecat's lifecycle. Path A is the contributor's own PR branch round-trip — the
-polecat still pushes the rebased contributor commits there (no new artifact
-under maintainer identity), posts the synthesis comment on the contributor's
-existing PR itself, and only hands off `gh pr merge` to mayor.
+polecat's lifecycle. Path A is no exception: a comment on the contributor's PR
+and a force-push to their branch both land under the maintainer's identity, so
+closing `human-gate` approves the review, not those writes (gc-0joat,
+dr-vodu2).
+
+**Halts never post (dr-vodu2).** A halt that needs the contributor (scope
+divergence, conflicts with `maintainerCanModify = false`, complex conflicts)
+STAGES its comment, label or review: the body goes in a file and the exact
+command in the root bead notes, for the maintainer to run. The polecat runs
+none of them. A pool worker's `gh` refuses GitHub writes unless
+`GASCITY_SHIP_BYPASS` is set, and this formula never sets it.
 
 ## Contract
 
@@ -29,8 +36,9 @@ existing PR itself, and only hands off `gh pr merge` to mayor.
 2. Polecat reads steps, executes each in order
 3. After review, human-gate blocks until maintainer closes it
 4. Polecat resumes finalize → resolves merge path → prepares all local artifacts
-5. Path A: polecat pushes rebased contributor commits, posts synthesis, waits CI,
-   records merge_command, mails mayor; finalize cleanup ends the chain
+5. Path A: polecat stages the synthesis comment, waits CI, records push_command
+   + post_synthesis_command + merge_command, mails mayor; finalize cleanup ends
+   the chain
 6. Paths B/C/D: polecat records branch-ready handoff bundle (push_command +
    optional pr_create_command + synthesis body + merge_command) in root bead,
    mails mayor; finalize cleanup ends the chain. Polecat does NOT push, create,
@@ -125,12 +133,19 @@ status and continue:
 - Continue to the `rebase-check` step. The default route is **take-the-good**:
   we rebase the branch onto main ourselves, drop the stray commits, and the
   review/finalize machinery merges the in-scope change.
-- Only `gh pr review <number> --request-changes` here when the divergence is
+- Only stage a `--request-changes` review here when the divergence is
   UNSALVAGEABLE *and* genuinely needs the author — i.e. one of the reserved
   cases holds: **cant-reproduce**, **needs-author-input** (secret/env/design
   intent / `maintainerCanModify = false`), or **author-wants-to-iterate**. When
-  you do, name the case in the RC body and `gc bd close $ROOT_ID --reason
-  "request_changes: <case>"`, then exit.
+  you do, STAGE it, never post it: name the case in the RC body, record the
+  command for the maintainer, close, and exit:
+  ```bash
+  STAGED_DIR="${GC_CITY_PATH:?}/.gc/staged-gh/pr-<number>"
+  mkdir -p "$STAGED_DIR"
+  printf '%s\\n' "<RC body naming the case>" > "$STAGED_DIR/request-changes.md"
+  gc bd update $ROOT_ID --append-notes "request_changes_command: gh pr review <number> --request-changes --body-file $STAGED_DIR/request-changes.md"
+  gc bd close $ROOT_ID --reason "request_changes: <case>; review staged for maintainer"
+  ```
 
 **5. Check maintainer edits:**
 Record in root bead notes: `maintainer_edits: true` or `maintainer_edits: false`.
@@ -242,11 +257,20 @@ MERGEABLE=$(gh pr view <number> --json mergeable --jq '.mergeable')
 - If `CONFLICTING` → continue.
 
 **3. Gate on maintainerCanModify:**
-If `maintainer_edits` is false → **STOP**:
-- Post conflict comment asking author to rebase
-- Add label: `gh pr edit <number> --add-label "status/needs-info"`
-- Close root bead: `gc bd close $ROOT_ID --reason "conflicts, maintainerCanModify=false"`
-- Exit
+If `maintainer_edits` is false → **STOP**. Only the author can rebase, and
+asking them is a comment and a label on their PR under the maintainer's
+account. STAGE both, run neither (dr-vodu2: this step used to say "post" and
+"add label", and on 2026-09-21 a worker did both on gastownhall/gascity#3880):
+```bash
+STAGED_DIR="${GC_CITY_PATH:?}/.gc/staged-gh/pr-<number>"
+mkdir -p "$STAGED_DIR"
+printf '%s\\n' "<conflict comment asking author to rebase>" > "$STAGED_DIR/comment-conflict.md"
+gc bd update $ROOT_ID --append-notes "conflict_comment_path: $STAGED_DIR/comment-conflict.md
+post_conflict_command: gh pr comment <number> --body-file $STAGED_DIR/comment-conflict.md
+label_command: gh pr edit <number> --add-label status/needs-info"
+gc bd close $ROOT_ID --reason "conflicts, maintainerCanModify=false; conflict comment staged for maintainer"
+```
+Exit.
 
 **4. Fetch upstream base:**
 ```bash
@@ -277,12 +301,23 @@ For each conflicting file, classify:
   Validate: no conflict markers survive, all PR additions present. If valid → `cp /tmp/union "$file" && git add "$file"`.
 - **Modify/modify conflict** (non-empty base section) → **complex**, abort.
 
-If complex conflicts found:
+If complex conflicts found, abort and stage the ask. The polecat never
+resolves a modify/modify conflict, whatever `maintainer_edits` says. When it is
+true the maintainer can resolve the conflict on the contributor branch instead
+of posting the ask, so record it with the staged commands (PR #3880 took this
+branch with `maintainerCanModify = true`):
 ```bash
 git rebase --abort
-gh pr comment <number> --body "<conflict comment asking author to rebase>"
-gh pr edit <number> --add-label "status/needs-info"
-gc bd close $ROOT_ID --reason "complex merge conflicts"
+# Write the body, record both commands, run NEITHER (dr-vodu2).
+STAGED_DIR="${GC_CITY_PATH:?}/.gc/staged-gh/pr-<number>"
+mkdir -p "$STAGED_DIR"
+printf '%s\\n' "<conflict comment asking author to rebase>" > "$STAGED_DIR/comment-conflict.md"
+gc bd update $ROOT_ID --append-notes "conflict_comment_path: $STAGED_DIR/comment-conflict.md
+conflict_files: <modify/modify files>
+maintainer_edits: <true|false>
+post_conflict_command: gh pr comment <number> --body-file $STAGED_DIR/comment-conflict.md
+label_command: gh pr edit <number> --add-label status/needs-info"
+gc bd close $ROOT_ID --reason "complex merge conflicts; conflict comment staged for maintainer"
 ```
 Exit.
 
@@ -424,10 +459,10 @@ title = "Resolve path, prepare artifacts, hand publish + merge to mayor"
 needs = ["human-gate"]
 description = """
 Determine the merge path, then:
-- **Path A** (contributor PR, no maintainer changes): push the rebased
-  contributor branch, post synthesis comment, wait for CI, record the merge
-  command + `merge_ready: true` in root bead, mail mayor, then run the A.5
-  cleanup. Mayor performs the merge asynchronously.
+- **Path A** (contributor PR, no maintainer changes): stage the synthesis
+  comment, wait for CI, record the push (if rebased), comment and merge
+  commands + `merge_ready: true` in root bead, mail mayor, then run the A.5
+  cleanup. Mayor performs push, comment and merge asynchronously.
 - **Paths B/C/D** (involve maintainer-authored content publishing to upstream):
   prepare all local artifacts (squash, branch, cherry-pick, synthesis body),
   record a *branch-ready handoff bundle* (status + push_command + optional
@@ -436,10 +471,10 @@ Determine the merge path, then:
   asynchronously.
 
 **Polecats NEVER run `gh pr merge`** on any path.
-**Polecats NEVER run `git push`, `gh pr create`, or `gh pr comment` on paths
-B/C/D** — those publish maintainer-authored content (push of new history,
-new PRs, or synthesis comments under maintainer identity) and require
-per-action mayor approval.
+**Polecats NEVER run `git push`, `gh pr create`, or `gh pr comment` on any
+path** — those publish under the maintainer's identity (push of new history,
+new PRs, or synthesis comments) and require per-action mayor approval. Path A
+is no exception (gc-0joat).
 
 **1. Re-enter the staged PR worktree and read root bead state:**
 
@@ -486,7 +521,7 @@ Update notes: `merge_path: A|B|C|D`
 
 ### Path A: Squash Merge (no maintainer changes)
 
-**A.1: Post synthesis comment.**
+**A.1: Stage synthesis comment.**
 Read `<review_run_dir>/outputs/synthesis.md`. Build comment using Path A template:
 
 ```markdown
@@ -506,7 +541,11 @@ Thanks for the contribution, @<author>! <specific acknowledgment>.
 _Adopted via `/adopt-pr` workflow. Contributor commits preserved._
 ```
 
-Post: `gh pr comment <number> --body "<comment>"`
+Write it to a file. Do NOT post it: A.4 hands the post to mayor.
+```bash
+SYNTH_PATH="<review_run_dir>/outputs/comment-path-a.md"
+# write the rendered comment body to $SYNTH_PATH
+```
 
 **A.2: Wait for CI.**
 
@@ -523,32 +562,55 @@ gh pr checks <number> --watch
 ```
 If CI fails → **STOP**, report failure, wait for nudge.
 
-**A.3: Push rebased branch (if applicable).**
-If rebase was performed (`rebase_status` is not `not_needed`):
+**A.3: Resolve the push (if applicable).**
+**Polecats NEVER run `git push`.** If rebase was performed (`rebase_status` is
+not `not_needed`), the rebased branch goes to mayor as a command:
 ```bash
-git push --force-with-lease
+REBASE_STATUS=$(bd_notes_get "$ROOT_ID" rebase_status)   # extracted in step 1
+if [ "$REBASE_STATUS" != "not_needed" ]; then
+    PUSH_CMD="git push --force-with-lease"
+else
+    PUSH_CMD="none"
+fi
 ```
 
-**A.4: Hand off the merge to mayor.**
-**Polecats NEVER run `gh pr merge`.** Record the resolved merge command +
+**A.4: Hand off push, comment and merge to mayor.**
+**Polecats NEVER run `gh pr merge`.** Record the resolved commands +
 readiness flag in the root bead, mail mayor, and proceed to A.5 — do NOT
-run the merge yourself. The maintainer (via mayor) performs the merge
-out-of-band per the per-action approval rule.
+run any of them yourself. The maintainer (via mayor) performs them
+out-of-band per the per-action approval rule. Use double-quoted command
+strings so `$SYNTH_PATH` expands at write time:
 
 ```bash
-gc bd update $ROOT_ID --notes "<notes with merge_path: A, merge_ready: true, status: ready-for-merge, merge_command: 'gh pr merge <number> --squash'>"
+HEAD_SHA=$(git rev-parse HEAD)
+POST_SYNTH_CMD="gh pr comment <number> --body-file $SYNTH_PATH"
+MERGE_CMD="gh pr merge <number> --squash"
+
+gc bd update "$ROOT_ID" --notes "<notes with
+  merge_path: A,
+  merge_ready: true,
+  status: ready-for-merge,
+  branch: <head_ref>,
+  head_sha: $HEAD_SHA,
+  push_command: $PUSH_CMD,
+  synthesis_path: $SYNTH_PATH,
+  post_synthesis_command: $POST_SYNTH_CMD,
+  merge_command: $MERGE_CMD>"
 ```
 
 Then mail mayor:
 ```
-[adopt-pr] Path A ready for merge — synthesis posted, CI green, no maintainer changes.
-[adopt-pr]   PR:            <number>
-[adopt-pr]   Merge command: gh pr merge <number> --squash
-[adopt-pr]   Root bead:     $ROOT_ID
+[adopt-pr] Path A ready for merge — synthesis staged, CI green, no maintainer changes.
+[adopt-pr]   PR:                 <number>
+[adopt-pr]   Branch / SHA:       <head_ref> @ $HEAD_SHA
+[adopt-pr]   Push command:       $PUSH_CMD
+[adopt-pr]   Post-synthesis cmd: $POST_SYNTH_CMD
+[adopt-pr]   Merge command:      $MERGE_CMD
+[adopt-pr]   Root bead:          $ROOT_ID
 ```
 
 The polecat then runs A.5 (cleanup), the final step in the molecule. Mayor's
-merge happens asynchronously — the polecat's own lifecycle does not wait for it.
+push → post synthesis → merge happens asynchronously — the polecat's own lifecycle does not wait for it.
 
 **A.5: Cleanup and final report (terminal — all paths).**
 
@@ -863,14 +925,15 @@ original asynchronously per the per-action approval rule.
 - **All reviews use canonical upstream base** — fetched from the real upstream URL, not origin
 
 **Exit criteria:** Merge path resolved. Then:
-- **Path A:** synthesis posted, CI green, `merge_ready: true` + `merge_command`
-  recorded in root bead notes, mayor mailed, A.5 cleanup run.
+- **Path A:** synthesis staged, CI green, `merge_ready: true` + push, comment
+  and merge commands recorded in root bead notes, mayor mailed, A.5 cleanup
+  run — without pushing, posting comments, or merging.
 - **Paths B/C/D:** local artifacts prepared (squash / branch / cherry-pick /
   synthesis body), `status: ready-for-publish` + full publish-and-merge bundle
   recorded in root bead notes, mayor mailed, A.5 cleanup run — without pushing,
   creating PRs, posting comments, waiting on CI, or merging.
 
-The polecat never invokes `gh pr merge` on any path, and never invokes
-`git push` or `gh pr create` on paths B/C/D. Mayor performs publish and
+The polecat never invokes `gh pr merge`, `git push`, `gh pr create` or
+`gh pr comment` on any path. Mayor performs publish and
 downstream actions asynchronously per the per-action approval rule,
 independent of the polecat's lifecycle."""

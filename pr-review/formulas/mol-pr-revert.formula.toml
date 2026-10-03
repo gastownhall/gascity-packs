@@ -1,52 +1,43 @@
 description = """
-PR revert — 6 steps to revert a merged PR.
+PR revert — 5 steps to PREPARE the revert of a merged PR.
 
 Mayor-only invocation initially (no PL dispatch row). Reverts a merged PR
 via `git revert <merge-sha>` on a fresh branch off `origin/<default>`,
-opens a revert PR upstream, and comments on the original PR with the
-revert-PR URL.
+composes the revert PR body and the comment for the original PR, and
+records the commands that publish them.
 
-This is a WRITE-side formula. Three of its steps perform writes against
-the upstream repo:
+**This formula performs no upstream write.** It used to perform three --
+a push, a `gh pr create` and a `gh pr comment` -- under an `auto_push` /
+`GASCITY_SHIP_BYPASS=mayor_revert` carve-out, now retired. All three sat
+at the end of the chain, where a failure arrives after the work is done.
+The recommended deployment gives unattended pool seats a READ-ONLY
+`GH_TOKEN`. Without it the pool itself can publish, and nothing but this
+formula's prose stands between an unreviewed branch and the forge.
 
-  - `revert-branch` pushes the revert branch to the fork.
-  - `open-revert-pr` calls `gh pr create`.
-  - `comment-on-original` calls `gh pr comment`.
+The revert work stays in the pool. The three writes move to the publisher
+named by `publish_owner`, who performs them from its own login after a
+human approves that artifact. `hand-off-publish` records each command
+verbatim with its identifiers already resolved.
 
-The polecat's default policy forbids `git push`, `gh pr create`, and
-`gh pr edit`. This formula carves out an exception scoped to the
-invocation. The push step is permitted only when ONE of the following
-holds:
-
-  a. Root bead metadata `auto_push == "true"` (set by mayor at sling
-     time via `--metadata auto_push=true`) AND the prior
-     `verify-revertable` step's `evidence.reviewer_verdict == "pass"`.
-  b. Env var `GASCITY_SHIP_BYPASS == "mayor_revert"` — emergency
-     override for cases where the verify-revertable heuristic
-     false-negatives (e.g. complex-but-still-revertable history). The
-     mayor sets this env var in the polecat's invocation environment.
-
-The carve-out is verified once in `revert-branch`; on pass it records
-`evidence.carve_out_verified == "true"` on the root bead. Subsequent
-write steps (`open-revert-pr`, `comment-on-original`) gate on that flag
+The `verify-revertable` verdict still gates the work: `revert-branch`
+refuses to prepare a revert the verifier did not clear
 so a crash-resumed polecat with no env carryover stays authorized.
 
-This is the same carve-out shape used by mol-pr-from-issue's `open-pr`
-step — scoped to the macro formula's contract, not a polecat-wide
-policy change.
+`mol-pr-from-issue` ends at the same kind of hand-off, for the same
+reason and with the same evidence keys.
 
 The molecule root bead IS the control bead — all run state lives in its
 notes/metadata. Crash-safe: `gc bd mol current` resumes at the right step.
 
 ## Contract
 
-1. Caller (mayor) slings with:
-   `--var pr=<N> --var reason="<text>" --metadata auto_push=true`
-   (or with `GASCITY_SHIP_BYPASS=mayor_revert` in the polecat's env).
+1. Caller (mayor) slings with: `--var pr=<N> --var reason="<text>"`.
+   No authorization var is needed or read: nothing here writes upstream.
 2. Polecat executes steps in order.
 3. Chain ends with either:
-   - an opened revert PR on the upstream repo + a comment on the
-     original PR pointing at the revert PR, OR
+   - a revert branch plus a staged PR body and comment, with the three
+     publish commands recorded on the root bead for the publisher to
+     run after human approval (nothing is opened or posted here), OR
    - a halt with `metadata.summary_for_human` set on the root bead.
 
 ## Variables
@@ -63,11 +54,9 @@ notes/metadata. Crash-safe: `gc bd mol current` resumes at the right step.
 | PR not merged (state != MERGED or mergedAt is null) | intake-pr halts; summary_for_human set |
 | PR merge commit no longer on default branch (already reverted, or branch reset) | verify-revertable halts |
 | Subsequent commits modify the same files as the merge | verify-revertable records warning; verdict still pass; revert may produce conflicts caught downstream |
-| `auto_push` not set AND no `GASCITY_SHIP_BYPASS` | revert-branch halts BEFORE push; no upstream writes |
+| verify-revertable verdict is not pass | revert-branch halts before creating the branch; no branch, no writes |
 | `git revert` produces conflicts | revert-branch aborts the revert, halts; manual revert recommended |
-| `git push` fails | revert-branch halts; raw error captured in evidence |
-| `gh pr create` fails | open-revert-pr halts; commit sha kept in notes for manual recovery |
-| `gh pr comment` fails on original PR | comment-on-original logs failure but does NOT halt — revert PR is already open; final report records the gap |"""
+| a publish identifier cannot be read from the forge | hand-off-publish records what it resolved and names the missing one; the revert branch is still prepared |"""
 formula = "mol-pr-revert"
 phase = "vapor"
 # pour = true eager-materializes the steps. Without it this compiles RootOnly
@@ -82,6 +71,10 @@ version = 1
 [vars.pr]
 description = "PR number to revert. Must be merged on the default branch."
 required = true
+
+[vars.publish_owner]
+description = "Who runs the recorded publish commands. Recorded as evidence.publish_owner so the hand-off names its publisher. Default: maintainer."
+default = "maintainer"
 
 [vars.reason]
 description = "Explanation for the revert. Lands in revert-PR title/body and original-PR comment."
@@ -155,8 +148,8 @@ title = "Verify PR #{{pr}} is safely revertable"
 needs = ["intake-pr"]
 description = """
 Confirm the merge commit is still on the default branch and scan history
-for commits that touch the same files. Sets `evidence.reviewer_verdict`
-which the carve-out at revert-branch reads.
+for commits that touch the same files. Sets `evidence.reviewer_verdict`,
+which revert-branch refuses to proceed without.
 
 **1. Find root bead and resolve identifiers:**
 ```bash
@@ -249,25 +242,20 @@ reads these to decide whether to proceed."""
 
 [[steps]]
 id = "revert-branch"
-title = "Create revert branch, run git revert, push"
+title = "Create revert branch and run git revert (local only)"
 needs = ["verify-revertable"]
 description = """
-**WRITE STEP — requires auto_push carve-out.**
+**LOCAL-ONLY STEP — this step performs no upstream write.**
 
-Creates branch `revert/pr-{{pr}}` off `origin/<default>`, runs
-`git revert --no-edit <merge_sha>`, and pushes to the fork remote.
-
-The polecat's default policy forbids `git push`. This step performs the
-carve-out check ONCE at the top and records the result. If the carve-out
-fails, the step halts BEFORE any upstream write.
+Creates branch `revert/pr-{{pr}}` off `origin/<default>` and runs
+`git revert --no-edit <merge_sha>`. The branch stays local; the
+`hand-off-publish` step records the command that would push it.
 
 **1. Find root bead and read state:**
 ```bash
 ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 META=$(gc bd show "$ROOT_ID" --json | jq '.[0].metadata')
-AUTO_PUSH=$(echo "$META" | jq -r '.auto_push // "false"')
 VERDICT=$(echo "$META" | jq -r '."evidence.reviewer_verdict" // ""')
-BYPASS="${GASCITY_SHIP_BYPASS:-}"
 NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 MERGE_SHA=$(echo "$NOTES" | awk -F': ' '/^merge_sha:/ {print $2}')
 DEFAULT_BRANCH=$(echo "$NOTES" | awk -F': ' '/^default_branch:/ {print $2}')
@@ -276,28 +264,19 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 ```
 
-**2. Carve-out check (BEFORE any write):**
-```bash
-CARVE_OK=false
-CARVE_PATH=""
-if [ "$AUTO_PUSH" = "true" ] && [ "$VERDICT" = "pass" ]; then
-    CARVE_OK=true
-    CARVE_PATH="auto_push+verdict"
-elif [ "$BYPASS" = "mayor_revert" ]; then
-    CARVE_OK=true
-    CARVE_PATH="ship_bypass"
-fi
+**2. Refuse a revert the verifier did not clear:**
 
-if [ "$CARVE_OK" != "true" ]; then
+The old carve-out gated a push. There is no push here, but preparing a
+revert the verifier called unsafe still burns a branch and invites a
+publisher to trust it, so the verdict is still load-bearing:
+```bash
+if [ "$VERDICT" != "pass" ]; then
     gc bd update "$ROOT_ID" \\
       --set-metadata "gc.halt_chain=true" \\
-      --set-metadata "summary_for_human=Refusing to push revert of PR #{{pr}}. auto_push=$AUTO_PUSH, verify-revertable verdict=$VERDICT, GASCITY_SHIP_BYPASS=${BYPASS:-unset}. Polecat's default policy forbids git push; carve-out requires either (a) --metadata auto_push=true at sling time with a clean verify-revertable verdict, or (b) GASCITY_SHIP_BYPASS=mayor_revert in env. No upstream writes performed."
-    gc bd close "$ROOT_ID" --reason "push carve-out not satisfied"
+      --set-metadata "summary_for_human=Not preparing a revert of PR #{{pr}}: verify-revertable verdict=$VERDICT, not pass. No branch was created and nothing was written upstream."
+    gc bd close "$ROOT_ID" --reason "verify-revertable verdict not pass"
     exit 0
 fi
-
-gc bd update "$ROOT_ID" --set-metadata "evidence.carve_out_verified=true" \\
-                         --set-metadata "evidence.carve_out_path=$CARVE_PATH"
 ```
 
 **3. Confirm tree is clean before creating the branch:**
@@ -349,19 +328,14 @@ git commit --amend -m "$ORIGINAL_MSG" -m "Reverts PR #{{pr}}." -m "Reason: {{rea
 REVERT_SHA=$(git rev-parse HEAD)
 ```
 
-**6. Resolve fork remote and push:**
+**6. Resolve the fork remote. Do not push.**
+
+The remote is resolved here so `hand-off-publish` can record an exact
+command. `gh repo view` and `git remote -v` are reads:
 ```bash
 LOCAL_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 FORK_REMOTE=$(git remote -v | awk -v fork="$LOCAL_REPO" 'index($2, fork) && /\\(push\\)/ {print $1; exit}')
 [ -z "$FORK_REMOTE" ] && FORK_REMOTE="origin"
-
-if ! git push -u "$FORK_REMOTE" "$BRANCH"; then
-    gc bd update "$ROOT_ID" \\
-      --set-metadata "gc.halt_chain=true" \\
-      --set-metadata "summary_for_human=git push of $BRANCH to $FORK_REMOTE failed for PR #{{pr}} revert. Revert commit is local at $REVERT_SHA; investigate push permissions and retry manually."
-    gc bd close "$ROOT_ID" --reason "git push failed"
-    exit 0
-fi
 ```
 
 **7. Record state:**
@@ -373,41 +347,50 @@ gc bd update "$ROOT_ID" \\
 gc bd update "$ROOT_ID" --notes "$(echo "$NOTES")
 revert_branch: $BRANCH
 revert_sha: $REVERT_SHA
-fork_remote: $FORK_REMOTE
-carve_out_path: $CARVE_PATH"
+fork_remote: $FORK_REMOTE"
 ```
 
 **8. Display:**
 ```
-[pr-revert] revert-branch: pushed
+[pr-revert] revert-branch: reverted locally, nothing pushed
 [pr-revert]   Branch: $BRANCH
 [pr-revert]   Revert commit: $REVERT_SHA
 [pr-revert]   Reverts: $MERGE_SHA ("$PR_TITLE")
-[pr-revert]   Carve-out path: $CARVE_PATH
 ```
 
-**Exit criteria:** revert branch pushed to fork; evidence.revert_branch
-and evidence.revert_sha recorded."""
+**Exit criteria:** revert branch exists locally with the revert commit;
+evidence.revert_branch and evidence.revert_sha recorded. Nothing pushed."""
 
 [[steps]]
-id = "open-revert-pr"
-title = "Open revert PR upstream"
+id = "hand-off-publish"
+title = "Record the revert publish hand-off for the publisher"
 needs = ["revert-branch"]
 description = """
-Open the revert PR on the upstream repo. Gated on
-`evidence.carve_out_verified == "true"` so a crash-resumed polecat with
-no env carryover stays authorized.
+The pool half of this chain ENDS HERE. This step performs NO upstream
+write: no `git push`, no `gh pr create`, no `gh pr comment`. It composes
+the revert PR body and the comment that goes on the original PR, leaves
+both on disk, records the three commands that would publish them, and
+closes the molecule at branch-ready.
+
+**Why this step does not publish.** The recommended deployment gives unattended pool seats a READ-ONLY
+`GH_TOKEN`. Without it the pool itself can publish, and nothing but this
+formula's prose stands between an unreviewed branch and the forge. Under that
+deployment the old `auto_push` / `GASCITY_SHIP_BYPASS=mayor_revert`
+carve-out ends in a refusal at the forge AFTER the revert has been
+prepared. The revert work stays in the pool; the three writes move to the
+publisher named by `publish_owner`, who performs them from its own login
+after a human approves that artifact.
 
 **1. Find root bead and read state:**
 ```bash
 ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
 META=$(gc bd show "$ROOT_ID" --json | jq '.[0].metadata')
-CARVE_OK=$(echo "$META" | jq -r '."evidence.carve_out_verified" // "false"')
 NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 UPSTREAM_REPO=$(echo "$NOTES" | awk -F': ' '/^upstream_repo:/ {print $2}')
 DEFAULT_BRANCH=$(echo "$NOTES" | awk -F': ' '/^default_branch:/ {print $2}')
 BRANCH=$(echo "$NOTES" | awk -F': ' '/^revert_branch:/ {print $2}')
 REVERT_SHA=$(echo "$NOTES" | awk -F': ' '/^revert_sha:/ {print $2}')
+MERGE_SHA=$(echo "$NOTES" | awk -F': ' '/^merge_sha:/ {print $2}')
 PR_TITLE=$(echo "$NOTES" | awk -F': ' '/^pr_title:/ {print $2}')
 PR_URL=$(echo "$NOTES" | awk -F': ' '/^pr_url:/ {print $2}')
 SUBSEQUENT_COUNT=$(echo "$META" | jq -r '."evidence.subsequent_commits" // "0"')
@@ -416,25 +399,22 @@ LOCAL_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 FORK_OWNER=$(echo "$LOCAL_REPO" | cut -d/ -f1)
 ```
 
-**2. Gate on carve-out:**
-```bash
-if [ "$CARVE_OK" != "true" ]; then
-    gc bd update "$ROOT_ID" \\
-      --set-metadata "gc.halt_chain=true" \\
-      --set-metadata "summary_for_human=Refusing to open revert PR for #{{pr}}: evidence.carve_out_verified is not true. Branch $BRANCH at $REVERT_SHA is on the fork but no PR was opened. Re-sling with auto_push=true or set GASCITY_SHIP_BYPASS=mayor_revert."
-    gc bd close "$ROOT_ID" --reason "open-pr carve-out not satisfied"
-    exit 0
-fi
-```
+`gh repo view` is a read and works under the pool credential.
 
-**3. Compose PR title and body:**
+**2. Compose the revert PR body and leave it on disk.**
 
-Read MERGE_SHA out of root bead notes first so the heredoc only does
-variable interpolation (no embedded subshells, no backtick escaping):
+Not a `mktemp`: the publisher runs in a different process, so a temp file
+deleted at the end of this step is no use to them. Read MERGE_SHA out of
+notes first so the heredoc only does variable interpolation:
 ```bash
-MERGE_SHA=$(echo "$NOTES" | awk -F': ' '/^merge_sha:/ {print $2}')
-REVERT_TITLE="Revert PR #{{pr}}: {{reason}}"
-BODY_FILE=$(mktemp)
+REVERT_REASON=$(cat <<'REASON'
+{{reason}}
+REASON
+)
+REVERT_TITLE="Revert PR #{{pr}}: $REVERT_REASON"
+BODY_DIR="${GC_CITY_PATH:?}/.gc/staged-gh/$ROOT_ID-pr-{{pr}}"
+mkdir -p "$BODY_DIR"
+BODY_FILE="$BODY_DIR/revert-pr-body.md"
 cat > "$BODY_FILE" <<MD
 Reverts PR #{{pr}} ($PR_URL): "$PR_TITLE".
 
@@ -453,125 +433,80 @@ Generated by mol-pr-revert (mayor-invoked).
 MD
 ```
 
-**4. Open the PR:**
+**3. Compose the comment for the original PR and leave it on disk.**
+
+It cannot name the revert PR URL, because no revert PR exists yet. Leave
+the placeholder; the recorded comment command in step 4 fills it from the
+open revert PR at publish time:
 ```bash
-PR_URL_OUT=$(gh pr create \\
-    --repo "$UPSTREAM_REPO" \\
-    --base "$DEFAULT_BRANCH" \\
-    --head "$FORK_OWNER:$BRANCH" \\
-    --title "$REVERT_TITLE" \\
-    --body-file "$BODY_FILE" 2>&1)
-PR_EXIT=$?
-rm -f "$BODY_FILE"
-
-if [ "$PR_EXIT" -eq 0 ] && [ -z "$(echo "$PR_URL_OUT" | grep -oE 'https://[^ ]+/pull/[0-9]+')" ]; then
-    # No URL — recover by looking up an existing PR on this head.
-    PR_URL_OUT=$(gh pr list --repo "$UPSTREAM_REPO" --head "$FORK_OWNER:$BRANCH" --state open \\
-                  --json url --jq '.[0].url // empty')
-fi
-
-if [ "$PR_EXIT" -ne 0 ] || [ -z "$PR_URL_OUT" ]; then
-    gc bd update "$ROOT_ID" \\
-      --set-metadata "gc.halt_chain=true" \\
-      --set-metadata "summary_for_human=Revert branch $BRANCH pushed at $REVERT_SHA but gh pr create failed for PR #{{pr}}. Investigate before retrying. Manual command: gh pr create --repo $UPSTREAM_REPO --base $DEFAULT_BRANCH --head $FORK_OWNER:$BRANCH --title \\"$REVERT_TITLE\\""
-    gc bd close "$ROOT_ID" --reason "gh pr create failed"
-    exit 0
-fi
-
-REVERT_PR_URL=$(echo "$PR_URL_OUT" | grep -oE 'https://[^ ]+/pull/[0-9]+' | head -1)
-REVERT_PR_NUM=$(echo "$REVERT_PR_URL" | grep -oE '/pull/[0-9]+' | sed 's|/pull/||')
-```
-
-**5. Record state:**
-```bash
-gc bd update "$ROOT_ID" \\
-  --set-metadata "evidence.revert_pr_url=$REVERT_PR_URL" \\
-  --set-metadata "evidence.revert_pr_number=$REVERT_PR_NUM"
-gc bd update "$ROOT_ID" --notes "$(echo "$NOTES")
-revert_pr_url: $REVERT_PR_URL
-revert_pr_number: $REVERT_PR_NUM"
-```
-
-**6. Display:**
-```
-[pr-revert] open-revert-pr: opened
-[pr-revert]   Revert PR: $REVERT_PR_URL
-[pr-revert]   Reverts: #{{pr}} ($PR_URL)
-```
-
-**Exit criteria:** revert PR opened upstream; URL recorded in
-evidence.revert_pr_url."""
-
-[[steps]]
-id = "comment-on-original"
-title = "Comment on original PR #{{pr}} with revert link"
-needs = ["open-revert-pr"]
-description = """
-Post a comment on the original PR pointing at the revert PR. Best-effort:
-failure here does NOT halt the chain (the revert PR is already open and
-visible to the maintainer).
-
-**1. Find root bead and read state:**
-```bash
-ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
-CARVE_OK=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata."evidence.carve_out_verified" // "false"')
-NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
-UPSTREAM_REPO=$(echo "$NOTES" | awk -F': ' '/^upstream_repo:/ {print $2}')
-REVERT_PR_URL=$(echo "$NOTES" | awk -F': ' '/^revert_pr_url:/ {print $2}')
-```
-
-**2. Gate on carve-out (defensive — should always be true at this point):**
-```bash
-if [ "$CARVE_OK" != "true" ]; then
-    gc bd update "$ROOT_ID" \\
-      --set-metadata "evidence.comment_status=skipped_carve_out"
-    echo "[pr-revert] comment-on-original: skipped (carve_out_verified != true)"
-    exit 0
-fi
-```
-
-**3. Compose and post the comment:**
-```bash
-BODY_FILE=$(mktemp)
-cat > "$BODY_FILE" <<MD
-This PR has been reverted: $REVERT_PR_URL
+PUBLISH_OWNER=$(cat <<'OWNER'
+{{publish_owner}}
+OWNER
+)
+COMMENT_FILE="$BODY_DIR/revert-comment.md"
+cat > "$COMMENT_FILE" <<MD
+This PR has been reverted: <REVERT_PR_URL>
 
 **Reason:** {{reason}}
 
-_Posted automatically by mol-pr-revert._
+_Prepared by mol-pr-revert; posted by $PUBLISH_OWNER._
 MD
-
-if gh pr comment {{pr}} --repo "$UPSTREAM_REPO" --body-file "$BODY_FILE"; then
-    COMMENT_STATUS="posted"
-else
-    COMMENT_STATUS="failed"
-fi
-rm -f "$BODY_FILE"
 ```
 
-**4. Record state (NEVER halt on failure — revert PR is already open):**
+**4. Record the three publish commands on the root bead.**
+
+Verbatim, in the order the publisher runs them, with every identifier
+resolved. The comment command looks the revert PR URL up itself (a read),
+accepting exactly one open PR whose head owner, head SHA and base match
+this revert, and fills it into the staged body, so nothing is edited by
+hand; it refuses to post on a missing or ambiguous match:
 ```bash
+PUBLISH_OWNER=$(cat <<'OWNER'
+{{publish_owner}}
+OWNER
+)
+GIT_DIR_ABS=$(git rev-parse --path-format=absolute --git-common-dir)
+git update-ref "refs/staged-gh/$ROOT_ID" "$REVERT_SHA"
+PUBLISH_PUSH="git --git-dir=$(printf %q "$GIT_DIR_ABS") push $(printf %q "https://github.com/$LOCAL_REPO.git") $(printf %q "$REVERT_SHA:refs/heads/$BRANCH")"
+PUBLISH_CREATE="gh pr create --repo $(printf %q "$UPSTREAM_REPO") --base $(printf %q "$DEFAULT_BRANCH") --head $(printf %q "$FORK_OWNER:$BRANCH") --title $(printf %q "$REVERT_TITLE") --body-file $(printf %q "$BODY_FILE")"
+REVERT_URL_JQ=$(jq -nr --arg o "$FORK_OWNER" --arg s "$REVERT_SHA" --arg b "$DEFAULT_BRANCH" '"[.[] | select(.headRepositoryOwner.login == \\($o|@json) and .headRefOid == \\($s|@json) and .baseRefName == \\($b|@json))] | if length == 1 then .[0].url else empty end"')
+PUBLISH_COMMENT="url=\\$(gh pr list --repo $(printf %q "$UPSTREAM_REPO") --head $(printf %q "$BRANCH") --state open --json url,headRefOid,headRepositoryOwner,baseRefName --jq $(printf %q "$REVERT_URL_JQ")) && test -n \\"\\$url\\" && sed \\"s|<REVERT_PR_URL>|\\$url|\\" $(printf %q "$COMMENT_FILE") | gh pr comment {{pr}} --repo $(printf %q "$UPSTREAM_REPO") --body-file -"
+
 gc bd update "$ROOT_ID" \\
-  --set-metadata "evidence.comment_status=$COMMENT_STATUS"
+  --set-metadata "evidence.revert_branch=$BRANCH" \\
+  --set-metadata "evidence.revert_sha=$REVERT_SHA" \\
+  --set-metadata "evidence.pr_body_path=$BODY_FILE" \\
+  --set-metadata "evidence.comment_body_path=$COMMENT_FILE" \\
+  --set-metadata "evidence.publish_push_cmd=$PUBLISH_PUSH" \\
+  --set-metadata "evidence.publish_create_cmd=$PUBLISH_CREATE" \\
+  --set-metadata "evidence.publish_comment_cmd=$PUBLISH_COMMENT" \\
+  --set-metadata "evidence.publish_owner=$PUBLISH_OWNER" \\
+  --set-metadata "gc.outcome=branch-ready"
 gc bd update "$ROOT_ID" --notes "$(echo "$NOTES")
-comment_status: $COMMENT_STATUS"
+pr_body_path: $BODY_FILE
+comment_body_path: $COMMENT_FILE
+publish_owner: $PUBLISH_OWNER"
 ```
 
 **5. Display:**
 ```
-[pr-revert] comment-on-original: $COMMENT_STATUS
+[pr-revert] hand-off-publish: prepared, nothing published
+[pr-revert]   Revert branch: $BRANCH at $REVERT_SHA (local only)
+[pr-revert]   Reverts: #{{pr}} ($PR_URL)
+[pr-revert]   Publish commands recorded on $ROOT_ID
 ```
 
-**Exit criteria:** comment posted (or status=failed recorded). Chain
-continues regardless."""
+**Exit criteria:** revert branch local at `evidence.revert_sha`, both
+bodies on disk, all three publish commands recorded on the root bead. No
+upstream write performed."""
 
 [[steps]]
 id = "report"
-title = "Synthesize summary_for_human and close molecule"
-needs = ["comment-on-original"]
+title = "Synthesize summary_for_human and close molecule at branch-ready"
+needs = ["hand-off-publish"]
 description = """
-Final step. Compose `summary_for_human` from collected evidence, ensure
-`evidence.revert_pr_url` is set, and close the molecule.
+Final step. Compose `summary_for_human` from collected evidence and close
+the molecule. No revert PR exists yet, so there is no PR URL to record.
 
 **1. Find root bead and read state:**
 ```bash
@@ -581,11 +516,10 @@ NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].notes // ""')
 PR_NUM={{pr}}
 PR_URL=$(echo "$NOTES" | awk -F': ' '/^pr_url:/ {print $2}')
 PR_TITLE=$(echo "$NOTES" | awk -F': ' '/^pr_title:/ {print $2}')
-REVERT_PR_URL=$(echo "$META" | jq -r '."evidence.revert_pr_url" // ""')
-REVERT_PR_NUM=$(echo "$META" | jq -r '."evidence.revert_pr_number" // ""')
+REVERT_BRANCH=$(echo "$META" | jq -r '."evidence.revert_branch" // ""')
+PUSH_CMD=$(echo "$META" | jq -r '."evidence.publish_push_cmd" // ""')
 REVERT_SHA=$(echo "$META" | jq -r '."evidence.revert_sha" // ""')
-COMMENT_STATUS=$(echo "$META" | jq -r '."evidence.comment_status" // "unknown"')
-CARVE_PATH=$(echo "$META" | jq -r '."evidence.carve_out_path" // ""')
+
 OVERLAP_COUNT=$(echo "$META" | jq -r '."evidence.overlap_files" // "0"')
 ```
 
@@ -595,35 +529,31 @@ OVERLAP_COUNT=$(echo "$META" | jq -r '."evidence.overlap_files" // "0"')
 it tight; the maintainer can drill into evidence/notes for detail.
 
 ```bash
-COMMENT_NOTE=""
-case "$COMMENT_STATUS" in
-    posted) COMMENT_NOTE="Original PR commented." ;;
-    failed) COMMENT_NOTE="Original PR comment FAILED — post manually at $PR_URL." ;;
-    *) COMMENT_NOTE="Original PR comment status: $COMMENT_STATUS." ;;
-esac
-
+PUBLISH_OWNER=$(cat <<'OWNER'
+{{publish_owner}}
+OWNER
+)
 OVERLAP_NOTE=""
-[ "$OVERLAP_COUNT" -gt 0 ] && OVERLAP_NOTE=" $OVERLAP_COUNT files were modified after the original merge — watch CI on the revert PR."
+[ "$OVERLAP_COUNT" -gt 0 ] && OVERLAP_NOTE=" $OVERLAP_COUNT files were modified after the original merge — watch CI once the revert PR is opened."
 
 gc bd update "$ROOT_ID" \\
   --set-metadata "evidence.reviewer_verdict=pass" \\
-  --set-metadata "evidence.artifact_path=github-pr:$REVERT_PR_URL" \\
-  --set-metadata "summary_for_human=Reverted PR #$PR_NUM (\\"$PR_TITLE\\"). Revert PR: $REVERT_PR_URL (#$REVERT_PR_NUM). Revert commit: $REVERT_SHA. Carve-out path: $CARVE_PATH. $COMMENT_NOTE$OVERLAP_NOTE Reason: {{reason}}"
+  --set-metadata "evidence.artifact_path=git:$REVERT_SHA" \\
+  --set-metadata "summary_for_human=Revert of PR #$PR_NUM (\\"$PR_TITLE\\") is PREPARED, not published. Revert commit $REVERT_SHA is on local branch $REVERT_BRANCH; nothing has been pushed, no revert PR exists, and the original PR has not been commented on.$OVERLAP_NOTE Publishing is $PUBLISH_OWNER's step, from its own login, after a human approves this artifact; the three commands are on this bead as evidence.publish_push_cmd, evidence.publish_create_cmd and evidence.publish_comment_cmd. Reason: {{reason}}"
 ```
 
 **3. Close the molecule:**
 ```bash
-gc bd close "$ROOT_ID" --reason "revert PR #$REVERT_PR_NUM opened for #$PR_NUM"
+gc bd close "$ROOT_ID" --reason "revert of #$PR_NUM prepared at $REVERT_SHA; branch-ready to publish"
 ```
 
 **4. Display:**
 ```
-[pr-revert] Complete
-[pr-revert]   Reverted #$PR_NUM: $PR_URL
-[pr-revert]   Revert PR: $REVERT_PR_URL
-[pr-revert]   Revert commit: $REVERT_SHA
-[pr-revert]   Comment on original: $COMMENT_STATUS
+[pr-revert] Complete — prepared, nothing published
+[pr-revert]   Reverts #$PR_NUM: $PR_URL
+[pr-revert]   Revert commit: $REVERT_SHA on $REVERT_BRANCH (local only)
+[pr-revert]   Publish starts with: $PUSH_CMD
 ```
 
-**Exit criteria:** evidence.revert_pr_url and summary_for_human set;
-molecule closed."""
+**Exit criteria:** evidence.revert_sha, the three publish commands and
+summary_for_human set; molecule closed at branch-ready."""
