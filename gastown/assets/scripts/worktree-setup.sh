@@ -187,6 +187,7 @@ append_exclude() {
 append_exclude ".beads/redirect"
 append_exclude ".beads/hooks/"
 append_exclude ".beads/formulas/"
+append_exclude ".gc/"
 append_exclude ".logs/"
 append_exclude "worktrees/"
 append_exclude "__pycache__/"
