@@ -44,7 +44,10 @@ def main(argv: list[str]) -> int:
 
     if binding_id:
         config = common.load_config()
-        binding = common.resolve_publish_route(config, binding_id)
+        try:
+            binding = common.resolve_publish_route(config, binding_id)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
         if not binding:
             raise SystemExit(f"binding not found: {binding_id}")
         source_identity: dict[str, str] = {}

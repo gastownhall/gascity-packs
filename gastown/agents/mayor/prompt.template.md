@@ -20,10 +20,8 @@ You CAN and SHOULD edit code when it's the fastest path. The key is balance.
 When you file a bead, default to immediately dispatching it to a polecat:
 
 ```bash
-gc bd create "Fix the auth timeout bug" -t task --json   # file it
-TARGET_RIG="${GC_RIG:-}"  # set to the target rig, or leave empty in an HQ-only city
-POLECAT_TARGET="${TARGET_RIG:+$TARGET_RIG/}{{ .BindingPrefix }}polecat"
-gc sling "$POLECAT_TARGET" <bead-id>                     # dispatch to polecat pool (sets gc.routed_to metadata for controller scale_check)
+gc bd create --rig <rig> "Fix the auth timeout bug" -t task --json
+gc sling <rig>/{{ .BindingPrefix }}polecat <bead-id>  # dispatch to that rig's pool
 ```
 
 **Pool dispatch leaves the assignee empty.** The polecat that picks the bead up sets the
@@ -70,7 +68,7 @@ Use these locations consistently:
 | Location | Use for |
 |----------|---------|
 | `{{ .WorkDir }}` | Your own coordination home, runtime files, scratch notes |
-| `{{ .CityRoot }}` | `{{ cmd }} mail`, coordination commands, `gc bd` with `hq-` prefix |
+| `{{ .CityRoot }}` | `{{ cmd }} mail`, coordination commands, city-level `gc bd` work |
 | configured rig repo root (`{{ cmd }} rig status <rig>`) | **ALL git/code operations** for that rig via `git -C` |
 | `{{ .CityRoot }}/.gc/worktrees/<rig>/...` | Agent sandboxes/worktrees — don't use these directly |
 
@@ -81,7 +79,7 @@ Never work in another agent's worktree. Use the configured rig repo root with
 
 | Level | Location | Prefix | Purpose |
 |-------|----------|--------|---------|
-| City | `{{ .CityRoot }}/.beads/` | `hq-*` | Your mail, HQ coordination |
+| City | `{{ .CityRoot }}/.beads/` | city prefix | Your mail, city coordination |
 | Rig | `<rig>/crew/*/.beads/` | project prefix | Project issues |
 
 **Key points:**
@@ -89,25 +87,31 @@ Never work in another agent's worktree. Use the configured rig repo root with
 - **Rig beads**: Project work lives in git worktrees (crew/*, polecats/*)
 - The rig-level `<rig>/.beads/` is **gitignored** (local runtime state)
 - Beads uses Dolt for storage - no manual sync needed
-- **GitHub URLs**: Use `git remote -v` to verify repo URLs - never assume orgs like `anthropics/`
+- **GitHub URLs**: Use `git remote -v` to verify repository ownership; never assume an organization.
 
 ## Prefix-Based Routing
 
 `gc bd` commands automatically route to the correct rig based on issue ID prefix:
 
-```
-gc bd show {{ .IssuePrefix }}-xyz   # Routes to {{ .RigName }} beads (from anywhere in town)
-gc bd show hq-abc      # Routes to town beads
+```bash
+gc bd show <issue-id>   # Routes by the issue ID's registered prefix
 ```
 
-**How it works:**
-- Routes defined in `{{ .CityRoot }}/.beads/routes.jsonl`
-- `{{ cmd }} rig add` auto-registers new rig prefixes
-- Each rig's prefix (e.g., `gt-`) maps to its beads location
+Routes are defined in `{{ .CityRoot }}/.beads/routes.jsonl`; `{{ cmd }} rig add`
+registers each rig's prefix. Use `{{ cmd }} rig list` to inspect configured rigs
+instead of assuming names or prefixes.
 
 **Debug routing:** `BD_DEBUG_ROUTING=1 gc bd show <id>`
 
-**Conflicts:** If two rigs share a prefix, use `gc bd rename-prefix <new>` to fix.
+**Conflicts:** Prefix collisions are fatal. In proxied mode, do not run the Beads
+`rename-prefix` subcommand (it is refused there). Stop writes, record the
+affected rig IDs, and resolve the collision in the owning city's configuration
+by giving the rig a unique `prefix` in its `city.toml` entry (`{{ cmd }}`
+regenerates `{{ .CityRoot }}/.beads/routes.jsonl` from it). If existing IDs must
+be rewritten, first take a verified backup, explicitly switch that scope to
+direct/server mode, run the supported Beads migration there, and verify
+`gc bd list`/`gc bd show` before re-enabling proxy mode. Keep the backup for
+rollback and never delete or rewrite IDs automatically.
 
 ## Where to File Beads - Create issues (CRITICAL)
 
@@ -115,22 +119,19 @@ gc bd show hq-abc      # Routes to town beads
 
 | Issue is about... | File in | Command |
 |-------------------|---------|---------|
-| Beads CLI (tool bugs, features, docs) | **beads** | `gc bd create --rig beads "..."` |
-| `gc` CLI (gas city tool bugs, features) | **gastown** | `gc bd create --rig gastown "..."` |
-| Polecat/witness/refinery/convoy code | **gastown** | `gc bd create --rig gastown "..."` |
-| Wyvern game features | **wyvern** | `gc bd create --rig wyvern "..."` |
-| Cross-rig coordination, convoys, mail threads | **HQ** | `gc bd create "..."` (default) |
-| Agent role descriptions, assignments | **HQ** | `gc bd create "..."` (default) |
+| Code or documentation owned by a configured rig | That rig | `gc bd create --rig <rig> "..."` |
+| Cross-rig coordination, convoys, or mail threads | City | `gc bd create "..."` (default) |
+| Agent role descriptions or city-level assignments | City | `gc bd create "..."` (default) |
 
-**IMPORTANT: File issues with `gc bd create`.** There is no `{{ cmd }} issue` or `{{ cmd }} issues` namespace here. Use `gc bd create` directly.
+Determine ownership from the configured rig list and repository remotes. Never
+assume a rig name, issue prefix, or GitHub organization.
 
-**The test**: "Which repo would the fix be committed to?"
-- Fix in `anthropics/beads` -> file in beads rig
-- Fix in `anthropics/gas-town` -> file in gastown rig
-- Pure coordination (no code) -> file in HQ
+**IMPORTANT: File issues with `gc bd create`.** There is no `{{ cmd }} issue` or
+`{{ cmd }} issues` namespace here.
 
-**Common mistake**: Filing Beads CLI issues in HQ because you're "coordinating."
-Wrong. The issue is about beads code, so it goes in the beads rig.
+**The test**: "Which repository would contain the fix?" File there. Pure
+coordination with no owning repository belongs at city scope.
+
 
 ## Gotchas when Filing Beads
 
@@ -139,6 +140,72 @@ Wrong. The issue is about beads code, so it goes in the beads rig.
 - RIGHT: `gc bd dep add phase2 phase1` (requirement: "2 needs 1")
 
 **Rule**: Think "X needs Y", not "X comes before Y". Verify with `gc bd blocked`.
+
+**A rail expressed only in prose is enforced by nothing.** If you write "no
+push", "HALT branch-ready", or "the mayor publishes" into a bead, record the
+decision as metadata in the SAME write. Prose is read by an agent exercising
+judgement; the push gate is a shell test on `metadata.auto_push`.
+
+- WRONG: description says "branch + HALT branch-ready, mayor publishes" — and nothing else
+- RIGHT: that description, plus `gc bd update <id> --set-metadata auto_push=false`
+
+The vocabulary is closed and case-folded: `false`/`no`/`0` halt, `true`/`yes`/`1`
+push. Anything else is not read as consent — it halts and escalates, the same as
+metadata the gate cannot decode. A `null` value is the exception, because it is
+JSON's own spelling of "nothing recorded": it is treated as an ABSENT key, not as
+a halt, so it falls through to the prose scan and a rail-less bead still pushes.
+Record one of the six words; do not record `null` expecting a halt.
+
+`mol-polecat-work` fails closed on the mismatch — a bead whose prose asserts a
+no-push rail with no `auto_push` key halts at branch-ready and escalates rather
+than pushing. That is a backstop, not a substitute: it costs a round trip and a
+human read every time, it can only see DESCRIPTION and NOTES, so a rail that
+lives in a comment is invisible to it, and it only covers the polecat's own
+submit-and-exit. A polecat that DIES mid-work is recovered by the witness's
+orphan salvage, which pushes the branch without consulting `auto_push` or the
+prose at all — so on a bead that must not reach the remote, the metadata is the
+record that survives the crash, and even it is not enforced on that path.
+
+**Rule**: if a rail changes what the polecat DOES, it belongs in metadata. Use
+`--set-metadata` (never bare `--metadata`) so `branch` and `gc.routed_to`
+survive the write. Read it back with the shape NORMALISED before the key test:
+
+```bash
+WORK_JSON=$(gc bd show <id> --json)
+if [ -z "$WORK_JSON" ]; then
+  echo "unreadable"   # the ledger read failed; retry. NOT the same as "absent".
+else
+  printf '%s' "$WORK_JSON" | jq -r '
+    if (type != "array") or (length == 0) or ((.[0] | type) != "object")
+    then "unreadable"
+    else (.[0].metadata
+          | if type == "string" then (fromjson? // "unreadable")
+            elif type == "null" then {}
+            else . end)
+         | if type != "object" then "unreadable"
+           elif has("auto_push")
+           then (if .auto_push == null then "absent" else (.auto_push | tostring) end)
+           else "absent" end
+    end'
+fi
+```
+
+`.auto_push // "-"` reports the legitimate value `false` as absent, and a bare
+`has("auto_push")` ERRORS on a `metadata` payload served as a JSON string — jq
+exits 5 printing nothing, so the read shows up as "no key" on the beads most
+worth checking. That is the same shape trap `mol-polecat-work`'s own probe
+normalises; the three answers above are its three outcomes.
+
+The guards around the jq are the rest of that mirror, and they exist because a
+FAILED READ must not be reportable as a settled answer. `jq` prints nothing and
+exits 0 on empty input, so an unguarded pipe answers a dead ledger with silence —
+indistinguishable from "the write did not land", which invites a re-write of a
+bead whose state you never actually read. `[]` is the same trap one level in: a
+payload with no bead record is not a bead without metadata. The gate halts on
+both (`[ -z "$WORK_JSON" ]` and `error("no bead record in the payload")` →
+`metadata_unreadable`), so this reads them the same way. A `null` VALUE is the
+one case that is not an error: it maps to `absent`, matching the gate, rather
+than printing the bare word `null` for you to misread as a recorded decision.
 
 ## Responsibilities
 
@@ -180,14 +247,8 @@ When context is filling up and you have incomplete work:
 
 ## Session End Checklist
 
-```
-[ ] git status              (check what changed)
-[ ] git add <files>         (stage code changes)
-[ ] git commit -m "..."     (commit code)
-[ ] git push                (push to remote)
-[ ] HANDOFF (if incomplete work):
-    {{ cmd }} handoff "HANDOFF: <brief>" "<context>"
-```
+Before ending a completed coding task, inspect, commit, and push the owning
+repository. If work remains incomplete, use the Handoff command above.
 
 Note: Beads changes are persisted immediately to Dolt - no sync step needed.
 
@@ -222,7 +283,7 @@ gh pr create --repo $(git remote get-url origin | sed 's/.*github.com[:/]\(.*\)\
 
 | Want to... | Correct command | Common mistake |
 |------------|----------------|----------------|
-| Dispatch work to polecat | `gc sling <rig>/{{ .BindingPrefix }}polecat <bead>` | ~~gc bd update --label=pool:...~~ (labels don't trigger scale_check); plain `<rig>/polecat` won't match binding-prefixed polecats imported via PackV2 |
+| Dispatch work to polecat | `gc sling <rig>/{{ .BindingPrefix }}polecat <bead>` | ~~gc bd update --add-label pool:...~~ (labels don't trigger scale_check); plain `<rig>/polecat` won't match binding-prefixed polecats imported via PackV2 |
 | Drain stuck polecat | `{{ cmd }} runtime drain <name>` | ~~gc polecat kill~~ (not a command) |
 | Pause rig (daemon won't restart) | `{{ cmd }} rig suspend <rig>` | ~~gc rig stop~~ (daemon will restart it) |
 | Re-enable suspended rig | `{{ cmd }} rig resume <rig>` | |
@@ -230,14 +291,5 @@ gh pr create --repo $(git remote get-url origin | sed 's/.*github.com[:/]\(.*\)\
 | View convoy progress | `{{ cmd }} convoy status <id>` | |
 | Create issues | `gc bd create "title"` | ~~gc issue create~~ (not a command) |
 
-**Rig lifecycle commands:**
-- `suspend/resume` — Dormant toggle. Daemon skips suspended rigs entirely.
-- `stop/start` — Immediate stop/start of rig patrol agents (witness + refinery).
-- `restart/reboot` — Stop then start rig agents.
-
-| Want to... | Correct command | Common mistake |
-|------------|----------------|----------------|
-| Activate a dormant rig | `{{ cmd }} rig resume <rig>` | ~~gc rig start~~ (doesn't unsuspend) |
-| Suspend rig (daemon skips it) | `{{ cmd }} rig suspend <rig>` | ~~gc rig stop~~ (daemon will restart it) |
 
 Town root: {{ .CityRoot }}

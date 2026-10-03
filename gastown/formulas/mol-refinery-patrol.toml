@@ -169,9 +169,9 @@ needs = ["check-inbox"]
 description = """
 **Config: event_timeout = {{event_timeout}}**
 
-Search for work beads assigned to you with branch metadata:
+Search for work beads assigned to you — unclaimed, or already claimed by you:
 ```bash
-WORK=$(gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee=$GC_AGENT --status=open \
+WORK=$(gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee=$GC_AGENT --status=open,in_progress \
   --exclude-type=epic --has-metadata-key=branch --limit=1 --json | jq -r '.[0].id // empty')
 ```
 
@@ -180,6 +180,26 @@ database. Without it, `gc bd list` routes to the HQ database and never
 sees rig-scoped work beads — the `assignee` field alone does not route
 by namespace. For HQ-only refineries `$GC_RIG` is empty and the flag
 expands to nothing.
+
+`--status=open,in_progress` is what makes this query survive its own claim.
+Claiming a bead moves it to `in_progress`, so a filter of `open` alone can
+never see the work this patrol just took: the bead strands in `in_progress`
+with its branch metadata intact and nothing merged, while this step truthfully
+reports an empty queue. It is a leak with a rate — one stranded bead per
+claim, in every rig running this pack (measured in a production rig: the
+stranded count went 1 -> 2 in 30 minutes, with `--status=open` returning
+nothing the whole time and the branches provably unmerged rather than lost).
+
+Both statuses stay narrowed by `--assignee=$GC_AGENT`, so this widens the
+query to *your own* claims only — it never picks up another agent's in-flight
+work. Wisp roots are `ephemeral=true` and this query does not pass
+`--include-infra`, so widening the status cannot make the refinery adopt its
+own patrol wisp. Use the comma-separated form: repeating `-s/--status`
+silently overwrites the previous value instead of unioning them.
+
+Re-finding your own claim is the intended resume path, not a duplicate: a bead
+you claimed but did not land is unfinished work, and the merge-state gate in
+merge-push already closes it as `already_merged` if a previous pass landed it.
 
 If found: read the bead metadata to confirm it has a branch:
 ```bash
@@ -212,16 +232,141 @@ BRANCH=$(gc bd show $WORK --json | jq -r '.[0].metadata.branch')
 TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_branch}}"')
 ```
 
-Fetch and attempt mechanical rebase:
+Fetch and attempt mechanical rebase. Confirm the target resolves on
+origin *before* rebasing: `git rebase` reports a missing upstream with the
+same non-zero exit as a conflict, and the rejection path below would then
+delete the workflow, reopen the bead, and bounce a configuration error
+back to a polecat that hits the same wall. A target that does not exist
+on origin is not a conflict, and no polecat can resolve it — park the bead
+for a human, escalate, and keep the patrol running. Parking is the part
+that makes the halt safe: `find-work` selects open beads assigned to this
+refinery that carry `metadata.branch`, so a bead left assigned here is
+re-selected on the next cycle and one misconfigured `target` head-of-line
+blocks every other merge in the rig. Same shape as `block_existing_pr` in
+the merge step — the other invalid-configuration halt in this formula.
+The same block also decides whether a rebase is needed at all: when
+`origin/$TARGET` is already an ancestor of `origin/$BRANCH`, the source is a
+pure fast-forward candidate and rebasing it would only destroy merge topology.
+Run this block as one script that shares shell state: the probe's status is
+captured into `ANCESTOR_RC` on the very next line, so a split at the probe reads
+`0` in a fresh shell and fires the skip arm on a genuinely diverged source, and
+every STOP arm's `exit` must end the step.
 ```bash
 git fetch --prune origin
-git checkout -b temp origin/$BRANCH
-git rebase origin/$TARGET
+if ! git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
+  REASON="Target branch $TARGET does not exist on origin; there is nothing to rebase onto. This is an invalid upstream, not a merge conflict, so the rejection path is wrong: no polecat can rebase onto a branch that is not there. Fix metadata.target on $WORK, or push $TARGET, then route the bead back to the refinery."
+  echo "STOP: $REASON"
+  # Take the bead out of find-work's candidate set. Clearing the assignee is
+  # what deselects it; gc.routed_to=human is what keeps it inside a
+  # work-query tier instead of stranding it open+unassigned+unrouted. The
+  # branch, metadata.branch, and metadata.target are all left untouched —
+  # this is not the destructive delete-source/reopen-source path.
+  gc bd update $WORK \
+    --assignee="" \
+    --set-metadata merge_result=blocked \
+    --set-metadata gc.routed_to=human \
+    --set-metadata halt_reason=target_branch_missing \
+    --set-metadata blocked_reason="$REASON"
+  gc mail send mayor/ -s "ESCALATION: invalid target branch for $WORK" -m "$REASON
+Work bead: $WORK
+Branch: $BRANCH
+Target: $TARGET"
+  # Pour the next patrol iteration before burning this one: a halt on one
+  # bead must not end the merge lane.
+  CURRENT_WISP=${GC_BEAD_ID:-}
+  if [ -z "$CURRENT_WISP" ]; then
+    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  fi
+  NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
+  if [ -z "$NEXT" ]; then
+    echo "Could not pour next refinery wisp; not burning."
+    gc runtime drain-ack
+    exit 1
+  fi
+  if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
+    echo "Could not assign next refinery wisp; not burning."
+    gc runtime drain-ack
+    exit 1
+  fi
+  if [ -n "$CURRENT_WISP" ]; then
+    gc bd mol burn "$CURRENT_WISP" --force
+  else
+    echo "Could not resolve current wisp; not burning."
+    gc runtime drain-ack
+    exit 1
+  fi
+  gc runtime drain-ack
+  exit 1
+fi
+# Guarded ancestry decision (issue 374). Pin exactly the two tracking refs the
+# decision reads: the prune fetch above is best-effort with an unchecked exit,
+# and a decision read off stale refs would skip (or force) a rebase the source
+# does not need. Refspecs deliberately unbraced — string-distinct from the
+# braced merge-push fetch so the inference-gate pin witnesses this site
+# uniquely. Fail closed here: no probe, no rebase, no bead mutation.
+if ! git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" "+refs/heads/$TARGET:refs/remotes/origin/$TARGET"; then
+  echo "git fetch of $BRANCH/$TARGET tracking refs failed (unreachable origin or missing branch); cannot evaluate rebase ancestry. STOP. Do not mutate bead state."
+  gc runtime drain-ack
+  exit 1
+fi
+# Already-based source (origin/$TARGET an ancestor of origin/$BRANCH) is a pure
+# fast-forward candidate: rebasing it drops merge commits and their recorded
+# conflict resolutions — artificial conflicts on an unchanged SHA (the
+# rejection treadmill) or silent flattening that merge-push then force-pushes
+# over the source branch. Probe BEFORE any branch exists so every STOP leaves
+# the worktree clean for the next patrol cycle.
+git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"
+ANCESTOR_RC=$?
+case "$ANCESTOR_RC" in
+  0)
+    # The materialization itself is exit-checked: over a stranded `temp` (the
+    # pre-existing merge-push STOP wedge) this checkout fails, and proceeding
+    # would mis-report a skip while downstream consumes the stale branch.
+    if ! git checkout -b temp origin/$BRANCH; then
+      echo "cannot materialize temp at origin/$BRANCH for the skip path (a stale temp branch may be stranded from a previous merge-push STOP). STOP. Do not mutate bead state."
+      gc runtime drain-ack
+      exit 1
+    fi
+    echo "SKIP-REBASE: origin/$TARGET ($(git rev-parse --short "origin/$TARGET")) is already an ancestor of origin/$BRANCH ($(git rev-parse --short "origin/$BRANCH")); temp materialized at origin/$BRANCH with merge topology preserved. Proceed to run-tests; do not rebase, amend, or reset."
+    ;;
+  1)
+    # Genuinely diverged: the rebase this step has always run, behind the same
+    # exit-checked materialization as the skip arm. Unchecked, a stranded temp
+    # (a merge-push STOP wedge, or an `mr` lease failure re-entered without the
+    # cleanup below) fails this checkout and leaves HEAD on the STALE branch, so
+    # the rebase rewrites the wrong commits. The damage is worse here than on the
+    # skip arm: merge-push then force-pushes the result over $BRANCH, and
+    # --force-with-lease does not stop it because the guard fetch above already
+    # advanced the remote-tracking ref the lease is compared against.
+    if ! git checkout -b temp origin/$BRANCH; then
+      echo "cannot materialize temp at origin/$BRANCH for the rebase path (a stale temp branch may be stranded from a previous merge-push STOP or mr lease failure); rebasing it would rewrite the wrong commits and merge-push would force-push them over $BRANCH. STOP. Do not mutate bead state."
+      gc runtime drain-ack
+      exit 1
+    fi
+    git rebase origin/$TARGET
+    ;;
+  *)
+    # A probe error is never "not an ancestor" (same idiom as merge-push's
+    # already-merged gate error arm).
+    echo "git merge-base --is-ancestor errored (status $ANCESTOR_RC); cannot evaluate rebase ancestry. STOP. Do not mutate bead state."
+    gc runtime drain-ack
+    exit 1
+    ;;
+esac
 ```
+
+If the ancestry decision SKIPPED the rebase (`SKIP-REBASE` printed, probe
+rc=0): `temp` is already materialized at `origin/$BRANCH` with merge topology
+intact — treat this step as succeeded without a rebase and proceed to run-tests
+exactly as a successful rebase does. Do not abort, amend, reset, or re-run a
+rebase on it. Nothing was rewritten; merge-push consumes `temp` unchanged.
 
 If rebase SUCCEEDED (exit 0): close this step, proceed to run-tests.
 
-If rebase FAILED (conflicts):
+If rebase FAILED (conflicts) — and only then: the guards above have already
+ruled out an unresolvable target, an already-based source, and fetch/probe tool
+errors, so what reaches a failed rebase is a genuine content conflict with
+`$TARGET`:
 
 1. Abort: `git rebase --abort`
 2. Clean up the existing workflow and reopen the source bead:
@@ -233,9 +378,13 @@ gc workflow delete-source $WORK --apply && gc workflow reopen-source $WORK
 gc bd update $WORK \
   --status=open \
   --assignee="" \
+  --unset-metadata handoff_stage \
   --set-metadata rejection_reason="Conflicts with $TARGET at $(git rev-parse origin/$TARGET)" \
   --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat"
 ```
+Clearing `handoff_stage` is required, not cosmetic: rejection invalidates the
+polecat's "submit completed" marker, and leaving it set would let the witness's
+Step 3a hand this already-rejected tip straight back here on the next crash.
 4. Do NOT delete the branch (new polecat needs it for conflict resolution).
 5. Clean up temp branch: `git checkout {{target_branch}} && git branch -D temp`
 6. Pour next patrol iteration before burning:
@@ -334,9 +483,13 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
      gc bd update $WORK \
        --status=open \
        --assignee="" \
+       --unset-metadata handoff_stage \
        --set-metadata rejection_reason="<failure summary>" \
        --set-metadata gc.routed_to="${GC_RIG:+$GC_RIG/}{{binding_prefix}}polecat"
      ```
+     `handoff_stage` must be cleared here too: this path also deletes the
+     remote branch, so a stale marker would point the witness's Step 3a at
+     work that no longer exists on origin.
    - Delete branch: `git push origin --delete $BRANCH`
    - Clean up: `git checkout "$TARGET" && git branch -D temp`
    - Pour next patrol iteration before burning:
@@ -848,14 +1001,40 @@ case "$BHRC_STATUS" in
 esac
 ```
 
-**1. Push the rebased branch back to origin:**
+**1. Push the branch back to origin:**
 ```bash
 git checkout temp
 git push origin HEAD:$BRANCH --force-with-lease
 ```
-If `--force-with-lease` fails, the existing PR branch moved after your
-fetch. STOP, fetch the latest branch, rebase your temp branch again, and
-retry with `--force-with-lease`. Do not use plain `--force`.
+If `--force-with-lease` fails, the existing PR branch moved after your fetch and
+`temp` is stale. STOP. Do NOT rebase `temp` in place and retry the push: `mr` is
+the only path that rewrites `$BRANCH`, and on the skip path `temp` is not a
+rebase product — it is `origin/$BRANCH` with its merge topology intact — so
+rebasing it here performs exactly the flattening the `rebase` step's ancestry
+decision exists to prevent, and then force-pushes the flattened result over the
+source branch.
+
+Instead, re-enter the `rebase` step and let its ancestry decision run again on
+the moved branch. Clear the tested branch out of the way first — the decision
+probes BEFORE any branch exists so that every STOP leaves the worktree clean,
+and both its arms materialize `temp` with an exit-checked `git checkout -b`, so a
+surviving `temp` makes the re-entry STOP rather than proceed:
+```bash
+git checkout --detach "origin/$TARGET" && git branch -D temp
+```
+Then re-enter the step from the top and let it decide. It re-fetches both
+tracking refs and re-probes
+`git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"` with no `temp`
+in the way, and its arms take it from there:
+rc=0 re-materializes `temp` at the freshly fetched `origin/$BRANCH`, unrebased;
+rc=1 re-materializes it and rebases onto `origin/$TARGET`;
+any other status STOPs without mutating bead state.
+Do not "re-materialize in place" with `git checkout -B temp` — that leaves the
+branch alive across the probe, which is the ordering the decision's own
+rationale rejects, and it strands a mutated `temp` behind a probe error.
+Deleting and re-materializing replaces the tree that was tested, so this is
+a step re-entry and not a push-level fixup: `run-tests` runs again on the new
+`temp` before you return here to push. Do not use plain `--force`.
 
 **2. Reuse, create, or discover the pull request:**
 
@@ -895,7 +1074,10 @@ PR_BODY_FILE=$(mktemp)
   printf -- '- Issue: `%s` (%s%s)\n' "$WORK" "$ISSUE_TYPE" "${ISSUE_PRIORITY:+, P$ISSUE_PRIORITY}"
   printf -- '- Source branch: `%s`\n' "$BRANCH"
   printf -- '- Target: `%s`\n' "$TARGET"
-  printf -- '- Rebased on `%s` via Gastown Refinery.\n' "$TARGET"
+  # "Based on", not "Rebased on": on the skip path temp was never rebased, it is
+  # origin/$BRANCH with its merges intact. Both paths end with origin/$TARGET an
+  # ancestor of temp, which is exactly what this line now claims.
+  printf -- '- Based on `%s` via Gastown Refinery.\n' "$TARGET"
 } > "$PR_BODY_FILE"
 
 if [ -n "$EXISTING_PR" ]; then

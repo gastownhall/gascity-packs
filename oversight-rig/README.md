@@ -35,11 +35,26 @@ The project-lead writes a rollup bead labeled `severity:escalate`. A scheduled o
 - `agents/project-lead/` — the role (agent config, prompt template, and a `project-brief.template.md` to copy per rig)
 - `orders/` — `patrol-project-leads` (triage cadence) and `escalate-rollups` (deterministic delivery)
 - `assets/scripts/` — the delivery script and a rig→channel resolver
+- `skills/city-executive-status/` — an optional workflow for maintaining an Obsidian-compatible portfolio brief from project-owner updates
+
+## Optional executive status brief
+
+The `city-executive-status` skill packages the shareable workflow for requesting
+structured project-owner updates, validating them, and writing one concise
+portfolio brief. It can optionally publish a content-hash-deduplicated summary
+through a deployment-specific adapter.
+
+Importing this pack exposes the skill but does not activate its example
+schedules or write to a vault. The only active pack orders remain
+`patrol-project-leads` and `escalate-rollups`. To enable the workflow, follow the
+skill's `SKILL.md`, copy its environment and order examples into the consuming
+city, configure local paths, and verify dry-run output before scheduling writes.
 
 ## Requirements
 
 - An extmsg/slack adapter in the city for outbound delivery and inbound replies — **compose this pack with your slack pack** (e.g. `slack-full`, `slack-channel`, or `slack-mini`). This pack ships only the oversight role and its escalation machinery, not a slack bridge.
 - Optional: the project-lead's rig-scoped dispatch examples use convoy formulas (`mol-decompose`, `mol-pr-from-issue`) supplied by a workflow pack (e.g. `gastown`). The role works without them.
+- Optional: the executive-status skill needs Python 3.11 or newer. Obsidian and a publishing adapter are not required; without them it writes ordinary Markdown to a configured path.
 
 ## Install
 

@@ -28,7 +28,7 @@ be inherited from a parent convoy with `metadata.target` set.
 | Variable | Source | Description |
 |----------|--------|-------------|
 | binding_prefix | import binding | Agent identity prefix for bound Gas Town imports. |
-| affected_tests_command | rig `formula_vars` | Shell-safe command that reads `git diff --name-only origin/{{base_branch}}...HEAD` and runs the matching test subset. Empty = run full `test_command`. |
+| affected_tests_command | rig `formula_vars` | Shell-safe command that reads `git diff --name-only $BASE_REF...HEAD` (`self-review` exports `BASE_REF` from the base recorded by `workspace-setup`) and runs the matching test subset. Must exit non-zero if that diff fails, rather than running zero tests. Empty = run full `test_command`. |
 
 **Rejection-aware.** If the work bead has `metadata.branch` and
 `metadata.rejection_reason`, a previous attempt was rejected by the
@@ -54,7 +54,7 @@ description = "Import binding prefix for gastown agent identities, including tra
 default = ""
 
 [vars.affected_tests_command]
-description = "Shell-safe affected-tests command. Must read `git diff --name-only origin/{{base_branch}}...HEAD` and run the matching test subset. From rig `formula_vars` or empty to run full test_command."
+description = "Shell-safe affected-tests command. Must read `git diff --name-only $BASE_REF...HEAD` (self-review exports BASE_REF from the base recorded by workspace-setup) and run the matching test subset. Must exit non-zero when that diff fails instead of silently running zero tests. From rig `formula_vars` or empty to run full test_command."
 default = ""
 
 [[steps]]
@@ -73,7 +73,7 @@ Every check is idempotent — safe to re-run after crash/restart.
 2. `metadata.target` on the parent convoy chain
 3. the rig repo's default branch
 
-**1. Fetch latest and derive your work bead:**
+**1. Fetch latest, derive your work bead, and resolve the base ref:**
 ```bash
 git fetch --prune origin
 CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
@@ -83,7 +83,77 @@ if [ -z "$WORK_BEAD_ID" ]; then
   gc runtime drain-ack
   exit 1
 fi
+# Clear any stale handoff marker before touching the work. A fresh attempt on
+# this bead means a prior submit-and-exit step 5 no longer describes it, and a
+# leftover marker would let the witness's Step 3a hand un-submitted work to the
+# refinery if this attempt also crashes. Unconditional on purpose: a bead can
+# arrive here carrying the marker with no rejection_reason (witness pool reset,
+# operator re-sling), so clearing only on the rejection path is not enough.
+gc bd update "$WORK_BEAD_ID" --unset-metadata handoff_stage
 ```
+
+Then resolve what `{{base_branch}}` means in this clone, remote-first.
+A base that exists on origin is used via its freshly-fetched
+remote-tracking ref. A base that exists only locally (an unpushed
+integration branch) is still a valid pin — use the local branch. If
+neither exists the base configuration is wrong: STOP rather than
+substituting a different base, because silently falling back to the
+repo default is how a rig pinned to an integration branch got polecats
+branched off main (gas-e6r).
+
+When the base exists in both places, the local copy must not be ahead of
+origin: a base that has advanced only locally is not the base the
+refinery will merge against, and branching from either side silently
+picks a different fork point. Ancestry-check instead of guessing.
+
+Both arms name fully-qualified refs. Git resolves `refs/tags/<name>`
+before `refs/heads/<name>`, so a bare branch name lets a same-named tag
+shadow the branch `show-ref --verify` just confirmed — worktree add,
+rebase, `checkout -B`, and the recorded `fork_sha` would all pin the
+tag's tip.
+
+This order — remote, then local, else stop — is the same contract
+`gastown/assets/scripts/worktree-setup.sh` must follow when it grows
+base selection of its own; keep the two halves in step, or they will
+disagree about what "the base" means.
+
+```bash
+BASE_REMOTE="refs/remotes/origin/{{base_branch}}"
+BASE_LOCAL="refs/heads/{{base_branch}}"
+WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"
+if git show-ref --verify --quiet "$BASE_REMOTE"; then
+    if git show-ref --verify --quiet "$BASE_LOCAL" && ! git merge-base --is-ancestor "$BASE_LOCAL" "$BASE_REMOTE"; then
+        echo "STOP: local {{base_branch}} is ahead of, or diverged from, the copy on origin."
+        echo "Reconcile or push {{base_branch}} first; do not branch from a stale base."
+        gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=base_branch_diverged
+        gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_diverged ($WORK_BEAD_ID)" -m "Local {{base_branch}} is not an ancestor of the copy on origin; $WORK_BEAD_ID cannot pick a fork point. Reconcile the branch."
+        gc runtime drain-ack
+        exit 1
+    fi
+    BASE_REF="$BASE_REMOTE"    # preferred: freshly fetched, no local drift
+elif git show-ref --verify --quiet "$BASE_LOCAL"; then
+    BASE_REF="$BASE_LOCAL"     # local-only base (unpushed integration branch)
+    echo "note: base branch {{base_branch}} is local-only — it does not exist on origin"
+else
+    echo "STOP: base branch {{base_branch}} exists neither on origin nor locally."
+    echo "Fix the rig/bead base configuration; do not substitute a different base."
+    gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=base_branch_missing
+    gc mail send "$WITNESS_TARGET" -s "polecat halted: base_branch_missing ($WORK_BEAD_ID)" -m "Base branch {{base_branch}} exists neither on origin nor locally in this clone. $WORK_BEAD_ID cannot start until the rig/bead base configuration is fixed."
+    gc runtime drain-ack
+    exit 1
+fi
+gc bd update "$WORK_BEAD_ID" --set-metadata base_ref="$BASE_REF"
+```
+
+The STOP arms stamp `halt_reason` and mail the witness on the way out —
+a base misconfiguration needs a human, and an unrecorded exit just loops
+through witness recovery until someone reads session logs.
+
+Every later block in this step uses `$BASE_REF` — never assume
+`origin/{{base_branch}}` exists. `$BASE_REF` is a shell variable and
+dies with this session, so the resolution is also recorded on the work
+bead as `metadata.base_ref`; later steps run in fresh sessions and read
+it back from there.
 
 **2. Ensure worktree exists.**
 
@@ -101,8 +171,9 @@ to create a new one.
 
 **If no worktree** — create one scoped to the bead, not the agent:
 ```bash
+: "${BASE_REF:?base ref not resolved — run step 1 first}"
 WORKTREE_PATH=$(pwd)/worktrees/"$WORK_BEAD_ID"
-git worktree add "$WORKTREE_PATH" --detach origin/{{base_branch}}
+git worktree add "$WORKTREE_PATH" --detach "$BASE_REF"
 cd "$WORKTREE_PATH"
 ```
 Record immediately so restarts and witness recovery can find it:
@@ -155,31 +226,49 @@ If resuming a rejected branch, rebase onto latest base:
 ```bash
 REJECTION=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.rejection_reason // empty')
 if [ -n "$REJECTION" ]; then
-    git rebase origin/{{base_branch}}
+    : "${BASE_REF:?base ref not resolved — run step 1 first}"
+    git rebase "$BASE_REF"
     # If conflicts: resolve them (this is likely the rejection reason)
     # After resolving: git rebase --continue
     gc bd update "$WORK_BEAD_ID" \
       --unset-metadata rejection_reason \
-      --set-metadata fork_sha="$(git rev-parse "origin/{{base_branch}}")"
+      --set-metadata fork_sha="$(git rev-parse "$BASE_REF")"
 fi
 ```
 
 **If no branch** — create one and record it. Always branch from the
-freshly-fetched `origin/{{base_branch}}`, never from local
-{{base_branch}} or whatever branch happens to be checked out.
-Polecat worktrees are reused across beads, so the local copy of
-{{base_branch}} may lag the remote — branching from a stale local ref
-inherits already-merged commits with stale hashes and causes the next
-refinery rebase to reject for spurious "duplicate" conflicts.
+resolved `$BASE_REF`, never from whatever branch happens to be checked
+out. When the base exists on origin, `$BASE_REF` is its freshly-fetched
+remote-tracking ref: polecat worktrees are reused across beads, so the
+local copy of {{base_branch}} may lag the remote — branching from a
+stale local ref inherits already-merged commits with stale hashes and
+causes the next refinery rebase to reject for spurious "duplicate"
+conflicts. When the base is local-only, the local branch IS the tip;
+there is no remote ref to prefer.
 
 ```bash
-git fetch origin {{base_branch}}                     # ensure origin ref is current
+: "${BASE_REF:?base ref not resolved — run step 1 first}"
+if [ "$BASE_REF" = "refs/heads/{{base_branch}}" ]; then
+    :                                                      # local-only base: nothing on origin to refresh
+elif ! git fetch origin {{base_branch}} >/dev/null 2>&1; then
+    # Step 1 already resolved this base on origin, so a failure here is
+    # either transient or the base disappearing mid-run. A blanket `|| true`
+    # would silently branch from a stale remote-tracking ref, so ask origin.
+    if git ls-remote --exit-code --heads origin "refs/heads/{{base_branch}}" >/dev/null 2>&1; then
+        echo "warning: could not refresh {{base_branch}}; using the ref fetched in step 1"
+    else
+        echo "STOP: {{base_branch}} no longer resolves on origin (deleted, renamed, or unreachable)."
+        echo "Re-run workspace-setup to re-resolve the base; do not branch from a stale ref."
+        gc runtime drain-ack
+        exit 1
+    fi
+fi
 BRANCH="polecat/$WORK_BEAD_ID"
-git branch -D "$BRANCH" 2>/dev/null || true          # drop any stale local branch with the same name
-git checkout -B "$BRANCH" "origin/{{base_branch}}"   # force-create from the freshly-fetched remote tip
+git branch -D "$BRANCH" 2>/dev/null || true                # drop any stale local branch with the same name
+git checkout -B "$BRANCH" "$BASE_REF"                      # force-create from the resolved base tip
 gc bd update "$WORK_BEAD_ID" \
   --set-metadata branch="$BRANCH" \
-  --set-metadata fork_sha="$(git rev-parse "origin/{{base_branch}}")"
+  --set-metadata fork_sha="$(git rev-parse "$BASE_REF")"
 ```
 
 Recording the branch early means:
@@ -225,11 +314,29 @@ locally-runnable failures should have been caught before push.
 **Config: test_command = {{test_command}}**
 **Config: affected_tests_command = {{affected_tests_command}}**
 
-**1. Review the diff:**
+**1. Read back the resolved base ref, then review the diff.**
+
+`workspace-setup` recorded the base it actually branched from as
+`metadata.base_ref`. This step runs in a fresh session, so read it back
+rather than assuming `origin/{{base_branch}}` exists — for a local-only
+base it does not, and every command below would die on a bad revision.
+If it is missing or no longer resolves, STOP: reviewing against a
+guessed base reviews the wrong commit set.
+
 ```bash
-git diff origin/{{base_branch}}...HEAD
-git log --oneline origin/{{base_branch}}..HEAD
-git diff --stat origin/{{base_branch}}...HEAD
+CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
+WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+BASE_REF=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.base_ref // empty')
+if [ -z "$BASE_REF" ] || ! git rev-parse --verify --quiet "$BASE_REF^{commit}" >/dev/null; then
+    echo "STOP: base ref unresolved (metadata.base_ref='$BASE_REF')."
+    echo "Re-run workspace-setup to resolve and record the base; do not substitute a different one."
+    gc runtime drain-ack
+    exit 1
+fi
+export BASE_REF
+git diff "$BASE_REF"...HEAD
+git log --oneline "$BASE_REF"..HEAD
+git diff --stat "$BASE_REF"...HEAD
 ```
 
 Check for: bugs, security issues, style violations, missing error handling,
@@ -245,11 +352,18 @@ debug cruft, unintended file changes. Fix anything you find.
 
 **3. Run tests — affected subset if rig provides one, full suite otherwise:**
 ```bash
+: "${BASE_REF:?base ref not resolved — run step 1 of this step first}"
 if [ -n "{{affected_tests_command}}" ]; then
     # Rig has an affected-tests detector. Run only the tests our diff
     # touches — same logic the rig's CI uses to dispatch test workflows.
-    # The command must read `git diff --name-only origin/{{base_branch}}...HEAD`
-    # internally and execute the relevant test subset.
+    # The command must read `git diff --name-only $BASE_REF...HEAD`
+    # internally (BASE_REF is exported in step 1) and execute the relevant
+    # subset. The guard above is load-bearing: fenced blocks run in separate
+    # shells, and an unset BASE_REF makes that diff read `HEAD...HEAD`, which
+    # exits 0 with no files — zero tests run, and the fail-closed clause
+    # below never fires. It must also fail closed: a pipe-style detector
+    # without `set -o pipefail` swallows a failed diff, runs zero tests,
+    # exits 0, and pushes untested work.
     {{affected_tests_command}}
 else
     # No affected detector — run the full suite (legacy behavior).
@@ -267,8 +381,9 @@ submitting.
 
 **4. Ensure everything is committed:**
 ```bash
+: "${BASE_REF:?base ref not resolved — run step 1 of this step first}"
 git status                  # Must be clean
-git log origin/{{base_branch}}..HEAD --oneline  # Must show your commits
+git log "$BASE_REF"..HEAD --oneline  # Must show your commits
 ```
 
 If uncommitted changes exist, commit them with a body explaining what
@@ -309,6 +424,7 @@ handoff contract is broken and the bead is permanently stranded as
 ```bash
 CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
 WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+BASE_REF=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.base_ref // empty')
 CURRENT_BRANCH=$(git branch --show-current)
 EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"
 if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
@@ -321,7 +437,8 @@ if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
     echo ""
     echo "Recover by re-running the workspace-setup step:"
     echo "  - Create the per-bead worktree at \\$(pwd)/worktrees/$WORK_BEAD_ID"
-    echo "  - Create branch '$EXPECTED_BRANCH' from origin/{{base_branch}}"
+    echo "  - Create branch '$EXPECTED_BRANCH' from the recorded base ref '$BASE_REF'"
+    echo "    (metadata.base_ref, resolved by workspace-setup — not a re-guessed base)"
     echo "  - Cherry-pick your commits from $CURRENT_BRANCH onto the new branch"
     echo "  - Re-run submit-and-exit"
     echo ""
@@ -357,12 +474,242 @@ BODY
 This is a belt-and-suspenders check — self-review should have caught this,
 but we never push with untracked work left behind.
 
-**3. Push your branch:**
+**2b. Branch-content gate (fails closed — non-negotiable).**
+
+The branch-shape gate proves the branch is *named* right; it does not prove
+it *contains* anything. A branch created at the base tip and never committed
+to passes every other gate here: the name matches, the tree is clean, and
+`git push` of zero commits succeeds and creates the ref, so push verification
+sees origin == HEAD. The handoff is then stamped and the bead moves forward
+looking like success — a phantom handoff. Only the refinery's own
+no-work-on-branch check catches it, one gate slot later; without that check
+it merges as a no-op and the bead closes with the work undone. An idle worker
+is visible, this is not.
+
+The predicate is deliberately commit-count-only, measured against the resolved
+`$BASE_REF` tip: it catches the phantom handoff — a branch with
+nothing on it — at the cheapest point, before any push. It is weaker than the
+refinery's canonical `branch_has_real_change`, which also requires a non-empty
+`git diff` against the merge-base and therefore additionally catches a net-zero
+branch (commit plus revert). That split is intentional: the refinery stays the
+backstop for net-zero work. Do not "fix" only one side of the pair.
+
+`$BASE_REF` is the base this bead was actually branched from, read back from
+`metadata.base_ref` by the branch-shape gate above — the same block this gate
+already takes `$EXPECTED_BRANCH` from, so it is in scope here for exactly the
+same reason. Counting against a bare `origin/{{base_branch}}` instead would
+report a local-only base as an *unmeasurable* count and halt a perfectly good
+branch under `content_gate_error`. An unresolved `$BASE_REF` still lands in
+that same arm, so reading the resolved base fixes the false halt without
+opening the gate.
+
+`git rev-list` failing is not the same answer as "zero commits", and neither is
+a licence to hand off: a count that is not a plain number halts under its own
+`halt_reason=content_gate_error` rather than falling through to the push. That
+is why the count is matched with `case` instead of `[ "$COMMITS_AHEAD" -eq 0 ]`,
+which evaluates false — and so fails open — on an empty value.
+
 ```bash
-AUTO_PUSH=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata | if has("auto_push") then (.auto_push | tostring) else "" end')
+COMMITS_AHEAD=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null)
+HALT_REASON=""
+case "$COMMITS_AHEAD" in
+    ''|*[!0-9]*) HALT_REASON=content_gate_error ;;
+    0) HALT_REASON=no_commits ;;
+esac
+if [ -n "$HALT_REASON" ]; then
+    echo "BRANCH CONTENT GATE FAILED ($HALT_REASON)"
+    echo "  branch:  $EXPECTED_BRANCH"
+    if [ "$HALT_REASON" = content_gate_error ]; then
+        echo "  commits ahead of $BASE_REF: could not be measured"
+        echo ""
+        echo "The count could not be taken (unresolved, missing or corrupt base ref"
+        echo "'$BASE_REF', a concurrent prune). A tool error is a suspect, not a licence"
+        echo "to merge: an unmeasurable branch is not pushed and no handoff is stamped."
+    else
+        echo "  commits ahead of $BASE_REF: 0"
+        echo ""
+        echo "There is nothing to hand off. Do NOT push and do NOT reassign to the"
+        echo "refinery — an empty branch is a phantom handoff, not a completion."
+        echo ""
+        echo "Uncommitted leftovers are not the cause: the clean-state check above"
+        echo "already committed them. Either the work is sitting on another branch,"
+        echo "or no change was produced at all."
+        echo ""
+        echo "If the honest answer is that no code change is warranted (an"
+        echo "investigation that concluded 'no', a bead already satisfied by main),"
+        echo "that is a legitimate outcome — but it is reported, not handed off."
+    fi
+    echo ""
+    echo "The bead goes back to the pool with this halt recorded; do not re-run"
+    echo "submit-and-exit from this session, whose claim is released below."
+    gc bd update "$WORK_BEAD_ID" \
+      --status=open --assignee="" \
+      --set-metadata gc.routed_to="" \
+      --set-metadata halt_reason="$HALT_REASON" \
+      --append-notes "Halted at submit ($HALT_REASON): no handoff stamped.
+$(cat <<'BODY'
+<State what you investigated and why no code change is warranted, what blocked
+you from producing one, or — for content_gate_error — what left the branch
+unmeasurable. A coordinator reads this to decide next steps.>
+BODY
+)"
+    for ESCALATE_TARGET in mayor "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"; do
+      gc session nudge "$ESCALATE_TARGET" "POLECAT HANDOFF HALT ($HALT_REASON): $WORK_BEAD_ID on $EXPECTED_BRANCH — no handoff stamped; bead returned to the pool open and unassigned. Needs a coordinator decision." \
+        || echo "WARNING: could not nudge $ESCALATE_TARGET about $WORK_BEAD_ID; escalate by hand."
+    done
+    gc runtime drain-ack
+    exit 1
+fi
+```
+
+The halt parks the bead `open` + unassigned + unrouted, which no dispatcher
+tier serves and which witness orphan recovery skips (it filters for beads that
+*have* an assignee). Left at that, this gate would silently displace the
+refinery's `halt_false_completion`, which escalates the same failure class to
+mayor and witness. The nudges above keep that escalation, so moving the catch
+one gate earlier does not make it quieter.
+
+**3. Push gate — FAIL CLOSED, then push:**
+
+Absent metadata is not consent. A rail expressed only in prose is enforced by
+nothing: a bead whose DESCRIPTION says "no push — the mayor publishes" but
+which carries no `auto_push` key used to fall straight through to `git push`,
+because an absent key yielded the empty string and the empty string is not
+`"false"`. Two of the affected rigs are customer repos, and an unintended push
+to a customer repo has already caused an unintended prod deploy once. So the
+gate reads the bead's prose as well as its metadata, and halts rather than
+guess.
+
+The metadata itself is read through a shape-normalising probe, because the one
+thing worse than an unenforced rail is a *recorded* rail the gate silently
+fails to read: `jq`'s `has()` errors on a string, so on a ledger that serves
+`metadata` as a JSON string the explicit `auto_push=false` opt-out used to
+evaluate to the empty string and the bead was pushed (gci-to0l). Object, null
+and JSON-string payloads are all read; anything else halts.
+
+The `auto_push` VOCABULARY is closed and case-folded: `false`/`no`/`0` are the
+opt-out, `true`/`yes`/`1` are consent, a key present with a JSON `null` value is
+"nothing recorded". Anything else is an unreadable decision, not consent — the
+key is hand-written by humans following the mayor prompt, and reading `False`
+or `no` as "push" would fail open on exactly the beads that tried hardest to
+say no.
+
+Five outcomes, evaluated in order:
+
+| `auto_push` | Bead prose | Outcome |
+|---|---|---|
+| unreadable payload, or a value outside the vocabulary | not read | halt at branch-ready **and escalate** — a decision that cannot be read or understood cannot be shown to lack the opt-out |
+| `false`, `no`, `0` (any case) | not read | halt at branch-ready — the explicit opt-out |
+| absent, or present with a null value | asserts a no-push rail | halt at branch-ready **and escalate** — ambiguous, a human owns the call |
+| absent, or present with a null value | no rail | push + refinery handoff — the normal path |
+| `true`, `yes`, `1` (any case) | not read | push + refinery handoff — explicit consent |
+
+```bash
+WORK_JSON=$(gc bd show "$WORK_BEAD_ID" --json)
+BRANCH=$(git branch --show-current)
+
+# The metadata probe — NORMALISED, and fail CLOSED on a payload it cannot read.
+#
+# jq's has() ERRORS on a string, printing nothing to stdout, so the old probe
+# turned a string-shaped metadata payload into "" — and "" is not "false", so
+# outcome (a), the EXPLICIT opt-out, silently stopped firing and control
+# reached git push. A fail-OPEN on the one outcome nobody expects to be
+# conditional, and it inverted the incentive the whole no-push-rail arc has
+# been pushing: a bead that recorded its rail properly AS METADATA, and said
+# nothing in prose, is exactly the bead with no prose for (b) to match on.
+# Reproduced against this gate's own shipped text, 2026-09-05: explicit
+# auto_push=false + string-shaped metadata -> PUSH.
+#
+# MEASURED 2026-09-05 across all 7 active ledgers (control, sb, sb-app,
+# gas-city, flinders, arnotts, detmold) through this gate's own probe shape
+# (gc bd show <id> --json | jq of .[0].metadata | type): every one serves an
+# OBJECT when metadata is present and NULL when it is absent. No ledger serves
+# a string today, so this is a latent trap rather than a live hole — but the
+# shape is not a guarantee this gate owns: metadata is whatever the ledger
+# binding serialises, it varied by rig when the detector this arc grew out of
+# was written (that detector normalises object / string / null for exactly this
+# reason), and nothing pins it. The normalisation is lifted here now rather
+# than on the day it bites.
+#
+#   object -> read it.
+#   null   -> the bead carries no metadata. A legitimate live shape on every
+#             rig and the MAJORITY of beads (308 of the 410 open/in_progress
+#             beads across the six queryable ledgers), so it must fall through
+#             to (b) and never halt.
+#   string -> a JSON-encoded object. Parse it, then read it.
+#   anything else, a string that does not parse to an object, an auto_push
+#             value outside the closed vocabulary, or a probe that fails
+#             outright -> UNREADABLE, handled at (a0) below. The vocabulary is
+#             closed on purpose: the key is hand-written by humans, and reading
+#             `False` or `no` as "any other value -> explicit consent" fails
+#             open on the beads that tried hardest to say no. Note this is
+#             the OPPOSITE default to the (b) prose scan's empty INPUT case:
+#             there, nothing said is a legitimate "no rail"; here, nothing read
+#             is a failure to retrieve a decision that may well exist.
+AUTO_PUSH=""
+META_UNREADABLE=""
+if [ -z "$WORK_JSON" ]; then
+  META_UNREADABLE=1
+elif ! AUTO_PUSH=$(printf '%s' "$WORK_JSON" | jq -r '
+      if (type != "array") or (length == 0) or ((.[0] | type) != "object")
+      then error("no bead record in the payload")
+      else (.[0].metadata
+            | if   type == "object" then .
+              elif type == "null"   then {}
+              elif type == "string" then (fromjson? // "unparseable")
+              else "not-an-object" end)
+           | if type != "object" then error("metadata is not an object")
+             elif has("auto_push") then (.auto_push | tostring | ascii_downcase
+                   | if   . == "false" or . == "no"  or . == "0" then "false"
+                     elif . == "true"  or . == "yes" or . == "1" then "true"
+                     elif . == "null" then ""
+                     else error("auto_push value is outside the vocabulary")
+                     end)
+             else "" end
+      end' 2>/dev/null); then
+  META_UNREADABLE=1
+fi
+
+# (a0) The payload could not be read. Absent metadata is not consent, and
+# UNREADABLE metadata is not absent metadata — it is a bead whose recorded
+# decision the gate failed to retrieve. Reading the prose instead would be
+# guessing, so halt and hand it to a human.
+if [ -n "$META_UNREADABLE" ]; then
+  echo "metadata unreadable: halting at branch-ready (fail closed) and escalating."
+  # --append-notes, NEVER --notes — same rule as the other two halts (gci-3f5u).
+  gc bd update "$WORK_BEAD_ID" \
+    --status=open --assignee="" \
+    --set-metadata branch="$BRANCH" \
+    --set-metadata target={{base_branch}} \
+    --set-metadata branch_ready=true \
+    --set-metadata halt_reason=metadata_unreadable \
+    --set-metadata gc.routed_to="" \
+    --append-notes "Branch ready: the push gate could not read this bead's push decision — the ledger read returned no bead record, the metadata came in a shape the probe cannot decode, or auto_push carried a value outside the vocabulary (false/no/0 to halt, true/yes/1 to push). A decision that cannot be read cannot be shown to lack auto_push=false, so the gate halted instead of pushing. Re-record the push decision in the vocabulary, then re-sling."
+  gc mail send "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness" \
+    -s "HELP: push-gate metadata unreadable on $WORK_BEAD_ID [HIGH]" \
+    -m "Halted at branch-ready instead of pushing.
+
+Bead:   $WORK_BEAD_ID
+Branch: $BRANCH (local only — NOT pushed)
+Reason: the ledger read returned no readable bead record, served the metadata
+        in a shape the gate cannot decode (expected an object, a JSON string,
+        or null), or carried an auto_push value outside the vocabulary
+        (false/no/0 halt, true/yes/1 push, case-folded). The gate cannot tell
+        'halt' from 'go', so it halted.
+
+Resolve: check the ledger is healthy, then record the decision as metadata —
+  gc bd update $WORK_BEAD_ID --set-metadata auto_push=false   # confirm the halt
+  gc bd update $WORK_BEAD_ID --set-metadata auto_push=true    # authorise the push
+and re-sling. Use --set-metadata so branch and gc.routed_to survive."
+  gc runtime drain-ack
+  exit 0
+fi
+
+# (a) Explicit opt-out. Never read the prose — the metadata already decided.
 if [ "$AUTO_PUSH" = "false" ]; then
   echo "auto_push=false: halting at branch-ready (no push, no refinery handoff)"
-  BRANCH=$(git branch --show-current)
+  # --append-notes, NEVER --notes. --notes REPLACES the entire notes field, so a
+  # halt note written with it destroys whatever the requester left on the bead.
   gc bd update "$WORK_BEAD_ID" \
     --status=open --assignee="" \
     --set-metadata branch="$BRANCH" \
@@ -370,7 +717,136 @@ if [ "$AUTO_PUSH" = "false" ]; then
     --set-metadata branch_ready=true \
     --set-metadata halt_reason=auto_push_false \
     --set-metadata gc.routed_to="" \
-    --notes "Branch ready: auto_push=false (no push, no refinery handoff)"
+    --append-notes "Branch ready: auto_push=false (no push, no refinery handoff)"
+  gc runtime drain-ack
+  exit 0
+fi
+
+# (b) No decision recorded. Scan DESCRIPTION + NOTES for a no-push rail.
+# Lines about pushing *to main* are a DIFFERENT rail — one every polecat
+# already obeys, since it pushes a feature branch and never main — so the
+# PHRASE that states it is stripped out and the REMAINDER is matched. Without
+# that every bead quoting the standing "polecats do not push to main" rule
+# would halt, and a gate that cries wolf gets routed around.
+#
+# Strip the PHRASE, not the LINE. A line-granular exclusion took any real rail
+# that shared a line with a push-to-main mention down with it, and its target
+# list included bare `origin` — the remote this gate is about to push to — so
+# "do not push to origin" was read as the standing rule. MEASURED 2026-09-08
+# against this gate's own shipped patterns: 7 real rail wordings scored zero
+# hits and the gate PUSHED, among them "never push to origin — the customer
+# tenant is frozen" and "Polecats do not push to main. HALT branch-ready for
+# this bead." Narrowing the destination alone closes only 5 of those 7; the
+# other 2 need the strip, because rail and quote share one line. All 15
+# rail-detection rows keep their verdicts under the strip.
+#
+# The destination must end on a word boundary, or "never push to
+# origin/main-line-customer" loses its rail to the `origin/main` prefix. `/` is
+# in the protected class for the same reason `-` and `_` are: "never push to
+# main/customer" names a branch UNDER main, not main, and no English sentence
+# continues "main/…". `.` cannot join them — "Polecats never push to main. Open
+# a PR." would keep its quote and cry wolf — so the dotted-branch case stays in
+# the residual below. The text is downcased first because the strip has to catch
+# "Do Not Push To Main" and sed's case-insensitive flag is GNU-only; the match
+# grep is already -i, so downcasing upstream costs nothing.
+#
+# KNOWN RESIDUAL, two shapes, both measured 2026-09-09 and both ended by
+# recording the rail as auto_push=false:
+#   1. A rail whose ONLY signal sits inside the stripped phrase still reads as
+#      the standing rule — "never push to main or anywhere else" pushes. So does
+#      the dotted-branch form "never push to main.customer, it is frozen", which
+#      is the same shape: `.` is unprotectable without sentence semantics.
+#      Separating these needs sentence semantics, not a regex, and the cheap cure
+#      (keep the line whenever the strip would remove every signal) halts every
+#      bead that quotes the standing rule, which is the cry-wolf failure this
+#      filter exists to prevent.
+#   2. A NORMATIVE sentence about some other system's pushing — "Establish why
+#      the sync should not push twice" — halts, because the match arms below
+#      cannot tell a requirement about the subject under repair from a rail about
+#      this branch. Over-halting is the recoverable direction (a human records
+#      auto_push and re-slings) where a missed rail is not, so this is left as a
+#      halt rather than narrowed.
+#
+# Comments are deliberately out of scope: they are discussion, not standing
+# instructions, and they self-match on any bead that merely talks about
+# no-push rails.
+if [ -z "$AUTO_PUSH" ]; then
+  # Extract, downcase and strip in CHECKED stages. grep -c prints a count
+  # whenever it runs, so a failure INSIDE one long pipe arrives at the match
+  # grep as an empty stream and scores 0 — a push. Each stage that can fail is
+  # its own command and any failure sets RAIL_HIT=1: an undetermined rail is
+  # treated as an asserted one. ${RAIL_HIT:-1} then covers the last stage,
+  # where an empty result can only mean grep itself never ran.
+  RAIL_HIT=""
+  if ! PROSE=$(printf '%s' "$WORK_JSON" | jq -r '(.[0].description // ""), (.[0].notes // "")' 2>/dev/null); then
+    RAIL_HIT=1
+  elif ! LOWER=$(printf '%s' "$PROSE" | tr '[:upper:]' '[:lower:]'); then
+    RAIL_HIT=1
+  elif ! SCAN=$(printf '%s' "$LOWER" | sed -E 's#push(ing|es)?[[:space:]]+(directly[[:space:]]+)?to[[:space:]]+(origin/)?(main|master|trunk)([^-[:alnum:]_/]|$)# #g'); then
+    RAIL_HIT=1
+  else
+    # The match arms mirror the vocabulary this gate blesses elsewhere, or the
+    # gate fails open on the prose channel for words it accepts in metadata.
+    # `must not push`/`should not push` carry the same ([^e]|$) guard as
+    # `never push` for consistency, though a modal cannot take the -es/-ed form
+    # that guard exists for, so on those two arms it only catches ungrammatical
+    # prose. The value arm takes the FULL closed vocabulary — `no` and `0` are
+    # the same word as `false` at :450-455, and reading them as consent here
+    # while halting on them there is the mismatch this gate is about.
+    RAIL_HIT=$(printf '%s' "$SCAN" | grep -Eic 'no[- ]push([^e]|$)|do not push|don.t push|never push([^e]|$)|(must|should) not push([^e]|$)|(mayor|operator|human) publishes|halt[- ]*(at[- ]+)?branch[- ]ready|branch[- ]ready[- ]+halt|auto_push[[:space:]]*=[[:space:]]*(false|no|0)')
+  fi
+  if [ "${RAIL_HIT:-1}" -gt 0 ]; then
+    echo "NO-PUSH RAIL IN PROSE + auto_push ABSENT — halting at branch-ready (fail closed) and escalating."
+    # --append-notes, NEVER --notes. This halt cites a rail that is frequently
+    # written in the very notes a bare --notes would replace, so replacing them
+    # would delete the evidence the halt note tells the reader to go and read.
+    gc bd update "$WORK_BEAD_ID" \
+      --status=open --assignee="" \
+      --set-metadata branch="$BRANCH" \
+      --set-metadata target={{base_branch}} \
+      --set-metadata branch_ready=true \
+      --set-metadata halt_reason=no_push_rail_unresolved \
+      --set-metadata gc.routed_to="" \
+      --append-notes "Branch ready: DESCRIPTION/NOTES assert a no-push rail but the bead carries no auto_push metadata, so the rail is unenforceable. Halted instead of guessing. Whoever owns the rail: set auto_push=false to confirm the halt, or auto_push=true to authorise the push, then re-sling."
+    gc mail send "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness" \
+      -s "HELP: no-push rail unresolved on $WORK_BEAD_ID [HIGH]" \
+      -m "Halted at branch-ready instead of pushing.
+
+Bead:   $WORK_BEAD_ID
+Branch: $BRANCH (local only — NOT pushed)
+Reason: DESCRIPTION/NOTES assert a no-push rail, but metadata.auto_push is
+        absent. The push gate cannot tell 'halt' from 'go', so it halted.
+
+Resolve: read the rail, then record the decision as metadata —
+  gc bd update $WORK_BEAD_ID --set-metadata auto_push=false   # confirm the halt
+  gc bd update $WORK_BEAD_ID --set-metadata auto_push=true    # authorise the push
+and re-sling. Use --set-metadata so branch and gc.routed_to survive."
+    gc runtime drain-ack
+    exit 0
+  fi
+fi
+
+# (c) Normal path.
+# Refinery hand-off precondition. mol-refinery-patrol resolves the merge
+# target through origin (rebase, ancestry check, merge worktree), so a base
+# that exists only in this clone cannot be resolved there — and the refinery
+# reads the resulting invalid-upstream error as a merge conflict: it deletes
+# the workflow, reopens the bead, stamps a rejection reason computed from the
+# same unresolvable ref, and bounces the work to a polecat that hits the same
+# wall. Hand over only a target the refinery can actually resolve.
+git fetch --prune origin >/dev/null 2>&1 || true
+if ! git show-ref --verify --quiet "refs/remotes/origin/{{base_branch}}"; then
+  echo "base branch {{base_branch}} is local-only: halting at branch-ready (no push, no refinery handoff)"
+  BRANCH=$(git branch --show-current)
+  gc bd update "$WORK_BEAD_ID" \
+    --status=open --assignee="" \
+    --set-metadata branch="$BRANCH" \
+    --set-metadata target={{base_branch}} \
+    --set-metadata branch_ready=true \
+    --set-metadata halt_reason=base_branch_local_only \
+    --set-metadata gc.routed_to="" \
+    --append-notes "Branch ready: base branch {{base_branch}} does not exist on origin, so the refinery cannot merge it. Push the base branch, then re-run submit-and-exit."
+  gc mail send "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness" -s "polecat halted: base_branch_local_only ($WORK_BEAD_ID)" -m "Work is committed on branch $BRANCH, but base branch {{base_branch}} does not exist on origin, so the refinery cannot merge it. Push the base branch, then re-run submit-and-exit for $WORK_BEAD_ID."
   gc runtime drain-ack
   exit 0
 fi
@@ -414,15 +890,46 @@ git branch -D "$BRANCH"              # Branch is pushed; refinery owns it now
 
 **5. Update metadata on the work bead:**
 ```bash
+# --append-notes, NEVER --notes — see the note under this block.
 gc bd update "$WORK_BEAD_ID" \
   --set-metadata target={{base_branch}} \
-  --notes "Implemented: <brief summary>"
+  --set-metadata handoff_stage=target_recorded \
+  --append-notes "Implemented: <brief summary>"
 ```
 Branch was recorded in workspace-setup and is already in metadata.
 This adds the target for the refinery. If an existing pull request was
 provided by the caller, `metadata.existing_pr` is preserved for refinery
 validation. The refinery records canonical `pr_url` only after verifying
 the PR is open and matches the branch, base, and origin repository.
+
+**Every `gc bd update` call in this step uses `--append-notes`. Never use
+`--notes`.** The two flags do not differ in emphasis: `--notes` REPLACES the
+whole notes field, `--append-notes` appends to it with a newline separator. The
+bead you are finishing is not yours — it carries the requester's instructions,
+and on a rig it may carry an operator's hold or a prior polecat's handover. A
+closing note written with `--notes` deletes all of it, in one call, with no
+warning and no diff. That is bead-history destruction by the normal happy path,
+which is why it went unnoticed twice.
+
+The rule binds the two halt writes in item 3 hardest, not least. Both of them
+tell the reader to go and act on what the bead says — the ambiguity halt asks
+whoever owns the rail to resolve a rail that is, in the usual case, written in
+the very notes a bare `--notes` would have just deleted. The identity-stamped
+bead record is also the city's anchor against nudge-text spoofing, so a rail
+that silently erases it is a P1, not a formatting nit. The same rule holds
+anywhere a formula writes a note onto a bead it did not create: append.
+
+`handoff_stage=target_recorded` is the stage marker the witness's Step 3a
+uses to recognize a polecat that crashed between this step and step 6 and to
+complete the handoff instead of respinning the work. It must be written here
+and nowhere else: `target` cannot carry that meaning because `gc sling`
+accepts it as a mint-time input, nothing ever unsets it, and it survives
+refinery rejection. Every path that invalidates "step 5 completed" clears the
+marker — `workspace-setup` on each fresh attempt, and both `mol-refinery-patrol`
+rejection paths. Every branch-ready halt in the push gate above
+(`auto_push_false`, `metadata_unreadable`, `no_push_rail_unresolved`) returns
+before this step, as do the push-failure paths, so an unpushed branch never
+carries the marker.
 
 **6. Reassign to refinery:**
 ```bash

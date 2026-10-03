@@ -23,6 +23,7 @@ def _optional_bool(enabled: bool, disabled: bool, *, enable_flag: str, disable_f
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Bind a Discord conversation to one or more named sessions")
     parser.add_argument("--kind", required=True, choices=("dm", "room"), help="Binding kind")
+    parser.add_argument("--app", default="", help="Optional named app identity")
     parser.add_argument("--guild-id", default="", help="Discord guild id")
     parser.add_argument("--enable-ambient-read", action="store_true", help="Accept unmentioned messages in a bound room")
     parser.add_argument("--disable-ambient-read", action="store_true", help="Disable unmentioned room intake")
@@ -100,18 +101,70 @@ def main(argv: list[str]) -> int:
         raise SystemExit("room policy flags require --kind room")
 
     try:
+        app_name = common.validate_app_name(args.app)
+        loaded_config = common.load_config()
+        channel_metadata: dict[str, Any] | None = None
+        effective_guild_id = str(args.guild_id).strip()
+        if app_name:
+            common.resolve_app_config(loaded_config, app_name)
+        if args.kind == "room":
+            declared_policy_reason = common.outbound_policy_reason(
+                loaded_config,
+                effective_guild_id,
+                args.conversation_id,
+                app_name=app_name,
+            )
+            if declared_policy_reason == "guild_not_allowed" and effective_guild_id:
+                display_name = app_name or "default"
+                raise ValueError(f"Discord app {display_name!r} policy rejects binding: {declared_policy_reason}")
+            app_policy = common.resolve_app_policy(loaded_config, app_name)
+            has_outbound_policy = bool(
+                app_policy.get("guild_allowlist")
+                or app_policy.get("channel_allowlist")
+            )
+            if has_outbound_policy:
+                bot_token = common.load_bot_token(app_name)
+                if not bot_token:
+                    display_name = app_name or "default"
+                    raise ValueError(f"Discord bot token is not configured for app {display_name!r}")
+                channel_scope = common.describe_room_channel_scope(
+                    args.conversation_id,
+                    bot_token=bot_token,
+                )
+                actual_guild_id = str(channel_scope.get("guild_id", "")).strip()
+                if effective_guild_id and actual_guild_id and effective_guild_id != actual_guild_id:
+                    raise ValueError(
+                        f"--guild-id {effective_guild_id!r} does not match Discord channel guild {actual_guild_id!r}"
+                    )
+                effective_guild_id = actual_guild_id or effective_guild_id
+                channel_metadata = common.normalize_binding_channel_metadata(channel_scope)
+                parent_channel_id = (
+                    str(channel_scope.get("thread_parent_id", "")).strip()
+                    or args.conversation_id
+                )
+                policy_rejection = common.outbound_policy_reason(
+                    loaded_config,
+                    effective_guild_id,
+                    parent_channel_id,
+                    app_name=app_name,
+                )
+                if policy_rejection:
+                    display_name = app_name or "default"
+                    raise ValueError(f"Discord app {display_name!r} policy rejects binding: {policy_rejection}")
         config = common.set_chat_binding(
-            common.load_config(),
+            loaded_config,
             args.kind,
             args.conversation_id,
             args.session_name,
-            guild_id=args.guild_id,
+            guild_id=effective_guild_id,
+            app_name=app_name,
             policy=room_policy or None,
+            channel_metadata=channel_metadata,
         )
-    except ValueError as exc:
+    except (ValueError, common.DiscordAPIError) as exc:
         raise SystemExit(str(exc)) from exc
 
-    binding = common.resolve_chat_binding(config, common.chat_binding_id(args.kind, args.conversation_id))
+    binding = common.resolve_chat_binding(config, common.chat_binding_id(args.kind, args.conversation_id, app_name))
     print(json.dumps(binding or {}, indent=2, sort_keys=True))
     return 0
 

@@ -6,5 +6,6 @@ Examples:
   gc discord status --json
 
 The snapshot includes the public interactions URL, the tenant admin URL,
-redacted app configuration, workflow mappings, chat bindings, recent `/gc fix`
-requests, and recent explicit chat publishes.
+redacted default and named app configuration, per-app token presence and
+gateway health, workflow mappings, chat bindings, recent `/gc fix` requests,
+and recent explicit chat publishes. Token values are never shown.

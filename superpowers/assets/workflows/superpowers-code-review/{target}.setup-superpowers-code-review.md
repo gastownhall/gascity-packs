@@ -9,11 +9,24 @@ the completed drain manifest. Use these exact handoff paths:
 - gap-analysis report: `<artifact_root>/gap-analysis-report.md`
 - review fix summary: `<artifact_root>/review-fix-summary.md`
 
+`<artifact_root>` is relative to the rig repository root. Create and write
+these files there, and record the same rig-relative paths in root metadata. Do
+not use a per-bead worktree as the artifact root: that worktree is disposable
+and inaccessible to later review and finalization lanes.
+
 Write the compact context file to the code-review context path. The context
 file must include the workflow root id, source bead id, implementation convoy
 id, implemented member bead ids, task summary paths, commit hashes, changed
 files, requirements path, plan path, decomposition path, and the exact report
 paths above.
+
+For a direct, standalone review (no implementation convoy, drain manifest,
+requirements, plan, or decomposition is available), write the literal context
+field `implementation_convoy_id: not provided` and mark each unavailable
+upstream path `not provided`. Do not invent an external convoy or infer a full
+build workflow from the review subject alone. Those markers distinguish
+standalone review scope from a build-derived review whose required artifacts are
+missing.
 
 Update workflow root metadata before closing:
 

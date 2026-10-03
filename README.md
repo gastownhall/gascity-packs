@@ -150,6 +150,13 @@ Browse the tree for the current set; each pack has its own README.
 - [cass](./cass) adds a shared `cass-search` prompt fragment and Claude skill
   overlay for searching past coding-agent sessions.
 
+### Oversight packs
+
+- [oversight-rig](./oversight-rig) adds one rig-scoped project lead per rig and
+  includes an optional `city-executive-status` skill for maintaining a
+  shareable, Obsidian-compatible portfolio brief. Its status schedules are
+  examples only and remain inactive until configured by the consuming city.
+
 ### Build methodology packs
 
 Raw-framework subagents become Gas City fanouts. The vendored methodology text

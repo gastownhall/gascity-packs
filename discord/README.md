@@ -83,11 +83,64 @@ Create a Discord app in the Developer Portal, then import the app metadata and
 bot token:
 
 ```bash
-gc discord import-app \
-  --application-id 123456789012345678 \
-  --public-key 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --bot-token "$DISCORD_BOT_TOKEN"
+bao kv get -field=bot_token internal/kv/example/agents/default/discord |
+  gc discord import-app \
+    --application-id 123456789012345678 \
+    --public-key 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    --bot-token-file /dev/stdin
 ```
+
+The command above configures the default app. Add separate chat identities
+with stable lowercase app names:
+
+```bash
+bao kv get -field=bot_token internal/kv/example/agents/ollie/discord |
+  gc discord import-app \
+    --app ollie \
+    --application-id 223456789012345678 \
+    --public-key abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789 \
+    --bot-token-file /dev/stdin \
+    --guild-allowlist 323456789012345678 \
+    --channel-allowlist 423456789012345678
+
+bao kv get -field=bot_token internal/kv/example/agents/olivia/discord |
+  gc discord import-app \
+    --app olivia \
+    --application-id 523456789012345678 \
+    --public-key 123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0 \
+    --bot-token-file /dev/stdin \
+    --guild-allowlist 323456789012345678 \
+    --channel-allowlist 423456789012345678
+```
+
+Named apps have independent policy, token files, gateway connections, chat
+bindings, ingress receipts, and health counters. The default token remains at
+`secrets/bot-token.txt`; named tokens use
+`secrets/bot-token-<app>.txt`. All token files are mode `0600`.
+Named imports authenticate the supplied token with Discord and reject it before
+any local mutation unless its bot user ID matches `--application-id`. Omitted
+allowlist flags preserve an app's existing policy during credential rotation.
+An explicitly supplied empty token or token file is an error, so a failed Bao
+read cannot silently update metadata while retaining a stale credential.
+An app name is pinned to its first `application_id`; import a replacement under
+a new app name instead of changing that identity in place. Config and token
+persistence share one lock and roll back together if the credential write
+fails.
+
+Run `gc service restart discord-gateway` after adding, removing, or rotating
+named apps and credentials.
+The gateway starts one connection per configured app and staggers Discord
+identify requests. A failed named connection reconnects independently and does
+not stop the other bots.
+
+Before rolling this pack back to a version without multi-app support, back up
+`.gc/services/discord/data/config.json` and the service secrets directory.
+Older config mutators do not understand the `apps` registry and can remove it
+when they rewrite schema-v1 config; do not run them until the multi-app config
+has been restored or intentionally retired.
+
+Named apps cover direct chat in this release. Interactions, `/gc` commands,
+workflow mappings, and launcher rooms continue to use the default app.
 
 After import, point the app's Interactions Endpoint URL at:
 
@@ -126,6 +179,32 @@ gc discord bind-room --guild-id 223456789012345678 --enable-ambient-read 3234567
 gc discord bind-room --guild-id 223456789012345678 --enable-ambient-read --allow-untargeted-ambient-delivery 323456789012345678 randy
 gc discord bind-room --guild-id 223456789012345678 --enable-peer-fanout 323456789012345678 corp--sky corp--priya
 ```
+
+Bind several bot identities to the same room by selecting an app for each
+binding:
+
+```bash
+gc discord bind-room --app ollie --guild-id 223456789012345678 323456789012345678 teams.lead
+gc discord bind-room --app olivia --guild-id 223456789012345678 323456789012345678 teams.pm
+gc discord bind-room --app sky --guild-id 223456789012345678 323456789012345678 teams.designer
+```
+
+Mentioning a bot routes only through that app's binding. An inbound receipt
+records the app, and `gc discord reply-current` automatically publishes with
+the same app and token. For an operator-controlled send, select it explicitly:
+
+```bash
+gc discord publish --app ollie --binding room:323456789012345678 --body-file ./reply.txt
+```
+
+An exact default binding remains the backward-compatible result when `--app`
+is omitted. If there is no default binding, one matching named binding can be
+resolved automatically; several named candidates are ambiguous and fail
+closed.
+
+Guild and parent-channel policy applies to both the default app and named apps.
+Room bind and publish verify Discord's actual channel scope with the selected
+bot token; `--guild-id` is a consistency hint, not an authority boundary.
 
 Launcher mode is the new room-first UX:
 
@@ -182,12 +261,51 @@ Inbound behavior in v0:
 - peer fanout for room publishes is opt-in per binding and disabled by default
 - peer-triggered publishes only fan out when they explicitly mention target `@session_name` values
 
+## Reading An Inbound Message
+
+Every inbound message is written to `.gc/services/discord/data/chat-ingress/in-<message-id>.json`
+before it is routed. Four fields describe the body:
+
+| field | what it is |
+| --- | --- |
+| `body` | the whole message, bot mention removed, line breaks as typed |
+| `body_length` | `len(body)` |
+| `body_preview` | `body` flattened to one line and clipped to 160 chars for status lines |
+| `body_truncated` | `true` when the 160-char clip dropped something. It is computed from the flattened preview, so a heavily line-broken body can be `false` while `body` and `body_preview` still differ in shape. |
+
+**Read `body`. `body_preview` is for status lines.** They differ whenever
+`body_truncated` is true, and a clipped preview does not announce itself — one
+that happens to end on a sentence boundary reads exactly like a whole message.
+That cost the mayor two acted-on fragments on 2026-07-30, one of which dropped
+the scope limit on the work it was authorizing.
+
+Records written before this shape existed have only `body_preview` and no
+`body_truncated`. A missing flag means "unknown", not "short" — for those, the
+closest signal is `message_debug.gateway_content_length`, which is an upper
+bound — it is measured before the bot mention is stripped.
+
+The session receives the same message a second time in the deferred
+`<discord-event>` reminder's `untrusted_body_json`. That copy is never
+truncated, but it is flattened to a single line, so `body` is the only copy
+that keeps the author's line breaks. It also lands a turn or more later, so
+anything watching the ingress directory sees the file first.
+
 ## Inspect Status
 
 ```bash
 gc discord status
 gc discord status --json
 ```
+
+Status lists the default and named apps separately, including token presence,
+gateway state, and per-app counters. The gateway endpoint also reports an
+aggregate state without letting one failed bot hide or take down healthy bots.
+Status never prints token values.
+
+`Recent Chat Ingress` previews are redacted on this surface, so the line never
+shows message text. It does append `[CLIPPED — N chars total; ...]` when the
+record was clipped, which is how you tell a partial record from a whole one
+without reading the body.
 
 ## Workflow Helper
 

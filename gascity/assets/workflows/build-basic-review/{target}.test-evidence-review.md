@@ -5,6 +5,17 @@ command, proof command, changed files, and remaining risks. Verify that the
 commands actually cover the acceptance criteria claimed by the requirements and
 plan.
 
+Before evaluating proof, read `gc.build.code_review_context_path` from the
+workflow root bead and use its `## Implementation Worktrees` section as the
+authority for where commands must run. `gc.work_dir` is the launcher rig root,
+not the implementation worktree. Do not run evidence commands from the launcher
+checkout. Resolve relative command paths against the listed implementation
+worktree, run `cd "$WORKTREE"`, and verify `pwd -P` equals that worktree before
+executing proof commands. If the context is missing a usable implementation
+worktree, write an iterate finding against review setup.
+
+Contract: `gc.work_dir` is the launcher rig root, not the implementation worktree.
+
 Write concrete findings under the build artifact root. Distinguish missing
 proof from real product defects so the fix lane can either run the missing
 command or change code.

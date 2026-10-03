@@ -1,0 +1,4 @@
+interface:
+  display_name: "City Executive Status"
+  short_description: "Maintain portable city and project briefs"
+  default_prompt: "Use $city-executive-status to configure and maintain a concise executive status brief for my projects."

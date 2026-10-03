@@ -28,9 +28,23 @@ only; the rationale belongs in YAML front matter.
 
 If both review lanes approve, perform a no-op pass, update workflow root
 metadata with `gc.build.code_review_status=approved`, and close with
-`code_review.verdict=done`. If required fixes remain after processing, update
+`code_review.verdict=done`.
+
+If either review lane returns `iterate`, process its required findings and
+write the repair evidence. Even when the repair and focused tests pass, update
 workflow root metadata with `gc.build.code_review_status=draft` and close with
-`code_review.verdict=iterate`.
+`code_review.verdict=iterate`: the next attempt must independently re-review
+the repaired implementation. This lane must not self-approve its own remediation.
+Only a later attempt whose reviewer lanes both approve may close
+with `code_review.verdict=done`.
+
+An independently invoked review may have no requirements, plan, or
+decomposition artifact. When the review context marks those inputs as not
+provided and says `implementation_convoy_id: not provided`, record the absence
+in the fix summary as non-blocking for this standalone review; it does not make
+a required code finding remain open. Set `iterate` only for unresolved findings
+in the reviewed implementation, a required artifact that is missing or invalid,
+or a claimed resolution that cannot be verified.
 
 Always close with `gc.outcome=pass`, `code_review.verdict=done|iterate`,
 `code_review.report_path=<review fix summary path>`, and

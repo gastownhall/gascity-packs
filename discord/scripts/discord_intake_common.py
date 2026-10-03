@@ -13,12 +13,13 @@ import re
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 INTERACTIONS_SERVICE_NAME = "discord-interactions"
 ADMIN_SERVICE_NAME = "discord-admin"
@@ -38,6 +39,12 @@ DEFAULT_SUPERVISOR_API_BASE = "http://127.0.0.1:8372"
 LOCAL_API_BINDS = {"", "0.0.0.0", "::", "[::]", "*"}
 DISCORD_RATE_LIMIT_RETRIES = 2
 GC_API_REQUEST_TIMEOUT_SECONDS = 20.0
+GC_API_ASYNC_RESULT_TIMEOUT_SECONDS = 4 * 60.0
+GC_EVENT_REQUEST_FAILED = "request.failed"
+GC_EVENT_SESSION_MESSAGE_SUCCEEDED = "request.result.session.message"
+GC_EVENT_SESSION_SUBMIT_SUCCEEDED = "request.result.session.submit"
+GC_OPERATION_SESSION_MESSAGE = "session.message"
+GC_OPERATION_SESSION_SUBMIT = "session.submit"
 SERVICE_SOCKET_PROBE_TIMEOUT_SECONDS = 0.2
 NON_ROUTABLE_SESSION_STATES = {"", "closed", "stopped", "orphaned", "quarantined"}
 PEER_DELIVERY_TIMEOUT_SECONDS = 10.0
@@ -55,7 +62,11 @@ ROOM_LAUNCH_IDENTITY_RESOLVE_DELAY_SECONDS = 0.25
 ROOM_LAUNCH_READY_RESOLVE_TIMEOUT_SECONDS = 90.0
 ROOM_LAUNCH_READY_RESOLVE_DELAY_SECONDS = 0.5
 ROOM_LAUNCH_PRIMER_VERSION = 1
-AGENT_HANDLE_SEGMENT = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+# Dots are legal *inside* a segment (pack-qualified names like gasburger.mayor)
+# but never at the end: a mention that closes a sentence ("ask @@sky.") must
+# resolve to `sky`, not `sky.`.
+AGENT_HANDLE_SEGMENT = re.compile(r"^[a-z](?:[a-z0-9_.-]{0,30}[a-z0-9_-])?$")
+DISCORD_APP_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
 
 class DiscordAPIError(RuntimeError):
@@ -66,6 +77,24 @@ class DiscordAPIError(RuntimeError):
 
 class GCAPIError(RuntimeError):
     pass
+
+
+class GCAPITransportError(GCAPIError):
+    pass
+
+
+class GCAPIResultUnknown(GCAPIError):
+    pass
+
+
+class GCAPIRequestCancelled(GCAPIResultUnknown):
+    pass
+
+
+class GCAPIRequestFailed(GCAPIError):
+    def __init__(self, message: str, payload: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.payload = copy.deepcopy(payload)
 
 
 def utcnow() -> str:
@@ -152,6 +181,10 @@ def config_path() -> str:
     return os.path.join(data_dir(), "config.json")
 
 
+def config_mutation_lock_path() -> str:
+    return os.path.join(locks_dir(), "config.lock")
+
+
 def secret_path(name: str) -> str:
     return os.path.join(secrets_dir(), name)
 
@@ -166,7 +199,10 @@ def published_services_dir() -> str:
     return os.path.join(root, ".gc", "services", ".published")
 
 
-def gateway_status_path() -> str:
+def gateway_status_path(app_name: str = "") -> str:
+    normalized_app_name = validate_app_name(app_name)
+    if normalized_app_name:
+        return os.path.join(data_dir(), f"gateway-status-{normalized_app_name}.json")
     return os.path.join(data_dir(), "gateway-status.json")
 
 
@@ -239,6 +275,7 @@ def default_config() -> dict[str, Any]:
         "app": {
             "command_name": COMMAND_NAME_DEFAULT,
         },
+        "apps": {},
         "policy": {
             "guild_allowlist": [],
             "channel_allowlist": [],
@@ -322,6 +359,29 @@ def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
             "channel_allowlist": _normalize_allowlist(policy.get("channel_allowlist")),
             "role_allowlist": _normalize_allowlist(policy.get("role_allowlist")),
         }
+    apps = raw.get("apps")
+    if isinstance(apps, dict):
+        normalized_apps: dict[str, Any] = {}
+        for raw_name, raw_app in apps.items():
+            if not isinstance(raw_app, dict):
+                continue
+            try:
+                app_name = validate_app_name(raw_name, allow_default=False)
+            except ValueError:
+                continue
+            app_policy = raw_app.get("policy") if isinstance(raw_app.get("policy"), dict) else {}
+            normalized_apps[app_name] = {
+                "application_id": str(raw_app.get("application_id", "")).strip(),
+                "public_key": str(raw_app.get("public_key", "")).strip(),
+                "command_name": str(raw_app.get("command_name", COMMAND_NAME_DEFAULT)).strip()
+                or COMMAND_NAME_DEFAULT,
+                "policy": {
+                    "guild_allowlist": _normalize_allowlist(app_policy.get("guild_allowlist")),
+                    "channel_allowlist": _normalize_allowlist(app_policy.get("channel_allowlist")),
+                    "role_allowlist": _normalize_allowlist(app_policy.get("role_allowlist")),
+                },
+            }
+        config["apps"] = normalized_apps
     chat = raw.get("chat")
     if isinstance(chat, dict):
         normalized_bindings: dict[str, Any] = {}
@@ -341,7 +401,11 @@ def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
                 normalized_session_names = dedupe_session_names(session_names)
                 if kind == "dm" and len(normalized_session_names) != 1:
                     continue
-                binding_id = chat_binding_id(kind, conversation_id)
+                try:
+                    app_name = validate_app_name(value.get("app", ""))
+                except ValueError:
+                    continue
+                binding_id = chat_binding_id(kind, conversation_id, app_name)
                 normalized_bindings[binding_id] = {
                     "id": binding_id,
                     "kind": kind,
@@ -349,6 +413,8 @@ def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
                     "guild_id": str(value.get("guild_id", "")).strip(),
                     "session_names": normalized_session_names,
                 }
+                if app_name:
+                    normalized_bindings[binding_id]["app"] = app_name
                 channel_metadata = normalize_binding_channel_metadata(value)
                 if channel_metadata:
                     normalized_bindings[binding_id].update(channel_metadata)
@@ -551,7 +617,20 @@ def binding_peer_policy(binding: dict[str, Any]) -> dict[str, Any]:
 def redact_config(config: dict[str, Any]) -> dict[str, Any]:
     redacted = normalize_config(config)
     redacted["app"]["bot_token_present"] = bool(load_bot_token())
+    for app_name, app in redacted.get("apps", {}).items():
+        app["bot_token_present"] = bool(load_bot_token(app_name))
     return redacted
+
+
+def validate_app_name(value: Any, *, allow_default: bool = True) -> str:
+    normalized = str(value or "").strip()
+    if not normalized and allow_default:
+        return ""
+    if normalized == "default":
+        raise ValueError("app name 'default' is reserved for the legacy default app")
+    if not DISCORD_APP_NAME.fullmatch(normalized):
+        raise ValueError("app name must match [a-z][a-z0-9_-]{0,31}")
+    return normalized
 
 
 def validate_application_id(value: str) -> str:
@@ -576,40 +655,155 @@ def validate_public_key(value: str) -> str:
     return normalized
 
 
-def import_app_config(config: dict[str, Any], app_fields: dict[str, Any]) -> dict[str, Any]:
+def import_app_config(
+    config: dict[str, Any],
+    app_fields: dict[str, Any],
+    *,
+    app_name: str = "",
+    bot_token: str | None = None,
+) -> dict[str, Any]:
+    normalized_app_name = validate_app_name(app_name)
+    normalized_bot_token: str | None = None
+    if bot_token is not None:
+        normalized_bot_token = str(bot_token).strip()
+        if not normalized_bot_token:
+            raise ValueError("bot token is empty")
+    with advisory_lock(config_mutation_lock_path()):
+        current = load_config() if os.path.exists(config_path()) else normalize_config(config)
+        previous_bot_token = load_bot_token(normalized_app_name) if normalized_bot_token is not None else ""
+        existing_app = current.get("apps", {}).get(normalized_app_name) if normalized_app_name else None
+        requested_application_id = validate_application_id(
+            app_fields.get("application_id", app_fields.get("app_id", ""))
+        )
+        existing_application_id = (
+            str(existing_app.get("application_id", "")).strip()
+            if isinstance(existing_app, dict)
+            else ""
+        )
+        existing_named_bot_token = load_bot_token(normalized_app_name) if normalized_app_name else ""
+        if existing_named_bot_token and (not isinstance(existing_app, dict) or not existing_application_id):
+            raise ValueError(
+                f"orphan bot token for Discord app {normalized_app_name!r} has no pinned application_id; "
+                "remove it explicitly or import the replacement under a new app name"
+            )
+        if (
+            normalized_app_name
+            and existing_application_id
+            and requested_application_id
+            and requested_application_id != existing_application_id
+        ):
+            raise ValueError(
+                f"Discord app {normalized_app_name!r} cannot change application_id; "
+                "import the replacement under a new app name"
+            )
+        updated = _import_app_config_locked(current, app_fields, app_name=normalized_app_name)
+        if normalized_bot_token is None:
+            return updated
+        try:
+            save_bot_token(normalized_bot_token, app_name=normalized_app_name)
+        except OSError:
+            save_config(current)
+            if previous_bot_token:
+                save_bot_token(previous_bot_token, app_name=normalized_app_name)
+            else:
+                try:
+                    os.remove(secret_path(bot_token_secret_name(normalized_app_name)))
+                except FileNotFoundError:
+                    pass
+            raise
+        return updated
+
+
+def _import_app_config_locked(
+    config: dict[str, Any],
+    app_fields: dict[str, Any],
+    *,
+    app_name: str = "",
+) -> dict[str, Any]:
     cfg = normalize_config(config)
-    app = cfg.setdefault("app", {})
+    normalized_app_name = validate_app_name(app_name)
+    if normalized_app_name:
+        app = cfg.setdefault("apps", {}).setdefault(normalized_app_name, {})
+        policy = app.setdefault("policy", {})
+    else:
+        app = cfg.setdefault("app", {})
+        policy = cfg.setdefault("policy", {})
     application_id = validate_application_id(app_fields.get("application_id", app_fields.get("app_id", "")))
     public_key = validate_public_key(app_fields.get("public_key", ""))
     if application_id:
+        for existing_app_name in list_app_names(cfg):
+            if existing_app_name == normalized_app_name:
+                continue
+            existing_application_id = str(resolve_app_config(cfg, existing_app_name).get("application_id", "")).strip()
+            if existing_application_id == application_id:
+                display_name = existing_app_name or "default"
+                raise ValueError(f"application_id is already configured for app {display_name!r}")
         app["application_id"] = application_id
     if public_key:
         app["public_key"] = public_key
     command_name = str(app_fields.get("command_name", app.get("command_name", COMMAND_NAME_DEFAULT))).strip()
     app["command_name"] = command_name or COMMAND_NAME_DEFAULT
 
-    policy = cfg.setdefault("policy", {})
     for key in ("guild_allowlist", "channel_allowlist", "role_allowlist"):
         if key in app_fields:
             policy[key] = _normalize_allowlist(app_fields.get(key))
     return save_config(cfg)
 
 
-def save_bot_token(token: str) -> None:
+def resolve_app_config(config: dict[str, Any], app_name: str = "") -> dict[str, Any]:
+    cfg = normalize_config(config)
+    normalized_app_name = validate_app_name(app_name)
+    if not normalized_app_name:
+        return cfg["app"]
+    app = cfg.get("apps", {}).get(normalized_app_name)
+    if not isinstance(app, dict):
+        raise ValueError(f"unknown Discord app {normalized_app_name!r}")
+    return app
+
+
+def resolve_app_policy(config: dict[str, Any], app_name: str = "") -> dict[str, Any]:
+    cfg = normalize_config(config)
+    normalized_app_name = validate_app_name(app_name)
+    if not normalized_app_name:
+        return cfg["policy"]
+    app = cfg.get("apps", {}).get(normalized_app_name)
+    if not isinstance(app, dict):
+        raise ValueError(f"unknown Discord app {normalized_app_name!r}")
+    return app["policy"]
+
+
+def list_app_names(config: dict[str, Any]) -> list[str]:
+    cfg = normalize_config(config)
+    names = sorted(cfg.get("apps", {}))
+    return [""] + names
+
+
+def bot_token_secret_name(app_name: str = "") -> str:
+    normalized_app_name = validate_app_name(app_name)
+    if not normalized_app_name:
+        return "bot-token.txt"
+    return f"bot-token-{normalized_app_name}.txt"
+
+
+def save_bot_token(token: str, app_name: str = "") -> None:
     ensure_layout()
-    atomic_write_text(secret_path("bot-token.txt"), token.strip() + "\n", mode=0o600)
+    atomic_write_text(secret_path(bot_token_secret_name(app_name)), token.strip() + "\n", mode=0o600)
 
 
-def load_bot_token() -> str:
-    return read_text(secret_path("bot-token.txt")).strip()
+def load_bot_token(app_name: str = "") -> str:
+    return read_text(secret_path(bot_token_secret_name(app_name))).strip()
 
 
 def normalize_channel_key(guild_id: str, channel_id: str) -> str:
     return f"{str(guild_id).strip()}/{str(channel_id).strip()}"
 
 
-def chat_binding_id(kind: str, conversation_id: str) -> str:
-    return f"{str(kind).strip().lower()}:{str(conversation_id).strip()}"
+def chat_binding_id(kind: str, conversation_id: str, app_name: str = "") -> str:
+    binding_id = f"{str(kind).strip().lower()}:{str(conversation_id).strip()}"
+    normalized_app_name = validate_app_name(app_name)
+    if normalized_app_name:
+        return f"{binding_id}@app:{normalized_app_name}"
+    return binding_id
 
 
 def set_chat_binding(
@@ -619,6 +813,32 @@ def set_chat_binding(
     session_names: list[str],
     guild_id: str = "",
     *,
+    app_name: str = "",
+    policy: dict[str, Any] | None = None,
+    channel_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with advisory_lock(config_mutation_lock_path()):
+        current = load_config() if os.path.exists(config_path()) else normalize_config(config)
+        return _set_chat_binding_locked(
+            current,
+            kind,
+            conversation_id,
+            session_names,
+            guild_id,
+            app_name=app_name,
+            policy=policy,
+            channel_metadata=channel_metadata,
+        )
+
+
+def _set_chat_binding_locked(
+    config: dict[str, Any],
+    kind: str,
+    conversation_id: str,
+    session_names: list[str],
+    guild_id: str = "",
+    *,
+    app_name: str = "",
     policy: dict[str, Any] | None = None,
     channel_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -634,9 +854,10 @@ def set_chat_binding(
     if normalized_kind == "dm" and len(normalized_session_names) != 1:
         raise ValueError("DM bindings require exactly one session name")
 
+    normalized_app_name = validate_app_name(app_name)
     cfg = normalize_config(config)
-    binding_id = chat_binding_id(normalized_kind, normalized_conversation)
-    if normalized_kind == "room" and resolve_room_launcher(cfg, normalized_conversation):
+    binding_id = chat_binding_id(normalized_kind, normalized_conversation, normalized_app_name)
+    if not normalized_app_name and normalized_kind == "room" and resolve_room_launcher(cfg, normalized_conversation):
         raise ValueError("room launch is already enabled for that conversation")
     existing = resolve_chat_binding(cfg, binding_id) or {}
     raw_room_policy = copy.deepcopy(existing.get("policy")) if isinstance(existing.get("policy"), dict) else {}
@@ -664,6 +885,8 @@ def set_chat_binding(
         "guild_id": str(guild_id).strip(),
         "session_names": normalized_session_names,
     }
+    if normalized_app_name:
+        binding["app"] = normalized_app_name
     if normalized_kind == "room":
         if raw_channel_metadata:
             binding.update(raw_channel_metadata)
@@ -673,6 +896,27 @@ def set_chat_binding(
 
 
 def set_room_launcher(
+    config: dict[str, Any],
+    guild_id: str,
+    conversation_id: str,
+    *,
+    response_mode: str = "mention_only",
+    default_qualified_handle: str = "",
+    policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with advisory_lock(config_mutation_lock_path()):
+        current = load_config() if os.path.exists(config_path()) else normalize_config(config)
+        return _set_room_launcher_locked(
+            current,
+            guild_id,
+            conversation_id,
+            response_mode=response_mode,
+            default_qualified_handle=default_qualified_handle,
+            policy=policy,
+        )
+
+
+def _set_room_launcher_locked(
     config: dict[str, Any],
     guild_id: str,
     conversation_id: str,
@@ -735,14 +979,24 @@ def list_room_launchers(config: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(launchers.values(), key=lambda item: (str(item.get("kind", "")), str(item.get("conversation_id", ""))))
 
 
-def describe_room_channel_metadata(conversation_id: str, *, bot_token: str = "") -> dict[str, Any]:
-    token = str(bot_token).strip() or load_bot_token()
+def describe_room_channel_scope(conversation_id: str, *, bot_token: str | None = None) -> dict[str, Any]:
+    token = load_bot_token() if bot_token is None else str(bot_token).strip()
     if not token:
         return {}
     info = discord_api_request("GET", f"/channels/{urllib.parse.quote(str(conversation_id).strip())}", bot_token=token)
     if not isinstance(info, dict):
         return {}
-    return normalize_binding_channel_metadata(info)
+    scope = normalize_binding_channel_metadata(info)
+    guild_id = str(info.get("guild_id", "")).strip()
+    if guild_id:
+        scope["guild_id"] = guild_id
+    return scope
+
+
+def describe_room_channel_metadata(conversation_id: str, *, bot_token: str | None = None) -> dict[str, Any]:
+    return normalize_binding_channel_metadata(
+        describe_room_channel_scope(conversation_id, bot_token=bot_token)
+    )
 
 
 def channel_metadata_cache_path(conversation_id: str) -> str:
@@ -773,14 +1027,53 @@ def resolve_chat_binding(config: dict[str, Any], binding_id: str) -> dict[str, A
 
 def list_chat_bindings(config: dict[str, Any]) -> list[dict[str, Any]]:
     bindings = normalize_config(config).get("chat", {}).get("bindings", {})
-    return sorted(bindings.values(), key=lambda item: (str(item.get("kind", "")), str(item.get("conversation_id", ""))))
+    return sorted(
+        bindings.values(),
+        key=lambda item: (
+            str(item.get("kind", "")),
+            str(item.get("conversation_id", "")),
+            str(item.get("app", "")),
+        ),
+    )
 
 
-def resolve_publish_route(config: dict[str, Any], route_id: str) -> dict[str, Any] | None:
-    binding = resolve_chat_binding(config, route_id)
-    if binding:
-        return binding
+def resolve_publish_route(
+    config: dict[str, Any],
+    route_id: str,
+    *,
+    app_name: str = "",
+) -> dict[str, Any] | None:
     route = str(route_id).strip()
+    normalized_app_name = validate_app_name(app_name)
+    if normalized_app_name:
+        resolve_app_config(config, normalized_app_name)
+        if "@app:" in route:
+            expected_suffix = f"@app:{normalized_app_name}"
+            if not route.endswith(expected_suffix):
+                raise ValueError("--app does not match the binding app")
+        elif route.startswith(("dm:", "room:")):
+            route = f"{route}@app:{normalized_app_name}"
+        else:
+            raise ValueError("named apps support only room and DM bindings")
+    binding = resolve_chat_binding(config, route)
+    if binding:
+        binding_app_name = validate_app_name(binding.get("app", ""))
+        if binding_app_name:
+            resolve_app_config(config, binding_app_name)
+        return binding
+    if not normalized_app_name and route.startswith(("dm:", "room:")) and "@app:" not in route:
+        candidates = [
+            item
+            for item in list_chat_bindings(config)
+            if str(item.get("id", "")).partition("@app:")[0] == route
+        ]
+        if len(candidates) == 1:
+            candidate_app_name = validate_app_name(candidates[0].get("app", ""))
+            if candidate_app_name:
+                resolve_app_config(config, candidate_app_name)
+            return candidates[0]
+        if len(candidates) > 1:
+            raise ValueError(f"binding {route!r} is ambiguous; select one with --app")
     if route.startswith("launch-room:"):
         launcher = resolve_room_launcher(config, route.removeprefix("launch-room:"))
         if launcher:
@@ -793,6 +1086,18 @@ def resolve_publish_route(config: dict[str, Any], route_id: str) -> dict[str, An
 
 
 def set_channel_mapping(
+    config: dict[str, Any],
+    guild_id: str,
+    channel_id: str,
+    target: str,
+    fix_formula: str | None,
+) -> dict[str, Any]:
+    with advisory_lock(config_mutation_lock_path()):
+        current = load_config() if os.path.exists(config_path()) else normalize_config(config)
+        return _set_channel_mapping_locked(current, guild_id, channel_id, target, fix_formula)
+
+
+def _set_channel_mapping_locked(
     config: dict[str, Any],
     guild_id: str,
     channel_id: str,
@@ -826,6 +1131,18 @@ def normalize_rig_key(guild_id: str, rig_name: str) -> str:
 
 
 def set_rig_mapping(
+    config: dict[str, Any],
+    guild_id: str,
+    rig_name: str,
+    target: str,
+    fix_formula: str | None,
+) -> dict[str, Any]:
+    with advisory_lock(config_mutation_lock_path()):
+        current = load_config() if os.path.exists(config_path()) else normalize_config(config)
+        return _set_rig_mapping_locked(current, guild_id, rig_name, target, fix_formula)
+
+
+def _set_rig_mapping_locked(
     config: dict[str, Any],
     guild_id: str,
     rig_name: str,
@@ -1176,17 +1493,17 @@ def list_recent_requests(limit: int = 20) -> list[dict[str, Any]]:
     return entries[:limit]
 
 
-def save_gateway_status(payload: dict[str, Any]) -> dict[str, Any]:
+def save_gateway_status(payload: dict[str, Any], app_name: str = "") -> dict[str, Any]:
     ensure_layout()
     body = copy.deepcopy(payload)
     body["updated_at"] = utcnow()
-    atomic_write_json(gateway_status_path(), body)
+    atomic_write_json(gateway_status_path(app_name), body)
     return body
 
 
-def load_gateway_status() -> dict[str, Any]:
+def load_gateway_status(app_name: str = "") -> dict[str, Any]:
     ensure_layout()
-    payload = read_json(gateway_status_path(), {}, allow_invalid=True)
+    payload = read_json(gateway_status_path(app_name), {}, allow_invalid=True)
     if isinstance(payload, dict):
         return payload
     return {}
@@ -1413,9 +1730,15 @@ def touch_room_launch(launch_id: str, *, activity_at: str = "") -> dict[str, Any
         return save_room_launch(body)
 
 
-def set_room_launch_last_addressed(launch_id: str, qualified_handle: str) -> dict[str, Any] | None:
+def set_room_launch_last_addressed(
+    launch_id: str,
+    qualified_handle: str,
+    *,
+    delivery_order: str = "",
+) -> dict[str, Any] | None:
     normalized_launch_id = str(launch_id).strip()
     normalized_handle = str(qualified_handle).strip()
+    normalized_delivery_order = str(delivery_order).strip()
     if not normalized_launch_id or not normalized_handle:
         return None
     with advisory_lock(room_launch_lock_path(normalized_launch_id)):
@@ -1424,8 +1747,15 @@ def set_room_launch_last_addressed(launch_id: str, qualified_handle: str) -> dic
             return None
         if normalized_handle not in room_launch_participants(current):
             return current
+        current_delivery_order = str(current.get("last_addressed_delivery_order", "")).strip()
+        if current_delivery_order and (
+            not normalized_delivery_order or normalized_delivery_order <= current_delivery_order
+        ):
+            return current
         body = copy.deepcopy(current)
         body["last_addressed_qualified_handle"] = normalized_handle
+        if normalized_delivery_order:
+            body["last_addressed_delivery_order"] = normalized_delivery_order
         return save_room_launch(body)
 
 
@@ -1492,6 +1822,26 @@ def iter_chat_publishes_since(since_epoch: float) -> list[dict[str, Any]]:
         if isinstance(data, dict):
             items.append(data)
     return items
+
+
+def find_chat_publish_by_remote_message_id(
+    remote_message_id: str,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Return the chat-publish record for a message WE sent, keyed by the
+    Discord message id Discord assigned it (``remote_message_id``).
+
+    Lets a reply to one of our own past messages resolve its quote from what
+    we already wrote to disk when we published it, with no REST call.
+    """
+    normalized = str(remote_message_id).strip()
+    if not normalized:
+        return None
+    publish_records = records if records is not None else iter_chat_publishes()
+    for record in publish_records:
+        if str(record.get("remote_message_id", "")).strip() == normalized:
+            return record
+    return None
 
 
 def _safe_lock_name(prefix: str, key: str) -> str:
@@ -1701,6 +2051,17 @@ def list_recent_chat_ingress(limit: int = 20) -> list[dict[str, Any]]:
     return entries[:limit]
 
 
+def list_chat_ingress() -> list[dict[str, Any]]:
+    ensure_layout()
+    entries: list[dict[str, Any]] = []
+    for path in pathlib.Path(chat_ingress_dir()).glob("*.json"):
+        data = read_json(str(path), allow_invalid=True)
+        if isinstance(data, dict):
+            entries.append(data)
+    entries.sort(key=lambda item: item.get("created_at", ""))
+    return entries
+
+
 def prune_chat_ingress() -> None:
     ensure_layout()
     _prune_dir(chat_ingress_dir(), CHAT_INGRESS_RETENTION_SECONDS)
@@ -1722,6 +2083,10 @@ def redact_chat_ingress_record(payload: dict[str, Any]) -> dict[str, Any]:
         body["from_display"] = "[redacted]"
     if body.get("from_user_id"):
         body["from_user_id"] = "[redacted]"
+    # "body" carries the whole message and "body_preview" its first 160 chars.
+    # Both are the human's words; the admin page is tenant-visible.
+    if body.get("body"):
+        body["body"] = "[redacted]"
     if body.get("body_preview"):
         body["body_preview"] = "[redacted]"
     return body
@@ -1740,6 +2105,8 @@ def redact_room_launch_record(payload: dict[str, Any]) -> dict[str, Any]:
         body["from_display"] = "[redacted]"
     if body.get("from_user_id"):
         body["from_user_id"] = "[redacted]"
+    if body.get("body"):
+        body["body"] = "[redacted]"
     if body.get("body_preview"):
         body["body_preview"] = "[redacted]"
     return body
@@ -1804,12 +2171,17 @@ def interactions_url() -> str:
 
 def build_status_snapshot(limit: int = 20) -> dict[str, Any]:
     config = load_config()
+    gateway_statuses = {
+        app_name or "default": redact_gateway_status(load_gateway_status(app_name))
+        for app_name in list_app_names(config)
+    }
     return {
         "service_name": current_service_name(),
         "admin_url": admin_url(),
         "interactions_url": interactions_url(),
         "config": redact_config(config),
         "gateway_status": redact_gateway_status(load_gateway_status()),
+        "gateway_statuses": gateway_statuses,
         "recent_requests": [redact_request_record(item) for item in list_recent_requests(limit=limit)],
         "chat_bindings": list_chat_bindings(config),
         "chat_launchers": list_room_launchers(config),
@@ -1900,7 +2272,7 @@ def discord_api_request(
         "Accept": "application/json",
         "User-Agent": "gas-city-discord/0.1",
     }
-    token = bot_token or load_bot_token()
+    token = load_bot_token() if bot_token is None else bot_token
     if token:
         headers["Authorization"] = f"Bot {token}"
     if payload is not None:
@@ -2084,31 +2456,33 @@ def gc_api_base_url() -> str:
     return f"http://{bind}:{port}"
 
 
-def gc_api_request(
+def gc_api_url(path: str) -> str:
+    base_url = gc_api_base_url()
+    if path.startswith("http://") or path.startswith("https://"):
+        return path
+    # Skip scope discovery if the caller provided an explicit base URL
+    # (it already includes the scope prefix). Strip /v0/ from path
+    # since the base URL already contains the scoped root.
+    override = str(os.environ.get("GC_API_BASE_URL", "")).strip()
+    if override:
+        normalized_path = "/" + path[len("/v0/") :] if path.startswith("/v0/") else path
+    else:
+        city_cfg = load_city_toml()
+        scope_prefix = discover_supervisor_gc_api_scope(city_cfg)
+        normalized_path = path
+        if scope_prefix and path.startswith("/v0/"):
+            normalized_path = scope_prefix + "/" + path[len("/v0/") :]
+    return urllib.parse.urljoin(base_url.rstrip("/") + "/", normalized_path.lstrip("/"))
+
+
+def gc_api_request_with_status(
     method: str,
     path: str,
     payload: Any = None,
     headers: dict[str, str] | None = None,
     timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS,
-) -> Any:
-    base_url = gc_api_base_url()
-    if path.startswith("http://") or path.startswith("https://"):
-        url = path
-    else:
-        # Skip scope discovery if the caller provided an explicit base URL
-        # (it already includes the scope prefix). Strip /v0/ from path
-        # since the base URL already contains the scoped root.
-        override = str(os.environ.get("GC_API_BASE_URL", "")).strip()
-        if override:
-            # Explicit base URL already includes scope; strip /v0/ prefix.
-            normalized_path = "/" + path[len("/v0/"):] if path.startswith("/v0/") else path
-        else:
-            city_cfg = load_city_toml()
-            scope_prefix = discover_supervisor_gc_api_scope(city_cfg)
-            normalized_path = path
-            if scope_prefix and path.startswith("/v0/"):
-                normalized_path = scope_prefix + "/" + path[len("/v0/") :]
-        url = urllib.parse.urljoin(base_url.rstrip("/") + "/", normalized_path.lstrip("/"))
+) -> tuple[int, Any]:
+    url = gc_api_url(path)
     body = None
     request_headers = {
         "Accept": "application/json",
@@ -2124,22 +2498,170 @@ def gc_api_request(
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read()
+            status_code = getattr(response, "status", None)
+            if not isinstance(status_code, int):
+                getcode = getattr(response, "getcode", None)
+                candidate = getcode() if callable(getcode) else None
+                status_code = candidate if isinstance(candidate, int) else 200
     except urllib.error.HTTPError as exc:
         raw = exc.read()
         message = raw.decode("utf-8", errors="replace")
         raise GCAPIError(f"{method.upper()} {url} failed with {exc.code}: {message}") from exc
     except urllib.error.URLError as exc:
-        raise GCAPIError(f"{method.upper()} {url} failed: {exc}") from exc
+        raise GCAPITransportError(f"{method.upper()} {url} failed: {exc}") from exc
     except TimeoutError as exc:
-        raise GCAPIError(f"{method.upper()} {url} timed out") from exc
+        raise GCAPITransportError(f"{method.upper()} {url} timed out") from exc
     except OSError as exc:
-        raise GCAPIError(f"{method.upper()} {url} failed: {exc}") from exc
+        raise GCAPITransportError(f"{method.upper()} {url} failed: {exc}") from exc
     if not raw:
-        return {}
+        return status_code, {}
     try:
-        return json.loads(raw.decode("utf-8"))
+        return status_code, json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise GCAPIError(f"{method.upper()} {url} returned invalid JSON") from exc
+
+
+def gc_api_request(
+    method: str,
+    path: str,
+    payload: Any = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS,
+) -> Any:
+    _, response_payload = gc_api_request_with_status(
+        method,
+        path,
+        payload=payload,
+        headers=headers,
+        timeout=timeout,
+    )
+    return response_payload
+
+
+def wait_for_gc_request_result(
+    request_id: str,
+    *,
+    event_cursor: str,
+    success_type: str,
+    failure_operation: str,
+    timeout: float = GC_API_ASYNC_RESULT_TIMEOUT_SECONDS,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, Any]:
+    normalized_request_id = str(request_id).strip()
+    if not normalized_request_id:
+        raise GCAPIError("gc async request did not include request_id")
+    cursor = str(event_cursor).strip() or "0"
+    query = urllib.parse.urlencode({"after_seq": cursor})
+    url = gc_api_url(f"/v0/events/stream?{query}")
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "text/event-stream",
+            "User-Agent": "gas-city-discord/0.1",
+            "X-GC-Request": "true",
+        },
+        method="GET",
+    )
+    data_lines: list[str] = []
+    deadline = time.monotonic() + max(float(timeout), 0.0)
+    if cancel_event is not None and cancel_event.is_set():
+        raise GCAPIRequestCancelled(f"waiting for gc request {normalized_request_id} was cancelled")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            stream_done = threading.Event()
+            cancel_watcher: threading.Thread | None = None
+            if cancel_event is not None:
+                def close_stream_on_cancel() -> None:
+                    while not stream_done.wait(0.05):
+                        if cancel_event.is_set():
+                            close = getattr(response, "close", None)
+                            if callable(close):
+                                try:
+                                    close()
+                                except (OSError, ValueError):
+                                    pass
+                            return
+
+                cancel_watcher = threading.Thread(
+                    target=close_stream_on_cancel,
+                    name=f"gc-request-cancel-{normalized_request_id}",
+                    daemon=True,
+                )
+                cancel_watcher.start()
+            try:
+                for raw_line in response:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise GCAPIRequestCancelled(f"waiting for gc request {normalized_request_id} was cancelled")
+                    if time.monotonic() >= deadline:
+                        raise GCAPIResultUnknown(f"GET {url} timed out before request {normalized_request_id} completed")
+                    if isinstance(raw_line, bytes):
+                        try:
+                            line = raw_line.decode("utf-8")
+                        except UnicodeDecodeError as exc:
+                            raise GCAPIResultUnknown("gc event stream returned invalid UTF-8 before request completed") from exc
+                    else:
+                        line = str(raw_line)
+                    line = line.rstrip("\r\n")
+                    if line.startswith("data:"):
+                        data_lines.append(line.removeprefix("data:").lstrip())
+                        continue
+                    if line or not data_lines:
+                        continue
+                    try:
+                        envelope = json.loads("\n".join(data_lines))
+                    except json.JSONDecodeError as exc:
+                        raise GCAPIResultUnknown("gc event stream returned invalid JSON before request completed") from exc
+                    finally:
+                        data_lines = []
+                    if not isinstance(envelope, dict):
+                        continue
+                    event_type = str(envelope.get("type", "")).strip()
+                    payload = envelope.get("payload")
+                    if not isinstance(payload, dict):
+                        continue
+                    if str(payload.get("request_id", "")).strip() != normalized_request_id:
+                        continue
+                    if event_type == success_type:
+                        return payload
+                    if event_type != GC_EVENT_REQUEST_FAILED:
+                        continue
+                    if str(payload.get("operation", "")).strip() != failure_operation:
+                        continue
+                    error_code = str(payload.get("error_code", "")).strip() or "request_failed"
+                    error_message = str(payload.get("error_message", "")).strip() or "asynchronous request failed"
+                    raise GCAPIRequestFailed(
+                        f"{failure_operation} failed: {error_code}: {error_message}",
+                        payload,
+                    )
+            finally:
+                stream_done.set()
+                if cancel_watcher is not None:
+                    cancel_watcher.join(timeout=0.2)
+    except urllib.error.HTTPError as exc:
+        if cancel_event is not None and cancel_event.is_set():
+            raise GCAPIRequestCancelled(f"waiting for gc request {normalized_request_id} was cancelled") from exc
+        raw = exc.read()
+        message = raw.decode("utf-8", errors="replace")
+        raise GCAPIResultUnknown(f"GET {url} failed with {exc.code} before request completed: {message}") from exc
+    except urllib.error.URLError as exc:
+        if cancel_event is not None and cancel_event.is_set():
+            raise GCAPIRequestCancelled(f"waiting for gc request {normalized_request_id} was cancelled") from exc
+        raise GCAPIResultUnknown(f"GET {url} failed before request completed: {exc}") from exc
+    except TimeoutError as exc:
+        if cancel_event is not None and cancel_event.is_set():
+            raise GCAPIRequestCancelled(f"waiting for gc request {normalized_request_id} was cancelled") from exc
+        raise GCAPIResultUnknown(f"GET {url} timed out before request completed") from exc
+    except OSError as exc:
+        if cancel_event is not None and cancel_event.is_set():
+            raise GCAPIRequestCancelled(f"waiting for gc request {normalized_request_id} was cancelled") from exc
+        raise GCAPIResultUnknown(f"GET {url} failed before request completed: {exc}") from exc
+    except ValueError as exc:
+        if cancel_event is not None and cancel_event.is_set():
+            raise GCAPIRequestCancelled(f"waiting for gc request {normalized_request_id} was cancelled") from exc
+        raise GCAPIResultUnknown(f"GET {url} closed before request completed: {exc}") from exc
+    if cancel_event is not None and cancel_event.is_set():
+        raise GCAPIRequestCancelled(f"waiting for gc request {normalized_request_id} was cancelled")
+    raise GCAPIResultUnknown(f"gc event stream closed before request {normalized_request_id} completed")
 
 
 def load_session_transcript_raw(session_selector: str, tail: int = 20) -> list[dict[str, Any]]:
@@ -2224,6 +2746,24 @@ def _chat_ingress_target_matches_selector(target: dict[str, Any], selector: str)
                 str(response.get("session_alias", "")).strip(),
             }
         )
+    terminal_evidence = target.get("terminal_evidence")
+    if isinstance(terminal_evidence, dict):
+        candidates.update(
+            {
+                str(terminal_evidence.get("session_name", "")).strip(),
+                str(terminal_evidence.get("session_id", "")).strip(),
+                str(terminal_evidence.get("session_alias", "")).strip(),
+            }
+        )
+        terminal_payload = terminal_evidence.get("payload")
+        if isinstance(terminal_payload, dict):
+            candidates.update(
+                {
+                    str(terminal_payload.get("session_name", "")).strip(),
+                    str(terminal_payload.get("session_id", "")).strip(),
+                    str(terminal_payload.get("session_alias", "")).strip(),
+                }
+            )
     return wanted in {candidate for candidate in candidates if candidate}
 
 
@@ -2945,6 +3485,149 @@ def _normalize_agent_handle(handle: str) -> str:
     return normalized
 
 
+def resolve_existing_session_for_handle(handle: str) -> dict[str, str]:
+    """Attach-first launcher lookup: return the routable existing session
+    that matches `handle` by alias, session_name, or id. Case-insensitive.
+    Returns {} if none matches. This is what lets @@handle target an
+    already-running session instead of spawning a new one from a template.
+
+    Also matches the pack-qualified aliases the platform stores for named
+    sessions, via the shared _alias_matches_qualified_handle policy: typing
+    @@daytripper/fattony matches a stored daytripper/gasburger.fattony, and
+    the city-scope @@emma matches a stored employees.emma. Neither shape
+    crosses a scope — a bare tail cannot reach into a rig, and a
+    rig-qualified handle cannot leave its own rig.
+    """
+    normalized = str(handle).strip()
+    if not normalized:
+        return {}
+    key = normalized.lower()
+    alias_match: dict[str, Any] | None = None
+    name_match: dict[str, Any] | None = None
+    id_match: dict[str, Any] | None = None
+    tail_alias_match: dict[str, Any] | None = None
+    try:
+        sessions = list_city_sessions(state="all")
+    except GCAPIError:
+        # Attach lookup is best-effort; if the API is unreachable, fall
+        # through to template resolution rather than blocking the launcher.
+        return {}
+    for item in sessions:
+        if not session_record_routable(item):
+            continue
+        alias = str(item.get("alias", "")).strip().lower()
+        session_name = str(item.get("session_name", "")).strip().lower()
+        session_id = str(item.get("id", "")).strip().lower()
+        if alias == key and (
+            alias_match is None or _session_record_preference(item) > _session_record_preference(alias_match)
+        ):
+            alias_match = item
+        if session_name == key and (
+            name_match is None or _session_record_preference(item) > _session_record_preference(name_match)
+        ):
+            name_match = item
+        if session_id == key and (
+            id_match is None or _session_record_preference(item) > _session_record_preference(id_match)
+        ):
+            id_match = item
+        if alias and _alias_matches_qualified_handle(alias, key) and (
+            tail_alias_match is None or _session_record_preference(item) > _session_record_preference(tail_alias_match)
+        ):
+            tail_alias_match = item
+    chosen = alias_match or name_match or id_match or tail_alias_match
+    if not chosen:
+        return {}
+    return _session_identity_fields(chosen)
+
+
+def resolve_named_session_for_handle(handle: str) -> dict[str, str]:
+    """Named-session launcher lookup: is `handle` a declared but not-yet-
+    running named session? Returns {qualified_handle, template, alias,
+    scope, dir, spawn_template} that the caller can use to spawn via
+    create_agent_session. Returns {} on no match. Best-effort: swallows
+    errors reading city.toml so the launcher stays usable.
+
+    Handle matches are case-insensitive. For scope=rig entries the handle
+    is <dir>/<name>; for scope=city it is <name>. Declarations routinely
+    carry neither key, and gc fills both in: an omitted name leaves the
+    template itself as the public identity (config.go NamedSession.
+    IdentityName), so gastown.witness is addressed as @@<rig>/gastown.witness,
+    and a rig-scoped entry that omits dir declares one seat per configured
+    rig rather than a seat in a named rig, so it expands across city.toml's
+    rigs here the way gc expands it internally (config.go,
+    ExpandGenericRigNamedSessions).
+
+    spawn_template is the value to pass as create_agent_session(name=...):
+    rig-scoped templates are qualified with the rig prefix (dir/template)
+    so the platform resolves the correct rig-instance of the template.
+    """
+    normalized = str(handle).strip()
+    if not normalized:
+        return {}
+    key = normalized.lower()
+    try:
+        city_cfg = load_city_toml()
+    except (GCAPIError, OSError):
+        return {}
+    entries = city_cfg.get("named_session")
+    if not isinstance(entries, list):
+        return {}
+    rig_names = _city_rig_names(city_cfg)
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        template = str(entry.get("template", "")).strip()
+        if not template:
+            continue
+        raw_name = str(entry.get("name", "")).strip()
+        scope = str(entry.get("scope", "")).strip().lower()
+        dir_name = str(entry.get("dir", "")).strip()
+        alias = raw_name or template.rsplit("/", 1)[-1]
+        if scope == "rig":
+            # A rig-scoped entry that names no dir declares a seat in every
+            # configured rig, so address it as <rig>/<name> for each of them.
+            # Falling back to city scope here would answer a bare @@name with
+            # an unqualified spawn template that resolves outside the rig the
+            # declaration asked for; with no rigs configured the seat simply
+            # has nowhere to live and stays unaddressable.
+            candidate_dirs = [dir_name] if dir_name else rig_names
+        else:
+            candidate_dirs = [""]
+        for candidate_dir in candidate_dirs:
+            if candidate_dir:
+                qualified = f"{candidate_dir}/{alias}".lower()
+                spawn_template = template if "/" in template else f"{candidate_dir}/{template}"
+            else:
+                qualified = alias.lower()
+                spawn_template = template
+            if qualified != key:
+                continue
+            return {
+                "qualified_handle": qualified,
+                "template": template,
+                "alias": alias,
+                "scope": scope,
+                "dir": candidate_dir,
+                "spawn_template": spawn_template,
+            }
+    return {}
+
+
+def _city_rig_names(city_cfg: dict[str, Any]) -> list[str]:
+    """Rig directory names declared in city.toml, in declaration order."""
+    rigs = city_cfg.get("rigs")
+    if not isinstance(rigs, list):
+        return []
+    names: list[str] = []
+    for rig in rigs:
+        if not isinstance(rig, dict):
+            continue
+        name = str(rig.get("name", "")).strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def resolve_agent_handle(handle: str) -> tuple[str, str]:
     normalized = _normalize_agent_handle(handle)
     if not normalized:
@@ -3109,7 +3792,87 @@ def resolve_routable_session_identity_eventually(*selectors: str) -> dict[str, s
     return identity
 
 
-def resolve_routable_session_candidate_eventually(*selectors: str) -> tuple[str, dict[str, str]]:
+def resolve_routable_session_candidate_eventually(
+    *selectors: str,
+    suffix_template: str = "",
+    suffix_alias: str = "",
+    timeout: float | None = None,
+) -> tuple[str, dict[str, str]]:
+    candidates = _poll_candidates(selectors)
+    if not candidates and not str(suffix_alias).strip():
+        return "", {}
+    deadline = time.monotonic() + _poll_timeout(timeout, ROOM_LAUNCH_IDENTITY_RESOLVE_TIMEOUT_SECONDS)
+    while True:
+        sessions = list_city_sessions(state="all")
+        matched_selector, identity = resolve_routable_session_candidate_from_sessions(sessions, *candidates)
+        if identity:
+            return matched_selector, identity
+        # Same iteration, deliberately not a second deadline: when the
+        # platform stores the requested alias pack-prefixed, no exact
+        # candidate can ever match, so polling exact-only to exhaustion first
+        # would stall every such spawn for the full timeout while holding the
+        # launch advisory lock.
+        matched_selector, identity = _resolve_launched_session_by_suffix(
+            sessions, suffix_template, suffix_alias, ready=False,
+        )
+        if identity:
+            return matched_selector, identity
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return "", {}
+        time.sleep(min(ROOM_LAUNCH_IDENTITY_RESOLVE_DELAY_SECONDS, remaining))
+
+
+def _find_launched_session_by_suffix(
+    sessions: list[dict[str, Any]],
+    qualified_handle: str,
+    requested_alias: str,
+) -> dict[str, Any] | None:
+    """Locate a session created via async /v0/sessions when the platform
+    prefixes the requested alias (e.g. pack namespace) so exact-alias match
+    fails. Uniqueness comes from the sha digest embedded in the requested
+    alias by room_launch_session_alias().
+    """
+    template = str(qualified_handle).strip()
+    alias_suffix = str(requested_alias).strip()
+    if not alias_suffix:
+        return None
+    best: dict[str, Any] | None = None
+    for item in sessions:
+        if template and str(item.get("template", "")).strip() != template:
+            continue
+        alias = str(item.get("alias", "")).strip()
+        if not alias:
+            continue
+        if alias == alias_suffix or alias.endswith("." + alias_suffix) or alias.endswith("-" + alias_suffix) or alias.endswith("/" + alias_suffix):
+            if best is None or _session_record_preference(item) > _session_record_preference(best):
+                best = item
+    return best
+
+
+def _resolve_launched_session_by_suffix(
+    sessions: list[dict[str, Any]],
+    qualified_handle: str,
+    requested_alias: str,
+    *,
+    ready: bool,
+) -> tuple[str, dict[str, str]]:
+    """One suffix-match attempt against an already-fetched session list."""
+    if not str(requested_alias).strip():
+        return "", {}
+    chosen = _find_launched_session_by_suffix(sessions, qualified_handle, requested_alias)
+    if not chosen:
+        return "", {}
+    if not (session_record_ready(chosen) if ready else session_record_routable(chosen)):
+        return "", {}
+    identity = _session_identity_fields(chosen)
+    selector = identity.get("session_name") or identity.get("session_id") or identity.get("alias") or ""
+    if not selector:
+        return "", {}
+    return selector, identity
+
+
+def _poll_candidates(selectors: tuple[str, ...]) -> list[str]:
     candidates: list[str] = []
     seen: set[str] = set()
     for selector in selectors:
@@ -3118,18 +3881,15 @@ def resolve_routable_session_candidate_eventually(*selectors: str) -> tuple[str,
             continue
         seen.add(normalized)
         candidates.append(normalized)
-    if not candidates:
-        return "", {}
-    deadline = time.monotonic() + ROOM_LAUNCH_IDENTITY_RESOLVE_TIMEOUT_SECONDS
-    while True:
-        sessions = list_city_sessions(state="all")
-        matched_selector, identity = resolve_routable_session_candidate_from_sessions(sessions, *candidates)
-        if identity:
-            return matched_selector, identity
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return "", {}
-        time.sleep(min(ROOM_LAUNCH_IDENTITY_RESOLVE_DELAY_SECONDS, remaining))
+    return candidates
+
+
+def _poll_timeout(override: float | None, default_seconds: float) -> float:
+    """Injectable poll deadline: callers (and tests) may pin the timeout,
+    otherwise the module default is read at call time."""
+    if override is None:
+        return float(default_seconds)
+    return max(0.0, float(override))
 
 
 def session_record_ready(item: dict[str, Any] | None) -> bool:
@@ -3183,21 +3943,26 @@ def resolve_ready_session_candidate_from_sessions(
     return "", {}
 
 
-def resolve_ready_session_candidate_eventually(*selectors: str) -> tuple[str, dict[str, str]]:
-    candidates: list[str] = []
-    seen: set[str] = set()
-    for selector in selectors:
-        normalized = str(selector).strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        candidates.append(normalized)
-    if not candidates:
+def resolve_ready_session_candidate_eventually(
+    *selectors: str,
+    suffix_template: str = "",
+    suffix_alias: str = "",
+    timeout: float | None = None,
+) -> tuple[str, dict[str, str]]:
+    candidates = _poll_candidates(selectors)
+    if not candidates and not str(suffix_alias).strip():
         return "", {}
-    deadline = time.monotonic() + ROOM_LAUNCH_READY_RESOLVE_TIMEOUT_SECONDS
+    deadline = time.monotonic() + _poll_timeout(timeout, ROOM_LAUNCH_READY_RESOLVE_TIMEOUT_SECONDS)
     while True:
         sessions = list_city_sessions(state="all")
         matched_selector, identity = resolve_ready_session_candidate_from_sessions(sessions, *candidates)
+        if identity:
+            return matched_selector, identity
+        # Folded into this iteration for the same reason as the identity
+        # poll above: a pack-prefixed alias is unreachable by exact match.
+        matched_selector, identity = _resolve_launched_session_by_suffix(
+            sessions, suffix_template, suffix_alias, ready=True,
+        )
         if identity:
             return matched_selector, identity
         remaining = deadline - time.monotonic()
@@ -3256,7 +4021,7 @@ def room_launch_session_alias(guild_id: str, conversation_id: str, root_message_
 
 
 def room_launch_thread_name(qualified_handle: str, source_display: str = "") -> str:
-    handle_label = str(qualified_handle).strip().rsplit("/", 1)[-1] or "agent"
+    handle_label = str(qualified_handle).strip() or "agent"
     display = " ".join(str(source_display).strip().split())
     if display:
         value = f"{handle_label} - {display}"
@@ -3441,12 +4206,47 @@ def _room_launch_participant_matches_session(participant: dict[str, Any], *, ses
     return False
 
 
+def _alias_matches_qualified_handle(alias: str, qualified_handle: str) -> bool:
+    """Does a platform-stored session alias name the seat `qualified_handle`?
+
+    The platform qualifies an explicitly requested alias with the binding it
+    resolves under, so the seat we asked to call `meltron` comes back stored
+    as `docbook/gasburger.meltron` for a rig-scoped binding and as
+    `gasburger.meltron` for a city-scoped one. Both shapes match here, and
+    neither crosses a scope: a rig-qualified handle only matches aliases
+    under the same rig, and a bare handle only matches bare aliases.
+
+    This is the single tail-match policy — the attach lookup
+    (resolve_existing_session_for_handle) and the publish-side re-pin share
+    it so a seat reachable by @@handle is also re-pinnable, and vice versa.
+    """
+    alias_key = str(alias).strip().lower()
+    handle_key = str(qualified_handle).strip().lower()
+    if not alias_key or not handle_key:
+        return False
+    if alias_key == handle_key:
+        return True
+    if ("/" in alias_key) != ("/" in handle_key):
+        return False
+    if "/" in handle_key:
+        alias_rig, alias_tail = alias_key.split("/", 1)
+        handle_rig, handle_tail = handle_key.split("/", 1)
+        if alias_rig != handle_rig:
+            return False
+    else:
+        alias_tail, handle_tail = alias_key, handle_key
+    return alias_tail == handle_tail or alias_tail.endswith("." + handle_tail)
+
+
 def ensure_room_launch_session_for_handle(
     launch: dict[str, Any],
     qualified_handle: str,
     *,
     title: str = "",
     initial_message: str = "",
+    attached_identity: dict[str, str] | None = None,
+    spawn_template_override: str = "",
+    session_alias_override: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     launch_id = str(launch.get("launch_id", "")).strip()
     normalized_handle = str(qualified_handle).strip()
@@ -3458,8 +4258,12 @@ def ensure_room_launch_session_for_handle(
         participants = room_launch_participants(current)
         participant = copy.deepcopy(participants.get(normalized_handle, {}))
         created_new = False
+        # For named-session launches the caller supplies a stable alias
+        # (e.g. "fattony") so subsequent @@handle turns attach to the same
+        # session instead of spawning a fresh per-launch clone.
         session_alias = (
             str(participant.get("session_alias", "")).strip()
+            or str(session_alias_override).strip()
             or room_launch_session_alias(
                 str(current.get("guild_id", "")).strip(),
                 str(current.get("conversation_id", "")).strip(),
@@ -3467,6 +4271,23 @@ def ensure_room_launch_session_for_handle(
                 normalized_handle,
             )
         )
+        spawn_target = str(spawn_template_override).strip() or normalized_handle
+        if attached_identity:
+            # Attach mode: participant is an already-running session; skip
+            # create + prime + poll. Trust the caller's resolved identity.
+            participant["session_alias"] = str(attached_identity.get("alias", "")).strip() or session_alias
+            participant["session_id"] = str(attached_identity.get("session_id", "")).strip()
+            participant["session_name"] = str(attached_identity.get("session_name", "")).strip()
+            participant["delivery_selector"] = (
+                str(participant.get("session_name", "")).strip()
+                or str(participant.get("session_id", "")).strip()
+                or str(participant.get("session_alias", "")).strip()
+            )
+            participant["qualified_handle"] = normalized_handle
+            participant["attached"] = True
+            current = _sync_launch_participant(current, normalized_handle, participant)
+            current = save_room_launch(current)
+            return current, copy.deepcopy(participant)
         existing = None
         if str(participant.get("session_name", "")).strip():
             existing_by_name = session_index_by_name(state="all").get(str(participant.get("session_name", "")).strip())
@@ -3476,14 +4297,27 @@ def ensure_room_launch_session_for_handle(
             existing_by_alias = session_index_by_alias(state="all").get(session_alias)
             if session_record_routable(existing_by_alias):
                 existing = existing_by_alias
+        repinned_identity: dict[str, str] = {}
+        if not session_record_routable(existing):
+            # The stored session identity no longer routes: the seat's old
+            # session retired and it woke as a new one. The qualified handle
+            # is the stable identity, so re-resolve it the same way a fresh
+            # @@mention would before spawning a replacement — the thread
+            # re-pins to the live session instead of going deaf or spawning
+            # a second body for an already-running seat.
+            repinned_identity = resolve_existing_session_for_handle(normalized_handle)
         if session_record_routable(existing):
             participant["session_alias"] = str(existing.get("alias", "")).strip() or session_alias
             participant["session_id"] = str(existing.get("id", "")).strip()
             participant["session_name"] = str(existing.get("session_name", "")).strip()
+        elif repinned_identity:
+            participant["session_alias"] = str(repinned_identity.get("alias", "")).strip() or session_alias
+            participant["session_id"] = str(repinned_identity.get("session_id", "")).strip()
+            participant["session_name"] = str(repinned_identity.get("session_name", "")).strip()
         else:
             created_new = True
             created = create_agent_session(
-                normalized_handle,
+                spawn_target,
                 alias=session_alias,
                 title=title or room_launch_thread_name(normalized_handle, str(current.get("from_display", "")).strip()),
                 initial_message=initial_message,
@@ -3510,11 +4344,18 @@ def ensure_room_launch_session_for_handle(
                 selector_snapshot = created_selector
                 hydrated = created_identity
         if created_new and not selector_snapshot:
+            # Async POST /v0/sessions returns no identity fields, and the
+            # platform may store the alias under a pack-namespace prefix
+            # (e.g. gasburger.dc-...). Each poll tries the exact selectors
+            # and then a suffix match keyed by the unique sha digest baked
+            # into session_alias (or by the supplied named-session alias).
             selector_snapshot, hydrated = resolve_routable_session_candidate_eventually(
                 participant.get("session_name", ""),
                 participant.get("delivery_selector", ""),
                 participant.get("session_alias", ""),
                 participant.get("session_id", ""),
+                suffix_template=spawn_target,
+                suffix_alias=session_alias,
             )
         if hydrated:
             participant["session_alias"] = str(hydrated.get("alias", "")).strip() or str(participant.get("session_alias", "")).strip()
@@ -3550,6 +4391,8 @@ def ensure_room_launch_session_for_handle(
                     participant.get("session_id", ""),
                     participant.get("session_alias", ""),
                     participant.get("delivery_selector", ""),
+                    suffix_template=spawn_target,
+                    suffix_alias=session_alias,
                 )
             if not ready_identity:
                 raise GCAPIError(f"created launch session is not ready yet: {participant['session_alias'] or normalized_handle}")
@@ -3586,6 +4429,9 @@ def ensure_room_launch_session(
     *,
     title: str = "",
     initial_message: str = "",
+    attached_identity: dict[str, str] | None = None,
+    spawn_template_override: str = "",
+    session_alias_override: str = "",
 ) -> dict[str, Any]:
     qualified_handle = str(launch.get("qualified_handle", "")).strip()
     current, _participant = ensure_room_launch_session_for_handle(
@@ -3593,8 +4439,64 @@ def ensure_room_launch_session(
         qualified_handle,
         title=title,
         initial_message=initial_message,
+        attached_identity=attached_identity,
+        spawn_template_override=spawn_template_override,
+        session_alias_override=session_alias_override,
     )
     return current
+
+
+def repin_room_launch_participant_for_session(
+    launch_id: str,
+    qualified_handle: str,
+    *,
+    session_name: str = "",
+    session_id: str = "",
+    session_alias: str = "",
+) -> dict[str, Any] | None:
+    """Re-pin a launch participant to a live session identity.
+
+    A seat's session retires and it wakes as a new one; the qualified handle
+    stays. When the seat publishes into its old launch thread, rebind the
+    stored participant entry to the publishing session so later deliveries
+    reach the live session instead of knocking on the retired one. Returns
+    the updated launch record, or None when nothing changed.
+    """
+    normalized_launch_id = str(launch_id).strip()
+    normalized_handle = str(qualified_handle).strip()
+    normalized_name = str(session_name).strip()
+    normalized_id = str(session_id).strip()
+    if not normalized_launch_id or not normalized_handle:
+        return None
+    if not normalized_name and not normalized_id:
+        return None
+    with advisory_lock(room_launch_lock_path(normalized_launch_id)):
+        current = load_room_launch(normalized_launch_id)
+        if not isinstance(current, dict):
+            return None
+        participant = room_launch_participant(current, normalized_handle)
+        if not participant:
+            return None
+        if _room_launch_participant_matches_session(
+            participant,
+            session_name=normalized_name,
+            session_id=normalized_id,
+        ):
+            return None
+        if normalized_name:
+            participant["session_name"] = normalized_name
+        if normalized_id:
+            participant["session_id"] = normalized_id
+        if str(session_alias).strip():
+            participant["session_alias"] = str(session_alias).strip()
+        participant["delivery_selector"] = (
+            str(participant.get("session_name", "")).strip()
+            or str(participant.get("session_id", "")).strip()
+            or str(participant.get("session_alias", "")).strip()
+        )
+        participant["qualified_handle"] = normalized_handle
+        current = _sync_launch_participant(current, normalized_handle, participant)
+        return save_room_launch(current)
 
 
 def create_thread_from_message(parent_channel_id: str, source_message_id: str, name: str) -> dict[str, Any]:
@@ -3729,11 +4631,16 @@ def extract_agent_handles(body: str) -> list[str]:
             start = j
             while j < len(text):
                 lower = text[j].lower()
-                if ("a" <= lower <= "z") or text[j].isdigit() or text[j] in {"_", "-"}:
+                if ("a" <= lower <= "z") or text[j].isdigit() or text[j] in {"_", "-", "."}:
                     j += 1
                     continue
                 break
-            part = text[start:j]
+            # The scan set carries "." so pack-qualified segments
+            # (gasburger.mayor) survive, but sentence punctuation must not:
+            # "ask @@sky." names the seat `sky`, not `sky.`. Trailing dots are
+            # dropped here rather than terminating the scan so a mention
+            # followed by an ellipsis still resolves.
+            part = text[start:j].rstrip(".")
             if not part:
                 break
             parts.append(part)
@@ -4166,7 +5073,12 @@ def record_room_launch_message_target(
         return save_room_launch(body)
 
 
-def resolve_publish_conversation_id(binding: dict[str, Any], requested_conversation_id: str) -> str:
+def resolve_publish_conversation_id(
+    binding: dict[str, Any],
+    requested_conversation_id: str,
+    *,
+    bot_token: str | None = None,
+) -> str:
     binding_conversation_id = str(binding.get("conversation_id", "")).strip()
     requested = str(requested_conversation_id).strip()
     if not requested or requested == binding_conversation_id:
@@ -4174,7 +5086,11 @@ def resolve_publish_conversation_id(binding: dict[str, Any], requested_conversat
     if str(binding.get("kind", "")).strip() == "dm":
         raise ValueError("--conversation-id cannot override a DM binding")
     try:
-        channel_info = discord_api_request("GET", f"/channels/{urllib.parse.quote(requested)}")
+        channel_info = discord_api_request(
+            "GET",
+            f"/channels/{urllib.parse.quote(requested)}",
+            bot_token=bot_token,
+        )
     except DiscordAPIError as exc:
         raise ValueError(f"failed to validate --conversation-id: {exc}") from exc
     parent_id = str((channel_info or {}).get("parent_id", "")).strip()
@@ -4190,12 +5106,17 @@ def resolve_publish_destination(
     trigger_id: str = "",
     reply_to_message_id: str = "",
     source_context: dict[str, str] | None = None,
+    bot_token: str | None = None,
 ) -> tuple[str, str, dict[str, Any] | None]:
     reply_target = str(reply_to_message_id).strip() or str(trigger_id).strip()
     source_meta = derive_publish_source_metadata(source_context)
     launch_id = str(source_meta.get("launch_id", "")).strip()
     if str(binding.get("publish_route_kind", "")).strip() != "room_launch" or not launch_id:
-        conversation_id = resolve_publish_conversation_id(binding, requested_conversation_id)
+        conversation_id = resolve_publish_conversation_id(
+            binding,
+            requested_conversation_id,
+            bot_token=bot_token,
+        )
         return conversation_id, reply_target, None
     current = load_room_launch(launch_id)
     if not current:
@@ -4224,12 +5145,13 @@ def _peer_delivery_needs_attention(record: dict[str, Any]) -> bool:
         return False
     phase = str(peer_delivery.get("phase", "")).strip()
     status = str(peer_delivery.get("status", "")).strip()
-    if phase == "peer_fanout_partial_failure":
+    if phase in {"peer_fanout_in_progress", "peer_fanout_partial_failure"}:
         return True
     if status.startswith("failed_"):
         return True
     return any(
-        str(entry.get("status", "")).strip() in {"failed_retryable", "failed_permanent", "delivery_unknown"}
+        str(entry.get("status", "")).strip()
+        in {"pending", "in_progress", "awaiting_result", "failed_retryable", "failed_permanent", "delivery_unknown"}
         for entry in peer_delivery.get("targets", [])
         if isinstance(entry, dict)
     )
@@ -4248,7 +5170,7 @@ def _finalize_peer_delivery(record: dict[str, Any]) -> dict[str, Any]:
         if isinstance(entry, dict)
     }
     status = str(peer_delivery.get("status", "")).strip()
-    if {"pending", "in_progress"} & terminal_statuses:
+    if {"pending", "in_progress", "awaiting_result"} & terminal_statuses:
         peer_delivery["phase"] = "peer_fanout_in_progress"
     elif status.startswith("failed_"):
         peer_delivery["phase"] = "peer_fanout_partial_failure"
@@ -4293,11 +5215,59 @@ def _update_target_in_progress(
                 "idempotency_key": idempotency_key,
                 "attempt_count": attempt_count,
                 "attempted_at": utcnow(),
+                "request_id": "",
+                "event_cursor": "",
+                "response": {},
+                "terminal_evidence": {},
+                "reason": "",
             },
         )
         current["peer_delivery"] = peer_delivery
         current = _save_chat_publish_record(current)
         return current, attempt_count
+
+
+def _patch_peer_delivery_target(
+    *,
+    publish_id: str,
+    fallback_record: dict[str, Any],
+    session_name: str,
+    patch: dict[str, Any],
+    expected_request_id: str = "",
+) -> dict[str, Any]:
+    with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
+        current = load_chat_publish(publish_id) or copy.deepcopy(fallback_record)
+        peer_delivery = _peer_delivery_payload(current)
+        target_entry = next(
+            (item for item in peer_delivery.get("targets", []) if str(item.get("session_name", "")).strip() == session_name),
+            None,
+        )
+        if expected_request_id and str((target_entry or {}).get("request_id", "")).strip() != expected_request_id:
+            return current
+        _update_peer_target(peer_delivery, session_name, patch)
+        current["peer_delivery"] = peer_delivery
+        return _save_chat_publish_record(current)
+
+
+def _record_peer_async_acceptance(
+    *,
+    publish_id: str,
+    fallback_record: dict[str, Any],
+    session_name: str,
+    accepted: dict[str, Any],
+) -> dict[str, Any]:
+    return _patch_peer_delivery_target(
+        publish_id=publish_id,
+        fallback_record=fallback_record,
+        session_name=session_name,
+        patch={
+            "status": "awaiting_result",
+            "request_id": str(accepted.get("request_id", "")).strip(),
+            "event_cursor": str(accepted.get("event_cursor", "")).strip(),
+            "intent": str(accepted.get("intent", "default")).strip() or "default",
+            "response": accepted.get("response") if isinstance(accepted.get("response"), dict) else {},
+        },
+    )
 
 
 def _update_target_delivery_result(
@@ -4564,13 +5534,61 @@ def _apply_peer_fanout(
             idempotency_key=idempotency_key,
             launch=launch_record,
         )
+
+        def record_async_acceptance(accepted: dict[str, Any], session_name: str = target_key) -> None:
+            nonlocal current
+            current = _record_peer_async_acceptance(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                accepted=accepted,
+            )
+
+        def record_async_terminal(evidence: dict[str, Any], session_name: str = target_key) -> None:
+            nonlocal current
+            request_id = str(
+                next(
+                    (
+                        item.get("request_id", "")
+                        for item in _peer_delivery_payload(current).get("targets", [])
+                        if str(item.get("session_name", "")).strip() == session_name
+                    ),
+                    "",
+                )
+            ).strip()
+            terminal_status = "delivered" if str(evidence.get("status", "")).strip() == "succeeded" else "failed_retryable"
+            current = _patch_peer_delivery_target(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                expected_request_id=request_id,
+                patch={"status": terminal_status, "terminal_evidence": evidence},
+            )
+
         try:
             response = deliver_session_message(
                 delivery_selector,
                 envelope,
                 idempotency_key=idempotency_key,
                 timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
+                async_timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
+                on_async_accepted=record_async_acceptance,
+                on_async_terminal=record_async_terminal,
             )
+        except GCAPIResultUnknown as exc:
+            peer_delivery = _peer_delivery_payload(current)
+            target_entry = next(
+                (item for item in peer_delivery.get("targets", []) if str(item.get("session_name", "")).strip() == target_key),
+                {},
+            )
+            target_status = "awaiting_result" if str(target_entry.get("request_id", "")).strip() else "delivery_unknown"
+            current = _patch_peer_delivery_target(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=target_key,
+                patch={"status": target_status, "reason": str(exc)},
+            )
+            continue
         except GCAPIError as exc:
             current = _update_target_delivery_result(
                 publish_id=publish_id,
@@ -4613,6 +5631,7 @@ def retry_peer_fanout(
     if launch_id:
         launch_record = load_room_launch(launch_id)
     retry_targets: list[tuple[str, str, str, str, list[str], str, str, str]] = []
+    resume_targets: list[tuple[str, str, str, str]] = []
     with advisory_lock(_safe_lock_name("chat-publish", publish_id)):
         current = load_chat_publish(publish_id) or record
         current, changed = _promote_stale_in_progress_targets(current)
@@ -4639,7 +5658,17 @@ def retry_peer_fanout(
                     target_selector = resolved_name
             if selected and session_name not in selected:
                 continue
-            if str(entry.get("status", "")).strip() not in eligible:
+            entry_status = str(entry.get("status", "")).strip()
+            request_id = str(entry.get("request_id", "")).strip()
+            event_cursor = str(entry.get("event_cursor", "")).strip()
+            intent = str(entry.get("intent", "default")).strip() or "default"
+            if entry_status == "awaiting_result" or (
+                include_unknown and entry_status == "delivery_unknown" and request_id and event_cursor
+            ):
+                if request_id and event_cursor:
+                    resume_targets.append((session_name, request_id, event_cursor, intent))
+                continue
+            if entry_status not in eligible:
                 continue
             idempotency_key = str(entry.get("idempotency_key", "")).strip()
             if not idempotency_key:
@@ -4656,6 +5685,11 @@ def retry_peer_fanout(
                     "idempotency_key": idempotency_key,
                     "delivery_selector": target_selector,
                     "attempts": attempts,
+                    "request_id": "",
+                    "event_cursor": "",
+                    "response": {},
+                    "terminal_evidence": {},
+                    "reason": "",
                 },
             )
             retry_targets.append(
@@ -4673,6 +5707,55 @@ def retry_peer_fanout(
         current["peer_delivery"] = peer_delivery
         current = _save_chat_publish_record(current)
 
+    for session_name, request_id, event_cursor, intent in resume_targets:
+        try:
+            terminal_payload = resume_session_message_delivery(
+                request_id,
+                event_cursor,
+                intent=intent,
+                timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
+            )
+        except GCAPIResultUnknown as exc:
+            current = _patch_peer_delivery_target(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                expected_request_id=request_id,
+                patch={"status": "awaiting_result", "reason": str(exc)},
+            )
+        except GCAPIRequestFailed as exc:
+            current = _patch_peer_delivery_target(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                expected_request_id=request_id,
+                patch={
+                    "status": "failed_retryable",
+                    "reason": str(exc),
+                    "terminal_evidence": {"status": "failed", "payload": exc.payload},
+                },
+            )
+        except GCAPIError as exc:
+            current = _patch_peer_delivery_target(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                expected_request_id=request_id,
+                patch={"status": "failed_retryable", "reason": str(exc)},
+            )
+        else:
+            current = _patch_peer_delivery_target(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                expected_request_id=request_id,
+                patch={
+                    "status": "delivered",
+                    "delivered_at": utcnow(),
+                    "terminal_evidence": {"status": "succeeded", "payload": terminal_payload},
+                },
+            )
+
     for session_name, target_selector, idempotency_key, delivery, mentioned_session_names, root_ingress_receipt_id, source_session_name, source_session_id in retry_targets:
         envelope = _build_peer_envelope(
             binding=binding,
@@ -4686,13 +5769,61 @@ def retry_peer_fanout(
             idempotency_key=idempotency_key,
             launch=launch_record,
         )
+
+        def record_retry_async_acceptance(accepted: dict[str, Any], retry_session_name: str = session_name) -> None:
+            nonlocal current
+            current = _record_peer_async_acceptance(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=retry_session_name,
+                accepted=accepted,
+            )
+
+        def record_retry_async_terminal(evidence: dict[str, Any], retry_session_name: str = session_name) -> None:
+            nonlocal current
+            peer_delivery = _peer_delivery_payload(current)
+            target_entry = next(
+                (
+                    item
+                    for item in peer_delivery.get("targets", [])
+                    if str(item.get("session_name", "")).strip() == retry_session_name
+                ),
+                {},
+            )
+            request_id = str(target_entry.get("request_id", "")).strip()
+            terminal_status = "delivered" if str(evidence.get("status", "")).strip() == "succeeded" else "failed_retryable"
+            current = _patch_peer_delivery_target(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=retry_session_name,
+                expected_request_id=request_id,
+                patch={"status": terminal_status, "terminal_evidence": evidence},
+            )
+
         try:
             response = deliver_session_message(
                 target_selector,
                 envelope,
                 idempotency_key=idempotency_key,
                 timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
+                async_timeout=PEER_DELIVERY_TIMEOUT_SECONDS,
+                on_async_accepted=record_retry_async_acceptance,
+                on_async_terminal=record_retry_async_terminal,
             )
+        except GCAPIResultUnknown as exc:
+            peer_delivery = _peer_delivery_payload(current)
+            target_entry = next(
+                (item for item in peer_delivery.get("targets", []) if str(item.get("session_name", "")).strip() == session_name),
+                {},
+            )
+            target_status = "awaiting_result" if str(target_entry.get("request_id", "")).strip() else "delivery_unknown"
+            current = _patch_peer_delivery_target(
+                publish_id=publish_id,
+                fallback_record=current,
+                session_name=session_name,
+                patch={"status": target_status, "reason": str(exc)},
+            )
+            continue
         except GCAPIError as exc:
             current = _update_target_delivery_result(
                 publish_id=publish_id,
@@ -4727,20 +5858,63 @@ def publish_binding_message(
     source_session_name: str = "",
     source_session_id: str = "",
 ) -> dict[str, Any]:
+    app_name = validate_app_name(binding.get("app", ""))
+    bot_token: str | None = None
+    if app_name:
+        bot_token = load_bot_token(app_name)
+        if not bot_token:
+            raise DiscordAPIError(f"Discord bot token is not configured for app {app_name!r}")
+    if str(binding.get("kind", "")).strip() == "room":
+        config = load_config()
+        policy = resolve_app_policy(config, app_name)
+        has_outbound_policy = bool(
+            _normalize_allowlist(policy.get("guild_allowlist"))
+            or _normalize_allowlist(policy.get("channel_allowlist"))
+        )
+        if has_outbound_policy:
+            policy_token = bot_token or load_bot_token()
+            if not policy_token:
+                display_name = app_name or "default"
+                raise DiscordAPIError(f"Discord bot token is not configured for app {display_name!r}")
+            binding_conversation_id = str(binding.get("conversation_id", "")).strip()
+            channel_scope = describe_room_channel_scope(binding_conversation_id, bot_token=policy_token)
+            actual_guild_id = str(channel_scope.get("guild_id", "")).strip()
+            parent_channel_id = (
+                str(channel_scope.get("thread_parent_id", "")).strip()
+                or binding_conversation_id
+            )
+            policy_rejection = outbound_policy_reason(
+                config,
+                actual_guild_id,
+                parent_channel_id,
+                app_name=app_name,
+            )
+            if policy_rejection:
+                display_name = app_name or "default"
+                raise ValueError(f"Discord app {display_name!r} policy rejects publish: {policy_rejection}")
     conversation_id, reply_target, launch = resolve_publish_destination(
         binding,
         requested_conversation_id=requested_conversation_id,
         trigger_id=trigger_id,
         reply_to_message_id=reply_to_message_id,
         source_context=source_context,
+        bot_token=bot_token,
     )
     if not conversation_id:
         raise ValueError("binding is missing a destination conversation_id")
-    response = post_channel_message(
-        conversation_id,
-        body,
-        reply_to_message_id=reply_target,
-    )
+    if app_name:
+        response = post_channel_message(
+            conversation_id,
+            body,
+            reply_to_message_id=reply_target,
+            bot_token=bot_token,
+        )
+    else:
+        response = post_channel_message(
+            conversation_id,
+            body,
+            reply_to_message_id=reply_target,
+        )
     remote_message_id = str((response or {}).get("id", "")).strip()
     if not remote_message_id:
         raise DiscordAPIError("discord publish returned no message id")
@@ -4762,16 +5936,56 @@ def publish_binding_message(
         or str(resolved_source_identity.get("session_id", "")).strip()
         or str(os.environ.get("GC_SESSION_ID", "")).strip()
     )
+    launch_record = launch
+    if launch_record is None and str(source_meta.get("launch_id", "")).strip():
+        launch_record = load_room_launch(str(source_meta.get("launch_id", "")).strip())
     effective_source_qualified_handle = room_launch_participant_handle_for_session(
-        launch or {},
+        launch_record or {},
         session_name=effective_source_session_name,
         session_id=effective_source_session_id,
     )
+    effective_source_alias = str(resolved_source_identity.get("alias", "")).strip()
+    if not effective_source_qualified_handle and launch_record:
+        # The stored participant entries may pin a retired session; match the
+        # publishing session to its participant by alias instead (a seat's
+        # alias is its qualified handle) so the publish can re-pin below.
+        if not effective_source_alias:
+            env_session_id = str(os.environ.get("GC_SESSION_ID", "")).strip()
+            env_session_name = str(os.environ.get("GC_SESSION_NAME", "")).strip()
+            if (effective_source_session_id and effective_source_session_id == env_session_id) or (
+                effective_source_session_name and effective_source_session_name == env_session_name
+            ):
+                effective_source_alias = str(os.environ.get("GC_ALIAS", "")).strip()
+        if not effective_source_alias and (effective_source_session_id or effective_source_session_name):
+            try:
+                effective_source_alias = str(
+                    resolve_session_identity(
+                        effective_source_session_id or effective_source_session_name
+                    ).get("alias", "")
+                ).strip()
+            except GCAPIError:
+                effective_source_alias = ""
+        if effective_source_alias:
+            for handle in room_launch_participants(launch_record):
+                if _alias_matches_qualified_handle(effective_source_alias, handle):
+                    effective_source_qualified_handle = str(handle).strip()
+                    break
+    if effective_source_qualified_handle and launch_record:
+        repinned = repin_room_launch_participant_for_session(
+            str(launch_record.get("launch_id", "")).strip() or str(source_meta.get("launch_id", "")).strip(),
+            effective_source_qualified_handle,
+            session_name=effective_source_session_name,
+            session_id=effective_source_session_id,
+            session_alias=effective_source_alias,
+        )
+        if repinned:
+            launch_record = repinned
     record = save_chat_publish(
         {
             "binding_id": str(binding.get("id", "")).strip(),
             "binding_kind": str(binding.get("kind", "")).strip(),
             "binding_conversation_id": str(binding.get("conversation_id", "")).strip(),
+            "app": app_name,
             "conversation_id": conversation_id,
             "guild_id": str(binding.get("guild_id", "")).strip(),
             "trigger_id": str(trigger_id).strip(),
@@ -4782,14 +5996,11 @@ def publish_binding_message(
             "source_event_kind": source_meta.get("source_event_kind", ""),
             "root_ingress_receipt_id": source_meta.get("root_ingress_receipt_id", ""),
             "launch_id": source_meta.get("launch_id", ""),
-            "launch_thread_id": str((launch or {}).get("thread_id", "")).strip(),
+            "launch_thread_id": str((launch_record or {}).get("thread_id", "")).strip(),
             "body": body,
             "remote_message_id": remote_message_id,
         }
     )
-    launch_record = launch
-    if launch_record is None and str(source_meta.get("launch_id", "")).strip():
-        launch_record = load_room_launch(str(source_meta.get("launch_id", "")).strip())
     launch_thread_id = str((launch_record or {}).get("thread_id", "")).strip()
     launch_record_id = str((launch_record or {}).get("launch_id", "")).strip() or str(source_meta.get("launch_id", "")).strip()
     if launch_record_id and launch_thread_id and conversation_id == launch_thread_id:
@@ -4804,6 +6015,31 @@ def publish_binding_message(
     return {"binding": binding, "record": record, "response": response}
 
 
+def resume_session_message_delivery(
+    request_id: str,
+    event_cursor: str,
+    *,
+    intent: str = "default",
+    timeout: float = GC_API_ASYNC_RESULT_TIMEOUT_SECONDS,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, Any]:
+    normalized_intent = str(intent or "default").strip() or "default"
+    if normalized_intent == "default":
+        success_type = GC_EVENT_SESSION_MESSAGE_SUCCEEDED
+        failure_operation = GC_OPERATION_SESSION_MESSAGE
+    else:
+        success_type = GC_EVENT_SESSION_SUBMIT_SUCCEEDED
+        failure_operation = GC_OPERATION_SESSION_SUBMIT
+    return wait_for_gc_request_result(
+        request_id,
+        event_cursor=event_cursor,
+        success_type=success_type,
+        failure_operation=failure_operation,
+        timeout=timeout,
+        cancel_event=cancel_event,
+    )
+
+
 def deliver_session_message(
     session_name: str,
     message: str,
@@ -4811,7 +6047,13 @@ def deliver_session_message(
     timeout: float = GC_API_REQUEST_TIMEOUT_SECONDS,
     *,
     intent: str = "default",
+    async_timeout: float = GC_API_ASYNC_RESULT_TIMEOUT_SECONDS,
+    cancel_event: threading.Event | None = None,
+    on_async_accepted: Callable[[dict[str, Any]], None] | None = None,
+    on_async_terminal: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    if cancel_event is not None and cancel_event.is_set():
+        raise GCAPIRequestCancelled("session delivery was cancelled before submission")
     headers: dict[str, str] = {}
     key = str(idempotency_key).strip()
     if key:
@@ -4822,15 +6064,49 @@ def deliver_session_message(
     if normalized_intent != "default":
         path = f"/v0/session/{urllib.parse.quote(str(session_name).strip(), safe='')}/submit"
         payload_body["intent"] = normalized_intent
-    payload = gc_api_request(
-        "POST",
-        path,
-        payload=payload_body,
-        headers=headers,
-        timeout=timeout,
-    )
+    try:
+        status_code, payload = gc_api_request_with_status(
+            "POST",
+            path,
+            payload=payload_body,
+            headers=headers,
+            timeout=timeout,
+        )
+    except GCAPITransportError as exc:
+        raise GCAPIResultUnknown(f"session delivery outcome is unknown: {exc}") from exc
     if not isinstance(payload, dict):
+        if status_code == 202:
+            raise GCAPIResultUnknown("gc async HTTP 202 response requires request_id and event_cursor")
         return {}
+    if status_code != 202:
+        return payload
+    request_id = str(payload.get("request_id", "")).strip()
+    event_cursor = str(payload.get("event_cursor", "")).strip()
+    if not request_id or not event_cursor:
+        raise GCAPIResultUnknown("gc async HTTP 202 response requires request_id and event_cursor")
+    accepted_request = {
+        "http_status": status_code,
+        "request_id": request_id,
+        "event_cursor": event_cursor,
+        "intent": normalized_intent,
+        "response": payload,
+    }
+    if on_async_accepted is not None:
+        on_async_accepted(accepted_request)
+    try:
+        terminal_payload = resume_session_message_delivery(
+            request_id,
+            event_cursor=event_cursor,
+            intent=normalized_intent,
+            timeout=async_timeout,
+            cancel_event=cancel_event,
+        )
+    except GCAPIRequestFailed as exc:
+        if on_async_terminal is not None:
+            on_async_terminal({"status": "failed", "payload": exc.payload})
+        raise
+    if on_async_terminal is not None:
+        on_async_terminal({"status": "succeeded", "payload": terminal_payload})
     return payload
 
 
@@ -4884,7 +6160,13 @@ def sync_guild_commands(config: dict[str, Any], guild_id: str) -> Any:
     )
 
 
-def post_channel_message(channel_id: str, body: str, reply_to_message_id: str = "") -> Any:
+def post_channel_message(
+    channel_id: str,
+    body: str,
+    reply_to_message_id: str = "",
+    *,
+    bot_token: str | None = None,
+) -> Any:
     payload: dict[str, Any] = {
         "content": body,
         "allowed_mentions": {"parse": ["users"]},
@@ -4896,11 +6178,10 @@ def post_channel_message(channel_id: str, body: str, reply_to_message_id: str = 
             "message_id": reply_to_message_id,
             "fail_if_not_exists": False,
         }
-    return discord_api_request(
-        "POST",
-        f"/channels/{urllib.parse.quote(str(channel_id))}/messages",
-        payload=payload,
-    )
+    path = f"/channels/{urllib.parse.quote(str(channel_id))}/messages"
+    if bot_token is None:
+        return discord_api_request("POST", path, payload=payload)
+    return discord_api_request("POST", path, payload=payload, bot_token=bot_token)
 
 
 def discord_jump_url(guild_id: str, conversation_id: str) -> str:
@@ -4911,9 +6192,15 @@ def discord_jump_url(guild_id: str, conversation_id: str) -> str:
     return f"https://discord.com/channels/{guild_id}/{conversation_id}"
 
 
-def policy_reason(config: dict[str, Any], guild_id: str, parent_channel_id: str, role_ids: list[str]) -> str:
-    normalized = normalize_config(config)
-    policy = normalized.get("policy", {})
+def policy_reason(
+    config: dict[str, Any],
+    guild_id: str,
+    parent_channel_id: str,
+    role_ids: list[str],
+    *,
+    app_name: str = "",
+) -> str:
+    policy = resolve_app_policy(config, app_name)
     guild_allowlist = set(_normalize_allowlist(policy.get("guild_allowlist")))
     channel_allowlist = set(_normalize_allowlist(policy.get("channel_allowlist")))
     role_allowlist = set(_normalize_allowlist(policy.get("role_allowlist")))
@@ -4923,4 +6210,21 @@ def policy_reason(config: dict[str, Any], guild_id: str, parent_channel_id: str,
         return "channel_not_allowed"
     if role_allowlist and not role_allowlist.intersection(set(role_ids)):
         return "role_not_allowed"
+    return ""
+
+
+def outbound_policy_reason(
+    config: dict[str, Any],
+    guild_id: str,
+    parent_channel_id: str,
+    *,
+    app_name: str = "",
+) -> str:
+    policy = resolve_app_policy(config, app_name)
+    guild_allowlist = set(_normalize_allowlist(policy.get("guild_allowlist")))
+    channel_allowlist = set(_normalize_allowlist(policy.get("channel_allowlist")))
+    if guild_allowlist and str(guild_id).strip() not in guild_allowlist:
+        return "guild_not_allowed"
+    if channel_allowlist and str(parent_channel_id).strip() not in channel_allowlist:
+        return "channel_not_allowed"
     return ""
