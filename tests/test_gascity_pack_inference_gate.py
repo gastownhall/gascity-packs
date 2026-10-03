@@ -2003,6 +2003,10 @@ def test_inference_workflows_pin_gascity_source_root_to_installed_gc() -> None:
         assert 'go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}"' in workflow, name
         assert 'go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"' in workflow, name
         assert 'gascity_commit="$(jq -er .Origin.Hash <<<"$gascity_module")"' in workflow, name
+        # `go mod download -json mod@latest` omits .Origin, so the commit must be
+        # read from a download of the resolved version, not of the raw ref.
+        assert 'go mod download -json "github.com/gastownhall/gascity@${gascity_version}"' in workflow, name
+        assert 'gascity_version="$(jq -er .Version <<<"$gascity_query")"' in workflow, name
         assert (
             'git -C "$gascity_src" fetch --quiet --depth 1 https://github.com/gastownhall/gascity.git "$gascity_commit"'
             in workflow

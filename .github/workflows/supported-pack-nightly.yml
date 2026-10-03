@@ -244,9 +244,21 @@ jobs:
         run: |
           # Resolve the ref once so gc and the builtin core/bd packs the gate
           # imports (GASCITY_SOURCE_ROOT) come from the same gascity revision.
-          gascity_module="$(go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}")"
-          gascity_version="$(jq -er .Version <<<"$gascity_module")"
-          gascity_commit="$(jq -er .Origin.Hash <<<"$gascity_module")"
+          # A query such as @latest comes back without .Origin, so resolve the
+          # ref to a version first, then read that exact version's commit.
+          gascity_query="$(go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}")" || {
+            echo "$gascity_query" >&2
+            exit 1
+          }
+          gascity_version="$(jq -er .Version <<<"$gascity_query")"
+          gascity_module="$(go mod download -json "github.com/gastownhall/gascity@${gascity_version}")" || {
+            echo "$gascity_module" >&2
+            exit 1
+          }
+          gascity_commit="$(jq -er .Origin.Hash <<<"$gascity_module")" || {
+            echo "no commit recorded for gascity ${gascity_version}: $gascity_module" >&2
+            exit 1
+          }
           go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"
           # Import core/bd from a git checkout of that commit, never the module
           # cache directory: module zips drop file modes, so every pack script gc
