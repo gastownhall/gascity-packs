@@ -394,6 +394,34 @@ the worktree. Everything from here to Step 4 assumes `STILL_ORPHANED=true`
 and each destructive site re-states the check, so a step reached out of order
 still fails closed.
 
+**Step 2b: Prove the recorded directory is itself a Git worktree.**
+
+`git -C "$WORKTREE"` searches parent directories. A plain directory beneath a
+polecat home can therefore answer status, branch, and ancestry questions from
+the *parent* repository even though the recorded directory is not a worktree.
+Those answers never authorize acting on the child directory that would later
+be deleted. Canonicalize both paths and require an exact match:
+
+```bash
+WORKTREE_IS_EXACT=false
+if [ -n "$WORKTREE" ] && [ -d "$WORKTREE" ]; then
+  WORKTREE_CANON=$(cd "$WORKTREE" 2>/dev/null && pwd -P) || WORKTREE_CANON=""
+  WORKTREE_TOP=$(git -C "$WORKTREE" rev-parse --show-toplevel 2>/dev/null) || WORKTREE_TOP=""
+  if [ -n "$WORKTREE_CANON" ] && [ -n "$WORKTREE_TOP" ]; then
+    WORKTREE_TOP_CANON=$(cd "$WORKTREE_TOP" 2>/dev/null && pwd -P) || WORKTREE_TOP_CANON=""
+    if [ "$WORKTREE_CANON" = "$WORKTREE_TOP_CANON" ]; then
+      WORKTREE_IS_EXACT=true
+    fi
+  fi
+fi
+```
+
+If the recorded directory exists and `WORKTREE_IS_EXACT` is not `true`, skip
+this bead entirely and escalate the metadata mismatch. Do not inspect it with
+Git, salvage from it, close or reassign the bead, or delete the directory.
+An absent directory can still follow Case E; there is nothing at that path to
+inspect or remove.
+
 Check the bead and worktree state, then act:
 
 **Case A: Branch exists on origin (work already published).**
@@ -603,11 +631,16 @@ if [ "$STILL_ORPHANED" = "true" ] && [ "$HANDOFF_STAGE" = "target_recorded" ] &&
     # stopped one asleep with the handoff unprocessed.
     gc session wake "$REFINERY_TARGET" || true
     gc session nudge "$REFINERY_TARGET" "Run 'gc prime' to check merge queue and begin processing." || true
-    # Worktree is disposable, same reasoning as Step 3b:
+    # Worktree is disposable only when Step 2b proved this exact directory.
+    # Re-state the guard here because this arm skips Step 3b entirely.
     cd <rig-root>
-    git worktree remove <worktree-path> --force 2>/dev/null
-    rm -rf <worktree-path> 2>/dev/null  # Fallback
-    git worktree prune
+    if [ ! -d <worktree-path> ] || [ "$WORKTREE_IS_EXACT" = "true" ]; then
+      git worktree remove <worktree-path> --force 2>/dev/null
+      rm -rf <worktree-path> 2>/dev/null  # Fallback
+      git worktree prune
+    else
+      echo "SKIP: <bead> recorded worktree is not its own Git top-level — refusing deletion."
+    fi
     # Skip to Step 4 -- do NOT fall through to Step 3b's pool reset.
   else
     # The reassignment did not happen, and nothing above it mutated anything.
@@ -648,8 +681,12 @@ Once the verdict is `true`, the worktree is disposable:
 ```bash
 # Delete worktree if it exists
 cd <rig-root>
-git worktree remove <worktree-path> --force 2>/dev/null
-rm -rf <worktree-path> 2>/dev/null  # Fallback
+if [ ! -d <worktree-path> ] || [ "$WORKTREE_IS_EXACT" = "true" ]; then
+  git worktree remove <worktree-path> --force 2>/dev/null
+  rm -rf <worktree-path> 2>/dev/null  # Fallback
+else
+  echo "SKIP: <bead> recorded worktree is not its own Git top-level — refusing deletion."
+fi
 git worktree prune
 ```
 

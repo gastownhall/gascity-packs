@@ -24,6 +24,7 @@ trap 'rm -rf "$tmp"' EXIT
 BIN="$tmp/bin"
 STEP1="$tmp/step1-liveness-map.sh"
 STEP2A="$tmp/step2a-verdict.sh"
+STEP2B="$tmp/step2b-worktree-identity.sh"
 STEP3="$tmp/step3-on-main.sh"
 ERRLOG="$tmp/stderr.log"
 : >"$ERRLOG"
@@ -64,6 +65,7 @@ lift_block() {
 # rather than by the extraction failing.
 lift_block 'build_liveness_map() {' "$STEP1"
 lift_block 'STILL_ORPHANED=' "$STEP2A"
+lift_block 'WORKTREE_IS_EXACT=' "$STEP2B"
 lift_block 'merge-base --is-ancestor' "$STEP3"
 
 write_gc_stub() {
@@ -246,6 +248,41 @@ test_reassigned_bead_skips() {
     set_roster "$ROSTER_LIVE"
     run_verdict "pool-gone" "pool-1" OLD
     assert_verdict false "a bead reassigned since the snapshot"
+}
+
+# --- Step 2b: recorded worktree identity ---------------------------------
+
+run_worktree_identity() {
+    WORKTREE_IDENTITY=$(
+        set +eu
+        WORKTREE="$1"
+        . "$STEP2B"
+        printf '%s' "$WORKTREE_IS_EXACT"
+    )
+}
+
+test_exact_worktree_is_accepted() {
+    new_repo identity-exact
+    run_worktree_identity "$REPO"
+    [ "$WORKTREE_IDENTITY" = true ] ||
+        fail "an exact repository root must be accepted, got '$WORKTREE_IDENTITY'"
+}
+
+test_child_of_repository_is_rejected() {
+    new_repo identity-parent
+    mkdir -p "$REPO/worktrees/orphan"
+    printf 'untracked work\n' >"$REPO/worktrees/orphan/source.go"
+    run_worktree_identity "$REPO/worktrees/orphan"
+    [ "$WORKTREE_IDENTITY" = false ] ||
+        fail "a non-worktree child that inherits its parent repository must be rejected"
+    [ -f "$REPO/worktrees/orphan/source.go" ] ||
+        fail "identity validation must not alter the recorded directory"
+}
+
+test_missing_worktree_is_rejected() {
+    run_worktree_identity "$tmp/absent-worktree"
+    [ "$WORKTREE_IDENTITY" = false ] ||
+        fail "an absent worktree must not produce an exact-worktree verdict"
 }
 
 # --- Step 3: the "did this branch land?" test -----------------------------
@@ -453,11 +490,20 @@ test_lifted_blocks_use_no_bash4_only_constructs() {
     # includes macOS on bash 3.2.  Comment lines are stripped first -- the
     # recipe names `mapfile` in a comment explaining why it is not used.
     local block
-    for block in "$STEP1" "$STEP2A" "$STEP3"; do
+    for block in "$STEP1" "$STEP2A" "$STEP2B" "$STEP3"; do
         ! grep -v '^[[:space:]]*#' "$block" |
             grep -nE 'declare -A|local -A|mapfile|readarray|\$\{[A-Za-z_]+\^|\$\{[A-Za-z_]+,,|&>>|\[\[ -v ' >/dev/null ||
             fail "$(basename "$block") must stay bash 3.2 compatible"
     done
+}
+
+test_every_worktree_deletion_restates_identity_guard() {
+    local removals guarded
+    removals=$(grep -c 'git worktree remove <worktree-path>' "$FORMULA")
+    guarded=$(grep -c '\[ ! -d <worktree-path> \] || \[ "\$WORKTREE_IS_EXACT" = "true" \]' "$FORMULA")
+    [ "$removals" -eq 2 ] || fail "expected two worktree deletion sites, got $removals"
+    [ "$guarded" -eq "$removals" ] ||
+        fail "every worktree deletion site must re-state the exact-worktree guard"
 }
 
 test_absent_assignee_is_still_orphaned
@@ -472,6 +518,9 @@ test_bead_touched_mid_cycle_skips
 test_boundary_second_fraction_skips
 test_touch_before_the_recheck_rebuild_still_skips
 test_reassigned_bead_skips
+test_exact_worktree_is_accepted
+test_child_of_repository_is_rejected
+test_missing_worktree_is_rejected
 test_merge_commit_landing_reads_as_on_main
 test_rebased_landing_reads_as_on_main
 test_squashed_landing_reads_as_on_main
@@ -484,5 +533,6 @@ test_branch_with_no_changes_reads_as_not_on_main
 test_unreachable_remote_reads_as_not_on_main
 test_lifted_step3_block_is_the_hardened_one
 test_lifted_blocks_use_no_bash4_only_constructs
+test_every_worktree_deletion_restates_identity_guard
 
 echo "mol-witness-patrol orphan recovery tests passed"
