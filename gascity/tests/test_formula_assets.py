@@ -117,6 +117,7 @@ BUILD_FROM_PLAN_STEPS = BUILD_FROM_DECOMPOSE_STEPS | {
     "prepare-plan",
     "plan",
     "plan-review",
+    "plan-repair",
 }
 
 BUILD_FROM_REQUIREMENTS_STEPS = BUILD_FROM_PLAN_STEPS | {
@@ -1837,7 +1838,13 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["prepare-plan"]["needs"], ["requirements"])
         self.assertEqual(steps["plan"]["needs"], ["prepare-plan"])
         self.assertEqual(steps["plan-review"]["needs"], ["plan"])
-        self.assertEqual(steps["prepare-decompose"]["needs"], ["plan-review"])
+        self.assertEqual(steps["plan-repair"]["needs"], ["plan-review"])
+        self.assertEqual(steps["plan-repair"]["metadata"]["gc.run_target"], "gc.run-operator")
+        self.assertEqual(
+            steps["plan-repair"]["description_file"],
+            "../assets/workflows/build-from-plan-base/plan-repair.md",
+        )
+        self.assertEqual(steps["prepare-decompose"]["needs"], ["plan-repair"])
         self.assertEqual(steps["decompose"]["needs"], ["prepare-decompose"])
         self.assertEqual(steps["prepare-convoy"]["needs"], ["decompose"])
         self.assertEqual(steps["implement"]["needs"], ["prepare-convoy"])
