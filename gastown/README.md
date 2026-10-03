@@ -59,7 +59,10 @@ closed-unmerged, contradictory, or merged-unvalidated PRs remain blocked for
 operator review. A verified close records the distinct
 `merge_result=mr_merged` state and retains both the validated `pr_head_sha` and
 exact `polecat/<work>` source branch through artifact cleanup. Cleanup is never
-invoked by the MR publication path.
+invoked by the MR publication path. Because blocked beads are not session
+demand, the witness patrol wakes the refinery whenever a pending PR check is
+due, so a merged PR releases its dependents even when no other merge work
+arrives.
 
 This contract applies to new handoffs. An upgrade does not reopen legacy beads
 that an older pack already closed at PR publication; operators should audit

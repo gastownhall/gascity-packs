@@ -47,13 +47,14 @@ case "$1" in
                     --arg show_result "$show_result" \
                     --arg show_pr_state "$show_pr_state" \
                     --arg show_merged_at "$show_merged_at" \
+                    --arg show_cleanup_state "${GC_TEST_SHOW_CLEANUP_STATE:-complete}" \
                     '.[0]
                      | .status = $show_status
                      | .metadata.merge_result = $show_result
                      | .metadata.merged_sha = $merged_sha
                      | .metadata.pr_state = $show_pr_state
                      | .metadata.pr_merged_at = $show_merged_at
-                     | .metadata.artifact_cleanup_state = "complete"
+                     | .metadata.artifact_cleanup_state = $show_cleanup_state
                      | del(.metadata.artifact_dir, .metadata.work_dir)
                      | [.]' "$GC_TEST_LIST_JSON"
                 ;;
@@ -213,7 +214,7 @@ reset_case() {
     unset GC_TEST_CLOSE_FAIL GC_TEST_GH_FAIL GC_TEST_FETCH_FAIL GC_TEST_FAIL_UPDATE_AT
     unset GC_TEST_CLEANUP_FAIL
     unset GC_TEST_SHOW_STATUS GC_TEST_SHOW_RESULT
-    unset GC_TEST_SHOW_PR_STATE GC_TEST_SHOW_MERGED_AT
+    unset GC_TEST_SHOW_PR_STATE GC_TEST_SHOW_MERGED_AT GC_TEST_SHOW_CLEANUP_STATE
     unset GC_TEST_ORIGIN_URL
     unset GASTOWN_PR_RECONCILE_FORCE_REST GH_TOKEN
     export GC_TEST_MERGE_REACHABLE=1
@@ -312,6 +313,15 @@ test_record_blocks_without_closing() {
         fail "retry arm must retain the validated PR reuse hint"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "record must not close at PR publication"
+    # One atomic write carries the complete record, the dependency gate and a
+    # re-armed marker: an overlapping recovery that cleared the marker between
+    # the two writes cannot strand a blocked record without it.
+    [ "$(grep -cF 'gc <bd> <update>' "$LOG")" -eq 2 ] ||
+        fail "record must be exactly an arm write plus one atomic complete-record write"
+    grep -F '<--status=blocked>' "$LOG" |
+        grep -F '<--set-metadata> <merge_result=pull_request_pending>' |
+        grep -F '<--set-metadata> <pr_reconcile_pending=true>' >/dev/null ||
+        fail "the blocking write must carry the complete record and re-arm the marker"
 }
 
 test_record_rejects_origin_repo_mismatch_before_mutation() {
@@ -373,8 +383,16 @@ test_partial_record_never_blocks_without_complete_metadata() {
 
     grep -F '<--set-metadata> <pr_reconcile_pending=true>' "$LOG" >/dev/null ||
         fail "partial record must first leave a durable retry marker"
-    ! grep -F '<--status=blocked>' "$LOG" >/dev/null ||
-        fail "partial record must leave bead open for normal refinery retry"
+    # The dependency gate rides only in the (failed) complete-record write, so
+    # a failed record write can never leave a blocked bead behind.
+    [ "$(grep -cF 'gc <bd> <update>' "$LOG")" -eq 2 ] ||
+        fail "record must stop after its failed complete-record write"
+    grep -F '<--status=blocked>' "$LOG" |
+        grep -F '<--set-metadata> <merge_result=pull_request_pending>' |
+        grep -F "<--set-metadata> <pr_head_sha=$HEAD_A>" >/dev/null ||
+        fail "the dependency gate must land atomically with the complete record"
+    [ "$(grep -cF '<--status=blocked>' "$LOG")" -eq 1 ] ||
+        fail "partial record must not block outside the complete-record write"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "partial record must never close"
 }
@@ -579,7 +597,7 @@ test_merged_validated_head_and_target_closes() {
 
     grep -F '<fetch> <origin> <+refs/heads/main:refs/remotes/origin/main>' "$LOG" >/dev/null ||
         fail "merged PR must fetch the recorded target"
-    grep -F "<--no-replace-objects> <-C> <$GC_RIG_ROOT> <merge-base> <--is-ancestor> <$MERGE_SHA> <origin/main>" "$LOG" >/dev/null ||
+    grep -F "<--no-replace-objects> <-C> <$GC_RIG_ROOT> <merge-base> <--is-ancestor> <$MERGE_SHA> <refs/remotes/origin/main>" "$LOG" >/dev/null ||
         fail "merged PR must prove merge commit reachability"
     grep -F "<--set-metadata> <merged_sha=$MERGE_SHA>" "$LOG" >/dev/null ||
         fail "merged PR must record merge evidence before close"
@@ -749,12 +767,93 @@ test_unreachable_merge_commit_retries_without_close() {
         fail "unreachable merge commit should return nonzero"
     fi
 
-    grep -F '<--set-metadata> <pr_state=merged_unverified>' "$LOG" >/dev/null ||
+    grep -F '<--set-metadata> <pr_state=merge_unreachable>' "$LOG" >/dev/null ||
         fail "unreachable merge commit must record retryable verification state"
     ! grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
         fail "retryable verification failure must retain the pending marker"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "unreachable merge commit must not close its bead"
+    grep -F 'gc <mail> <send> <mayor/> <-s> <ESCALATION: merged PR not on target for tr-92a>' "$LOG" >/dev/null ||
+        fail "first unreachable observation must escalate a merged-but-absent PR"
+    grep -F 'git <--no-replace-objects> <-C> </srv/tributary> <merge-base> <--is-ancestor>' "$LOG" |
+        grep -F "<$MERGE_SHA> <refs/remotes/origin/main>" >/dev/null ||
+        fail "ancestry must be checked against the fully-qualified remote-tracking ref"
+
+    # A later retry in the same episode stays silent.
+    : >"$LOG"
+    jq '.[0].metadata.pr_state = "merge_unreachable"' "$LIST_JSON" >"$LIST_JSON.next"
+    mv "$LIST_JSON.next" "$LIST_JSON"
+    if "$COMMAND"; then
+        fail "still-unreachable merge commit should return nonzero"
+    fi
+    ! grep -F 'gc <mail>' "$LOG" >/dev/null ||
+        fail "unreachable merge escalation must fire once per episode, not every patrol"
+}
+
+test_previously_verified_merge_now_unreachable() {
+    # Blocked close-retry: quarantined, never closed.
+    reset_case
+    write_pending_list
+    jq --arg merged_sha "$MERGE_SHA" '
+        .[0].metadata.merge_result = "mr_merged"
+        | .[0].metadata.merged_sha = $merged_sha
+        | .[0].metadata.pr_state = "merged"
+        | .[0].metadata.pr_merged_at = "2026-07-26T19:30:00Z"
+    ' "$LIST_JSON" >"$LIST_JSON.next"
+    mv "$LIST_JSON.next" "$LIST_JSON"
+    write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
+    export GC_TEST_MERGE_REACHABLE=0
+    if "$COMMAND"; then
+        fail "rewritten target must fail reconciliation"
+    fi
+    grep -F '<--set-metadata> <merge_result=pull_request_merge_evidence_contradiction>' "$LOG" >/dev/null ||
+        fail "blocked mr_merged evidence that became unreachable was not quarantined"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "unreachable stored merge evidence must not close the bead"
+
+    # Closed cleanup retry: released for manual cleanup, NOT re-blocked.
+    reset_case
+    write_pending_list
+    jq --arg merged_sha "$MERGE_SHA" '
+        .[0].status = "closed"
+        | .[0].metadata.merge_result = "mr_merged"
+        | .[0].metadata.merged_sha = $merged_sha
+        | .[0].metadata.pr_state = "merged"
+        | .[0].metadata.pr_merged_at = "2026-07-26T19:30:00Z"
+    ' "$LIST_JSON" >"$LIST_JSON.next"
+    mv "$LIST_JSON.next" "$LIST_JSON"
+    write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
+    export GC_TEST_MERGE_REACHABLE=0
+    if "$COMMAND"; then
+        fail "rewritten target must fail the closed cleanup retry"
+    fi
+    ! grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+        fail "a closed verified bead must not be re-blocked by a later target rewrite"
+    grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
+        fail "closed bead with unconvergeable cleanup must release the reconciliation slot"
+    grep -F 'gc <mail> <send> <mayor/> <-s> <ESCALATION: MR artifact cleanup needs review for tr-92a>' "$LOG" >/dev/null ||
+        fail "closed bead with unconvergeable cleanup must escalate"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "cleanup must not run once the merge evidence is contradicted"
+}
+
+test_blocked_cleanup_releases_marker_and_escalates() {
+    reset_case
+    write_pending_list
+    write_pr_info MERGED "$HEAD_A" 2026-07-26T19:30:00Z "$MERGE_SHA"
+    export GC_TEST_CLEANUP_FAIL=1
+    export GC_TEST_SHOW_CLEANUP_STATE=blocked
+    if "$COMMAND"; then
+        fail "blocked artifact cleanup should return nonzero"
+    fi
+    grep -F 'gc <bd> <close> <--rig=tributary> <tr-92a>' "$LOG" >/dev/null ||
+        fail "verified merge must close before cleanup"
+    grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
+        fail "artifact_cleanup_state=blocked never self-heals; the marker must be released"
+    grep -F 'gc <mail> <send> <mayor/> <-s> <ESCALATION: MR artifact cleanup needs review for tr-92a>' "$LOG" >/dev/null ||
+        fail "blocked artifact cleanup must escalate for manual review"
+    ! grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+        fail "blocked artifact cleanup must not re-block a verified closed bead"
 }
 
 test_cleanup_waits_for_durable_closed_record() {
@@ -888,6 +987,76 @@ test_oldest_pending_pr_is_selected() {
         fail "one patrol must perform at most one pending PR transition"
 }
 
+# Blocked beads are not session demand, so an idled-out refinery would never
+# reconcile a merged PR whose dependents are all blocked behind it. The
+# always-on witness wakes it when a pending check is due.
+test_witness_wakes_refinery_for_due_pending_prs() {
+    local block="$TMP/witness-pending-pr-wake.sh"
+    python3 - "$ROOT/gastown/formulas/mol-witness-patrol.toml" "$block" <<'PY'
+import pathlib
+import re
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    formula = tomllib.load(handle)
+step = next(s for s in formula["steps"] if s["id"] == "check-refinery")
+desc = step["description"]
+start = desc.index("**Step 1b:")
+block = re.search(r"```bash\n(.*?)```", desc[start:], re.DOTALL).group(1)
+block = block.replace("{{binding_prefix}}", "gastown.")
+if "{{" in block:
+    raise SystemExit("unresolved template in witness pending-PR wake block")
+pathlib.Path(sys.argv[2]).write_text(block, encoding="utf-8")
+PY
+    local case_name checked expect
+    for case_name in due-never-checked due-stale not-due none; do
+        reset_case
+        case "$case_name" in
+            due-never-checked) checked=""; expect=wake ;;
+            due-stale) checked="2000-01-01T00:00:00Z"; expect=wake ;;
+            not-due) checked="2999-01-01T00:00:00Z"; expect=none ;;
+            none) checked=""; expect=none ;;
+        esac
+        if [ "$case_name" = none ]; then
+            printf '[]\n' >"$LIST_JSON"
+        else
+            write_pending_list "$HEAD_A" "$checked"
+            if [ -z "$checked" ]; then
+                jq 'del(.[0].metadata.pr_last_checked_at)' "$LIST_JSON" >"$LIST_JSON.next"
+                mv "$LIST_JSON.next" "$LIST_JSON"
+            fi
+        fi
+        (
+            gc() {
+                printf 'gc' >>"$LOG"
+                local arg
+                for arg in "$@"; do printf ' <%s>' "$arg" >>"$LOG"; done
+                printf '\n' >>"$LOG"
+                case "$1:$2" in
+                    bd:list) cat "$LIST_JSON" ;;
+                    session:wake|session:nudge) : ;;
+                    *) echo "unexpected gc call: $*" >&2; return 90 ;;
+                esac
+            }
+            # shellcheck source=/dev/null
+            source "$block"
+        ) || fail "witness pending-PR wake block failed for $case_name"
+        grep -F 'gc <bd> <list> <--rig=tributary> <--all> <--has-metadata-key=pr_reconcile_pending>' "$LOG" >/dev/null ||
+            fail "$case_name: witness must scan all statuses for pending PR markers"
+        if [ "$expect" = wake ]; then
+            local wake_line nudge_line
+            wake_line=$(grep -nF 'gc <session> <wake> <tributary/gastown.refinery>' "$LOG" | head -n1 | cut -d: -f1)
+            nudge_line=$(grep -nF 'gc <session> <nudge> <tributary/gastown.refinery>' "$LOG" | head -n1 | cut -d: -f1)
+            [[ -n "$wake_line" && -n "$nudge_line" && "$wake_line" -lt "$nudge_line" ]] ||
+                fail "$case_name: a due pending PR must wake, then nudge, the refinery"
+        else
+            ! grep -F 'gc <session>' "$LOG" >/dev/null ||
+                fail "$case_name: witness woke the refinery with no due pending PR"
+        fi
+    done
+}
+
 test_formula_uses_pending_merge_gate() {
     grep -F 'gc gastown pr-merge-reconcile record' "$FORMULA" >/dev/null ||
         fail "refinery formula must record PR handoffs through the reconciler"
@@ -926,11 +1095,14 @@ test_verified_merge_retry_error_preserves_stored_evidence
 test_verified_merge_evidence_mismatch_is_quarantined
 test_cleanup_failure_on_closed_bead_retries
 test_unreachable_merge_commit_retries_without_close
+test_previously_verified_merge_now_unreachable
+test_blocked_cleanup_releases_marker_and_escalates
 test_cleanup_waits_for_durable_closed_record
 test_closed_ambiguous_legacy_record_is_reblocked
 test_noncanonical_source_branch_is_quarantined
 test_verified_mr_with_open_remote_is_reblocked
 test_oldest_pending_pr_is_selected
+test_witness_wakes_refinery_for_due_pending_prs
 test_formula_uses_pending_merge_gate
 
 echo "PR merge reconciliation tests passed"

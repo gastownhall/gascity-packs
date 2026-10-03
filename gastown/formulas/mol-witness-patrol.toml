@@ -1061,6 +1061,36 @@ polecats have submitted for merging. Look for:
   overwhelmed or down.
 - **Empty queue**: No work assigned — refinery is idle, which is fine.
 
+**Step 1b: Wake the refinery for due pull-request merge checks:**
+
+`merge_strategy=mr` handoffs wait `blocked` until the refinery's find-work
+step runs `gc gastown pr-merge-reconcile`. Blocked beads are not session
+demand, so once the refinery idles out nothing else wakes it — and the
+dependents of a pending PR are themselves blocked, so no new merge work
+arrives to wake it either. A merged PR would then never release its
+dependency chain. Wake it whenever a pending check is due (never checked, or
+last checked more than 10 minutes ago); the refinery reconciles one pending
+PR per wake, least-recently-checked first:
+```bash
+REFINERY_TARGET="${GC_RIG:+$GC_RIG/}{{binding_prefix}}refinery"
+PENDING_PR_JSON=$(gc bd list ${GC_RIG:+--rig="$GC_RIG"} --all \
+  --has-metadata-key=pr_reconcile_pending --limit=0 --json) || PENDING_PR_JSON='[]'
+PENDING_PR_DUE=$(printf '%s' "$PENDING_PR_JSON" | jq -r '
+  [ .[]?
+    | select(((.metadata.pr_reconcile_pending // "") | tostring) == "true")
+    | (.metadata.pr_last_checked_at // "")
+    | select(. == "" or ((try fromdateiso8601 catch 0) < (now - 600))) ]
+  | length' 2>/dev/null) || PENDING_PR_DUE=0
+case "$PENDING_PR_DUE" in ''|*[!0-9]*) PENDING_PR_DUE=0 ;; esac
+if [ "$PENDING_PR_DUE" -gt 0 ]; then
+  # Wake before nudge: a stopped on-demand refinery ignores a bare nudge.
+  gc session wake "$REFINERY_TARGET" || true
+  gc session nudge "$REFINERY_TARGET" "Run 'gc prime' to check merge queue and begin processing." || true
+fi
+```
+A failed listing reads as "nothing due" — this step only ever adds wakes; it
+never mutates the pending beads themselves.
+
 **Step 2: Assess refinery wisp freshness:**
 
 Check when the refinery last completed a patrol cycle by looking at

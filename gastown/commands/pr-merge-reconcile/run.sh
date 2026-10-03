@@ -253,16 +253,22 @@ record_handoff() {
     }
 
     # Arm the retry marker and validated PR-reuse hint while the bead is still
-    # open. If a later write fails, the all-owner reconciler scan adopts the
-    # open row after refinery recycling. It completes a full pending record's
-    # block transition or clears partial evidence and returns the work to
-    # validation without causing a duplicate PR.
+    # open. If the next write fails, the all-owner reconciler scan adopts the
+    # open row after refinery recycling and clears partial evidence, returning
+    # the work to validation without causing a duplicate PR.
     bd_update "$work" \
         --assignee="$GC_AGENT" \
         --set-metadata pr_reconcile_pending=true \
         --set-metadata existing_pr="$pr_url"
+    # The complete record and the dependency gate land in ONE update, so no
+    # reader can observe an open bead carrying a complete pending record. The
+    # marker is re-armed in the same write: if an overlapping (recycled)
+    # refinery's open-marker recovery cleared it between the two writes, the
+    # blocked record must still be discoverable rather than stranded.
     bd_update "$work" \
+        --status=blocked \
         --assignee="$GC_AGENT" \
+        --set-metadata pr_reconcile_pending=true \
         --set-metadata merge_result=pull_request_pending \
         --set-metadata pr_url="$pr_url" \
         --set-metadata pr_number="$pr_number" \
@@ -279,9 +285,6 @@ record_handoff() {
         --unset-metadata pr_merged_at \
         --unset-metadata existing_pr \
         --unset-metadata observed_pr_head_sha
-    bd_update "$work" \
-        --status=blocked \
-        --assignee="$GC_AGENT"
 }
 
 quarantine_metadata() {
@@ -403,6 +406,25 @@ quarantine_terminal_pr() {
         "$reason
 Work bead: $work
 The bead and its dependents remain blocked."
+}
+
+# A closed, verified-merged bead whose artifact cleanup cannot converge
+# without a human. Retrying it every patrol would only occupy the one
+# reconciliation slot forever, so release the marker (the bead stays closed
+# and its artifact stays preserved) and escalate once.
+release_closed_for_manual_cleanup() {
+    work=$1
+    reason=$2
+    now=$3
+    bd_update "$work" \
+        --set-metadata pr_last_checked_at="$now" \
+        --set-metadata pr_reconcile_error="$reason" \
+        --unset-metadata pr_reconcile_pending
+    mail_mayor \
+        "ESCALATION: MR artifact cleanup needs review for $work" \
+        "$reason
+Work bead: $work
+The bead stays closed; its task artifact was preserved. Inspect it, then run gc gastown task-artifact-cleanup $work once resolved."
 }
 
 reconcile_one() {
@@ -643,9 +665,43 @@ reconcile_one() {
                 record_retryable_error "$work" merged_unverified "Could not fetch origin/$target to verify the PR merge; will retry." "$now" "$preserve_verified_state"
                 return 1
             fi
+            # Name the remote-tracking ref fully qualified: a bare
+            # "origin/$target" is DWIM-resolved and a same-named tag
+            # (refs/tags/origin/<target>) or local branch
+            # (refs/heads/origin/<target>) would shadow the ref just fetched,
+            # letting local state stand in for the remote target.
             if ! rig_git_without_history_overrides \
-                merge-base --is-ancestor "$merged_sha" "origin/$target"; then
-                record_retryable_error "$work" merged_unverified "PR merge commit $merged_sha is not reachable from origin/$target; will retry." "$now" "$preserve_verified_state"
+                merge-base --is-ancestor "$merged_sha" "refs/remotes/origin/$target"; then
+                if [ "$recorded_result" = mr_merged ] && [ "$work_status" = closed ]; then
+                    # Verified once and already closed (dependents released):
+                    # do not re-block, but stop cleanup and hand to a human.
+                    release_closed_for_manual_cleanup \
+                        "$work" \
+                        "Previously verified merge commit $merged_sha is no longer reachable from origin/$target (target history rewritten?); artifact cleanup stopped and the artifact is preserved." \
+                        "$now"
+                    return 1
+                fi
+                if [ "$recorded_result" = mr_merged ]; then
+                    # This exact merge commit was verified reachable before;
+                    # after a successful fetch it no longer is, so the target
+                    # history was rewritten. Stop trusting the evidence.
+                    quarantine_terminal_pr \
+                        "$work" \
+                        pull_request_merge_evidence_contradiction \
+                        merge_evidence_contradiction \
+                        "Previously verified merge commit $merged_sha is no longer reachable from origin/$target (target history rewritten?); refusing closure or cleanup." \
+                        "$now"
+                    return 1
+                fi
+                record_retryable_error "$work" merge_unreachable "PR merge commit $merged_sha is not reachable from origin/$target; will retry." "$now" "$preserve_verified_state"
+                if [ "$recorded_pr_state" != merge_unreachable ]; then
+                    # Escalate once per episode; retries continue silently.
+                    mail_mayor \
+                        "ESCALATION: merged PR not on target for $work" \
+                        "GitHub reports $pr_url merged as $merged_sha, but that commit is not reachable from a freshly fetched origin/$target.
+Work bead: $work
+The bead and its dependents stay blocked; reconciliation keeps retrying. Check for a rewritten or force-pushed $target."
+                fi
                 return 1
             fi
 
@@ -723,6 +779,21 @@ reconcile_one() {
             # every cleanup failure and crash window so --all can rediscover
             # this closed bead on the next patrol.
             if ! gc gastown task-artifact-cleanup "$work"; then
+                # `blocked` is the cleanup command's durable verdict that the
+                # artifact is unsafe to remove (dirty, SHA mismatch, moved
+                # source ref, ...). It never self-heals, so stop occupying the
+                # reconciliation slot. A `pending` verdict stays retryable.
+                failed_cleanup_state=$(bd_show "$work" 2>/dev/null |
+                    jq -r 'if type == "array" and length == 1
+                           then (.[0].metadata.artifact_cleanup_state // "")
+                           else "" end' 2>/dev/null || true)
+                if [ "$failed_cleanup_state" = blocked ]; then
+                    release_closed_for_manual_cleanup \
+                        "$work" \
+                        "PR merge is verified and the bead is closed, but task artifact cleanup reported artifact_cleanup_state=blocked." \
+                        "$now"
+                    return 1
+                fi
                 record_retryable_error \
                     "$work" \
                     merged_cleanup_pending \
