@@ -1,0 +1,385 @@
+# BB provider for Gas City
+
+Experimental **0.1.0**, staged on `feat/bb-provider-gascity-1.4`. This pack
+connects unmodified [BB](https://github.com/get-bb/bb) to configured agents in
+**Gas City 1.5** through BB's public provider bridge and GC's HTTP session API.
+It targets **BB 0.43.3**, **SDK 0.4.104**, and **GC 1.5** plus the GC runtime
+corrections on [`fix/claude-runtime-v1.5.0`](https://github.com/gastownhall/gascity/tree/fix/claude-runtime-v1.5.0),
+which are not in the 1.5 release candidate. It is not yet a registry release.
+The branch name predates the move from GC 1.4 to 1.5.
+
+Open **Gas City** in BB’s sidebar. Select a connected host, a standard BB
+project, an exact global or rig agent, and its existing workspace. Gas City
+retains the agent’s model, prompt, tools, permissions, and runtime configuration.
+The launcher requires matching BB/GC directories and never substitutes a
+default agent for an unavailable selection.
+
+For interactive conversations, configure an agent role that finishes startup
+and waits for user messages. GC's default graph-worker role may drain when no
+bead work is assigned; BB preserves that configured behavior. The
+[conversation test role](./tests/conversation-agent-prompt.md) provides a minimal
+example suitable for an agent's `prompt.md`.
+
+**Release status:** the pack remains a release candidate and has **not yet
+passed on GC 1.5**. The last complete pass is historical: all **40 live product
+cases passed on Hillsboro** using Manifold's **Kimi for Coding through Claude
+CLI 2.1.270**, BB 0.43.3, and patched GC `1.4.2-bb-runtime.4f41f8285070`.
+Those artifacts were deployed and verified on Hillsboro on 2026-09-20; since
+2026-09-24 Hillsboro runs an unqualified GC `1.5.0-dev-bb.8ab11cc90` build,
+with global and mapped-rig Kimi roles alongside the existing Claude/Codex roles.
+The [deployment verification](../specs/research/bb-hillsboro-evidence-2026-09-19/deployment-verification.json)
+checks installed artifacts, configuration, catalogs, and service health;
+model inference was tested in isolated state, not user conversations.
+The tested provider source hash is `b17e84154ec3…`; the full pins and
+[passing ledger](../specs/research/bb-hillsboro-evidence-2026-09-19/completion11-summary.json)
+are retained. GC 1.5 qualification, CI, the complete native Claude and Codex
+matrices, macOS qualification, and registry publication remain open gates.
+The [GC 1.5 fix-gap analysis](../specs/research/bb-gc-1.5-fix-gap-2026-09-26.md)
+records which GC corrections 1.5 still needs.
+Drafts: [provider pack #455](https://github.com/gastownhall/gascity-packs/pull/455)
+and [GC runtime corrections #6481](https://github.com/gastownhall/gascity/pull/6481).
+
+Historical GC 1.4.0/1.4.1 compatibility checks remain visible. Live testing found
+that GC 1.4.1 reports Codex transcript activity as `unknown`, so the bridge cannot
+verify completion for that runtime. It fails visibly rather than treating an
+assistant message as proof of completion. Current Claude approval menus also
+require GC fixes: the released runtime's hardcoded denial key can select a
+broader permission mode. Do not use this candidate for Claude approvals on
+unchanged GC 1.4.0–1.4.2. The incorrect denial mapping was reproduced with
+Claude 2.1.270 on GC 1.4.2 without sending a response. See [verification](./docs/verification.md)
+for the tested versions, results, and remaining gates.
+
+## Capabilities
+
+| BB concept | Gas City mapping |
+| --- | --- |
+| Provider | One `gas-city` provider, configured independently on each BB execution host |
+| Model choice | Exact configured agent identity: connection + city + qualified agent name |
+| Project | Explicit BB project ID → connection + city + rig binding |
+| Existing workspace | Longest matching configured checkout/worktree path |
+| Thread | One new template-backed GC session, with a durable local ownership receipt |
+| Prompt / streamed answer | GC asynchronous submit / structured transcript SSE |
+| Interrupt | Stop the active GC turn |
+| Release / host disconnect | Detach the BB bridge; retain the GC session |
+
+Projectless discovery lists global agents from every running city on the
+configured supervisors. A mapped project lists its city's globals plus that
+rig's agents. Expanded configuration is the catalog source, so scale-zero
+templates remain discoverable. Suspended cities, rigs, and agents are excluded.
+Qualified identities distinguish identically named agents across cities, rigs,
+and connections.
+
+The dedicated launcher refreshes discovery directly on the selected host,
+using the explicit project ID. BB’s native **Model** picker lists global agents
+and configured mapped rigs before a new thread has a workspace. Choose a bound
+project and **Project checkout** for rig work; creation and restore validate the
+binding from the actual execution directory. Once a workspace exists, the
+picker narrows its choices to that scope. Personal threads keep BB's own workspace and
+can converse with global agents in their GC directory. Choose a standard
+project and matching workspace when BB's file and diff views should describe
+the agent's checkout.
+
+BB 0.43.3 caches the native picker's catalog for up to ten minutes. Newly added
+GC agents can appear immediately in the Gas City launcher while the native
+picker still shows its previous list; reloading the plugin does not clear that
+BB cache. Wait for the ordinary refresh before selecting a new agent there.
+
+## Prerequisites and topology
+
+- Gas City **1.5** (`release/v1.5.0`) with the runtime corrections on
+  `fix/claude-runtime-v1.5.0`, a running supervisor, and configured agents that
+  can create sessions and produce a reliable structured transcript. The plugin
+  refuses supervisors older than 1.5. Limitations below that name GC 1.4 were
+  observed on 1.4 and have not all been re-checked on 1.5.
+- BB **0.43.3**, using `@get-bb/plugin-sdk` **0.4.104**.
+  The plugin declares BB compatibility `>=0.43.3 <0.44` and SDK compatibility
+  `>=0.4.104 <0.5`; the passing live matrix pins the versions above.
+- Node.js **22+**, npm, and the BB CLI.
+- For the initial setup below, the BB server, BB execution host, Gas City, and
+  pack checkout are on the same machine and run as the same operator. This
+  also makes working-directory checks meaningful.
+
+Current Claude qualification uses **Claude CLI 2.1.270**. Set
+`session_id_flag = "--session-id"` on its GC provider so GC supplies the native
+conversation identity at launch. Include the actual private transcript roots
+in `[daemon].observe_paths`, retaining existing entries. For native Manifold
+launches, the Claude projects path must match the launch configuration's
+`session_root`; acceptance tests use separate homes and transcript roots.
+
+Hillsboro's complete qualification covers **Kimi for Coding** through the stock
+Claude CLI's Anthropic protocol and GC's Claude adapter. Native Manifold Claude
+has supplemental passing checks, not a complete matrix pass. Native Kimi CLI
+integration and the original Codex acceptance gate remain separate. See
+[verification](./docs/verification.md) for evidence and remaining gates.
+
+The adapter runs inside BB's host-side provider infrastructure. There is no
+new HTTP service, ACP server, or background process started by importing this
+pack. Separate BB hosts need their own GC configuration, filesystem paths,
+and journals; a journal is not a portable cross-host session locator.
+
+## Install this branch
+
+Clone the staging branch, then import its local path from a Gas City city:
+
+```sh
+git clone --branch feat/bb-provider-gascity-1.4 \
+  https://github.com/gastownhall/gascity-packs.git
+cd /absolute/path/to/your-city
+gc import add --name bb /absolute/path/to/gascity-packs/bb
+gc bb install
+gc bb connect --id local --url http://127.0.0.1:8372
+gc bb status
+gc bb agents
+```
+
+Use your supervisor's actual URL if it differs. `install` copies the adapter
+out of the pack cache, installs locked npm dependencies, builds its helper
+CLI, and invokes `bb plugin install path:<installed-directory>`. It forwards
+`--yes` only when you explicitly pass it. Importing the pack alone performs
+none of these installation steps.
+
+Open the **Gas City** sidebar launcher after binding a standard project below.
+For explicit conversation-only use, select the **Gas City** provider in BB’s
+native picker and choose a qualified global agent. With no project selected,
+the agent uses its existing GC directory. BB's personal workspace remains
+separate; the conversation shows the GC directory and explains that BB's file
+and diff views do not track it.
+Select **Full access**: this is the bridge's supported BB permission mode;
+the agent's existing Gas City permission policy still applies. GC tmux
+approval requests are shown as explicit BB questions offering **Approve once**
+and **Deny**. Selecting Full access does not automatically answer them.
+
+To update, pull this branch and run `gc bb install` again from the city directory.
+Each installation is staged under `versions/`, built, and registered with BB
+before the `current` symlink changes. Old and failed installations are retained.
+A failed registration restores the prior path source without uninstalling its
+settings. Existing npm/git registrations are preserved; use BB’s update flow for
+those. Configuration and receipts live outside the installation directory.
+If an installer was killed, inspect `.install-lock` before retrying; it is never
+blindly removed. `gc bb status --json` checks registration, connections, bindings,
+and unsettled receipts. It reports configuration readiness, not runtime certification.
+
+## Bind projects and existing workspaces
+
+Use the stable BB project ID, not its display name. For example:
+
+```sh
+gc bb bind --project proj_example --id local --city alpha --rig web \
+  --path /absolute/path/to/web-checkout \
+  --path /absolute/path/to/existing-bb-worktree
+gc bb agents --project proj_example --json
+gc bb agents --cwd /absolute/path/to/existing-bb-worktree
+```
+
+Each path must exist. Multiple `--path` arguments cover existing worktrees;
+newly allocated BB worktrees must be bound separately. Rebinding replaces
+only that project's mapping on this host. Ambiguous workspace matches and
+unmapped standard BB projects produce an error. BB's personal project
+(`proj_personal`) remains projectless.
+
+The launcher lists the mapped city’s globals and rig agents together. Select
+an agent and verify **Existing workspace**: GC 1.4’s expanded config omits the
+effective `work_dir`, so the suggested city/rig path may need correction.
+The provider compares the actual created session directory before sending input.
+Use a canonical absolute `work_dir` in GC configuration. GC 1.4’s Claude
+project-directory encoding also differs from current Claude for underscores;
+see the live verification notes before choosing a runtime workspace.
+
+**Refresh** bypasses BB’s model catalog cache. Missing hosts, projects and agents
+remain unavailable until explicitly selected again. Validation errors can be
+corrected and retried. If thread creation has an uncertain outcome, inspect BB’s
+thread list before using the explicit retry acknowledgement.
+
+## Checkouts and configuration
+
+Gas City owns the session checkout. The bridge does not silently move a rig
+agent into BB's newly created worktree.
+
+- `conversation` (explicit opt-in) allows different directories and posts a visible
+  notice in the conversation. BB file and diff views do not automatically
+  describe changes made in GC's different checkout.
+- `require-match` (default) blocks project prompt submission unless the real BB
+  and GC working directories match. Use a matching unmanaged BB environment
+  for project work. Personal conversations with global agents use the GC-owned
+  directory and display the same workspace notice; BB requires these threads
+  to keep its separate personal workspace.
+
+Set the policy while configuring a connection:
+
+```sh
+gc bb connect --id local --url http://127.0.0.1:8372 \
+  --workspace-policy require-match
+```
+
+The host-local JSON file defaults to
+`${XDG_CONFIG_HOME:-~/.config}/gascity/bb.json`:
+
+```json
+{
+  "version": 1,
+  "workspacePolicy": "require-match",
+  "connections": [{ "id": "local", "url": "http://127.0.0.1:8372" }],
+  "bindings": [{
+    "projectId": "proj_example",
+    "connection": "local",
+    "city": "alpha",
+    "rig": "web",
+    "paths": ["/absolute/path/to/web-checkout"]
+  }]
+}
+```
+
+`GC_BB_CONFIG` overrides the config file. `GC_BB_INSTALL_DIR` overrides the
+adapter install location (default `${XDG_DATA_HOME:-~/.local/share}/gascity/bb/plugin`).
+Receipts live under `${XDG_STATE_HOME:-~/.local/state}/gascity/bb/sessions`.
+Configuration and receipts are atomically written with private file modes.
+
+Connections accept loopback HTTP or an authorized HTTPS proxy. An optional
+`GC_BB_AUTH_TOKEN` environment variable supplies a bearer token to that proxy;
+it is not stored in JSON or exposed in BB model IDs. One token applies to all
+configured connections. URL credentials and redirects are rejected.
+`X-GC-Request` is sent on writes for GC's request guard; it is not authentication.
+Direct hardened deployments requiring GC-specific city grants are outside
+this stage; access-denied responses are surfaced to the operator. Remote
+proxies do not remove the same-filesystem requirement of this version.
+
+## Conversation lifecycle and recovery
+
+The bridge creates a template-backed GC session with a deterministic alias
+derived from the BB thread ID. It waits for the correlated asynchronous
+creation result and saves the actual GC session ID. It does not attach to a
+pre-existing canonical agent conversation. GC singleton/capacity rules still
+apply; choose an agent configuration that permits a new session.
+
+Each text prompt is journaled before posting. A successful submit result means
+queued/delivered, not finished. Completion requires new assistant output, a
+reliable idle transcript, and no unfinished text, tools, or interactions.
+Stream replay is deduplicated by structured message/block identity. The
+bridge reports transcript rewrites, degraded history, and unknown interaction
+types instead of presenting a successful turn.
+
+When GC supplies a typed terminal provider error, the same delivery and idle
+checks settle the BB turn and its receipt as failed. The error is shown in BB,
+and an explicit next prompt is allowed after the underlying problem is fixed.
+Active retry notices keep the turn open. This requires the GC corrections
+linked in [verification](docs/verification.md); released GC 1.4.0/1.4.1 can
+misrepresent native Claude API errors as ordinary assistant messages.
+
+A fresh session can temporarily have only GC's terminal fallback. After checking
+the actual workspace, the bridge acknowledges BB's turn promptly and waits up
+to 150 seconds for reliable idle structured history before journaling or sending
+the first prompt. Startup cancellation or failure sends no prompt. After a
+submit, the complete forwarded prompt must appear as a new transcript entry
+before output is attributed to that turn. This delivery check also has a bounded
+150-second wait. Terminal fallback and startup output cannot satisfy it.
+A failed or uncertain submission keeps its receipt for inspection. Existing
+conversations require reliable idle history before another prompt is sent.
+
+Completed threads resume the same GC session on the original BB host. An
+interrupted stream or uncertain HTTP response can leave remote work running.
+The bridge then blocks resubmission/resume until the operator inspects it:
+
+```sh
+# Read the complete remote transcript in Gas City first.
+gc bb recover --thread <BB-thread-ID> --confirm-reviewed
+```
+
+Recovery resolves a lost creation reply through its deterministic alias. For
+an unsettled turn it verifies the exact asynchronous submit result, the new
+submitted prompt and subsequent settled answer or typed provider failure, and reliable idle history without
+pending tools/interactions. Idle history alone does not prove delivery.
+It records success or failure from that reviewed outcome; it does not import missing history into BB
+or resend the prompt. If the submit reply was lost, supply the original GC
+request evidence from inspected events:
+
+```sh
+gc bb recover --thread <BB-thread-ID> --confirm-reviewed \
+  --request-id <original-GC-request-ID> --event-cursor <original-cursor>
+```
+
+Both evidence flags are required together. Older receipts lacking prompt
+history evidence remain blocked; retain them and use GC to finish that work.
+Each live bridge holds a host-local ownership lease, including between turns.
+Release it in BB before recovery. A provably dead process on the same host
+allows lock retirement, preserving the original lock. Corrupt, foreign-host,
+and otherwise unverifiable locks require inspection. Preserve all receipts
+when reinstalling; they prevent duplicate submission.
+
+## Deliberate limits
+
+- The native BB picker and Gas City launcher expose reasoning levels from the
+  configured provider's `options_schema` in GC's `/providers/public` response.
+  **Agent default** inherits the agent's
+  configured effort; an explicit level is sent as `options.effort` at session
+  creation. GC 1.4 cannot change effort on an existing session. Keep its original
+  selection for subsequent turns, or create a new BB thread to change it.
+  GC validates the effective agent options at creation. Its public catalog does
+  not reflect agent/workspace `start_command` overrides or every custom provider
+  inheritance case, so those configurations may omit supported levels or offer
+  levels GC rejects. Use Agent default for custom commands.
+- Agent choices are configured, expanded templates. GC 1.4's config endpoint
+  does not enumerate every dormant named conversation. Generic rig templates
+  without a resolved `dir` are skipped with a warning; import roles at rig
+  scope so GC expands their identities.
+- One active BB turn per session; busy follow-ups fail without clearing the
+  active turn or submitting twice. Queue through BB or wait for completion.
+  Text input only. Inline attachments, BB
+  dynamic tools/skills injection, agent switching, fork, rename, archive,
+  manual compaction, and model/tier overrides are not implemented.
+- Only the verified GC tmux approval interaction is translated. Other
+  interactions require responding in GC and recovering the BB thread.
+- GC tools and text appear in BB. Full fidelity usage, specialized tool UI,
+  arbitrary named-session attachment, remote checkout adoption, and automatic
+  mid-turn reconnect recovery are later stages.
+- This is a branch for integration testing. The automated gates below do not
+  yet have a complete passing live product matrix.
+
+## Development and checks
+
+```sh
+cd bb/assets/plugin
+npm ci --ignore-scripts
+npm run typecheck
+npm run build
+npm test
+cd ../../..
+GC_TEST_BIN=/absolute/path/to/gc-1.5 \
+  python3 -m unittest discover -s bb/tests -v
+```
+
+The TypeScript tests exercise a GC-shaped HTTP/SSE fixture and BB's
+published bridge conformance runner: scoped discovery, exact identities,
+async creation, prompt delivery, replay, tool deltas, resume, interrupt,
+release, checkout mismatch, lost responses, and explicit approvals.
+The Python checks use the **actual GC binary** for pack lint,
+resolved configuration, command discovery, and executable entrypoints.
+GC 1.5 has no tagged release yet, so the dedicated workflow builds GC from two
+pinned commits: the unmodified `release/v1.5.0` candidate, and
+`fix/claude-runtime-v1.5.0` (the candidate plus the GC corrections). Both run
+as labeled development builds and cannot certify a released binary. The
+workflow also builds the server, host and frontend with released BB 0.43.3. Installer
+tests exercise failed builds, registration rollback and retained data.
+
+`BB end-to-end acceptance` additionally requires actual Claude and Codex
+conversations through released BB and both GC builds, for global and rig
+agents: two verified completions, retained context, a tool event and its file
+output, followed by agent suspension and a third turn proving the same provider
+conversation and memory without tools. Missing inference credentials fail the check.
+Each model job first makes one real call through the runtime CLI
+(`bb/tests/credential_preflight.py`) and prints only a redacted HTTP status, so a
+rejected secret fails once and visibly. See
+[live CI setup and reproduction](./docs/verification.md#ci-acceptance).
+
+`bb/tests/full_e2e.py` adds the rendered New thread and launcher journeys,
+every advertised reasoning level, real permissions, queueing, interruption,
+process recovery, lost responses, installation changes, and visible failures.
+Its required-case ledger cannot pass with missing or failed cases. Run it
+against the same retained installation while diagnosing failures; on macOS
+the gate also requires the isolated released desktop app. See
+[the full product gate](./docs/verification.md#full-product-gate).
+
+The layout follows this repository's pack pattern: schema-2 `pack.toml`,
+documented `commands/*/run.sh`, a `doctor` check, and adapter code under
+`assets/`. No agent definitions or runtime configuration are changed by this
+integration. See [staging and contract references](./docs/staging.md) for
+the next BB PR and release gates.

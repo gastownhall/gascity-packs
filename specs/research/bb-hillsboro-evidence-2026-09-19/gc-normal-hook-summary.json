@@ -1,0 +1,61 @@
+{
+  "commit": "4f41f8285070d3509dae94cd97509eb562f2f068",
+  "normalHook": ".githooks/pre-push",
+  "command": "make test-fast-parallel",
+  "passedJobs": 8,
+  "failedJobs": 0,
+  "exitCode": 0,
+  "elapsedSeconds": 320.0046076774597,
+  "sourceChanges": false,
+  "priorFailureRun": "/var/tmp/gc4f41-prepush-arnyx4gx",
+  "correctedRunnerEnvironment": {
+    "HOME": "/home/ubuntu",
+    "TMPDIR": "/var/tmp/gujihzfl1",
+    "bd": "pinned OSS 1.3.0"
+  },
+  "priorFailures": {
+    "TestCmdSessionWake_PokesManagedControllerAndRequestsSuspendedStart": "Fixture controller listener path exceeds production 100-character canonical-path threshold; client uses hash fallback, listener uses legacy path",
+    "TestReloadControllerConfigUsesControllerReloadCommand": "Same controller path mismatch then supervisor socket exceeds sockaddr length",
+    "TestProductMetricsServiceChildEnvSupervisorStart": "Runner HOME override violates explicit platform supervisor real-HOME requirement",
+    "TestCmdSessionNew_AllowsReservedNamedAliasWithController": "Fixture controller listener path exceeds production canonical-path threshold",
+    "TestCmdSessionNew_ACPTemplatePersistsStoredMCPMetadata": "ACP Unix socket path exceeds sockaddr length",
+    "TestSupervisorCreatesControllerSocketForManagedCity": "Fixture expects legacy controller path beyond canonical-path threshold",
+    "TestControllerSocketPathUsesShortCanonicalPathForLongAlias": "Explicit fixture path length114, expected <=100"
+  },
+  "retainedLogs": [
+    {
+      "path": "/var/tmp/gc4f41-hook-fixed-tj5rmteb/retained-shard-logs/gc-local-tests.sjkhle--fsys-darwin-compile.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/var/tmp/gc4f41-hook-fixed-tj5rmteb/retained-shard-logs/gc-local-tests.sjkhle--unit-cmd-gc-1-of-6.log",
+      "sha256": "49d38ce4f8ec443500aa28447f90cffffd46ac958a0d155aebcd6d9b0b8e0838"
+    },
+    {
+      "path": "/var/tmp/gc4f41-hook-fixed-tj5rmteb/retained-shard-logs/gc-local-tests.sjkhle--unit-cmd-gc-2-of-6.log",
+      "sha256": "dce36f7c2f87b70fb5891ab07249a4e73b3452a911ca7d203910dd0087f19dad"
+    },
+    {
+      "path": "/var/tmp/gc4f41-hook-fixed-tj5rmteb/retained-shard-logs/gc-local-tests.sjkhle--unit-cmd-gc-3-of-6.log",
+      "sha256": "21395548b91a9f56aff7932bdc4791b38591712546682396a3f71af347f9a941"
+    },
+    {
+      "path": "/var/tmp/gc4f41-hook-fixed-tj5rmteb/retained-shard-logs/gc-local-tests.sjkhle--unit-cmd-gc-4-of-6.log",
+      "sha256": "3523726f01112f1f05b3aa2ee031a86121c6aa478ba46576d9cc6fe86efba1f9"
+    },
+    {
+      "path": "/var/tmp/gc4f41-hook-fixed-tj5rmteb/retained-shard-logs/gc-local-tests.sjkhle--unit-cmd-gc-5-of-6.log",
+      "sha256": "b40de26bddbbdd822bf1c298d393d718f97a38b9dc8d4cee64594e2a47f1b2e1"
+    },
+    {
+      "path": "/var/tmp/gc4f41-hook-fixed-tj5rmteb/retained-shard-logs/gc-local-tests.sjkhle--unit-cmd-gc-6-of-6.log",
+      "sha256": "01a8842f6ac0013f1aacac591d136c095810e17150c64e19e0899a1836f34565"
+    },
+    {
+      "path": "/var/tmp/gc4f41-hook-fixed-tj5rmteb/retained-shard-logs/gc-local-tests.sjkhle--unit-core.log",
+      "sha256": "ee07a152592e1d47c97135ba101e3ea286da54bd76ec7519a409f031cfb956bd"
+    }
+  ],
+  "precommitEvidence": "/home/ubuntu/bb-gascity/releases/1.4.2-bb-runtime.4f41f8285070/gc-tool-interrupt-hardening-commit-20260920.log",
+  "publicationPerformed": false
+}
