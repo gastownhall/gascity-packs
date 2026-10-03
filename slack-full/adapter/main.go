@@ -2725,8 +2725,12 @@ func processSlackEvent(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 	if msg.Type != "message" && msg.Type != "app_mention" {
 		return
 	}
-	// Skip bot/system messages.
-	if msg.BotID != "" || msg.Subtype != "" || msg.User == "" {
+	// Skip bot/system messages. Human file uploads arrive as file_share,
+	// and human replies broadcast to a channel arrive as thread_broadcast;
+	// both are ordinary deliverable messages. AdmissibleSubtype also allows
+	// bot_message for the company-router path, so reject it explicitly here:
+	// the legacy path must never ingest bot echoes even when BotID is absent.
+	if msg.BotID != "" || msg.User == "" || msg.Subtype == "bot_message" || !AdmissibleSubtype(msg.Subtype) {
 		return
 	}
 	if strings.TrimSpace(msg.Text) == "" {
