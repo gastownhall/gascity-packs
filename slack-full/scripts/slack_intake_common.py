@@ -23,6 +23,15 @@ DEFAULT_GC_API = "http://127.0.0.1:8372"
 _LEGACY_ADAPTER_PUBLISH = "http://127.0.0.1:8766/publish"  # legacy nohup mode (pre gc-5rz Phase A)
 DEFAULT_ADAPTER_ENV = pathlib.Path.home() / ".config" / "gc-slack-adapter" / "env"
 
+# The adapter's own worst case for one /publish, from the constants in
+# adapter/publish_readback.go: slackPostTimeout + attempts*clientTimeout +
+# (attempts-1)*delay = 10 + 3*4 + 2*0.2. Any client budget at or below this
+# can time out on a message Slack already accepted.
+SLACK_PUBLISH_WORST_CASE_SECONDS = 22.4
+# What direct-to-adapter /publish callers wait. Must stay above the worst
+# case above; 30s also matches _request's default and gc's 30s adapter budget.
+PUBLISH_ADAPTER_TIMEOUT = 30.0
+
 
 def _maybe_load_adapter_env() -> None:
     """Load SLACK_* keys from the adapter's env file if not in os.environ.
@@ -762,7 +771,15 @@ def publish_to_channel_via_adapter(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        # /publish spends its budget on a write plus a readback: worst case
+        # slackPostTimeout + attempts*clientTimeout + (attempts-1)*delay =
+        # 10 + 3*4 + 2*0.2 = 22.4s (adapter/publish_readback.go, pinned by
+        # TestSlackReadbackTimingDefaults). A client budget under that times
+        # out on a message Slack has already accepted — the adapter goroutine
+        # is not cancelled by the disconnect, so the post still lands and the
+        # operator's retry duplicates it. 30s matches _request's default and
+        # gc's own 30s adapter budget.
+        with urllib.request.urlopen(req, timeout=PUBLISH_ADAPTER_TIMEOUT) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")

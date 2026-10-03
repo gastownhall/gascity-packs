@@ -15,6 +15,7 @@ identity registry override (visible username + avatar).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -22,6 +23,29 @@ import sys
 
 import slack_intake_common as common
 import slack_mrkdwn
+
+
+def _derive_idempotency_key(
+    *, session_id: str, conversation_id: str, kind: str, thread_ts: str, body: str
+) -> str:
+    """Derive a stable idempotency key from the publish's identifying fields.
+
+    ``/publish`` can legitimately spend up to
+    ``common.SLACK_PUBLISH_WORST_CASE_SECONDS`` on a write plus its readback,
+    and a client that gives up first does not cancel the adapter goroutine —
+    the post still lands. Unkeyed, the operator's retry takes the no-key path
+    and posts a duplicate. Keying it deterministically means the same logical
+    publish (same session, conversation, kind, thread anchor and body) reuses
+    one key, so the adapter replays the original receipt instead (gpk-lbhl).
+
+    Mirrors ``slack_chat_reply_current._derive_idempotency_key``, including
+    fingerprinting the body *after* the accidental-mrkdwn guard has run: the
+    guarded and ``--raw`` renderings of one input are different messages and
+    must not collapse onto one key.
+    """
+    fingerprint = "\x00".join((session_id, conversation_id, kind, thread_ts, body))
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+    return f"publish-to-channel:{digest}"
 
 
 def _load_body(args: argparse.Namespace) -> str:
@@ -57,7 +81,12 @@ def main(argv: list[str]) -> int:
                              "(applies identity override). Defaults to "
                              "$GC_SESSION_ID.")
     parser.add_argument("--idempotency-key", default="",
-                        help="Caller-supplied idempotency key (optional).")
+                        help=("Caller-supplied idempotency key. When omitted, a "
+                              "deterministic key is derived from the session, "
+                              "conversation, kind, thread anchor and body so a "
+                              "retry of the same publish dedupes instead of "
+                              "double-posting. Pass a distinct value to send the "
+                              "same text twice on purpose."))
     parser.add_argument("--body", default="")
     parser.add_argument("--body-file", default="")
     parser.add_argument(
@@ -80,6 +109,16 @@ def main(argv: list[str]) -> int:
     if not os.environ.get("SLACK_WORKSPACE_ID", "").strip():
         raise SystemExit("SLACK_WORKSPACE_ID is not set; cannot construct conversation envelope")
 
+    idempotency_key = args.idempotency_key.strip()
+    if not idempotency_key:
+        idempotency_key = _derive_idempotency_key(
+            session_id=session_id,
+            conversation_id=args.conversation_id,
+            kind=args.kind,
+            thread_ts=args.thread_ts,
+            body=body,
+        )
+
     try:
         result = common.publish_to_channel_via_adapter(
             session_id=session_id,
@@ -87,7 +126,7 @@ def main(argv: list[str]) -> int:
             text=body,
             kind=args.kind,
             thread_ts=args.thread_ts,
-            idempotency_key=args.idempotency_key,
+            idempotency_key=idempotency_key,
         )
     except common.AdapterError as exc:
         raise SystemExit(str(exc)) from exc

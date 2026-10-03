@@ -1507,6 +1507,8 @@ func newPublishDedupCache(ttl time.Duration) *publishDedupCache {
 }
 
 // Get returns the cached receipt for key when one is present and unexpired.
+// The receipt it returns shares nothing with the cache entry: callers may write
+// it without holding c.mu.
 func (c *publishDedupCache) Get(key string) (publishReceipt, bool) {
 	if key == "" {
 		return publishReceipt{}, false
@@ -1521,7 +1523,19 @@ func (c *publishDedupCache) Get(key string) (publishReceipt, bool) {
 		delete(c.entries, key)
 		return publishReceipt{}, false
 	}
-	return e.receipt, true
+	// The receipt is copied by value, but Metadata is a map: returning it as
+	// it stands would hand every caller a header aliasing the cache entry's
+	// own map. replayPublishReceipt writes that map (confirmPublishReceipt)
+	// outside this lock, so two retries on one key would race. Clone it.
+	receipt := e.receipt
+	if receipt.Metadata != nil {
+		clone := make(map[string]string, len(receipt.Metadata))
+		for k, v := range receipt.Metadata {
+			clone[k] = v
+		}
+		receipt.Metadata = clone
+	}
+	return receipt, true
 }
 
 // publishReceiptBlocksRepost reports whether a retry on the same idempotency
