@@ -217,6 +217,7 @@ BRANCH=$(printf '%s' "$META" | jq -r '.branch // empty')
 TARGET=$(printf '%s' "$META" | jq -r '.merged_target // empty')
 MERGED_SHA=$(printf '%s' "$META" | jq -r '.merged_sha // empty')
 PR_HEAD_SHA=$(printf '%s' "$META" | jq -r '.pr_head_sha // empty')
+PR_NUMBER=$(printf '%s' "$META" | jq -r '.pr_number // empty')
 TASK_ARTIFACT=$(printf '%s' "$META" | jq -r '
     if ((.artifact_dir // "") | length) > 0
     then .artifact_dir
@@ -295,20 +296,70 @@ if [ -n "$ARTIFACT_STATUS" ]; then
     exit 1
 fi
 
-remote_branch_matches() {
-    durable_branch=$1
+# 0 = exact ref holds the SHA, 1 = origin unreadable, 2 = ref holds something
+# else, 3 = ref absent (ls-remote --exit-code reports 2 for "no match").
+remote_ref_matches() {
+    durable_ref=$1
     durable_sha=$2
-    durable_record=$(git -C "$RIG_ROOT" ls-remote \
-        --exit-code --heads origin "refs/heads/$durable_branch" 2>/dev/null) ||
+    case "$durable_ref" in
+        refs/heads/*) durable_scope=--heads ;;
+        *) durable_scope=--refs ;;
+    esac
+    if durable_record=$(git -C "$RIG_ROOT" ls-remote \
+        --exit-code "$durable_scope" origin "$durable_ref" 2>/dev/null); then
+        :
+    else
+        durable_rc=$?
+        [ "$durable_rc" -eq 2 ] && return 3
         return 1
-    # An exact ref lookup must produce one <oid> <ref> record.
+    fi
+    # An exact ref lookup must produce one <oid> <ref> record. ls-remote
+    # patterns match ref tails, so a longer ref ending in the same path is a
+    # mismatch rather than evidence.
     set -- $durable_record
     if [ "$#" -eq 2 ] &&
         [ "$1" = "$durable_sha" ] &&
-        [ "$2" = "refs/heads/$durable_branch" ]; then
+        [ "$2" = "$durable_ref" ]; then
         return 0
     fi
     return 2
+}
+
+remote_branch_matches() {
+    if remote_ref_matches "refs/heads/$1" "$2"; then
+        return 0
+    else
+        branch_rc=$?
+    fi
+    [ "$branch_rc" -eq 3 ] && return 1
+    return "$branch_rc"
+}
+
+# Verified-PR source evidence. The exact polecat/<bead> branch is preferred.
+# GitHub's "automatically delete head branches" removes it on merge, and
+# GitHub retains the PR head immutably at refs/pull/<n>/head, so only when the
+# branch is ABSENT may that ref stand in for it, and only at the exact
+# validated head SHA. Return codes match remote_branch_matches.
+remote_pr_source_matches() {
+    pr_branch=$1
+    pr_sha=$2
+    pr_num=$3
+    if remote_ref_matches "refs/heads/$pr_branch" "$pr_sha"; then
+        return 0
+    else
+        pr_rc=$?
+    fi
+    [ "$pr_rc" -eq 3 ] || return "$pr_rc"
+    case "$pr_num" in
+        ""|*[!0-9]*) return 1 ;;
+    esac
+    if remote_ref_matches "refs/pull/$pr_num/head" "$pr_sha"; then
+        return 0
+    else
+        pr_rc=$?
+    fi
+    [ "$pr_rc" -eq 3 ] && return 1
+    return "$pr_rc"
 }
 
 merged_target_contains() {
@@ -403,16 +454,16 @@ case "$HANDOFF_RESULT" in
             echo "ARTIFACT_CLEANUP_BLOCKED incomplete verified-PR evidence for $WORK" >&2
             exit 1
         fi
-        if remote_branch_matches "$BRANCH" "$PR_HEAD_SHA"; then
+        if remote_pr_source_matches "$BRANCH" "$PR_HEAD_SHA" "$PR_NUMBER"; then
             :
         else
             REMOTE_STATUS=$?
             if [ "$REMOTE_STATUS" -eq 1 ]; then
                 record_cleanup_state pending || true
-                echo "ARTIFACT_CLEANUP_BLOCKED could not read origin/$BRANCH for $WORK; cleanup remains pending" >&2
+                echo "ARTIFACT_CLEANUP_BLOCKED could not read origin/$BRANCH or its PR head ref for $WORK; cleanup remains pending" >&2
             else
                 record_cleanup_state blocked || true
-                echo "ARTIFACT_CLEANUP_BLOCKED origin/$BRANCH does not match the merged PR head for $WORK" >&2
+                echo "ARTIFACT_CLEANUP_BLOCKED origin/$BRANCH (or refs/pull/$PR_NUMBER/head) does not match the merged PR head for $WORK" >&2
             fi
             exit 1
         fi

@@ -228,7 +228,49 @@ setup_case() {
     TASK_SHA=$("$REAL_GIT" -C "$ARTIFACT" rev-parse HEAD)
     MERGE_SHA=$TASK_SHA
     "$REAL_GIT" -C "$ARTIFACT" push -q -u origin "polecat/$GC_IT_WORK"
-    "$REAL_GIT" -C "$RIG" merge -q --ff-only "$TASK_SHA"
+    # MERGE_SHAPE models how GitHub landed the PR on the bare remote's main.
+    # Every non-ff shape first moves main so the landing commit differs from
+    # the PR head, exactly as on a live repository.
+    case "${MERGE_SHAPE:-ff}" in
+        ff)
+            "$REAL_GIT" -C "$RIG" merge -q --ff-only "$TASK_SHA"
+            ;;
+        merge|squash|rebase|none)
+            printf 'other\n' >"$RIG/other.txt"
+            "$REAL_GIT" -C "$RIG" add other.txt
+            "$REAL_GIT" -C "$RIG" commit -qm "unrelated work on main"
+            ;;
+        *)
+            fail "unknown MERGE_SHAPE=${MERGE_SHAPE:-}"
+            ;;
+    esac
+    case "${MERGE_SHAPE:-ff}" in
+        merge)
+            "$REAL_GIT" -C "$RIG" merge -q --no-ff -m "Merge pull request #1" "$TASK_SHA"
+            MERGE_SHA=$("$REAL_GIT" -C "$RIG" rev-parse HEAD)
+            ;;
+        squash)
+            "$REAL_GIT" -C "$RIG" merge -q --squash "$TASK_SHA" >/dev/null
+            "$REAL_GIT" -C "$RIG" commit -qm "task (#1)"
+            MERGE_SHA=$("$REAL_GIT" -C "$RIG" rev-parse HEAD)
+            ;;
+        rebase)
+            "$REAL_GIT" -C "$RIG" cherry-pick "$TASK_SHA" >/dev/null
+            MERGE_SHA=$("$REAL_GIT" -C "$RIG" rev-parse HEAD)
+            ;;
+        none)
+            # GitHub claims a merge commit that exists on the remote (as its
+            # test-merge ref) but never reached main.
+            "$REAL_GIT" -C "$RIG" checkout -q -b gh-test-merge
+            "$REAL_GIT" -C "$RIG" merge -q --no-ff -m "test merge" "$TASK_SHA"
+            MERGE_SHA=$("$REAL_GIT" -C "$RIG" rev-parse HEAD)
+            "$REAL_GIT" -C "$RIG" push -q origin "HEAD:refs/pull/1/merge"
+            "$REAL_GIT" -C "$RIG" checkout -q main
+            "$REAL_GIT" -C "$RIG" branch -q -D gh-test-merge
+            ;;
+    esac
+    [ "${MERGE_SHAPE:-ff}" = ff ] || [ "$MERGE_SHA" != "$TASK_SHA" ] ||
+        fail "MERGE_SHAPE=${MERGE_SHAPE:-} did not produce a distinct landing commit"
     "$REAL_GIT" -C "$RIG" push -q origin main
 
     jq -n \
@@ -466,8 +508,134 @@ test_changed_head_and_closed_unmerged_never_cleanup() {
         fail "closed-unmerged PR invoked terminal cleanup"
 }
 
+assert_converged() {
+    local label=$1
+    [ "$(jq -r '.[0].status' "$STATE")" = closed ] ||
+        fail "$label: verified merge did not close the bead"
+    [ "$(jq -r '.[0].metadata.merged_sha' "$STATE")" = "$MERGE_SHA" ] ||
+        fail "$label: closed bead does not record GitHub's landing commit"
+    [ ! -e "$ARTIFACT" ] || fail "$label: verified merge did not retire the artifact"
+    [ "$(jq -r '.[0].metadata.artifact_cleanup_state' "$STATE")" = complete ] ||
+        fail "$label: cleanup did not durably complete"
+    [ "$(jq -r '.[0].metadata.pr_reconcile_pending // empty' "$STATE")" = "" ] ||
+        fail "$label: marker remained after convergence"
+}
+
+assert_not_landed() {
+    local label=$1
+    [ "$(jq -r '.[0].status' "$STATE")" = blocked ] ||
+        fail "$label: an unlanded merge commit changed the bead status"
+    [ -d "$ARTIFACT" ] || fail "$label: an unlanded merge removed the artifact"
+    assert_marker_present
+    [ "$(jq -r '.[0].metadata.pr_state' "$STATE")" = merge_unreachable ] ||
+        fail "$label: an unlanded merge was not recorded as merge_unreachable"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "$label: an unlanded merge closed the bead"
+    ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
+        fail "$label: an unlanded merge ran artifact cleanup"
+}
+
+# Real ancestry (the git shim passes merge-base through): GitHub's merge
+# commit, squash commit, and last rebased commit all differ from the PR head,
+# and each must be proven on the freshly fetched target.
+test_real_git_merge_shapes_close_only_when_landed() {
+    local shape
+    for shape in merge squash rebase; do
+        MERGE_SHAPE=$shape setup_case "shape-$shape"
+        write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
+        "$RECONCILE" >/dev/null
+        assert_converged "$shape"
+    done
+
+    MERGE_SHAPE=none setup_case shape-none
+    write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
+    if "$RECONCILE" >/dev/null 2>&1; then
+        fail "a merge commit absent from the target should not reconcile"
+    fi
+    assert_not_landed "not merged"
+}
+
+# A local tag or branch literally named origin/main must not stand in for the
+# remote-tracking ref: bare "origin/main" DWIM-resolves refs/tags and
+# refs/heads first.
+test_real_git_shadowing_local_refs_are_not_evidence() {
+    MERGE_SHAPE=none setup_case shadow-tag
+    "$REAL_GIT" -C "$RIG" tag origin/main "$MERGE_SHA"
+    write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
+    if "$RECONCILE" >/dev/null 2>&1; then
+        fail "a shadowing refs/tags/origin/main must not prove the merge"
+    fi
+    assert_not_landed "shadowing tag"
+
+    MERGE_SHAPE=none setup_case shadow-branch
+    "$REAL_GIT" -C "$RIG" branch origin/main "$MERGE_SHA"
+    write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
+    if "$RECONCILE" >/dev/null 2>&1; then
+        fail "a shadowing refs/heads/origin/main must not prove the merge"
+    fi
+    assert_not_landed "shadowing branch"
+}
+
+test_real_git_fetch_failure_is_retryable() {
+    MERGE_SHAPE=squash setup_case fetch-failure
+    write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
+    mv "$REMOTE" "$REMOTE.offline"
+    if "$RECONCILE" >/dev/null 2>&1; then
+        fail "an unreachable origin should not reconcile"
+    fi
+    [ "$(jq -r '.[0].status' "$STATE")" = blocked ] ||
+        fail "fetch failure changed the bead status"
+    assert_marker_present
+    [ -d "$ARTIFACT" ] || fail "fetch failure removed the artifact"
+
+    mv "$REMOTE.offline" "$REMOTE"
+    : >"$LOG"
+    "$RECONCILE" >/dev/null
+    assert_converged "fetch recovered"
+}
+
+# GitHub's "automatically delete head branches" removes polecat/<bead> on
+# merge; GitHub keeps the head at refs/pull/<n>/head. Cleanup may use that
+# immutable ref only when the branch is gone, and only at the validated head.
+test_real_git_deleted_head_branch_uses_pull_head_ref() {
+    MERGE_SHAPE=squash setup_case deleted-head
+    "$REAL_GIT" -C "$RIG" push -q origin "$TASK_SHA:refs/pull/1/head"
+    "$REAL_GIT" -C "$RIG" push -q origin --delete "polecat/$GC_IT_WORK"
+    write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
+    "$RECONCILE" >/dev/null
+    assert_converged "deleted head branch"
+
+    MERGE_SHAPE=squash setup_case deleted-head-no-pull-ref
+    "$REAL_GIT" -C "$RIG" push -q origin --delete "polecat/$GC_IT_WORK"
+    write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
+    if "$RECONCILE" >/dev/null 2>&1; then
+        fail "cleanup without any remote source evidence should not converge"
+    fi
+    [ "$(jq -r '.[0].status' "$STATE")" = closed ] ||
+        fail "the verified merge should still close the bead"
+    [ -d "$ARTIFACT" ] || fail "cleanup removed an artifact without remote source evidence"
+    assert_marker_present
+
+    MERGE_SHAPE=squash setup_case deleted-head-moved-pull-ref
+    "$REAL_GIT" -C "$RIG" push -q origin "main:refs/pull/1/head"
+    "$REAL_GIT" -C "$RIG" push -q origin --delete "polecat/$GC_IT_WORK"
+    write_pr MERGED "$TASK_SHA" 2026-07-26T20:30:00Z "$MERGE_SHA"
+    if "$RECONCILE" >/dev/null 2>&1; then
+        fail "a PR head ref at the wrong SHA must not authorize cleanup"
+    fi
+    [ -d "$ARTIFACT" ] || fail "a mismatched PR head ref removed the artifact"
+    [ "$(jq -r '.[0].metadata.artifact_cleanup_state' "$STATE")" = blocked ] ||
+        fail "a mismatched PR head ref must block cleanup"
+    [ "$(jq -r '.[0].metadata.pr_reconcile_pending // empty' "$STATE")" = "" ] ||
+        fail "blocked cleanup must release the reconciliation slot"
+}
+
 test_publication_arms_without_premature_cleanup_then_converges
 test_closed_legacy_pull_request_is_not_terminal
+test_real_git_merge_shapes_close_only_when_landed
+test_real_git_shadowing_local_refs_are_not_evidence
+test_real_git_fetch_failure_is_retryable
+test_real_git_deleted_head_branch_uses_pull_head_ref
 test_cleanup_failure_then_closed_bead_retry
 test_close_failure_retries_from_complete_blocked_merge_evidence
 test_removed_before_metadata_crash_retries_to_completion

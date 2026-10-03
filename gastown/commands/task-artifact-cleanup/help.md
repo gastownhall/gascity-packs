@@ -23,7 +23,9 @@ then applies the evidence matrix for that exact result:
   prove `merged_sha` is reachable there as terminal-state corroboration; and
 - `mr_merged` requires the source ref to equal the validated `pr_head_sha`
   GitHub reported to the refinery, plus refreshed target reachability for
-  `merged_sha`.
+  `merged_sha`. When GitHub deleted the head branch on merge (the branch is
+  absent, not moved), GitHub's immutable `refs/pull/<pr_number>/head` at that
+  exact SHA stands in as the retained source ref.
 
 The target checks do not prove a source-to-merge relation. In every accepted
 case the exact source ref remains independent recovery evidence after local
