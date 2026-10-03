@@ -12,4 +12,7 @@ scope = "city"
 trigger = "cooldown"
 interval = "15m"
 exec = "bash $GC_PACK_DIR/assets/scripts/nudge-project-leads.sh"
-timeout = "30s"
+# Nudges are sequential, and a wait-idle nudge to a session that is not yet
+# flagged busy can block for up to 30s, so 30s total cut off every lead after
+# the first slow one. Matches escalate-rollups.
+timeout = "2m"
