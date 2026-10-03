@@ -223,6 +223,18 @@ reviewing, and shipping the PRs your city authors.
 Issues and pull requests are welcome. When a pack's surface changes, update
 its README in the same PR so the docs stay current with the code.
 
+### Running the tests
+
+```sh
+make test            # every pytest suite CI runs
+make test-gascity    # tests/ and gascity/tests/ only
+```
+
+`make test` uses `python3 -m pytest` when pytest, PyYAML and jsonschema
+import, and otherwise `uv run --with pytest --with pyyaml --with jsonschema
+python3 -m pytest` (a Homebrew python3 ships no pytest). Set `PYTHON=` to
+pick the interpreter and `PYTEST_ARGS=` to pass options.
+
 ### Publishing registry releases
 
 Registry releases are content-addressed. Use the Make targets so the release
