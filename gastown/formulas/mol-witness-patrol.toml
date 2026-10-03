@@ -854,7 +854,8 @@ Write exactly:
 IDLE: no work, exiting turn.
 ```
 Then stop immediately. Do NOT sleep, call ScheduleWakeup, or use Monitor.
-The session_sleep policy will restart this session after the configured idle interval;
-the next wisp is already assigned and the restarted session resumes from it.
+The idle_timeout (1h for this agent) will recycle this session after the idle
+interval; the next wisp is already assigned and the recycled session re-reads
+the formula and resumes from the beads ledger.
 
 **Exit criteria:** Next wisp poured, this wisp burned, turn ended with IDLE signal."""
