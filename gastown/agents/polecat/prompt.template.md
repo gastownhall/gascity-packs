@@ -268,15 +268,20 @@ NEW session identity. If you wake into a session that context says was already
 mid-work on a claimed bead, your FIRST action — before touching code — is to
 re-check ownership against THIS session's identity:
 
-`$GC_BEAD_ID` is the convoy, not the work bead — derive the child work bead
-first (exactly as the done sequence does), then verify THAT bead's ownership:
+Read back the work bead this session claimed, then verify THAT bead's
+ownership. `$GC_BEAD_ID` (the convoy) exists only in the controller's dispatch
+condition environment, never in a session shell (`gc hook current --help`), so
+the claim stamp comes first and the convoy is only a fallback:
 
 ```bash
 EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
-CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json)
-WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+WORK_BEAD_ID=$(gc hook current --id-only 2>/dev/null)
+if [ -z "$WORK_BEAD_ID" ] && [ -n "${GC_BEAD_ID:-}" ]; then
+  CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json)
+  WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
+fi
 if [ -z "$WORK_BEAD_ID" ]; then
-  echo "RESUME_INDETERMINATE convoy $GC_BEAD_ID has no single child work bead; re-claim instead of guessing."
+  echo "RESUME_INDETERMINATE no claimed work bead for this session (gc hook current is empty, no convoy in env); re-claim instead of guessing."
   gc runtime drain-ack
   exit 0
 fi
@@ -391,10 +396,11 @@ reassignment, wake/nudge, and drain all live there. Run that step.
 
 **Do NOT run submit-and-exit twice** (double push, double reassign, double
 refinery wake is a bug). Do not trust memory for this — check mechanically.
-Derive the work bead from your convoy exactly as the formula's workspace-setup
-step does (never pass a bare or guessed id to `bd`, which fuzzy-matches and can
-reassign the wrong bead); `$GC_BEAD_ID` is the convoy the molecule was poured
-on. If a clean read shows the work bead is no longer `in_progress` for this
+Read the work bead back from this session's claim stamp with
+`gc hook current --id-only` (an exact id; never pass a bare or guessed id to
+`bd`, which fuzzy-matches and can reassign the wrong bead). `$GC_BEAD_ID`, the
+convoy the molecule was poured on, is never set in a session shell, so the
+convoy derivation is only a fallback for when it is. If a clean read shows the work bead is no longer `in_progress` for this
 session, submit-and-exit already ran — drain and exit. Otherwise run it:
 
 ```bash
@@ -411,8 +417,11 @@ READ_OK=0
 READ_TRY=0
 while [ "$READ_TRY" -lt 3 ]; do
   READ_TRY=$((READ_TRY + 1))
-  CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json 2>/dev/null)
-  WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end' 2>/dev/null)
+  WORK_BEAD_ID=$(gc hook current --id-only 2>/dev/null)
+  if [ -z "$WORK_BEAD_ID" ] && [ -n "${GC_BEAD_ID:-}" ]; then
+    CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json 2>/dev/null)
+    WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end' 2>/dev/null)
+  fi
   if [ -n "$WORK_BEAD_ID" ]; then
     WORK_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
     SHOW_CODE=$?
