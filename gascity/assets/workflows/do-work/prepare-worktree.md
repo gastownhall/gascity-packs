@@ -15,18 +15,14 @@ setup only. Do not edit source files in the launcher checkout.
      input convoy metadata `gc.drain_member_id`
    - do not use the synthetic drain-unit convoy id as `<source-anchor-id>`;
      hard-fail if the selected source anchor id equals the synthetic input convoy id
-   - else if input convoy metadata has `gc.synthetic=true` (the one-item input
-     convoy `gc sling <item>` creates for a non-convoy target), read its tracked
-     members with `gc convoy status <input-convoy-id> --json`; it must have
-     exactly one entry in `.children` (hard-fail otherwise), and that member is
-     the source anchor. Never use the synthetic wrapper convoy id as
-     `<source-anchor-id>`: closing the wrapper would leave the real item open
-   - otherwise (a real, user-created convoy) use `<input-convoy-id>` as the
-     source anchor
+   - else if it has `gc.synthetic=true` (the wrapper `gc sling <item>` makes),
+     use its one tracked member from `gc convoy status <input-convoy-id> --json`
+     `.children` (hard-fail unless exactly one). Never use the synthetic wrapper
+     convoy id as `<source-anchor-id>`; that leaves the real item open
+   - otherwise use `<input-convoy-id>` as the source anchor
    - if root metadata also has `gc.drain_member_id`, it must match the selected
      drain member
-   - stamp the result on the root so every later step reads it instead of
-     re-deriving it:
+   - stamp it for later steps:
      `gc bd update <root-bead-id> --set-metadata gc.source_anchor_id=<source-anchor-id>`.
      If the root already has `gc.source_anchor_id` (a retry), it must equal the
      id resolved above; hard-fail on a mismatch instead of overwriting it
