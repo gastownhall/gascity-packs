@@ -142,10 +142,53 @@ def test_terminal_step_closes_itself_before_drain_ack(rel, step_id):
     )
 
 
+@pytest.mark.parametrize(
+    "rel,step_id,ack_index,ack_count",
+    [
+        pytest.param(
+            "gastown/formulas/mol-polecat-work.toml",
+            "submit-and-exit",
+            index,
+            10,
+            id=f"submit-and-exit-ack-{index + 1}",
+        )
+        for index in range(10)
+    ]
+    + [
+        pytest.param("gastown/formulas/mol-review-leg.toml", "notify-close", 0, 1, id="notify-close-ack"),
+        pytest.param("pr-pipeline/formulas/mol-pr-from-issue.formula.toml", "drain", 0, 1, id="drain-ack"),
+    ],
+)
+def test_each_shipped_ack_rejects_its_own_close_being_removed(rel, step_id, ack_index, ack_count):
+    data = tomllib.loads((REPO_ROOT / rel).read_text())
+    description = next(step["description"] for step in data["steps"] if step["id"] == step_id)
+    lines = description.splitlines(keepends=True)
+    in_bash = False
+    ack_lines = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("```bash"):
+            in_bash = True
+        elif stripped == "```":
+            in_bash = False
+        elif in_bash and stripped == "gc runtime drain-ack":
+            ack_lines.append(index)
+
+    assert len(ack_lines) == ack_count, f"{rel} {step_id}: shipped ack count changed"
+    close_index = ack_lines[ack_index] - 1
+    assert lines[close_index].strip().startswith('gc bd update "$STEP_BEAD_ID" ')
+    assert "--status=closed || exit 1" in lines[close_index]
+    lines.pop(close_index)
+
+    assert len(drain_ack_violations("".join(lines), step_id)) == 1, (
+        f"{rel} {step_id}: ack {ack_index + 1} lost its close without a violation"
+    )
+
+
 GUARDED = (
     'STEP_BEAD_ID=$(gc hook current --id-only) || exit 1\n'
     'STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1\n'
-    'printf \'%s\' "$STEP_BEAD" | jq -e \'.status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".s"))\' >/dev/null || exit 1\n'
+    'printf \'%s\' "$STEP_BEAD" | jq -e \'(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".s"))\' >/dev/null || exit 1\n'
     'gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed || exit 1\n'
 )
 
@@ -175,3 +218,13 @@ GUARDED = (
 )
 def test_checker_recognizes_the_guarded_close(block, ok):
     assert (not drain_ack_violations(f"```bash\n{block}\n```", "s")) == ok
+
+
+def test_checker_rejects_second_ack_in_same_bash_block_without_its_own_close():
+    block = GUARDED + "gc runtime drain-ack\ngc runtime drain-ack"
+    assert len(drain_ack_violations(f"```bash\n{block}\n```", "s")) == 1
+
+
+def test_checker_rejects_close_of_unrelated_variable():
+    block = GUARDED.replace('gc bd update "$STEP_BEAD_ID"', 'gc bd update "$OTHER_BEAD_ID"')
+    assert drain_ack_violations(f"```bash\n{block}gc runtime drain-ack\n```", "s")
