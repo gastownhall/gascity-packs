@@ -26,29 +26,40 @@ new_upstream_and_rig() {
     git_c clone -q "$base/upstream.git" "$base/rig"
 }
 
+# stable_branch — the branch worktree-setup.sh gives the worktree at <wt> for
+# <agent> (its branch_name()). --sync keeps exactly this branch current with
+# origin/HEAD, so the tests check it out to exercise the sync of the
+# worktree's own branch.
+stable_branch() {
+    local rig="$1" wt="$2" agent="$3" hash
+    hash=$(printf '%s' "$wt" | git_c -C "$rig" hash-object --stdin | cut -c1-12)
+    printf 'gc-%s-%s' "$agent" "$hash"
+}
+
 test_sync_pulls_when_branch_lacks_origin_tracking() {
     local base="$1"
     local rig="$base/rig" wt="$base/wt-notrack"
+    local branch
+    branch=$(stable_branch "$rig" "$wt" notrack)
 
     # Reproduce #299's precondition directly: a worktree branch created by
     # the no-start-point fallback (the path taken when origin/HEAD isn't
     # configured at creation time -- e.g. a rig set up locally and given a
     # remote afterwards) has no branch.<name>.remote/.merge config at all.
-    git_c -C "$rig" worktree add -q "$wt" -b notrack
+    git_c -C "$rig" worktree add -q "$wt" -b "$branch"
     if git_c -C "$wt" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-        fail "test setup bug: notrack must have no upstream tracking configured"
+        fail "test setup bug: $branch must have no upstream tracking configured"
     fi
 
-    # The branch WAS pushed at some point (e.g. by a prior refinery run), and
-    # origin has since moved ahead of it -- the exact "we hit this in
-    # production" scenario from the issue.
-    git_c -C "$wt" push -q origin notrack
+    # origin's default branch has since moved ahead of the worktree -- the
+    # exact "we hit this in production" scenario from the issue, where a
+    # frozen worktree fell 31 commits behind main.
     (cd "$base" && git_c clone -q "$base/upstream.git" advance \
-        && cd advance && git_c checkout -q notrack \
+        && cd advance \
         && git_c commit -q --allow-empty -m "advanced upstream" \
-        && git_c push -q origin notrack)
+        && git_c push -q origin main)
     local advanced_sha
-    advanced_sha=$(git_c -C "$base/advance" rev-parse notrack)
+    advanced_sha=$(git_c -C "$base/advance" rev-parse main)
 
     sh "$SCRIPT" "$rig" "$wt" notrack --sync
 
@@ -56,46 +67,33 @@ test_sync_pulls_when_branch_lacks_origin_tracking() {
     wt_sha=$(git_c -C "$wt" rev-parse HEAD)
     [ "$wt_sha" = "$advanced_sha" ] ||
         fail "sync should have pulled the advanced commit despite missing tracking config; want $advanced_sha got $wt_sha"
-}
-
-test_sync_is_noop_without_origin_counterpart() {
-    local base="$1"
-    local rig="$base/rig" wt="$base/wt-unpushed"
-
-    git_c -C "$rig" worktree add -q "$wt" -b unpushed
-    local before_sha
-    before_sha=$(git_c -C "$wt" rev-parse HEAD)
-
-    # Never pushed to origin -- nothing to sync. Must not error and must
-    # leave the worktree exactly where it was.
-    sh "$SCRIPT" "$rig" "$wt" unpushed --sync
-
-    local after_sha
-    after_sha=$(git_c -C "$wt" rev-parse HEAD)
-    [ "$after_sha" = "$before_sha" ] ||
-        fail "an unpushed branch with no origin counterpart must be left untouched, got $before_sha -> $after_sha"
+    # Still on its own branch: stable_branch() matched the script's name, so
+    # this exercised the fast-forward rather than a fresh branch at origin/HEAD.
+    [ "$(git_c -C "$wt" branch --show-current)" = "$branch" ] ||
+        fail "sync should have kept the worktree on $branch"
 }
 
 test_sync_still_works_with_configured_tracking() {
     local base="$1"
     local rig="$base/rig" wt="$base/wt-tracked"
+    local branch
+    branch=$(stable_branch "$rig" "$wt" tracked)
 
     # The already-working case: a branch created from an explicit
     # origin-tracking start point (the DEFAULT_REF path this script's own
     # creation logic normally takes) gets real tracking config for free.
-    # The explicit fetch/pull-by-name form must keep working for it too.
-    git_c -C "$rig" worktree add -q "$wt" -b tracked refs/remotes/origin/main
+    # Sync must keep working for it too.
+    git_c -C "$rig" worktree add -q "$wt" -b "$branch" refs/remotes/origin/main
     if ! git_c -C "$wt" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-        fail "test setup bug: tracked must have upstream tracking configured"
+        fail "test setup bug: $branch must have upstream tracking configured"
     fi
 
-    git_c -C "$wt" push -q origin tracked
     (cd "$base" && git_c clone -q "$base/upstream.git" advance2 \
-        && cd advance2 && git_c checkout -q tracked \
+        && cd advance2 \
         && git_c commit -q --allow-empty -m "advanced tracked" \
-        && git_c push -q origin tracked)
+        && git_c push -q origin main)
     local advanced_sha
-    advanced_sha=$(git_c -C "$base/advance2" rev-parse tracked)
+    advanced_sha=$(git_c -C "$base/advance2" rev-parse main)
 
     sh "$SCRIPT" "$rig" "$wt" tracked --sync
 
@@ -103,6 +101,8 @@ test_sync_still_works_with_configured_tracking() {
     wt_sha=$(git_c -C "$wt" rev-parse HEAD)
     [ "$wt_sha" = "$advanced_sha" ] ||
         fail "sync should still pull for a normally-tracked branch; want $advanced_sha got $wt_sha"
+    [ "$(git_c -C "$wt" branch --show-current)" = "$branch" ] ||
+        fail "sync should have kept the worktree on $branch"
 }
 
 tmp=$(mktemp -d)
@@ -110,7 +110,6 @@ trap 'rm -rf "$tmp"' EXIT
 new_upstream_and_rig "$tmp"
 
 test_sync_pulls_when_branch_lacks_origin_tracking "$tmp"
-test_sync_is_noop_without_origin_counterpart "$tmp"
 test_sync_still_works_with_configured_tracking "$tmp"
 
 echo "worktree-setup sync tests passed"
