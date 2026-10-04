@@ -114,11 +114,11 @@ including the Jev overlay's full `jev-build` route. `jev-build-direct` and
   closes don't need `--force`, and name the downstream effect of `blocked` in
   its warning.
 
-## Not fixed by
+## What the existing fixes did not cover
 
-PR gastownhall/gascity#6881 (five v1.5 fixes) does not touch this path. Its
-closest change, #6860 (emit `bead.closed` for every observed close), addresses
-a different symptom. PR #6810 (reconcile keys on controller wake-ups) changes
+Before the commits below were added, gastownhall/gascity#6881 (then five v1.5
+fixes from the Jarvis work) did not touch this path. Its closest change, #6860
+(emit `bead.closed` for every observed close), addresses a different symptom. PR #6810 (reconcile keys on controller wake-ups) changes
 nothing under the legacy reconciler. Upstream `main` at `2feddeb32` still has
 the veto and no pass/blocked consistency check.
 
