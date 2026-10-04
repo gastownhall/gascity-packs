@@ -42,11 +42,13 @@ test_sync_pulls_when_branch_lacks_origin_tracking() {
     local branch
     branch=$(stable_branch "$rig" "$wt" notrack)
 
-    # Reproduce #299's precondition directly: a worktree branch created by
-    # the no-start-point fallback (the path taken when origin/HEAD isn't
-    # configured at creation time -- e.g. a rig set up locally and given a
-    # remote afterwards) has no branch.<name>.remote/.merge config at all.
-    git_c -C "$rig" worktree add -q "$wt" -b "$branch"
+    # Build #299's precondition by hand, not through the script: the branch
+    # the no-start-point fallback creates (the path taken when origin/HEAD
+    # isn't configured at creation time -- e.g. a rig set up locally and
+    # given a remote afterwards) has no branch.<name>.remote/.merge config.
+    # --no-track pins that state even when the developer's
+    # branch.autoSetupMerge (always, inherit) would track the start point.
+    git_c -C "$rig" worktree add -q --no-track "$wt" -b "$branch"
     if git_c -C "$wt" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
         fail "test setup bug: $branch must have no upstream tracking configured"
     fi
@@ -81,9 +83,12 @@ test_sync_still_works_with_configured_tracking() {
 
     # The already-working case: a branch created from an explicit
     # origin-tracking start point (the DEFAULT_REF path this script's own
-    # creation logic normally takes) gets real tracking config for free.
-    # Sync must keep working for it too.
-    git_c -C "$rig" worktree add -q "$wt" -b "$branch" refs/remotes/origin/main
+    # creation logic normally takes) gets real tracking config under git's
+    # default branch.autoSetupMerge; --track pins it even when the
+    # developer's setting (false, simple) would not. sync_worktree never
+    # reads tracking config, so this guards that configured tracking is
+    # harmless to the sync rather than exercising a separate path.
+    git_c -C "$rig" worktree add -q --track "$wt" -b "$branch" refs/remotes/origin/main
     if ! git_c -C "$wt" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
         fail "test setup bug: $branch must have upstream tracking configured"
     fi
