@@ -1,0 +1,67 @@
+{
+  "label": "blocked-review",
+  "root": "fi-55y",
+  "root_status": "timeout",
+  "root_outcome": null,
+  "root_closed_at": null,
+  "publish_closed_at": [],
+  "root_closed_after_publish": false,
+  "gate_item": null,
+  "gate_summary": null,
+  "gate_notes": {
+    "jev.role": "review-gate"
+  },
+  "lane_beads": [],
+  "review_report_bead": null,
+  "review_report_valid": null,
+  "review_report_validator": null,
+  "decision_records": 0,
+  "outcome_records": [],
+  "audited_decisions": [],
+  "closed_order": [
+    [
+      "jev-build.prepare",
+      "2026-10-04T02:35:45Z",
+      "pass"
+    ],
+    [
+      "requirements.iteration.1",
+      "2026-10-04T02:35:59Z",
+      "pass"
+    ],
+    [
+      "jev-build.requirements",
+      "2026-10-04T02:36:04Z",
+      "pass"
+    ],
+    [
+      "plan.iteration.1",
+      "2026-10-04T02:36:11Z",
+      "pass"
+    ],
+    [
+      "jev-build.plan",
+      "2026-10-04T02:36:15Z",
+      "pass"
+    ],
+    [
+      "jev-build.plan-review",
+      "2026-10-04T02:36:22Z",
+      "pass"
+    ]
+  ],
+  "open_members": [
+    "summarize-implementation.iteration.1",
+    "jev-build.summarize-implementation",
+    "jev-build.workflow-finalize",
+    "decompose.iteration.1",
+    "jev-build.review",
+    "jev-build.review-fanout",
+    "jev-build.plan.spec",
+    "jev-build.summarize-implementation.spec",
+    "jev-build.decompose",
+    "jev-build.requirements.spec",
+    "jev-build.implement",
+    "jev-build.decompose.spec"
+  ]
+}

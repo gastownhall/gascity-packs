@@ -121,3 +121,22 @@ host is set up.
 it slung `jev-build-direct`, whose graph was prepare → requirements →
 decompose → implement → summarize-implementation → review, with no plan or
 plan-review beads. Both roots closed `pass`; `swept: []`.
+
+## structure-005 and structure-006 — October 4, 2026: the plan-review stall, before and after
+
+Both run the new `blocked-review` scenario: the stub plan-review worker closes
+its step with `gc.outcome=pass` and `gc.work_outcome=blocked`, the shape that
+stalled two live baseline builds in ab-003
+([RCA](../jev-overlay-ab/ab-003-stall-rca.md)). Each ran alone on the host.
+
+- [structure-005](structure-005/), `gc 1.5.0-dev-bb+8ab11cc90` (the build the
+  A/Bs used): plan review closed at 02:36:22, the decompose work bead stayed
+  open and unassigned, and the root timed out at 02:44:46. The stall reproduces
+  deterministically.
+- [structure-006](structure-006/), `gc` built from gastownhall/gascity#6881
+  with the readiness fix: decompose was claimed and the root closed `pass`
+  4.5 minutes after launch.
+
+A first attempt ran both binaries at once; the fixed one got past decompose but
+timed out later, under contention from the other city. Run alone it completed,
+so only the solo runs are kept.

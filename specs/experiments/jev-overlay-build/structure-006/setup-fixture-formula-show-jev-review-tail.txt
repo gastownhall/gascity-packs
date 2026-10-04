@@ -1,0 +1,45 @@
+Formula: jev-review-tail
+Description: Gated review tail bonded by the jev-build review gate (one instance per gate item).
+
+Review lanes run only when the gate item says `run`. Synthesis runs only when at
+least two lanes run, and the whole review loop is dropped when no lane runs. A
+script step then writes the gc.build.review.v1 report and labels the gate's
+decisions from the lane verdicts; finalize and publish follow. Nothing is
+inherited into a bond, so the review, finalize and publish contracts are
+restated here.
+
+
+Variables:
+  {{acceptance}}: run or skip the acceptance lane. (default=run)
+  {{acceptance_scope}}: Criterion ids the acceptance lane must review, or all. (default=all)
+  {{forwarded_smells}}: Smells Jev confirmed; they go straight to the fix lane. (default=none)
+  {{gate}}: How the gate decided: jev, escalate:<reason> or fail-open:<reason>. (default=fail-open:unknown)
+  {{implementation_target}}: Role target used to apply review findings. (default=gc.implementation-worker)
+  {{loop}}: run or skip the whole review loop (skipped when no lane runs). (default=run)
+  {{simplicity}}: run or skip the simplicity lane. (default=run)
+  {{simplicity_scope}}: full (smell and design checks) or design (the smell screen was clean). (default=full)
+  {{synth}}: run or skip synthesis (skipped when at most one lane runs). (default=run)
+  {{test_evidence}}: run or skip the test-evidence lane. (default=run)
+
+Steps (21):
+  ├── jev-review-tail.main.review-loop.spec: Step spec for Run the Jev-gated review until approved (spec)
+  ├── jev-review-tail.main.review-loop.iteration.1.main.acceptance-review: Jev-gated review: acceptance and correctness
+  ├── jev-review-tail.main.review-loop.iteration.1.main.test-evidence-review: Jev-gated review: test evidence
+  ├── jev-review-tail.main.review-loop.iteration.1.main.simplicity-review: Jev-gated review: simplicity and maintainability
+  ├── jev-review-tail.main.review-report.spec: Step spec for Write the review report and label Jev decisions (spec)
+  ├── jev-review-tail.main.finalize.spec: Step spec for Finalize jev-build (spec)
+  ├── jev-review-tail.main.review-loop.iteration.1.main.acceptance-review-scope-check: Finalize scope for Jev-gated review: acceptance and correctness [needs: jev-review-tail.main.review-loop.iteration.1.main.acceptance-review]
+  ├── jev-review-tail.main.review-loop.iteration.1.main.test-evidence-review-scope-check: Finalize scope for Jev-gated review: test evidence [needs: jev-review-tail.main.review-loop.iteration.1.main.test-evidence-review]
+  ├── jev-review-tail.main.review-loop.iteration.1.main.simplicity-review-scope-check: Finalize scope for Jev-gated review: simplicity and maintainability [needs: jev-review-tail.main.review-loop.iteration.1.main.simplicity-review]
+  ├── jev-review-tail.main.review-loop.iteration.1.main.synthesize-review: Synthesize the Jev-gated review [needs: jev-review-tail.main.review-loop.iteration.1.main.acceptance-review-scope-check, jev-review-tail.main.review-loop.iteration.1.main.test-evidence-review-scope-check, jev-review-tail.main.review-loop.iteration.1.main.simplicity-review-scope-check]
+  ├── jev-review-tail.main.review-loop.iteration.1.main.synthesize-review-scope-check: Finalize scope for Synthesize the Jev-gated review [needs: jev-review-tail.main.review-loop.iteration.1.main.synthesize-review]
+  ├── jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings: Apply Jev-gated review findings [needs: jev-review-tail.main.review-loop.iteration.1.main.acceptance-review-scope-check, jev-review-tail.main.review-loop.iteration.1.main.test-evidence-review-scope-check, jev-review-tail.main.review-loop.iteration.1.main.simplicity-review-scope-check, jev-review-tail.main.review-loop.iteration.1.main.synthesize-review-scope-check]
+  ├── jev-review-tail.main.review-loop.iteration.1: Run the Jev-gated review until approved [needs: jev-review-tail.main.review-loop.iteration.1.main.acceptance-review, jev-review-tail.main.review-loop.iteration.1.main.test-evidence-review, jev-review-tail.main.review-loop.iteration.1.main.simplicity-review, jev-review-tail.main.review-loop.iteration.1.main.synthesize-review, jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings]
+  ├── jev-review-tail.main.review-loop: Run the Jev-gated review until approved [needs: jev-review-tail.main.review-loop.iteration.1]
+  ├── jev-review-tail.main.review-report.iteration.1: Write the review report and label Jev decisions [needs: jev-review-tail.main.review-loop]
+  ├── jev-review-tail.main.review-report: Write the review report and label Jev decisions [needs: jev-review-tail.main.review-loop, jev-review-tail.main.review-report.iteration.1]
+  ├── jev-review-tail.main.finalize.iteration.1: Finalize jev-build [needs: jev-review-tail.main.review-report]
+  ├── jev-review-tail.main.finalize: Finalize jev-build [needs: jev-review-tail.main.review-report, jev-review-tail.main.finalize.iteration.1]
+  ├── jev-review-tail.main.publish: Optionally publish jev-build [needs: jev-review-tail.main.finalize]
+  ├── jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings-scope-check: Finalize scope for Apply Jev-gated review findings [needs: jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings]
+  └── jev-review-tail.workflow-finalize: Finalize workflow [needs: jev-review-tail.main.review-loop, jev-review-tail.main.publish, jev-review-tail.main.review-loop.iteration.1.main.apply-review-findings-scope-check]

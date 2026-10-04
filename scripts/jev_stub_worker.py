@@ -303,7 +303,10 @@ def main() -> int:
             try:
                 root = root_of(step)
                 if handler is None:
-                    close(step['id'], f'stub: {name} passed')
+                    # A scenario can make the step record a work outcome too, as a
+                    # real plan review does when it finds required changes.
+                    outcome = scenario().get(f'{name.replace("-", "_")}_work_outcome')
+                    close(step['id'], f'stub: {name} passed', **({'gc__work_outcome': outcome} if outcome else {}))
                 else:
                     handler(step, root)
                 log(f'done {step["id"]} {name}')

@@ -1,0 +1,914 @@
+[
+  {
+    "id": "fi-55y",
+    "status": "timeout",
+    "metadata": {},
+    "closed_at": null
+  },
+  {
+    "id": "fi-0he",
+    "title": "Write implementation plan",
+    "description": "Use the built-in Gas City design authoring flow.\n\nCreate the implementation plan at the path recorded on the workflow root bead\nas `gc.build.plan_path` (fallback `gc.var.plan_path`). The artifact must be\nMarkdown with YAML front matter, not JSON. Its front matter must declare\n`schema: gc.build.plan.v1`, the workflow id/formula, the methodology pack/name,\nthe producer formula/stage/attempt, `status`, and `trace` with upstream and\ncoverage entries. Include a Markdown coverage table whose ID/status pairs\nexactly match `trace.coverage`.\nThe validator only recognizes a Markdown table with an `ID` column and a\n`Status` column. Use this shape:\n\n| ID | Status |\n| --- | --- |\n| REQ-001 | covered |\n\nUse mapping objects for front matter; do not use scalar shortcuts such as\n`workflow: build-basic`. The top-level YAML shape must be:\n\n- `schema: gc.build.plan.v1`\n- `workflow: {id: <workflow-root-id>, formula: build-basic}`\n- `methodology: {pack: gascity, name: build-basic}`\n- `producer: {formula: build-basic, stage: plan, attempt: <positive integer>}`\n- `status: approved` or another schema-allowed status\n- `trace: {upstream: [...], coverage: [...]}`\n\nTrace front matter must use the validator shape exactly:\n\n- `trace.upstream[]` entries must include `path` and `hash`; do not use\n  `id`/`title`/`type` entries as the upstream shape.\n- For the requirements artifact, use its recorded path and a scheme-qualified\n  hash such as `sha256:<digest>` or `git:<revision>`.\n- If an upstream entry lists `ids`, every listed id must appear exactly once in\n  `trace.coverage` and in the Markdown coverage table with the same status.\n- Coverage statuses are not artifact statuses. Use `covered` for satisfied\n  requirements; do not use `approved` in `trace.coverage[].status` or the\n  Markdown coverage table.\n\nGround the plan in the generated requirements and repository conventions.\nInclude the required schema sections:\n\n- Summary\n- Current System\n- Proposed Implementation\n- Non-Goals\n- Verification\n\nRecord the implementation plan path on the workflow root bead before closing.\nUse `gc bd update \"<workflow-root-id>\" --set-metadata \"gc.build.plan_path=<absolute path>\"`.\nDo not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON\nobject.\nBefore closing this step, set the claimed step outcome with\n`gc bd update \"<claimed-step-id>\" --set-metadata \"gc.outcome=pass\"`, then close\nwith `gc bd close \"<claimed-step-id>\" --reason \"<concise reason>\"`. Do not pass\n`--metadata` or `--set-metadata` to `gc bd close`.\n\nArtifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.plan_path` (fallback `gc.var.plan_path`) against schema `gc.build.plan.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.\n",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:36:15Z",
+    "closed_at": "2026-10-04T02:36:15Z",
+    "metadata": {
+      "gc.attempt_log": "[{\"action\":\"close\",\"attempt\":\"1\",\"outcome\":\"pass\"}]",
+      "gc.build.artifact_path_keys": "gc.build.plan_path,gc.var.plan_path",
+      "gc.build.artifact_schema": "gc.build.plan.v1",
+      "gc.check_mode": "exec",
+      "gc.check_path": ".gc/scripts/checks/build-artifact-valid.sh",
+      "gc.check_timeout": "5m",
+      "gc.control_epoch": "1",
+      "gc.controller_error": "",
+      "gc.controller_error_class": "",
+      "gc.controller_retry_count": "",
+      "gc.controller_retry_first_seen": "",
+      "gc.controller_retryable": "",
+      "gc.execution_rig_context": "fixture",
+      "gc.execution_routed_to": "fixture/gc.design-author",
+      "gc.kind": "ralph",
+      "gc.max_attempts": "3",
+      "gc.native_step_dependencies.v1": "[\"requirements\"]",
+      "gc.outcome": "pass",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/core.control-dispatcher",
+      "gc.run_target": "gc.design-author",
+      "gc.step_defined_emitted": "2026-10-04T02:35:33Z",
+      "gc.step_id": "plan",
+      "gc.step_ref": "jev-build.plan",
+      "stub.close_reason": "stub: plan written"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-0he",
+        "depends_on_id": "fi-nl4",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:32Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-0he",
+        "depends_on_id": "fi-ixu",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:32Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-0he",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 2,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-2tf",
+    "title": "Write canonical implementation summary",
+    "description": "# External Prompt Required\n\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\n\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\n\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\n\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-base/summarize-implementation.md`\n- Original formula description_file: `../assets/workflows/build-base/summarize-implementation.md`\n- Prompt file size: 4906 bytes\n\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\n\n## Formula Variables\n\nUse these resolved formula values when interpreting `{{...}}` placeholders in the prompt file:\n\n```bash\nartifact_root=\".gc/jev-structure/blocked-review\"\ncode_review_formula=\"review\"\ncontext_path=\"\"\ndecomposition_formula=\"decomposition-base\"\ndecomposition_path=\"\"\ndrain_policy=\"separate\"\nimplementation_formula=\"implement\"\nimplementation_item_formula=\"do-work-item\"\nimplementation_target=\"gc.implementation-worker\"\ninteraction_mode=\"headless\"\nmax_iterations=\"10\"\nopen_pr=\"false\"\nplan_path=\"\"\nplanning_formula=\"planning-base\"\npush=\"false\"\nrequirements_path=\"\"\nreview_fix_formula=\"fix-loop-base\"\nreview_mode=\"agent\"\n```\n",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:34Z",
+    "metadata": {
+      "gc.attempt": "1",
+      "gc.build.artifact_path_keys": "gc.build.implementation_summary_path",
+      "gc.build.artifact_schema": "gc.build.implementation-summary.v1",
+      "gc.control_for": "summarize-implementation",
+      "gc.iteration": "1",
+      "gc.logical_bead_id": "fi-4sb",
+      "gc.native_step_dependencies.v1": "[\"jev-build.implement\"]",
+      "gc.ralph_step_id": "summarize-implementation",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/gc.run-operator",
+      "gc.run_target": "gc.run-operator",
+      "gc.step_defined_emitted": "2026-10-04T02:35:33Z",
+      "gc.step_id": "summarize-implementation",
+      "gc.step_ref": "summarize-implementation.iteration.1"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-2tf",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-2tf",
+        "depends_on_id": "fi-mvp",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-3bv",
+    "title": "Generate requirements",
+    "description": "# External Prompt Required\n\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\n\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\n\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\n\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-basic/requirements.md`\n- Original formula description_file: `../assets/workflows/build-basic/requirements.md`\n- Prompt file size: 6364 bytes\n\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\n",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "assignee": "je-wisp-bl6",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:59Z",
+    "started_at": "2026-10-04T02:35:57Z",
+    "closed_at": "2026-10-04T02:35:59Z",
+    "metadata": {
+      "gc.attempt": "1",
+      "gc.build.artifact_path_keys": "gc.build.requirements_path,gc.var.requirements_path",
+      "gc.build.artifact_schema": "gc.build.requirements.v1",
+      "gc.claimed_at": "2026-10-04T02:35:57Z",
+      "gc.control_for": "requirements",
+      "gc.iteration": "1",
+      "gc.logical_bead_id": "fi-nl4",
+      "gc.native_step_dependencies.v1": "[\"jev-build.prepare\"]",
+      "gc.outcome": "pass",
+      "gc.ralph_step_id": "requirements",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/gc.requirements-planner",
+      "gc.run_target": "gc.requirements-planner",
+      "gc.session_id": "je-wisp-bl6",
+      "gc.session_name": "fixture--gc__requirements-planner-1-pool",
+      "gc.step_defined_emitted": "2026-10-04T02:35:33Z",
+      "gc.step_id": "requirements",
+      "gc.step_ref": "requirements.iteration.1",
+      "stub.close_reason": "stub: requirements written"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-3bv",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-3bv",
+        "depends_on_id": "fi-6mr",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:32Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-4sb",
+    "title": "Write canonical implementation summary",
+    "description": "# External Prompt Required\n\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\n\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\n\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\n\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-base/summarize-implementation.md`\n- Original formula description_file: `../assets/workflows/build-base/summarize-implementation.md`\n- Prompt file size: 4906 bytes\n\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\n\n## Formula Variables\n\nUse these resolved formula values when interpreting `{{...}}` placeholders in the prompt file:\n\n```bash\nartifact_root=\".gc/jev-structure/blocked-review\"\ncode_review_formula=\"review\"\ncontext_path=\"\"\ndecomposition_formula=\"decomposition-base\"\ndecomposition_path=\"\"\ndrain_policy=\"separate\"\nimplementation_formula=\"implement\"\nimplementation_item_formula=\"do-work-item\"\nimplementation_target=\"gc.implementation-worker\"\ninteraction_mode=\"headless\"\nmax_iterations=\"10\"\nopen_pr=\"false\"\nplan_path=\"\"\nplanning_formula=\"planning-base\"\npush=\"false\"\nrequirements_path=\"\"\nreview_fix_formula=\"fix-loop-base\"\nreview_mode=\"agent\"\n```\n",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:34Z",
+    "metadata": {
+      "gc.build.artifact_path_keys": "gc.build.implementation_summary_path",
+      "gc.build.artifact_schema": "gc.build.implementation-summary.v1",
+      "gc.check_mode": "exec",
+      "gc.check_path": ".gc/scripts/checks/build-artifact-valid.sh",
+      "gc.check_timeout": "5m",
+      "gc.control_epoch": "1",
+      "gc.execution_rig_context": "fixture",
+      "gc.execution_routed_to": "fixture/gc.run-operator",
+      "gc.kind": "ralph",
+      "gc.max_attempts": "3",
+      "gc.native_step_dependencies.v1": "[\"jev-build.implement\"]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/core.control-dispatcher",
+      "gc.run_target": "gc.run-operator",
+      "gc.step_defined_emitted": "2026-10-04T02:35:33Z",
+      "gc.step_id": "summarize-implementation",
+      "gc.step_ref": "jev-build.summarize-implementation"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-4sb",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-4sb",
+        "depends_on_id": "fi-2tf",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-4sb",
+        "depends_on_id": "fi-mvp",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 2,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-5tq",
+    "title": "Finalize workflow",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:34Z",
+    "metadata": {
+      "gc.execution_rig_context": "fixture",
+      "gc.execution_routed_to": "fixture/gc.run-operator",
+      "gc.kind": "workflow-finalize",
+      "gc.native_step_dependencies.v1": "[\"jev-build.review-fanout\"]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/core.control-dispatcher",
+      "gc.step_defined_emitted": "2026-10-04T02:35:33Z",
+      "gc.step_id": "jev-build.workflow-finalize",
+      "gc.step_ref": "jev-build.workflow-finalize"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-5tq",
+        "depends_on_id": "fi-axj",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-5tq",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-5wc",
+    "title": "Create task beads",
+    "description": "# External Prompt Required\n\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\n\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\n\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\n\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-basic/decompose.md`\n- Original formula description_file: `../assets/workflows/build-basic/decompose.md`\n- Prompt file size: 4953 bytes\n\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\n",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:34Z",
+    "metadata": {
+      "gc.attempt": "1",
+      "gc.build.artifact_path_keys": "gc.build.decomposition_path,gc.var.decomposition_path",
+      "gc.build.artifact_schema": "gc.build.decomposition.v1",
+      "gc.control_for": "decompose",
+      "gc.iteration": "1",
+      "gc.logical_bead_id": "fi-ez9",
+      "gc.native_step_dependencies.v1": "[\"jev-build.plan-review\"]",
+      "gc.ralph_step_id": "decompose",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/gc.task-decomposer",
+      "gc.run_target": "gc.task-decomposer",
+      "gc.step_defined_emitted": "2026-10-04T02:35:33Z",
+      "gc.step_id": "decompose",
+      "gc.step_ref": "decompose.iteration.1"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-5wc",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-5wc",
+        "depends_on_id": "fi-rsn",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:32Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-6ej",
+    "title": "Jev review gate",
+    "description": "Jev review gate (deterministic script worker; no LLM session).\n\nThe `gc.jev-gate` worker runs `assets/scripts/jev_gate.py worker` for this step. It:\n\n- resolves the implementation worktrees from the implementation summary and\n  workflow members, and writes the review context recorded as\n  `gc.build.code_review_context_path` on the workflow root;\n- gathers receipts: runs the tests in each worktree itself and compares every\n  pre-existing test file with its base blob by hash;\n- asks Jev (`jev-1.13.0`, mode `auto`) one \"is there any input for\n  which this implementation violates the criterion?\" question per acceptance\n  criterion, plus one smell screen over the diff hunks;\n- applies the bands in the gate state directory (audit sampling and circuit\n  breaker included), logs every decision to `<artifact_root>/jev/decisions.jsonl`\n  and the shared ledger, and closes with `gc.output_json` holding exactly one\n  item for the `jev-review-tail` bond.\n\nAny failure (no key, HTTP error, invalid answer, missing receipts) runs every\nreview lane at full scope and records the reason on this bead.\n",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:34Z",
+    "metadata": {
+      "gc.native_step_dependencies.v1": "[\"summarize-implementation\"]",
+      "gc.output_json_required": "true",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/gc.jev-gate",
+      "gc.run_target": "gc.jev-gate",
+      "gc.step_defined_emitted": "2026-10-04T02:35:34Z",
+      "gc.step_id": "jev-build.review",
+      "gc.step_ref": "jev-build.review",
+      "jev.role": "review-gate"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-6ej",
+        "depends_on_id": "fi-4sb",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-6ej",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-6mr",
+    "title": "Prepare build context",
+    "description": "# External Prompt Required\n\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\n\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\n\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\n\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-base/prepare.md`\n- Original formula description_file: `../assets/workflows/build-base/prepare.md`\n- Prompt file size: 4947 bytes\n\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\n\n## Formula Variables\n\nUse these resolved formula values when interpreting `{{...}}` placeholders in the prompt file:\n\n```bash\nartifact_root=\".gc/jev-structure/blocked-review\"\ncode_review_formula=\"review\"\ncontext_path=\"\"\ndecomposition_formula=\"decomposition-base\"\ndecomposition_path=\"\"\ndrain_policy=\"separate\"\nimplementation_formula=\"implement\"\nimplementation_item_formula=\"do-work-item\"\nimplementation_target=\"gc.implementation-worker\"\ninteraction_mode=\"headless\"\nmax_iterations=\"10\"\nopen_pr=\"false\"\nplan_path=\"\"\nplanning_formula=\"planning-base\"\npush=\"false\"\nrequirements_path=\"\"\nreview_fix_formula=\"fix-loop-base\"\nreview_mode=\"agent\"\n```\n",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "assignee": "je-wisp-3l6",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:45Z",
+    "started_at": "2026-10-04T02:35:43Z",
+    "closed_at": "2026-10-04T02:35:45Z",
+    "metadata": {
+      "gc.claimed_at": "2026-10-04T02:35:43Z",
+      "gc.native_step_dependencies.v1": "[]",
+      "gc.outcome": "pass",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/gc.run-operator",
+      "gc.run_target": "gc.run-operator",
+      "gc.session_id": "je-wisp-3l6",
+      "gc.session_name": "fixture--gc__run-operator-2-pool",
+      "gc.step_defined_emitted": "2026-10-04T02:35:34Z",
+      "gc.step_id": "jev-build.prepare",
+      "gc.step_ref": "jev-build.prepare",
+      "stub.close_reason": "stub: prepared artifact paths"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-6mr",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 2,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-axj",
+    "title": "Expand fanout for Jev review gate",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:34Z",
+    "metadata": {
+      "gc.bond": "jev-review-tail",
+      "gc.bond_vars": "{\"acceptance\":\"{item.acceptance}\",\"acceptance_scope\":\"{item.acceptance_scope}\",\"forwarded_smells\":\"{item.forwarded_smells}\",\"gate\":\"{item.gate}\",\"implementation_target\":\"gc.implementation-worker\",\"loop\":\"{item.loop}\",\"simplicity\":\"{item.simplicity}\",\"simplicity_scope\":\"{item.simplicity_scope}\",\"synth\":\"{item.synth}\",\"test_evidence\":\"{item.test_evidence}\"}",
+      "gc.control_for": "review",
+      "gc.execution_rig_context": "fixture",
+      "gc.execution_routed_to": "fixture/gc.jev-gate",
+      "gc.fanout_mode": "parallel",
+      "gc.for_each": "output.items",
+      "gc.kind": "fanout",
+      "gc.native_step_dependencies.v1": "[\"jev-build.review\"]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/core.control-dispatcher",
+      "gc.step_defined_emitted": "2026-10-04T02:35:34Z",
+      "gc.step_id": "jev-build.review-fanout",
+      "gc.step_ref": "jev-build.review-fanout"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-axj",
+        "depends_on_id": "fi-6ej",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-axj",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-bzw",
+    "title": "Step spec for Write implementation plan",
+    "description": "{\"id\":\"plan\",\"title\":\"Write implementation plan\",\"description\":\"Use the built-in Gas City design authoring flow.\\n\\nCreate the implementation plan at the path recorded on the workflow root bead\\nas `gc.build.plan_path` (fallback `gc.var.plan_path`). The artifact must be\\nMarkdown with YAML front matter, not JSON. Its front matter must declare\\n`schema: gc.build.plan.v1`, the workflow id/formula, the methodology pack/name,\\nthe producer formula/stage/attempt, `status`, and `trace` with upstream and\\ncoverage entries. Include a Markdown coverage table whose ID/status pairs\\nexactly match `trace.coverage`.\\nThe validator only recognizes a Markdown table with an `ID` column and a\\n`Status` column. Use this shape:\\n\\n| ID | Status |\\n| --- | --- |\\n| REQ-001 | covered |\\n\\nUse mapping objects for front matter; do not use scalar shortcuts such as\\n`workflow: build-basic`. The top-level YAML shape must be:\\n\\n- `schema: gc.build.plan.v1`\\n- `workflow: {id: \\u003cworkflow-root-id\\u003e, formula: build-basic}`\\n- `methodology: {pack: gascity, name: build-basic}`\\n- `producer: {formula: build-basic, stage: plan, attempt: \\u003cpositive integer\\u003e}`\\n- `status: approved` or another schema-allowed status\\n- `trace: {upstream: [...], coverage: [...]}`\\n\\nTrace front matter must use the validator shape exactly:\\n\\n- `trace.upstream[]` entries must include `path` and `hash`; do not use\\n  `id`/`title`/`type` entries as the upstream shape.\\n- For the requirements artifact, use its recorded path and a scheme-qualified\\n  hash such as `sha256:\\u003cdigest\\u003e` or `git:\\u003crevision\\u003e`.\\n- If an upstream entry lists `ids`, every listed id must appear exactly once in\\n  `trace.coverage` and in the Markdown coverage table with the same status.\\n- Coverage statuses are not artifact statuses. Use `covered` for satisfied\\n  requirements; do not use `approved` in `trace.coverage[].status` or the\\n  Markdown coverage table.\\n\\nGround the plan in the generated requirements and repository conventions.\\nInclude the required schema sections:\\n\\n- Summary\\n- Current System\\n- Proposed Implementation\\n- Non-Goals\\n- Verification\\n\\nRecord the implementation plan path on the workflow root bead before closing.\\nUse `gc bd update \\\"\\u003cworkflow-root-id\\u003e\\\" --set-metadata \\\"gc.build.plan_path=\\u003cabsolute path\\u003e\\\"`.\\nDo not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON\\nobject.\\nBefore closing this step, set the claimed step outcome with\\n`gc bd update \\\"\\u003cclaimed-step-id\\u003e\\\" --set-metadata \\\"gc.outcome=pass\\\"`, then close\\nwith `gc bd close \\\"\\u003cclaimed-step-id\\u003e\\\" --reason \\\"\\u003cconcise reason\\u003e\\\"`. Do not pass\\n`--metadata` or `--set-metadata` to `gc bd close`.\\n\\nArtifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.plan_path` (fallback `gc.var.plan_path`) against schema `gc.build.plan.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.\\n\",\"metadata\":{\"gc.build.artifact_path_keys\":\"gc.build.plan_path,gc.var.plan_path\",\"gc.build.artifact_schema\":\"gc.build.plan.v1\",\"gc.run_target\":\"gc.design-author\"},\"needs\":[\"requirements\"],\"ralph\":{\"max_attempts\":3,\"check\":{\"mode\":\"exec\",\"path\":\".gc/scripts/checks/build-artifact-valid.sh\",\"timeout\":\"5m\"}}}",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "spec",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:35Z",
+    "metadata": {
+      "gc.kind": "spec",
+      "gc.native_step_dependencies.v1": "[]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.spec_for": "plan",
+      "gc.spec_for_ref": "plan",
+      "gc.step_defined_emitted": "2026-10-04T02:35:34Z",
+      "gc.step_id": "jev-build.plan.spec",
+      "gc.step_ref": "jev-build.plan.spec"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-bzw",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-cca",
+    "title": "Step spec for Write canonical implementation summary",
+    "description": "{\"id\":\"summarize-implementation\",\"title\":\"Write canonical implementation summary\",\"description\":\"# External Prompt Required\\n\\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\\n\\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\\n\\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\\n\\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-base/summarize-implementation.md`\\n- Original formula description_file: `../assets/workflows/build-base/summarize-implementation.md`\\n- Prompt file size: 4906 bytes\\n\\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\\n\\n## Formula Variables\\n\\nUse these resolved formula values when interpreting `{{...}}` placeholders in the prompt file:\\n\\n```bash\\nartifact_root=\\\".gc/jev-structure/blocked-review\\\"\\ncode_review_formula=\\\"review\\\"\\ncontext_path=\\\"\\\"\\ndecomposition_formula=\\\"decomposition-base\\\"\\ndecomposition_path=\\\"\\\"\\ndrain_policy=\\\"separate\\\"\\nimplementation_formula=\\\"implement\\\"\\nimplementation_item_formula=\\\"do-work-item\\\"\\nimplementation_target=\\\"gc.implementation-worker\\\"\\ninteraction_mode=\\\"headless\\\"\\nmax_iterations=\\\"10\\\"\\nopen_pr=\\\"false\\\"\\nplan_path=\\\"\\\"\\nplanning_formula=\\\"planning-base\\\"\\npush=\\\"false\\\"\\nrequirements_path=\\\"\\\"\\nreview_fix_formula=\\\"fix-loop-base\\\"\\nreview_mode=\\\"agent\\\"\\n```\\n\",\"metadata\":{\"gc.build.artifact_path_keys\":\"gc.build.implementation_summary_path\",\"gc.build.artifact_schema\":\"gc.build.implementation-summary.v1\",\"gc.run_target\":\"gc.run-operator\"},\"needs\":[\"implement\",\"implement-same-session\"],\"ralph\":{\"max_attempts\":3,\"check\":{\"mode\":\"exec\",\"path\":\".gc/scripts/checks/build-artifact-valid.sh\",\"timeout\":\"5m\"}}}",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "spec",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:35Z",
+    "metadata": {
+      "gc.kind": "spec",
+      "gc.native_step_dependencies.v1": "[]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.spec_for": "summarize-implementation",
+      "gc.spec_for_ref": "summarize-implementation",
+      "gc.step_defined_emitted": "2026-10-04T02:35:34Z",
+      "gc.step_id": "jev-build.summarize-implementation.spec",
+      "gc.step_ref": "jev-build.summarize-implementation.spec"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-cca",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-ez9",
+    "title": "Create task beads",
+    "description": "# External Prompt Required\n\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\n\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\n\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\n\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-basic/decompose.md`\n- Original formula description_file: `../assets/workflows/build-basic/decompose.md`\n- Prompt file size: 4953 bytes\n\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\n",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:35Z",
+    "metadata": {
+      "gc.build.artifact_path_keys": "gc.build.decomposition_path,gc.var.decomposition_path",
+      "gc.build.artifact_schema": "gc.build.decomposition.v1",
+      "gc.check_mode": "exec",
+      "gc.check_path": ".gc/scripts/checks/build-artifact-valid.sh",
+      "gc.check_timeout": "5m",
+      "gc.control_epoch": "1",
+      "gc.execution_rig_context": "fixture",
+      "gc.execution_routed_to": "fixture/gc.task-decomposer",
+      "gc.kind": "ralph",
+      "gc.max_attempts": "3",
+      "gc.native_step_dependencies.v1": "[\"jev-build.plan-review\"]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/core.control-dispatcher",
+      "gc.run_target": "gc.task-decomposer",
+      "gc.step_defined_emitted": "2026-10-04T02:35:34Z",
+      "gc.step_id": "decompose",
+      "gc.step_ref": "jev-build.decompose"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-ez9",
+        "depends_on_id": "fi-5wc",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-ez9",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-ez9",
+        "depends_on_id": "fi-rsn",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 2,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-isi",
+    "title": "Step spec for Generate requirements",
+    "description": "{\"id\":\"requirements\",\"title\":\"Generate requirements\",\"description\":\"# External Prompt Required\\n\\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\\n\\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\\n\\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\\n\\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-basic/requirements.md`\\n- Original formula description_file: `../assets/workflows/build-basic/requirements.md`\\n- Prompt file size: 6364 bytes\\n\\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\\n\",\"metadata\":{\"gc.build.artifact_path_keys\":\"gc.build.requirements_path,gc.var.requirements_path\",\"gc.build.artifact_schema\":\"gc.build.requirements.v1\",\"gc.run_target\":\"gc.requirements-planner\"},\"needs\":[\"prepare\"],\"ralph\":{\"max_attempts\":3,\"check\":{\"mode\":\"exec\",\"path\":\".gc/scripts/checks/build-artifact-valid.sh\",\"timeout\":\"5m\"}}}",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "spec",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:35Z",
+    "metadata": {
+      "gc.kind": "spec",
+      "gc.native_step_dependencies.v1": "[]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.spec_for": "requirements",
+      "gc.spec_for_ref": "requirements",
+      "gc.step_defined_emitted": "2026-10-04T02:35:34Z",
+      "gc.step_id": "jev-build.requirements.spec",
+      "gc.step_ref": "jev-build.requirements.spec"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-isi",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-ixu",
+    "title": "Write implementation plan",
+    "description": "Use the built-in Gas City design authoring flow.\n\nCreate the implementation plan at the path recorded on the workflow root bead\nas `gc.build.plan_path` (fallback `gc.var.plan_path`). The artifact must be\nMarkdown with YAML front matter, not JSON. Its front matter must declare\n`schema: gc.build.plan.v1`, the workflow id/formula, the methodology pack/name,\nthe producer formula/stage/attempt, `status`, and `trace` with upstream and\ncoverage entries. Include a Markdown coverage table whose ID/status pairs\nexactly match `trace.coverage`.\nThe validator only recognizes a Markdown table with an `ID` column and a\n`Status` column. Use this shape:\n\n| ID | Status |\n| --- | --- |\n| REQ-001 | covered |\n\nUse mapping objects for front matter; do not use scalar shortcuts such as\n`workflow: build-basic`. The top-level YAML shape must be:\n\n- `schema: gc.build.plan.v1`\n- `workflow: {id: <workflow-root-id>, formula: build-basic}`\n- `methodology: {pack: gascity, name: build-basic}`\n- `producer: {formula: build-basic, stage: plan, attempt: <positive integer>}`\n- `status: approved` or another schema-allowed status\n- `trace: {upstream: [...], coverage: [...]}`\n\nTrace front matter must use the validator shape exactly:\n\n- `trace.upstream[]` entries must include `path` and `hash`; do not use\n  `id`/`title`/`type` entries as the upstream shape.\n- For the requirements artifact, use its recorded path and a scheme-qualified\n  hash such as `sha256:<digest>` or `git:<revision>`.\n- If an upstream entry lists `ids`, every listed id must appear exactly once in\n  `trace.coverage` and in the Markdown coverage table with the same status.\n- Coverage statuses are not artifact statuses. Use `covered` for satisfied\n  requirements; do not use `approved` in `trace.coverage[].status` or the\n  Markdown coverage table.\n\nGround the plan in the generated requirements and repository conventions.\nInclude the required schema sections:\n\n- Summary\n- Current System\n- Proposed Implementation\n- Non-Goals\n- Verification\n\nRecord the implementation plan path on the workflow root bead before closing.\nUse `gc bd update \"<workflow-root-id>\" --set-metadata \"gc.build.plan_path=<absolute path>\"`.\nDo not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON\nobject.\nBefore closing this step, set the claimed step outcome with\n`gc bd update \"<claimed-step-id>\" --set-metadata \"gc.outcome=pass\"`, then close\nwith `gc bd close \"<claimed-step-id>\" --reason \"<concise reason>\"`. Do not pass\n`--metadata` or `--set-metadata` to `gc bd close`.\n\nArtifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.plan_path` (fallback `gc.var.plan_path`) against schema `gc.build.plan.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.\n",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "assignee": "je-wisp-whn",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:36:11Z",
+    "started_at": "2026-10-04T02:36:10Z",
+    "closed_at": "2026-10-04T02:36:11Z",
+    "metadata": {
+      "gc.attempt": "1",
+      "gc.build.artifact_path_keys": "gc.build.plan_path,gc.var.plan_path",
+      "gc.build.artifact_schema": "gc.build.plan.v1",
+      "gc.claimed_at": "2026-10-04T02:36:10Z",
+      "gc.control_for": "plan",
+      "gc.iteration": "1",
+      "gc.logical_bead_id": "fi-0he",
+      "gc.native_step_dependencies.v1": "[\"requirements\"]",
+      "gc.outcome": "pass",
+      "gc.ralph_step_id": "plan",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/gc.design-author",
+      "gc.run_target": "gc.design-author",
+      "gc.session_id": "je-wisp-whn",
+      "gc.session_name": "fixture--gc__design-author-1-pool",
+      "gc.step_defined_emitted": "2026-10-04T02:35:34Z",
+      "gc.step_id": "plan",
+      "gc.step_ref": "plan.iteration.1",
+      "stub.close_reason": "stub: plan written"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-ixu",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-ixu",
+        "depends_on_id": "fi-nl4",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:32Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-mvp",
+    "title": "Drain build implementation",
+    "description": "Use the built-in Gas City implementation stage contract.\n\nImplement the approved decomposition with the inherited artifact root, context\npath, drain policy, implementation target, iteration limit, push flag, and open\nPR flag. Store the implementation summary path and outcome on the workflow root\nbead.\n\nClose this step only after implementation reports a clean result or an explicit\nfailure artifact.\n",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:35Z",
+    "metadata": {
+      "gc.drain_context": "separate",
+      "gc.drain_formula": "do-work",
+      "gc.drain_member_access": "exclusive",
+      "gc.drain_on_item_failure": "continue",
+      "gc.execution_rig_context": "fixture",
+      "gc.execution_routed_to": "fixture/gc.implementation-worker",
+      "gc.graphv2_vars.v1": "{\"artifact_root\":\".gc/jev-structure/blocked-review\",\"binding_name\":\"gc\",\"binding_prefix\":\"gc.\",\"code_review_formula\":\"review\",\"context_path\":\"\",\"decomposition_formula\":\"decomposition-base\",\"decomposition_path\":\"\",\"drain_policy\":\"separate\",\"implementation_formula\":\"implement\",\"implementation_item_formula\":\"do-work-item\",\"implementation_target\":\"gc.implementation-worker\",\"interaction_mode\":\"headless\",\"jev_audit_rate\":\"0\",\"jev_intake_decision\":\"\",\"jev_mode\":\"auto\",\"jev_model\":\"jev-1.13.0\",\"jev_state_dir\":\"/tmp/jst-j0ijd9aq/jev-state\",\"jev_test_command\":\"/tmp/jevvenv/bin/python -m pytest -q -p no:cacheprovider\",\"jev_test_timeout\":\"600\",\"keep_inherited_tail\":\"\",\"max_iterations\":\"10\",\"open_pr\":\"false\",\"plan_path\":\"\",\"planning_formula\":\"planning-base\",\"push\":\"false\",\"requirements_path\":\"\",\"review_fix_formula\":\"fix-loop-base\",\"review_mode\":\"agent\",\"rig_name\":\"fixture\"}",
+      "gc.kind": "drain",
+      "gc.native_step_dependencies.v1": "[\"decompose\"]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/core.control-dispatcher",
+      "gc.run_target": "gc.implementation-worker",
+      "gc.step_defined_emitted": "2026-10-04T02:35:35Z",
+      "gc.step_id": "jev-build.implement",
+      "gc.step_ref": "jev-build.implement"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-mvp",
+        "depends_on_id": "fi-ez9",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-mvp",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 2,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-nl4",
+    "title": "Generate requirements",
+    "description": "# External Prompt Required\n\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\n\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\n\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\n\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-basic/requirements.md`\n- Original formula description_file: `../assets/workflows/build-basic/requirements.md`\n- Prompt file size: 6364 bytes\n\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\n",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:36:04Z",
+    "closed_at": "2026-10-04T02:36:04Z",
+    "metadata": {
+      "gc.attempt_log": "[{\"action\":\"close\",\"attempt\":\"1\",\"outcome\":\"pass\"}]",
+      "gc.build.artifact_path_keys": "gc.build.requirements_path,gc.var.requirements_path",
+      "gc.build.artifact_schema": "gc.build.requirements.v1",
+      "gc.check_mode": "exec",
+      "gc.check_path": ".gc/scripts/checks/build-artifact-valid.sh",
+      "gc.check_timeout": "5m",
+      "gc.control_epoch": "1",
+      "gc.controller_error": "",
+      "gc.controller_error_class": "",
+      "gc.controller_retry_count": "",
+      "gc.controller_retry_first_seen": "",
+      "gc.controller_retryable": "",
+      "gc.execution_rig_context": "fixture",
+      "gc.execution_routed_to": "fixture/gc.requirements-planner",
+      "gc.kind": "ralph",
+      "gc.max_attempts": "3",
+      "gc.native_step_dependencies.v1": "[\"jev-build.prepare\"]",
+      "gc.outcome": "pass",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/core.control-dispatcher",
+      "gc.run_target": "gc.requirements-planner",
+      "gc.step_defined_emitted": "2026-10-04T02:35:35Z",
+      "gc.step_id": "requirements",
+      "gc.step_ref": "jev-build.requirements",
+      "stub.close_reason": "stub: requirements written"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-nl4",
+        "depends_on_id": "fi-6mr",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:32Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-nl4",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-nl4",
+        "depends_on_id": "fi-3bv",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:32Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 2,
+    "dependent_count": 2,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-qof",
+    "title": "Step spec for Create task beads",
+    "description": "{\"id\":\"decompose\",\"title\":\"Create task beads\",\"description\":\"# External Prompt Required\\n\\nThis bead still follows the normal runtime and lifecycle protocol from your startup prompt and current agent prompt, including claiming work, honoring result contracts, checking for follow-on work, and draining only when appropriate.\\n\\nIn addition to that protocol, this bead's task-specific instructions come from a formula `description_file` that is too large to inline safely into bead storage.\\n\\nBefore you start the task-specific work, you MUST read the file below and treat it as the task prompt for this bead. Do not proceed from memory, ambient skills, or prior workflow knowledge until you have read it.\\n\\n- Resolved prompt file: `/home/ubuntu/code/gastownhall/gascity-packs-jev/gascity/assets/workflows/build-basic/decompose.md`\\n- Original formula description_file: `../assets/workflows/build-basic/decompose.md`\\n- Prompt file size: 4953 bytes\\n\\nTreat the file contents as the authoritative task prompt for this bead. It augments the startup/runtime protocol; it does not replace the startup prompt, the current agent prompt, or any bead lifecycle/result-contract instructions already given to you.\\nFollow the section matching this bead's `gc.step_id` metadata and title, plus any result, closure, lifecycle, or post-close contract sections in that file.\\n\",\"metadata\":{\"gc.build.artifact_path_keys\":\"gc.build.decomposition_path,gc.var.decomposition_path\",\"gc.build.artifact_schema\":\"gc.build.decomposition.v1\",\"gc.run_target\":\"gc.task-decomposer\"},\"needs\":[\"plan-review\"],\"ralph\":{\"max_attempts\":3,\"check\":{\"mode\":\"exec\",\"path\":\".gc/scripts/checks/build-artifact-valid.sh\",\"timeout\":\"5m\"}}}",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "spec",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:35:36Z",
+    "metadata": {
+      "gc.kind": "spec",
+      "gc.native_step_dependencies.v1": "[]",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.spec_for": "decompose",
+      "gc.spec_for_ref": "decompose",
+      "gc.step_defined_emitted": "2026-10-04T02:35:35Z",
+      "gc.step_id": "jev-build.decompose.spec",
+      "gc.step_ref": "jev-build.decompose.spec"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-qof",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "fi-rsn",
+    "title": "Run design review",
+    "description": "Use the built-in Gas City `design-review` flow.\n\nRun a plan review against the implementation plan. Treat required changes as blockers for decomposition; update the plan or capture the unresolved findings before closing this step.\n\nInclude a lightweight implementation readiness pass before decomposition:\n\n- requirements traceability: every major plan task maps to acceptance criteria\n- task boundaries: each task can become a clear implementation bead\n- test commands: the plan names the focused proof commands or test strategy\n- risk: risky files, migrations, public interfaces, and rollback concerns are\n  explicit enough for an implementer\n\nIf you write a plan-readiness note, record it on the workflow root as\n`gc.build.plan_review_report_path=<path>`. Do not write or overwrite\n`gc.build.review_report_path`; that key is reserved for the later\nbuild-basic implementation review artifact.\n\nBefore closing this step, set the claimed step outcome with\n`gc bd update \"<claimed-step-id>\" --set-metadata \"gc.outcome=pass\"`, then close\nwith `gc bd close \"<claimed-step-id>\" --reason \"<concise reason>\"`. Do not pass\n`--metadata` or `--set-metadata` to `gc bd close`.\n",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "assignee": "je-wisp-4a4",
+    "owner": "jev@example.invalid",
+    "created_at": "2026-10-04T02:35:32Z",
+    "created_by": "Jev Structure",
+    "updated_at": "2026-10-04T02:36:22Z",
+    "started_at": "2026-10-04T02:36:20Z",
+    "closed_at": "2026-10-04T02:36:22Z",
+    "metadata": {
+      "gc.claimed_at": "2026-10-04T02:36:20Z",
+      "gc.native_step_dependencies.v1": "[\"plan\"]",
+      "gc.outcome": "pass",
+      "gc.root_bead_id": "fi-55y",
+      "gc.root_store_ref": "rig:fixture",
+      "gc.routed_to": "fixture/gc.review-synthesizer",
+      "gc.run_target": "gc.review-synthesizer",
+      "gc.session_id": "je-wisp-4a4",
+      "gc.session_name": "fixture--gc__review-synthesizer-1-pool",
+      "gc.step_defined_emitted": "2026-10-04T02:35:35Z",
+      "gc.step_id": "jev-build.plan-review",
+      "gc.step_ref": "jev-build.plan-review",
+      "gc.work_outcome": "blocked",
+      "stub.close_reason": "stub: plan-review passed"
+    },
+    "dependencies": [
+      {
+        "issue_id": "fi-rsn",
+        "depends_on_id": "fi-0he",
+        "type": "blocks",
+        "created_at": "2026-10-04T02:35:32Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "fi-rsn",
+        "depends_on_id": "fi-55y",
+        "type": "tracks",
+        "created_at": "2026-10-04T02:35:33Z",
+        "created_by": "Jev Structure",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 2,
+    "comment_count": 0
+  }
+]

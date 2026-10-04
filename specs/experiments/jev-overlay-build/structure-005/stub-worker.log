@@ -1,0 +1,11 @@
+1791081344.200 1023729 claim fi-6mr jev-build.prepare agent=fixture--gc__run-operator-2-pool
+1791081344.694 1023732 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1791081345.344 1023729 done fi-6mr prepare
+1791081358.751 1032097 claim fi-3bv requirements.iteration.1 agent=fixture--gc__requirements-planner-1-pool
+1791081358.907 1032094 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru
+1791081359.443 1032097 done fi-3bv requirements
+1791081370.831 1040329 claim fi-ixu plan.iteration.1 agent=fixture--gc__design-author-1-pool
+1791081371.502 1040329 done fi-ixu plan
+1791081381.209 1047572 claim fi-rsn jev-build.plan-review agent=fixture--gc__review-synthesizer-1-pool
+1791081381.884 1047572 done fi-rsn plan-review
+1791081387.572 1051415 no work: {'schema_version': '1', 'ok': True, 'command': 'hook', 'action': 'drain', 'reason': 'no_work', 'drain_acknowledged': Tru

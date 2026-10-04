@@ -17,6 +17,7 @@ Scenarios (run in order in one city, then a no-key phase after a restart):
 - nokey   TYPESAFE_API_KEY removed: the gate fails open to every lane
 - compact routed with size compact: jev-build-compact
 - direct  routed with size standard and no design need: jev-build-direct
+- blocked-review  plan review closes gc.outcome=pass with gc.work_outcome=blocked
 
 Evidence lands in --out. The city lives under a short /tmp path and is torn
 down (gc stop, supervisor stop, two scoped process sweeps) at the end.
@@ -59,6 +60,8 @@ SCENARIOS = {
     # Size standard, no design need, guards low: the router picks jev-build-direct.
     'direct': {'p': {}, 'audit_rate': '0', 'route': True, 'size': 1},
     'nokey': {'p': {}, 'audit_rate': '0', 'nokey': True},
+    # Plan review passes but records gc.work_outcome=blocked, as two live builds did.
+    'blocked-review': {'p': {}, 'audit_rate': '0', 'plan_review_work_outcome': 'blocked'},
 }
 
 
