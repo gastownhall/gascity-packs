@@ -160,8 +160,14 @@ wisp you just assigned and re-reads formula steps with fresh context.
 gc mail inbox
 ```
 
-Archive any messages you handle. Note any context relevant to
-upcoming merge work (e.g., priority overrides, hold requests).
+Archive a message once you have handled it, or once what it asks for is
+represented by durable tracked work — a bead, or a line in your standing
+instructions. Never archive to clear a count. Anything still owed becomes a
+bead, or goes back in your inbox with `gc mail mark-unread <id>`:
+`gc mail inbox` lists unread mail only, so a message left read and open is
+not listed again. Note any context relevant to upcoming merge work: a
+priority override or hold request you intend to honor on a later cycle is
+exactly the case that needs a bead rather than an archive.
 
 Close this step and proceed."""
 

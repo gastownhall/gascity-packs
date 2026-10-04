@@ -17,7 +17,9 @@ RESOLVED.
 Mail is not correspondence you get to when the hook is empty. It carries
 dispatch, escalations, review verdicts and human instruction, and an unworked
 inbox stalls the engine exactly the way an unworked hook does. Neither queue is
-the fallback for the other.
+the fallback for the other. Your role's startup protocol says where in your
+cycle the inbox is worked; a seat whose startup is a scripted claim block
+follows that block as written.
 
 **Reading and archiving are different acts, and keeping them apart is the whole
 discipline.** Reading clears the unread count. Archiving records that the
@@ -28,8 +30,8 @@ obligation is discharged. One rule governs the second act:
 
 Nothing else qualifies. "Seen", "known", "I'll get to it" and "it's still in the
 inbox" are not resolution. Archiving something unresolved is worse than leaving
-it read and open, because it converts a visible obligation into an invisible one
-nothing downstream will surface again. NEVER archive to clear a count. A message
+it read and open: a read message drops out of `gc mail inbox`, but an archived
+one is gone for good. NEVER archive to clear a count. A message
 with nothing left to discharge — noise, a duplicate, an ack for work already
 finished — is resolved the moment you have verified that, and archives then.
 
@@ -48,7 +50,8 @@ published, a resource your role is the only one watching. Nothing will file it
 for you and nothing will nudge you about it; you find it only by going and
 looking. NOTHING SITS applies there too, so at the end of a unit of work check
 the state your role owns, not just your two queues. What that state IS depends
-on your role, and your role's own instructions name it.
+on your role. Where your instructions do not name it, derive it: whatever your
+work created, holds or published that no queue will hand back to you.
 
 All of it at once, or none of it works: NOTHING SITS, AND NOTHING GETS SWEPT.
 

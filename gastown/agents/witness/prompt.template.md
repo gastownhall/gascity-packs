@@ -318,11 +318,16 @@ Process mail in your inbox-check mol step — the mol tells you exactly how.
 
 ### Mail Drain
 
-During inbox check, archive stale protocol messages (> 30 minutes old).
-When inbox exceeds 10 messages, batch-process: read subjects, categorize,
-archive stale ones, then handle remaining. Protocol messages older than
-30 minutes are stale — the underlying state has been handled or is no
-longer actionable.
+Protocol messages age out of usefulness: a MERGE_READY, RECOVERY_NEEDED or
+LIFECYCLE message older than ~30 minutes has usually already been overtaken by
+the state it announced. Age is the cue to go and check, not the licence to
+archive — confirm from the durable record (the bead, the branch, the session)
+that the underlying state has been handled or is no longer actionable, and
+archive then. Anything you cannot confirm yet becomes a bead, or goes back in
+your inbox with `gc mail mark-unread <id>`: `gc mail inbox` lists unread mail
+only, so a message left read and open is not listed again. A large inbox is a
+reason to work through it faster, never a reason to archive something you have
+not resolved.
 
 ### Escalation
 

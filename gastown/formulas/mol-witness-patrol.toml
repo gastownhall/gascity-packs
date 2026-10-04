@@ -115,17 +115,25 @@ For escalations:
 gc mail send mayor/ -s "ESCALATION: <polecat> needs help [HIGH|MED|LOW]" -m "<category>: <details>"
 ```
 Do NOT escalate routine blocks or lifecycle messages — handle them yourself.
-Archive after handling.
+Archive once you have answered it, or once the escalation is represented by
+durable tracked work.
 
 **HANDOFF:**
-Read predecessor context. Continue from where they left off.
-Archive after absorbing context.
+Read predecessor context. Continue from where they left off. The handoff is
+resolved once you have picked the work up — archive then, not on reading it.
 
 **Other / informational:**
-Archive after reading.
+Verify there is nothing left to discharge, then archive. If something is,
+resolve it or file a bead first.
 
-**Hygiene principle**: Archive messages after they're fully processed.
-Inbox should be near-empty after this step.
+**Hygiene principle**: archive a message once its obligation is resolved, or
+once it is represented by durable tracked work — a bead, or a line in your
+standing instructions. Reading is what clears the unread count; archiving is
+what records that the obligation is discharged. Never archive to clear a
+count. Reading is not parking either: `gc mail inbox` lists unread mail only,
+so a message you read and leave open is not listed again. Anything you cannot
+discharge this cycle becomes a bead, or goes back in your inbox with
+`gc mail mark-unread <id>`.
 
 Close this step and continue to `recover-orphaned-beads` — do NOT exit
 the wisp here. The `next-iteration` step is the only place that pours
