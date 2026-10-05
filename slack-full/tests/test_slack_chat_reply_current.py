@@ -1294,3 +1294,19 @@ def test_company_path_raw_flag_passes_tildes(
     rc_code = rc.main(["--body", _RUNWAY_LINE, "--raw"])
     assert rc_code == 0
     assert captured[0]["payload"]["text"] == _RUNWAY_LINE
+
+
+@pytest.mark.parametrize('result', [
+    {'CreatedAt': '2026-09-30T02:37:00Z', 'Kind': 'outbound'},
+    {'Receipt': {'Delivered': 'false'}},
+    {'Receipt': {'Delivered': None}},
+    {'delivered': 'true'},
+    {'Receipt': {'Delivered': False, 'FailureKind': 'auth'}},
+])
+def test_reply_current_requires_confirmed_boolean_delivery(monkeypatch, capsys, result):
+    reply, common = _import_modules()
+    monkeypatch.setattr(common, 'publish_via_gc_outbound', lambda **_: result)
+    monkeypatch.setattr(common, 'find_latest_inbound_thread_for_session', lambda _: None)
+    assert reply.main(['--session', 'new-session', '--conversation-id', 'CFOREMAN',
+                       '--body', 'receipt regression']) == 1
+    assert 'delivered=false' in capsys.readouterr().err

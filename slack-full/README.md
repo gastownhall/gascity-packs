@@ -73,6 +73,12 @@ Implemented:
 - [x] `gc slack publish` — publish to a session's saved binding (target
       session required, no event-scan fallback — fail-fast when the
       session has no active binding)
+  Binding lookup prefers an active session binding, then the most recent
+  unexpired Slack binding for the session's durable agent/alias. Agent
+  bindings keep working after session restarts without a session rebind.
+  `publish`, `upload`, and `reply-current` exit successfully only when the
+  delivery receipt explicitly confirms delivery with a boolean value;
+  a transcript record alone is not delivery confirmation.
 - [x] `gc slack publish-to-channel` — publish to an arbitrary channel
       ID (no session binding required; useful for one-shot ops posts)
 - [x] `gc slack status` — read-only diagnostics (adapters, bindings,

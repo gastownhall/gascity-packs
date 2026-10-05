@@ -74,6 +74,8 @@ def _isolate_env(
     monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
     monkeypatch.setenv("SLACK_WORKSPACE_ID", "T0TESTWS")
     monkeypatch.setenv("GC_SESSION_ID", "gc-test-session")
+    monkeypatch.setenv("GC_ALIAS", "test/seat")
+    monkeypatch.setenv("GC_AGENT", "test/seat")
     monkeypatch.delenv("GC_SLACK_ADAPTER_ENV", raising=False)
 
 
@@ -239,6 +241,8 @@ def test_reply_current_publishes_via_group_membership_fallback(
     monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
     monkeypatch.setenv("SLACK_WORKSPACE_ID", "T0TESTWS")
     monkeypatch.setenv("GC_SESSION_ID", "gc-test-session")
+    monkeypatch.setenv("GC_ALIAS", "test/seat")
+    monkeypatch.setenv("GC_AGENT", "test/seat")
 
     try:
         # NO register_binding(). The session has no direct binding.
@@ -298,6 +302,8 @@ def test_outbound_returns_auth_failure_when_session_lacks_binding_and_group(
     monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
     monkeypatch.setenv("SLACK_WORKSPACE_ID", "T0TESTWS")
     monkeypatch.setenv("GC_SESSION_ID", "gc-test-session")
+    monkeypatch.setenv("GC_ALIAS", "test/seat")
+    monkeypatch.setenv("GC_AGENT", "test/seat")
 
     try:
         # Neither binding nor group membership registered.
@@ -547,3 +553,15 @@ def test_reply_current_resolves_conversation_from_inbound_event(
     assert slack_calls[0].gc_request == "true", (
         "gc → adapter leg must carry X-GC-Request: true (post-#1817)"
     )
+
+
+def test_restarted_agent_binding_publish_round_trip(gc_mock, slack_mock, capsys):
+    gc_mock.register_agent_binding('restarted-session', 'helios/canola', 'CFOREMAN')
+    pub = _import_publish_module()
+    assert pub.main(['--session', 'restarted-session', '--body', 'durable binding']) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result['result']['Receipt']['Delivered'] is True
+    assert result['conversation_id'] == 'CFOREMAN'
+    assert slack_mock.calls()[0].channel == 'CFOREMAN'
+    assert any(call.query.get('label') == 'extmsg:binding:agent:v1:helios/canola'
+               for call in gc_mock.calls())
