@@ -10,6 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Post-merge follow-ups to the publish-readback change (#313). The
+  adapter's publish dedup cache no longer hands callers a receipt whose
+  `Metadata` map aliases the cached entry: `/publish` re-verifies a
+  posted-but-unconfirmed receipt by writing that map outside the cache
+  lock, so two concurrent retries on one idempotency key raced on a
+  shared map (a data race, and reachable `fatal error: concurrent map
+  writes`). `gc slack publish-to-channel`'s client budget goes 15s → 30s,
+  above the 22.4s worst case `/publish` now spends on a write plus its
+  readback — under it, the client gave up on a message Slack had already
+  accepted, and because that command published *unkeyed* the operator's
+  retry duplicated it. It now derives a deterministic idempotency key
+  from the session, conversation, kind, thread anchor and body when
+  `--idempotency-key` is omitted (matching `reply-current`), so a retry
+  dedupes; pass an explicit key to send the same text twice on purpose.
+  Because the adapter stamps keyed publishes with the low-visibility
+  `_ref:<12hex>_` marker, `publish-to-channel` messages now carry that
+  footer like `reply-current`'s already do — which is also what lets the
+  readback match them by marker instead of by normalized text.
+  The `SLACK_BOT_TOKEN` row in `README.md` now lists the history scopes
+  (`channels:history`, `groups:history`, `im:history`, `mpim:history`)
+  the readback requires — a token provisioned from that table alone
+  reported every publish as `Delivered:false` / `readback_auth` while
+  the messages were plainly visible in Slack.
 - `gc slack reply-current` now inherits the thread from the latest
   inbound (gp-i62): a thread-reply inbound's transcript entry carries
   the Slack `thread_ts` in `ReplyToMessageID`, and the reply anchors

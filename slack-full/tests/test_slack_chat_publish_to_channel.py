@@ -178,3 +178,132 @@ def test_publish_to_channel_raw_flag_skips_guard(
     ])
     assert rc == 0
     assert captured["text"] == "~$58.5k out, ~$16.5k left"
+
+
+# --------------------------------------------------------------------------
+# Retry safety: the client budget must outlast /publish's readback, and an
+# unkeyed publish must still dedupe when the operator retries a timeout.
+# --------------------------------------------------------------------------
+
+def _key_collector(monkeypatch: pytest.MonkeyPatch, common) -> list[str]:
+    """Stub the adapter POST and record each call's idempotency key."""
+    keys: list[str] = []
+
+    def fake_publish(**kwargs):
+        keys.append(kwargs.get("idempotency_key", ""))
+        return {"delivered": True, "message_id": "1700.001"}
+
+    monkeypatch.setattr(common, "publish_to_channel_via_adapter", fake_publish)
+    return keys
+
+
+def test_publish_to_channel_auto_derives_stable_idempotency_key(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no --idempotency-key, the key is derived and stable.
+
+    Two identical invocations — the shape of an operator retrying after the
+    client gave up on a publish the adapter actually completed — must send
+    the SAME key, so the adapter replays the receipt instead of posting a
+    duplicate. A per-invocation random key would satisfy "a key was sent"
+    while leaving the duplicate window exactly as wide as it was.
+    """
+    pub, common = _import_modules()
+    keys = _key_collector(monkeypatch, common)
+
+    argv = ["--conversation-id", "C0CHAN01", "--session", "gc-1", "--body", "ok"]
+    assert pub.main(argv) == 0
+    assert pub.main(argv) == 0
+    assert keys[0] != ""
+    assert keys[0] == keys[1]
+    assert keys[0].startswith("publish-to-channel:")
+
+
+def test_publish_to_channel_derived_key_varies_with_target_and_body(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Distinct logical publishes must not collapse onto one key."""
+    pub, common = _import_modules()
+    keys = _key_collector(monkeypatch, common)
+
+    base = ["--session", "gc-1", "--conversation-id", "C0CHAN01"]
+    assert pub.main(base + ["--body", "first"]) == 0
+    assert pub.main(base + ["--body", "second"]) == 0
+    assert pub.main(["--session", "gc-1", "--conversation-id", "C0CHAN02",
+                     "--body", "first"]) == 0
+    assert pub.main(base + ["--body", "first", "--thread-ts", "1700.900"]) == 0
+    assert len(set(keys)) == len(keys), f"keys collided: {keys}"
+
+
+def test_publish_to_channel_derived_key_fingerprints_the_sent_body(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fingerprint runs on the post-guard body, not the raw argv.
+
+    The guarded and --raw renderings of one input are different messages.
+    Fingerprinting before the accidental-mrkdwn guard would give them one
+    key, so sending both would silently drop the second.
+    """
+    pub, common = _import_modules()
+    keys = _key_collector(monkeypatch, common)
+
+    body = "~$58.5k out, ~$16.5k left"
+    base = ["--session", "gc-1", "--conversation-id", "C0CHAN01", "--body", body]
+    assert pub.main(base) == 0
+    assert pub.main(base + ["--raw"]) == 0
+    assert keys[0] != keys[1]
+
+
+def test_publish_to_channel_explicit_idempotency_key_wins(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit key is passed through untouched — the duplicate escape hatch."""
+    pub, common = _import_modules()
+    keys = _key_collector(monkeypatch, common)
+
+    assert pub.main([
+        "--conversation-id", "C0CHAN01",
+        "--session", "gc-1",
+        "--body", "ok",
+        "--idempotency-key", "key-42",
+    ]) == 0
+    assert keys == ["key-42"]
+
+
+def test_publish_adapter_timeout_outlasts_the_readback_worst_case(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The client budget must exceed what /publish is designed to spend.
+
+    /publish costs slackPostTimeout + attempts*clientTimeout +
+    (attempts-1)*delay = 22.4s in the worst case (adapter/publish_readback.go,
+    pinned Go-side by TestSlackReadbackTimingDefaults). A client that gives up
+    first does not cancel the adapter goroutine, so the post lands anyway and
+    the operator sees a spurious error. Pinned as literals: raising the
+    adapter's budget without raising this one re-opens the window.
+    """
+    _pub, common = _import_modules()
+    assert common.SLACK_PUBLISH_WORST_CASE_SECONDS == 22.4
+    assert common.PUBLISH_ADAPTER_TIMEOUT == 30.0
+    assert common.PUBLISH_ADAPTER_TIMEOUT > common.SLACK_PUBLISH_WORST_CASE_SECONDS
+
+    seen: dict[str, Any] = {}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self):
+            return b'{"delivered": true}'
+
+    def fake_urlopen(_req, **kwargs):
+        seen.update(kwargs)
+        return _Resp()
+
+    monkeypatch.setattr(common.urllib.request, "urlopen", fake_urlopen)
+
+    common.publish_to_channel_via_adapter(
+        session_id="gc-1",
+        conversation_id="C0CHAN01",
+        text="ok",
+    )
+    # Not just declared — actually handed to the socket.
+    assert seen["timeout"] == common.PUBLISH_ADAPTER_TIMEOUT
