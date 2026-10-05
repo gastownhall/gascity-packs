@@ -292,12 +292,7 @@ func fetchThreadReplies(ctx context.Context, token, channel, threadTS string, li
 // gc-px8.5's first-mention semantics. A non-empty sinceTS limits
 // the preamble to peer activity newer than the target's last
 // delivered context — gc-px8.6's cross-agent delta visibility.
-//
-// Bot-authored and whitespace-only messages are filtered. Returns
-// "" when no messages survive filtering — caller MUST treat that as
-// no-op so empty/short threads, current-message-only callbacks, and
-// replays with no new peer activity carry no preamble overhead.
-func formatThreadContextPreamble(replies []slackThreadMessage, currentTS, sinceTS string) string {
+func formatThreadContextPreamble(replies []slackThreadMessage, threadTS, currentTS, sinceTS string) string {
 	var prior []slackThreadMessage
 	for _, m := range replies {
 		if m.TS == "" {
@@ -306,10 +301,11 @@ func formatThreadContextPreamble(replies []slackThreadMessage, currentTS, sinceT
 		if currentTS != "" && m.TS >= currentTS {
 			continue
 		}
-		if sinceTS != "" && m.TS <= sinceTS {
+		isRoot := threadTS != "" && m.TS == threadTS
+		if !isRoot && sinceTS != "" && m.TS <= sinceTS {
 			continue
 		}
-		if m.BotID != "" {
+		if !isRoot && m.BotID != "" {
 			continue
 		}
 		if strings.TrimSpace(m.Text) == "" {
@@ -327,6 +323,11 @@ func formatThreadContextPreamble(replies []slackThreadMessage, currentTS, sinceT
 	}
 	b.WriteString("):\n")
 	for _, m := range prior {
+		if m.BotID != "" {
+			text := strings.ReplaceAll(strings.TrimSpace(m.Text), "\n", " | ")
+			fmt.Fprintf(&b, "[bot %s]: %s\n", m.BotID, text)
+			continue
+		}
 		author := m.User
 		if author == "" {
 			author = "?"

@@ -2828,20 +2828,19 @@ func processSlackEvent(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 	//   - Subsequent mention of X with peer activity since the last
 	//     visit: only the delta — what other bound agents (or human
 	//     posts) added between visits — gets prepended (gc-px8.6).
-	//   - Subsequent mention of X with no new activity: empty preamble.
 	// Errors leave the cached ts unchanged so a transient failure
 	// retries on the next inbound rather than silently losing context.
-	if msg.ThreadTS != "" && msg.ThreadTS != msg.TS && cfg.threadContextCache != nil {
+	if msg.ThreadTS != "" && msg.ThreadTS != msg.TS {
+		threadMarker := fmt.Sprintf("[slack thread_ts=%s]\n", msg.ThreadTS)
 		sinceTS := cfg.threadContextCache.lastDeliveredFor(target, msg.Channel, msg.ThreadTS)
 		fetchCtx, cancel := context.WithTimeout(context.Background(), threadContextFetchTimeout)
 		replies, err := fetchThreadReplies(fetchCtx, cfg.slackBotToken, msg.Channel, msg.ThreadTS, cfg.slackThreadContextLimit)
 		cancel()
 		if err != nil {
 			log.Printf("thread context fetch failed chan=%s thread=%s target=%q: %v", msg.Channel, msg.ThreadTS, target, err)
+			text = threadMarker + "Thread parent could not be fetched.\n\n" + text
 		} else {
-			if preamble := formatThreadContextPreamble(replies, msg.TS, sinceTS); preamble != "" {
-				text = preamble + text
-			}
+			text = threadMarker + formatThreadContextPreamble(replies, msg.ThreadTS, msg.TS, sinceTS) + text
 			cfg.threadContextCache.markDelivered(target, msg.Channel, msg.ThreadTS, msg.TS)
 		}
 	}
@@ -4182,6 +4181,10 @@ func dispatchToAliasedSession(cfg config, sessionID string, msg externalInboundM
 		}
 		attachmentsBlock = ab.String()
 	}
+	threadTS := msg.ProviderMessageID
+	if msg.ReplyToMessageID != "" {
+		threadTS = msg.ReplyToMessageID
+	}
 	body := fmt.Sprintf(
 		"<system-reminder>\n"+
 			"Slack address-by-handle: @%s addressed you from channel %s (Slack ts %s) by user %s.\n"+
@@ -4208,7 +4211,7 @@ func dispatchToAliasedSession(cfg config, sessionID string, msg externalInboundM
 		neutralizeMarkupBoundaries(msg.Text),
 		attachmentsBlock, // already per-field neutralized; pass raw
 		neutralizeMarkupBoundaries(msg.Conversation.ConversationID),
-		neutralizeMarkupBoundaries(msg.ProviderMessageID),
+		neutralizeMarkupBoundaries(threadTS),
 	)
 	payload, _ := json.Marshal(gcSessionMessageRequest{Message: body})
 	// PathEscape cityName and sessionID so URL-significant characters

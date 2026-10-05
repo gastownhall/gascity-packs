@@ -91,6 +91,132 @@ func fakeSlackRepliesServer(t *testing.T, messages []slackThreadMessage) (*httpt
 	return srv, &calls
 }
 
+func TestThreadContext_BotRootIncludedOnFirstReply(t *testing.T) {
+	const rootTS = "99.000001"
+	const rootText = "NEEDS YOU: choose a, b, or c"
+	slackStub, _ := fakeSlackRepliesServer(t, []slackThreadMessage{
+		{BotID: "B_AGENT", Text: rootText, TS: rootTS},
+	})
+	withSlackAPIStub(t, slackStub)
+
+	capture := &inboundCapture{}
+	gcStub := httptest.NewServer(capture.handler())
+	t.Cleanup(gcStub.Close)
+	cfg := config{
+		gcAPIBase:               gcStub.URL,
+		cityName:                "test-city",
+		provider:                "slack",
+		accountID:               "T1",
+		handlePrefix:            "@",
+		slackBotToken:           "xoxb-fake",
+		slackThreadContextLimit: 20,
+		threadContextCache:      newThreadContextCache(),
+		dispatchSem:             defaultTestDispatchSem,
+	}
+	rawMsg, _ := json.Marshal(slackMessageEvent{
+		Type: "message", Channel: "C1", User: "U_HUMAN",
+		TS: "99.000002", ThreadTS: rootTS, Text: "@mayor yes go ahead, a",
+	})
+	processSlackEvent(cfg, newTestHandleAliasRegistry(t), nil, nil, nil, nil, slackEventEnvelope{Type: "event_callback", Event: rawMsg}, func() {})
+
+	msgs := capture.snapshot()
+	if len(msgs) != 1 {
+		t.Fatalf("captured %d inbound messages, want 1", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Text, "[slack thread_ts="+rootTS+"]") {
+		t.Errorf("inbound missing root ts marker; got %q", msgs[0].Text)
+	}
+	if !strings.Contains(msgs[0].Text, rootText) {
+		t.Errorf("inbound missing bot-authored root; got %q", msgs[0].Text)
+	}
+	if !strings.Contains(msgs[0].Text, "bot B_AGENT") {
+		t.Errorf("inbound did not label root as bot-authored; got %q", msgs[0].Text)
+	}
+}
+
+func TestThreadContext_BotRootIncludedAfterSinceTS(t *testing.T) {
+	const rootTS = "98.000001"
+	const rootText = "NEEDS YOU: choose deployment mode"
+	slackStub, _ := fakeSlackRepliesServer(t, []slackThreadMessage{
+		{BotID: "B_AGENT", Text: rootText, TS: rootTS},
+	})
+	withSlackAPIStub(t, slackStub)
+
+	capture := &inboundCapture{}
+	gcStub := httptest.NewServer(capture.handler())
+	t.Cleanup(gcStub.Close)
+	cfg := config{
+		gcAPIBase:               gcStub.URL,
+		cityName:                "test-city",
+		provider:                "slack",
+		accountID:               "T1",
+		handlePrefix:            "@",
+		slackBotToken:           "xoxb-fake",
+		slackThreadContextLimit: 20,
+		threadContextCache:      newThreadContextCache(),
+		dispatchSem:             defaultTestDispatchSem,
+	}
+	aliasReg := newTestHandleAliasRegistry(t)
+	for _, event := range []slackMessageEvent{
+		{Type: "message", Channel: "C1", User: "U1", TS: "98.000002", ThreadTS: rootTS, Text: "@mayor first"},
+		{Type: "message", Channel: "C1", User: "U1", TS: "98.000003", ThreadTS: rootTS, Text: "@mayor second"},
+	} {
+		rawMsg, _ := json.Marshal(event)
+		processSlackEvent(cfg, aliasReg, nil, nil, nil, nil, slackEventEnvelope{Type: "event_callback", Event: rawMsg}, func() {})
+	}
+
+	msgs := capture.snapshot()
+	if len(msgs) != 2 {
+		t.Fatalf("captured %d inbound messages, want 2", len(msgs))
+	}
+	if !strings.Contains(msgs[1].Text, "[slack thread_ts="+rootTS+"]") {
+		t.Errorf("second inbound missing root ts marker; got %q", msgs[1].Text)
+	}
+	if !strings.Contains(msgs[1].Text, rootText) {
+		t.Errorf("second inbound missing root after sinceTS advanced; got %q", msgs[1].Text)
+	}
+}
+
+func TestThreadContext_FetchFailureMarksThread(t *testing.T) {
+	const rootTS = "97.000001"
+	failingSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(failingSrv.Close)
+	withSlackAPIStub(t, failingSrv)
+
+	capture := &inboundCapture{}
+	gcStub := httptest.NewServer(capture.handler())
+	t.Cleanup(gcStub.Close)
+	cfg := config{
+		gcAPIBase:               gcStub.URL,
+		cityName:                "test-city",
+		provider:                "slack",
+		accountID:               "T1",
+		handlePrefix:            "@",
+		slackBotToken:           "xoxb-fake",
+		slackThreadContextLimit: 20,
+		threadContextCache:      newThreadContextCache(),
+		dispatchSem:             defaultTestDispatchSem,
+	}
+	rawMsg, _ := json.Marshal(slackMessageEvent{
+		Type: "message", Channel: "C1", User: "U1",
+		TS: "97.000002", ThreadTS: rootTS, Text: "@mayor a",
+	})
+	processSlackEvent(cfg, newTestHandleAliasRegistry(t), nil, nil, nil, nil, slackEventEnvelope{Type: "event_callback", Event: rawMsg}, func() {})
+
+	msgs := capture.snapshot()
+	if len(msgs) != 1 {
+		t.Fatalf("captured %d inbound messages, want 1", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Text, "[slack thread_ts="+rootTS+"]") {
+		t.Errorf("inbound missing root ts marker; got %q", msgs[0].Text)
+	}
+	if !strings.Contains(msgs[0].Text, "Thread parent could not be fetched.") {
+		t.Errorf("inbound missing fetch-failure line; got %q", msgs[0].Text)
+	}
+}
+
 func TestThreadContext_FirstMentionPrependsPreamble(t *testing.T) {
 	prior := []slackThreadMessage{
 		{User: "U_ALICE", Text: "should we ship this?", TS: "100.000001"},
@@ -134,7 +260,10 @@ func TestThreadContext_FirstMentionPrependsPreamble(t *testing.T) {
 		t.Fatalf("captured %d inbound messages, want 1", len(msgs))
 	}
 	body := msgs[0].Text
-	if !strings.HasPrefix(body, "Thread context (2 earlier messages):\n") {
+	if !strings.HasPrefix(body, "[slack thread_ts=100.000001]\n") {
+		t.Errorf("body missing thread marker; got %q", body)
+	}
+	if !strings.Contains(body, "Thread context (2 earlier messages):\n") {
 		t.Errorf("body missing preamble; got %q", body)
 	}
 	if !strings.Contains(body, "@U_ALICE: should we ship this?") {
@@ -154,14 +283,7 @@ func TestThreadContext_FirstMentionPrependsPreamble(t *testing.T) {
 	}
 }
 
-// TestThreadContext_SecondMentionWithoutNewActivityNoPreamble — the
-// gc-px8.6 cache stores per-target last-delivered ts. A second
-// mention of the same target with no peer activity in between
-// fetches Slack again (option B) but the formatter filter sees no
-// messages newer than the cached cutoff, so no preamble is emitted.
-// gc-px8.5's user-visible "no redundant context paste" guarantee
-// is preserved even though the API call count is now per-inbound.
-func TestThreadContext_SecondMentionWithoutNewActivityNoPreamble(t *testing.T) {
+func TestThreadContext_SecondMentionRepeatsRootWithoutNewActivity(t *testing.T) {
 	// Shared replies list mutated between calls so the second
 	// inbound sees only itself and the parent (no new peer activity).
 	var serverMu sync.Mutex
@@ -222,7 +344,6 @@ func TestThreadContext_SecondMentionWithoutNewActivityNoPreamble(t *testing.T) {
 	processSlackEvent(cfg, aliasReg, nil, nil, nil, nil, slackEventEnvelope{Type: "event_callback", Event: first}, func() {})
 	processSlackEvent(cfg, aliasReg, nil, nil, nil, nil, slackEventEnvelope{Type: "event_callback", Event: second}, func() {})
 
-	// Option B: each inbound fetches. The cache filters preamble.
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Errorf("conversations.replies calls = %d, want 2 (option B: fetch per inbound)", got)
 	}
@@ -230,13 +351,13 @@ func TestThreadContext_SecondMentionWithoutNewActivityNoPreamble(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("captured %d inbound messages, want 2", len(msgs))
 	}
-	if !strings.HasPrefix(msgs[0].Text, "Thread context (1 earlier message):\n") {
+	if !strings.Contains(msgs[0].Text, "Thread context (1 earlier message):\n") {
 		t.Errorf("first inbound missing preamble; got %q", msgs[0].Text)
 	}
-	if strings.Contains(msgs[1].Text, "Thread context") {
-		t.Errorf("second inbound carried preamble despite no new peer activity; got %q", msgs[1].Text)
+	if !strings.Contains(msgs[1].Text, "@U_ALICE: context line") {
+		t.Errorf("second inbound missing thread root; got %q", msgs[1].Text)
 	}
-	if !strings.HasPrefix(msgs[1].Text, "follow-up question") {
+	if !strings.Contains(msgs[1].Text, "follow-up question") {
 		t.Errorf("second inbound text unexpected; got %q", msgs[1].Text)
 	}
 }
@@ -377,6 +498,9 @@ func TestThreadContext_NoPriorsAfterFilteringEmitsNoPreamble(t *testing.T) {
 	}
 	if strings.Contains(msgs[0].Text, "Thread context") {
 		t.Errorf("inbound carried preamble despite no priors after filter; got %q", msgs[0].Text)
+	}
+	if strings.Contains(msgs[0].Text, "bot reply") {
+		t.Errorf("inbound carried non-root bot reply; got %q", msgs[0].Text)
 	}
 }
 
@@ -561,13 +685,11 @@ func TestThreadContext_CrossAgentDeltaVisibility(t *testing.T) {
 		t.Errorf("step 3 missing peer's intervening reply; got %q", msgs[1].Text)
 	}
 
-	// Step 5: mayor sees the delta since step 1 — U_PEER and
-	// U_PEER2. NOT U_ALICE (already delivered to mayor).
-	if !strings.Contains(msgs[2].Text, "Thread context (2 earlier messages):") {
-		t.Errorf("step 5 (mayor second) expected delta of 2 messages; got %q", msgs[2].Text)
+	if !strings.Contains(msgs[2].Text, "Thread context (3 earlier messages):") {
+		t.Errorf("step 5 (mayor second) expected root plus delta of 2 messages; got %q", msgs[2].Text)
 	}
-	if strings.Contains(msgs[2].Text, "@U_ALICE: should we ship?") {
-		t.Errorf("step 5 carried U_ALICE prior again (cache should exclude already-delivered to mayor); got %q", msgs[2].Text)
+	if !strings.Contains(msgs[2].Text, "@U_ALICE: should we ship?") {
+		t.Errorf("step 5 missing thread root; got %q", msgs[2].Text)
 	}
 	if !strings.Contains(msgs[2].Text, "@U_PEER: I think yes") {
 		t.Errorf("step 5 missing U_PEER reply (delta since mayor's last visit); got %q", msgs[2].Text)
@@ -811,6 +933,7 @@ func TestFormatThreadContextPreamble_FiltersAndFormats(t *testing.T) {
 	cases := []struct {
 		name     string
 		replies  []slackThreadMessage
+		thread   string
 		current  string
 		since    string // gc-px8.6 lower bound; "" = first delivery
 		want     string
@@ -849,6 +972,17 @@ func TestFormatThreadContextPreamble_FiltersAndFormats(t *testing.T) {
 			},
 			current:  "1700000100.000000",
 			wantNoOp: true,
+		},
+		{
+			name: "bot root survives bot and since filters",
+			replies: []slackThreadMessage{
+				{BotID: "B_ROOT", Text: "choose a, b, or c", TS: "1700000050.000000"},
+				{BotID: "B_OTHER", Text: "bot noise", TS: "1700000060.000000"},
+			},
+			thread:  "1700000050.000000",
+			current: "1700000100.000000",
+			since:   "1700000080.000000",
+			want:    "Thread context (1 earlier message):\n[bot B_ROOT]: choose a, b, or c\n\n---\n\n",
 		},
 		{
 			name: "only whitespace replies",
@@ -919,7 +1053,7 @@ func TestFormatThreadContextPreamble_FiltersAndFormats(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := formatThreadContextPreamble(tc.replies, tc.current, tc.since)
+			got := formatThreadContextPreamble(tc.replies, tc.thread, tc.current, tc.since)
 			if tc.wantNoOp {
 				if got != "" {
 					t.Errorf("expected empty preamble, got %q", got)

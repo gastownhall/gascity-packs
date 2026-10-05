@@ -1637,6 +1637,32 @@ func TestDispatchToAliasedSession(t *testing.T) {
 	}
 }
 
+func TestDispatchToAliasedSessionThreadedReplyUsesRootTS(t *testing.T) {
+	var gotBody gcSessionMessageRequest
+	gcStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(gcStub.Close)
+
+	cfg := config{gcAPIBase: gcStub.URL, cityName: "ds-research"}
+	inbound := externalInboundMessage{
+		ProviderMessageID: "1234.9999",
+		ReplyToMessageID:  "1234.0001",
+		Conversation:      conversationRef{ConversationID: "C0B1NSK4N3T"},
+		Actor:             externalActor{ID: "U0B1N5KD6HF"},
+		Text:              "yes go ahead, a",
+	}
+	dispatchToAliasedSession(cfg, "gc-2568", inbound, "mayor")
+
+	if !strings.Contains(gotBody.Message, "--thread-ts 1234.0001") {
+		t.Errorf("body missing root thread ts:\n%s", gotBody.Message)
+	}
+	if strings.Contains(gotBody.Message, "--thread-ts 1234.9999") {
+		t.Errorf("body used reply ts instead of root ts:\n%s", gotBody.Message)
+	}
+}
+
 // TestDispatchToAliasedSessionPostsWarningReactOnFailure verifies that when
 // the gc session-messages endpoint returns a 4xx error, the adapter fires a
 // ⚠️ (warning) reaction on the originating Slack message so the drop is
