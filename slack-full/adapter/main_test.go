@@ -4675,6 +4675,143 @@ func TestProcessSlackEventReleasesSlotOnNoAliasPath(t *testing.T) {
 	}
 }
 
+// TestProcessSlackEventIngestsFileShare pins the Slack event shape used for
+// human uploads. Slack marks these ordinary messages with subtype=file_share;
+// they must retain their text, download hosted files with bot authentication,
+// and deliver the resulting local attachment through gc's inbound endpoint.
+func TestProcessSlackEventIngestsFileShare(t *testing.T) {
+	testAllowAnyURL(t)
+
+	const fileBody = "PNG-BYTES"
+	authCh := make(chan string, 1)
+	slackStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authCh <- r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(fileBody))
+	}))
+	t.Cleanup(slackStub.Close)
+
+	inboundCh := make(chan externalInboundMessage, 1)
+	gcStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Message externalInboundMessage `json:"message"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode inbound request: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		inboundCh <- body.Message
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(gcStub.Close)
+
+	cfg := config{
+		gcAPIBase:        gcStub.URL,
+		cityName:         "test-city",
+		provider:         "slack",
+		accountID:        "T1",
+		slackBotToken:    "xoxb-test",
+		inboundFileStore: filepath.Join(t.TempDir(), "inbound"),
+		handlePrefix:     "@",
+		dispatchSem:      defaultTestDispatchSem,
+	}
+	rawMsg, _ := json.Marshal(slackMessageEvent{
+		Type:    "message",
+		Subtype: "file_share",
+		Channel: "C1",
+		User:    "U1",
+		TS:      "1789324789.333939",
+		Text:    "please review this diagram",
+		Files: []slackFile{{
+			ID:         "F1",
+			Name:       "diagram.png",
+			URLPrivate: slackStub.URL + "/files/F1",
+			MIMEType:   "image/png",
+		}},
+	})
+	env := slackEventEnvelope{Type: "event_callback", Event: rawMsg}
+
+	var releases int32
+	processSlackEvent(cfg, newTestHandleAliasRegistry(t), nil, nil, nil, nil, env, func() {
+		atomic.AddInt32(&releases, 1)
+	})
+
+	select {
+	case got := <-inboundCh:
+		if got.Text != "please review this diagram" {
+			t.Errorf("inbound text = %q, want original file-share text", got.Text)
+		}
+		if len(got.Attachments) != 1 {
+			t.Fatalf("inbound attachments = %d, want 1 (%+v)", len(got.Attachments), got.Attachments)
+		}
+		att := got.Attachments[0]
+		if att.ProviderID != "F1" || att.MIMEType != "image/png" {
+			t.Errorf("inbound attachment metadata = %+v, want provider F1 image/png", att)
+		}
+		path := strings.TrimPrefix(att.URL, "file://")
+		if path == att.URL {
+			t.Fatalf("inbound attachment URL = %q, want file:// URL", att.URL)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read downloaded attachment: %v", err)
+		}
+		if string(body) != fileBody {
+			t.Errorf("downloaded attachment = %q, want %q", string(body), fileBody)
+		}
+	default:
+		t.Fatal("file_share event was dropped before postInbound")
+	}
+
+	select {
+	case got := <-authCh:
+		if got != "Bearer xoxb-test" {
+			t.Errorf("download Authorization = %q, want bearer bot token", got)
+		}
+	default:
+		t.Fatal("file_share attachment was not downloaded")
+	}
+	if got := atomic.LoadInt32(&releases); got != 1 {
+		t.Errorf("release fired %d times for file_share path; want exactly 1", got)
+	}
+}
+
+func TestProcessSlackEventRejectsBotAndSystemSubtypes(t *testing.T) {
+	var posts int32
+	gcStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&posts, 1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(gcStub.Close)
+
+	cfg := config{
+		gcAPIBase:    gcStub.URL,
+		cityName:     "test-city",
+		provider:     "slack",
+		accountID:    "T1",
+		handlePrefix: "@",
+		dispatchSem:  defaultTestDispatchSem,
+	}
+	for _, subtype := range []string{"bot_message", "message_changed", "message_deleted", "channel_join"} {
+		t.Run(subtype, func(t *testing.T) {
+			rawMsg, _ := json.Marshal(slackMessageEvent{
+				Type: "message", Subtype: subtype, Channel: "C1", User: "U1", TS: "1.0", Text: "ignore me",
+			})
+			var releases int32
+			processSlackEvent(cfg, newTestHandleAliasRegistry(t), nil, nil, nil, nil,
+				slackEventEnvelope{Type: "event_callback", Event: rawMsg},
+				func() { atomic.AddInt32(&releases, 1) },
+			)
+			if got := atomic.LoadInt32(&releases); got != 1 {
+				t.Errorf("release fired %d times; want exactly 1", got)
+			}
+		})
+	}
+	if got := atomic.LoadInt32(&posts); got != 0 {
+		t.Errorf("bot/system subtype inbound POSTs = %d, want 0", got)
+	}
+}
+
 // TestProcessSlackEventTransfersSlotToAliasGoroutine verifies the
 // alias-dispatch path takes ownership of the caller-supplied slot
 // (no separate acquire) and the release fires exactly once after
