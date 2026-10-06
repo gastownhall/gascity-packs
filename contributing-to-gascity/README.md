@@ -167,6 +167,9 @@ The same import by hand in `pack.toml`, followed by `gc import install`:
 source = "https://github.com/gastownhall/gascity-packs.git//contributing-to-gascity"
 ```
 
+The same tag rule applies here. Until a tag contains the directory, add
+`version = "sha:<commit>"` to the table.
+
 To work on the pack from a local checkout, point `source` at the path instead:
 
 ```toml
