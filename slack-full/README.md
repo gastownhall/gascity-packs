@@ -324,10 +324,10 @@ name the owner again.
 When a human replies inside a Slack thread, the text the session
 receives starts with a `[slack thread_ts=<root ts>]` line naming the
 thread root. After it comes the earlier thread context: the root
-message on every reply, even when a bot posted it (shown as
+message's text on every reply, even when a bot posted it (shown as
 `[bot <bot id>]: ...`), plus any human messages newer than the last
-reply this session already received. Other bot messages in the thread
-are left out. If the adapter cannot fetch the thread from Slack, the
+reply this session already received. Other bot messages, and messages
+with no text (a file-only root, for example), are left out. If the adapter cannot fetch the thread from Slack, the
 marker line is followed by `Thread parent could not be fetched.`
 instead of the context. `gc slack reply-current` already answers in
 the thread; with `gc slack publish-to-channel`, pass the root ts as
