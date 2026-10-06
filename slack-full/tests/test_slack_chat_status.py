@@ -428,6 +428,43 @@ def test_a_fully_readable_city_reports_no_unreadable_sections(
     assert parsed["unreadable"] == {}
 
 
+@pytest.mark.parametrize("body", [{}, [], {"items": {"a": 1}}, {"items": ["x"]}, "ok"])
+def test_a_malformed_response_is_unreadable_not_empty(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture, body: Any) -> None:
+    status_mod, common = _import_modules()
+    fake, _ = _make_router({
+        "/extmsg/adapters": body,
+        "events?type=extmsg.inbound": [],
+        "events?type=extmsg.outbound": [],
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    rc = status_mod.main(["--json"])
+    parsed = json.loads(capsys.readouterr().out)
+
+    assert rc == 2
+    assert list(parsed["unreadable"]) == ["adapters"]
+    assert "unexpected response shape" in parsed["unreadable"]["adapters"]
+    assert parsed["events"]["inbound"] == [] and "events.inbound" not in parsed["unreadable"]
+
+
+def test_a_null_items_list_reads_as_empty(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+    status_mod, common = _import_modules()
+    fake, _ = _make_router({
+        "/extmsg/adapters": {"items": None},
+        "events?type=extmsg.inbound": [],
+        "events?type=extmsg.outbound": [],
+    })
+    monkeypatch.setattr(common, "_request", fake)
+
+    rc = status_mod.main(["--json"])
+    parsed = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert parsed["adapters"] == []
+
+
 def test_invalid_limit_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     status_mod, _common = _import_modules()
     with pytest.raises(SystemExit):

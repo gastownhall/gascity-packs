@@ -36,7 +36,12 @@ def _read(fetch) -> tuple[list[dict[str, Any]], str]:
         res = fetch()
     except common.GCAPIError as exc:
         return [], str(exc)
-    return list(res.get("items") or []), ""
+    items = res.get("items", ()) if isinstance(res, dict) else ()
+    if items is None:
+        items = []
+    if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+        return [], f"unexpected response shape: {json.dumps(res)[:200]}"
+    return list(items), ""
 
 
 def _events(event_type: str, limit: int, since: str) -> tuple[list[dict[str, Any]], str]:
