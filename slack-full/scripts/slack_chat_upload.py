@@ -42,6 +42,7 @@ import pathlib
 import sys
 
 import slack_intake_common as common
+import slack_mrkdwn
 
 
 def _resolve_conversation(session_id: str) -> dict[str, str]:
@@ -82,11 +83,19 @@ def main(argv: list[str]) -> int:
                         help="Slack message ts to thread under. Mutually "
                              "exclusive with --thread-current.")
     parser.add_argument("--thread-current", action="store_true",
-                        help="Thread under the latest inbound for this session "
-                             "(same logic as `gc slack reply-current`). "
-                             "Mutually exclusive with --thread-ts.")
+                        help="Thread under the latest inbound for this session, "
+                             "at that inbound's thread root when it was itself "
+                             "a thread reply (same logic as `gc slack "
+                             "reply-current`). Mutually exclusive with "
+                             "--thread-ts.")
     parser.add_argument("--idempotency-key", default="",
                         help="Caller-supplied idempotency key for retries.")
+    parser.add_argument(
+        "--raw", action="store_true",
+        help=("Send --initial-comment verbatim, skipping the accidental-"
+              "mrkdwn guard (by default, tildes that would pair into "
+              "unintended Slack strikethrough are neutralized; deliberate "
+              "~word~ wrapping and code spans always pass through)."))
     parser.add_argument("--via", choices=("gc", "adapter"), default="gc",
                         help="Routing path. 'gc' (default) records the upload "
                              "in the transcript and fans out to peer sessions; "
@@ -115,14 +124,25 @@ def main(argv: list[str]) -> int:
             f"session {session_id!r} binding has no conversation_id "
             "(corrupt binding record?)")
 
+    initial_comment = args.initial_comment
+    if initial_comment and not args.raw:
+        # gp-o42: the comment renders as mrkdwn alongside the file.
+        initial_comment = slack_mrkdwn.escape_accidental_mrkdwn(initial_comment)
+
     thread_ts = args.thread_ts.strip()
     if args.thread_current:
-        match = common.find_latest_inbound_message_id_for_session(session_id)
+        match = common.find_latest_inbound_thread_for_session(session_id)
         if not match:
             raise SystemExit(
                 f"session {session_id!r} has no inbound to thread under; "
                 "pass --thread-ts <ts> explicitly or omit threading")
-        thread_ts = match[0]
+        mid, thread_root, _conv = match
+        # Same anchoring as `gc slack reply-current --thread-current`, which
+        # help.md promises: a thread-reply inbound anchors at its thread
+        # ROOT, since a thread_ts pointing at a child strands the upload
+        # outside the thread the human is reading (gp-i62). An unthreaded
+        # inbound still anchors at its own ts.
+        thread_ts = thread_root or mid
 
     try:
         if args.via == "adapter":
@@ -132,7 +152,7 @@ def main(argv: list[str]) -> int:
                 kind=conv["kind"],
                 file_path=str(file_path),
                 filename=args.filename,
-                initial_comment=args.initial_comment,
+                initial_comment=initial_comment,
                 thread_ts=thread_ts,
                 title=args.title,
                 idempotency_key=args.idempotency_key,
@@ -147,7 +167,7 @@ def main(argv: list[str]) -> int:
                 kind=conv["kind"],
                 file_path=str(file_path),
                 filename=args.filename,
-                initial_comment=args.initial_comment,
+                initial_comment=initial_comment,
                 thread_ts=thread_ts,
                 title=args.title,
                 idempotency_key=args.idempotency_key,

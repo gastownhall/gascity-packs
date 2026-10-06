@@ -14,6 +14,8 @@ Report-only path:
 - Preserve the reports' own verdicts (`approved`, `changes_required`, or
   `blocked`). In report mode, producing the validated reports is the successful
   deliverable even when findings require changes.
+- Publish the implementation review report as the stage review report (see "Review report
+  path" below).
 - Update workflow root metadata:
   - `gc.build.code_review_status=reported`
   - `gc.build.code_review_report_path=<implementation review report path>`
@@ -30,12 +32,42 @@ Approval path for `agent` and `interactive` modes:
   `gc.build.gap_analysis_report_path`.
 - Confirm the review fix summary exists at workflow root metadata
   `gc.build.review_fix_summary_path`.
+- Publish the implementation review report as the stage review report (see "Review report
+  path" below).
 - Update workflow root metadata:
   - `gc.build.code_review_status=approved`
   - `gc.build.code_review_approved_at=<UTC timestamp>`
 - Close this expansion target with `gc.outcome=pass`,
   `code_review.verdict=done`, and
   `code_review.report_path=<review fix summary path>`.
+
+Review report path (both passing paths):
+
+The terminal artifact check on this step and the build gate validate the file
+recorded at workflow root metadata `gc.build.review_report_path` against
+`gc.build.review.v1`. The build prepare stage pre-declares that key as
+`<artifact_root>/review-report.md`, which this expansion does not otherwise
+write, so publish the review report explicitly before closing:
+
+- Resolve the review report path: use workflow root metadata
+  `gc.build.review_report_path` when it is set; otherwise use the implementation review report
+  path from `gc.build.code_review_report_path`.
+- If the resolved review report path is relative, resolve it against
+  `$GC_RIG_ROOT` before copying and recording it.
+- If the review report path differs from the implementation review report path, copy the
+  implementation review report to it with `mkdir -p "$(dirname "<review report path>")"`
+  and `cp -f "<implementation review report path>" "<review report path>"`.
+- Record the absolute review report path on the workflow root bead, not on the
+  claimed step bead:
+  `gc bd update "<workflow-root-id>" --set-metadata "gc.build.review_report_path=<absolute path>"`.
+  Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts
+  a JSON object.
+- From `$GC_RIG_ROOT`, run the artifact validator with the claimed bead id and
+  fix any error before setting `gc.outcome=pass`:
+  `GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh`.
+- On repair attempts (`gc.attempt` greater than 1), first read the validator
+  errors from `gc.attempt_log` on the validation loop control bead (the
+  dependent of this step bead) and fix every listed error in place.
 
 Failure path:
 

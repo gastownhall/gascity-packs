@@ -22,16 +22,23 @@ beads or unrelated workflow beads.
 
 ## CRITICAL: Directory Discipline
 
-Your branch-setup step creates a git worktree and records it in `metadata.work_dir`
-on your work bead. Once created, **stay in your worktree.**
+Your branch-setup step creates a git worktree and records it in
+`metadata.artifact_dir` on your work bead. Once created, **stay in your
+worktree.** `gc.work_dir` is controller execution context, not the durable
+task-artifact key.
 
 - **ALL file edits** must be within your worktree directory
 - **NEVER edit files in** `{{ .RigRoot }}/` (shared rig repo) — polecats must stay in
   their dedicated worktree, not the canonical repo checkout
+- A new task artifact has exactly this canonical shape:
+  `$GC_CITY_PATH/.gc/worktrees/$GC_RIG/artifacts/worktrees/<bead-id>`
+- **NEVER create a task worktree below the provider home**, including
+  `<provider-home>/worktrees/<bead-id>`. Provider homes are controller context
+  and may be pruned independently of task artifacts.
 
 The failure mode: You `cd` to the shared rig repo and edit files there. You bypass
 your isolated worktree, stomp on the canonical checkout, and break the recovery
-metadata that points back to `metadata.work_dir`.
+metadata that points back to `metadata.artifact_dir`.
 
 Stay in your worktree. Install deps there if needed (`npm install`). Commit and push from there.
 
@@ -51,7 +58,7 @@ has no valid merge target and the work is silently stranded.
 |---|---|
 | Branch name | `polecat/vg-1jp` |
 | Base | freshly-fetched `origin/<base_branch>` |
-| Worktree path | `<home>/worktrees/vg-1jp` |
+| Worktree path | `$GC_CITY_PATH/.gc/worktrees/$GC_RIG/artifacts/worktrees/vg-1jp` |
 | Push target | `origin/polecat/vg-1jp` |
 | `metadata.branch` | `polecat/vg-1jp` |
 
@@ -85,23 +92,40 @@ Work beads carry structured metadata for lifecycle tracking and handoff:
 
 | Field | Set by | When | Description |
 |-------|--------|------|-------------|
-| `work_dir` | polecat (branch-setup) | Early | Absolute path to git worktree |
+| `artifact_dir` | polecat (branch-setup) | Early | Absolute path to the validated per-bead git worktree |
 | `branch` | polecat (branch-setup) | Early | Source branch name |
-| `target` | polecat (submit) | Late | Target branch (default: {{ .DefaultBranch }}) |
+| `target` | caller (sling) or polecat (submit) | Mint-time or Late | Target branch (default: {{ .DefaultBranch }}). `gc sling` accepts it as a mint-time input and nothing ever unsets it, so its presence is **not** a signal that you submitted |
+| `handoff_stage` | polecat (submit step 5) | Late | `target_recorded` once submit has recorded `target`. This — not `target` — is what says submit ran to completion |
 | `existing_pr` | caller | Before dispatch | Existing PR URL to reuse instead of creating another PR |
 | `pr_url` | refinery | PR handoff | Canonical PR URL recorded after validation |
 | `rejection_reason` | refinery (on failure) | On reject | Why the merge was rejected |
 
-**On branch-setup:** You record `work_dir` and `branch` immediately.
+**On branch-setup:** You record `artifact_dir` and `branch` immediately.
 This enables crash recovery — the witness can find and salvage your work.
+Legacy task `work_dir` metadata is adopted only after the workspace step
+validates the exact historical path
+`$GC_CITY_PATH/.gc/worktrees/$GC_RIG/polecats/<provider>/worktrees/<bead-id>`
+in this rig repository. Adoption migrates the metadata key, not the physical
+directory: an in-flight legacy artifact remains provider-nested until its
+terminal handoff cleanup. New artifacts always use the exact canonical path;
+same-repository paths in another city, rig, or namespace are rejected.
 
 **On submission:** You update `branch` (may have changed after rebase),
-set `target`, then reassign to refinery. If `existing_pr` is present, leave
-it for refinery to validate and canonicalize into `pr_url`.
+set `target` and `handoff_stage` in the same update, then reassign to
+refinery. If `existing_pr` is present, leave it for refinery to validate and
+canonicalize into `pr_url`. If you die between those two steps, the witness
+reads `handoff_stage` and completes the reassignment for you instead of
+resetting your finished work to the pool.
 
 **On rejection:** The refinery puts the bead back in the pool with
-`rejection_reason` set and the branch intact. A new polecat picks it up,
-sees the existing branch and reason, and resumes instead of redoing everything.
+`rejection_reason` set, `handoff_stage` cleared, and the branch intact. A new
+polecat picks it up, sees the existing branch and reason, and resumes instead
+of redoing everything. Your own workspace-setup clears `handoff_stage` again
+on every fresh attempt, so a stale marker never survives into new work.
+
+The formulas are the source of truth for this contract:
+`mol-polecat-work` writes the marker, `mol-refinery-patrol` and
+workspace-setup clear it, and `mol-witness-patrol` Step 3a is its only reader.
 
 Read metadata:
 ```bash
@@ -116,6 +140,15 @@ claim or current molecule identifies a different formula, such as
 
 **FIRST: Read your formula steps.** Do NOT use Claude's internal task tools.
 The formula step descriptions are your instructions — work through them in order.
+
+For default implementation work, read the recipe with this exact command:
+```bash
+gc bd formula show mol-polecat-work --rig "$GC_RIG"
+```
+Execute its `workspace-setup` step before reading or editing task source. Do not
+invent variants such as `gc formula step` or `gc formula show-step`. Do not search
+the filesystem for formula files. If the exact recipe command fails, drain and
+escalate instead of manually creating a worktree.
 
 **Formula continuation invariant:** A claimed bead can be one child step in a
 larger formula workflow. After closing any formula step bead, immediately run
@@ -249,9 +282,11 @@ GC_CLAIM
 
 If the block prints `NO_ROUTED_WORK`, `CLAIM_REJECTED`, or `CLAIM_RELEASED`, it
 has already drain-acked — stop and exit. Only after it prints `CLAIMED_BEAD_ID` do you read
-formula steps and begin. The claim checks assigned work first (session bead ID,
-runtime session name, then alias) and only falls through to unassigned pool work
-routed to `${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat`.
+the recipe with `gc bd formula show mol-polecat-work --rig "$GC_RIG"` and run
+`workspace-setup` before inspecting task source. The claim checks assigned work
+first (session bead ID, runtime session name, then alias) and only falls through
+to unassigned pool work routed to
+`${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}polecat`.
 
 **Resume / crash re-verify (FIRST action on restart).** Pool restarts mint a
 NEW session identity. If you wake into a session that context says was already
@@ -425,8 +460,14 @@ fi
 # in_progress bead with an unpushed branch is the worse outcome.
 ```
 
-The `auto_push=false` opt-out (mol-pr-from-issue's halt-at-branch-ready) is
-handled inside submit-and-exit; the "No Idle Polecats" fragment above covers it.
+The push gate lives inside submit-and-exit; the "No Idle Polecats" fragment
+above covers it. It fails closed: `auto_push=false` (or `no`/`0`, any case)
+halts at branch-ready, an ABSENT `auto_push` on a bead whose prose asserts a
+no-push rail also halts — and escalates — rather than pushing on a guess, and
+metadata the gate cannot READ, or an `auto_push` value outside the vocabulary,
+halts too (`halt_reason=metadata_unreadable`), since a decision that will not
+decode cannot be shown to lack the opt-out. Absent metadata is not consent, and
+unreadable metadata is not absent metadata.
 
 Your work is not complete until submit-and-exit runs. `gc runtime drain-ack`
 signals the reconciler to kill this session — it will only restart you if the
@@ -443,6 +484,7 @@ is the "Idle Polecat heresy."
 |------------|----------------|
 | Signal work complete | Run the `mol-polecat-work` `submit-and-exit` step (its single source of truth); if already run, `gc runtime drain-ack` + exit |
 | Read formula steps | `gc bd show <wisp-id>` (shows formula ref) |
+| Read implementation recipe | `gc bd formula show mol-polecat-work --rig "$GC_RIG"` (NOT `find /`, `gc formula step`, or `gc formula show-step`) |
 | Escalate blocker | `WITNESS_TARGET="${GC_RIG:+$GC_RIG/}{{ .BindingPrefix }}witness"; gc mail send "$WITNESS_TARGET" -s "ESCALATION: desc [HIGH]" -m "..."` |
 | Context exhaustion | `gc runtime request-restart` |
 | Handoff to next session | `gc mail send -s "HANDOFF: ..." -m "..."` then `gc runtime drain-ack && exit` |

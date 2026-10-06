@@ -131,6 +131,501 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "delivered")
         self.assertEqual(receipt["app"], "")
 
+    def test_summarize_body_detail_reports_whether_it_clipped(self) -> None:
+        short, clipped = gateway_service.summarize_body_detail("well within the limit")
+        self.assertEqual(short, "well within the limit")
+        self.assertFalse(clipped)
+
+        exact, clipped = gateway_service.summarize_body_detail("x" * gateway_service.MAX_STATUS_PREVIEW)
+        self.assertEqual(exact, "x" * gateway_service.MAX_STATUS_PREVIEW)
+        self.assertFalse(clipped)
+
+        over, clipped = gateway_service.summarize_body_detail("x" * (gateway_service.MAX_STATUS_PREVIEW + 1))
+        self.assertTrue(clipped)
+        self.assertTrue(over.endswith("..."))
+
+    def test_ingress_body_fields_keeps_the_whole_message(self) -> None:
+        # 467 chars is the length of the operator message that went out clipped
+        # on 2026-07-25 and started gm-pbejk.
+        content = "A" * 467
+        fields = gateway_service.ingress_body_fields({"content": content}, "999")
+
+        self.assertEqual(fields["body"], content)
+        self.assertEqual(fields["body_length"], 467)
+        self.assertTrue(fields["body_truncated"])
+        self.assertEqual(len(fields["body_preview"]), gateway_service.MAX_STATUS_PREVIEW + len("..."))
+
+    def test_ingress_body_fields_marks_a_short_message_untruncated(self) -> None:
+        fields = gateway_service.ingress_body_fields({"content": "<@999> ship it"}, "999")
+
+        self.assertEqual(fields["body"], "ship it")
+        self.assertEqual(fields["body_preview"], "ship it")
+        self.assertFalse(fields["body_truncated"])
+        self.assertEqual(fields["body_length"], len("ship it"))
+
+    def test_ingress_body_fields_preserves_paragraphs_the_preview_flattens(self) -> None:
+        fields = gateway_service.ingress_body_fields({"content": "<@999> do this\n\n- then this\n- and this"}, "999")
+
+        self.assertEqual(fields["body"], "do this\n\n- then this\n- and this")
+        self.assertEqual(fields["body_preview"], "do this - then this - and this")
+        self.assertFalse(fields["body_truncated"])
+
+    def test_ingress_body_fields_keeps_paragraphs_after_an_embedded_mention(self) -> None:
+        content = "first paragraph <@999>\n\nsecond paragraph"
+        fields = gateway_service.ingress_body_fields({"content": content}, "999")
+
+        self.assertIn("\n\n", fields["body"])
+        self.assertTrue(fields["body"].startswith("first paragraph"))
+        self.assertTrue(fields["body"].endswith("second paragraph"))
+        # routing keeps the flattened form it always had
+        self.assertEqual(
+            gateway_service.strip_bot_mentions(content, "999"),
+            "first paragraph second paragraph",
+        )
+
+    # gm-52178u: reply-to context (message_reference / referenced_message)
+
+    def test_ingress_body_fields_has_no_reply_fields_for_a_non_reply(self) -> None:
+        fields = gateway_service.ingress_body_fields({"content": "no reply here"}, "999")
+
+        self.assertEqual(fields["reply_to_message_id"], "")
+        self.assertEqual(fields["reply_to_quote"], "")
+
+    def test_ingress_body_fields_captures_reply_reference_from_inline_referenced_message(self) -> None:
+        message = {
+            "content": "just merge with that red",
+            "message_reference": {"message_id": "msg-1"},
+            "referenced_message": {"id": "msg-1", "content": "which PR should I merge?"},
+        }
+        fields = gateway_service.ingress_body_fields(message, "999")
+
+        self.assertEqual(fields["reply_to_message_id"], "msg-1")
+        self.assertEqual(fields["reply_to_quote"], "which PR should I merge?")
+
+    def test_resolve_reply_reference_ignores_an_unrelated_inline_referenced_message(self) -> None:
+        # Discord's contract is that referenced_message.id matches
+        # message_reference.message_id; guard the mismatch defensively so a
+        # stale/wrong inline payload cannot mislabel a different quote.
+        message = {
+            "message_reference": {"message_id": "msg-1"},
+            "referenced_message": {"id": "msg-OTHER", "content": "wrong message"},
+        }
+        with mock.patch.object(gateway_service, "fetch_message_via_rest", return_value={}), mock.patch.object(
+            common, "find_chat_publish_by_remote_message_id", return_value=None
+        ):
+            result = gateway_service.resolve_reply_reference(message)
+
+        self.assertEqual(result["reply_to_message_id"], "msg-1")
+        self.assertEqual(result["reply_to_quote"], "")
+
+    def test_resolve_reply_reference_falls_back_to_rest_fetch(self) -> None:
+        message = {"channel_id": "222", "message_reference": {"message_id": "msg-2"}}
+        with mock.patch.object(
+            gateway_service,
+            "fetch_message_via_rest",
+            return_value={"id": "msg-2", "content": "fetched via REST"},
+        ) as fetch:
+            result = gateway_service.resolve_reply_reference(message)
+
+        # No bot_token keyword when there is no token: a fetch_message_via_rest()
+        # that predates the parameter (the live gateway's) rejects it even as None.
+        fetch.assert_called_once_with("222", "msg-2")
+        self.assertEqual(result["reply_to_message_id"], "msg-2")
+        self.assertEqual(result["reply_to_quote"], "fetched via REST")
+
+    def test_resolve_reply_reference_rest_tier_works_with_a_fetcher_that_takes_no_bot_token(self) -> None:
+        # The live gateway's fetch_message_via_rest(channel_id, message_id) predates
+        # the bot_token keyword that upstream added. Passing bot_token=None to it
+        # raised TypeError and took down inbound handling for ANY reply that reached
+        # the REST tier (a message_reference with no inline referenced_message).
+        # Found only by running this suite against the live branch's base.
+        def narrow_fetch(channel_id: str, message_id: str) -> dict[str, Any]:
+            return {"id": message_id, "content": "fetched by the narrow signature"}
+
+        message = {"channel_id": "55", "message_reference": {"message_id": "msg-9"}}
+        with mock.patch.object(gateway_service, "fetch_message_via_rest", narrow_fetch):
+            result = gateway_service.resolve_reply_reference(message)
+
+        self.assertEqual(result["reply_to_message_id"], "msg-9")
+        self.assertEqual(result["reply_to_quote"], "fetched by the narrow signature")
+
+    def test_resolve_reply_reference_forwards_a_bot_token_when_one_is_given(self) -> None:
+        # The other half: not passing the keyword by default must not lose it where
+        # a token exists (a multi-bot app fetching under its own identity).
+        seen: dict[str, Any] = {}
+
+        def capturing_fetch(channel_id: str, message_id: str, *, bot_token: str | None = None) -> dict[str, Any]:
+            seen["bot_token"] = bot_token
+            return {"id": message_id, "content": "fetched with a token"}
+
+        message = {"channel_id": "55", "message_reference": {"message_id": "msg-9"}}
+        with mock.patch.object(gateway_service, "fetch_message_via_rest", capturing_fetch):
+            result = gateway_service.resolve_reply_reference(message, bot_token="tok-1")
+
+        self.assertEqual(seen["bot_token"], "tok-1")
+        self.assertEqual(result["reply_to_quote"], "fetched with a token")
+
+    def test_resolve_reply_reference_falls_back_to_our_own_chat_publish_record(self) -> None:
+        message = {"channel_id": "222", "message_reference": {"message_id": "msg-3"}}
+        with mock.patch.object(gateway_service, "fetch_message_via_rest", return_value={}), mock.patch.object(
+            common,
+            "find_chat_publish_by_remote_message_id",
+            return_value={"remote_message_id": "msg-3", "body": "our own earlier reply"},
+        ) as find_publish:
+            result = gateway_service.resolve_reply_reference(message)
+
+        find_publish.assert_called_once_with("msg-3")
+        self.assertEqual(result["reply_to_message_id"], "msg-3")
+        self.assertEqual(result["reply_to_quote"], "our own earlier reply")
+
+    def test_resolve_reply_reference_clips_a_long_quote(self) -> None:
+        long_content = "y" * (gateway_service.REPLY_QUOTE_PREVIEW_LIMIT + 50)
+        message = {
+            "message_reference": {"message_id": "msg-4"},
+            "referenced_message": {"id": "msg-4", "content": long_content},
+        }
+        result = gateway_service.resolve_reply_reference(message)
+
+        self.assertTrue(result["reply_to_quote"].endswith("..."))
+        self.assertEqual(
+            len(result["reply_to_quote"]),
+            gateway_service.REPLY_QUOTE_PREVIEW_LIMIT + len("..."),
+        )
+
+    def test_resolve_reply_reference_costs_nothing_for_a_non_reply(self) -> None:
+        with mock.patch.object(gateway_service, "fetch_message_via_rest") as fetch, mock.patch.object(
+            common, "find_chat_publish_by_remote_message_id"
+        ) as find_publish:
+            result = gateway_service.resolve_reply_reference({"content": "no reply"})
+
+        fetch.assert_not_called()
+        find_publish.assert_not_called()
+        self.assertEqual(result, {"reply_to_message_id": "", "reply_to_quote": ""})
+
+    def test_resolve_reply_reference_prefers_our_own_publish_record_over_rest(self) -> None:
+        # A reply to one of our own messages resolves from disk; no network call.
+        message = {"channel_id": "222", "message_reference": {"message_id": "msg-5"}}
+        with mock.patch.object(gateway_service, "fetch_message_via_rest") as fetch, mock.patch.object(
+            common,
+            "find_chat_publish_by_remote_message_id",
+            return_value={"remote_message_id": "msg-5", "body": "our own earlier reply"},
+        ):
+            result = gateway_service.resolve_reply_reference(message)
+
+        fetch.assert_not_called()
+        self.assertEqual(result["reply_to_quote"], "our own earlier reply")
+
+    def test_resolve_reply_reference_rest_failure_leaves_quote_empty(self) -> None:
+        # The quote is optional context; a Discord hiccup must not fail ingress.
+        message = {"channel_id": "222", "message_reference": {"message_id": "msg-6"}}
+        with mock.patch.object(
+            gateway_service, "fetch_message_via_rest", side_effect=TimeoutError("read timed out")
+        ), mock.patch.object(common, "find_chat_publish_by_remote_message_id", return_value=None):
+            result = gateway_service.resolve_reply_reference(message)
+
+        self.assertEqual(result["reply_to_message_id"], "msg-6")
+        self.assertEqual(result["reply_to_quote"], "")
+
+    def test_rejected_ingress_receipt_never_fetches_the_replied_to_message(self) -> None:
+        # Rejection receipts are written on the gateway receive loop (queue full,
+        # shutdown); a REST call there could stall heartbeats.
+        message = {
+            "id": "106",
+            "channel_id": "55",
+            "content": "a reply while overloaded",
+            "message_reference": {"message_id": "msg-7"},
+            "author": {"id": "u-1", "username": "alice"},
+        }
+        with mock.patch.object(gateway_service, "fetch_message_via_rest") as fetch:
+            gateway_service.save_rejected_ingress_receipt(
+                message,
+                "999",
+                status="rejected_queue_full",
+                reason="queue_full",
+            )
+
+        fetch.assert_not_called()
+        receipt = common.load_chat_ingress("in-106")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_message_id"], "msg-7")
+        self.assertEqual(receipt["reply_to_quote"], "")
+
+    def test_named_app_inbound_reply_fetches_with_that_apps_token(self) -> None:
+        config = common.import_app_config(
+            common.load_config(),
+            {"application_id": "999", "public_key": "ab" * 32},
+            app_name="ollie",
+        )
+        common.set_chat_binding(
+            config,
+            "room",
+            "22",
+            ["teams.lead"],
+            guild_id="1",
+            app_name="ollie",
+            channel_metadata={"channel_type": 0},
+        )
+        message = {
+            "id": "reply-204",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "<@999> yes, that one",
+            "mentions": [{"id": "999"}],
+            "message_reference": {"message_id": "msg-8"},
+            "author": {"id": "u-2", "username": "alice"},
+        }
+        seen: dict[str, Any] = {}
+
+        def capturing_fetch(channel_id: str, message_id: str, *, bot_token: str | None = None) -> dict[str, Any]:
+            seen["bot_token"] = bot_token
+            return {"id": message_id, "content": "which one should I take?"}
+
+        with mock.patch.object(common, "load_bot_token", return_value="tok-app"), mock.patch.object(
+            gateway_service, "fetch_message_via_rest", capturing_fetch
+        ), mock.patch.object(
+            common,
+            "session_index_by_name",
+            return_value={"teams.lead": {"session_name": "teams.lead", "state": "active"}},
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999", app_name="ollie")
+
+        self.assertEqual(outcome["status"], "delivered")
+        self.assertEqual(seen["bot_token"], "tok-app")
+        receipt = common.load_chat_ingress("in-reply-204-app-ollie")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_quote"], "which one should I take?")
+
+    def test_build_room_launch_envelope_surfaces_reply_reference_when_present(self) -> None:
+        envelope = gateway_service.build_room_launch_envelope(
+            launcher={"id": "launch-room:22"},
+            launch={
+                "launch_id": "room-launch:222",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+                "participants": {},
+            },
+            message={"id": "300", "guild_id": "1", "channel_id": "22", "author": {"id": "u-300", "username": "alice"}},
+            body="what's next?",
+            mentioned_handles=[],
+            ingress_id="in-300",
+            reply_to_id="msg-1",
+            reply_to_quote="earlier question",
+        )
+
+        self.assertIn("reply_to_discord_message_id: msg-1", envelope)
+        self.assertIn('reply_to_quote_json: "earlier question"', envelope)
+
+    def test_build_room_launch_envelope_reply_fields_default_empty(self) -> None:
+        envelope = gateway_service.build_room_launch_envelope(
+            launcher={"id": "launch-room:22"},
+            launch={
+                "launch_id": "room-launch:222",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+                "participants": {},
+            },
+            message={"id": "301", "guild_id": "1", "channel_id": "22", "author": {"id": "u-301", "username": "alice"}},
+            body="hello",
+            mentioned_handles=[],
+            ingress_id="in-301",
+        )
+
+        self.assertIn("reply_to_discord_message_id: \n", envelope)
+        self.assertIn('reply_to_quote_json: ""', envelope)
+
+    # gm-52178u, the bound-DM half. The operator's messages arrive on the
+    # bound-DM path, whose deferred envelope is build_human_envelope() -- not the
+    # two room-launch builders above -- so the reply context has to be threaded
+    # through it too or the operator's own replies would still arrive bare.
+    def test_build_human_envelope_surfaces_reply_reference_when_present(self) -> None:
+        envelope = gateway_service.build_human_envelope(
+            binding={"id": "dm:55"},
+            message={"id": "400", "channel_id": "55", "author": {"id": "u-400", "username": "alice"}},
+            channel_info={},
+            body="just merge it",
+            mentioned_aliases=[],
+            delivery="targeted",
+            ingress_id="in-400",
+            reply_to_id="msg-agent-1",
+            reply_to_quote="two pending asks",
+        )
+
+        self.assertIn("reply_to_discord_message_id: msg-agent-1", envelope)
+        self.assertIn('reply_to_quote_json: "two pending asks"', envelope)
+
+    def test_build_human_envelope_reply_fields_default_empty(self) -> None:
+        envelope = gateway_service.build_human_envelope(
+            binding={"id": "dm:55"},
+            message={"id": "401", "channel_id": "55", "author": {"id": "u-401", "username": "alice"}},
+            channel_info={},
+            body="hello",
+            mentioned_aliases=[],
+            delivery="targeted",
+            ingress_id="in-401",
+        )
+
+        self.assertIn("reply_to_discord_message_id: \n", envelope)
+        self.assertIn('reply_to_quote_json: ""', envelope)
+
+    def test_process_inbound_dm_reply_carries_reference_and_quote_in_envelope_and_receipt(self) -> None:
+        # The operator replies, in their DM, to one of two pending asks. Both the
+        # deferred envelope the session reads and the persisted receipt must name
+        # the replied-to message and quote it.
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        message = {
+            "id": "102",
+            "channel_id": "55",
+            "content": "merge; ... just merge with that red",
+            "message_reference": {"message_id": "msg-agent-9"},
+            "referenced_message": {
+                "id": "msg-agent-9",
+                "content": "two pending asks: (1) merge the red PR, (2) hold the green one",
+            },
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "suspended"}}), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-1"},
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("reply_to_discord_message_id: msg-agent-9", envelope)
+        self.assertIn(
+            'reply_to_quote_json: "two pending asks: (1) merge the red PR, (2) hold the green one"',
+            envelope,
+        )
+        # The new field names the message being ANSWERED. Where OUR reply goes is
+        # still the operator's own message, and threading the new field through
+        # must not have moved it.
+        self.assertIn("publish_reply_to_discord_message_id: 102", envelope)
+        self.assertIn("--reply-to 102 --body-file <path>", envelope)
+        receipt = common.load_chat_ingress("in-102")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_message_id"], "msg-agent-9")
+        self.assertEqual(receipt["reply_to_quote"], "two pending asks: (1) merge the red PR, (2) hold the green one")
+
+    def test_process_inbound_dm_non_reply_carries_empty_reply_fields(self) -> None:
+        # The control for the case above: the same path, no reply. Empty fields,
+        # present in both the envelope and the receipt, so a reader never has to
+        # tell "not a reply" from "field missing".
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        message = {
+            "id": "103",
+            "channel_id": "55",
+            "content": "a fresh question, not a reply",
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "suspended"}}), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted", "id": "gc-1"},
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("reply_to_discord_message_id: \n", envelope)
+        self.assertIn('reply_to_quote_json: ""', envelope)
+        self.assertIn("publish_reply_to_discord_message_id: 103", envelope)
+        receipt = common.load_chat_ingress("in-103")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_message_id"], "")
+        self.assertEqual(receipt["reply_to_quote"], "")
+
+    def test_process_inbound_dm_records_a_long_body_without_loss(self) -> None:
+        common.set_chat_binding(common.load_config(), "dm", "55", ["sky"])
+        # Long enough to clip, and split across lines so a flattening bug shows up
+        # as a content difference rather than only a length one.
+        content = ("Delegating this one to you.\n\n" + "Detail line. " * 40).strip()
+        self.assertGreater(len(content), gateway_service.MAX_STATUS_PREVIEW)
+        message = {
+            "id": "104",
+            "channel_id": "55",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common, "session_index_by_name", return_value={"sky": {"session_name": "sky", "state": "suspended"}}
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted", "id": "gc-1"}):
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        receipt = common.load_chat_ingress("in-104")
+        assert receipt is not None
+        self.assertEqual(receipt["body"], content)
+        self.assertEqual(receipt["body_length"], len(content))
+        self.assertTrue(receipt["body_truncated"])
+        self.assertTrue(receipt["body_preview"].endswith("..."))
+
+    def test_rejected_ingress_receipt_records_the_full_body(self) -> None:
+        # A message the gateway refuses is still a message the operator sent; the
+        # rejection paths write their own receipts and must not drop it either.
+        content = "B" * 400
+        message = {
+            "id": "105",
+            "channel_id": "55",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        gateway_service.save_rejected_ingress_receipt(
+            message,
+            "999",
+            status="rejected_shutting_down",
+            reason="service_shutting_down",
+        )
+
+        receipt = common.load_chat_ingress("in-105")
+        assert receipt is not None
+        self.assertEqual(receipt["body"], content)
+        self.assertTrue(receipt["body_truncated"])
+
+    def test_room_launch_record_keeps_the_whole_body(self) -> None:
+        # The launch record is the launcher room's own copy of the message, and
+        # a reader browsing launches sees it instead of the ingress receipt.
+        # Same loss, same fix: it must carry the body, not just the preview.
+        self._configure_discord_app()
+        common.set_room_launcher(common.load_config(), "1", "22")
+        content = ("@@corp/sky take this one.\n\n" + "Detail line. " * 40).strip()
+        self.assertGreater(len(content), gateway_service.MAX_STATUS_PREVIEW)
+        message = {
+            "id": "106",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": content,
+            "author": {"id": "u-1", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common, "resolve_existing_session_for_handle", return_value={"session_name": "sky"}
+        ), mock.patch.object(
+            common, "ensure_room_launch_session", side_effect=lambda launch, **kwargs: launch
+        ), mock.patch.object(
+            gateway_service, "resume_ingress_delivery", side_effect=lambda receipt, **kwargs: receipt
+        ):
+            gateway_service.process_room_launch_message(
+                base_receipt={"ingress_id": "in-106", "discord_message_id": "106"},
+                launcher={"id": "launcher:1:22"},
+                message=message,
+                bot_user_id="999",
+                ingress_id="in-106",
+            )
+
+        launch = common.load_room_launch(common.room_launch_record_id("106"))
+        assert launch is not None
+        self.assertEqual(launch["body"], content)
+        self.assertEqual(launch["body_length"], len(content))
+        self.assertTrue(launch["body_truncated"])
+        self.assertTrue(launch["body_preview"].endswith("..."))
+
     def test_process_inbound_room_message_targets_only_named_alias(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["sky", "lawrence"], guild_id="1")
         message = {
@@ -887,6 +1382,239 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         normalize_to_extmsg_message.assert_not_called()
         deliver_to_extmsg.assert_not_called()
 
+    def test_record_extmsg_inbound_skips_launcher_room_mentions(self) -> None:
+        # Same precedence as a bound room: extmsg must yield the launcher's
+        # own room so process_room_launch_message gets the message instead of
+        # spawning a generic session in a thread the launcher never sees.
+        self._configure_discord_app()
+        common.set_room_launcher(common.load_config(), "1", "22")
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207c",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@@corp/sky what changed?",
+            "author": {"id": "u-207c", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "resolve_at_mentions", return_value=["sky"]) as resolve_at_mentions, mock.patch.object(
+            common, "resolve_mention_targets"
+        ) as resolve_mention_targets, mock.patch.object(common, "launch_thread_for_mentions") as launch_thread_for_mentions:
+            handled = worker._record_extmsg_inbound(message, bot_user_id="999")
+
+        self.assertFalse(handled)
+        resolve_at_mentions.assert_not_called()
+        resolve_mention_targets.assert_not_called()
+        launch_thread_for_mentions.assert_not_called()
+
+    def _record_extmsg_thread_message(
+        self, worker: "gateway_service.GatewayWorker", message: dict, parent_id: str,
+    ) -> tuple[object, mock.MagicMock]:
+        """Drive a thread message all the way to extmsg delivery, stubbing the
+        agent-directory lookups the thread branch makes on the way. Without
+        those stubs the branch raises and returns False on its own, and every
+        "extmsg did not take this thread" assertion passes vacuously.
+        """
+        with mock.patch.object(gateway_service, "_resolve_thread_parent", return_value=parent_id), mock.patch.object(
+            common, "resolve_at_mentions", return_value=[]
+        ), mock.patch.object(
+            common, "resolve_nl_agent_mentions", return_value=[]
+        ), mock.patch.object(
+            common, "normalize_to_extmsg_message", return_value={},
+        ), mock.patch.object(common, "deliver_to_extmsg") as deliver_to_extmsg:
+            handled = worker._record_extmsg_inbound(message, bot_user_id="999")
+        return handled, deliver_to_extmsg
+
+    def test_record_extmsg_inbound_delivers_threads_outside_a_launcher(self) -> None:
+        # Positive control for the two thread skips below: this fixture does
+        # reach extmsg delivery, so their assert_not_called is a real signal.
+        self._configure_discord_app()
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207g",
+            "guild_id": "1",
+            "channel_id": "223",
+            "content": "still there?",
+            "author": {"id": "u-207g", "username": "alice"},
+        }
+
+        handled, deliver_to_extmsg = self._record_extmsg_thread_message(worker, message, parent_id="33")
+
+        self.assertTrue(handled)
+        deliver_to_extmsg.assert_called_once()
+
+    def test_record_extmsg_inbound_skips_thread_inside_launcher_room(self) -> None:
+        self._configure_discord_app()
+        common.set_room_launcher(common.load_config(), "1", "22")
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207d",
+            "guild_id": "1",
+            "channel_id": "223",
+            "content": "still there?",
+            "author": {"id": "u-207d", "username": "alice"},
+        }
+
+        handled, deliver_to_extmsg = self._record_extmsg_thread_message(worker, message, parent_id="22")
+
+        self.assertFalse(handled)
+        deliver_to_extmsg.assert_not_called()
+
+    def test_record_extmsg_inbound_skips_lingering_launch_record_thread(self) -> None:
+        # Condition 3 carrying the claim alone: the launcher was unconfigured
+        # while its launch records lingered, so the parent is no longer a
+        # launcher room and only the record's thread_id still identifies the
+        # thread as launcher-managed.
+        self._configure_discord_app()
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:224",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "224",
+                "qualified_handle": "corp/sky",
+                "thread_id": "224",
+                "state": "active",
+            }
+        )
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207e",
+            "guild_id": "1",
+            "channel_id": "224",
+            "content": "follow up",
+            "author": {"id": "u-207e", "username": "alice"},
+        }
+
+        handled, deliver_to_extmsg = self._record_extmsg_thread_message(worker, message, parent_id="22")
+
+        self.assertFalse(handled)
+        deliver_to_extmsg.assert_not_called()
+
+    def test_record_extmsg_inbound_still_handles_rooms_without_a_launcher(self) -> None:
+        # Positive control for the two skips above: with no launcher and no
+        # binding, extmsg keeps its room-mention path. Without this, widening
+        # launcher_claims_message to claim everything stays green.
+        self._configure_discord_app()
+        worker = self._new_gateway_worker()
+        message = {
+            "id": "207f",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@randy what changed?",
+            "author": {"id": "u-207f", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "resolve_at_mentions", return_value=["randy"]) as resolve_at_mentions, mock.patch.object(
+            common, "resolve_mention_targets", return_value=[]
+        ), mock.patch.object(common, "launch_thread_for_mentions"):
+            worker._record_extmsg_inbound(message, bot_user_id="999")
+
+        resolve_at_mentions.assert_called_once()
+
+    def test_participant_target_identity_carries_every_selector(self) -> None:
+        identity = gateway_service.participant_target_identity(
+            {"session_name": "s-gc-123", "session_id": "gc-123", "session_alias": "corp/gasburger.sky",
+             "delivery_selector": "s-gc-123"}
+        )
+
+        self.assertEqual(
+            identity,
+            {"session_name": "s-gc-123", "session_id": "gc-123", "session_alias": "corp/gasburger.sky"},
+        )
+        self.assertEqual(gateway_service.participant_target_identity({"session_id": " "}), {})
+        self.assertEqual(gateway_service.participant_target_identity({}), {})
+
+    def test_process_inbound_room_launch_receipt_target_carries_session_identity(self) -> None:
+        # reply-current matches a receipt target by whichever of
+        # GC_SESSION_ID / GC_SESSION_NAME / alias the replying session
+        # presents, so all three must survive into targets[].
+        common.set_room_launcher(common.load_config(), "1", "22")
+        message = {
+            "id": "208z",
+            "guild_id": "1",
+            "channel_id": "22",
+            "content": "@@corp/sky please help",
+            "author": {"id": "u-208z", "username": "alice"},
+        }
+
+        with mock.patch.object(common, "resolve_agent_handle", return_value=("corp/sky", "")), mock.patch.object(
+            common,
+            "ensure_room_launch_session",
+            return_value={
+                "launch_id": "room-launch:208z",
+                "qualified_handle": "corp/sky",
+                "session_alias": "corp/gasburger.sky",
+                "session_name": "s-gc-123",
+                "session_id": "gc-123",
+            },
+        ), mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}):
+            gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        receipt = common.load_chat_ingress("in-208z")
+        assert receipt is not None
+        target = receipt["targets"][0]
+        self.assertEqual(target["session_name"], "s-gc-123")
+        self.assertEqual(target["session_id"], "gc-123")
+        self.assertEqual(target["session_alias"], "corp/gasburger.sky")
+
+    def test_launcher_claims_message_matches_configured_launcher_room(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+
+        self.assertTrue(gateway_service.launcher_claims_message(config, "22"))
+
+    def test_launcher_claims_message_matches_thread_whose_parent_is_the_launcher(self) -> None:
+        # Condition 2 on its own: a thread channel with no launch record is
+        # still the launcher's, claimed via its parent.
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+
+        self.assertTrue(gateway_service.launcher_claims_message(config, "999222", parent_id="22"))
+        self.assertFalse(gateway_service.launcher_claims_message(config, "999222"))
+
+    def test_launcher_claims_message_matches_launch_record_thread(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:225",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "225",
+                "qualified_handle": "corp/sky",
+                "thread_id": "225",
+                "state": "active",
+            }
+        )
+
+        self.assertTrue(gateway_service.launcher_claims_message(config, "225"))
+
+    def test_launcher_claims_message_ignores_unrelated_channels(self) -> None:
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+
+        self.assertFalse(gateway_service.launcher_claims_message(config, "33"))
+        self.assertFalse(gateway_service.launcher_claims_message(config, "33", parent_id="44"))
+        self.assertFalse(gateway_service.launcher_claims_message(config, ""))
+
+    def test_launcher_claims_message_ignores_launch_record_for_a_different_thread(self) -> None:
+        # The record must name this channel as its thread: a launch whose
+        # thread lives elsewhere does not claim the root message's channel.
+        config = common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:226",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "226",
+                "qualified_handle": "corp/sky",
+                "thread_id": "22699",
+                "state": "active",
+            }
+        )
+
+        self.assertFalse(gateway_service.launcher_claims_message(config, "226"))
+
     def test_process_inbound_room_launch_routes_handle_without_bot_mention(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")
         message = {
@@ -1269,6 +1997,88 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         receipt = common.load_chat_ingress("in-212a")
         assert receipt is not None
         self.assertEqual(receipt["routing_mode"], "reply_to")
+
+    def test_process_inbound_room_launch_thread_reply_captures_reference_and_quote(self) -> None:
+        # gm-52178u: the operator replies to a specific Discord message to
+        # disambiguate which of several pending asks they are answering. The
+        # ingress receipt and the deferred envelope both need the replied-to
+        # id and a short quote, not just routing that happens to use it.
+        common.set_room_launcher(common.load_config(), "1", "22")
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:222",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "222",
+                "qualified_handle": "corp/sky",
+                "session_alias": "dc-123-sky",
+                "session_name": "dc-sky",
+                "participants": {
+                    "corp/sky": {
+                        "qualified_handle": "corp/sky",
+                        "session_alias": "dc-123-sky",
+                        "session_name": "dc-sky",
+                        "session_id": "gc-sky",
+                    },
+                    "corp/alex": {
+                        "qualified_handle": "corp/alex",
+                        "session_alias": "dc-456-alex",
+                        "session_name": "dc-alex",
+                        "session_id": "gc-alex",
+                    },
+                },
+                "message_targets": {"msg-agent-1": "corp/alex"},
+                "thread_id": "222",
+                "state": "active",
+            }
+        )
+        message = {
+            "id": "212b",
+            "guild_id": "1",
+            "channel_id": "222",
+            "content": "merge; ... just merge with that red",
+            "message_reference": {"message_id": "msg-agent-1"},
+            "referenced_message": {
+                "id": "msg-agent-1",
+                "content": "two pending asks: (1) merge the red PR, (2) hold the green one",
+            },
+            "author": {"id": "u-212b", "username": "alice"},
+        }
+
+        with mock.patch.object(
+            common,
+            "ensure_room_launch_session_for_handle",
+            return_value=(
+                common.load_room_launch("room-launch:222") or {},
+                {
+                    "qualified_handle": "corp/alex",
+                    "session_alias": "dc-456-alex",
+                    "session_name": "dc-alex",
+                    "session_id": "gc-alex",
+                },
+            ),
+        ), mock.patch.object(common, "set_room_launch_last_addressed"), mock.patch.object(
+            common,
+            "deliver_session_message",
+            return_value={"status": "accepted"},
+        ) as deliver_session_message:
+            outcome = gateway_service.process_inbound_message(message, bot_user_id="999")
+
+        self.assertEqual(outcome["status"], "delivered")
+        envelope = deliver_session_message.call_args.args[1]
+        self.assertIn("reply_to_discord_message_id: msg-agent-1", envelope)
+        self.assertIn(
+            'reply_to_quote_json: "two pending asks: (1) merge the red PR, (2) hold the green one"',
+            envelope,
+        )
+        receipt = common.load_chat_ingress("in-212b")
+        assert receipt is not None
+        self.assertEqual(receipt["reply_to_message_id"], "msg-agent-1")
+        self.assertEqual(
+            receipt["reply_to_quote"],
+            "two pending asks: (1) merge the red PR, (2) hold the green one",
+        )
 
     def test_process_inbound_room_launch_thread_uses_last_addressed_fallback(self) -> None:
         common.set_room_launcher(common.load_config(), "1", "22")

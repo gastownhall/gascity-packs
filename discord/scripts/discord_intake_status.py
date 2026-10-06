@@ -9,6 +9,24 @@ import sys
 import discord_intake_common as common
 
 
+def chat_ingress_clipped_marker(item: dict[str, object]) -> str:
+    """Say so when the printed preview is only part of the message.
+
+    The status line has always shown ``body_preview``, which stops at 160
+    characters with no sign that it did. A reader who cannot tell a whole
+    message from its first third will eventually act on the third (gm-pbejk).
+    Records written before ``body_truncated`` existed carry neither field and
+    get no marker — absence of the flag is not evidence the message was short.
+    """
+    if not item.get("body_truncated"):
+        return ""
+    length = item.get("body_length")
+    whole = "the ingress record's 'body' field holds the whole message"
+    if isinstance(length, int) and length > 0:
+        return f" [CLIPPED — {length} chars total; {whole}]"
+    return f" [CLIPPED — {whole}]"
+
+
 def render_text(snapshot: dict[str, object]) -> str:
     config = snapshot.get("config", {})
     gateway = snapshot.get("gateway_status", {})
@@ -104,12 +122,13 @@ def render_text(snapshot: dict[str, object]) -> str:
     else:
         for item in ingress:
             lines.append(
-                "  - {ingress_id} binding={binding_id} status={status} from={from_display} preview={preview}".format(
+                "  - {ingress_id} binding={binding_id} status={status} from={from_display} preview={preview}{clipped}".format(
                     ingress_id=item.get("ingress_id", ""),
                     binding_id=item.get("binding_id", ""),
                     status=item.get("status", ""),
                     from_display=item.get("from_display", ""),
                     preview=item.get("body_preview", ""),
+                    clipped=chat_ingress_clipped_marker(item),
                 )
             )
     lines.append("")

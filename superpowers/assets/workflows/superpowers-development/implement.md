@@ -1,7 +1,8 @@
 Inspect the Superpowers implementation task.
 
-Resolve the source anchor with the same rules as the inherited worktree setup,
-read its `work_dir`, and switch to that worktree before reading or editing
+Resolve the source anchor as the workflow root's stamped `gc.source_anchor_id`
+(only when the root has none, use the same rules as the inherited worktree
+setup), read its `work_dir`, and switch to that worktree before reading or editing
 source files. Read the approved requirements, approved plan, decomposition
 artifact, and this task bead. The task bead describes the work unit only; the
 drained Superpowers implementation workflow supplies the execution procedure.

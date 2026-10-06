@@ -86,5 +86,13 @@ description_file = "../assets/workflows/gstack-plan-review/{target}.apply-plan-r
 id = "{target}"
 title = "Finalize gstack plan review"
 needs = ["{target}.gstack-plan-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
 description_file = "../assets/workflows/gstack-plan-review/{target}.md"
+
+[template.check]
+max_attempts = 3
+
+[template.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/build-artifact-valid.sh"
+timeout = "5m"

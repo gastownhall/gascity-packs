@@ -1,5 +1,6 @@
 
-Resolve `<source-anchor-id>` using the same rules as `prepare-worktree`. For a
+Resolve `<source-anchor-id>` as described below: the root's stamped
+`gc.source_anchor_id`, else the same rules as `prepare-worktree`. For a
 synthetic drain-unit convoy, the source anchor is the original drain member in
 `gc.drain_member_id`, not the synthetic convoy id. Read `work_dir` from the source anchor, never read `work_dir` from the synthetic drain-unit convoy,
 validate that it is an absolute existing git worktree, set `WORKTREE` to that
@@ -8,16 +9,24 @@ path, then `cd "$WORKTREE"` before reading or editing source files. If
 
 Do not infer the source anchor from dependency ids such as the
 `prepare-worktree` step. Read the claimed step bead's `gc.root_bead_id`, read
-that do-work root with `gc bd show <root-bead-id> --json`, then read the root
-metadata `gc.input_convoy_id`. Read that input convoy with `gc bd show
-<input-convoy-id> --json`; if the JSON output is a one-element list, unwrap the
-first element before reading metadata. If the input convoy has
+that do-work root with `gc bd show <root-bead-id> --json`;
+if the JSON output is a one-element list, unwrap the first element before
+reading metadata. If the
+root has `gc.source_anchor_id`, `prepare-worktree` already resolved the anchor
+and stamped it there: use exactly that id and do not re-derive it. Only when
+the root has no `gc.source_anchor_id` (a workflow started before the stamp
+existed), read the root metadata `gc.input_convoy_id` and read that input
+convoy with `gc bd show <input-convoy-id> --json`. If the input convoy has
 `gc.synthetic_kind=drain-unit-convoy`, use its `gc.drain_member_id` as the
-source anchor. Otherwise use the input convoy id as the source anchor. Then
-read the source anchor and use only its `work_dir` metadata as `WORKTREE`.
+source anchor. Else if it has `gc.synthetic=true`, use its single tracked member
+from `gc convoy status <input-convoy-id> --json`. Otherwise use the input
+convoy id as the source anchor. Then read the source anchor and use only its
+`work_dir` metadata as `WORKTREE`; for an unstamped root whose resolved member
+has no `work_dir`, a pre-stamp `prepare-worktree` persisted it on the
+`gc.synthetic=true` input convoy, so read `work_dir` from that convoy instead.
 
 `gc.work_dir` is the launcher rig root, not the implementation worktree. Use
-`gc.work_dir` only later to run `.gc/scripts/checks/build-artifact-valid.sh`.
+`gc.work_dir` only later to run the artifact validator.
 After resolving `WORKTREE`, run `cd "$WORKTREE"` and verify `pwd -P` equals
 `$WORKTREE` before any source read, source edit, test, file hash, `git add`, or
 `git commit`. If a command uses the launcher checkout path for source edits,
@@ -74,4 +83,4 @@ Trace front matter must use the validator shape exactly:
   requirements; do not use `approved` in `trace.coverage[].status` or the
   Markdown coverage table.
 
-Artifact validation: this step is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the summary recorded at `gc.implementation.summary_path` (fallbacks `gc.build.implementation_summary_path`, then `gc.var.summary_path`) against schema `gc.build.implementation-summary.v1`. Before closing this step, read the launcher rig root from the workflow root bead's `gc.work_dir`, then run the same validator locally from that rig root with `GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh`; fix every reported validation error before setting `gc.outcome=pass`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the summary in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the summary.
+Artifact validation: this step is gated by the pack-owned `build-artifact-valid.sh` check, which validates the summary recorded at `gc.implementation.summary_path` (fallbacks `gc.build.implementation_summary_path`, then `gc.var.summary_path`) against schema `gc.build.implementation-summary.v1`. Before closing this step, read the launcher rig root from the workflow root bead's `gc.work_dir`, then run the same validator locally from that rig root. The validator is the script recorded as `gc.check_path` on the validation loop control bead (the dependent of this step bead whose `gc.kind` is `ralph`); Gas City resolves it to this pack's own `build-artifact-valid.sh` asset, so nothing has to be copied into the rig. Run `GC_BEAD_ID=<claimed-step-id> GC_RIG_ROOT=<launcher-rig-root> "<gc.check_path>"`; fix every reported validation error before setting `gc.outcome=pass`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the summary in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the summary.

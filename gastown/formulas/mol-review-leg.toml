@@ -83,11 +83,15 @@ Use a structured report, not a one-line summary. Preserve the substance of
 your findings in the notes so the coordinator can re-read them after your
 session exits.
 
-Suggested pattern:
+Suggested pattern — `--append-notes`, never bare `--notes`. This bead is a
+convoy member you did not create: it carries the coordinator's assignment, and
+`--notes` REPLACES the whole field, so a report written with it deletes the
+instructions the report is answering (and the previous leg's report, on a
+re-served or multi-leg review).
 ```bash
 CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
 WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
-gc bd update "$WORK_BEAD_ID" --notes "$(cat <<'EOF'
+gc bd update "$WORK_BEAD_ID" --append-notes "$(cat <<'EOF'
 # <report title>
 
 ## Summary
@@ -141,6 +145,10 @@ EOF
 **3. Close the bead and drain:**
 ```bash
 gc bd update "$WORK_BEAD_ID" --status=closed
+STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".notify-close"))' >/dev/null || { echo "notify-close: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed || exit 1
 gc runtime drain-ack
 ```
 

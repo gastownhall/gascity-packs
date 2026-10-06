@@ -25,10 +25,13 @@
 #   universal   Present on every gc. tests/test_gastown_lint_findings.py
 #               requires each one, so a finding that disappears fails and the
 #               entry has to be deleted in the same change as the upstream fix.
-#   pre-5220    Emitted by gc up to v1.4.1 and fixed on gascity main. Tolerated
-#               rather than required, because which one CI sees depends on
-#               whether `gc@latest` has picked up the fix yet. The set still
-#               has to be all-present or all-absent; a partial match fails.
+#   pre-4995    Emitted by gc v1.4.x and fixed in v1.5.0 (gascity #4995).
+#   pre-5220    Emitted by gc v1.4.x and fixed in v1.5.0 (gascity #5220).
+#               Both are tolerated rather than required, because which ones CI
+#               sees depends on whether `gc@latest` is a v1.4.x or a v1.5.x
+#               release. Each set still has to be all-present or all-absent;
+#               a partial match fails. Delete a section once no supported gc
+#               release emits it.
 #
 # Every line here that quotes a `bd` invocation does so because it is gc's own
 # output, matched byte for byte. tests/test_no_bare_bd_commands.py exempts
@@ -39,7 +42,13 @@
 # binary with nothing failing.
 
 # ---------------------------------------------------------------------------
-# 1. named_session x5: `gc lint` calls a bare cap a "pool control"
+# 1. named_session x5, gc <= v1.4.x only: `gc lint` calls a bare cap a
+#    "pool control"
+#
+# Fixed by gascity 72b8951790 ("fix(cmd/gc): lint no longer flags the max=1
+# named-session singleton flavor as a pool conflict", #4995, 2026-08-21), which
+# is in v1.5.0 and NOT in v1.4.2. The analysis below is why the pack was right
+# and the linter wrong.
 #
 # All five templates set `max_active_sessions = 1` and nothing else: no
 # min_active_sessions, no scale_check, no namepool. That configuration spawns
@@ -61,10 +70,10 @@
 # SupportsGenericEphemeralSessions returns false, which changes how the agent
 # can be spawned rather than annotating intent.
 #
-# Refute: grep -n 'agentHasPoolControls' <gascity checkout>/cmd/gc/cmd_lint.go
-#         grep -n 'EffectiveMinActiveSessions' <gascity checkout>/internal/doctor/checks_named_session.go
+# Refute: cd <gascity checkout> && git log --oneline v1.4.2..v1.5.0 -- cmd/gc/cmd_lint.go
+#         gc lint gastown --json    (v1.5.x: no named_session diagnostic)
 # ---------------------------------------------------------------------------
-# @section: universal
+# @section: pre-4995
 pack.toml: named_session "mayor" targets pool-controlled agent "mayor"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
 pack.toml: named_session "deacon" targets pool-controlled agent "deacon"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
 pack.toml: named_session "boot" targets pool-controlled agent "boot"; remove pool settings from named-session templates or remove [[named_session]] for pool agents
@@ -91,16 +100,17 @@ pack.toml: named_session "refinery" targets pool-controlled agent "refinery"; re
 # Refute: gc bd mol wisp gc --help | grep -- --age
 #         grep -n '"mol wisp"' <gascity checkout>/internal/bdflags/bdflags.go
 # ---------------------------------------------------------------------------
+# @section: universal
 agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
 agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "--age"
 
 # ---------------------------------------------------------------------------
-# 3. x20, gc <= v1.4.1 only: the scanner ran past the pipe, and did not know
+# 3. x22, gc <= v1.4.x only: the scanner ran past the pipe, and did not know
 #    about `gc bd`'s own scope flags
 #
 # Two separate scanner defects, both fixed by gascity 7724983de ("fix(bdflags):
 # stop reporting valid gc bd invocations as unknown flags", #5220, 2026-08-15),
-# which is on gascity main and is NOT in v1.4.1.
+# which is in v1.5.0 and NOT in v1.4.2.
 #
 #   - Every `"-r"` below is jq's. The token loop ended at `--`, at a new bd
 #     invocation, or at end of line, and ran straight through `|`, so
@@ -113,15 +123,17 @@ agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized
 # This section is why the finding set is version-dependent, and it is why this
 # file exists at all rather than the findings being "fixed": acting on any of
 # these breaks prompt text that works. .github/workflows/ci.yml installs
-# `gc@latest`, so CI sees them until the release after v1.4.1 ships. Delete the
-# whole section then; the test requires the set to be all-present or
-# all-absent, so a partial match still fails.
+# `gc@latest`, so CI sees them while that is a v1.4.x release. Delete the whole
+# section once v1.4.x is no longer a supported gc; the test requires the set to
+# be all-present or all-absent, so a partial match still fails.
 #
-# Refute: cd <gascity checkout> && git log --oneline v1.4.1..main -- internal/bdflags/
+# Refute: cd <gascity checkout> && git log --oneline v1.4.2..v1.5.0 -- internal/bdflags/
 #         gc bd list --rig <a rig> -s open     (works; the same flag on bare
 #                                              bd is correctly rejected)
 # ---------------------------------------------------------------------------
 # @section: pre-5220
+agents/boot/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
+agents/boot/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
 agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
 agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
 agents/deacon/prompt.template.md: bd-unknown-flag: bd mol wisp uses unrecognized flag "-r"
