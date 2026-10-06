@@ -53,14 +53,15 @@ if [[ -n "$need_go" && -n "$have_go" ]] &&
 fi
 
 private_build_dir() {
-  local dir="${TMPDIR:-/tmp}/$1-$(id -u)"
+  local uid dir
+  uid="$(id -u)" || return 1
+  dir="${TMPDIR:-/tmp}/$1-$uid"
   mkdir -p -m 700 "$dir" 2>/dev/null || true
-  if [[ -L "$dir" || ! -d "$dir" || ! -O "$dir" ]]; then
-    log "ERROR: $dir is not a directory owned by this user; refusing to build with it"
+  if [[ -L "$dir" || ! -d "$dir" || ! -O "$dir" ]] || ! chmod 700 "$dir"; then
+    log "ERROR: $dir is not a private directory owned by this user; refusing to build with it"
     log "manual fix: set HOME, or GOCACHE and GOPATH, in the service environment"
     return 1
   fi
-  chmod 700 "$dir"
   printf '%s\n' "$dir"
 }
 

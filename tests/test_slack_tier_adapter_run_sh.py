@@ -191,6 +191,20 @@ def test_home_less_build_refuses_a_symlinked_build_dir(harness, tmp_path, kind):
     assert not (adapter / binary_name).exists()
 
 
+@pytest.mark.parametrize("tool", ["id", "chmod"])
+def test_home_less_build_refuses_when_the_build_dir_cannot_be_secured(harness, tmp_path, tool):
+    _, adapter, binary_name, run, builds, _ = harness
+    failing = tmp_path / "stubbin" / tool
+    failing.write_text("#!/bin/sh\nexit 1\n")
+    failing.chmod(0o755)
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    proc = run(extra_env={"TMPDIR": str(tmp)}, drop_env=BARE_SUPERVISOR_ENV)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert builds() == []
+    assert not (adapter / binary_name).exists()
+
+
 @pytest.mark.parametrize("cache_var", ["XDG_CACHE_HOME", "GOCACHE"])
 def test_gopath_is_defaulted_whenever_home_is_unset(harness, tmp_path, cache_var):
     _, _, binary_name, run, _, build_environments = harness
