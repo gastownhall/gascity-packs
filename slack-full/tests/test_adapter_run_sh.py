@@ -33,6 +33,7 @@ from __future__ import annotations
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 
 import pytest
@@ -40,6 +41,16 @@ import pytest
 PACK_DIR = pathlib.Path(__file__).resolve().parent.parent
 RUN_SH = PACK_DIR / "adapter" / "run.sh"
 GO_MOD = PACK_DIR / "adapter" / "go.mod"
+
+BARE_SUPERVISOR_ENV = [
+    "HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "GOCACHE",
+    "GOPATH",
+    "GOMODCACHE",
+    "GC_SLACK_ADAPTER_ENV",
+]
 
 GO_STUB = """#!/usr/bin/env bash
 # Stub Go toolchain: records every invocation (with its cwd, so tests
@@ -240,38 +251,97 @@ def test_explicit_env_file_is_still_fatal_when_a_binary_exists(harness):
     assert "PREBUILT_RAN" not in proc.stdout
 
 
-def test_self_heal_builds_when_home_is_unset(harness):
+def test_self_heal_builds_when_home_is_unset(harness, tmp_path):
     """Supervisor environments may not set HOME. Under `set -u` an
     unguarded $HOME aborts before the fast path — and `go build` then
     fails a second way, because it can only locate a build cache via
     GOCACHE, XDG_CACHE_HOME, or HOME. Assert the *build* survives, not
     merely the shell."""
     adapter, run, go_invocations, build_environments = harness
-    proc = run(
-        drop_env=[
-            "HOME",
-            "XDG_CONFIG_HOME",
-            "XDG_CACHE_HOME",
-            "GOCACHE",
-            "GOPATH",
-            # GOMODCACHE too: it is the other way Go can locate a module
-            # cache, so leaving the developer's own exported value in
-            # place would stop this test simulating the bare supervisor
-            # environment it is named for.
-            "GOMODCACHE",
-            "GC_SLACK_ADAPTER_ENV",
-        ]
-    )
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    proc = run(extra_env={"TMPDIR": str(tmp)}, drop_env=BARE_SUPERVISOR_ENV)
     assert proc.returncode == 0, proc.stderr
     assert "STUB_ADAPTER_RAN" in proc.stdout
     assert len(go_invocations()) == 1, go_invocations()
     # The build was handed a usable cache and module path rather than
     # inheriting neither, which is what actually fails on such a host.
-    tmp = os.environ.get("TMPDIR", "/tmp").rstrip("/")
+    uid = os.getuid()
+    gocache = tmp / f"gc-slack-adapter-gocache-{uid}"
+    gopath = tmp / f"gc-slack-adapter-gopath-{uid}"
     assert build_environments() == [
-        f"buildenv GOCACHE={tmp}/gc-slack-adapter-gocache "
-        f"GOPATH={tmp}/gc-slack-adapter-gopath"
+        f"buildenv GOCACHE={gocache} GOPATH={gopath}"
     ], build_environments()
+    for build_dir in (gocache, gopath):
+        assert build_dir.is_dir() and not build_dir.is_symlink()
+        assert stat.S_IMODE(build_dir.stat().st_mode) == 0o700
+    assert (adapter / "gc-slack-adapter").exists()
+
+
+@pytest.mark.parametrize("kind", ["gocache", "gopath"])
+def test_home_less_build_refuses_a_symlinked_build_dir(harness, tmp_path, kind):
+    adapter, run, go_invocations, _ = harness
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp / f"gc-slack-adapter-{kind}-{os.getuid()}").symlink_to(elsewhere)
+    proc = run(extra_env={"TMPDIR": str(tmp)}, drop_env=BARE_SUPERVISOR_ENV)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "ERROR:" in proc.stderr
+    assert "refusing to build with it" in proc.stderr
+    assert "manual fix:" in proc.stderr
+    assert go_invocations() == []
+    assert not (adapter / "gc-slack-adapter").exists()
+
+
+@pytest.mark.parametrize("kind", ["gocache", "gopath"])
+def test_home_less_build_refuses_a_build_path_that_is_a_file(harness, tmp_path, kind):
+    adapter, run, go_invocations, _ = harness
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    (tmp / f"gc-slack-adapter-{kind}-{os.getuid()}").write_text("planted\n")
+    proc = run(extra_env={"TMPDIR": str(tmp)}, drop_env=BARE_SUPERVISOR_ENV)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "refusing to build with it" in proc.stderr
+    assert go_invocations() == []
+    assert not (adapter / "gc-slack-adapter").exists()
+
+
+@pytest.mark.parametrize("kind", ["gocache", "gopath"])
+def test_home_less_build_refuses_a_build_dir_owned_by_another_user(
+    harness, tmp_path, kind
+):
+    if os.geteuid() != 0:
+        pytest.skip("requires root to create a directory owned by another user")
+    adapter, run, go_invocations, _ = harness
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    build_dir = tmp / f"gc-slack-adapter-{kind}-{os.getuid()}"
+    build_dir.mkdir()
+    os.chown(build_dir, 65534, 65534)
+    proc = run(extra_env={"TMPDIR": str(tmp)}, drop_env=BARE_SUPERVISOR_ENV)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "ERROR:" in proc.stderr
+    assert "refusing to build with it" in proc.stderr
+    assert "manual fix:" in proc.stderr
+    assert go_invocations() == []
+    assert not (adapter / "gc-slack-adapter").exists()
+
+
+@pytest.mark.parametrize("kind", ["gocache", "gopath"])
+def test_home_less_build_tightens_an_owned_build_dir(harness, tmp_path, kind):
+    adapter, run, go_invocations, build_environments = harness
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    build_dir = tmp / f"gc-slack-adapter-{kind}-{os.getuid()}"
+    build_dir.mkdir(mode=0o755)
+    build_dir.chmod(0o755)
+    proc = run(extra_env={"TMPDIR": str(tmp)}, drop_env=BARE_SUPERVISOR_ENV)
+    assert proc.returncode == 0, proc.stderr
+    assert stat.S_IMODE(build_dir.stat().st_mode) == 0o700
+    assert len(go_invocations()) == 1, go_invocations()
+    assert str(build_dir) in build_environments()[0]
     assert (adapter / "gc-slack-adapter").exists()
 
 
@@ -305,7 +375,7 @@ def test_gopath_is_defaulted_whenever_home_is_unset(harness, tmp_path, cache_var
     expected_gocache = str(cache_dir) if cache_var == "GOCACHE" else "unset"
     assert build_environments() == [
         f"buildenv GOCACHE={expected_gocache} "
-        f"GOPATH={tmp}/gc-slack-adapter-gopath"
+        f"GOPATH={tmp}/gc-slack-adapter-gopath-{os.getuid()}"
     ], build_environments()
 
 

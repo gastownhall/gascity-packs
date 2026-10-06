@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A HOME-less rebuild no longer uses a shared, guessable build cache.**
+  When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
+  build with `$TMPDIR/gc-slack-adapter-gocache` and
+  `$TMPDIR/gc-slack-adapter-gopath`. Another local user could create those
+  directories first and plant cache entries that end up in the adapter
+  binary. The script now uses per-user `0700` directories named with the
+  uid, and refuses to build if one is a symlink, is not a directory, or is
+  owned by another user. slack-mini and slack-channel got the same fix in
+  #492.
+
 - `_request` in `scripts/slack_intake_common.py` let two failure shapes
   escape as non-`GCAPIError` exceptions. A peer that answers but breaks the
   protocol (`IncompleteRead`, `BadStatusLine`) raises
