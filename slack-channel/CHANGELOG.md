@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A pack pin bump no longer strands the adapter service.** The `[[service]]`
+  command pointed straight at the gitignored `adapter/gc-slack-channel-adapter`
+  binary, which `gc import install` (git-only) never ships, so the service
+  failed after every install or pin bump. The command is now the checked-in
+  `adapter/run.sh`, ported from slack-full: it execs an existing binary, or
+  builds one from the colocated sources (atomically, with a toolchain/go.mod
+  check and a HOME-less cache fallback) and execs that. Environment is still
+  inherited from the service, with no env file. Upstream issue #404.
+
 ### Added
 
 - **Socket Mode transport** (`adapter/socketmode.go`), an ingress-free

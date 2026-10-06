@@ -140,8 +140,8 @@ Then in **Event Subscriptions**, set the Request URL to
 `url_verification` challenge, which the adapter answers automatically.
 
 gc supervises the adapter as a `proxy_process` service (named
-`slack-channel`); building the binary is a one-time `go build` in `adapter/`
-(see [Build](#build)). Start your city.
+`slack-channel`); the service command is `adapter/run.sh`, which builds the
+binary from source on first start (see [Build](#build)). Start your city.
 
 ## Usage walkthrough
 
@@ -189,6 +189,13 @@ cd adapter
 go build -o gc-slack-channel-adapter ./...
 go test ./...
 ```
+
+The built binary is git-ignored. The `[[service]]` block runs `adapter/run.sh`,
+which execs the binary when it exists and otherwise builds it from the
+sources next to it first, so a pack pin bump (`gc import install`
+re-materializes the pack from git only) no longer strands the service. The
+first build runs inside gc's readiness window, so expect one or more
+restarts until the Go build cache is warm; a Go toolchain must be installed.
 
 The built binary is git-ignored; the `[[service]]` block runs it in place.
 
