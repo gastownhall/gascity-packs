@@ -455,8 +455,7 @@ type config struct {
 	cityPath string
 	// threadContextCache is the process-singleton cache that
 	// short-circuits repeated thread-context fetches for a given
-	// (channel, thread_ts). Nil-safe: when nil, processSlackEvent
-	// skips the preamble path entirely. Initialized in main(); tests
+	// (channel, thread_ts). Initialized in main(); tests
 	// construct one directly. gc-px8.5.
 	threadContextCache *threadContextCache
 	// slackThreadContextLimit caps how many replies the adapter asks
