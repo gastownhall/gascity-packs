@@ -327,3 +327,16 @@ schema = 1
     commit = "ffcb02933f878c7c9ac2df470338c28a5e5d829d"
     hash = "sha256:432a1f917c400a3497f1be7466e0297d108b5e2174eed4d7ae4a87579e45d2d1"
     description = "First registry release of the Cloudflare session runtime as an RPP v0 pack."
+
+[[pack]]
+  name = "contributing-to-gascity"
+  description = "The external-contributor lifecycle for gastownhall/gascity — write a good issue, find priority work, plan a PR, map its blast radius, and self-review against the codebase audit. Each step produces an artifact you act on; the pack stops before pushing — opening the PR is your call. Self-contained: gas-city's actual standards (the B-rule adoption-review audit, blast-radius dimensions, test tiers) are baked into the skills; no imports."
+  source = "https://github.com/gastownhall/gascity-packs/tree/main/contributing-to-gascity"
+  source_kind = "git"
+
+  [[pack.release]]
+    version = "0.5.0"
+    ref = "main"
+    commit = "510a4e22a34d325063fe24f77038c004221b7e7e"
+    hash = "sha256:e4d85af1e0e202e30785ac33ac12c83f26dba1cc61de22573d3ac5f8ea9e80de"
+    description = "First release under the new name; the pack was renamed from contributing. Carries everything since contributing 0.2.1: the mol-contributing-* formula set, renamed lifecycle skills with an orchestrated umbrella, default-branch resolution from the local ref, and bead commands routed through gc. Imports must switch from //contributing to //contributing-to-gascity."
