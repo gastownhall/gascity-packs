@@ -15,10 +15,10 @@ Schema reference: <https://api.slack.com/reference/manifests>
 - **`features.app_home`** — Messages tab enabled (DM intake), Home tab off.
 - **`features.slash_commands`** — empty list. Slash commands will be
   populated by [`gc slack sync-commands`](../README.md) (gc-cby.2) once
-  that command lands. Until then, slack-full does not expose any
+  that command lands. Until then, the slack-pack does not expose any
   `/gc …` shortcuts in Slack.
 - **`oauth_config.scopes.bot`** — the minimal scope set the live
-  adapter (`slack-full/adapter/main.go`) requires today.
+  adapter (`examples/slack-pack/adapter/main.go`) requires today.
   Each `*:history` scope pairs with the matching `message.*` event
   subscription below — Slack rejects an install whose subscriptions
   exceed its scopes, so the two lists must move together. The
