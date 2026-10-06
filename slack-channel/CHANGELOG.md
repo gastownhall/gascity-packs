@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed after every install or pin bump. The command is now the checked-in
   `adapter/run.sh`, ported from slack-full: it execs an existing binary, or
   builds one from the colocated sources (atomically, with a toolchain/go.mod
-  check and a HOME-less cache fallback) and execs that. Environment is still
+  check, and a HOME-less fallback to per-user `0700` build directories under
+  `$TMPDIR` that it refuses to use if another user owns them or they are
+  symlinks) and execs that. Environment is still
   inherited from the service, with no env file. Upstream issue #404.
 
 ### Added

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 
 import pytest
@@ -155,17 +156,39 @@ def test_inherited_environment_reaches_the_adapter(harness):
     assert "MARKER_VAR=from-service-env" in proc.stdout
 
 
-def test_self_heal_builds_when_home_is_unset(harness):
+def test_self_heal_builds_when_home_is_unset(harness, tmp_path):
     _, adapter, binary_name, run, builds, build_environments = harness
-    proc = run(drop_env=BARE_SUPERVISOR_ENV)
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    proc = run(extra_env={"TMPDIR": str(tmp)}, drop_env=BARE_SUPERVISOR_ENV)
     assert proc.returncode == 0, proc.stderr
     assert "STUB_ADAPTER_RAN" in proc.stdout
     assert len(builds()) == 1, builds()
-    tmp = os.environ.get("TMPDIR", "/tmp").rstrip("/")
+    uid = os.getuid()
+    gocache = tmp / f"{binary_name}-gocache-{uid}"
+    gopath = tmp / f"{binary_name}-gopath-{uid}"
     assert build_environments() == [
-        f"buildenv GOCACHE={tmp}/{binary_name}-gocache GOPATH={tmp}/{binary_name}-gopath"
+        f"buildenv GOCACHE={gocache} GOPATH={gopath}"
     ], build_environments()
+    for build_dir in (gocache, gopath):
+        assert build_dir.is_dir() and not build_dir.is_symlink()
+        assert stat.S_IMODE(build_dir.stat().st_mode) == 0o700
     assert (adapter / binary_name).exists()
+
+
+@pytest.mark.parametrize("kind", ["gocache", "gopath"])
+def test_home_less_build_refuses_a_symlinked_build_dir(harness, tmp_path, kind):
+    _, adapter, binary_name, run, builds, _ = harness
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp / f"{binary_name}-{kind}-{os.getuid()}").symlink_to(elsewhere)
+    proc = run(extra_env={"TMPDIR": str(tmp)}, drop_env=BARE_SUPERVISOR_ENV)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "refusing to build with it" in proc.stderr
+    assert builds() == []
+    assert not (adapter / binary_name).exists()
 
 
 @pytest.mark.parametrize("cache_var", ["XDG_CACHE_HOME", "GOCACHE"])
@@ -174,12 +197,13 @@ def test_gopath_is_defaulted_whenever_home_is_unset(harness, tmp_path, cache_var
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     drop = [v for v in BARE_SUPERVISOR_ENV if v != cache_var]
-    proc = run(extra_env={cache_var: str(cache_dir)}, drop_env=drop)
+    tmp = tmp_path / "tmpdir"
+    tmp.mkdir()
+    proc = run(extra_env={cache_var: str(cache_dir), "TMPDIR": str(tmp)}, drop_env=drop)
     assert proc.returncode == 0, proc.stderr
-    tmp = os.environ.get("TMPDIR", "/tmp").rstrip("/")
     expected_gocache = str(cache_dir) if cache_var == "GOCACHE" else "unset"
     assert build_environments() == [
-        f"buildenv GOCACHE={expected_gocache} GOPATH={tmp}/{binary_name}-gopath"
+        f"buildenv GOCACHE={expected_gocache} GOPATH={tmp}/{binary_name}-gopath-{os.getuid()}"
     ], build_environments()
 
 

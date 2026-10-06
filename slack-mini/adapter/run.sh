@@ -52,13 +52,27 @@ if [[ -n "$need_go" && -n "$have_go" ]] &&
   log "WARNING: $go_bin is $have_go but go.mod needs >= $need_go — Go will try to fetch the required toolchain (needs network and a writable module cache)"
 fi
 
+private_build_dir() {
+  local dir="${TMPDIR:-/tmp}/$1-$(id -u)"
+  mkdir -p -m 700 "$dir" 2>/dev/null || true
+  if [[ -L "$dir" || ! -d "$dir" || ! -O "$dir" ]]; then
+    log "ERROR: $dir is not a directory owned by this user; refusing to build with it"
+    log "manual fix: set HOME, or GOCACHE and GOPATH, in the service environment"
+    return 1
+  fi
+  chmod 700 "$dir"
+  printf '%s\n' "$dir"
+}
+
 if [[ -z "${GOCACHE:-}" && -z "${XDG_CACHE_HOME:-}" && -z "${HOME:-}" ]]; then
-  export GOCACHE="${TMPDIR:-/tmp}/gc-slack-mini-adapter-gocache"
+  GOCACHE="$(private_build_dir gc-slack-mini-adapter-gocache)" || exit 1
+  export GOCACHE
   log "no HOME / XDG_CACHE_HOME / GOCACHE in the environment — building with GOCACHE=$GOCACHE"
 fi
 
 if [[ -z "${GOPATH:-}" && -z "${GOMODCACHE:-}" && -z "${HOME:-}" ]]; then
-  export GOPATH="${TMPDIR:-/tmp}/gc-slack-mini-adapter-gopath"
+  GOPATH="$(private_build_dir gc-slack-mini-adapter-gopath)" || exit 1
+  export GOPATH
   log "no HOME / GOMODCACHE / GOPATH in the environment — building with GOPATH=$GOPATH"
 fi
 
