@@ -16,9 +16,12 @@ change.
 ### Changed
 
 - `pack.toml`: `name` → `contributing-to-gascity`; `version` 0.4.0 → 0.5.0.
-- Registry source → `https://github.com/gastownhall/gascity-packs/tree/main/contributing-to-gascity`.
-- Import-path, directory, and test-command references updated across the pack
-  README and repository catalog.
+- Registry: the `contributing` entry is removed. Its releases point at commits
+  that only have `contributing/`, so they cannot validate against the new path.
+  A follow-up adds a `contributing-to-gascity` entry with release 0.5.0 pinned
+  to the commit that lands this rename.
+- Import-path, directory, and test-command references updated in the pack
+  README and the repository README.
 
 ### Unchanged
 

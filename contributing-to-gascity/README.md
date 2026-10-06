@@ -155,8 +155,12 @@ Import it into your city from this repository:
 gc import add https://github.com/gastownhall/gascity-packs.git//contributing-to-gascity
 ```
 
-That writes the import and pins it in `packs.lock`. The same import by hand in
-`pack.toml`, followed by `gc import install`:
+That writes the import and pins it in `packs.lock`. Without `--version`, `gc`
+resolves the newest repository tag, so this form needs a tag that contains the
+`contributing-to-gascity/` directory. Until one exists, pin a commit on `main`
+with `--version sha:<commit>`.
+
+The same import by hand in `pack.toml`, followed by `gc import install`:
 
 ```toml
 [imports.contributing-to-gascity]
