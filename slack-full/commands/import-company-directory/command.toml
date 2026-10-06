@@ -1,2 +1,2 @@
-description = "Validate and atomically import a company-rooms directory TOML into the slack-pack registry"
+description = "Validate and atomically import a company-rooms directory TOML into the slack-full registry"
 run = "../import-company-directory.sh"

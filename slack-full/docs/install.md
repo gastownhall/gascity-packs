@@ -1,7 +1,7 @@
-# slack-pack OAuth install (gc-cby.9)
+# slack-full OAuth install (gc-cby.9)
 
 The OAuth install path lets a non-developer human in another Slack
-workspace install the slack-pack into a fresh `gc` city without
+workspace install the slack-full into a fresh `gc` city without
 hand-editing the adapter's env file. It replaces the manual web-UI
 copy-paste of the bot token at the end of [`adapter/SETUP.md`](../adapter/SETUP.md).
 

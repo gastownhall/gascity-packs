@@ -1,7 +1,7 @@
-Import a Slack app manifest into the gc city's slack-pack registry.
+Import a Slack app manifest into the gc city's slack-full registry.
 
 Reads the JSON manifest, validates that it declares the bot scopes
-the slack-pack adapter and downstream commands require, and persists
+the slack-full adapter and downstream commands require, and persists
 an app record keyed by (workspace_id, app_id) at
 <cityPath>/.gc/slack/apps.json.
 

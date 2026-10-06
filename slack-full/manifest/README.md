@@ -1,9 +1,9 @@
-# slack-pack manifest
+# slack-full manifest
 
-Canonical Slack app manifest for the slack-pack. `app.json` is the
+Canonical Slack app manifest for slack-full. `app.json` is the
 **source of truth** for the Slack app's display info, OAuth scopes,
 event subscriptions, and (eventually) slash commands. Use it to
-install the slack-pack into a fresh workspace without clicking through
+install slack-full into a fresh workspace without clicking through
 the Slack web UI scope-by-scope.
 
 Schema reference: <https://api.slack.com/reference/manifests>
@@ -101,12 +101,12 @@ the assigned **app id** (`A0…`, found at api.slack.com → your app →
 **Basic Information**) and import the manifest into the gc city:
 
 ```bash
-gc slack import-app examples/slack-pack/manifest/app.json \
+gc slack import-app slack-full/manifest/app.json \
   --workspace-id T0123456 \
   --app-id       A0123456
 ```
 
-This validates the manifest's bot scopes against the set the slack-pack
+This validates the manifest's bot scopes against the set the slack-full
 adapter and downstream commands require, then persists a typed app
 record at `<cityPath>/.gc/slack/apps.json` (composite key
 `(workspace_id, app_id)`). Re-importing the same `(workspace_id,
@@ -122,7 +122,7 @@ read from.
 
 The on-disk shape is described by
 [`schema/apps.schema.json`](../schema/apps.schema.json) — that file is
-the contract between the gc CLI (writer) and the slack-pack adapter
+the contract between the gc CLI (writer) and the slack-full adapter
 (reader).
 
 ## Required secrets after install
@@ -340,9 +340,9 @@ running `sync-commands` propagates them to Slack.
 ## Validating local edits
 
 ```bash
-python3 -c "import json; json.load(open('examples/slack-pack/manifest/app.json'))"
+python3 -c "import json; json.load(open('slack-full/manifest/app.json'))"
 ```
 
-The pytest suite in `examples/slack-pack/tests/test_manifest.py`
+The pytest suite in `slack-full/tests/test_manifest.py`
 asserts the file parses + carries the required top-level keys; run it
-with `pytest examples/slack-pack/tests/test_manifest.py`.
+with `pytest slack-full/tests/test_manifest.py`.

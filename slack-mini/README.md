@@ -66,11 +66,27 @@ text; nothing else.
 
 ### 2. Configure the city (1 min)
 
-Import the pack in your city's `pack.toml`:
+Import the pack into your city:
+
+```sh
+gc import add https://github.com/gastownhall/gascity-packs.git//slack-mini
+```
+
+That writes the import and pins the release in `packs.lock`. The same import
+by hand in `pack.toml`, followed by `gc import install`:
 
 ```toml
 [imports.slack-mini]
-source = "../packs/slack-mini"
+source = "https://github.com/gastownhall/gascity-packs.git//slack-mini"
+```
+
+`gc pack registry show slack-mini` prints the registry entry and its releases.
+To work on the pack from a local checkout, point `source` at the path
+instead:
+
+```toml
+[imports.slack-mini]
+source = "../gascity-packs/slack-mini"
 ```
 
 Provide the adapter's environment (e.g. in your city service env or

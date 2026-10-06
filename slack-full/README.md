@@ -7,7 +7,7 @@ the same primitives can be ported one at a time.
 
 This pack lives at `slack-full/` in the
 [`gastownhall/gascity-packs`](https://github.com/gastownhall/gascity-packs)
-catalog. A city opts in by path-importing its `pack.toml` (see
+catalog. A city opts in by importing it from that repository (see
 "Install" below).
 
 ## Tiering
@@ -247,8 +247,25 @@ which bypasses `/publish` entirely and is unaffected by this guard.
 
 ## Install
 
+Import the pack into your city:
+
+```sh
+gc import add https://github.com/gastownhall/gascity-packs.git//slack-full
+```
+
+That writes the import and pins the release in `packs.lock`. The same import
+by hand in `pack.toml`, followed by `gc import install`:
+
 ```toml
-# city.toml
+[imports.slack-full]
+source = "https://github.com/gastownhall/gascity-packs.git//slack-full"
+```
+
+`gc pack registry show slack-full` prints the registry entry and its releases.
+To work on the pack from a local checkout, point `source` at the path
+instead:
+
+```toml
 [imports.slack-full]
 source = "/path/to/gascity-packs/slack-full"
 ```
