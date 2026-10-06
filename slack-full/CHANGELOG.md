@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read.** The sections that were read are still printed in both cases.
   (`dr-3lhmr`)
 
+- `manifest/app.json` and `manifest/agent-app.json` no longer ship
+  `features.slash_commands: []`, which Slack's manifest validator rejects
+  at import, and `manifest/app.json` now declares the `app_mentions:read`
+  bot scope its `app_mention` subscription requires (#63).
 - `gc slack reply-current` now inherits the thread from the latest
   inbound (gp-i62): a thread-reply inbound's transcript entry carries
   the Slack `thread_ts` in `ReplyToMessageID`, and the reply anchors
