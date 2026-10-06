@@ -3,7 +3,7 @@
 Experimental **0.1.0**, staged on `feat/bb-provider-gascity-1.4`. This pack
 connects unmodified [BB](https://github.com/get-bb/bb) to configured agents in
 **Gas City 1.5** through BB's public provider bridge and GC's HTTP session API.
-It targets **BB 0.43.3**, **SDK 0.4.104**, and **GC 1.5** plus the GC runtime
+It targets **BB 0.43.4**, **SDK 0.5.9**, and **GC 1.5** plus the GC runtime
 corrections on [`fix/claude-runtime-v1.5.0`](https://github.com/gastownhall/gascity/tree/fix/claude-runtime-v1.5.0),
 which are not in the 1.5 release candidate. It is not yet a registry release.
 The branch name predates the move from GC 1.4 to 1.5.
@@ -89,11 +89,13 @@ BB cache. Wait for the ordinary refresh before selecting a new agent there.
 - Gas City **1.5** (`release/v1.5.0`) with the runtime corrections on
   `fix/claude-runtime-v1.5.0`, a running supervisor, and configured agents that
   can create sessions and produce a reliable structured transcript. The plugin
-  refuses supervisors older than 1.5. Limitations below that name GC 1.4 were
-  observed on 1.4 and have not all been re-checked on 1.5.
-- BB **0.43.3**, using `@get-bb/plugin-sdk` **0.4.104**.
-  The plugin declares BB compatibility `>=0.43.3 <0.44` and SDK compatibility
-  `>=0.4.104 <0.5`; the passing live matrix pins the versions above.
+  refuses supervisors older than 1.5 and explicit incomplete or failed supervisor
+  startup, even when the HTTP health endpoint reports `status: ok`. Limitations
+  below that name GC 1.4 were observed on 1.4 and have not all been re-checked on 1.5.
+- BB **0.43.4**, using `@get-bb/plugin-sdk` **0.5.9**.
+  The plugin declares BB compatibility `>=0.43.4 <0.44` and SDK compatibility
+  `>=0.5.9 <0.6`. The historical live matrix below used older BB/SDK versions;
+  current builds and fixture tests do not replace runtime qualification.
 - Node.js **22+**, npm, and the BB CLI.
 - For the initial setup below, the BB server, BB execution host, Gas City, and
   pack checkout are on the same machine and run as the same operator. This

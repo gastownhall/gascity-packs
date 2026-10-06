@@ -61,9 +61,9 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           node --test browser_driver.test.mjs desktop_attach.test.mjs
-      - name: Build every plugin entry with released BB 0.43.3
+      - name: Build every plugin entry with released BB 0.43.4
         run: |
-          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.4
           "$RUNNER_TEMP/bb-release/node_modules/.bin/bb" plugin build bb/assets/plugin
       - name: Build the exact GC 1.5 release candidate
         working-directory: .gc-source
@@ -151,7 +151,7 @@ jobs:
         env:
           RUNTIME: ${{ matrix.runtime }}
         run: |
-          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.4
           if [ "$RUNTIME" = claude ]; then
             npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @anthropic-ai/claude-code@2.1.263
           else
@@ -273,7 +273,7 @@ jobs:
         env:
           RUNTIME: ${{ matrix.runtime }}
         run: |
-          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.3
+          npm install --prefix "$RUNNER_TEMP/bb-release" --no-audit --no-fund bb-app@0.43.4
           if [ "$RUNTIME" = claude ]; then
             npm install --prefix "$RUNNER_TEMP/runtime" --no-audit --no-fund @anthropic-ai/claude-code@2.1.270
           else

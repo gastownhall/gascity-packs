@@ -1,4 +1,4 @@
-"""Load the installed pack through the actual GC 1.5 CLI, without inference."""
+"""Load the installed pack through the actual supported GC CLI, without inference."""
 import json
 import os
 from pathlib import Path
@@ -16,7 +16,7 @@ class PackIntegration(unittest.TestCase):
     def setUpClass(cls):
         cls.gc = os.environ.get("GC_TEST_BIN")
         if not cls.gc:
-            raise unittest.SkipTest("Set GC_TEST_BIN to a Gas City 1.5 executable")
+            raise unittest.SkipTest("Set GC_TEST_BIN to a Gas City 1.5+ executable")
         cls.gc = str(Path(cls.gc).resolve())
         cls.scratch = tempfile.TemporaryDirectory(prefix="bb-pack-gc15-")
         cls.root = Path(cls.scratch.name)
@@ -31,9 +31,9 @@ class PackIntegration(unittest.TestCase):
         cls.scratch.cleanup()
     def run_gc(self, *args):
         return subprocess.run([self.gc, *args], cwd=self.city, env=self.env, text=True, capture_output=True, timeout=30)
-    def test_exact_release_and_lint(self):
+    def test_supported_runtime_and_lint(self):
         version=self.run_gc('version')
-        self.assertRegex(version.stdout, r'^1\.5\.')
+        self.assertRegex(version.stdout, r'^1\.(?:[5-9]|[1-9][0-9]+)\.')
         result=self.run_gc('lint', str(PACK), '--json')
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         self.assertTrue(json.loads(result.stdout)['passed'])
@@ -47,7 +47,7 @@ class PackIntegration(unittest.TestCase):
         result=self.run_gc('bb','bind','--help')
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         self.assertIn('--project',result.stdout)
-    def test_json_contracts_are_discoverable_in_released_gc(self):
+    def test_json_contracts_are_discoverable_in_installed_gc(self):
         for command, field in [('agents', 'agents'), ('status', 'registration')]:
             result = self.run_gc('bb', command, '--json-schema=result')
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)

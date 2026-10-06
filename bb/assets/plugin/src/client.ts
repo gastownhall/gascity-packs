@@ -59,10 +59,12 @@ export class GasCityClient {
   city(city: string, suffix: string) { return `/v0/city/${encodeURIComponent(city)}${suffix}`; }
   session(city: string, id: string, suffix = "") { return this.city(city, `/session/${encodeURIComponent(id)}${suffix}`); }
   async health(): Promise<{ version: string }> {
-    const health = await this.get<{ status: string; version: string }>("/health");
+    const health = await this.get<{ status: string; version: string; startup?: { ready: boolean; phase?: string } }>("/health");
     const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[+-].*)?$/.exec(health.version);
     if (health.status !== "ok" || !match || Number(match[1]) !== 1 || Number(match[2]) < 5)
       throw new Error(`Gas City 1.5+ is required; supervisor reported ${health.version ?? "unknown"}`);
+    if (health.startup && health.startup.ready !== true)
+      throw new Error(`Gas City supervisor is not ready (${health.startup.phase ?? "initializing"}). Check gc supervisor status and logs.`);
     return health;
   }
   async *events(path: string, signal: AbortSignal, resume?: string): AsyncGenerator<SSE> {
