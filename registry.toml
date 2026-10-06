@@ -176,6 +176,13 @@ schema = 1
     hash = "sha256:2d2255e68175b7d464845100654839a0956e8cd6fefa259e85cd03915213186b"
     description = "Ship idempotent reply-current (stops delivered-but-timed-out double-post) and mark pack scripts/tests executable to align release hash with materialized modes."
 
+  [[pack.release]]
+    version = "0.0.4"
+    ref = "main"
+    commit = "ea4066504ef753c0b4e8bcc73aea2d447c964969"
+    hash = "sha256:00d3af738603107cc507136d9ed3cb3f3e88f3f4834e88a98cd5b0564872cbb1"
+    description = "Rolls up main since 0.0.3: company rooms, per-agent and group DMs, delivery that wakes sleeping sessions, a run.sh entrypoint that rebuilds a missing adapter, thread-root context on every threaded reply, app manifests that Slack accepts on import, and gc slack status reporting unreadable sections instead of empty ones."
+
 [[pack]]
   name = "slack-channel"
   description = "Shared Slack channel routing and session identity pack for Gas City."
@@ -196,6 +203,13 @@ schema = 1
     hash = "sha256:e8da9a9dab6e6d3ce8a3cded94104a1c64d88f39130e63b09653ce3e7457dd36"
     description = "Ship idempotent reply-current (stops delivered-but-timed-out double-post) and mark schema test executable to align release hash with materialized modes."
 
+  [[pack.release]]
+    version = "0.1.2"
+    ref = "main"
+    commit = "ea4066504ef753c0b4e8bcc73aea2d447c964969"
+    hash = "sha256:a96786bd538a592dc7eb259adefc2f5d731aafc2724582133bab777a89c00e5b"
+    description = "Socket Mode transport, adapter registration retry during city startup, a checked-in run.sh that rebuilds a missing adapter binary, and install docs for the git import."
+
 [[pack]]
   name = "slack-mini"
   description = "Minimal Slack mention bridge and outbound message pack for Gas City."
@@ -208,6 +222,13 @@ schema = 1
     commit = "788b6e8ec224a8951c728ef6da74dab8bc04d474"
     hash = "sha256:fff2523a9ab32e0812815c8d2addb08e6349d3885052d095bd76600eec87921a"
     description = "Initial Slack mini pack release with canonical content hash."
+
+  [[pack.release]]
+    version = "0.1.1"
+    ref = "main"
+    commit = "ea4066504ef753c0b4e8bcc73aea2d447c964969"
+    hash = "sha256:59996bf0c9dcdedf72a3f058cb13cfb421042fc4099d7beb5d03900523800324"
+    description = "Socket Mode transport for ingress-free installs, a checked-in run.sh that rebuilds a missing adapter binary, and install docs for the git import."
 
 [[pack]]
   name = "pr-pipeline"
