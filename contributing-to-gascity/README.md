@@ -149,11 +149,25 @@ readiness report. **Pushing the branch and opening the PR are your call.**
 
 ## Usage
 
-In your city's `pack.toml`:
+Import it into your city from this repository:
+
+```sh
+gc import add https://github.com/gastownhall/gascity-packs.git//contributing-to-gascity
+```
+
+That writes the import and pins it in `packs.lock`. The same import by hand in
+`pack.toml`, followed by `gc import install`:
 
 ```toml
 [imports.contributing-to-gascity]
-source = "../packs/contributing-to-gascity"   # path; or git URL when published
+source = "https://github.com/gastownhall/gascity-packs.git//contributing-to-gascity"
+```
+
+To work on the pack from a local checkout, point `source` at the path instead:
+
+```toml
+[imports.contributing-to-gascity]
+source = "../gascity-packs/contributing-to-gascity"
 ```
 
 Then the skills load for your coding agent. You can also read them directly from
