@@ -192,12 +192,15 @@ EOF
 )"
 ```
 
-### Mail lifecycle: Read → Process → Archive
+### Mail lifecycle: Read → Resolve → Archive
 
 - `gc mail read <id>` marks as read but keeps the message (you can re-read later)
 - `gc mail peek <id>` views a message without marking it read
 - `gc mail archive <id>` permanently closes the message bead
-- **After processing a message, always archive it** to keep your inbox clean
+- **Archive only once the obligation is resolved, or once it is represented by
+  durable tracked work** — a bead, or a line in your role's standing
+  instructions. Reading is what clears the unread count; archiving is what
+  records that the obligation is discharged. Never archive to clear a count
 - `gc mail reply <id> -s "RE: ..." -m "..."` creates a threaded reply
 
 **Dolt health — your part:**

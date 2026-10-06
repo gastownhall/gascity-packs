@@ -417,11 +417,15 @@ test_witness_handoff_recovery_is_guarded_and_fail_closed() {
         /gc mail send mayor\/ -s "ORPHAN_HANDED_OFF/  { print "mail" }
         /gc session wake "\$REFINERY_TARGET"/         { print "wake" }
         /gc session nudge "\$REFINERY_TARGET"/        { print "nudge" }
-        /git worktree remove <worktree-path> --force/ { print "worktree-remove" }
         /^  else$/                                    { print "else" }
     ' | tr '\n' ' ')
-    [[ "$signature" == "guarded-update delete-source mail wake nudge worktree-remove else " ]] ||
-        fail "Step 3a must check the reassignment's exit status first, then delete the subtree and mail/wake/nudge/clean up in the success arm, and fall through in an else (got: $signature)"
+    [[ "$signature" == "guarded-update delete-source mail wake nudge else " ]] ||
+        fail "Step 3a must check the reassignment's exit status first, then delete the subtree and mail/wake/nudge in the success arm, and fall through in an else (got: $signature)"
+    # A completed handoff is an ordinary refinery handoff: the task artifact
+    # stays in place for the refinery's verified terminal cleanup
+    # (gc gastown task-artifact-cleanup), never a witness force-removal.
+    ! printf '%s\n' "$block" | grep -E 'git worktree remove|rm -rf' >/dev/null ||
+        fail "Step 3a must leave the task artifact for the refinery's terminal cleanup"
 
     # The marker contract spans three formulas: one writer, three clearers.
     # Losing any clearer silently restores the stale-marker over-trigger that

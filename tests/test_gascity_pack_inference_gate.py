@@ -244,7 +244,7 @@ def test_build_gate_env_uses_nightly_ollama_auth_shape(tmp_path) -> None:
 
     assert env["ANTHROPIC_BASE_URL"] == "https://ollama.com"
     assert env["ANTHROPIC_AUTH_TOKEN"] == "ollama-secret"
-    assert env["GC_INFERENCE_EXPECTED_MODEL"] == "kimi-k2.7-code"
+    assert env["GC_INFERENCE_EXPECTED_MODEL"] == "kimi-k3"
     assert env["HOME"] == str(tmp_path / "home")
     assert "ANTHROPIC_API_KEY" not in env
     assert "GC_SESSION" not in env
@@ -308,11 +308,11 @@ def inference_env(**overrides: str) -> dict[str, str]:
         "OLLAMA_API_KEY": "ollama-secret",
         "ANTHROPIC_BASE_URL": "https://works.gascity.com/manifold-api",
         "ANTHROPIC_AUTH_TOKEN": "manifold-secret",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-k2.7-code",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k2.7-code",
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k2.7-code",
-        "CLAUDE_CODE_SUBAGENT_MODEL": "kimi-k2.7-code",
-        "GC_INFERENCE_EXPECTED_MODEL": "kimi-k2.7-code",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-k3",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k3",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k3",
+        "CLAUDE_CODE_SUBAGENT_MODEL": "kimi-k3",
+        "GC_INFERENCE_EXPECTED_MODEL": "kimi-k3",
     }
     env.update(overrides)
     return env
@@ -334,17 +334,17 @@ def test_validate_inference_env_rejects_an_anthropic_model_as_the_expected_model
         CLAUDE_CODE_SUBAGENT_MODEL="claude-fable-5",
     )
 
-    with pytest.raises(gascity_pack_inference_gate.GateError, match="GC_INFERENCE_EXPECTED_MODEL must be kimi-k2.7-code"):
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="GC_INFERENCE_EXPECTED_MODEL must be kimi-k3"):
         gascity_pack_inference_gate.validate_inference_env(env)
 
 
 def test_preflight_inference_model_accepts_the_requested_model_usage(monkeypatch) -> None:
-    expected = "kimi-k2.7-code"
+    expected = "kimi-k3"
     calls: list[tuple[list[str], dict[str, str]]] = []
 
     def fake_run_checked(command, *, env, **_kwargs) -> str:
         calls.append((list(command), dict(env)))
-        return 'notice\n{"type":"result","is_error":false,"modelUsage":{"kimi-k2.7-code[1m]":{"inputTokens":1}}}'
+        return 'notice\n{"type":"result","is_error":false,"modelUsage":{"kimi-k3[1m]":{"inputTokens":1}}}'
 
     monkeypatch.setattr(gascity_pack_inference_gate, "run_checked", fake_run_checked)
 
@@ -365,7 +365,7 @@ def test_preflight_inference_model_rejects_a_successful_fallback_model(monkeypat
     monkeypatch.setattr(gascity_pack_inference_gate, "run_checked", fake_run_checked)
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="reported modelUsage.*claude-fable-5"):
-        gascity_pack_inference_gate.preflight_inference_model("kimi-k2.7-code", env=inference_env())
+        gascity_pack_inference_gate.preflight_inference_model("kimi-k3", env=inference_env())
 
 
 def test_preflight_inference_model_surfaces_a_json_error_from_claude(monkeypatch) -> None:
@@ -379,7 +379,7 @@ def test_preflight_inference_model_surfaces_a_json_error_from_claude(monkeypatch
     monkeypatch.setattr(gascity_pack_inference_gate, "run_checked", fake_run_checked)
 
     with pytest.raises(gascity_pack_inference_gate.GateError, match="rejected model.*gc-models entitlement"):
-        gascity_pack_inference_gate.preflight_inference_model("kimi-k2.7-code", env=inference_env())
+        gascity_pack_inference_gate.preflight_inference_model("kimi-k3", env=inference_env())
 
 
 def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -> None:
@@ -413,7 +413,7 @@ def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -
     assert "GATE_TIMEOUT: ${{ github.event.inputs.timeout || matrix.gate_timeout }}" in workflow
     assert '--timeout "$GATE_TIMEOUT"' in workflow
     assert 'DOLT_VERSION: "2.1.7"' in workflow
-    assert 'BD_VERSION: "v1.1.0"' in workflow
+    assert "BD_VERSION" not in workflow
     assert 'go-version: "1.26.5"' in workflow
     assert "ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api" in workflow
     assert "ANTHROPIC_AUTH_TOKEN: ${{ secrets.MANIFOLD_AUTH_TOKEN }}" in workflow
@@ -465,7 +465,7 @@ def test_dispatch_inference_workflow_is_manual_or_external_only() -> None:
     assert "\n  push:" not in workflow
     assert "runs-on: blacksmith-32vcpu-ubuntu-2404" in workflow
     assert 'DOLT_VERSION: "2.1.7"' in workflow
-    assert 'BD_VERSION: "v1.1.0"' in workflow
+    assert "BD_VERSION" not in workflow
     assert 'go-version: "1.26.5"' in workflow
     assert "include-hidden-files: true" in workflow
     assert "ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api" in workflow
@@ -1204,10 +1204,20 @@ def test_validate_polecat_branch_content_gate_rejects_gate_moved_after_the_push(
         # step-3 push gate and pushes a branch this gate just declared unfit,
         # after the halt has already released the bead.
         pytest.param(
-            "    done\n    gc runtime drain-ack\n    exit 1",
-            "    done\n    gc runtime drain-ack",
+            'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    gc runtime drain-ack\n    exit 1',
+            'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    gc runtime drain-ack',
             "halt exit",
             id="deleted-halt-exit",
+        ),
+        # The halt closes its own step straight after the escalation loop. A
+        # statement wedged between them (an early exit, say) lets the gate halt
+        # without the close, and a close moved ahead of the loop breaks the
+        # same adjacency.
+        pytest.param(
+            "    done\n    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1",
+            "    done\n    true\n    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1",
+            "halt close after escalation",
+            id="statement-between-the-escalation-and-the-close",
         ),
     ],
 )
@@ -1231,15 +1241,16 @@ def test_validate_polecat_branch_content_gate_rejects_deleting_the_gates_own_dra
 
     An unanchored ``gc runtime drain-ack`` fragment is therefore satisfied by
     the auto_push=false halt's own copy, and deleting the branch-content gate's
-    drain-ack left the validator green. The fragment is anchored to the
-    escalation loop's ``done`` instead, which occurs only in this gate.
+    drain-ack left the validator green. The fragment is anchored to this gate's
+    own close instead, whose ``gc.failure_reason="$HALT_REASON"`` occurs only
+    in this gate.
     """
     pack_source = gastown_formulas_copy(tmp_path)
     path = pack_source / "formulas" / "mol-polecat-work.toml"
     text = path.read_text(encoding="utf-8")
-    original = "    done\n    gc runtime drain-ack\n    exit 1"
+    original = 'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    gc runtime drain-ack\n    exit 1'
     assert text.count(original) == 1
-    mutated = text.replace(original, "    done\n    exit 1")
+    mutated = text.replace(original, 'gc.failure_reason="$HALT_REASON" --status=closed || exit 1\n    exit 1')
     path.write_text(mutated, encoding="utf-8")
 
     # The precondition that makes the rejection below meaningful: the bare
@@ -1275,8 +1286,8 @@ def test_polecat_base_ref_contract_allows_prose_mentions_of_the_bare_ref(tmp_pat
     # explain in prose which ref it is refusing to assume.
     pack_source = mutated_gastown_source(
         tmp_path,
-        "**2. Ensure worktree exists.**",
-        "Never assume origin/{{base_branch}} exists.\n\n**2. Ensure worktree exists.**",
+        "**2. Ensure a safe per-bead artifact worktree exists.**",
+        "Never assume origin/{{base_branch}} exists.\n\n**2. Ensure a safe per-bead artifact worktree exists.**",
     )
 
     gascity_pack_inference_gate.validate_polecat_base_ref_contract(pack_source)
@@ -1494,7 +1505,8 @@ def test_gastown_build_workflow_contract_covers_orchestration_roles() -> None:
     assert "0) HALT_REASON=no_commits ;;" in contracts["mol-polecat-work"]
     assert 'git worktree add --detach "$MERGE_WT" "origin/$TARGET"' in contracts["mol-refinery-patrol"]
     assert 'gc bd close "$WORK" --reason "Merged to $TARGET at $MERGED_SHORT"' in contracts["mol-refinery-patrol"]
-    assert "gc bd close $WORK --reason \"Pull request ready: $PR_URL\"" in contracts["mol-refinery-patrol"]
+    assert "gc gastown pr-merge-reconcile record" in contracts["mol-refinery-patrol"]
+    assert "closure happens only in" in contracts["mol-refinery-patrol"]
     assert "FAIL-SAFE: empty liveness map" in contracts["mol-witness-patrol"]
     assert "gc bd create --type=task --labels=warrant" in contracts["mol-deacon-patrol"]
     assert "gc bd dep add" in contracts["mol-idea-to-plan"]
@@ -1866,3 +1878,202 @@ trace:
 
 {body}
 """
+
+
+def fake_gascity_source(root: Path) -> Path:
+    for rel in (("internal", "bootstrap", "packs", "core"), ("examples", "bd")):
+        pack_dir = root.joinpath(*rel)
+        pack_dir.mkdir(parents=True)
+        (pack_dir / "pack.toml").write_text("[pack]\n", encoding="utf-8")
+    return root
+
+
+def test_resolve_gascity_source_root_requires_an_explicit_choice(tmp_path) -> None:
+    for value in (None, "", "  "):
+        with pytest.raises(gascity_pack_inference_gate.GateError, match="--gascity-source-root"):
+            gascity_pack_inference_gate.resolve_gascity_source_root(value)
+
+
+def test_resolve_gascity_source_root_accepts_remote_opt_in() -> None:
+    assert gascity_pack_inference_gate.resolve_gascity_source_root("remote") is None
+    sources = gascity_pack_inference_gate.builtin_pack_sources(None)
+    assert sources["core"] == f"{gascity_pack_inference_gate.GASCITY_REMOTE_SOURCE}//internal/bootstrap/packs/core"
+    assert sources["bd"] == f"{gascity_pack_inference_gate.GASCITY_REMOTE_SOURCE}//examples/bd"
+
+
+def test_resolve_gascity_source_root_rejects_non_gascity_tree(tmp_path) -> None:
+    (tmp_path / "examples" / "bd").mkdir(parents=True)
+    (tmp_path / "examples" / "bd" / "pack.toml").write_text("[pack]\n", encoding="utf-8")
+
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="not a gascity source tree.*packs/core/pack.toml"):
+        gascity_pack_inference_gate.resolve_gascity_source_root(tmp_path)
+
+
+def test_explicit_gascity_source_root_feeds_builtin_imports(tmp_path) -> None:
+    source_root = gascity_pack_inference_gate.resolve_gascity_source_root(fake_gascity_source(tmp_path / "gascity"))
+    pack_source = tmp_path / "repo" / "gascity"
+    roles_source = pack_source / "roles"
+    roles_source.mkdir(parents=True)
+
+    workspace = gascity_pack_inference_gate.write_gate_workspace(
+        tmp_path / "gate",
+        pack_source=pack_source,
+        roles_source=roles_source,
+        gascity_source_root=source_root,
+        city_name="inference-city",
+        rig_name="fixture",
+    )
+
+    pack_toml = (workspace.city_dir / "pack.toml").read_text(encoding="utf-8")
+    assert f'[imports.core]\nsource = "{source_root / "internal" / "bootstrap" / "packs" / "core"}"' in pack_toml
+    assert f'[imports.bd]\nsource = "{source_root / "examples" / "bd"}"' in pack_toml
+
+
+def test_parser_reads_gascity_source_root_from_env(monkeypatch) -> None:
+    monkeypatch.delenv("GASCITY_SOURCE_ROOT", raising=False)
+    monkeypatch.delenv("GASCITY_REPO_ROOT", raising=False)
+    assert gascity_pack_inference_gate.build_parser().parse_args([]).gascity_source_root is None
+
+    monkeypatch.setenv("GASCITY_REPO_ROOT", "/src/repo-root")
+    assert gascity_pack_inference_gate.build_parser().parse_args([]).gascity_source_root == "/src/repo-root"
+    monkeypatch.setenv("GASCITY_SOURCE_ROOT", "/src/source-root")
+    assert gascity_pack_inference_gate.build_parser().parse_args([]).gascity_source_root == "/src/source-root"
+    args = gascity_pack_inference_gate.build_parser().parse_args(["--gascity-source-root", "remote"])
+    assert args.gascity_source_root == "remote"
+
+
+def test_build_gate_env_passes_bd_env_through_and_isolates_dolt_server(tmp_path) -> None:
+    workspace = gate_workspace(tmp_path)
+    workspace.gc_home.mkdir(parents=True)
+    inherited = {
+        "PATH": "/usr/bin",
+        "HOME": str(tmp_path / "home"),
+        "BD_DOLT_SHARED_SERVER": "true",
+        "BD_DOLT_EXAMPLE_SETTING": "kept",
+        "BD_DOLT_EMPTY": "",
+        "BD_ACTOR": "dropped",
+        "NOT_BD_SETTING": "dropped",
+    }
+
+    env = gascity_pack_inference_gate.build_gate_env("/usr/bin/gc", workspace, inherited=inherited)
+    assert env["BD_DOLT_SHARED_SERVER"] == "true"
+    assert env["BD_DOLT_EXAMPLE_SETTING"] == "kept"
+    assert "BD_DOLT_EMPTY" not in env
+    assert "BD_ACTOR" not in env
+    assert "NOT_BD_SETTING" not in env
+
+    del inherited["BD_DOLT_SHARED_SERVER"]
+    env = gascity_pack_inference_gate.build_gate_env("/usr/bin/gc", workspace, inherited=inherited)
+    assert env["BD_DOLT_SHARED_SERVER"] == "false"
+
+
+def test_initialize_rig_git_gives_fixture_a_bare_origin_with_default_branch(tmp_path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is required")
+    rig_dir = tmp_path / "fixture"
+    rig_dir.mkdir()
+    (rig_dir / "README.md").write_text("fixture\n", encoding="utf-8")
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(tmp_path / "home"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+
+    gascity_pack_inference_gate.initialize_rig_git(rig_dir, env=env)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=rig_dir, env=env, text=True, capture_output=True, check=True
+        ).stdout.strip()
+
+    origin = gascity_pack_inference_gate.rig_origin_path(rig_dir)
+    assert git("remote", "get-url", "origin") == str(origin)
+    assert git("symbolic-ref", "refs/remotes/origin/HEAD") == "refs/remotes/origin/main"
+    assert git("rev-parse", "refs/remotes/origin/main") == git("rev-parse", "HEAD")
+    assert git("rev-parse", "--abbrev-ref", "main@{upstream}") == "origin/main"
+    assert not origin.is_relative_to(rig_dir)
+
+
+def test_inference_workflows_install_bd_matching_installed_gc() -> None:
+    # A bd pin independent of the gascity ref drifts whenever gascity bumps
+    # beads, and the gate then refuses to start (gc/bd beads module mismatch).
+    for name in ("supported-pack-nightly.yml", "gascity-pack-inference.yml"):
+        workflow = (gascity_pack_inference_gate.REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        install_gc = workflow.index('go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"')
+        install_bd = workflow.index('scripts/install_bd_matching_gc.sh "$(go env GOPATH)/bin/gc"')
+        run_gate = workflow.index("python3 scripts/gascity_pack_inference_gate.py")
+        assert install_gc < install_bd < run_gate, name
+        assert ".gascity-ci/.github/scripts/install-bd-archive.sh" in workflow[install_bd:run_gate], name
+        assert workflow.count("install-bd-archive.sh") == 1, name
+        assert "--bd-bin" not in workflow, name  # the gate reads GC_BEADS_BIN exported by the install step
+
+
+def test_inference_workflows_pin_gascity_source_root_to_installed_gc() -> None:
+    for name in ("supported-pack-nightly.yml", "gascity-pack-inference.yml"):
+        workflow = (gascity_pack_inference_gate.REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        assert 'go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}"' in workflow, name
+        assert 'go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"' in workflow, name
+        assert 'gascity_commit="$(jq -er .Origin.Hash <<<"$gascity_module")"' in workflow, name
+        # `go mod download -json mod@latest` omits .Origin, so the commit must be
+        # read from a download of the resolved version, not of the raw ref.
+        assert 'go mod download -json "github.com/gastownhall/gascity@${gascity_version}"' in workflow, name
+        assert 'gascity_version="$(jq -er .Version <<<"$gascity_query")"' in workflow, name
+        assert (
+            'git -C "$gascity_src" fetch --quiet --depth 1 https://github.com/gastownhall/gascity.git "$gascity_commit"'
+            in workflow
+        ), name
+        assert 'echo "GASCITY_SOURCE_ROOT=${gascity_src}" >> "$GITHUB_ENV"' in workflow, name
+        assert 'cmd/gc@${GASCITY_REF}"' not in workflow, name
+        # The module cache dir is read-only and mode-stripped; importing core/bd
+        # from it makes every pack script gc execs fail with exit 126.
+        assert "jq -er .Dir" not in workflow, name
+        assert "go env GOMODCACHE" not in workflow, name
+
+
+def write_executable(path: Path, *, executable: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755 if executable else 0o644)
+
+
+def gascity_source_with_scripts(root: Path, *, executable: bool) -> Path:
+    fake_gascity_source(root)
+    core = root / "internal" / "bootstrap" / "packs" / "core"
+    (core / "orders").mkdir()
+    (core / "orders" / "gate-sweep.toml").write_text(
+        '[order]\nexec = "$PACK_DIR/assets/scripts/gate-sweep.sh"\n', encoding="utf-8"
+    )
+    write_executable(core / "assets" / "scripts" / "gate-sweep.sh", executable=executable)
+    write_executable(core / "assets" / "scripts" / "escalate.sh", executable=executable)
+    dolt = root / "examples" / "bd" / "dolt"
+    dolt.mkdir()
+    (dolt / "pack.toml").write_text("[pack]\n", encoding="utf-8")
+    (dolt / "orders").mkdir()
+    (dolt / "orders" / "backup.toml").write_text(
+        '[order]\nexec = "${PACK_DIR}/assets/scripts/backup.sh"\n', encoding="utf-8"
+    )
+    write_executable(dolt / "assets" / "scripts" / "backup.sh", executable=executable)
+    write_executable(dolt / "commands" / "status" / "run.sh", executable=executable)
+    write_executable(root / "examples" / "bd" / "doctor" / "check-bd" / "run.sh", executable=executable)
+    # Sourced helper libraries are not exec'd and may stay 0644.
+    write_executable(dolt / "assets" / "scripts" / "runtime.sh", executable=False)
+    return root
+
+
+def test_resolve_gascity_source_root_accepts_executable_pack_scripts(tmp_path) -> None:
+    root = gascity_source_with_scripts(tmp_path / "gascity", executable=True)
+    assert gascity_pack_inference_gate.resolve_gascity_source_root(root) == root.resolve()
+
+
+def test_resolve_gascity_source_root_rejects_mode_stripped_module_dir(tmp_path) -> None:
+    root = gascity_source_with_scripts(tmp_path / "gascity", executable=False)
+
+    assert [path.relative_to(root) for path in gascity_pack_inference_gate.non_executable_pack_scripts(root)] == [
+        Path("examples/bd/doctor/check-bd/run.sh"),
+        Path("examples/bd/dolt/assets/scripts/backup.sh"),
+        Path("examples/bd/dolt/commands/status/run.sh"),
+        Path("internal/bootstrap/packs/core/assets/scripts/escalate.sh"),
+        Path("internal/bootstrap/packs/core/assets/scripts/gate-sweep.sh"),
+    ]
+    with pytest.raises(gascity_pack_inference_gate.GateError, match="not executable.*exit 126.*git checkout"):
+        gascity_pack_inference_gate.resolve_gascity_source_root(root)

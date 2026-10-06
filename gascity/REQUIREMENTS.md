@@ -202,6 +202,17 @@ for formula checks. Base schemas are expected at stable paths:
 | `gc.build.review.v1` | `gascity/schemas/build/review.v1.yaml` |
 | `gc.build.final-report.v1` | `gascity/schemas/build/final-report.v1.yaml` |
 
+Formula checks owned by this pack use paths relative to the defining formula
+layer, such as `../assets/scripts/checks/build-artifact-valid.sh`. Gas City
+(v1.4.0 and later) resolves those paths at parse time to the absolute script in
+the highest-priority formula layer that ships it, and records that path as
+`gc.check_path` on the check's control bead. They are not launcher- or
+store-relative `.gc/scripts` paths, and a target rig is not required to install
+a copy of the validator. Prompts that ask an agent to self-run a gate's
+validator point at that `gc.check_path` value. Because resolution follows
+formula-layer shadowing, a higher-priority layer that ships a script with the
+same name under `assets/scripts/checks/` replaces this pack's check.
+
 Derived packs may add stricter methodology-specific schemas or extension fields,
 but they must not relax the base schema or replace required base sections,
 fields, statuses, traceability, or coverage.

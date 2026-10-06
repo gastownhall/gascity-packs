@@ -222,7 +222,11 @@ MODE_VAR_DEFAULTS = {
     "github-pr-review": {"interaction_mode": "interactive", "review_mode": "report"},
 }
 
+# Derived packs still use the launcher-installed compatibility path in their
+# explicit step overrides. The base gascity pack owns and resolves its script
+# from the sibling asset tree.
 BUILD_ARTIFACT_CHECK_SCRIPT = ".gc/scripts/checks/build-artifact-valid.sh"
+GASCITY_BUILD_ARTIFACT_CHECK_SCRIPT = "../assets/scripts/checks/build-artifact-valid.sh"
 
 # One produce attempt plus two bounded schema-repair attempts per artifact stage.
 BUILD_ARTIFACT_GATE_MAX_ATTEMPTS = 3
@@ -484,6 +488,17 @@ def methodology_selector_defaults(expected: dict) -> dict[str, str]:
 
 def load_formula(root: pathlib.Path, name: str) -> dict:
     return tomllib.loads((root / "formulas" / f"{name}.formula.toml").read_text(encoding="utf-8"))
+
+
+def _walk_formula_nodes(data: dict):
+    """Yield every step/template node, including nested children and loop bodies."""
+    pending = list(data.get("steps") or []) + list(data.get("template") or [])
+    while pending:
+        node = pending.pop()
+        yield node
+        pending.extend(node.get("children") or [])
+        loop = node.get("loop") or {}
+        pending.extend(loop.get("body") or [])
 
 
 def load_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str) -> dict:
@@ -796,6 +811,32 @@ class FormulaAssetTests(unittest.TestCase):
             prompt = root / "roles" / "agents" / agent_name / "prompt.template.md"
             with self.subTest(agent=agent_name):
                 self.assertEqual(prompt.read_text(encoding="utf-8"), f"{include}\n")
+
+    def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
+        close = text[text.index("## Close") : text.index("## Continue")]
+
+        for required in (
+            "Never merge a pull request yourself unless the bead explicitly",
+            "canonical PR URL",
+            "PR or publish metadata the bead's result contract requests",
+            "If the bead or its formula names a handoff",
+            "never invent a recipient",
+            "do not claim a handoff",
+            "`gc.outcome=fail`",
+            "`gc.failure_class=pr_handoff_failed`",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, close)
+
+        # The fragment is shared by every graph.v2 worker in gascity and the
+        # derived packs. A hard-coded coordinator recipient, or a mail send
+        # chained in front of the close, strands the claimed bead whenever that
+        # recipient does not resolve or the mail store is unavailable.
+        self.assertNotRegex(close, r"gc mail send\s+mayor")
+        self.assertNotRegex(close, r"&&\s*(?:\\\s*)?gc bd close")
+        self.assertNotIn("MERGE REQUEST", close)
 
     def test_city_claim_command_verifies_and_normalizes_claim(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -2138,7 +2179,11 @@ class FormulaAssetTests(unittest.TestCase):
             text = (root / relative_path).read_text(encoding="utf-8")
             for fragment in (
                 "read the launcher rig root from the workflow root bead's `gc.work_dir`",
-                "GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh",
+                # The gate's validator is a pack asset, not a rig-local
+                # .gc/scripts copy: agents run the absolute path gc resolved
+                # onto the ralph control bead.
+                "the script recorded as `gc.check_path` on the validation loop control bead",
+                'GC_BEAD_ID=<claimed-step-id> GC_RIG_ROOT=<launcher-rig-root> "<gc.check_path>"',
                 "fix every reported validation error before setting `gc.outcome=pass`",
             ):
                 with self.subTest(asset=relative_path, fragment=fragment):
@@ -3648,6 +3693,12 @@ class FormulaAssetTests(unittest.TestCase):
 
         close_source = node_description(root, steps["close-source-anchor"])
         for fragment in (
+            "gc.root_bead_id",
+            "gc.source_anchor_id",
+            "DO NOT re-derive",
+            "FALLBACK — only if the root has NO `gc.source_anchor_id`",
+            "gc.synthetic_kind=drain-unit-convoy",
+            "gc.drain_member_id",
             "Read `work_dir` from the source anchor",
             "close only `<source-anchor-id>`",
             "handle both an object and a",
@@ -3662,6 +3713,117 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             with self.subTest(step="close-source-anchor", fragment=fragment):
                 self.assertIn(fragment, close_source)
+
+    def test_pack_close_source_anchor_overrides_read_root_stamped_anchor(self) -> None:
+        gascity_root = pathlib.Path(__file__).resolve().parents[1]
+        pack_root = gascity_root.parent / "superpowers"
+
+        resolved = resolve_formula_from_dirs(
+            [gascity_root / "formulas", pack_root / "formulas"],
+            "superpowers-development",
+        )
+        steps = {step["id"]: step for step in resolved["steps"]}
+        close_source = node_description(pack_root, steps["close-source-anchor"])
+        for fragment in (
+            "gc.root_bead_id",
+            "gc.source_anchor_id",
+            "DO NOT re-derive",
+            "FALLBACK — only if the root has NO `gc.source_anchor_id`",
+            "gc.synthetic_kind=drain-unit-convoy",
+            "gc.drain_member_id",
+            "close only the source anchor with `gc.outcome=pass`",
+        ):
+            with self.subTest(pack="superpowers", fragment=fragment):
+                self.assertIn(fragment, close_source)
+
+    def test_do_work_source_anchor_is_stamped_once_and_read_back(self) -> None:
+        """prepare-worktree is the only resolver; later steps read its stamp.
+
+        Covers the three resolution paths every source-anchor consumer must
+        handle: the stamped id, the unstamped (legacy / shared-drain item)
+        fallback, and the missing-anchor fail-closed path.
+        """
+        gascity_root = pathlib.Path(__file__).resolve().parents[1]
+        repo_root = gascity_root.parent
+
+        def flat(text: str) -> str:
+            return " ".join(text.split())
+
+        do_work = resolve_formula(gascity_root, "do-work")
+        steps = {step["id"]: step for step in do_work["steps"]}
+        prepare = flat(node_description(gascity_root, steps["prepare-worktree"]))
+        implement = flat(node_description(gascity_root, steps["implement"]))
+        close_source = flat(node_description(gascity_root, steps["close-source-anchor"]))
+
+        sp_formulas = [gascity_root / "formulas", repo_root / "superpowers" / "formulas"]
+        sp_closes = {
+            name: flat(
+                node_description(
+                    repo_root / "superpowers",
+                    {s["id"]: s for s in resolve_formula_from_dirs(sp_formulas, name)["steps"]}[
+                        "close-source-anchor"
+                    ],
+                )
+            )
+            for name in ("superpowers-development", "superpowers-development-item")
+        }
+
+        # Stamped path: prepare-worktree writes the stamp, idempotently, and
+        # verifies it; every downstream step reads exactly that id.
+        for fragment in (
+            "gc bd update <root-bead-id> --set-metadata gc.source_anchor_id=<source-anchor-id>",
+            "If the root already has `gc.source_anchor_id` (a retry), it must equal the id resolved above; hard-fail on a mismatch instead of overwriting it",
+            "the root now has `gc.source_anchor_id=<source-anchor-id>` before closing this step",
+        ):
+            with self.subTest(path="stamped", step="prepare-worktree", fragment=fragment):
+                self.assertIn(fragment, prepare)
+        with self.subTest(path="stamped", step="implement"):
+            self.assertIn("If the root has `gc.source_anchor_id`", implement)
+            self.assertIn("use exactly that id and do not re-derive it", implement)
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="stamped", step="close-source-anchor", formula=name):
+                self.assertIn("read that root's `gc.source_anchor_id` metadata", text)
+                self.assertIn("DO NOT re-derive it", text)
+        for rel in (
+            "bmad/assets/workflows/bmad-story-development/implement-story.md",
+            "bmad/assets/workflows/bmad-story-development/apply-story-findings.md",
+            "gstack/assets/workflows/gstack-work/implement.md",
+            "superpowers/assets/workflows/superpowers-development/implement.md",
+        ):
+            with self.subTest(path="stamped", prompt=rel):
+                self.assertIn(
+                    "Resolve the source anchor as the workflow root's stamped `gc.source_anchor_id`",
+                    flat((repo_root / rel).read_text(encoding="utf-8")),
+                )
+
+        # A single-item sling wraps the item in a `gc.synthetic=true` input
+        # convoy; the item, never the wrapper, is the source anchor.
+        for name, text in {"prepare-worktree": prepare, "implement": implement, "do-work close": close_source, **sp_closes}.items():
+            with self.subTest(path="single-item-wrapper", step=name):
+                self.assertIn("`gc.synthetic=true`", text)
+                self.assertIn("gc convoy status <input-convoy-id> --json", text)
+        self.assertIn("Never use the synthetic wrapper convoy id as `<source-anchor-id>`", prepare)
+
+        # Fallback path: unstamped roots (pre-stamp in-flight runs, the shared
+        # drain item lane) derive the anchor with prepare-worktree's rules and
+        # still find a pre-stamp work_dir on the wrapper convoy.
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="fallback", formula=name):
+                self.assertIn("FALLBACK — only if the root has NO `gc.source_anchor_id`", text)
+                self.assertIn("gc.synthetic_kind=drain-unit-convoy", text)
+                self.assertIn("gc.drain_member_id", text)
+                self.assertIn("read `work_dir` from that convoy", text)
+                self.assertIn("still close the member", text)
+        self.assertIn("superpowers-development-item` lane, which has no `prepare-worktree`", sp_closes["superpowers-development-item"])
+        self.assertIn("read `work_dir` from that convoy instead", implement)
+
+        # Missing-anchor / wrong-bead path: fail closed before closing anything.
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="missing-anchor", formula=name):
+                self.assertIn("if it is missing too, fail this step without closing any bead", text)
+                self.assertIn("gc.synthetic=true", text)
+                self.assertRegex(text, r"fail this step without closing any bead (if it does not hold|unless)")
+                self.assertIn("do not close it again", text)
 
     def test_wrapper_formulas_route_role_agents(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -4166,6 +4328,93 @@ description = "Override sink that writes the base triage report contract."
             self.assertNotIn("/data/projects", text)
             self.assertNotIn("gascity-packs-worktrees", text)
 
+    def test_formula_checks_resolve_from_versioned_pack_assets(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        formula_paths = sorted((root / "formulas").glob("*.formula.toml"))
+        referenced_checks: set[pathlib.Path] = set()
+
+        for formula_path in formula_paths:
+            text = formula_path.read_text(encoding="utf-8")
+            with self.subTest(formula=formula_path.name):
+                self.assertNotIn(
+                    '.gc/scripts/checks/',
+                    text,
+                    "pack-owned validators must not depend on launcher-local .gc files",
+                )
+                data = tomllib.loads(text)
+                for node in _walk_formula_nodes(data):
+                    check = (node.get("check") or {}).get("check")
+                    if not check:
+                        continue
+                    path = check.get("path", "")
+                    # gc resolves only the documented "../assets/<rel>" form
+                    # through the formula layers; anything else is looked up
+                    # under the worker/store directory at runtime.
+                    self.assertTrue(
+                        path.startswith("../assets/scripts/checks/"),
+                        f"{formula_path.name}:{node.get('id')} check path {path!r} "
+                        "must be a layer-resolved ../assets/scripts/checks/ path",
+                    )
+                    script = (formula_path.parent / path).resolve()
+                    self.assertTrue(script.is_file(), f"missing pack check asset: {script}")
+                    self.assertTrue(os.access(script, os.X_OK), f"{script} must be executable")
+                    referenced_checks.add(script)
+
+        self.assertTrue(referenced_checks, "expected formulas to reference pack check assets")
+        self.assertEqual(
+            {script.name for script in referenced_checks},
+            {
+                "build-artifact-valid.sh",
+                "design-review-approved.sh",
+                "implementation-review-approved.sh",
+            },
+        )
+
+    def test_other_packs_do_not_shadow_gascity_check_assets(self) -> None:
+        # gc resolves "../assets/scripts/checks/<name>" to the highest-priority
+        # formula layer that ships that file, across every imported pack. A
+        # sibling pack shipping a same-named check silently replaces the
+        # gascity gate whenever its layer sorts above gascity's in a city.
+        # gastown's design-review-approved.sh predates the migration and is a
+        # known collision (different verdict reader); do not add more.
+        known_collisions = {("gastown", "design-review-approved.sh")}
+        root = pathlib.Path(__file__).resolve().parents[1]
+        gascity_checks = {
+            path.name for path in (root / "assets" / "scripts" / "checks").glob("*.sh")
+        }
+        collisions = set()
+        for pack_dir in sorted(root.parent.iterdir()):
+            if pack_dir == root or not (pack_dir / "pack.toml").is_file():
+                continue
+            checks_dir = pack_dir / "assets" / "scripts" / "checks"
+            for script in sorted(checks_dir.glob("*.sh")) if checks_dir.is_dir() else ():
+                if script.name in gascity_checks:
+                    collisions.add((pack_dir.name, script.name))
+        self.assertEqual(collisions, known_collisions)
+
+    def test_pack_prompts_do_not_send_agents_to_launcher_local_checks(self) -> None:
+        # The formulas resolve their gates from this pack's assets, so no rig
+        # carries a .gc/scripts/checks copy any more. A prompt that tells an
+        # agent to run (or install) one sends it to a path that does not exist.
+        root = pathlib.Path(__file__).resolve().parents[1]
+        surfaces = [
+            path
+            for sub_dir in ("assets", "agents", "commands", "roles", "skills", "template-fragments")
+            for path in sorted((root / sub_dir).rglob("*"))
+            if path.is_file() and path.suffix in {".md", ".toml", ".sh", ".py"}
+        ]
+        self.assertTrue(surfaces)
+        for path in surfaces:
+            text = path.read_text(encoding="utf-8")
+            relative = path.relative_to(root)
+            with self.subTest(asset=str(relative)):
+                if path.name == "build-artifact-valid.sh":
+                    # The check keeps its installed-copy rig-root fallback for
+                    # derived packs that still use the launcher-relative path.
+                    continue
+                self.assertNotIn(".gc/scripts/checks", text)
+                self.assertNotIn("cp -R {{pack_root}}/assets/scripts .gc/scripts", text)
+
     def test_producer_stages_gate_artifacts_with_bounded_repair(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
 
@@ -4191,7 +4440,7 @@ description = "Override sink that writes the base triage report contract."
                     step["check"]["check"],
                     {
                         "mode": "exec",
-                        "path": BUILD_ARTIFACT_CHECK_SCRIPT,
+                        "path": GASCITY_BUILD_ARTIFACT_CHECK_SCRIPT,
                         "timeout": "5m",
                     },
                 )
@@ -4204,9 +4453,11 @@ description = "Override sink that writes the base triage report contract."
         bead_id: str,
         extra_env: dict[str, str] | None = None,
         script_root: pathlib.Path | None = None,
+        script: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess:
         root = pathlib.Path(__file__).resolve().parents[1]
-        script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+        if script is None:
+            script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
 
         if script_root is not None:
             installed_check_dir = script_root / ".gc" / "scripts" / "checks"
@@ -4770,6 +5021,200 @@ description = "Override sink that writes the base triage report contract."
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(str(artifact), result.stdout)
+
+    # Controller-run gates. With the formulas resolving their check from pack
+    # assets, the dispatcher executes the script from the pack tree and only
+    # exports GC_STORE_PATH (durable store root) and GC_WORK_DIR (inherited
+    # gc.work_dir) -- no GC_RIG_ROOT, and no installed <rig>/.gc/scripts copy
+    # to derive the rig root from.
+    _CONTROLLER_ENV_CLEARED = {"GC_RIG_ROOT": "", "GC_BEADS_SCOPE_ROOT": "", "GC_DIR": ""}
+
+    def _relative_requirements_beads(self) -> dict[str, str]:
+        control = (
+            '[{"id": "loop", "metadata": {'
+            '"gc.root_bead_id": "root", '
+            '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+            '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+        )
+        root_bead = (
+            '[{"id": "root", "metadata": {'
+            '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+            '}}]'
+        )
+        return {"loop": control, "root": root_bead}
+
+    def _write_requirements(self, root: pathlib.Path, *, valid: bool = True) -> pathlib.Path:
+        artifact = root / ".gc" / "inference-gate" / "requirements.md"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        text = self._valid_requirements_artifact()
+        if not valid:
+            text = text.replace("status: approved", "status: bogus")
+        artifact.write_text(text, encoding="utf-8")
+        return artifact
+
+    def test_build_artifact_check_from_pack_assets_resolves_relative_path_from_store_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = self._write_requirements(rig_root)
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={
+                    **self._CONTROLLER_ENV_CLEARED,
+                    "GC_STORE_PATH": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_prefers_store_path_over_work_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = self._write_requirements(rig_root)
+            per_bead_worktree = tmp / "per-bead-worktree"
+            stale = self._write_requirements(per_bead_worktree, valid=False)
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={
+                    **self._CONTROLLER_ENV_CLEARED,
+                    "GC_STORE_PATH": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+        self.assertNotIn(str(stale), result.stdout + result.stderr)
+
+    def test_build_artifact_check_falls_back_to_work_dir_when_store_lacks_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            store_root = tmp / "city"
+            store_root.mkdir()
+            work_dir = tmp / "rig"
+            artifact = self._write_requirements(work_dir)
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={
+                    **self._CONTROLLER_ENV_CLEARED,
+                    "GC_STORE_PATH": str(store_root),
+                    "GC_WORK_DIR": str(work_dir),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_reports_every_root_it_tried(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            store_root = tmp / "rig"
+            store_root.mkdir()
+            work_dir = tmp / "per-bead-worktree"
+            work_dir.mkdir()
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={
+                    **self._CONTROLLER_ENV_CLEARED,
+                    "GC_STORE_PATH": str(store_root),
+                    "GC_WORK_DIR": str(work_dir),
+                },
+            )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("does not exist", result.stderr)
+        self.assertIn(str(store_root / ".gc" / "inference-gate" / "requirements.md"), result.stderr)
+        self.assertIn(str(work_dir / ".gc" / "inference-gate" / "requirements.md"), result.stderr)
+
+    def test_build_artifact_check_does_not_treat_a_pack_tree_as_an_installed_rig(self) -> None:
+        # A pack checkout can itself contain a .gc directory (a city or rig
+        # rooted at the pack). Only an installed <rig>/.gc/scripts/checks copy
+        # may derive the rig root from its own location.
+        source_root = pathlib.Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            pack = tmp / "gascity"
+            checks = pack / "assets" / "scripts" / "checks"
+            checks.mkdir(parents=True)
+            check = checks / "build-artifact-valid.sh"
+            check.write_text(
+                (source_root / "assets" / "scripts" / "checks" / check.name).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            check.chmod(0o755)
+            validator = source_root / "assets" / "scripts" / "validate_build_artifact.py"
+            (checks.parent / validator.name).write_text(
+                validator.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            for schema in (source_root / "schemas" / "build").glob("*.yaml"):
+                destination = pack / "schemas" / "build" / schema.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(schema.read_text(encoding="utf-8"), encoding="utf-8")
+            # An invalid artifact under the pack tree would be picked by the
+            # old "<script>/../../.. has .gc" heuristic.
+            decoy = self._write_requirements(pack, valid=False)
+            rig_root = tmp / "rig"
+            artifact = self._write_requirements(rig_root)
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={**self._CONTROLLER_ENV_CLEARED, "GC_STORE_PATH": str(rig_root)},
+                script=check,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+        self.assertNotIn(str(decoy), result.stdout + result.stderr)
+
+    def test_build_artifact_check_prefers_its_own_pack_validator_over_work_dir_checkout(self) -> None:
+        # GC_WORK_DIR may be a checkout of this repository on another branch.
+        # A gate resolved from pack assets must validate with the validator and
+        # schemas of the same pack layer, not that checkout's copy.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            artifact = tmp / "requirements.md"
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            work_dir = tmp / "checkout"
+            stale_validator = work_dir / "gascity" / "assets" / "scripts" / "validate_build_artifact.py"
+            stale_validator.parent.mkdir(parents=True)
+            stale_validator.write_text(
+                "import sys\nprint('stale checkout validator', file=sys.stderr)\nsys.exit(1)\n",
+                encoding="utf-8",
+            )
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                f'"gc.build.requirements_path": "{artifact}"'
+                "}}]"
+            )
+
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={"GC_WORK_DIR": str(work_dir)},
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("stale checkout validator", result.stdout + result.stderr)
 
     def test_build_artifact_check_blocks_invalid_artifact_with_repair_context(self) -> None:
         with tempfile.TemporaryDirectory() as artifact_dir:

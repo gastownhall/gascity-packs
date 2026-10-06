@@ -795,12 +795,18 @@ description = """
 Final step. Signal the controller to reclaim this polecat session.
 
 ```bash
+STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".drain"))' >/dev/null || { echo "drain: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed || exit 1
 gc runtime drain-ack
 ```
 
-Run this command and nothing else. The molecule completes when this step
-closes. The downstream loop-close handler picks up the root bead close
-and surfaces `metadata.summary_for_human` to the originating Slack thread
-via the PL.
+Run this block as written and nothing else: it closes this step before the ack,
+because `gc runtime drain-ack` gives back every claim the session still holds
+and would otherwise return this step to the pool to run again. The molecule
+completes when this step closes. The downstream loop-close handler picks up
+the root bead close and surfaces `metadata.summary_for_human` to the
+originating Slack thread via the PL.
 
-**Exit criteria:** drain-ack signaled; molecule complete."""
+**Exit criteria:** this step closed; drain-ack signaled; molecule complete."""
