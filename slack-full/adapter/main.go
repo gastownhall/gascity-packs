@@ -452,11 +452,7 @@ type config struct {
 	// rig's workdir (read from <cityPath>/.beads/routes.jsonl) and
 	// `gc sling` from the city root. Empty when GC_CITY_PATH is unset;
 	// the rig dispatch path surfaces a fix-it ephemeral in that case.
-	cityPath string
-	// threadContextCache is the process-singleton cache that
-	// short-circuits repeated thread-context fetches for a given
-	// (channel, thread_ts). Initialized in main(); tests
-	// construct one directly. gc-px8.5.
+	cityPath           string
 	threadContextCache *threadContextCache
 	// slackThreadContextLimit caps how many replies the adapter asks
 	// for when seeding thread context. Sourced from

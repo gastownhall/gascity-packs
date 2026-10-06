@@ -319,6 +319,20 @@ rejected before any API call rather than quietly sweeping the room's
 publisher. Re-running `bind-room` on an owned room therefore has to
 name the owner again.
 
+### Threaded replies
+
+When a human replies inside a Slack thread, the text the session
+receives starts with a `[slack thread_ts=<root ts>]` line naming the
+thread root. After it comes the earlier thread context: the root
+message on every reply, even when a bot posted it (shown as
+`[bot <bot id>]: ...`), plus any human messages newer than the last
+reply this session already received. Other bot messages in the thread
+are left out. If the adapter cannot fetch the thread from Slack, the
+marker line is followed by `Thread parent could not be fetched.`
+instead of the context. `gc slack reply-current` already answers in
+the thread; with `gc slack publish-to-channel`, pass the root ts as
+`--thread-ts`. Messages outside a thread arrive without the marker.
+
 ## Adapter as a proxy_process service
 
 Phase A of the in-pack adapter (tracked as bd `gc-5rz`) lets gc
