@@ -2,7 +2,7 @@
 
 Experimental **0.1.0**. This candidate targets the project-aware picker branch
 `feat/gc-project-picker` of [BB](https://github.com/get-bb/bb), based on BB
-**0.45.0** with SDK runtime **0.6.26**. The development dependency is the
+**0.45.0** with SDK runtime **0.6.28**. The development dependency is the
 published SDK **0.6.23**; the new experimental picker contract requires the
 custom BB build. It is not yet a registry release. GC calls use the generated
 OpenAPI client pinned in `assets/plugin/contracts/gc/`.
@@ -21,7 +21,7 @@ example suitable for an agent's `prompt.md`.
 
 **Release status:** this project-aware candidate is staged for review in a disposable
 Debian 13 VM. It is not merged, promoted, or published. Its tested combination is
-BB 0.45.0 plus the picker patch, SDK runtime 0.6.26, and a pinned GC
+BB 0.45.0 plus the picker patch, SDK runtime 0.6.28, and a pinned GC
 `1.6.0-dev-jarvis.7` candidate based on `69ce77b8a8e031fc4f6e5e0b9f8f8064294686f2`.
 Codex 0.156.1 uses Luna; Claude Code 2.1.292 uses Haiku, both at medium effort
 with subscription authentication. Qualification is recorded in
@@ -66,8 +66,8 @@ The separate launcher retains its explicit global discovery mode.
   supervisor, and agents with reliable structured history and activity. The
   plugin rejects supervisors older than 1.5 and explicit incomplete or failed
   startup; that minimum version check does not qualify every newer release.
-- The custom BB **0.45.0** picker build with SDK runtime **0.6.26**. Declared
-  ranges are BB `>=0.45.0 <0.46` and SDK `>=0.6.26 <0.7`; compiling uses the
+- The custom BB **0.45.0** picker build with SDK runtime **0.6.28**. Declared
+  ranges are BB `>=0.45.0 <0.46` and SDK `>=0.6.28 <0.7`; compiling uses the
   published SDK 0.6.23 with the candidate picker contract.
 - Node.js **22+**, npm, and the BB CLI.
 - For the initial setup below, the BB server, BB execution host, Gas City, and

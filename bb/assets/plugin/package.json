@@ -6,7 +6,7 @@
   "engines": {
     "node": ">=22",
     "bb": ">=0.45.0 <0.46",
-    "bbPluginSdk": ">=0.6.26 <0.7"
+    "bbPluginSdk": ">=0.6.28 <0.7"
   },
   "bb": {
     "name": "Gas City",
