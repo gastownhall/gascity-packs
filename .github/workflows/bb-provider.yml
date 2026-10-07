@@ -53,6 +53,7 @@ jobs:
         working-directory: bb/assets/plugin
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
+          npm run gc:check
           npm run typecheck
           npm run build
           npm test

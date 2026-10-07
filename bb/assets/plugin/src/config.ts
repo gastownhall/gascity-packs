@@ -10,7 +10,7 @@ export const configSchema = z.object({
   workspacePolicy: z.enum(["conversation", "require-match"]).default("require-match"),
   connections: z.array(z.object({ id: name, url: z.string().url() }).strict()).min(1),
   bindings: z.array(z.object({
-    projectId: name, connection: name, city: name, rig: name,
+    projectId: name, connection: name, city: name, rig: z.string().trim().max(200).default(""),
     paths: z.array(z.string().refine(isAbsolute, "Expected an absolute checkout path")).min(1),
   }).strict()).default([]),
 }).strict().superRefine((value, ctx) => {

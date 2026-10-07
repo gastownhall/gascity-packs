@@ -1,3 +1,4 @@
+import type { ProviderPublicResponse } from "./generated/gc/types.gen.js";
 export const REASONING_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 export type ReasoningLevel = typeof REASONING_LEVELS[number];
 export const reasoningLabel = (level: ReasoningLevel) => ({ none: "Agent default", low: "Low", medium: "Medium", high: "High", xhigh: "Extra High", max: "Max" })[level];
@@ -5,10 +6,7 @@ export const reasoningDescription = (level: ReasoningLevel) => level === "none"
   ? "Use the Gas City agent's configured effort."
   : `Set Gas City effort to ${level} when creating this conversation.`;
 
-export interface PublicProvider {
-  name: string;
-  options_schema?: { key: string; type: string; choices?: { value: string }[] }[];
-}
+export type PublicProvider = Pick<ProviderPublicResponse, "name" | "options_schema">;
 export function providerReasoning(provider?: PublicProvider): ReasoningLevel[] {
   const effort = provider?.options_schema?.find(option => option.key === "effort" && option.type === "select");
   return REASONING_LEVELS.filter(level => level === "none" || effort?.choices?.some(choice => choice.value === level));

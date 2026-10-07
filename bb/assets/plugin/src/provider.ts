@@ -1,3 +1,4 @@
+import type { PendingInteraction, SessionPendingClearedEvent } from "./generated/gc/types.gen.js";
 import { createHash, randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -94,10 +95,10 @@ export class GasCityProvider {
       return { protocolVersion: PROVIDER_BRIDGE_PROTOCOL_VERSION, capabilities: { grammarVersions: [THREAD_DELTA_GRAMMAR_V3, THREAD_DELTA_GRAMMAR_V3], sessionRestore: true, threadArchive: false, threadRename: false, threadGoalClear: false, fork: "none", approvalEnforcedBy: "provider", steerMode: "queue", skills: { configure: false } } };
     }
     if (method === "model/list") {
-      const { cwd } = modelListParamsSchema.parse(input);
-      // BB asks for the New thread catalog before it has an environment/cwd.
-      // Offer configured mapped rigs there; creation validates the actual cwd.
-      const catalog = await discover(await this.loadConfig(), { cwd, includeMappedRigs: !cwd }, this.makeClient);
+      const args = modelListParamsSchema.parse(input);
+      const projectId = z.string().min(1).optional().parse(args.projectId);
+      if ((!projectId && !args.cwd) || projectId === "proj_personal") return { models: [], selectedOnlyModels: [] };
+      const catalog = await discover(await this.loadConfig(), { cwd: args.cwd, projectId }, this.makeClient);
       for (const warning of catalog.warnings) process.stderr.write(`[gas-city] ${warning}\n`);
       return { models: catalog.agents.map(modelRow), selectedOnlyModels: [] };
     }
@@ -131,7 +132,7 @@ export class GasCityProvider {
           receipt = { target, threadId: args.threadId, alias: sessionAlias(args.threadId), reasoningLevel };
           await this.journal.put(args.threadId, receipt);
           const alias = receipt.alias;
-          receipt.create = await client.post(client.city(target.city, "/sessions"), { kind: "agent", name: target.agent, alias, title: `BB · ${target.agent}`, project_id: projectId, ...(reasoningLevel === "none" ? {} : { options: { effort: reasoningLevel } }) });
+          receipt.create = await client.createSession(target.city, { kind: "agent", name: target.agent, alias, title: `BB · ${target.agent}`, project_id: projectId, ...(reasoningLevel === "none" ? {} : { options: { effort: reasoningLevel } }) });
           await this.journal.put(args.threadId, receipt);
         }
         if (!receipt.sessionId) {
@@ -183,7 +184,7 @@ export class GasCityProvider {
         session.controller?.abort();
         await session.completion;
         if (args.intent === "interrupt" && wasBusy) {
-          if (session.delivery !== "none") await session.client.post(session.client.session(session.target.city, session.sessionId, "/stop"));
+          if (session.delivery !== "none") await session.client.stop(session.target.city, session.sessionId);
           const receipt = await this.journal.get(session.threadId);
           // If submit was still in flight, /stop cannot prove it will not arrive
           // later. Preserve that uncertain receipt for explicit recovery.
@@ -221,7 +222,7 @@ export class GasCityProvider {
     const connection = config.connections.find(c => c.id === target.connection);
     if (!connection) throw new Error(`Gas City connection ${target.connection} is no longer configured`);
     const client = this.makeClient(connection);
-    const remote = await client.get(client.session(target.city, sessionId));
+    const remote = await client.getSession(target.city, sessionId);
     if (remote.template !== target.agent || remote.state === "closed") throw new Error("Gas City session template changed or the session is closed");
     let warning: string | undefined, workspaceContext: string | undefined;
     if (!remote.work_dir && config.workspacePolicy === "require-match") throw new Error("Gas City did not report its session working directory; cannot verify workspace ownership before sending a prompt.");
@@ -256,11 +257,10 @@ export class GasCityProvider {
     const combined = AbortSignal.any([signal, deadline]);
     const notReady = () => new Error(`Gas City did not publish a reliable idle transcript within 150 seconds. Open session ${session.sessionId} in Gas City to finish startup or review runtime prompts before sending input; no prompt was sent.`);
     try {
-      const pending = await session.client.get(session.client.session(session.target.city, session.sessionId, "/pending"), combined);
+      const pending = await session.client.pending(session.target.city, session.sessionId, combined);
       if (pending.pending) throw new Error("The Gas City session needs a response; resolve it there before sending a prompt. No prompt was sent.");
       const cursor = snapshot.history.cursor.resume_token;
-      const path = session.client.session(session.target.city, session.sessionId, `/stream?format=structured&after_cursor=${encodeURIComponent(cursor)}`);
-      for await (const event of session.client.events(path, combined, cursor)) {
+      for await (const event of session.client.sessionEvents(session.target.city, session.sessionId, cursor, combined)) {
         signal.throwIfAborted();
         if (deadline.aborted) throw notReady();
         if (event.event === "pending") throw new Error("The Gas City session needs a response; resolve it there before sending a prompt. No prompt was sent.");
@@ -269,7 +269,7 @@ export class GasCityProvider {
           if (ready(frame)) {
             // SSE upserts contain only a suffix. Correlation needs every prior
             // message ID, and the agent may have resumed work since this event.
-            const full = await session.client.get<Frame>(session.client.session(session.target.city, session.sessionId, "/transcript?format=structured"), combined);
+            const full = await session.client.transcript(session.target.city, session.sessionId, combined);
             combined.throwIfAborted();
             if (ready(full)) return full;
           }
@@ -311,7 +311,7 @@ export class GasCityProvider {
         session.warning = undefined;
       }
       acknowledged();
-      let snapshot = await session.client.get<Frame>(session.client.session(session.target.city, session.sessionId, "/transcript?format=structured"), controller.signal);
+      let snapshot = await session.client.transcript(session.target.city, session.sessionId, controller.signal);
       controller.signal.throwIfAborted();
       // A sleeping agent can temporarily expose terminal fallback history while
       // GC wakes its existing runtime. Preserve the prior receipt and wait for
@@ -319,12 +319,21 @@ export class GasCityProvider {
       if (!receipt.turn || snapshot.history?.tail_state?.degraded) snapshot = await this.waitForReady(session, snapshot, controller.signal);
       controller.signal.throwIfAborted();
       const transcript = new Transcript(snapshot, message);
+      // A durable GC bead can survive a native-runtime reset. BB's local timeline
+      // is not evidence that the agent still has the previous conversation.
+      // Verify the last completed history before replacing its delivery receipt.
+      const priorIds = receipt.historyMessageIds ?? receipt.turn?.baselineMessageIds ?? [];
+      let priorIndex = 0;
+      for (const entry of snapshot.structured_messages) {
+        if (entry.id === priorIds[priorIndex]) priorIndex++;
+      }
+      if (priorIndex !== priorIds.length) throw new Error("Gas City no longer exposes the prior conversation history. Inspect the session before continuing; BB will not silently start a new conversation.");
       if (snapshot.history.tail_state.activity !== "idle" || snapshot.history.tail_state.pending_interaction_ids?.length || snapshot.history.tail_state.open_tool_call_ids?.length) throw new Error("The Gas City session is busy or needs a response; resolve it there before starting a BB turn");
       receipt.turn = { clientRequestId: operationId, digest: createHash("sha256").update(prompt).digest("hex"), state: "submitting", messageDigest: createHash("sha256").update(message).digest("hex"), baselineMessageIds: snapshot.structured_messages.map(m => m.id) };
       await this.journal.put(session.threadId, receipt);
       controller.signal.throwIfAborted();
       session.delivery = "sending";
-      const accepted = await session.client.post(session.client.session(session.target.city, session.sessionId, "/submit"), { message, intent: "default" }, controller.signal);
+      const accepted = await session.client.submit(session.target.city, session.sessionId, { message, intent: "default" }, controller.signal);
       receipt.turn = { ...receipt.turn, state: "accepted", request_id: accepted.request_id, event_cursor: accepted.event_cursor };
       await this.journal.put(session.threadId, receipt);
       const result = await session.client.result(session.target.city, accepted, "submit", controller.signal);
@@ -342,22 +351,21 @@ export class GasCityProvider {
     const startup = setTimeout(() => {
       if (transcript.waitingForPrompt) void this.failTurn(session, new Error("Gas City did not publish structured history containing the complete submitted prompt within 150 seconds. Inspect the remote transcript for missing or truncated delivery before recovery."), controller);
     }, 150_000);
-    const path = session.client.session(session.target.city, session.sessionId, `/stream?format=structured&after_cursor=${encodeURIComponent(cursor)}`);
     try {
-      for await (const event of session.client.events(path, controller.signal, cursor)) {
+      for await (const event of session.client.sessionEvents(session.target.city, session.sessionId, cursor, controller.signal)) {
         if (controller.signal.aborted) return;
         if (event.event === "structured") {
           this.emit(session, transcript.apply(JSON.parse(event.data)));
           const outcome = transcript.outcome();
           if (outcome) {
-            const completion = this.completeTurn(session, controller, outcome);
+            const completion = this.completeTurn(session, controller, outcome, transcript.historyMessageIds);
             session.completion = completion;
             try { await completion; }
             finally { if (session.completion === completion) session.completion = undefined; }
             return;
           }
         } else if (event.event === "pending") {
-          const pending = JSON.parse(event.data);
+          const pending = JSON.parse(event.data) as PendingInteraction;
           if (!session.pending.has(pending.request_id)) {
             const interaction = new AbortController();
             session.pending.set(pending.request_id, interaction);
@@ -367,30 +375,33 @@ export class GasCityProvider {
             });
           }
         } else if (event.event === "pending_cleared") {
-          const { request_id } = JSON.parse(event.data);
+          const { request_id } = JSON.parse(event.data) as SessionPendingClearedEvent;
           session.pending.get(request_id)?.abort();
           session.pending.delete(request_id);
         }
       }
     } finally { clearTimeout(startup); }
   }
-  private async completeTurn(session: LiveSession, controller: AbortController, outcome: TurnOutcome) {
+  private async completeTurn(session: LiveSession, controller: AbortController, outcome: TurnOutcome, historyMessageIds: string[]) {
     const receipt = (await this.journal.get(session.threadId))!;
     if (controller !== session.controller || controller.signal.aborted) return;
     const previous = receipt.turn!.state;
+    const previousHistory = receipt.historyMessageIds;
+    receipt.historyMessageIds = historyMessageIds;
     receipt.turn!.state = outcome.status;
     await this.journal.put(session.threadId, receipt);
     if (controller !== session.controller || controller.signal.aborted) {
       // An atomic write cannot be cancelled once started. Restore uncertainty
       // before stop/discard can finish and a later turn can own the receipt.
       receipt.turn!.state = previous;
+      receipt.historyMessageIds = previousHistory;
       await this.journal.put(session.threadId, receipt);
       return;
     }
     this.emit(session, [{ kind: "turn.boundary", ...outcome }]);
     session.busy = false; session.turnOpen = false; controller.abort();
   }
-  private async respond(session: LiveSession, pending: any, signal: AbortSignal) {
+  private async respond(session: LiveSession, pending: PendingInteraction, signal: AbortSignal) {
     if (pending.kind !== "approval" || pending.metadata?.source !== "tmux") throw new Error("This GC interaction type is not mapped in v1; respond in Gas City, then recover the BB thread.");
     const id = `gc-interaction-${randomUUID()}`;
     const response = new Promise<any>((resolve, reject) => {
@@ -404,7 +415,7 @@ export class GasCityProvider {
     const result = await response;
     const action = result?.kind === "user_answer" ? result.answers?.[pending.request_id]?.selected?.[0] : undefined;
     if (!['approve', 'deny'].includes(action)) throw new Error("Gas City approval requires an explicit approve or deny response");
-    if (!signal.aborted) await session.client.post(session.client.session(session.target.city, session.sessionId, "/respond"), { request_id: pending.request_id, action }, signal);
+    if (!signal.aborted) await session.client.respond(session.target.city, session.sessionId, { request_id: pending.request_id, action }, signal);
   }
   private async failTurn(session: LiveSession, error: Error, controller: AbortController) {
     // Transport cleanup and queued timers can outlive an interrupted turn.

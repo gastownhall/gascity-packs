@@ -39,14 +39,14 @@ async function main() {
   }
   const config = await readConfig();
   if (command === "bind") {
-    if (!values.project || !values.city || !values.rig || !values.path?.length) throw new Error("Usage: gc bb bind --project <BB-project-ID> --id local --city <city> --rig <rig> --path <checkout> [--path <worktree>]");
+    if (!values.project || !values.city || !values.path?.length) throw new Error("Usage: gc bb bind --project <BB-project-ID> --id local --city <city> [--rig <rig>] --path <checkout> [--path <worktree>]");
     if (values.project === "proj_personal") throw new Error("BB's personal project stays projectless; bind a standard BB project.");
     const connection = config.connections.find(c => c.id === (values.id ?? "local"));
     if (!connection) throw new Error("Unknown connection; run gc bb connect");
     const client = new GasCityClient(connection);
-    const city = await client.get(client.city(values.city, "/config"));
-    if (!city.rigs?.some((r: any) => r.name === values.rig && !r.suspended)) throw new Error("Rig is absent or suspended in that city");
-    const binding = { projectId: values.project, connection: connection.id, city: values.city, rig: values.rig, paths: await Promise.all(values.path.map(p => realpath(p))) };
+    const city = await client.config(values.city);
+    if (values.rig && !city.rigs?.some((r: any) => r.name === values.rig && !r.suspended)) throw new Error("Rig is absent or suspended in that city");
+    const binding = { projectId: values.project, connection: connection.id, city: values.city, rig: values.rig ?? "", paths: await Promise.all(values.path.map(p => realpath(p))) };
     config.bindings = [...config.bindings.filter(b => b.projectId !== binding.projectId), binding];
     await saveConfig(config);
     console.log(`Mapped ${binding.projectId} to ${binding.city}/${binding.rig} on ${binding.connection}. Allow up to 10 minutes for BB's ordinary catalog refresh. gc bb agents always discovers afresh.`);

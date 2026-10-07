@@ -1,12 +1,11 @@
 # BB provider for Gas City
 
-Experimental **0.1.0**, staged on `feat/bb-provider-gascity-1.4`. This pack
-connects unmodified [BB](https://github.com/get-bb/bb) to configured agents in
-**Gas City 1.5** through BB's public provider bridge and GC's HTTP session API.
-It targets **BB 0.43.4**, **SDK 0.5.9**, and **GC 1.5** plus the GC runtime
-corrections on [`fix/claude-runtime-v1.5.0`](https://github.com/gastownhall/gascity/tree/fix/claude-runtime-v1.5.0),
-which are not in the 1.5 release candidate. It is not yet a registry release.
-The branch name predates the move from GC 1.4 to 1.5.
+Experimental **0.1.0**. This candidate targets the project-aware picker branch
+`feat/gc-project-picker` of [BB](https://github.com/get-bb/bb), based on BB
+**0.45.0** with SDK runtime **0.6.26**. The development dependency is the
+published SDK **0.6.23**; the new experimental picker contract requires the
+custom BB build. It is not yet a registry release. GC calls use the generated
+OpenAPI client pinned in `assets/plugin/contracts/gc/`.
 
 Open **Gas City** in BB’s sidebar. Select a connected host, a standard BB
 project, an exact global or rig agent, and its existing workspace. Gas City
@@ -20,34 +19,16 @@ bead work is assigned; BB preserves that configured behavior. The
 [conversation test role](./tests/conversation-agent-prompt.md) provides a minimal
 example suitable for an agent's `prompt.md`.
 
-**Release status:** the pack remains a release candidate and has **not yet
-passed on GC 1.5**. The last complete pass is historical: all **40 live product
-cases passed on Hillsboro** using Manifold's **Kimi for Coding through Claude
-CLI 2.1.270**, BB 0.43.3, and patched GC `1.4.2-bb-runtime.4f41f8285070`.
-Those artifacts were deployed and verified on Hillsboro on 2026-09-20; since
-2026-09-24 Hillsboro runs an unqualified GC `1.5.0-dev-bb.8ab11cc90` build,
-with global and mapped-rig Kimi roles alongside the existing Claude/Codex roles.
-The [deployment verification](../specs/research/bb-hillsboro-evidence-2026-09-19/deployment-verification.json)
-checks installed artifacts, configuration, catalogs, and service health;
-model inference was tested in isolated state, not user conversations.
-The tested provider source hash is `b17e84154ec3…`; the full pins and
-[passing ledger](../specs/research/bb-hillsboro-evidence-2026-09-19/completion11-summary.json)
-are retained. GC 1.5 qualification, CI, the complete native Claude and Codex
-matrices, macOS qualification, and registry publication remain open gates.
-The [GC 1.5 fix-gap analysis](../specs/research/bb-gc-1.5-fix-gap-2026-09-26.md)
-records which GC corrections 1.5 still needs.
-Drafts: [provider pack #455](https://github.com/gastownhall/gascity-packs/pull/455)
-and [GC runtime corrections #6481](https://github.com/gastownhall/gascity/pull/6481).
-
-Historical GC 1.4.0/1.4.1 compatibility checks remain visible. Live testing found
-that GC 1.4.1 reports Codex transcript activity as `unknown`, so the bridge cannot
-verify completion for that runtime. It fails visibly rather than treating an
-assistant message as proof of completion. Current Claude approval menus also
-require GC fixes: the released runtime's hardcoded denial key can select a
-broader permission mode. Do not use this candidate for Claude approvals on
-unchanged GC 1.4.0–1.4.2. The incorrect denial mapping was reproduced with
-Claude 2.1.270 on GC 1.4.2 without sending a response. See [verification](./docs/verification.md)
-for the tested versions, results, and remaining gates.
+**Release status:** this project-aware candidate is staged for review in a disposable
+Debian 13 VM. It is not merged, promoted, or published. Its tested combination is
+BB 0.45.0 plus the picker patch, SDK runtime 0.6.26, and a pinned GC
+`1.6.0-dev-jarvis.7` candidate based on `69ce77b8a8e031fc4f6e5e0b9f8f8064294686f2`.
+Codex 0.156.1 uses Luna; Claude Code 2.1.292 uses Haiku, both at medium effort
+with subscription authentication. Qualification is recorded in
+[the candidate verification record](./../specs/plans/0001-bb-provider-staging.md).
+No claim here covers unpatched official GC releases, other native CLIs, or macOS
+execution. Earlier Hillsboro/Kimi results in [verification](./docs/verification.md)
+are historical evidence for their own pinned combinations.
 
 ## Capabilities
 
@@ -62,57 +43,42 @@ for the tested versions, results, and remaining gates.
 | Interrupt | Stop the active GC turn |
 | Release / host disconnect | Detach the BB bridge; retain the GC session |
 
-Projectless discovery lists global agents from every running city on the
-configured supervisors. A mapped project lists its city's globals plus that
-rig's agents. Expanded configuration is the catalog source, so scale-zero
-templates remain discoverable. Suspended cities, rigs, and agents are excluded.
-Qualified identities distinguish identically named agents across cities, rigs,
-and connections.
+The native picker uses **Agents** and **Search agents**, with the Gas City fox
+icon. Without a selected project the trigger says **Select an agent**. The **Agents**
+menu explains: "Select a Gas City project (city or rig) to see its agents."
+No agent choices appear until a project is selected.
+Bind a BB city project with `gc bb bind --project <id> --id <id>
+--city <city> --path <checkout>` (omit `--rig`) to list that city's global
+agents. Add `--rig <rig>` for a rig project to list globals plus that rig's
+agents. Project IDs and workspace paths partition BB's model catalog cache,
+so a late response for another project cannot replace the current catalog.
 
-The dedicated launcher refreshes discovery directly on the selected host,
-using the explicit project ID. BB’s native **Model** picker lists global agents
-and configured mapped rigs before a new thread has a workspace. Choose a bound
-project and **Project checkout** for rig work; creation and restore validate the
-binding from the actual execution directory. Once a workspace exists, the
-picker narrows its choices to that scope. Personal threads keep BB's own workspace and
-can converse with global agents in their GC directory. Choose a standard
-project and matching workspace when BB's file and diff views should describe
-the agent's checkout.
-
-BB 0.43.3 caches the native picker's catalog for up to ten minutes. Newly added
-GC agents can appear immediately in the Gas City launcher while the native
-picker still shows its previous list; reloading the plugin does not clear that
-BB cache. Wait for the ordinary refresh before selecting a new agent there.
+Expanded GC configuration is the catalog source, including scale-zero
+agent templates. Suspended cities, rigs, and agents are excluded. Qualified
+identities distinguish agents across cities, rigs, and connections. Creation
+and restore still validate that BB and GC point to the same checkout; catalog
+visibility alone does not authorize launching in a different directory.
+The separate launcher retains its explicit global discovery mode.
 
 ## Prerequisites and topology
 
-- Gas City **1.5** (`release/v1.5.0`) with the runtime corrections on
-  `fix/claude-runtime-v1.5.0`, a running supervisor, and configured agents that
-  can create sessions and produce a reliable structured transcript. The plugin
-  refuses supervisors older than 1.5 and explicit incomplete or failed supervisor
-  startup, even when the HTTP health endpoint reports `status: ok`. Limitations
-  below that name GC 1.4 were observed on 1.4 and have not all been re-checked on 1.5.
-- BB **0.43.4**, using `@get-bb/plugin-sdk` **0.5.9**.
-  The plugin declares BB compatibility `>=0.43.4 <0.44` and SDK compatibility
-  `>=0.5.9 <0.6`. The historical live matrix below used older BB/SDK versions;
-  current builds and fixture tests do not replace runtime qualification.
+- The pinned GC candidate and patch set in the qualification record, a running
+  supervisor, and agents with reliable structured history and activity. The
+  plugin rejects supervisors older than 1.5 and explicit incomplete or failed
+  startup; that minimum version check does not qualify every newer release.
+- The custom BB **0.45.0** picker build with SDK runtime **0.6.26**. Declared
+  ranges are BB `>=0.45.0 <0.46` and SDK `>=0.6.26 <0.7`; compiling uses the
+  published SDK 0.6.23 with the candidate picker contract.
 - Node.js **22+**, npm, and the BB CLI.
 - For the initial setup below, the BB server, BB execution host, Gas City, and
   pack checkout are on the same machine and run as the same operator. This
   also makes working-directory checks meaningful.
 
-Current Claude qualification uses **Claude CLI 2.1.270**. Set
-`session_id_flag = "--session-id"` on its GC provider so GC supplies the native
-conversation identity at launch. Include the actual private transcript roots
-in `[daemon].observe_paths`, retaining existing entries. For native Manifold
-launches, the Claude projects path must match the launch configuration's
-`session_root`; acceptance tests use separate homes and transcript roots.
-
-Hillsboro's complete qualification covers **Kimi for Coding** through the stock
-Claude CLI's Anthropic protocol and GC's Claude adapter. Native Manifold Claude
-has supplemental passing checks, not a complete matrix pass. Native Kimi CLI
-integration and the original Codex acceptance gate remain separate. See
-[verification](./docs/verification.md) for evidence and remaining gates.
+Use the native transcript roots in `[daemon].observe_paths` and keep native
+session identities across resumes. Staging uses separate VM workspaces and
+runtime state. A candidate must never execute on the stable host; only its web
+relay may run there. Credential copies require authorization and removal when
+the disposable VM is torn down.
 
 The adapter runs inside BB's host-side provider infrastructure. There is no
 new HTTP service, ACP server, or background process started by importing this
@@ -341,6 +307,7 @@ when reinstalling; they prevent duplicate submission.
 ```sh
 cd bb/assets/plugin
 npm ci --ignore-scripts
+npm run gc:check
 npm run typecheck
 npm run build
 npm test
@@ -348,6 +315,40 @@ cd ../../..
 GC_TEST_BIN=/absolute/path/to/gc-1.5 \
   python3 -m unittest discover -s bb/tests -v
 ```
+
+### Generated supervisor contract
+
+Every runtime HTTP and SSE operation uses the generated OpenAPI SDK in
+`assets/plugin/src/generated/gc`. The pinned source is
+`assets/plugin/contracts/gc/openapi.json`; its build, source commit and SHA-256
+are recorded in `provenance.json`. This snapshot comes from a tested API surface
+on a development build; it does not certify that build for production or every
+older GC 1.5 deployment. Qualify the exact target supervisor before promotion.
+
+From `bb/assets/plugin`:
+
+```sh
+npm run gc:generate   # regenerate from the checked-in schema
+npm run gc:check      # regenerate into a temporary directory and compare all files
+npm run gc:check-live -- http://127.0.0.1:YOUR_PORT
+```
+
+Generation uses locked `@hey-api/openapi-ts` 0.99.0 and requires Node 22.18 or
+later. Never edit generated files. To update the contract, retrieve
+`/openapi.json` from the candidate supervisor, review the schema diff, replace
+the snapshot, and update its SHA-256, exact build and source commit in
+`provenance.json`. Regenerate, run the checks, then exercise the installed plugin
+against that same supervisor. The live check compares the complete schema,
+ignoring JSON key order; an additive change also requires review. It uses
+`GC_BB_AUTH_TOKEN` when configured and does not print that value.
+
+CI runs the regeneration check and an AST boundary check rejecting handwritten
+GC endpoint literals and subprocess imports in session-facing modules. These
+are regression guards, not a complete security audit. HTTP authentication,
+timeouts and error messages remain in the small client adapter. SSE retains
+its existing parser, cancellation and bounded retry policy; the generated SDK
+owns routes, parameters and wire types for both transports. BB never uses
+native transcripts or tmux as a runtime data source.
 
 The TypeScript tests exercise a GC-shaped HTTP/SSE fixture and BB's
 published bridge conformance runner: scoped discovery, exact identities,

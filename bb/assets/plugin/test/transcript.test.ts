@@ -94,3 +94,43 @@ test("native failure requires full prompt, reliable idle, and closed text and to
     assert.equal(transcript.outcome()?.status, "failed", `${guard} settled`);
   }
 });
+
+
+
+test("Codex delayed usage reset preserves tool output and completes without duplicate replay", () => {
+  const prompt = { id: "prompt", role: "user", status: "final", blocks: [{ type: "text", text: "Run hostname" }] };
+  const call = { id: "call-message", role: "assistant", status: "final", blocks: [{ type: "tool_use", id: "call", name: "exec", input: { cmd: "hostname" } }] };
+  const result = { id: "result", role: "user", status: "final", blocks: [{ type: "tool_result", tool_call_id: "call", content: "bb-provider-stage" }] };
+  const answer = { id: "answer", role: "assistant", status: "final", blocks: [{ type: "text", text: "DONE" }] };
+  const transcript = new Transcript(frame("s1", [prompt]));
+  const opened = transcript.apply(frame("s1", [call, result], "in_turn", "upsert"));
+  assert.equal(opened.filter(d => d.kind === "item.open").length, 1);
+  assert.equal(opened.filter(d => d.kind === "item.close").length, 1);
+  const reset = { ...frame("s1", [prompt, { ...call, model: "gpt-6-luna", usage: { input_tokens: 42, output_tokens: 8 } }, result, answer], "idle", "reset"), reset_reason: "history_rewritten" as const };
+  const deltas = transcript.apply(reset);
+  assert.equal(deltas.filter(d => d.kind === "item.open").length, 1, "only the new answer opens");
+  assert.equal(deltas.filter(d => d.kind === "item.textDelta").map(d => d.text).join(""), "DONE");
+  assert.equal(deltas.filter(d => d.kind === "item.close").length, 0, "completed tool is not replayed");
+  assert.deepEqual(transcript.apply(reset), []);
+  assert.equal(transcript.complete(), true);
+});
+
+test("metadata reset reconciliation rejects changed, missing or reordered conversation content atomically", () => {
+  const prompt = { id: "prompt", role: "user", status: "final", blocks: [{ type: "text", text: "Run hostname" }] };
+  const call = { id: "call-message", role: "assistant", status: "final", blocks: [{ type: "tool_use", id: "call", name: "exec", input: { cmd: "hostname" } }] };
+  const result = { id: "result", role: "user", status: "final", blocks: [{ type: "tool_result", tool_call_id: "call", content: "bb-provider-stage" }] };
+  const variants = [
+    [prompt, { ...call, blocks: [{ ...call.blocks[0], input: { cmd: "other" } }] }, result],
+    [prompt, call, { ...result, blocks: [{ ...result.blocks[0], content: "changed" }] }],
+    [prompt, result],
+    [prompt, result, call],
+    [{ ...prompt, blocks: [{ type: "text", text: "Changed prompt" }] }, call, result],
+    [prompt, { ...call, status: "superseded" }, result],
+  ];
+  for (const messages of variants) {
+    const transcript = new Transcript(frame("s1", [prompt]));
+    transcript.apply(frame("s1", [call, result], "in_turn", "upsert"));
+    assert.throws(() => transcript.apply({ ...frame("s1", messages, "idle", "reset"), reset_reason: "history_rewritten" as const }), /rewrote/);
+    assert.equal(transcript.idle, false, "failed reset must not change completion state");
+  }
+});

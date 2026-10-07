@@ -5,8 +5,8 @@
   "type": "module",
   "engines": {
     "node": ">=22",
-    "bb": ">=0.43.4 <0.44",
-    "bbPluginSdk": ">=0.5.9 <0.6"
+    "bb": ">=0.45.0 <0.46",
+    "bbPluginSdk": ">=0.6.26 <0.7"
   },
   "bb": {
     "name": "Gas City",
@@ -23,18 +23,18 @@
   ],
   "scripts": {
     "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js",
-    "test": "node test/run.mjs",
-    "typecheck": "tsc --noEmit"
+    "test": "node --test scripts/gc-contract.test.mjs && node test/run.mjs",
+    "typecheck": "tsc --noEmit",
+    "gc:generate": "node scripts/gc-contract.mjs generate",
+    "gc:check": "node scripts/gc-contract.mjs check",
+    "gc:check-live": "node scripts/gc-contract.mjs check-live"
   },
   "dependencies": {
     "zod": "4.3.6"
   },
   "devDependencies": {
-    "@types/node": "22.19.7",
-    "esbuild": "0.25.12",
-    "typescript": "5.9.3",
-    "@types/react": "19.2.14",
-    "@get-bb/plugin-sdk": "0.5.9",
+    "@get-bb/plugin-sdk": "0.6.23",
+    "@hey-api/openapi-ts": "0.99.0",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
     "@radix-ui/react-context-menu": "^2.3.3",
@@ -46,10 +46,14 @@
     "@radix-ui/react-popover": "^1.1.19",
     "@radix-ui/react-select": "^2.3.3",
     "@radix-ui/react-tooltip": "^1.2.12",
+    "@types/node": "22.19.7",
+    "@types/react": "19.2.14",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "esbuild": "0.25.12",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
+    "typescript": "5.9.3",
     "vaul": "^1.1.2"
   },
   "peerDependencies": {

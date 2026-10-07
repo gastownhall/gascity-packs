@@ -86,9 +86,9 @@ test("release during preflight prevents a later prompt submission", async () => 
   const f = await fixture(); let reached = false; let release!: () => void;
   const paused = new Promise<void>(resolve => { release = resolve; });
   class PausingClient extends GasCityClient {
-    override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
-      if (path.includes("/transcript?")) { reached = true; await paused; }
-      return super.get<T>(path, signal);
+    override async transcript(city: string, id: string, signal?: AbortSignal) {
+      reached = true; await paused;
+      return super.transcript(city, id, signal);
     }
   }
   const provider = new GasCityProvider({ send: () => {}, config: async () => f.config, client: c => new PausingClient(c), journal: new Journal(join(f.cwd, "journal")) });
@@ -116,13 +116,13 @@ test("a canceled startup cannot accept another turn until interrupt finishes", a
   }
   let waitingForStartup = false, first = true;
   class StartupClient extends GasCityClient {
-    override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
-      if (path.includes("/transcript?") && first) {
+    override async transcript(city: string, id: string, signal?: AbortSignal) {
+      if (first) {
         first = false; waitingForStartup = true;
         await new Promise<void>(resolve => { if (signal!.aborted) resolve(); else signal!.addEventListener("abort", () => resolve(), { once: true }); });
         signal!.throwIfAborted();
       }
-      return super.get<T>(path, signal);
+      return super.transcript(city, id, signal);
     }
   }
   const journal = new PausingJournal(join(f.cwd, "journal"));
@@ -162,18 +162,14 @@ for (const lateFailure of ["observer rejection", "startup timeout"] as const) {
       return setTimer(callback, delay, ...args);
     });
     class DelayedObserverClient extends GasCityClient {
-      override async *events(path: string, signal: AbortSignal, resume?: string) {
-        if (path.includes("/stream?format=structured")) {
-          if (++streamCount === 1) {
-            // A transport may finish cancellation/cleanup after stop returns.
-            await oldGate;
-            if (lateFailure === "observer rejection") throw new Error("old observer cleanup failed");
-          } else {
-            await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
-          }
-          return;
+      override async *sessionEvents(city: string, id: string, resume: string, signal: AbortSignal) {
+        if (++streamCount === 1) {
+          // A transport may finish cancellation/cleanup after stop returns.
+          await oldGate;
+          if (lateFailure === "observer rejection") throw new Error("old observer cleanup failed");
+        } else {
+          await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
         }
-        yield* super.events(path, signal, resume);
       }
     }
     const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new DelayedObserverClient(c), journal });
@@ -217,8 +213,8 @@ for (const settlement of ["completed", "failed"] as const) for (const intent of 
     const journal = new PausingJournal(join(f.cwd, "journal"));
     let injected = false;
     class SettlementClient extends GasCityClient {
-      override async *events(path: string, signal: AbortSignal, cursor?: string) {
-        if (settlement !== "failed" || injected || !path.includes("/session/")) { yield* super.events(path, signal, cursor); return; }
+      override async *sessionEvents(city: string, id: string, cursor: string, signal: AbortSignal) {
+        if (settlement !== "failed" || injected) { yield* super.sessionEvents(city, id, cursor, signal); return; }
         injected = true;
         const remote = [...f.sessions.values()][0];
         remote.messages.push({ id: "native-error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", message: "Native failure" }, blocks: [] });
@@ -349,8 +345,8 @@ test("first input waits through startup and records the full baseline after a su
   const finished = new Promise<void>(resolve => { finish = resolve; });
   let startup = true;
   class StartupClient extends GasCityClient {
-    override async *events(path: string, signal: AbortSignal, resume?: string) {
-      if (path.includes("/stream?format=structured") && startup) {
+    override async *sessionEvents(city: string, id: string, resume: string, signal: AbortSignal) {
+      if (startup) {
         startup = false;
         const session = [...f.sessions.values()][0]!;
         session.messages = [
@@ -363,7 +359,7 @@ test("first input waits through startup and records the full baseline after a su
         yield { event: "structured", data: JSON.stringify(frame(session.id, [session.messages[1]], "idle", "upsert")) };
         return;
       }
-      yield* super.events(path, signal, resume);
+      yield* super.sessionEvents(city, id, resume, signal);
     }
   }
   const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new StartupClient(c), journal });
@@ -396,17 +392,17 @@ for (const outcome of ["ready", "interrupt", "deadline"] as const) {
     let finish!: () => void;
     const resumed = new Promise<void>(resolve => { finish = resolve; });
     class WakeClient extends GasCityClient {
-      override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
-        if (waking && path.includes("/transcript?")) {
+      override async transcript(city: string, id: string, signal?: AbortSignal) {
+        if (waking) {
           const fallback = frame("s1", [], "in_turn");
           fallback.history.transcript_stream_id = "fallback:s1";
           fallback.history.tail_state.degraded = true;
-          return fallback as T;
+          return fallback;
         }
-        return super.get<T>(path, signal);
+        return super.transcript(city, id, signal);
       }
-      override async *events(path: string, signal: AbortSignal, resume?: string) {
-        if (waking && path.includes("/stream?format=structured")) {
+      override async *sessionEvents(city: string, id: string, resume: string, signal: AbortSignal) {
+        if (waking) {
           waiting = true;
           await Promise.race([resumed, new Promise<void>(resolve => {
             if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true });
@@ -417,7 +413,7 @@ for (const outcome of ["ready", "interrupt", "deadline"] as const) {
           yield { event: "structured", data: JSON.stringify(frame(remote.id, remote.messages.slice(-1), "idle", "upsert")) };
           return;
         }
-        yield* super.events(path, signal, resume);
+        yield* super.sessionEvents(city, id, resume, signal);
       }
     }
     const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config,
@@ -466,14 +462,10 @@ for (const failure of ["pending", "deadline", "interrupt", "release"] as const) 
     let reached!: () => void;
     const waiting = new Promise<void>(resolve => { reached = resolve; });
     class StartupClient extends GasCityClient {
-      override async *events(path: string, signal: AbortSignal, resume?: string) {
-        if (path.includes("/stream?format=structured")) {
-          reached();
-          if (failure === "pending") yield { event: "pending", data: JSON.stringify({ request_id: "startup-approval" }) };
-          else await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
-          return;
-        }
-        yield* super.events(path, signal, resume);
+      override async *sessionEvents(city: string, id: string, resume: string, signal: AbortSignal) {
+        reached();
+        if (failure === "pending") yield { event: "pending", data: JSON.stringify({ request_id: "startup-approval" }) };
+        else await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
       }
     }
     const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new StartupClient(c), journal, readinessDeadline: () => deadline.signal });
@@ -565,9 +557,9 @@ test("a lost create response recovers the deterministic alias without creating t
 test("initial transcript failure closes the accepted turn and permits an explicit retry", async () => {
   const f = await fixture(); let fail = true; const messages: any[] = [];
   class PreflightClient extends GasCityClient {
-    override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
-      if (path.includes("/transcript?") && fail) { fail = false; throw new Error("transient preflight failure"); }
-      return super.get<T>(path, signal);
+    override async transcript(city: string, id: string, signal?: AbortSignal) {
+      if (fail) { fail = false; throw new Error("transient preflight failure"); }
+      return super.transcript(city, id, signal);
     }
   }
   const provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, client: c => new PreflightClient(c), journal: new Journal(join(f.cwd, "journal")) });
@@ -589,8 +581,8 @@ test("initial transcript failure closes the accepted turn and permits an explici
 test("unsupported tier and unverifiable working directory fail before prompt submission", async () => {
   const f = await fixture();
   class MissingDirectoryClient extends GasCityClient {
-    override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
-      const result = await super.get<any>(path, signal);
+    override async getSession(city: string, id: string, signal?: AbortSignal) {
+      const result = await super.getSession(city, id, signal);
       if (result.template) delete result.work_dir;
       return result;
     }
@@ -611,8 +603,8 @@ test("a correlated native provider failure settles failed and permits a manual n
   const journal = new Journal(join(f.cwd, "journal"));
   let failedOnce = false;
   class NativeErrorClient extends GasCityClient {
-    override async *events(path: string, signal: AbortSignal, cursor?: string) {
-      if (!path.includes("/session/") || failedOnce) { yield* super.events(path, signal, cursor); return; }
+    override async *sessionEvents(city: string, id: string, cursor: string, signal: AbortSignal) {
+      if (failedOnce) { yield* super.sessionEvents(city, id, cursor, signal); return; }
       failedOnce = true;
       const remote = [...f.sessions.values()][0];
       remote.messages.push({ id: "native-error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", code: "authentication_failed", message: "Provider authentication failed" }, blocks: [{ type: "text", text: "Provider authentication failed" }] });
@@ -637,3 +629,33 @@ test("a correlated native provider failure settles failed and permits a manual n
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 2);
   } finally { await provider.close(); await f.close(); }
 });
+
+for (const lost of [false, true]) {
+  test(`completed conversation ${lost ? "lost history blocks" : "intact history allows"} a resumed follow-up`, async () => {
+    const f = await fixture(); const messages: any[] = [];
+    const journal = new Journal(join(f.cwd, "journal"));
+    let provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal });
+    const execution = { ...options, model: targetId(target) };
+    try {
+      const start: any = await provider.dispatch("thread/start", { threadId: "continuity", cwd: f.cwd, instructionMode: "append", options: execution });
+      await provider.dispatch("turn/start", { threadId: "continuity", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "Remember my first message" }], clientRequestId: "creq_23456789ab", options: execution });
+      await until(() => messages.some(m => m.params?.deltas?.some((d: any) => d.kind === "turn.boundary" && d.status === "completed")));
+      const before = await journal.get("continuity");
+      await provider.close();
+      if (lost) for (const session of f.sessions.values()) session.messages = [];
+      messages.length = 0;
+      provider = new GasCityProvider({ send: m => messages.push(m), config: async () => f.config, journal });
+      await provider.dispatch("thread/resume", { threadId: "continuity", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution });
+      await provider.dispatch("turn/start", { threadId: "continuity", providerThreadId: start.providerThreadId, input: [{ type: "text", text: "Recall my earlier message" }], clientRequestId: "creq_23456789ac", options: execution });
+      await until(() => messages.some(m => m.params?.deltas?.some((d: any) => d.kind === "turn.boundary")));
+      if (lost) {
+        assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1, "must not send a follow-up into a fresh native conversation");
+        assertVisibleProviderFailure(messages, /prior conversation history.*No prompt was sent/s);
+        assert.deepEqual(await journal.get("continuity"), before, "keep the previous receipt for diagnosis");
+      } else {
+        assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 2);
+        assert.ok(messages.some(m => m.params?.deltas?.some((d: any) => d.kind === "turn.boundary" && d.status === "completed")));
+      }
+    } finally { await provider.close(); await f.close(); }
+  });
+}

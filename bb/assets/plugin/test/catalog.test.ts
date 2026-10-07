@@ -44,3 +44,38 @@ test("stale bindings warn without hiding valid projects or losing recreated path
     assert.equal((await bindingFor(config, { cwd: stale.paths[0]! }))?.projectId, "old");
   } finally { await f.close(); }
 });
+
+test("city project exposes only its own globals; rig project adds only that rig", async () => {
+  const f = await fixture();
+  try {
+    const binding = f.config.bindings[0]!;
+    const config = configSchema.parse({ ...f.config, bindings: [...f.config.bindings, { ...binding, projectId: "city-project", rig: "" }] });
+    const city = await discover(config, { projectId: "city-project" });
+    assert.deepEqual(city.agents.map(a => a.agent), ["gc.mayor"]);
+    assert.ok(city.agents.every(a => a.city === binding.city && !a.rig));
+    const rig = await discover(config, { projectId: binding.projectId });
+    assert.deepEqual(rig.agents.map(a => a.agent).sort(), ["gc.mayor", "web/review.reviewer"]);
+  } finally { await f.close(); }
+});
+
+
+test("a selected rig shadows same-named city agents without hiding other globals", async () => {
+  const f = await fixture();
+  try {
+    const { GasCityClient } = await import("../src/client.js");
+    const makeClient = (connection: typeof f.config.connections[number]) => {
+      const client = new GasCityClient(connection);
+      const config = client.config.bind(client);
+      client.config = async (...args) => {
+        const result = await config(...args);
+        result.agents = [...result.agents ?? [], { name: "gc.mayor", dir: "web", provider: "claude", suspended: false }];
+        return result;
+      };
+      return client;
+    };
+    const rig = await discover(f.config, { projectId: "project-web" }, makeClient);
+    assert.deepEqual(rig.agents.map(a => a.agent).sort(), ["web/gc.mayor", "web/review.reviewer"]);
+    const city = await discover(f.config, { projectId: null }, makeClient);
+    assert.ok(city.agents.some(a => a.agent === "gc.mayor"));
+  } finally { await f.close(); }
+});

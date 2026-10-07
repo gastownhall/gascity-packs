@@ -6,11 +6,12 @@ import { Journal } from "../src/journal.js";
 import { targetId } from "../src/catalog.js";
 import { fixture, options } from "./fixture.js";
 
-test("native New thread lists mapped rigs before BB has provisioned its cwd", async () => {
+test("native New thread requires a project and filters before BB provisions its cwd", async () => {
   const f = await fixture();
   const provider = new GasCityProvider({ send: () => {}, config: async () => f.config, journal: new Journal(join(f.cwd, "journal")) });
   try {
-    const catalog: any = await provider.dispatch("model/list", {});
+    assert.deepEqual(await provider.dispatch("model/list", {}), { models: [], selectedOnlyModels: [] });
+    const catalog: any = await provider.dispatch("model/list", { projectId: "project-web" });
     const ids = catalog.models.map((row: any) => row.id);
     const target = { v: 1 as const, connection: "local", city: "alpha", agent: "web/review.reviewer" };
     assert.ok(ids.includes(targetId(target)), "Mapped rig must be selectable before a native thread exists");

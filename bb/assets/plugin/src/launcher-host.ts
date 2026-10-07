@@ -1,3 +1,4 @@
+import type { ConfigResponse } from "./generated/gc/types.gen.js";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { readConfig, type Config } from "./config.js";
@@ -13,18 +14,18 @@ export function createLauncherHostHandlers(loadConfig: () => Promise<Config> = r
     const config = await loadConfig();
     const found = await discover(config, input, connection => new GasCityClient(connection, (url, init) => fetch(url, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, context.signal]) : context.signal })));
     const result: LaunchCatalog = { agents: [], warnings: found.warnings, workspacePolicy: config.workspacePolicy };
-    const cities = new Map<string, { path: string; config: any }>();
+    const cities = new Map<string, { path: string; config: ConfigResponse }>();
     for (const agent of found.agents) {
       context.signal.throwIfAborted();
       const key = JSON.stringify([agent.connection, agent.city]);
       let city = cities.get(key);
       if (!city) {
         const client = new GasCityClient(config.connections.find(c => c.id === agent.connection)!);
-        const rows = await client.get<{ items: { name: string; path?: string }[] }>("/v0/cities", context.signal);
-        city = { path: rows.items.find(c => c.name === agent.city)?.path ?? "", config: await client.get(client.city(agent.city, "/config"), context.signal) };
+        const rows = await client.cities(context.signal);
+        city = { path: (rows.items ?? []).find(c => c.name === agent.city)?.path ?? "", config: await client.config(agent.city, context.signal) };
         cities.set(key, city);
       }
-      const rigPath = city.config.rigs?.find((r: any) => r.name === agent.rig)?.path;
+      const rigPath = city.config.rigs?.find(r => r.name === agent.rig)?.path;
       let workspacePath: string | null = null, unavailableReason: string | null = null;
       try {
         // GC 1.4 expanded config omits effective work_dir. This is a suggestion;

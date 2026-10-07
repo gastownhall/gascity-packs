@@ -7,7 +7,7 @@ import type { Config } from "../src/config.js";
 import type { Frame } from "../src/transcript.js";
 
 export const options = { permissionMode: "full", permissionScope: "full", approvalReviewer: null, permissionEscalation: null, reasoningLevel: "none", serviceTier: "default" } as const;
-export function frame(id: string, messages: any[] = [], activity = "idle", operation = "snapshot"): Frame {
+export function frame(id: string, messages: any[] = [], activity = "idle", operation: Frame["operation"] = "snapshot"): Frame {
   return { schema_version: "session.structured.v1", operation, structured_messages: messages,
     history: { transcript_stream_id: `stream-${id}`, generation: { id: "g1" }, cursor: { resume_token: `cursor-${id}-${messages.length}` }, tail_state: { activity } } };
 }

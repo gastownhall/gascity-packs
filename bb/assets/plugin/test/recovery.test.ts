@@ -12,9 +12,9 @@ const target = { v: 1 as const, connection: "local", city: "alpha", agent: "gc.m
 test("lost submit acceptance can be reconciled using inspected request evidence without resending", async () => {
   const f = await fixture(); const journal = new Journal(join(f.cwd, "journal")); const client = new GasCityClient(f.config.connections[0]!);
   try {
-    const create = await client.post(client.city("alpha", "/sessions"), { kind: "agent", name: target.agent, alias: "bb-evidence" });
+    const create = await client.createSession("alpha", { kind: "agent", name: target.agent, alias: "bb-evidence" });
     const created = await client.result("alpha", create, "create");
-    const accepted = await client.post(client.session("alpha", created.session.id, "/submit"), { message: "Hello" });
+    const accepted = await client.submit("alpha", created.session.id, { message: "Hello" });
     await journal.put("lost", { target, sessionId: created.session.id, turn: { clientRequestId: "creq_23456789ab", digest: createHash("sha256").update("Hello").digest("hex"), state: "submitting", baselineMessageIds: [], messageDigest: createHash("sha256").update("Hello").digest("hex") } });
     await assert.rejects(recoverThread(f.config, journal, "lost"), /response was lost/);
     const recovered = await recoverThread(f.config, journal, "lost", { requestId: accepted.request_id, eventCursor: accepted.event_cursor });
@@ -28,7 +28,7 @@ test("recovery waits for the exact async request before considering an idle tran
   const f = await fixture(); const journal = new Journal(join(f.cwd, "journal"));
   const client = new GasCityClient(f.config.connections[0]!);
   try {
-    const create = await client.post(client.city("alpha", "/sessions"), { kind: "agent", name: target.agent, alias: "bb-recovery" });
+    const create = await client.createSession("alpha", { kind: "agent", name: target.agent, alias: "bb-recovery" });
     const created = await client.result("alpha", create, "create");
     await journal.put("recovery", { target, sessionId: created.session.id, turn: { clientRequestId: "creq_23456789ab", digest: "digest", state: "accepted", request_id: "not-yet-delivered", event_cursor: "1" } });
     await assert.rejects(recoverThread(f.config, journal, "recovery", { signal: AbortSignal.timeout(40) }), /not confirmed|abort/i);
@@ -41,9 +41,9 @@ test("recovery waits for the exact async request before considering an idle tran
 test("a confirmed delivery cannot recover an old idle snapshot before the prompt is consumed", async () => {
   const f = await fixture(); const journal = new Journal(join(f.cwd, "journal")); const client = new GasCityClient(f.config.connections[0]!);
   try {
-    const create = await client.post(client.city("alpha", "/sessions"), { kind: "agent", name: target.agent, alias: "bb-delayed" });
+    const create = await client.createSession("alpha", { kind: "agent", name: target.agent, alias: "bb-delayed" });
     const created = await client.result("alpha", create, "create");
-    const accepted = await client.post(client.session("alpha", created.session.id, "/submit"), { message: "Hello" });
+    const accepted = await client.submit("alpha", created.session.id, { message: "Hello" });
     const remote = f.sessions.get(created.session.id); const finished = [...remote.messages]; remote.messages = [];
     await journal.put("delayed", { target, sessionId: created.session.id, turn: { clientRequestId: "creq_23456789ab", digest: createHash("sha256").update("Hello").digest("hex"), state: "accepted", baselineMessageIds: [], messageDigest: createHash("sha256").update("Hello").digest("hex"), ...accepted } });
     await assert.rejects(recoverThread(f.config, journal, "delayed"), /prompt.*history|history.*prompt/i);
@@ -57,9 +57,9 @@ test("a confirmed delivery cannot recover an old idle snapshot before the prompt
 test("reviewed recovery settles a correlated native failure without mistaking planning for success", async () => {
   const f = await fixture(); const journal = new Journal(join(f.cwd, "journal")); const client = new GasCityClient(f.config.connections[0]!);
   try {
-    const create = await client.post(client.city("alpha", "/sessions"), { kind: "agent", name: target.agent, alias: "bb-native-error" });
+    const create = await client.createSession("alpha", { kind: "agent", name: target.agent, alias: "bb-native-error" });
     const created = await client.result("alpha", create, "create");
-    const accepted = await client.post(client.session("alpha", created.session.id, "/submit"), { message: "Hello" });
+    const accepted = await client.submit("alpha", created.session.id, { message: "Hello" });
     const remote = f.sessions.get(created.session.id);
     remote.messages.push({ id: "error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", message: "Provider failed" }, blocks: [{ type: "text", text: "Provider failed" }] });
     await journal.put("native-error", { target, sessionId: created.session.id, turn: { clientRequestId: "creq_23456789ab", digest: "digest", state: "accepted", baselineMessageIds: [], messageDigest: createHash("sha256").update("Hello").digest("hex"), ...accepted } });
@@ -74,9 +74,9 @@ test("reviewed recovery settles a correlated native failure without mistaking pl
 test("recovery leaves unfinished native outcomes uncertain and ignores baseline errors", async () => {
   const f = await fixture(); const journal = new Journal(join(f.cwd, "journal")); const client = new GasCityClient(f.config.connections[0]!);
   try {
-    const create = await client.post(client.city("alpha", "/sessions"), { kind: "agent", name: target.agent, alias: "bb-recovery-guards" });
+    const create = await client.createSession("alpha", { kind: "agent", name: target.agent, alias: "bb-recovery-guards" });
     const created = await client.result("alpha", create, "create");
-    const accepted = await client.post(client.session("alpha", created.session.id, "/submit"), { message: "Hello" });
+    const accepted = await client.submit("alpha", created.session.id, { message: "Hello" });
     const remote = f.sessions.get(created.session.id);
     const [prompt, answer] = remote.messages;
     const error = { id: "error", role: "system", status: "final", system_event: { kind: "error", category: "provider_error", message: "Native failure" }, blocks: [] };
@@ -101,3 +101,24 @@ test("recovery leaves unfinished native outcomes uncertain and ignores baseline 
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
   } finally { await f.close(); }
 });
+
+for (const variant of ["exact", "wrong-id", "extra-content", "changed-whitespace", "non-claude"]) {
+  test(`Claude pasted-content recovery preserves exact payload: ${variant}`, async () => {
+    const f = await fixture(); const journal = new Journal(join(f.cwd, "journal")); const client = new GasCityClient(f.config.connections[0]!);
+    try {
+      const prompt = "first line\n  second line\n";
+      const create = await client.createSession("alpha", { kind: "agent", name: target.agent, alias: "bb-pasted" });
+      const created = await client.result("alpha", create, "create");
+      const accepted = await client.submit("alpha", created.session.id, { message: prompt });
+      const user = f.sessions.get(created.session.id).messages[0];
+      user.provider = variant === "non-claude" ? "codex" : "claude";
+      const payload = variant === "changed-whitespace" ? prompt.trim() : prompt;
+      user.user_prompt.text = `<pasted_content id="52aa">\n${payload}\n</pasted_content id="${variant === "wrong-id" ? "2585" : "52aa"}">` + (variant === "extra-content" ? "\nother instruction" : "");
+      user.blocks = [{ type: "text", text: user.user_prompt.text }];
+      await journal.put("pasted", { target, sessionId: created.session.id, turn: { clientRequestId: "creq_23456789ab", digest: "digest", state: "accepted", ...accepted, baselineMessageIds: [], messageDigest: createHash("sha256").update(prompt).digest("hex") } });
+      if (variant === "exact") assert.equal((await recoverThread(f.config, journal, "pasted")).turn?.state, "completed");
+      else { await assert.rejects(recoverThread(f.config, journal, "pasted"), /prompt.*history/); assert.equal((await journal.get("pasted"))?.turn?.state, "accepted"); }
+      assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
+    } finally { await f.close(); }
+  });
+}

@@ -72,8 +72,8 @@ test("personal startup without a GC directory blocks, then explicit retry reuses
   const f = await fixture(); const bbCwd = join(f.cwd, "bb-personal-workspace"); await mkdir(bbCwd);
   let reportDirectory = false;
   class DirectoryClient extends GasCityClient {
-    override async get<T = any>(path: string, signal?: AbortSignal): Promise<T> {
-      const result = await super.get<any>(path, signal);
+    override async getSession(city: string, id: string, signal?: AbortSignal) {
+      const result = await super.getSession(city, id, signal);
       if (result.template && !reportDirectory) delete result.work_dir;
       return result;
     }

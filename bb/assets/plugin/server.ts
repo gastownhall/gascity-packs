@@ -2,6 +2,8 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { registerLauncher } from "./src/launcher-server.js";
 import { REASONING_LEVELS, reasoningLabel, reasoningDescription } from "./src/reasoning.js";
 
+const agentCatalog = { scope: "workspace" as const, fallback: [], experimental_picker: { label: "Agents", selectPlaceholder: "Select an agent", projectRequiredMessage: "Select a Gas City project (city or rig) to see its agents.", searchPlaceholder: "Search agents", requiresProject: true } };
+
 export default function plugin(bb: BbPluginApi) {
   registerLauncher(bb);
   bb.providers.register({
@@ -18,7 +20,7 @@ export default function plugin(bb: BbPluginApi) {
       supportsThreadArchive: false, supportsThreadRename: false, supportsServiceTier: false,
     },
     reasoningLevels: REASONING_LEVELS.map(id => ({ id, label: reasoningLabel(id), description: reasoningDescription(id) })),
-    composerActions: [], models: { scope: "workspace", fallback: [] },
+    composerActions: [], models: agentCatalog,
     env: { passthrough: ["GC_BB_CONFIG", "GC_BB_AUTH_TOKEN", "XDG_CONFIG_HOME", "XDG_STATE_HOME"] },
     deriveProviderOptions(context) {
       return { projectId: context.projectId, bbThreadId: context.threadId };

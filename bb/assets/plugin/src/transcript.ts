@@ -1,13 +1,23 @@
+import { isDeepStrictEqual } from "node:util";
 import type { ThreadDelta, DeltaItemShape } from "@get-bb/plugin-sdk/provider-bridge";
 
-export interface Block { type: string; text?: string; thinking?: string; id?: string; tool_call_id?: string; name?: string; input?: unknown; content?: string; is_error?: boolean; structured?: unknown }
-export interface Message { id: string; role: string; status: string; blocks: Block[]; system_event?: { kind: string; category?: string; code?: string; message?: string }; user_prompt?: { text?: string } }
-export interface Frame {
-  schema_version: string;
-  operation?: string;
-  structured_messages: Message[];
-  history: { transcript_stream_id: string; generation: { id: string }; cursor: { resume_token: string }; tail_state: { activity: string; open_tool_call_ids?: string[]; pending_interaction_ids?: string[]; degraded?: boolean } };
+import type { SessionStructuredBlock, SessionStructuredMessage, SessionStreamStructuredMessageEvent, SessionStructuredHistory } from "./generated/gc/types.gen.js";
+export type Block = SessionStructuredBlock;
+export type Message = SessionStructuredMessage;
+// The projection consumes only these fields from both snapshots and upserts.
+export type Frame = Pick<SessionStreamStructuredMessageEvent, "schema_version" | "operation" | "reset_reason" | "structured_messages"> & {
+  history: Pick<SessionStructuredHistory, "transcript_stream_id" | "generation" | "cursor" | "tail_state">;
+};
+// Claude may record bracketed terminal input in an identified paste envelope.
+// Strip only that complete, matching envelope; payload whitespace is significant.
+export function userPromptTexts(message: Message): string[] {
+  if (message.role !== "user") return [];
+  const text = message.user_prompt?.text ?? message.blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n");
+  if (message.provider !== "claude") return [text];
+  const envelope = /^<pasted_content( id="[^"\r\n]+")?>\n([\s\S]*)\n<\/pasted_content\1>$/.exec(text);
+  return envelope ? [text, envelope[2]!] : [text];
 }
+
 const presentation = (label: string) => ({ label: { pending: label, completed: label }, icon: { glyph: "Bot" } });
 
 export type TurnOutcome = { status: "completed" } | { status: "failed"; error: { message: string } };
@@ -31,6 +41,7 @@ export function latestTurnOutcome(messages: Iterable<Message>): TurnOutcome | un
 
 export class Transcript {
   private messages = new Map<string, Message>();
+  private observed = new Map<string, Message>();
   private text = new Map<string, { text: string; closed: boolean }>();
   private tools = new Map<string, { name: string; input: unknown; closed: boolean }>();
   private base = new Set<string>();
@@ -42,12 +53,28 @@ export class Transcript {
     this.assertFrame(snapshot, allowMissingHistory);
     if (allowMissingHistory) return;
     this.stream = snapshot.history.transcript_stream_id;
-    for (const m of snapshot.structured_messages) this.base.add(m.id);
+    for (const m of snapshot.structured_messages) { this.base.add(m.id); this.observed.set(m.id, m); }
   }
+  get historyMessageIds() { return [...this.observed.keys()]; }
   get waitingForPrompt() { return this.bootstrapPrompt !== undefined; }
   private assertFrame(frame: Frame, allowMissingHistory = false) {
     if (frame.schema_version !== "session.structured.v1" || !frame.history || !Array.isArray(frame.structured_messages)) throw new Error("Gas City did not return its structured transcript contract");
     if (frame.history.tail_state.degraded && !allowMissingHistory) throw new Error("Gas City has no reliable structured transcript for this runtime; inspect the session in Gas City before retrying.");
+  }
+  private metadataOnlyReset(frame: Frame): boolean {
+    if (frame.reset_reason !== "history_rewritten") return false;
+    // Codex reports usage after tool results, enriching an older assistant
+    // entry. GC correctly sends a full reset. Accept it only when every known
+    // entry remains in order and unchanged apart from model/usage metadata.
+    const content = (message: Message) => {
+      if (message.role !== "assistant" && message.role !== "unknown") return message;
+      const { model: _model, usage: _usage, ...rest } = message;
+      return rest;
+    };
+    return [...this.observed.values()].every((previous, index) => {
+      const current = frame.structured_messages[index];
+      return current !== undefined && isDeepStrictEqual(content(previous), content(current));
+    });
   }
   apply(frame: Frame): ThreadDelta[] {
     this.assertFrame(frame, this.waitingForPrompt);
@@ -58,7 +85,7 @@ export class Transcript {
       const first = frame.structured_messages.findIndex(message => message.role === "user" && !this.base.has(message.id) &&
         (message.user_prompt?.text ?? message.blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n")).includes(this.bootstrapPrompt!));
       if (first === -1) {
-        for (const message of frame.structured_messages) this.base.add(message.id);
+        for (const message of frame.structured_messages) { this.base.add(message.id); this.observed.set(message.id, message); }
         return [];
       }
       for (const message of frame.structured_messages.slice(0, first + 1)) this.base.add(message.id);
@@ -67,7 +94,8 @@ export class Transcript {
     if (frame.history.tail_state.activity === "unknown") throw new Error("Gas City cannot report reliable turn activity for this runtime. Completion cannot be verified; inspect the session in Gas City.");
     if (this.stream && frame.history.transcript_stream_id !== this.stream) throw new Error("Gas City changed transcript streams during this turn; inspect the session before continuing.");
     this.stream = frame.history.transcript_stream_id;
-    if (frame.operation === "reset" && this.messages.size) throw new Error("Gas City rewrote the transcript during this turn. The bridge stopped replay to avoid duplicate or misleading history.");
+    if (frame.operation === "reset" && this.messages.size && !this.metadataOnlyReset(frame)) throw new Error("Gas City rewrote the transcript during this turn. The bridge stopped replay to avoid duplicate or misleading history.");
+    for (const message of frame.structured_messages) this.observed.set(message.id, message);
     const deltas: ThreadDelta[] = [];
     const tail = frame.history.tail_state;
     this.idle = tail.activity === "idle";
@@ -80,7 +108,7 @@ export class Transcript {
       this.messages.set(message.id, message);
       if (message.role === "assistant") this.hasAssistant = true;
       for (const [index, block] of message.blocks.entries()) {
-        const id = `gc-${message.id}-${block.id ?? index}`;
+        const id = `gc-${message.id}-${("id" in block ? block.id : undefined) ?? index}`;
         const key = { providerItemId: id };
         if (message.role === "assistant" && (block.type === "text" || block.type === "thinking")) {
           const value = block.type === "text" ? block.text ?? "" : block.thinking ?? "";
@@ -102,7 +130,7 @@ export class Transcript {
           }
         }
         if (block.type === "tool_result") {
-          const callId = block.tool_call_id ?? block.id ?? id;
+          const callId = block.tool_call_id ?? id;
           const tool = this.tools.get(callId) ?? { name: "Gas City tool", input: undefined, closed: false };
           if (!tool.closed) {
             const item: DeltaItemShape = { type: "tool", tool: tool.name, args: tool.input, result: block.structured ?? block.content, ...(block.is_error ? { error: block.content ?? "Tool failed" } : {}) };

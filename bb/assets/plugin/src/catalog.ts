@@ -25,28 +25,34 @@ export async function discover(config: Config, context: { projectId?: string | n
     try {
       const client = makeClient(connection);
       await client.health();
-      const cities = await client.get<{ items: { name: string; running: boolean }[] }>("/v0/cities");
-      if (binding && !cities.items.some(c => c.name === binding.city && c.running)) throw new Error(`Mapped city ${binding.city} is not running`);
-      for (const city of cities.items.filter(c => c.running && (!binding || c.name === binding.city))) {
-        const cfg = await client.get(client.city(city.name, "/config"));
+      const cities = await client.cities();
+      if (binding && !(cities.items ?? []).some(c => c.name === binding.city && c.running)) throw new Error(`Mapped city ${binding.city} is not running`);
+      for (const city of (cities.items ?? []).filter(c => c.running && (!binding || c.name === binding.city))) {
+        const cfg = await client.config(city.name);
         if (cfg.workspace?.suspended) continue;
-        if (binding && !cfg.rigs?.some((r: any) => r.name === binding.rig && !r.suspended)) throw new Error(`Mapped rig ${binding.rig} is absent or suspended`);
-        const providers = await client.get<{ items: PublicProvider[] }>(client.city(city.name, "/providers/public"));
+        if (binding?.rig && !cfg.rigs?.some(r => r.name === binding.rig && !r.suspended)) throw new Error(`Mapped rig ${binding.rig} is absent or suspended`);
+        const providers = await client.providers(city.name);
         for (const a of cfg.agents ?? []) {
           if (a.suspended) continue;
           if (a.scope === "rig" && !a.dir) { warnings.push(`${city.name}: generic rig template ${a.name} needs an expanded rig import in v1`); continue; }
           const rig = a.dir ?? "";
-          if (rig && !cfg.rigs?.some((r: any) => r.name === rig && !r.suspended)) continue;
+          if (rig && !cfg.rigs?.some(r => r.name === rig && !r.suspended)) continue;
           const target: Target = { v: 1, connection: connection.id, city: city.name, agent: rig ? `${rig}/${a.name}` : a.name };
           if (!inScope(target, binding) && !(context.includeMappedRigs && !binding && config.bindings.some(b => inScope(target, b)))) continue;
           const provider = a.provider || cfg.workspace?.provider || "configured";
-          const spec = providers.items.find(p => p.name === provider);
-          agents.push({ ...target, rig, displayName: `${city.name} · ${rig || "Global"} · ${a.name} [${connection.id}]`, provider, isPool: a.is_pool === true, reasoningLevels: providerReasoning(spec) });
+          const spec = (providers.items ?? []).find(p => p.name === provider);
+          agents.push({ ...target, rig, displayName: `${city.name} · ${a.name}`, provider, isPool: a.is_pool === true, reasoningLevels: providerReasoning(spec) });
         }
       }
     } catch (error) {
       if (binding) throw error;
       warnings.push(`${connection.id}: ${(error as Error).message}`);
+    }
+  }
+  if (binding?.rig) {
+    const rigNames = new Set(agents.filter(a => a.rig === binding.rig).map(a => a.agent.slice(a.agent.indexOf("/") + 1)));
+    for (let i = agents.length - 1; i >= 0; i--) {
+      if (!agents[i]!.rig && rigNames.has(agents[i]!.agent)) agents.splice(i, 1);
     }
   }
   agents.sort((a, b) => a.displayName.localeCompare(b.displayName));

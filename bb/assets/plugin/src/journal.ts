@@ -13,6 +13,7 @@ export interface Receipt {
   alias?: string;
   sessionId?: string;
   create?: { request_id: string; event_cursor: string };
+  historyMessageIds?: string[];
   turn?: { clientRequestId: string; digest: string; state: "submitting" | "accepted" | "completed" | "failed"; request_id?: string; event_cursor?: string; messageDigest?: string; baselineMessageIds?: string[] };
 }
 export class Journal {

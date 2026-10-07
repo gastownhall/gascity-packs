@@ -1,4 +1,8 @@
 import { setTimeout as delay } from "node:timers/promises";
+import * as sdk from "./generated/gc/sdk.gen.js";
+import { createClient, type Client } from "./generated/gc/client/index.js";
+import type { AsyncAcceptedBody, CreateSessionData, SubmitSessionData, RespondSessionData, SessionCreateSucceededPayload, SessionSubmitSucceededPayload, TypedEventStreamEnvelope } from "./generated/gc/types.gen.js";
+import type { Frame } from "./transcript.js";
 import type { Connection } from "./config.js";
 
 export class ApiError extends Error {
@@ -34,32 +38,46 @@ export async function* parseSSE(body: ReadableStream<Uint8Array>): AsyncGenerato
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 export class GasCityClient {
-  constructor(readonly connection: Connection, private readonly transport: typeof fetch = fetch) {}
-  private async request(path: string, init: RequestInit = {}): Promise<Response> {
-    const headers = new Headers(init.headers);
+  private readonly api: Client;
+  constructor(readonly connection: Connection, private readonly transport: typeof fetch = fetch) {
+    this.api = createClient({ baseUrl: connection.url.replace(/\/$/, ""), throwOnError: true,
+      fetch: async request => this.request(request instanceof Request ? request : new Request(request)) });
+    // Keep the bridge's bounded SSE parser/reconnect policy. The generated SDK
+    // still owns the endpoint, parameter serialization and wire data types.
+    this.api.sse.get = async options => ({ stream: this.streamData(options) });
+  }
+  private options(signal?: AbortSignal) {
+    return { client: this.api, signal, headers: { "X-GC-Request": "bb-provider" } };
+  }
+  private async request(request: Request): Promise<Response> {
+    const headers = new Headers(request.headers);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
-    if (init.body) headers.set("Content-Type", "application/json");
-    if (init.method && init.method !== "GET") headers.set("X-GC-Request", "bb-provider");
     if (process.env.GC_BB_AUTH_TOKEN) headers.set("Authorization", `Bearer ${process.env.GC_BB_AUTH_TOKEN}`);
-    const timeout = AbortSignal.timeout(20_000);
-    const signal = headers.get("Accept") === "text/event-stream" ? init.signal : init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
-    const response = await this.transport(`${this.connection.url.replace(/\/$/, "")}${path}`, {
-      ...init, headers, redirect: "error", signal,
-    });
+    const signal = headers.get("Accept") === "text/event-stream" ? request.signal : AbortSignal.any([request.signal, AbortSignal.timeout(20_000)]);
+    const response = await this.transport(request.url, { method: request.method, headers,
+      ...(request.body ? { body: await request.text() } : {}), redirect: "error", signal });
     if (!response.ok) {
       const body = (await response.text()).slice(0, 1200);
-      throw new ApiError(response.status, `Gas City ${response.status} on ${path.split("?")[0]}: ${body}`);
+      throw new ApiError(response.status, `Gas City ${response.status} on ${new URL(request.url).pathname}: ${body}`);
     }
     return response;
   }
-  async get<T = any>(path: string, signal?: AbortSignal): Promise<T> { return (await this.request(path, { signal })).json(); }
-  async post<T = any>(path: string, body: unknown = {}, signal?: AbortSignal): Promise<T> {
-    return (await this.request(path, { method: "POST", body: JSON.stringify(body), signal })).json();
+  cities(signal?: AbortSignal) { return sdk.getV0Cities(this.options(signal)); }
+  config(city: string, signal?: AbortSignal) { return sdk.getV0CityByCityNameConfig({ ...this.options(signal), path: { cityName: city } }); }
+  providers(city: string, signal?: AbortSignal) { return sdk.getV0CityByCityNameProvidersPublic({ ...this.options(signal), path: { cityName: city } }); }
+  getSession(city: string, id: string, signal?: AbortSignal) { return sdk.getV0CityByCityNameSessionById({ ...this.options(signal), path: { cityName: city, id } }); }
+  createSession(city: string, body: CreateSessionData["body"], signal?: AbortSignal) { return sdk.createSession({ ...this.options(signal), path: { cityName: city }, body }); }
+  submit(city: string, id: string, body: SubmitSessionData["body"], signal?: AbortSignal) { return sdk.submitSession({ ...this.options(signal), path: { cityName: city, id }, body }); }
+  stop(city: string, id: string, signal?: AbortSignal) { return sdk.postV0CityByCityNameSessionByIdStop({ ...this.options(signal), path: { cityName: city, id } }); }
+  pending(city: string, id: string, signal?: AbortSignal) { return sdk.getV0CityByCityNameSessionByIdPending({ ...this.options(signal), path: { cityName: city, id } }); }
+  respond(city: string, id: string, body: RespondSessionData["body"], signal?: AbortSignal) { return sdk.respondSession({ ...this.options(signal), path: { cityName: city, id }, body }); }
+  async transcript(city: string, id: string, signal?: AbortSignal): Promise<Frame> {
+    const frame = await sdk.getV0CityByCityNameSessionByIdTranscript({ ...this.options(signal), path: { cityName: city, id }, query: { format: "structured" } });
+    if (!("schema_version" in frame) || frame.schema_version !== "session.structured.v1" || !frame.history || !Array.isArray(frame.structured_messages)) throw new Error("Gas City did not return its structured transcript contract");
+    return frame;
   }
-  city(city: string, suffix: string) { return `/v0/city/${encodeURIComponent(city)}${suffix}`; }
-  session(city: string, id: string, suffix = "") { return this.city(city, `/session/${encodeURIComponent(id)}${suffix}`); }
-  async health(): Promise<{ version: string }> {
-    const health = await this.get<{ status: string; version: string; startup?: { ready: boolean; phase?: string } }>("/health");
+  async health() {
+    const health = await sdk.getHealth(this.options());
     const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[+-].*)?$/.exec(health.version);
     if (health.status !== "ok" || !match || Number(match[1]) !== 1 || Number(match[2]) < 5)
       throw new Error(`Gas City 1.5+ is required; supervisor reported ${health.version ?? "unknown"}`);
@@ -67,18 +85,28 @@ export class GasCityClient {
       throw new Error(`Gas City supervisor is not ready (${health.startup.phase ?? "initializing"}). Check gc supervisor status and logs.`);
     return health;
   }
-  async *events(path: string, signal: AbortSignal, resume?: string): AsyncGenerator<SSE> {
+  private async *streamData<T>(options: Omit<import("./generated/gc/client/index.js").RequestOptions<T, import("./generated/gc/client/index.js").ResponseStyle>, "method">) {
+    const headers = new Headers(options.headers as HeadersInit);
+    headers.set("Accept", "text/event-stream");
+    const response = await this.request(new Request(this.api.buildUrl({ url: options.url, path: options.path, query: options.query }), { headers, signal: options.signal }));
+    if (!response.body) throw new Error("Gas City returned no event stream");
+    for await (const event of parseSSE(response.body)) {
+      const data = JSON.parse(event.data);
+      options.onSseEvent?.({ ...event, data });
+      yield data;
+    }
+  }
+  private async *events(open: (last: string | undefined, onEvent: (event: { data: unknown; event?: string; id?: string }) => void) => Promise<{ stream: AsyncGenerator<unknown> }>, signal: AbortSignal, resume?: string): AsyncGenerator<SSE> {
     let last = resume, attempts = 0;
     while (!signal.aborted) {
       try {
-        const headers = new Headers({ Accept: "text/event-stream" });
-        if (last) headers.set("Last-Event-ID", last);
-        const response = await this.request(path, { headers, signal });
-        if (!response.body) throw new Error("Gas City returned no event stream");
-        for await (const event of parseSSE(response.body)) {
-          if (event.id) last = event.id;
+        let current: SSE | undefined;
+        const { stream } = await open(last, event => { current = { event: event.event ?? "message", id: event.id, data: JSON.stringify(event.data) }; });
+        for await (const _data of stream) {
+          if (!current) throw new Error("Gas City stream did not publish event metadata");
+          if (current.id) last = current.id;
           attempts = 0;
-          yield event;
+          yield current;
         }
       } catch (error) {
         if (signal.aborted) return;
@@ -88,16 +116,25 @@ export class GasCityClient {
       await delay(Math.min(250 * 2 ** attempts, 5000), undefined, { signal });
     }
   }
-  async result(city: string, accepted: { request_id: string; event_cursor: string }, operation: "create" | "submit", signal?: AbortSignal): Promise<any> {
+  sessionEvents(city: string, id: string, cursor: string, signal: AbortSignal) {
+    return this.events((last, onSseEvent) => sdk.streamSession({ ...this.options(signal), path: { cityName: city, id }, query: { format: "structured", after_cursor: cursor }, headers: { "X-GC-Request": "bb-provider", ...(last ? { "Last-Event-ID": last } : {}) }, onSseEvent }), signal, cursor);
+  }
+  cityEvents(city: string, cursor: string, signal: AbortSignal) {
+    return this.events((last, onSseEvent) => sdk.streamEvents({ ...this.options(signal), path: { cityName: city }, query: { after_seq: cursor }, headers: { "X-GC-Request": "bb-provider", ...(last ? { "Last-Event-ID": last } : {}) }, onSseEvent }), signal, cursor);
+  }
+  result(city: string, accepted: Pick<AsyncAcceptedBody, "request_id" | "event_cursor">, operation: "create", signal?: AbortSignal): Promise<SessionCreateSucceededPayload>;
+  result(city: string, accepted: Pick<AsyncAcceptedBody, "request_id" | "event_cursor">, operation: "submit", signal?: AbortSignal): Promise<SessionSubmitSucceededPayload>;
+  async result(city: string, accepted: Pick<AsyncAcceptedBody, "request_id" | "event_cursor">, operation: "create" | "submit", signal?: AbortSignal) {
     if (!accepted.request_id || accepted.event_cursor === undefined) throw new Error("Invalid Gas City async acceptance response");
     const timeout = AbortSignal.timeout(150_000);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const path = this.city(city, `/events/stream?after_seq=${encodeURIComponent(accepted.event_cursor)}`);
-    for await (const event of this.events(path, combined)) {
-      const envelope = JSON.parse(event.data);
-      if (envelope.payload?.request_id !== accepted.request_id) continue;
-      if (envelope.type === "request.failed") throw new Error(`Gas City ${operation} failed: ${envelope.payload.error_message ?? envelope.payload.message ?? envelope.message ?? "unknown failure"}`);
-      if (envelope.type === `request.result.session.${operation}`) return envelope.payload;
+    for await (const event of this.cityEvents(city, accepted.event_cursor, combined)) {
+      if (event.event !== "event") continue;
+      const envelope = JSON.parse(event.data) as TypedEventStreamEnvelope;
+      if (!envelope.payload || typeof envelope.payload !== "object" || !("request_id" in envelope.payload) || envelope.payload.request_id !== accepted.request_id) continue;
+      if (envelope.type === "request.failed") throw new Error(`Gas City ${operation} failed: ${envelope.payload.error_message}`);
+      if (operation === "create" && envelope.type === "request.result.session.create") return envelope.payload;
+      if (operation === "submit" && envelope.type === "request.result.session.submit") return envelope.payload;
     }
     throw new Error(`Gas City ${operation} result was not confirmed. Do not retry a prompt blindly.`);
   }

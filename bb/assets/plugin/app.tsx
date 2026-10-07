@@ -1,3 +1,4 @@
+import { gasCityFox } from "./assets/gascity-fox.js";
 import { useEffect, useRef, useState } from "react";
 import { definePluginApp, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginRpcResult } from "@get-bb/plugin-sdk/app";
@@ -143,4 +144,5 @@ export function GasCityLauncher() {
     </div>
   </main>;
 }
-export default definePluginApp(app => { app.slots.navPanel({ id: "gas-city", title: "Gas City", icon: "Building2", path: "launch", component: GasCityLauncher }); });
+function GasCityIcon({ className }: { className?: string }) { return <img className={className} src={gasCityFox} alt="" aria-hidden />; }
+export default definePluginApp(app => { app.slots.experimental_providerIcon({ providerKind: "agent", providerId: "gas-city", icon: GasCityIcon }); app.slots.navPanel({ id: "gas-city", title: "Gas City", icon: "Building2", path: "launch", component: GasCityLauncher }); });
