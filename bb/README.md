@@ -386,3 +386,11 @@ documented `commands/*/run.sh`, a `doctor` check, and adapter code under
 `assets/`. No agent definitions or runtime configuration are changed by this
 integration. See [staging and contract references](./docs/staging.md) for
 the next BB PR and release gates.
+
+### CI versus candidate acceptance
+
+Pushes and pull requests run build, generated-contract and fixture checks. The
+legacy BB 0.43.4 / GC 1.5 live matrices require an explicit workflow dispatch
+and API credentials; they do not certify this custom BB/GC candidate. Their
+aggregate live acceptance gate runs only with that manual matrix. The current
+candidate is verified separately in a disposable VM with subscription logins.

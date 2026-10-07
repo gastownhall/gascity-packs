@@ -82,6 +82,7 @@ jobs:
         run: python3 -m unittest discover -s bb/tests -v
 
   live-conversations:
+    if: github.event_name == 'workflow_dispatch'
     name: Live ${{ matrix.runtime }} conversations (GC 1.5 ${{ matrix.gc }})
     runs-on: ubuntu-latest
     # GC build, two scopes with three bounded (600 s) turns and agent-resume settlement,
@@ -209,6 +210,7 @@ jobs:
           if-no-files-found: warn
 
   candidate-e2e:
+    if: github.event_name == 'workflow_dispatch'
     name: Full browser E2E ${{ matrix.runtime }} (GC 1.5 candidate, Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -335,7 +337,7 @@ jobs:
 
   acceptance:
     name: BB end-to-end acceptance
-    if: always()
+    if: always() && github.event_name == 'workflow_dispatch'
     needs: [compatibility, live-conversations, candidate-e2e]
     runs-on: ubuntu-latest
     steps:
