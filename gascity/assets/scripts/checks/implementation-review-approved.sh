@@ -79,11 +79,15 @@ APPROVAL_VERDICTS_JSON="$(printf '%s\n' "${APPROVAL_VERDICTS[@]}" \
   | jq -Rsc 'split("\n") | map(select(. != "")) | map(ascii_downcase)')"
 
 is_approved() {
-  local candidate known
+  local candidate known known_lc
   candidate="$(printf '%s' "${1-}" | tr '[:upper:]' '[:lower:]')"
   [ -n "$candidate" ] || return 1
   for known in "${APPROVAL_VERDICTS[@]}"; do
-    if [ "$candidate" = "${known,,}" ]; then
+    # macOS /bin/bash is 3.2 and does not implement ${var,,}. The candidate
+    # side already uses tr; downcase the vocabulary the same way so the check
+    # stays case-insensitive on bash 3.2 and bash 4+.
+    known_lc="$(printf '%s' "$known" | tr '[:upper:]' '[:lower:]')"
+    if [ "$candidate" = "$known_lc" ]; then
       return 0
     fi
   done
