@@ -5335,6 +5335,7 @@ description = "Override sink that writes the base triage report contract."
         self,
         shared_namespaces: str,
         extra_env: dict[str, str] | None = None,
+        script_root: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess:
         with tempfile.TemporaryDirectory() as artifact_dir:
             artifact = pathlib.Path(artifact_dir) / "decomposition.md"
@@ -5356,6 +5357,7 @@ description = "Override sink that writes the base triage report contract."
                 {"loop": control, "root": root_bead},
                 "loop",
                 extra_env=extra_env,
+                script_root=script_root,
                 deps_by_id=self._DECOMPOSITION_DEPS,
             )
 
@@ -5383,9 +5385,13 @@ description = "Override sink that writes the base triage report contract."
     def test_build_artifact_check_fails_when_namespace_script_missing(self) -> None:
         # AC-10 / BR-14: with the check script absent from every candidate
         # location the gate fails "not found" rather than silently skipping.
+        # Run the installed copy. The pack tree itself contains the script, and
+        # the gate prefers that pack validator, so the source script can never
+        # observe a missing candidate.
         pack_root = pathlib.Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as work_dir:
-            staged = pathlib.Path(work_dir) / "gascity" / "assets" / "scripts"
+            work_root = pathlib.Path(work_dir)
+            staged = work_root / "gascity" / "assets" / "scripts"
             staged.mkdir(parents=True)
             for name in (
                 "validate_build_artifact.py",
@@ -5395,7 +5401,9 @@ description = "Override sink that writes the base triage report contract."
             # The base validator resolves schemas relative to its own file.
             shutil.copytree(pack_root / "schemas", staged.parents[1] / "schemas")
             result = self._run_decomposition_gate(
-                self._SENTINEL_NAMESPACES, extra_env={"GC_WORK_DIR": work_dir}
+                self._SENTINEL_NAMESPACES,
+                extra_env={"GC_WORK_DIR": work_dir},
+                script_root=work_root,
             )
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
