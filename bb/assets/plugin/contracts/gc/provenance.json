@@ -1,8 +1,8 @@
 {
   "title": "Gas City Supervisor API",
   "source_repository": "https://github.com/csells/gascity",
-  "source_commit": "992a8dd485239b74214a0c3befe80fb5bec25669",
-  "build": "1.6.0-dev-jarvis.8-bb-integration.2",
+  "source_commit": "303790c4890fa481cfc016af99223c618e4546f5",
+  "build": "1.6.0-dev-jarvis.8-bb-integration.3",
   "notes": "Generated canonical OpenAPI from the pinned personal GC integration commit. Live-schema equality is a separate staging qualification gate; no release or stable promotion is implied.",
   "sha256": "5d095307111f0b38be2e2fd221dedffdd64dda1606df0a937c0028b5d5d9059b",
   "generator": "@hey-api/openapi-ts@0.99.0"

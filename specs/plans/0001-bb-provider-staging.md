@@ -1,7 +1,7 @@
 # Project-aware BB candidate qualification
 
-Status: the exact GC integration candidate passed qualification in disposable
-staging on October 7–8, 2026. Earlier-build results remain separately identified.
+Status: the PR7076 candidate is staged; October 8 live qualification exposes a
+native Codex command-cancellation blocker. Earlier-build results are separate.
 No candidate is approved for merge or promotion. The exact manifest and retained evidence are in Chris's external
 `bb-provider-project-picker` run directory; they are deliberately outside the VM.
 
@@ -70,9 +70,9 @@ VM-only CLI entrypoints and required storage pack imports were repaired as well.
 Stable services are unchanged; Chris must approve this final staging candidate.
 
 
-## Personal GC integration refresh
+## Earlier .2 personal GC integration refresh
 
-The generated contract now comes from personal GC branch
+The earlier generated contract came from personal GC branch
 `csells/gascity:fix/bb-supervisor-continuity`, commit
 `992a8dd485239b74214a0c3befe80fb5bec25669`. Build
 `1.6.0-dev-jarvis.8-bb-integration.2` has SHA256
@@ -99,9 +99,63 @@ BB fork CI is queued without a runner, not passing. No merge or stable promotion
 is approved.
 
 
-Current review conversations: Luna `thr_zjvncacxyr`, Haiku `thr_frr674vn6k`.
+Earlier .2 review conversations: Luna `thr_zjvncacxyr`, Haiku `thr_frr674vn6k`.
 The final summary, native receipts, screenshots and exact binary are exported in
 `bb-provider-project-picker/gc-update-oct7/`. The generated client is verified
 against the serving supervisor; no raw terminal access exists in the BB bridge.
 Optional top-level Codex model metadata can be absent after large output; model
 qualification checks configured options and the exact native test artifact.
+
+
+## PR 7076 port — October 8: staging has a cancellation blocker
+
+GC `303790c4890fa481cfc016af99223c618e4546f5`, build `1.6.0-dev-jarvis.8-bb-integration.3`, serves only disposable VM140.
+SHA256: `3d6c84adfb5faf839335c7f199c0cb0aea197445d64e8887817019ccf4209cc2`.
+It ports the missing `creating`-state wake exemption from PR 7076
+`41fec8ba6442fe28d252aacfbeb188a15c98fd5f`, preserves `start-pending` refusal,
+and adds API/CLI and evicted-close regressions. Existing readiness and close-event
+fixes are retained. Shared rig-template edit scope and concurrent event ordering
+are clarified. The wake regression fails before the fix; a negative control
+confirms that losing a queued close claim drops its required event.
+
+Native pre-commit passes, all 234 native targets pass, and six selected integration
+targets pass: CLI, API, tmux, session, dashport and beads. These six are not the
+entire upstream integration suite. Generated schema/client code is unchanged;
+the BB pack's provenance pins this build. All 78 plugin tests, two contract guards,
+typecheck and build pass, as does equality with the serving supervisor schema.
+
+Live checks pass six picker cases and four rendered rig turns each for Luna and
+Haiku at medium effort. Both pass approval allow/deny, lost-submit reply recovery
+without replay and release. Claude also passes interruption with no delayed file.
+Codex reports the turn interrupted but its shell command continues and writes the
+file. A second reproduction waits for a command-start marker before Stop and
+fails the same assertion. This is **not** a fully qualified candidate.
+
+Codex 0.156.1 and latest stable 0.161.0 deliberately retain Unified Exec processes
+across turn interruption. See [upstream issue 42717](https://github.com/openai/codex/issues/42717)
+and the [pinned implementation](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/core/src/unified_exec/process_manager.rs#L598).
+The observed Stop acknowledgment is not proof of command exit. Earlier isolated
+passing interruption samples do not establish that stronger guarantee. The
+no-delayed-artifact acceptance criterion remains unmet; it has not been weakened.
+Chris's choice of turn-only interruption versus command termination remains open.
+Do not add client-side process killing or replace generated supervisor APIs.
+
+All nine disposable native fixtures, including the failed reproductions, close
+and remain terminal across 90 seconds. The two original user threads and both
+previous .2 review conversations retain their native identities and ordered
+histories; the preexisting missing session remains missing and unrebound.
+Original-thread resume requires no inference or replay. Temporary 8 GiB build
+swap is removed; readiness, binary/helper hashes and the closed profiler are
+verified. An early empty-picker screenshot showed a generic provider glyph;
+rechecking with an explicit provider-control wait passes all six cases. Both
+initial and settled screenshots are retained; no BB source change was made.
+
+Review conversations: Luna `thr_ehbqaf4iaf`, Haiku `thr_fvqgtpucbp`.
+[Open staging](https://csells-mac-mini--51995.getbb.app). The Mac relays traffic;
+all execution remains in VM140. Exact binary, native logs, screenshots and failed
+cancellation evidence are retained in `bb-provider-project-picker/pr7076-port-oct8/`.
+BB remains `6e5c1c6fd`, rebased on main `81256f5d42`, SDK 0.6.28. Codex remains
+0.156.1; merely updating it would retain the same documented cancellation policy.
+Earlier installer and whole-VM-reboot results belong to their earlier builds.
+Development-branch publication does not approve any upstream merge, release or
+stable promotion. The cancellation blocker must be resolved before qualification.
