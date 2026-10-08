@@ -183,13 +183,15 @@ test_work_bead_resolution_discriminator_is_pinned() {
     # The third precondition lives in the formula, not in agent.toml, so neither
     # pin above can ever catch its loss: the deacon pours the successor, burns
     # this wisp, and EXITS the turn, so one process env holds exactly one wisp
-    # for its whole life and the restarted session gets a fresh trigger. An
-    # in-session loop here revives the stale-trigger failure with both config
-    # pins still green.
+    # for its whole life and the idle_timeout-recycled session gets a fresh
+    # trigger. An in-session loop here revives the stale-trigger failure with
+    # both config pins still green.
     grep -F 'IDLE: no work, exiting turn.' "$deacon" >/dev/null ||
         fail "the deacon's trigger-first wisp resolution is safe only while each iteration ends by exiting the turn; mol-deacon-patrol.toml no longer emits the IDLE exit signal"
-    grep -F 'the restarted session resumes from it' "$deacon" >/dev/null ||
-        fail "the deacon's trigger-first wisp resolution is safe only while the successor wisp is resumed by a RESTARTED session (fresh trigger); mol-deacon-patrol.toml no longer hands the successor to a restarted session"
+    grep -F 'the next wisp is already assigned and the recycled session re-reads' "$deacon" >/dev/null ||
+        fail "the deacon's trigger-first wisp resolution is safe only while the exit step states the handoff contract part 1 (successor already assigned); mol-deacon-patrol.toml no longer states the handoff"
+    grep -F 'the formula and resumes from the beads ledger' "$deacon" >/dev/null ||
+        fail "the deacon's trigger-first wisp resolution is safe only while the exit step states the handoff contract part 2 (the idle_timeout-recycled session re-reads the formula and resumes from the beads ledger); mol-deacon-patrol.toml no longer states the handoff"
     ! grep -F 're-read formula steps to begin' "$deacon" >/dev/null ||
         fail "the deacon now rotates wisps in-session like the refinery, so its spawn trigger goes stale mid-loop; mol-deacon-patrol.toml must drop the trigger-preferring resolution for the bare \${GC_BEAD_ID:-} plus live assignee query"
 
