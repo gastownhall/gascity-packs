@@ -18,3 +18,6 @@
 # Python test/runtime artifacts
 __pycache__/
 *.py[cod]
+
+# Browser acceptance dependencies
+bb/tests/node_modules/

@@ -1,0 +1,1861 @@
+diff --git a/cmd/gc/session_lifecycle_parallel.go b/cmd/gc/session_lifecycle_parallel.go
+index 1d74591..8927c0d 100644
+--- a/cmd/gc/session_lifecycle_parallel.go
++++ b/cmd/gc/session_lifecycle_parallel.go
+@@ -995,9 +995,15 @@ func buildPreparedStartWithWorkDirResolver(
+ 	// transcript layer so each provider keeps its own resumability rules; for
+ 	// providers whose resume state we cannot probe on disk (codex/gemini/...)
+ 	// the probe reports !probeable and we leave their metadata untouched.
+-	if sk := strings.TrimSpace(candidate.info.SessionKey); sk != "" && agentCfg.WorkDir != "" {
++	// Caller-allocated keys have no transcript until the first launch. Rebuilding
++	// a pending launch must retain the same key, even before its first JSONL write.
++	searchPaths := worker.DefaultSearchPaths()
++	if cfg != nil {
++		searchPaths = worker.MergeSearchPaths(cfg.Daemon.ObservePaths)
++	}
++	if sk := strings.TrimSpace(candidate.info.SessionKey); sk != "" && agentCfg.WorkDir != "" && candidate.info.StartedConfigHash != "" {
+ 		provider := sessionTranscriptProvider(tp.ResolvedProvider, candidate.info)
+-		if present, probeable := staleResumeKeyProbe(provider, agentCfg.WorkDir, sk); probeable && !present {
++		if present, probeable := staleResumeKeyProbe(searchPaths, provider, agentCfg.WorkDir, sk); probeable && !present {
+ 			var sessFront *sessionpkg.Store
+ 			if store != nil {
+ 				sessFront = sessionFrontDoor(store)
+@@ -1053,7 +1059,7 @@ func buildPreparedStartWithWorkDirResolver(
+ 		parentStale := false
+ 		if firstStart && !forceFresh && tp.ResolvedProvider != nil && agentCfg.WorkDir != "" {
+ 			provider := sessionTranscriptProvider(tp.ResolvedProvider, candidate.info)
+-			if present, probeable := staleResumeKeyProbe(provider, agentCfg.WorkDir, parentSID); probeable && !present {
++			if present, probeable := staleResumeKeyProbe(searchPaths, provider, agentCfg.WorkDir, parentSID); probeable && !present {
+ 				parentStale = true
+ 			}
+ 		}
+@@ -1863,11 +1869,8 @@ func observeRuntimeProviderLiveness(sp runtime.Provider, name string, processNam
+ // so tests can model a present or absent transcript without materializing
+ // provider-specific transcript trees. Production delegates to the transcript
+ // discovery layer, which knows each provider's on-disk layout and merges each
+-// provider's own default roots on top of the supplied claude default, so
+-// claude/kimi/pi each probe their real location.
+-var staleResumeKeyProbe = func(provider, workDir, sessionKey string) (present, probeable bool) {
+-	return workertranscript.HasKeyedTranscript(worker.DefaultSearchPaths(), provider, workDir, sessionKey)
+-}
++// provider's own default roots with the configured worker search paths.
++var staleResumeKeyProbe = workertranscript.HasKeyedTranscript
+ 
+ // validateForkLaunch enforces fork-launch invariants before command resolution.
+ // It fails loud rather than ever silently degrading a brain-forked (warm) arm to
+diff --git a/cmd/gc/session_lifecycle_parallel_phase2_test.go b/cmd/gc/session_lifecycle_parallel_phase2_test.go
+index 3b9dcb7..027038e 100644
+--- a/cmd/gc/session_lifecycle_parallel_phase2_test.go
++++ b/cmd/gc/session_lifecycle_parallel_phase2_test.go
+@@ -23,7 +23,7 @@ func TestPhase2InitialInputDelivery(t *testing.T) {
+ 	// guard's missing-transcript behavior is covered by TestStaleResumeKeyProbe
+ 	// and the transcript layer's TestHasKeyedTranscript.
+ 	prevProbe := staleResumeKeyProbe
+-	staleResumeKeyProbe = func(string, string, string) (present, probeable bool) { return true, true }
++	staleResumeKeyProbe = func([]string, string, string, string) (present, probeable bool) { return true, true }
+ 	t.Cleanup(func() { staleResumeKeyProbe = prevProbe })
+ 
+ 	for _, tc := range selectedPhase2ProviderCases(t) {
+diff --git a/cmd/gc/session_lifecycle_parallel_test.go b/cmd/gc/session_lifecycle_parallel_test.go
+index 94a077c..cfaea1d 100644
+--- a/cmd/gc/session_lifecycle_parallel_test.go
++++ b/cmd/gc/session_lifecycle_parallel_test.go
+@@ -7573,7 +7573,7 @@ func TestStaleResumeKeyProbe(t *testing.T) {
+ 
+ 	// Missing transcript: claude is probeable and reports absent, so the guard
+ 	// would treat the resume key as stale.
+-	if present, probeable := staleResumeKeyProbe("claude", workDir, key); !probeable || present {
++	if present, probeable := staleResumeKeyProbe(sessionlog.DefaultSearchPaths(), "claude", workDir, key); !probeable || present {
+ 		t.Fatalf("missing claude transcript: probeable=%v present=%v, want probeable && !present", probeable, present)
+ 	}
+ 
+@@ -7587,20 +7587,20 @@ func TestStaleResumeKeyProbe(t *testing.T) {
+ 	if err := os.WriteFile(filepath.Join(projDir, key+".jsonl"), []byte("{}\n"), 0o600); err != nil {
+ 		t.Fatalf("write: %v", err)
+ 	}
+-	if present, probeable := staleResumeKeyProbe("claude", workDir, key); !probeable || !present {
++	if present, probeable := staleResumeKeyProbe(sessionlog.DefaultSearchPaths(), "claude", workDir, key); !probeable || !present {
+ 		t.Fatalf("present claude transcript: probeable=%v present=%v, want probeable && present", probeable, present)
+ 	}
+ 
+ 	// Codex resolves transcripts by cwd/date, not a keyed file, so it is never
+ 	// probeable and the guard leaves its metadata untouched.
+-	if _, probeable := staleResumeKeyProbe("codex", workDir, key); probeable {
++	if _, probeable := staleResumeKeyProbe(sessionlog.DefaultSearchPaths(), "codex", workDir, key); probeable {
+ 		t.Fatal("codex probeable = true, want false")
+ 	}
+ 	// Empty inputs are not probeable.
+-	if _, probeable := staleResumeKeyProbe("claude", "", key); probeable {
++	if _, probeable := staleResumeKeyProbe(sessionlog.DefaultSearchPaths(), "claude", "", key); probeable {
+ 		t.Fatal("empty workDir probeable = true, want false")
+ 	}
+-	if _, probeable := staleResumeKeyProbe("claude", workDir, ""); probeable {
++	if _, probeable := staleResumeKeyProbe(sessionlog.DefaultSearchPaths(), "claude", workDir, ""); probeable {
+ 		t.Fatal("empty key probeable = true, want false")
+ 	}
+ }
+diff --git a/cmd/gc/session_reconciler_fork_launch_test.go b/cmd/gc/session_reconciler_fork_launch_test.go
+index c2cc52c..7cf659f 100644
+--- a/cmd/gc/session_reconciler_fork_launch_test.go
++++ b/cmd/gc/session_reconciler_fork_launch_test.go
+@@ -33,7 +33,7 @@ func TestRecoverRunningPendingCreate_BuildFailResidueMatchesStore(t *testing.T)
+ 	// pre-flight guard fires clearStaleResumeKeyMetadata (persisting started_config_hash="")
+ 	// before validateForkLaunch aborts on fork + wake_mode=fresh.
+ 	prevProbe := staleResumeKeyProbe
+-	staleResumeKeyProbe = func(_, _, _ string) (present, probeable bool) { return false, true }
++	staleResumeKeyProbe = func(_ []string, _, _, _ string) (present, probeable bool) { return false, true }
+ 	t.Cleanup(func() { staleResumeKeyProbe = prevProbe })
+ 
+ 	ok, residue := recoverRunningPendingCreate(candidate.info, candidate.tp, cfg, store, clock.Real{}, nil)
+@@ -356,7 +356,7 @@ func TestBuildPreparedStart_ForkValidationNotBypassedByStaleKeyRecovery(t *testi
+ 			prevProbe := staleResumeKeyProbe
+ 			// The own session_key is stale (transcript gone) so recovery fires; the
+ 			// parent's presence is controlled per case.
+-			staleResumeKeyProbe = func(_, _, key string) (present, probeable bool) {
++			staleResumeKeyProbe = func(_ []string, _, _, key string) (present, probeable bool) {
+ 				if key == parentSID {
+ 					return tc.parentPresent, true
+ 				}
+diff --git a/cmd/gc/session_resume_identity_test.go b/cmd/gc/session_resume_identity_test.go
+new file mode 100644
+index 0000000..24b62d8
+--- /dev/null
++++ b/cmd/gc/session_resume_identity_test.go
+@@ -0,0 +1,76 @@
++package main
++
++import (
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	sessionpkg "github.com/gastownhall/gascity/internal/session"
++	"github.com/gastownhall/gascity/internal/sessionlog"
++)
++
++func TestBuildPreparedStartPreservesAllocatedKeyUntilFirstTranscript(t *testing.T) {
++	candidate, cfg, store := newForkSessionCandidate(t, forkClaude(), "", "")
++	candidate.tp.ResolvedProvider.BuiltinAncestor = "claude"
++	key := "11111111-2222-4333-8444-555555555555"
++	patch := sessionpkg.MetadataPatch{"session_key": key, "started_config_hash": ""}
++	if err := sessionFrontDoor(store).ApplyPatch(candidate.info.ID, patch); err != nil {
++		t.Fatal(err)
++	}
++	candidate.info = candidate.info.ApplyPatch(patch)
++	for attempt := 0; attempt < 2; attempt++ {
++		prepared, info, err := buildPreparedStart(candidate, cfg, store)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if info.SessionKey != key {
++			t.Fatalf("preparation %d rotated unlaunched key to %q", attempt, info.SessionKey)
++		}
++		if !strings.Contains(prepared.cfg.Command, "--session-id "+key) {
++			t.Fatalf("fresh command = %q", prepared.cfg.Command)
++		}
++		stored, err := store.Get(candidate.info.ID)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if stored.Metadata["session_key"] != key {
++			t.Fatalf("stored key = %q", stored.Metadata["session_key"])
++		}
++		candidate.info = info
++	}
++}
++
++func TestBuildPreparedStartResumesExactObservedTranscript(t *testing.T) {
++	candidate, cfg, store := newForkSessionCandidate(t, forkClaude(), "", "")
++	candidate.tp.ResolvedProvider.BuiltinAncestor = "claude"
++	key := candidate.info.SessionKey
++	privateConfig := t.TempDir()
++	projects := filepath.Join(privateConfig, "projects")
++	directory := filepath.Join(projects, sessionlog.ProjectSlug(candidate.info.WorkDir))
++	if err := os.MkdirAll(directory, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(directory, key+".jsonl"), []byte("{}\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	cfg.Daemon.ObservePaths = []string{projects}
++	candidate.tp.ResolvedProvider.Env = map[string]string{"CLAUDE_CONFIG_DIR": privateConfig}
++	prepared, info, err := buildPreparedStart(candidate, cfg, store)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if info.SessionKey != key {
++		t.Fatalf("existing observed transcript key replaced: %q", info.SessionKey)
++	}
++	if !strings.Contains(prepared.cfg.Command, "--resume "+key) || strings.Contains(prepared.cfg.Command, "--session-id") {
++		t.Fatalf("resume command = %q", prepared.cfg.Command)
++	}
++	stored, err := store.Get(candidate.info.ID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if stored.Metadata["session_key"] != key {
++		t.Fatalf("stored key = %q", stored.Metadata["session_key"])
++	}
++}
+diff --git a/internal/runtime/dialog.go b/internal/runtime/dialog.go
+index db1a269..d68431c 100644
+--- a/internal/runtime/dialog.go
++++ b/internal/runtime/dialog.go
+@@ -445,8 +445,8 @@ func containsPostUpdateStartupDialog(content string) bool {
+ // acceptWorkspaceTrustDialog dismisses workspace trust dialogs for supported
+ // agents. Claude shows "Quick safety check"; Codex shows
+ // "Do you trust the contents of this directory?"; pi (>= 0.79) shows
+-// "Trust project folder?". In all cases the safe continue option is
+-// pre-selected, so Enter accepts.
++// "Trust project folder?". Claude may default to No, so inspect its complete
++// menu before choosing the affirmative option.
+ func acceptWorkspaceTrustDialog(
+ 	ctx context.Context,
+ 	timeout time.Duration,
+@@ -465,7 +465,11 @@ func acceptWorkspaceTrustDialog(
+ 		}
+ 
+ 		if containsWorkspaceTrustDialog(content) {
+-			if err := sendKeys("Enter"); err != nil {
++			keys, err := workspaceTrustDialogKeys(content)
++			if err != nil {
++				return err
++			}
++			if err := sendKeys(keys...); err != nil {
+ 				return err
+ 			}
+ 			sleep(ctx, startupDialogAcceptDelay)
+@@ -497,11 +501,11 @@ func acceptWorkspaceTrustDialogFromStream(
+ 	sendKeys func(keys ...string) error,
+ ) (bool, error) {
+ 	return acceptDialogFromStream(ctx, timeout, snapshots, sendKeys, streamDialogSpec{
+-		match:       containsWorkspaceTrustDialog,
+-		matchKeys:   []string{"Enter"},
+-		matchDelay:  startupDialogAcceptDelay,
+-		ready:       containsPromptIndicator,
+-		readyOrNext: containsPostTrustStartupDialog,
++		match:        containsWorkspaceTrustDialog,
++		matchKeysFor: workspaceTrustDialogKeys,
++		matchDelay:   startupDialogAcceptDelay,
++		ready:        containsPromptIndicator,
++		readyOrNext:  containsPostTrustStartupDialog,
+ 	})
+ }
+ 
+@@ -1029,11 +1033,12 @@ func dismissRateLimitDialogFromStream(
+ }
+ 
+ type streamDialogSpec struct {
+-	match       func(string) bool
+-	ready       func(string) bool
+-	readyOrNext func(string) bool
+-	matchKeys   []string
+-	matchDelay  time.Duration
++	match        func(string) bool
++	ready        func(string) bool
++	readyOrNext  func(string) bool
++	matchKeys    []string
++	matchKeysFor func(string) ([]string, error)
++	matchDelay   time.Duration
+ }
+ 
+ type replayableSnapshotStream struct {
+@@ -1171,7 +1176,15 @@ func acceptDialogFromStream(
+ 			for idx, content := range history {
+ 				if spec.match != nil && spec.match(content) {
+ 					snapshots.replay(history[idx+1:])
+-					return true, sendDialogKeys(ctx, sendKeys, spec.matchKeys, spec.matchDelay)
++					keys := spec.matchKeys
++					if spec.matchKeysFor != nil {
++						var err error
++						keys, err = spec.matchKeysFor(content)
++						if err != nil {
++							return true, err
++						}
++					}
++					return true, sendDialogKeys(ctx, sendKeys, keys, spec.matchDelay)
+ 				}
+ 				if spec.readyOrNext != nil && spec.readyOrNext(content) {
+ 					snapshots.replay(history[idx:])
+diff --git a/internal/runtime/dialog_claude_trust.go b/internal/runtime/dialog_claude_trust.go
+new file mode 100644
+index 0000000..52bd147
+--- /dev/null
++++ b/internal/runtime/dialog_claude_trust.go
+@@ -0,0 +1,64 @@
++package runtime
++
++import (
++	"errors"
++	"fmt"
++	"strings"
++)
++
++// ErrUnrecognizedWorkspaceTrust prevents startup input entering an unknown trust menu.
++var ErrUnrecognizedWorkspaceTrust = errors.New("unrecognized Claude workspace trust menu")
++
++// workspaceTrustDialogKeys preserves other providers' confirmation behavior and
++// selects Claude's explicit affirmative option only in its complete known menu.
++func workspaceTrustDialogKeys(content string) ([]string, error) {
++	if !strings.Contains(content, "Quick safety check") && !strings.Contains(content, "trust this folder") {
++		return []string{"Enter"}, nil
++	}
++	lines := strings.Split(content, "\n")
++	for i := range lines {
++		lines[i] = stripLeadingBoxBorder(strings.TrimSpace(lines[i]))
++	}
++	content = strings.Join(lines, "\n")
++	before, after, ok := strings.Cut(content, "Enter to confirm · Esc to cancel")
++	if !ok || strings.TrimSpace(after) != "" {
++		return nil, ErrUnrecognizedWorkspaceTrust
++	}
++	block := strings.TrimSpace(before)
++	if at := strings.LastIndex(block, "\n\n"); at >= 0 {
++		block = block[at+2:]
++	}
++	options := strings.Split(block, "\n")
++	if len(options) != 2 {
++		return nil, ErrUnrecognizedWorkspaceTrust
++	}
++	selected, trust, exit := -1, -1, -1
++	for i, line := range options {
++		if strings.HasPrefix(line, "❯ ") {
++			if selected >= 0 {
++				return nil, ErrUnrecognizedWorkspaceTrust
++			}
++			selected = i
++			line = strings.TrimSpace(strings.TrimPrefix(line, "❯"))
++		}
++		line = strings.TrimPrefix(line, fmt.Sprintf("%d. ", i+1))
++		switch line {
++		case "Yes, I trust this folder":
++			trust = i
++		case "No, exit":
++			exit = i
++		default:
++			return nil, ErrUnrecognizedWorkspaceTrust
++		}
++	}
++	if selected < 0 || trust < 0 || exit < 0 {
++		return nil, ErrUnrecognizedWorkspaceTrust
++	}
++	if selected < trust {
++		return []string{"Down", "Enter"}, nil
++	}
++	if selected > trust {
++		return []string{"Up", "Enter"}, nil
++	}
++	return []string{"Enter"}, nil
++}
+diff --git a/internal/runtime/dialog_claude_trust_test.go b/internal/runtime/dialog_claude_trust_test.go
+new file mode 100644
+index 0000000..8ecfdc3
+--- /dev/null
++++ b/internal/runtime/dialog_claude_trust_test.go
+@@ -0,0 +1,62 @@
++package runtime
++
++import (
++	"context"
++	"reflect"
++	"strings"
++	"testing"
++	"time"
++)
++
++const claudeFreshTrustFixture = `Quick safety check: Is this a project you created or one you trust?
++
++ ❯ No, exit
++   Yes, I trust this folder
++
++ Enter to confirm · Esc to cancel
++`
++
++// A fresh Claude workspace must not exit merely because its cursor defaults to No.
++func TestClaudeFreshWorkspaceTrust(t *testing.T) {
++	withZeroDialogTimings(t)
++	for _, tc := range []struct {
++		name, content string
++		want          []string
++		blocked       bool
++	}{
++		{"exit selected", claudeFreshTrustFixture, []string{"Down", "Enter"}, false},
++		{"trust selected", strings.ReplaceAll(claudeFreshTrustFixture, "❯ No, exit\n   Yes, I trust this folder", "  No, exit\n ❯ Yes, I trust this folder"), []string{"Enter"}, false},
++		{"legacy exit selected", strings.ReplaceAll(claudeFreshTrustFixture, "❯ No, exit\n   Yes, I trust this folder", "  1. Yes, I trust this folder\n ❯ 2. No, exit"), []string{"Up", "Enter"}, false},
++		{"unknown option", strings.ReplaceAll(claudeFreshTrustFixture, "Yes, I trust this folder", "Yes, trust all folders"), nil, true},
++		{"extra option", strings.ReplaceAll(claudeFreshTrustFixture, "Yes, I trust this folder", "Yes, I trust this folder\n   Trust parent folder"), nil, true},
++		{"unselected", strings.ReplaceAll(claudeFreshTrustFixture, "❯", " "), nil, true},
++		{"truncated", strings.Split(claudeFreshTrustFixture, "Enter to confirm")[0], nil, true},
++		{"stale scrollback", claudeFreshTrustFixture + "\n❯ Current user prompt\n", nil, true},
++	} {
++		for _, streaming := range []bool{false, true} {
++			name := tc.name + "/poll"
++			if streaming {
++				name = tc.name + "/stream"
++			}
++			t.Run(name, func(t *testing.T) {
++				var sent []string
++				send := func(keys ...string) error { sent = append(sent, keys...); return nil }
++				var err error
++				if streaming {
++					snapshots := make(chan string, 1)
++					snapshots <- tc.content
++					close(snapshots)
++					_, err = acceptWorkspaceTrustDialogFromStream(context.Background(), time.Second, newReplayableSnapshotCursor(snapshots), send)
++				} else {
++					err = acceptWorkspaceTrustDialog(context.Background(), time.Second, func(int) (string, error) { return tc.content, nil }, send)
++				}
++				if (err != nil) != tc.blocked {
++					t.Errorf("error=%v, want blocked=%v", err, tc.blocked)
++				}
++				if !reflect.DeepEqual(sent, tc.want) {
++					t.Errorf("keys=%v, want %v", sent, tc.want)
++				}
++			})
++		}
++	}
++}
+diff --git a/internal/runtime/dialog_test.go b/internal/runtime/dialog_test.go
+index a31ee04..15746de 100644
+--- a/internal/runtime/dialog_test.go
++++ b/internal/runtime/dialog_test.go
+@@ -1304,7 +1304,7 @@ func TestPollsUntilDialogAppears(t *testing.T) {
+ 			if n < 3 {
+ 				return "starting up...", nil
+ 			}
+-			return "Quick safety check\ntrust this folder", nil
++			return claudeFreshTrustFixture, nil
+ 		},
+ 		func(...string) error {
+ 			return nil
+diff --git a/internal/runtime/tmux/adapter.go b/internal/runtime/tmux/adapter.go
+index 01b3a92..62026b6 100644
+--- a/internal/runtime/tmux/adapter.go
++++ b/internal/runtime/tmux/adapter.go
+@@ -18,6 +18,7 @@ import (
+ 	"github.com/gastownhall/gascity/internal/overlay"
+ 	"github.com/gastownhall/gascity/internal/runtime"
+ 	"github.com/gastownhall/gascity/internal/runtime/proctable"
++	"github.com/gastownhall/gascity/internal/sessionlog"
+ 	"github.com/gastownhall/gascity/internal/shellquote"
+ )
+ 
+@@ -261,9 +262,28 @@ func (p *Provider) Stop(name string) error {
+ 	return err
+ }
+ 
+-// Interrupt sends Ctrl-C to the named tmux session.
++// Interrupt sends Ctrl-C, or cancels a recognized Claude approval with Escape.
+ // Best-effort: returns nil if the session doesn't exist.
+ func (p *Provider) Interrupt(name string) error {
++	if sessionlog.ProviderFamily(p.tm.providerEnv(name)) == "claude" {
++		pane, err := p.tm.CapturePane(name, 0)
++		if err != nil {
++			if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrNoServer) {
++				return nil
++			}
++			return fmt.Errorf("observing Claude before interrupt: %w", err)
++		}
++		if parseApprovalPrompt(pane) != nil {
++			// The approval dialog advertises Escape to cancel; Ctrl-C can leave
++			// it open. Never select a numbered permission option to interrupt.
++			p.tm.cancelCopyModeIfParked(name)
++			err := p.tm.SendKeysRaw(name, "Escape")
++			if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrNoServer) {
++				return nil
++			}
++			return err
++		}
++	}
+ 	if p.tm.requiresHiddenAttachedInterrupt(name) && !p.tm.IsSessionAttached(name) {
+ 		if err := p.tm.ensureHiddenAttachedClient(name); err != nil {
+ 			return fmt.Errorf("preparing detached interrupt: %w", err)
+@@ -1235,7 +1255,9 @@ func launchOrchestration(ctx context.Context, ops startOps, name string, cfg run
+ 	// Always attempted when process names are set, since any Claude-like
+ 	// agent may show a trust dialog regardless of EmitsPermissionWarning.
+ 	if shouldAcceptStartupDialogs(cfg) {
+-		_ = ops.acceptStartupDialogs(ctx, name) // best-effort
++		if err := ops.acceptStartupDialogs(ctx, name); errors.Is(err, runtime.ErrUnrecognizedWorkspaceTrust) {
++			return err
++		} // Other startup dialogs remain best-effort.
+ 		if err := ctx.Err(); err != nil {
+ 			return err
+ 		}
+@@ -1262,7 +1284,9 @@ func launchOrchestration(ctx context.Context, ops startOps, name string, cfg run
+ 	// ready screen. Re-run dialog acceptance after readiness so late dialogs do
+ 	// not strand the session in an unusable startup state.
+ 	if shouldAcceptStartupDialogs(cfg) {
+-		_ = ops.acceptStartupDialogs(ctx, name) // best-effort
++		if err := ops.acceptStartupDialogs(ctx, name); errors.Is(err, runtime.ErrUnrecognizedWorkspaceTrust) {
++			return err
++		} // Other startup dialogs remain best-effort.
+ 		if err := ctx.Err(); err != nil {
+ 			return ignoreDeadlineIfSessionAlive(ops, name, err)
+ 		}
+diff --git a/internal/runtime/tmux/claude_interrupt_test.go b/internal/runtime/tmux/claude_interrupt_test.go
+new file mode 100644
+index 0000000..f54a270
+--- /dev/null
++++ b/internal/runtime/tmux/claude_interrupt_test.go
+@@ -0,0 +1,156 @@
++package tmux
++
++import (
++	"context"
++	"errors"
++	"reflect"
++	"strings"
++	"testing"
++	"time"
++)
++
++type claudeInterruptExecutor struct {
++	panes      []string
++	captureErr error
++	sendErr    error
++	parked     bool
++	captures   [][]string
++	keys       []string
++}
++
++func (f *claudeInterruptExecutor) execute(args []string) (string, error) {
++	switch args[1] {
++	case "show-environment":
++		key := args[len(args)-1]
++		if key == "GC_PROVIDER" {
++			return key + "=claude", nil
++		}
++		return key + "=❯ ", nil
++	case "capture-pane":
++		f.captures = append(f.captures, args)
++		if f.captureErr != nil {
++			return "", f.captureErr
++		}
++		pane := f.panes[0]
++		if len(f.panes) > 1 {
++			f.panes = f.panes[1:]
++		}
++		return pane, nil
++	case "display-message":
++		if f.parked {
++			return "1", nil
++		}
++		return "0", nil
++	case "send-keys":
++		key := args[len(args)-1]
++		f.keys = append(f.keys, key)
++		if key == "cancel" {
++			f.parked = false
++			return "", nil
++		}
++		return "", f.sendErr
++	default:
++		return "", errors.New("unexpected command: " + strings.Join(args, " "))
++	}
++}
++
++func (f *claudeInterruptExecutor) executeCtx(_ context.Context, args []string) (string, error) {
++	return f.execute(args)
++}
++
++func TestClaudeInterruptCancelsApprovalWithoutSelectingPermission(t *testing.T) {
++	for _, tc := range []struct {
++		name, pane, want string
++	}{
++		{"approval", currentClaudeApprovalPane(t), "Escape"},
++		{"ordinary turn", "Working (esc to interrupt)\n❯ ", "C-c"},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			fe := &claudeInterruptExecutor{panes: []string{tc.pane}}
++			tm := NewTmux()
++			tm.exec = fe
++			if err := (&Provider{tm: tm}).Interrupt("custom-claude-worker"); err != nil {
++				t.Fatal(err)
++			}
++			if !reflect.DeepEqual(fe.keys, []string{tc.want}) {
++				t.Fatalf("interrupt keys = %q, want exactly %q", fe.keys, tc.want)
++			}
++		})
++	}
++}
++
++func TestClaudeInterruptCaptureFailureSendsNoKeys(t *testing.T) {
++	want := errors.New("capture unavailable")
++	fe := &claudeInterruptExecutor{captureErr: want}
++	tm := NewTmux()
++	tm.exec = fe
++	if err := (&Provider{tm: tm}).Interrupt("custom-claude-worker"); !errors.Is(err, want) {
++		t.Fatalf("Interrupt = %v, want capture error", err)
++	}
++	if len(fe.keys) != 0 {
++		t.Fatalf("sent keys without observing the current pane: %q", fe.keys)
++	}
++}
++
++func TestClaudeWaitForIdleRejectsApprovalAndMenu(t *testing.T) {
++	for _, pane := range []string{currentClaudeApprovalPane(t), "Earlier input\n❯ \nChoose an action\n❯ 1. Continue\n  2. Cancel"} {
++		fe := &claudeInterruptExecutor{panes: []string{pane}}
++		tm := NewTmux()
++		tm.exec = fe
++		ctx, cancel := context.WithTimeout(context.Background(), 450*time.Millisecond)
++		err := tm.WaitForIdle(ctx, "custom-claude-worker", time.Second)
++		cancel()
++		if !errors.Is(err, context.DeadlineExceeded) {
++			t.Fatalf("modal accepted as idle: %v", err)
++		}
++	}
++}
++
++func TestClaudeInterruptSettlesOnlyAfterCurrentComposerReturns(t *testing.T) {
++	fe := &claudeInterruptExecutor{panes: []string{
++		currentClaudeApprovalPane(t), currentClaudeApprovalPane(t),
++		"Processing (esc to interrupt)\n❯ ", "Interrupted\n❯ ", "Interrupted\n❯ ",
++	}}
++	tm := NewTmux()
++	tm.exec = fe
++	if err := (&Provider{tm: tm}).Interrupt("custom-claude-worker"); err != nil {
++		t.Fatal(err)
++	}
++	if err := tm.WaitForIdle(context.Background(), "custom-claude-worker", 2*time.Second); err != nil {
++		t.Fatal(err)
++	}
++	if len(fe.captures) != 5 || !reflect.DeepEqual(fe.keys, []string{"Escape"}) {
++		t.Fatalf("interrupt settled too early or sent more keys: captures=%d keys=%q", len(fe.captures), fe.keys)
++	}
++	for _, args := range fe.captures {
++		if args[len(args)-1] != "-0" {
++			t.Fatalf("observed history instead of current viewport: %q", args)
++		}
++	}
++}
++
++func TestClaudeInterruptExitsCopyModeBeforeCancelingApproval(t *testing.T) {
++	fe := &claudeInterruptExecutor{panes: []string{currentClaudeApprovalPane(t)}, parked: true}
++	tm := NewTmux()
++	tm.exec = fe
++	if err := (&Provider{tm: tm}).Interrupt("custom-claude-worker"); err != nil {
++		t.Fatal(err)
++	}
++	if !reflect.DeepEqual(fe.keys, []string{"cancel", "Escape"}) || fe.parked {
++		t.Fatalf("interrupt did not leave copy mode before Escape: keys=%q parked=%v", fe.keys, fe.parked)
++	}
++}
++
++func TestClaudeInterruptVanishedApprovalIsBestEffort(t *testing.T) {
++	for _, gone := range []error{ErrSessionNotFound, ErrNoServer} {
++		fe := &claudeInterruptExecutor{panes: []string{currentClaudeApprovalPane(t)}, sendErr: gone}
++		tm := NewTmux()
++		tm.exec = fe
++		if err := (&Provider{tm: tm}).Interrupt("custom-claude-worker"); err != nil {
++			t.Fatalf("vanished session: %v", err)
++		}
++		if !reflect.DeepEqual(fe.keys, []string{"Escape"}) {
++			t.Fatalf("unexpected keys: %q", fe.keys)
++		}
++	}
++}
+diff --git a/internal/runtime/tmux/interaction.go b/internal/runtime/tmux/interaction.go
+index 133664d..2d40ed3 100644
+--- a/internal/runtime/tmux/interaction.go
++++ b/internal/runtime/tmux/interaction.go
+@@ -36,58 +36,142 @@ func (p *Provider) Respond(name string, response runtime.InteractionResponse) er
+ var (
+ 	// "This command requires approval" or "Approve edits?" patterns
+ 	requiresApprovalRe = regexp.MustCompile(`(?m)(This command requires approval|Approve edits\?)`)
++	proceedRe          = regexp.MustCompile(`(?m)^\s*Do you want to proceed\?\s*$`)
++	approvalOptionRe   = regexp.MustCompile(`^\s*(❯)?\s*([1-9])\. (.+?)\s*$`)
+ 
+ 	// Tool call header: "● ToolName(args)" or "● ToolName"
+ 	// Uses greedy match to last ")" to handle nested parens in args.
+ 	toolHeaderRe = regexp.MustCompile(`● (\w+)(?:\((.+)\))?`)
+ )
+ 
+-// parsedApproval holds the parsed approval prompt from a tmux pane capture.
++// approvalOption binds a visible label to its literal selection key.
++type approvalOption struct {
++	Key   string
++	Label string
++}
++
++// parsedApproval holds the active tool request and its currently displayed menu.
+ type parsedApproval struct {
+ 	ToolName string
+ 	Input    string
++	Options  []approvalOption
+ }
+ 
+ // parseApprovalPrompt parses the tmux pane text for a Claude Code approval prompt.
+ // Returns nil if no approval prompt is found or if the prompt can't be associated
+-// with a tool header (avoids false positives from conversational text).
++// with a tool header or bordered tool modal (avoids conversational matches).
+ func parseApprovalPrompt(paneText string) *parsedApproval {
+-	if !requiresApprovalRe.MatchString(paneText) {
++	questions := proceedRe.FindAllStringIndex(paneText, -1)
++	if len(questions) == 0 {
+ 		return nil
+ 	}
+-
+-	// Find the tool header closest to (before) the approval text.
+-	// This prevents binding a historical tool output to the active prompt.
+-	approvalIdx := requiresApprovalRe.FindStringIndex(paneText)
+-	if approvalIdx == nil {
++	question := questions[len(questions)-1]
++	options := parseApprovalOptions(paneText[question[1]:])
++	if options == nil {
+ 		return nil
+ 	}
+-	textBeforeApproval := paneText[:approvalIdx[0]]
+-
+-	// Find the LAST tool header before the approval marker.
++	start := 0
++	if len(questions) > 1 {
++		// Earlier approval dialogs in scrollback cannot supply the current tool.
++		start = questions[len(questions)-2][1]
++	}
++	before := paneText[start:question[0]]
++	// Claude 2.1.263 renders a bordered Bash modal without either the old
++	// approval marker or a structured tool-call bullet. Associate its command
++	// only with that modal, never with preceding conversational output.
++	lines := strings.Split(before, "\n")
++	for i := len(lines) - 1; i > 0; i-- {
++		if strings.TrimSpace(lines[i]) != "Bash command" {
++			continue
++		}
++		if toolHeaderRe.MatchString(strings.Join(lines[i+1:], "\n")) {
++			// A newer legacy tool header owns this prompt even when the prior
++			// Bash dialog's question/menu was erased from the captured pane.
++			break
++		}
++		border := strings.TrimSpace(lines[i-1])
++		if len([]rune(border)) < 8 || strings.Trim(border, "─") != "" {
++			return nil
++		}
++		var input []string
++		for _, line := range lines[i+1:] {
++			if strings.HasPrefix(line, "   ") && strings.TrimSpace(line) != "" {
++				input = append(input, strings.TrimSpace(line))
++			}
++		}
++		if len(input) == 0 {
++			return nil
++		}
++		return &parsedApproval{ToolName: "Bash", Input: strings.Join(input, "\n"), Options: options}
++	}
++	markers := requiresApprovalRe.FindAllStringIndex(before, -1)
++	if len(markers) == 0 {
++		return nil
++	}
++	textBeforeApproval := before[:markers[len(markers)-1][0]]
+ 	matches := toolHeaderRe.FindAllStringSubmatch(textBeforeApproval, -1)
+ 	if len(matches) == 0 {
+-		// No tool header found — can't associate this approval with a tool.
+-		// Return nil to avoid false positives from conversational output.
+ 		return nil
+ 	}
+ 	lastMatch := matches[len(matches)-1]
+-
+-	approval := &parsedApproval{
+-		ToolName: lastMatch[1],
+-	}
+-	if len(lastMatch) >= 3 && lastMatch[2] != "" {
+-		approval.Input = lastMatch[2]
+-	}
+-
+-	// Try to extract the command/content shown between the tool header and approval prompt.
++	approval := &parsedApproval{ToolName: lastMatch[1], Input: lastMatch[2], Options: options}
+ 	if approval.Input == "" {
+ 		approval.Input = extractToolInput(textBeforeApproval, approval.ToolName)
+ 	}
+-
+ 	return approval
+ }
+ 
++// Require a selected, numbered menu with unambiguous one-time approval and
++// denial. Wrapped labels are retained, including workspace/mode escalation
++// choices, so responses can match only their supported approval labels.
++func parseApprovalOptions(text string) []approvalOption {
++	var options []approvalOption
++	seen := make(map[string]bool)
++	selected, yes, no := 0, 0, 0
++	footer := false
++	for _, line := range strings.Split(text, "\n") {
++		trimmed := strings.TrimSpace(line)
++		if trimmed == "" {
++			continue
++		}
++		if footer {
++			return nil
++		}
++		if strings.HasPrefix(trimmed, "Esc to cancel") {
++			footer = true
++			continue
++		}
++		match := approvalOptionRe.FindStringSubmatch(line)
++		if match != nil {
++			if seen[match[2]] {
++				return nil
++			}
++			seen[match[2]] = true
++			if match[1] != "" {
++				selected++
++			}
++			options = append(options, approvalOption{Key: match[2], Label: match[3]})
++			continue
++		}
++		if len(options) == 0 || !strings.HasPrefix(line, "      ") {
++			return nil
++		}
++		options[len(options)-1].Label += " " + trimmed
++	}
++	for _, option := range options {
++		if option.Label == "Yes" {
++			yes++
++		}
++		if option.Label == "No" {
++			no++
++		}
++	}
++	if selected != 1 || yes != 1 || no != 1 {
++		return nil
++	}
++	return options
++}
++
+ // extractToolInput extracts the indented tool input block from pane text.
+ // Claude shows tool input as indented lines between the "● ToolName" header
+ // and the "This command requires approval" / "Approve edits?" line.
+@@ -128,12 +212,7 @@ func extractToolInput(textBeforeApproval, toolName string) string {
+ 	if len(captured) == 0 {
+ 		return ""
+ 	}
+-	result := strings.Join(captured, "\n")
+-	// Truncate very long inputs
+-	if len(result) > 500 {
+-		result = result[:500] + "…"
+-	}
+-	return result
++	return strings.Join(captured, "\n")
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -147,7 +226,11 @@ type approvalDedup struct {
+ }
+ 
+ func approvalHash(a *parsedApproval) string {
+-	h := sha256.Sum256([]byte(a.ToolName + "\x00" + a.Input))
++	identity := a.ToolName + "\x00" + a.Input
++	for _, option := range a.Options {
++		identity += "\x00" + option.Key + "\x00" + option.Label
++	}
++	h := sha256.Sum256([]byte(identity))
+ 	return fmt.Sprintf("%x", h[:8])
+ }
+ 
+@@ -208,11 +291,15 @@ func (t *Tmux) Pending(name string) (*runtime.PendingInteraction, error) {
+ 		prompt = "Allow " + approval.ToolName + "?"
+ 	}
+ 
++	options := make([]string, len(approval.Options))
++	for i, option := range approval.Options {
++		options[i] = option.Label
++	}
+ 	return &runtime.PendingInteraction{
+ 		RequestID: requestID,
+ 		Kind:      "approval",
+ 		Prompt:    prompt,
+-		Options:   []string{"Yes", "Yes, and don't ask again", "No"},
++		Options:   options,
+ 		Metadata: map[string]string{
+ 			"tool_name": approval.ToolName,
+ 			"source":    "tmux",
+@@ -226,7 +313,9 @@ const (
+ )
+ 
+ // Respond sends the appropriate keystroke to the tmux pane to approve or deny
+-// a pending tool approval, then verifies the prompt was consumed.
++// a pending tool approval, then verifies the prompt was consumed. Explicit
++// persistent actions require a recognized "don't ask again" choice; workspace
++// access and permission-mode changes remain native UI actions.
+ func (t *Tmux) Respond(name string, response runtime.InteractionResponse) error {
+ 	// Verify the expected approval is still present before sending keys.
+ 	paneText, err := t.CapturePane(name, 40)
+@@ -238,6 +327,9 @@ func (t *Tmux) Respond(name string, response runtime.InteractionResponse) error
+ 	}
+ 	current := parseApprovalPrompt(paneText)
+ 	if current == nil {
++		if proceedRe.MatchString(paneText) {
++			return fmt.Errorf("cannot safely identify the current approval menu")
++		}
+ 		t.approvalDedup().clear(name)
+ 		return nil // prompt already gone
+ 	}
+@@ -249,20 +341,37 @@ func (t *Tmux) Respond(name string, response runtime.InteractionResponse) error
+ 		}
+ 	}
+ 
+-	// Map action to keystroke. Claude's prompt shows:
+-	// 1. Yes
+-	// 2. Yes, and don't ask again for: <tool>
+-	// 3. No
+-	var key string
++	// Select by the current label, never a fixed position: newer Claude
++	// menus place "switch to auto mode" at the former denial position.
++	var label string
++	persistent := false
+ 	switch response.Action {
+ 	case "approve":
+-		key = "1"
+-	case "approve_accept_edits", "approve_always":
+-		key = "2"
++		label = "Yes"
+ 	case "deny":
+-		key = "3"
++		label = "No"
++	case "approve_always", "approve_accept_edits":
++		label = "Yes, and don't ask again"
++		persistent = true
+ 	default:
+-		return fmt.Errorf("unknown action %q", response.Action)
++		return fmt.Errorf("unsupported approval action %q", response.Action)
++	}
++	var key string
++	for _, option := range current.Options {
++		matches := option.Label == label
++		if persistent {
++			matches = option.Label == "Yes, and don't ask again for edits" ||
++				strings.HasPrefix(option.Label, "Yes, and don't ask again for: ")
++		}
++		if matches {
++			if key != "" {
++				return fmt.Errorf("current approval menu has no unambiguous %q option", label)
++			}
++			key = option.Key
++		}
++	}
++	if key == "" {
++		return fmt.Errorf("current approval menu has no unambiguous %q option", label)
+ 	}
+ 
+ 	// Exit copy-mode first if the pane is parked (the ga-c4w wheel binding),
+diff --git a/internal/runtime/tmux/interaction_claude_270_test.go b/internal/runtime/tmux/interaction_claude_270_test.go
+new file mode 100644
+index 0000000..5306dbe
+--- /dev/null
++++ b/internal/runtime/tmux/interaction_claude_270_test.go
+@@ -0,0 +1,57 @@
++package tmux
++
++import (
++	"os"
++	"strings"
++	"testing"
++	"testing/synctest"
++
++	"github.com/gastownhall/gascity/internal/runtime"
++)
++
++// This pane was captured from an isolated Claude 2.1.270 session before any
++// response was sent. Its third choice changes permission mode; denial is fourth.
++func claude270ApprovalPane(t *testing.T) string {
++	t.Helper()
++	pane, err := os.ReadFile("testdata/claude-2.1.270-bash-approval.txt")
++	if err != nil {
++		t.Fatal(err)
++	}
++	return string(pane)
++}
++
++func TestPendingClaude270UsesModalCommandAndEveryChoice(t *testing.T) {
++	provider := &Provider{tm: &Tmux{exec: &fakeExecutor{out: claude270ApprovalPane(t)}}}
++	pending, err := provider.Pending("fixture")
++	if err != nil || pending == nil {
++		t.Fatalf("Pending = %+v, %v; want captured Claude permission request", pending, err)
++	}
++	if pending.Metadata["tool_name"] != "Bash" || !strings.Contains(pending.Prompt, "python3 -c") ||
++		!strings.Contains(pending.Prompt, `.open("x").write("approved once\n")`) ||
++		!strings.Contains(pending.Prompt, "Create approval-proof.txt with exclusive open") {
++		t.Fatalf("Pending lost the modal command or title: %+v", pending)
++	}
++	if len(pending.Options) != 4 || pending.Options[0] != "Yes" || pending.Options[3] != "No" ||
++		!strings.Contains(pending.Options[2], "switch to auto mode") {
++		t.Fatalf("Pending options = %q, want the four actual menu choices", pending.Options)
++	}
++}
++
++func TestRespondClaude270DeniesWithoutChangingPermissionMode(t *testing.T) {
++	synctest.Test(t, func(t *testing.T) {
++		fe := &fakeExecutor{outs: []string{claude270ApprovalPane(t), "0", "", "assistant ready"}}
++		provider := &Provider{tm: &Tmux{exec: fe}}
++		if err := provider.Respond("fixture", runtime.InteractionResponse{Action: "deny"}); err != nil {
++			t.Fatal(err)
++		}
++		var sent []string
++		for _, call := range fe.calls {
++			if strings.Contains(strings.Join(call, " "), "send-keys") {
++				sent = append(sent, call[len(call)-1])
++			}
++		}
++		if len(sent) != 1 || sent[0] != "4" {
++			t.Fatalf("denial keys = %q, want exactly 4 (No), never 3 (switch to auto mode)", sent)
++		}
++	})
++}
+diff --git a/internal/runtime/tmux/interaction_current_test.go b/internal/runtime/tmux/interaction_current_test.go
+new file mode 100644
+index 0000000..bb29d30
+--- /dev/null
++++ b/internal/runtime/tmux/interaction_current_test.go
+@@ -0,0 +1,171 @@
++package tmux
++
++import (
++	"os"
++	"strings"
++	"testing"
++	"testing/synctest"
++
++	"github.com/gastownhall/gascity/internal/runtime"
++)
++
++func currentClaudeApprovalPane(t *testing.T) string {
++	t.Helper()
++	pane, err := os.ReadFile("testdata/claude-2.1.263-bash-approval.txt")
++	if err != nil {
++		t.Fatal(err)
++	}
++	return string(pane)
++}
++
++func TestPendingCurrentClaudeBashApproval(t *testing.T) {
++	provider := &Provider{tm: &Tmux{exec: &fakeExecutor{out: currentClaudeApprovalPane(t)}}}
++	pending, err := provider.Pending("fixture")
++	if err != nil || pending == nil {
++		t.Fatalf("Pending = %+v, %v; want current Claude permission request", pending, err)
++	}
++	if pending.Metadata["tool_name"] != "Bash" || !strings.Contains(pending.Prompt, "printf 'APPROVED_fixture") {
++		t.Fatalf("Pending lost the actual command: %+v", pending)
++	}
++	if len(pending.Options) != 4 || pending.Options[0] != "Yes" || pending.Options[3] != "No" {
++		t.Fatalf("Pending options = %q, want the four actual menu choices", pending.Options)
++	}
++}
++
++func TestRespondCurrentClaudeDenialDoesNotEnableAutoMode(t *testing.T) {
++	fe := &fakeExecutor{outs: []string{currentClaudeApprovalPane(t), "0", "", "assistant ready"}}
++	provider := &Provider{tm: &Tmux{exec: fe}}
++	if err := provider.Respond("fixture", runtime.InteractionResponse{Action: "deny"}); err != nil {
++		t.Fatal(err)
++	}
++	var sent []string
++	for _, call := range fe.calls {
++		if strings.Contains(strings.Join(call, " "), "send-keys") {
++			sent = append(sent, call[len(call)-1])
++		}
++	}
++	if len(sent) != 1 || sent[0] != "4" {
++		t.Fatalf("denial keys = %q, want exactly 4 (No), never 3 (switch to auto mode)", sent)
++	}
++}
++
++func TestRespondApprovalUsesCurrentExactChoice(t *testing.T) {
++	current := currentClaudeApprovalPane(t)
++	for _, tc := range []struct{ name, pane, action, key string }{
++		{"current-approve-once", current, "approve", "1"},
++		{"legacy-deny", approvalPromptPane(), "deny", "3"},
++		{"renumbered-deny", strings.Replace(current, "4. No", "7. No", 1), "deny", "7"},
++		{"renumbered-approve", strings.Replace(current, "1. Yes", "5. Yes", 1), "approve", "5"},
++		{"legacy-approve-always", approvalPromptPane(), "approve_always", "2"},
++		{"renumbered-accept-edits", strings.Replace(approvalPromptPane(), "2. Yes, and don't ask again for: Read:*", "6. Yes, and don't ask again for edits", 1), "approve_accept_edits", "6"},
++		{"wrapped-persistent-rule", strings.Replace(approvalPromptPane(), "2. Yes, and don't ask again for: Read:*", "7. Yes, and don't ask again\n      for: Read:*", 1), "approve_always", "7"},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			synctest.Test(t, func(t *testing.T) {
++				fe := &fakeExecutor{outs: []string{tc.pane, "0", "", "assistant ready"}}
++				provider := &Provider{tm: &Tmux{exec: fe}}
++				if err := provider.Respond("fixture", runtime.InteractionResponse{Action: tc.action}); err != nil {
++					t.Fatal(err)
++				}
++				var sent []string
++				for _, call := range fe.calls {
++					if strings.Contains(strings.Join(call, " "), "send-keys") {
++						sent = append(sent, call[len(call)-1])
++					}
++				}
++				if len(sent) != 1 || sent[0] != tc.key {
++					t.Fatalf("sent %q, want exactly %q", sent, tc.key)
++				}
++			})
++		})
++	}
++}
++
++func TestRespondApprovalNeverEscalatesPermissions(t *testing.T) {
++	for _, action := range []string{"approve_always", "approve_accept_edits", "switch_auto", "2", "3"} {
++		t.Run(action, func(t *testing.T) {
++			fe := &fakeExecutor{out: currentClaudeApprovalPane(t)}
++			provider := &Provider{tm: &Tmux{exec: fe}}
++			if err := provider.Respond("fixture", runtime.InteractionResponse{Action: action}); err == nil {
++				t.Fatal("unsafe or unsupported approval action succeeded")
++			}
++			if len(fe.calls) != 1 || !strings.Contains(strings.Join(fe.calls[0], " "), "capture-pane") {
++				t.Fatalf("unsafe approval mutated the pane: %v", fe.calls)
++			}
++		})
++	}
++}
++
++func TestRespondRejectsAmbiguousPersistentApproval(t *testing.T) {
++	pane := strings.Replace(approvalPromptPane(), "   3. No", "   4. Yes, and don't ask again for edits\n   3. No", 1)
++	fe := &fakeExecutor{out: pane}
++	provider := &Provider{tm: &Tmux{exec: fe}}
++	if err := provider.Respond("fixture", runtime.InteractionResponse{Action: "approve_always"}); err == nil {
++		t.Fatal("ambiguous persistent approval succeeded")
++	}
++	if len(fe.calls) != 1 || !strings.Contains(strings.Join(fe.calls[0], " "), "capture-pane") {
++		t.Fatalf("ambiguous approval mutated the pane: %v", fe.calls)
++	}
++}
++
++func TestRespondRejectsChangedApprovalMenu(t *testing.T) {
++	before := currentClaudeApprovalPane(t)
++	after := strings.Replace(before, "4. No", "5. No", 1)
++	fe := &fakeExecutor{outs: []string{before, after}}
++	provider := &Provider{tm: &Tmux{exec: fe}}
++	pending, err := provider.Pending("fixture")
++	if err != nil || pending == nil {
++		t.Fatalf("Pending: %+v, %v", pending, err)
++	}
++	if err := provider.Respond("fixture", runtime.InteractionResponse{RequestID: pending.RequestID, Action: "deny"}); err == nil || !strings.Contains(err.Error(), "approval prompt changed") {
++		t.Fatalf("Respond: %v, want stale menu rejection", err)
++	}
++	if len(fe.calls) != 2 {
++		t.Fatalf("changed menu caused input: %v", fe.calls)
++	}
++}
++
++func TestApprovalParsingRejectsUnrecognizedOrHistoricalMenus(t *testing.T) {
++	current := currentClaudeApprovalPane(t)
++	for name, pane := range map[string]string{
++		"no-denial":            strings.Replace(current, "   4. No\n", "", 1),
++		"no-once-approval":     strings.Replace(current, "1. Yes", "1. Yes, always", 1),
++		"ambiguous-denial":     strings.Replace(current, "4. No", "4. No\n   5. No", 1),
++		"duplicate-key":        strings.Replace(current, "4. No", "3. No", 1),
++		"no-selected-option":   strings.Replace(current, "❯", " ", 1),
++		"missing-modal-border": strings.ReplaceAll(current, "─", " "),
++		"historical-menu":      current + "\nAssistant completed the action.\n❯ Next prompt\n",
++	} {
++		t.Run(name, func(t *testing.T) {
++			fe := &fakeExecutor{out: pane}
++			provider := &Provider{tm: &Tmux{exec: fe}}
++			pending, err := provider.Pending("fixture")
++			if err != nil || pending != nil {
++				t.Fatalf("Pending = %+v, %v, want no safely recognized menu", pending, err)
++			}
++			if err := provider.Respond("fixture", runtime.InteractionResponse{Action: "deny"}); err == nil {
++				t.Fatal("unrecognized approval menu should reject response")
++			}
++			if len(fe.calls) != 2 {
++				t.Fatalf("unrecognized menu caused input: %v", fe.calls)
++			}
++		})
++	}
++}
++
++func TestPendingDoesNotBindEarlierBashModalToCurrentEditApproval(t *testing.T) {
++	current := currentClaudeApprovalPane(t)
++	for name, earlier := range map[string]string{
++		"complete-prior-dialog": current,
++		"prior-menu-cleared":    strings.Split(current, " Do you want to proceed?")[0],
++	} {
++		t.Run(name, func(t *testing.T) {
++			pane := earlier + "\n● Edit(file_path: /tmp/next.go)\n Approve edits?\n Do you want to proceed?\n ❯ 1. Yes\n   3. No\n"
++			provider := &Provider{tm: &Tmux{exec: &fakeExecutor{out: pane}}}
++			pending, err := provider.Pending("fixture")
++			if err != nil || pending == nil || pending.Metadata["tool_name"] != "Edit" || !strings.Contains(pending.Prompt, "/tmp/next.go") {
++				t.Fatalf("Pending associated the wrong tool: %+v, %v", pending, err)
++			}
++		})
++	}
++}
+diff --git a/internal/runtime/tmux/interaction_test.go b/internal/runtime/tmux/interaction_test.go
+index e260655..ea323c7 100644
+--- a/internal/runtime/tmux/interaction_test.go
++++ b/internal/runtime/tmux/interaction_test.go
+@@ -264,10 +264,7 @@ func TestPhase2ProviderRespondApprovesAndClearsPrompt(t *testing.T) {
+ 		},
+ 	}
+ 
+-	requestID := "tmux-" + approvalHash(&parsedApproval{
+-		ToolName: "Read",
+-		Input:    "file_path: /tmp/test.txt",
+-	})
++	requestID := "tmux-" + approvalHash(parseApprovalPrompt(approvalPromptPane()))
+ 	err := provider.Respond(session, runtime.InteractionResponse{
+ 		RequestID: requestID,
+ 		Action:    "approve",
+diff --git a/internal/runtime/tmux/startup_claude_trust_test.go b/internal/runtime/tmux/startup_claude_trust_test.go
+new file mode 100644
+index 0000000..a89eb9d
+--- /dev/null
++++ b/internal/runtime/tmux/startup_claude_trust_test.go
+@@ -0,0 +1,39 @@
++package tmux
++
++import (
++	"context"
++	"errors"
++	"testing"
++
++	"github.com/gastownhall/gascity/internal/runtime"
++)
++
++// Unknown trust menus must block startup before prompt or setup input is sent.
++func TestStartupBlocksUnrecognizedClaudeTrust(t *testing.T) {
++	for _, late := range []bool{false, true} {
++		name := "initial"
++		if late {
++			name = "after readiness"
++		}
++		t.Run(name, func(t *testing.T) {
++			ops := &fakeStartOps{hasSessionResult: true}
++			calls := 0
++			ops.acceptStartupDialogsHook = func() {
++				calls++
++				if !late || calls == 2 {
++					ops.acceptStartupDialogsErr = runtime.ErrUnrecognizedWorkspaceTrust
++				}
++			}
++			cfg := runtime.Config{WorkDir: "/scratch", Command: "claude", ReadyPromptPrefix: "❯ ", ProcessNames: []string{"claude"}, EmitsPermissionWarning: true, Nudge: "must not submit"}
++			err := doStartSession(context.Background(), ops, "gc-trust-test", cfg, DefaultConfig().SetupTimeout)
++			if !errors.Is(err, runtime.ErrUnrecognizedWorkspaceTrust) {
++				t.Fatalf("error=%v, want trust error", err)
++			}
++			for _, call := range ops.calls {
++				if call.method == "sendKeys" || call.method == "runSetupCommand" || (!late && call.method == "waitForReady") {
++					t.Fatalf("unsafe subsequent startup operation %s", call.method)
++				}
++			}
++		})
++	}
++}
+diff --git a/internal/runtime/tmux/testdata/claude-2.1.263-bash-approval.txt b/internal/runtime/tmux/testdata/claude-2.1.263-bash-approval.txt
+new file mode 100644
+index 0000000..36b5e5d
+--- /dev/null
++++ b/internal/runtime/tmux/testdata/claude-2.1.263-bash-approval.txt
+@@ -0,0 +1,24 @@
++  write it. If permission is denied, do not retry or use another method; end
++  with DENIED_A. If allowed, read the file using Read, then end with
++  APPROVED_A.
++
++⏺ Writing approval test string to file
++  ⎿  $ printf 'APPROVED_fixture\n' > approved-fixture.txt
++
++────────────────────────────────────────────────────────────────────────────────
++ Bash command
++ Tip: auto mode handles these prompts for you — choose "switch to auto mode"
++ below
++
++   printf 'APPROVED_fixture\n' > approved-fixture.txt
++   Write approval test string to file
++
++ Do you want to proceed?
++ ❯ 1. Yes
++   2. Yes, and always allow access to
++      /tmp/bb-live-test/workspaces/approvals-fixture from this
++      project
++   3. Yes, and switch to auto mode · auto mode handles these prompts for you
++   4. No
++
++ Esc to cancel · Tab to amend
+diff --git a/internal/runtime/tmux/testdata/claude-2.1.270-bash-approval.txt b/internal/runtime/tmux/testdata/claude-2.1.270-bash-approval.txt
+new file mode 100644
+index 0000000..64b52d4
+--- /dev/null
++++ b/internal/runtime/tmux/testdata/claude-2.1.270-bash-approval.txt
+@@ -0,0 +1,24 @@
++
++
++● Creating approval-proof.txt with exclusive open
++  ⎿  $ python3 -c 'from pathlib import Path; Path('"'"'/tmp/bb-menu-check-jlsjif
++     jp/approval-proof.txt'"'"').open("x").write("approved once\n")'
++
++────────────────────────────────────────────────────────────────────────────────
++ Bash command
++ Tip: auto mode handles these prompts for you — choose "switch to auto mode"
++ below
++
++   │ python3 -c 'from pathlib import Path; Path('"'"'/tmp/bb-menu-check-jlsji
++   │ fjp/approval-proof.txt'"'"').open("x").write("approved once\n")'
++   Create approval-proof.txt with exclusive open
++
++ This command requires approval
++
++ Do you want to proceed?
++ ❯ 1. Yes
++   2. Yes, and don’t ask again for: python3 *
++   3. Yes, and switch to auto mode · auto mode handles these prompts for you
++   4. No
++
++ Esc to cancel · Tab to amend
+diff --git a/internal/runtime/tmux/tmux.go b/internal/runtime/tmux/tmux.go
+index 015d274..4a8a915 100644
+--- a/internal/runtime/tmux/tmux.go
++++ b/internal/runtime/tmux/tmux.go
+@@ -2993,6 +2993,10 @@ func idlePromptPrefix(configured string) string {
+ 	return DefaultReadyPromptPrefix
+ }
+ 
++// Claude uses its composer glyph for selected menu rows too. Such a row is
++// never evidence that an interrupted turn has returned to the composer.
++var claudeMenuSelectionRe = regexp.MustCompile(`(?m)^\s*(?:[│┃]\s*)?❯\s*\d+[.)](?:\s|$)`)
++
+ // WaitForIdle polls until the agent appears to be at an idle prompt.
+ // Unlike WaitForRuntimeReady (which is for bootstrap), this is for steady-state
+ // idle detection — used to avoid interrupting agents mid-work.
+@@ -3005,6 +3009,12 @@ func idlePromptPrefix(configured string) string {
+ // Returns nil if the agent becomes idle within the timeout.
+ // Returns an error if the timeout expires while the agent is still busy.
+ func (t *Tmux) WaitForIdle(ctx context.Context, session string, timeout time.Duration) error {
++	family := sessionlog.ProviderFamily(t.providerEnv(session))
++	observationLines := promptObservationLines
++	if family == "claude" {
++		// Historical input prompts cannot establish a current stop boundary.
++		observationLines = 0
++	}
+ 	promptPrefix := DefaultReadyPromptPrefix
+ 	if configured, err := t.GetEnvironment(session, sessionReadyPromptEnvKey); err == nil {
+ 		promptPrefix = idlePromptPrefix(configured)
+@@ -3019,7 +3029,7 @@ func (t *Tmux) WaitForIdle(ctx context.Context, session string, timeout time.Dur
+ 		if err := ctx.Err(); err != nil {
+ 			return err
+ 		}
+-		lines, err := t.CapturePaneLines(session, promptObservationLines)
++		lines, err := t.CapturePaneLines(session, observationLines)
+ 		if err != nil {
+ 			// Distinguish terminal errors from transient ones.
+ 			// Session not found or no server means the session is gone —
+@@ -3037,7 +3047,9 @@ func (t *Tmux) WaitForIdle(ctx context.Context, session string, timeout time.Dur
+ 		// Check for active processing indicator in the status bar.
+ 		// Claude Code shows "esc to interrupt" while processing — if present,
+ 		// the agent is busy regardless of whether the prompt is visible.
+-		if paneContainsBusyIndicator(lines) {
++		pane := strings.Join(lines, "\n")
++		modal := family == "claude" && (claudeMenuSelectionRe.MatchString(pane) || parseApprovalPrompt(pane) != nil)
++		if modal || paneContainsBusyIndicator(lines) {
+ 			consecutiveIdle = 0
+ 			if err := waitForIdlePoll(ctx); err != nil {
+ 				return err
+diff --git a/internal/session/manager.go b/internal/session/manager.go
+index 86fa223..99552ce 100644
+--- a/internal/session/manager.go
++++ b/internal/session/manager.go
+@@ -1243,6 +1243,17 @@ func (m *Manager) Suspend(id string) error {
+ 			return err
+ 		}
+ 
++		// Invalidate exit tracking before the provider can report death. An
++		// explicit suspend is neither a rapid crash nor unproductive churn;
++		// either classification would discard the conversation resume key.
++		// Restore the wake stamp if stopping a live runtime fails.
++		lastWokeAt := b.Metadata["last_woke_at"]
++		if lastWokeAt != "" {
++			if err := m.store.SetMetadata(id, "last_woke_at", ""); err != nil {
++				return fmt.Errorf("preparing suspension exit tracking: %w", err)
++			}
++		}
++
+ 		// Kill the runtime session. Stop is provider-idempotent, so call it
+ 		// even when liveness already reports false; tmux remain-on-exit panes
+ 		// can be non-running but still need their session artifact removed.
+@@ -1256,7 +1267,13 @@ func (m *Manager) Suspend(id string) error {
+ 				err = nil
+ 			}
+ 			if err != nil {
+-				return fmt.Errorf("stopping runtime session: %w", err)
++				stopErr := fmt.Errorf("stopping runtime session: %w", err)
++				if lastWokeAt != "" {
++					if restoreErr := m.store.SetMetadata(id, "last_woke_at", lastWokeAt); restoreErr != nil {
++						return errors.Join(stopErr, fmt.Errorf("restoring suspension exit tracking: %w", restoreErr))
++					}
++				}
++				return stopErr
+ 			}
+ 		}
+ 
+diff --git a/internal/session/manager_suspend_exit_test.go b/internal/session/manager_suspend_exit_test.go
+new file mode 100644
+index 0000000..3d80a05
+--- /dev/null
++++ b/internal/session/manager_suspend_exit_test.go
+@@ -0,0 +1,116 @@
++package session
++
++import (
++	"context"
++	"errors"
++	"testing"
++	"time"
++
++	"github.com/gastownhall/gascity/internal/beads"
++	"github.com/gastownhall/gascity/internal/runtime"
++)
++
++type suspendExitObserver struct {
++	*runtime.Fake
++	beforeStop func()
++	stopErr    error
++}
++
++func (p *suspendExitObserver) Stop(name string) error {
++	if p.beforeStop != nil {
++		p.beforeStop()
++	}
++	if p.stopErr != nil {
++		return p.stopErr
++	}
++	return p.Fake.Stop(name)
++}
++
++func TestSuspendPreservesConversationAcrossExitClassification(t *testing.T) {
++	for _, elapsed := range []time.Duration{time.Second, time.Minute} {
++		t.Run(elapsed.String(), func(t *testing.T) {
++			store := beads.NewMemStore()
++			sp := &suspendExitObserver{Fake: runtime.NewFake()}
++			mgr := NewManagerWithOptions(store, sp)
++			now := time.Now().UTC()
++			info, err := mgr.CreateSession(context.Background(), CreateOptions{Template: "helper", Command: "claude", WorkDir: t.TempDir(), Provider: "claude", ExtraMeta: map[string]string{"session_origin": "manual"}})
++			if err != nil {
++				t.Fatal(err)
++			}
++			if err := store.SetMetadataBatch(info.ID, map[string]string{"session_key": "keep-provider-conversation", "last_woke_at": now.Add(-elapsed).Format(time.RFC3339)}); err != nil {
++				t.Fatal(err)
++			}
++			check := func() {
++				b, err := store.Get(info.ID)
++				if err != nil {
++					t.Fatal(err)
++				}
++				outcome := DecideSessionExit(ExitFacts{LastWokeAt: b.Metadata["last_woke_at"], Now: now, StabilityThreshold: 10 * time.Second, ProductivityThreshold: 5 * time.Minute})
++				if outcome != ExitNone {
++					t.Errorf("intentional suspend classified as %v", outcome)
++				}
++				if b.Metadata["session_key"] != "keep-provider-conversation" {
++					t.Error("suspend changed provider conversation")
++				}
++			}
++			sp.beforeStop = check
++			if err := mgr.Suspend(info.ID); err != nil {
++				t.Fatal(err)
++			}
++			check()
++		})
++	}
++}
++
++func TestSuspendRestoresExitTrackingWhenLiveStopFails(t *testing.T) {
++	store := beads.NewMemStore()
++	sp := &suspendExitObserver{Fake: runtime.NewFake()}
++	mgr := NewManagerWithOptions(store, sp)
++	info, err := mgr.CreateSession(context.Background(), CreateOptions{Template: "helper", Command: "claude", WorkDir: t.TempDir(), Provider: "claude"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	woke := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
++	if err := store.SetMetadata(info.ID, "last_woke_at", woke); err != nil {
++		t.Fatal(err)
++	}
++	sp.stopErr = errors.New("cannot stop live process")
++	if err := mgr.Suspend(info.ID); !errors.Is(err, sp.stopErr) {
++		t.Fatalf("Suspend error = %v", err)
++	}
++	b, err := store.Get(info.ID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if b.Metadata["last_woke_at"] != woke {
++		t.Errorf("failed stop lost wake stamp: %q", b.Metadata["last_woke_at"])
++	}
++	if State(b.Metadata["state"]) != StateActive {
++		t.Errorf("failed stop state = %q", b.Metadata["state"])
++	}
++}
++
++func TestSuspendDoesNotStopWhenExitTrackingCannotBeSaved(t *testing.T) {
++	store := beads.NewMemStore()
++	sp := &suspendExitObserver{Fake: runtime.NewFake()}
++	mgr := NewManagerWithOptions(store, sp)
++	info, err := mgr.CreateSession(context.Background(), CreateOptions{Template: "helper", Command: "claude", WorkDir: t.TempDir(), Provider: "claude"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := store.SetMetadata(info.ID, "last_woke_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
++		t.Fatal(err)
++	}
++	mgr.store = failMetadataKeyStore{MemStore: store, key: "last_woke_at"}
++	stopped := false
++	sp.beforeStop = func() { stopped = true }
++	if err := mgr.Suspend(info.ID); err == nil {
++		t.Fatal("expected persistence error")
++	}
++	if stopped {
++		t.Error("stopped runtime without saving deliberate-stop intent")
++	}
++	if !sp.IsRunning(info.SessionName) {
++		t.Error("persistence failure stopped runtime")
++	}
++}
+diff --git a/internal/sessionlog/claude_api_error.go b/internal/sessionlog/claude_api_error.go
+new file mode 100644
+index 0000000..a698484
+--- /dev/null
++++ b/internal/sessionlog/claude_api_error.go
+@@ -0,0 +1,26 @@
++package sessionlog
++
++import "strings"
++
++// normalizeClaudeAPIError uses the CLI's explicit failure marker. Assistant
++// refusals and text quoting an API error remain ordinary assistant messages.
++func normalizeClaudeAPIError(entry *Entry) {
++	if entry.Type != "assistant" || !entry.IsAPIErrorMessage {
++		return
++	}
++	text := entry.TextContent()
++	if text == "" {
++		var parts []string
++		for _, block := range entry.ContentBlocks() {
++			if block.Type == "text" && block.Text != "" {
++				parts = append(parts, block.Text)
++			}
++		}
++		text = strings.Join(parts, "\n")
++	}
++	if strings.TrimSpace(text) == "" {
++		text = "Claude provider failed"
++	}
++	entry.Type = "system"
++	entry.SystemEvent = &SystemEvent{Kind: "error", Category: "provider_error", Code: jsonStringValue(entry.APIError), Message: text}
++}
+diff --git a/internal/sessionlog/claude_api_error_test.go b/internal/sessionlog/claude_api_error_test.go
+new file mode 100644
+index 0000000..7008e84
+--- /dev/null
++++ b/internal/sessionlog/claude_api_error_test.go
+@@ -0,0 +1,65 @@
++package sessionlog
++
++import (
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++// Explicit provider failures after partial assistant output must remain failures.
++func TestClaudeAPIErrorAfterPartialResponse(t *testing.T) {
++	partial := `{"uuid":"partial","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Partial response"}],"stop_reason":"refusal"}}`
++	failure := `{"uuid":"failure","parentUuid":"partial","type":"assistant","isApiErrorMessage":true,"error":"invalid_request","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Request blocked by provider safeguards."}],"stop_reason":"refusal"}}`
++	p := filepath.Join(t.TempDir(), "session.jsonl")
++	if err := os.WriteFile(p, []byte(partial+"\n"+failure+"\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	session, err := ReadFile(p, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(session.Messages) != 2 {
++		t.Fatalf("messages=%d", len(session.Messages))
++	}
++	if session.Messages[0].Type != "assistant" || session.Messages[0].SystemEvent != nil {
++		t.Fatal("ordinary assistant refusal was reclassified")
++	}
++	got := session.Messages[1]
++	if got.Type != "system" || got.SystemEvent == nil {
++		t.Fatalf("API error classification: type=%q event=%+v", got.Type, got.SystemEvent)
++	}
++	if got.SystemEvent.Kind != "error" || got.SystemEvent.Category != "provider_error" || got.SystemEvent.Code != "invalid_request" || got.SystemEvent.Message != "API Error: Request blocked by provider safeguards." {
++		t.Fatalf("event=%+v", got.SystemEvent)
++	}
++	if string(got.Raw) != failure {
++		t.Fatal("raw provider record changed")
++	}
++}
++
++func TestClaudeAPIErrorRequiresExplicitFlag(t *testing.T) {
++	for _, flag := range []string{"false", "true"} {
++		t.Run(flag, func(t *testing.T) {
++			raw := `{"uuid":"entry","type":"assistant","isApiErrorMessage":` + flag + `,"message":{"role":"assistant","content":"API Error: quoted example"}}`
++			p := filepath.Join(t.TempDir(), "session.jsonl")
++			if err := os.WriteFile(p, []byte(raw+"\n"), 0o600); err != nil {
++				t.Fatal(err)
++			}
++			session, err := ReadFile(p, 0)
++			if err != nil {
++				t.Fatal(err)
++			}
++			entry := session.Messages[0]
++			if (entry.SystemEvent != nil) != (flag == "true") {
++				t.Fatalf("event=%+v for flag %s", entry.SystemEvent, flag)
++			}
++			if flag == "true" && entry.SystemEvent.Message != "API Error: quoted example" {
++				t.Fatal("plain text content lost")
++			}
++			var original map[string]json.RawMessage
++			if err := json.Unmarshal(entry.Raw, &original); err != nil {
++				t.Fatal(err)
++			}
++		})
++	}
++}
+diff --git a/internal/sessionlog/claude_project_slug_test.go b/internal/sessionlog/claude_project_slug_test.go
+new file mode 100644
+index 0000000..f93d6b8
+--- /dev/null
++++ b/internal/sessionlog/claude_project_slug_test.go
+@@ -0,0 +1,32 @@
++package sessionlog
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestFindSessionFileByIDClaudeUnderscoreWorkspace(t *testing.T) {
++	root := t.TempDir()
++	workDir := "/home/ubuntu/workspace_with_underscores"
++	key := "11111111-2222-4333-8444-555555555555"
++	for _, slug := range []string{"-home-ubuntu-workspace-with-underscores", "-home-ubuntu-workspace_with_underscores"} {
++		t.Run(slug, func(t *testing.T) {
++			projects := filepath.Join(root, slug)
++			directory := filepath.Join(projects, slug)
++			if err := os.MkdirAll(directory, 0o700); err != nil {
++				t.Fatal(err)
++			}
++			want := filepath.Join(directory, key+".jsonl")
++			if err := os.WriteFile(want, []byte("{}\n"), 0o600); err != nil {
++				t.Fatal(err)
++			}
++			if got := FindSessionFileByID([]string{projects}, workDir, key); got != want {
++				t.Fatalf("keyed transcript = %q, want %q", got, want)
++			}
++			if got := FindSessionFileByID([]string{projects}, workDir, "another-session"); got != "" {
++				t.Fatalf("unrelated key resolved to %q", got)
++			}
++		})
++	}
++}
+diff --git a/internal/sessionlog/entry.go b/internal/sessionlog/entry.go
+index f71dce0..ebfdd93 100644
+--- a/internal/sessionlog/entry.go
++++ b/internal/sessionlog/entry.go
+@@ -33,6 +33,10 @@ type Entry struct {
+ 	Type    string `json:"type"`    // user, assistant, system, tool_use, tool_result, progress, result, file-history-snapshot
+ 	Subtype string `json:"subtype"` // compact_boundary, init, status, etc. (system entries only)
+ 
++	// IsAPIErrorMessage marks Claude-generated provider failures, not model replies.
++	IsAPIErrorMessage bool            `json:"isApiErrorMessage,omitempty"`
++	APIError          json.RawMessage `json:"error,omitempty"`
++
+ 	// Content
+ 	Message     json.RawMessage `json:"message"` // {role, content} for user/assistant
+ 	SystemEvent *SystemEvent    `json:"systemEvent,omitempty"`
+diff --git a/internal/sessionlog/reader.go b/internal/sessionlog/reader.go
+index 178d1bd..51a4889 100644
+--- a/internal/sessionlog/reader.go
++++ b/internal/sessionlog/reader.go
+@@ -438,6 +438,7 @@ func parseFileDetailed(path string) ([]*Entry, SessionDiagnostics, error) {
+ 		raw := make([]byte, len(line))
+ 		copy(raw, line)
+ 		e.Raw = raw
++		normalizeClaudeAPIError(&e)
+ 		entries = append(entries, &e)
+ 	}
+ 	if err := scanner.Err(); err != nil {
+@@ -1532,12 +1533,16 @@ func claudeProjectSlugCandidates(workDir string) []string {
+ 	seenSlugs := make(map[string]bool)
+ 	var slugs []string
+ 	for _, path := range paths {
+-		slug := ProjectSlug(path)
+-		if seenSlugs[slug] {
+-			continue
++		legacySlug := ProjectSlug(path)
++		// Current Claude versions replace underscores as well. Keep the
++		// legacy spelling as a candidate for transcripts written earlier.
++		for _, slug := range []string{strings.ReplaceAll(legacySlug, "_", "-"), legacySlug} {
++			if seenSlugs[slug] {
++				continue
++			}
++			seenSlugs[slug] = true
++			slugs = append(slugs, slug)
+ 		}
+-		seenSlugs[slug] = true
+-		slugs = append(slugs, slug)
+ 	}
+ 	return slugs
+ }
+diff --git a/internal/sessionlog/tail.go b/internal/sessionlog/tail.go
+index bc46a28..92fec36 100644
+--- a/internal/sessionlog/tail.go
++++ b/internal/sessionlog/tail.go
+@@ -228,7 +228,7 @@ func isInterruptMessage(message json.RawMessage) bool {
+ 	if msg.Content[0] == '"' {
+ 		var s string
+ 		if json.Unmarshal(msg.Content, &s) == nil {
+-			return bytes.Contains([]byte(s), []byte("[Request interrupted by user]"))
++			return containsInterruptMarker(s)
+ 		}
+ 	}
+ 	// Array content: [{"type":"text","text":"..."}]
+@@ -237,7 +237,7 @@ func isInterruptMessage(message json.RawMessage) bool {
+ 	}
+ 	if json.Unmarshal(msg.Content, &blocks) == nil {
+ 		for _, b := range blocks {
+-			if bytes.Contains([]byte(b.Text), []byte("[Request interrupted by user]")) {
++			if containsInterruptMarker(b.Text) {
+ 				return true
+ 			}
+ 		}
+@@ -245,6 +245,13 @@ func isInterruptMessage(message json.RawMessage) bool {
+ 	return false
+ }
+ 
++// Both native markers terminate a turn. Preserve legacy matching and require
++// the new tool-use marker to stand alone, not appear in ordinary user prose.
++func containsInterruptMarker(text string) bool {
++	return bytes.Contains([]byte(text), []byte("[Request interrupted by user]")) ||
++		bytes.Equal(bytes.TrimSpace([]byte(text)), []byte("[Request interrupted by user for tool use]"))
++}
++
+ // unwrapJSONString handles JSONL files where the message field is stored
+ // as a JSON string (e.g. "message":"{\"role\":...}") rather than an
+ // object. If raw is a JSON string, it returns the unquoted inner bytes;
+diff --git a/internal/sessionlog/tool_interrupt_test.go b/internal/sessionlog/tool_interrupt_test.go
+new file mode 100644
+index 0000000..012dcc8
+--- /dev/null
++++ b/internal/sessionlog/tool_interrupt_test.go
+@@ -0,0 +1,48 @@
++package sessionlog
++
++import (
++	"encoding/json"
++	"testing"
++)
++
++func TestToolUseInterruptActivity(t *testing.T) {
++	for _, marker := range []string{"[Request interrupted by user]", "[Request interrupted by user for tool use]", "  [Request interrupted by user for tool use]\n"} {
++		for _, form := range []string{"string", "blocks", "wrapped"} {
++			t.Run(marker+"/"+form, func(t *testing.T) {
++				var content any = marker
++				if form != "string" {
++					content = []map[string]string{{"type": "text", "text": marker}}
++				}
++				message, err := json.Marshal(map[string]any{"role": "user", "content": content})
++				if err != nil {
++					t.Fatal(err)
++				}
++				if form == "wrapped" {
++					message, err = json.Marshal(string(message))
++					if err != nil {
++						t.Fatal(err)
++					}
++				}
++				if got := InferActivity("user", "", message); got != "idle" {
++					t.Fatalf("interrupt activity = %q, want idle", got)
++				}
++				entries := []*Entry{
++					{Type: "assistant", Message: json.RawMessage(`{"role":"assistant","stop_reason":"tool_use"}`)},
++					{Type: "user", Message: message},
++				}
++				if got := InferActivityFromEntries(entries); got != "idle" {
++					t.Fatalf("interrupted stream activity = %q, want idle", got)
++				}
++			})
++		}
++	}
++	for _, text := range []string{"Request interrupted by user for tool use", "[Request interrupted by user for tool use", "[Request interrupted by user for another reason]", "Please interrupt the tool", "Explain [Request interrupted by user for tool use]", "[Request interrupted by user for tool use] and continue"} {
++		message, err := json.Marshal(map[string]any{"role": "user", "content": text})
++		if err != nil {
++			t.Fatal(err)
++		}
++		if got := InferActivity("user", "", message); got != "in-turn" {
++			t.Errorf("ordinary user content %q activity = %q", text, got)
++		}
++	}
++}
+diff --git a/internal/worker/sessionlog_claude_error_test.go b/internal/worker/sessionlog_claude_error_test.go
+new file mode 100644
+index 0000000..b558fc0
+--- /dev/null
++++ b/internal/worker/sessionlog_claude_error_test.go
+@@ -0,0 +1,32 @@
++package worker
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/gastownhall/gascity/internal/sessionlog"
++)
++
++// Structured history must expose a provider failure rather than an assistant completion.
++func TestClaudeAPIErrorProjectsSystemFailure(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "session.jsonl")
++	raw := `{"uuid":"failure","type":"assistant","isApiErrorMessage":true,"error":"invalid_request","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: request blocked"}],"stop_reason":"refusal"}}`
++	if err := os.WriteFile(path, []byte(raw+"\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	session, err := sessionlog.ReadFile(path, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	got := normalizeEntry("claude", path, "session", 0, session.Messages[0])
++	if got.Actor != ActorSystem || got.Kind != "system" || got.Status != ResultStatusFinal {
++		t.Fatalf("actor=%s kind=%s status=%s", got.Actor, got.Kind, got.Status)
++	}
++	if got.SystemEvent == nil || got.SystemEvent.Kind != "error" || got.SystemEvent.Category != "provider_error" || got.SystemEvent.Code != "invalid_request" || got.SystemEvent.Message != "API Error: request blocked" {
++		t.Fatalf("event=%+v", got.SystemEvent)
++	}
++	if string(got.Provenance.Raw) != raw {
++		t.Fatal("native provider evidence changed")
++	}
++}
+diff --git a/internal/worker/transcript/claude_underscore_test.go b/internal/worker/transcript/claude_underscore_test.go
+new file mode 100644
+index 0000000..4c0d424
+--- /dev/null
++++ b/internal/worker/transcript/claude_underscore_test.go
+@@ -0,0 +1,29 @@
++package transcript
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestHasKeyedTranscriptClaudeUnderscoreWorkspace(t *testing.T) {
++	projects := filepath.Join(t.TempDir(), "private-config", "projects")
++	directory := filepath.Join(projects, "-home-ubuntu-workspace-with-underscores")
++	if err := os.MkdirAll(directory, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	key := "11111111-2222-4333-8444-555555555555"
++	if err := os.WriteFile(filepath.Join(directory, key+".jsonl"), []byte("{}\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	for _, provider := range []string{"claude", "claude-moonshot"} {
++		exists, probeable := HasKeyedTranscript([]string{projects}, provider, "/home/ubuntu/workspace_with_underscores", key)
++		if !exists || !probeable {
++			t.Fatalf("%s exact transcript = (%v, %v)", provider, exists, probeable)
++		}
++		exists, probeable = HasKeyedTranscript([]string{projects}, provider, "/home/ubuntu/workspace_with_underscores", "missing-key")
++		if exists || !probeable {
++			t.Fatalf("%s missing key = (%v, %v)", provider, exists, probeable)
++		}
++	}
++}
