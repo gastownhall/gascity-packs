@@ -261,6 +261,35 @@ Inbound behavior in v0:
 - peer fanout for room publishes is opt-in per binding and disabled by default
 - peer-triggered publishes only fan out when they explicitly mention target `@session_name` values
 
+## Reading An Inbound Message
+
+Every inbound message is written to `.gc/services/discord/data/chat-ingress/in-<message-id>.json`
+before it is routed. Four fields describe the body:
+
+| field | what it is |
+| --- | --- |
+| `body` | the whole message, bot mention removed, line breaks as typed |
+| `body_length` | `len(body)` |
+| `body_preview` | `body` flattened to one line and clipped to 160 chars for status lines |
+| `body_truncated` | `true` when the 160-char clip dropped something. It is computed from the flattened preview, so a heavily line-broken body can be `false` while `body` and `body_preview` still differ in shape. |
+
+**Read `body`. `body_preview` is for status lines.** They differ whenever
+`body_truncated` is true, and a clipped preview does not announce itself — one
+that happens to end on a sentence boundary reads exactly like a whole message.
+That cost the mayor two acted-on fragments on 2026-07-30, one of which dropped
+the scope limit on the work it was authorizing.
+
+Records written before this shape existed have only `body_preview` and no
+`body_truncated`. A missing flag means "unknown", not "short" — for those, the
+closest signal is `message_debug.gateway_content_length`, which is an upper
+bound — it is measured before the bot mention is stripped.
+
+The session receives the same message a second time in the deferred
+`<discord-event>` reminder's `untrusted_body_json`. That copy is never
+truncated, but it is flattened to a single line, so `body` is the only copy
+that keeps the author's line breaks. It also lands a turn or more later, so
+anything watching the ingress directory sees the file first.
+
 ## Inspect Status
 
 ```bash
@@ -272,6 +301,11 @@ Status lists the default and named apps separately, including token presence,
 gateway state, and per-app counters. The gateway endpoint also reports an
 aggregate state without letting one failed bot hide or take down healthy bots.
 Status never prints token values.
+
+`Recent Chat Ingress` previews are redacted on this surface, so the line never
+shows message text. It does append `[CLIPPED — N chars total; ...]` when the
+record was clipped, which is how you tell a partial record from a whole one
+without reading the body.
 
 ## Workflow Helper
 

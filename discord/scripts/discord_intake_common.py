@@ -1824,6 +1824,26 @@ def iter_chat_publishes_since(since_epoch: float) -> list[dict[str, Any]]:
     return items
 
 
+def find_chat_publish_by_remote_message_id(
+    remote_message_id: str,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Return the chat-publish record for a message WE sent, keyed by the
+    Discord message id Discord assigned it (``remote_message_id``).
+
+    Lets a reply to one of our own past messages resolve its quote from what
+    we already wrote to disk when we published it, with no REST call.
+    """
+    normalized = str(remote_message_id).strip()
+    if not normalized:
+        return None
+    publish_records = records if records is not None else iter_chat_publishes()
+    for record in publish_records:
+        if str(record.get("remote_message_id", "")).strip() == normalized:
+            return record
+    return None
+
+
 def _safe_lock_name(prefix: str, key: str) -> str:
     digest = hashlib.sha256(str(key).encode("utf-8")).hexdigest()[:16]
     return os.path.join(locks_dir(), f"{prefix}-{digest}.lock")
@@ -2063,6 +2083,10 @@ def redact_chat_ingress_record(payload: dict[str, Any]) -> dict[str, Any]:
         body["from_display"] = "[redacted]"
     if body.get("from_user_id"):
         body["from_user_id"] = "[redacted]"
+    # "body" carries the whole message and "body_preview" its first 160 chars.
+    # Both are the human's words; the admin page is tenant-visible.
+    if body.get("body"):
+        body["body"] = "[redacted]"
     if body.get("body_preview"):
         body["body_preview"] = "[redacted]"
     return body
@@ -2081,6 +2105,8 @@ def redact_room_launch_record(payload: dict[str, Any]) -> dict[str, Any]:
         body["from_display"] = "[redacted]"
     if body.get("from_user_id"):
         body["from_user_id"] = "[redacted]"
+    if body.get("body"):
+        body["body"] = "[redacted]"
     if body.get("body_preview"):
         body["body_preview"] = "[redacted]"
     return body

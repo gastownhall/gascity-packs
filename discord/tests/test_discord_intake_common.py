@@ -3385,6 +3385,42 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(common._count_root_peer_triggered_publishes("room:22", "in-1", "corp--sky"), 2)
         self.assertEqual(common._count_root_peer_deliveries_from_index("room:22", "in-1"), 3)
 
+    # gm-52178u: reply-to context falls back to our own past publish record
+    # when Discord doesn't hand us an inline referenced_message and a REST
+    # fetch isn't available/desired.
+
+    def test_find_chat_publish_by_remote_message_id_finds_a_match(self) -> None:
+        common.save_chat_publish(
+            {
+                "publish_id": "discord-publish-10",
+                "remote_message_id": "msg-10",
+                "body": "our own earlier reply",
+            }
+        )
+        record = common.find_chat_publish_by_remote_message_id("msg-10")
+        assert record is not None
+        self.assertEqual(record["publish_id"], "discord-publish-10")
+        self.assertEqual(record["body"], "our own earlier reply")
+
+    def test_find_chat_publish_by_remote_message_id_returns_none_when_no_match(self) -> None:
+        common.save_chat_publish({"publish_id": "discord-publish-11", "remote_message_id": "msg-11"})
+        self.assertIsNone(common.find_chat_publish_by_remote_message_id("msg-does-not-exist"))
+
+    def test_find_chat_publish_by_remote_message_id_returns_none_for_empty_id(self) -> None:
+        common.save_chat_publish({"publish_id": "discord-publish-12", "remote_message_id": "msg-12"})
+        self.assertIsNone(common.find_chat_publish_by_remote_message_id(""))
+
+    def test_find_chat_publish_by_remote_message_id_uses_injected_records_over_disk(self) -> None:
+        # A record only on disk (not in the injected list) must NOT match --
+        # confirms the records param is used in place of iter_chat_publishes(),
+        # not merely as an addition to it.
+        common.save_chat_publish({"publish_id": "discord-publish-13", "remote_message_id": "msg-13"})
+        injected = [{"publish_id": "discord-publish-14", "remote_message_id": "msg-14", "body": "injected"}]
+        self.assertIsNone(common.find_chat_publish_by_remote_message_id("msg-13", records=injected))
+        record = common.find_chat_publish_by_remote_message_id("msg-14", records=injected)
+        assert record is not None
+        self.assertEqual(record["body"], "injected")
+
     def _save_peer_retry_record(self, publish_id: str, target: dict[str, object]) -> None:
         common.set_chat_binding(
             common.load_config(),
@@ -3814,6 +3850,7 @@ class DiscordIntakeCommonTests(unittest.TestCase):
                 "ingress_id": "in-1",
                 "from_display": "alice",
                 "from_user_id": "u-1",
+                "body": "super secret body, at whatever length the human typed it",
                 "body_preview": "super secret body",
                 "status": "delivered",
             }
@@ -3838,7 +3875,26 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(snapshot["recent_chat_ingress"][0]["from_display"], "[redacted]")
         self.assertEqual(snapshot["recent_chat_ingress"][0]["from_user_id"], "[redacted]")
         self.assertEqual(snapshot["recent_chat_ingress"][0]["body_preview"], "[redacted]")
+        # The full body is the same human's words as the preview, and the admin
+        # page this snapshot feeds is tenant-visible.
+        self.assertEqual(snapshot["recent_chat_ingress"][0]["body"], "[redacted]")
         self.assertEqual(snapshot["recent_chat_publishes"][0]["body"], "[redacted]")
+
+    def test_redact_room_launch_record_hides_full_body(self) -> None:
+        redacted = common.redact_room_launch_record(
+            {
+                "launch_id": "room-launch:1",
+                "from_display": "alice",
+                "from_user_id": "u-1",
+                "body": "the whole launch instruction",
+                "body_preview": "the whole launch",
+            }
+        )
+
+        self.assertEqual(redacted["from_display"], "[redacted]")
+        self.assertEqual(redacted["from_user_id"], "[redacted]")
+        self.assertEqual(redacted["body"], "[redacted]")
+        self.assertEqual(redacted["body_preview"], "[redacted]")
 
     def test_list_recent_requests_skips_invalid_json_files(self) -> None:
         common.save_request({"request_id": "dc-valid"})

@@ -149,11 +149,32 @@ readiness report. **Pushing the branch and opening the PR are your call.**
 
 ## Usage
 
-In your city's `pack.toml`:
+Import it into your city from this repository:
+
+```sh
+gc import add https://github.com/gastownhall/gascity-packs.git//contributing-to-gascity
+```
+
+That writes the import and pins it in `packs.lock`. Without `--version`, `gc`
+resolves the newest repository tag, so this form needs a tag that contains the
+`contributing-to-gascity/` directory. Until one exists, pin a commit on `main`
+with `--version sha:<commit>`.
+
+The same import by hand in `pack.toml`, followed by `gc import install`:
 
 ```toml
-[imports.contributing]
-source = "../packs/contributing"   # path; or git URL when published
+[imports.contributing-to-gascity]
+source = "https://github.com/gastownhall/gascity-packs.git//contributing-to-gascity"
+```
+
+The same tag rule applies here. Until a tag contains the directory, add
+`version = "sha:<commit>"` to the table.
+
+To work on the pack from a local checkout, point `source` at the path instead:
+
+```toml
+[imports.contributing-to-gascity]
+source = "../gascity-packs/contributing-to-gascity"
 ```
 
 Then the skills load for your coding agent. You can also read them directly from
@@ -161,7 +182,14 @@ this directory — they're self-contained Markdown.
 
 ## Migrating from the previous version
 
-The current pack is **0.4.0**. If you adopted an earlier version, the skill and
+The current pack is **0.5.0**.
+
+**0.5.0 is a breaking rename**: the pack moved from `contributing` to
+`contributing-to-gascity` (directory and import name). Update
+`[imports.contributing]` to `[imports.contributing-to-gascity]` and the `source`
+path accordingly. The skill and formula names are unchanged.
+
+If you adopted an earlier version, the skill and
 formula **names** changed during the lifecycle rework — nothing else about how a
 step behaves did. Every standard baked into the skills (the B1–B36 adoption
 audit, the blast-radius dimensions, the five test tiers, the gating model) is
@@ -195,7 +223,7 @@ that pins one:
 ## Pack contents
 
 ```
-contributing/
+contributing-to-gascity/
 ├── pack.toml                                    schema=2; no imports (self-contained)
 ├── README.md
 ├── skills/                                      agent-read + mayor-mode maps
@@ -226,7 +254,7 @@ contributing/
 ## Tests
 
 ```sh
-python3 -m pytest contributing/tests/
+python3 -m pytest contributing-to-gascity/tests/
 ```
 
 [pr-pipeline]: https://github.com/gastownhall/gascity-packs/tree/main/pr-pipeline

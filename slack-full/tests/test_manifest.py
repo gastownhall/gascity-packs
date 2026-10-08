@@ -75,6 +75,7 @@ def test_manifest_declares_bot_scopes(manifest: dict) -> None:
     # install or silently drops the channel subscription. Lock the
     # invariant scope-by-event into this assertion.
     required = {
+        "app_mentions:read",
         "channels:history",
         # company rooms: verify switchboard membership of public
         # directory rooms (conversations.info / conversations.members)
@@ -138,11 +139,12 @@ def test_manifest_bot_events_unique_and_sorted(manifest: dict) -> None:
     assert events == sorted(events), "bot events must be sorted alphabetically"
 
 
-def test_manifest_slash_commands_field_present(manifest: dict) -> None:
-    # gc-cby.2 (sync-commands) needs this field to exist as a list so
-    # it can append/diff. Empty is fine today; missing is not.
+def test_manifest_omits_empty_slash_commands(manifest: dict) -> None:
     cmds = manifest.get("features", {}).get("slash_commands")
-    assert isinstance(cmds, list), "features.slash_commands must be a list"
+    assert cmds is None or cmds, (
+        "features.slash_commands must be omitted or non-empty; Slack "
+        "rejects an empty array at import"
+    )
 
 
 # --- Agent identity app template (manifest/agent-app.json) -----------

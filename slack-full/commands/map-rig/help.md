@@ -1,7 +1,7 @@
 Bind a Slack rig to a set of channels for slash-command default routing.
 
 Persists a (workspace_id, rig_name) → set-of-channel-ids record at
-<cityPath>/.gc/slack/rig_mappings.json. The slack-pack adapter reads
+<cityPath>/.gc/slack/rig_mappings.json. The slack-full adapter reads
 this file at startup and uses it as the fall-through resolver when no
 per-channel 'map-channel' binding exists for an inbound channel.
 

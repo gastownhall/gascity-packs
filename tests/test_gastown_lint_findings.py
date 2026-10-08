@@ -17,8 +17,8 @@ outliving it.
 
 Which findings gc emits depends on which gc ran, and this test does not paper
 over that. `.github/workflows/ci.yml` installs `gc@latest`; twenty-two findings
-that a released gc reports were fixed on gascity main by 7724983de and are
-absent from a dev build. So the waiver file is sectioned: entries every gc
+that gc v1.4.x reports were fixed in v1.5.0 by 7724983de (#5220), and five
+more by 72b8951790 (#4995). So the waiver file is sectioned: entries every gc
 reports are required, and a version-dependent section is tolerated but has to
 be wholly present or wholly absent. That is what the sections are for, and it
 is why the first run of this test in CI went red while it was green locally.
@@ -58,7 +58,7 @@ UNIVERSAL = "universal"
 # released gc reports and main no longer does, and this test holds each to the
 # assertion that is true of it. Collapsing the two would mean either CI red on
 # an upstream release, or a real regression waved through on a dev build.
-TOLERATED_SECTIONS = ("pre-5220",)
+TOLERATED_SECTIONS = ("pre-4995", "pre-5220")
 
 
 def gc_binary() -> str | None:
@@ -403,7 +403,7 @@ class WaiverKeyingTest(unittest.TestCase):
         self.assertEqual((observed - waived), Counter({target: 1}))
 
     def test_a_tolerated_section_reported_short_by_one_is_partial(self) -> None:
-        """The all-present-or-all-absent rule, exercised without a v1.4.1 gc."""
+        """The all-present-or-all-absent rule, exercised without a v1.4.x gc."""
         sections = waived_findings()
         for name in TOLERATED_SECTIONS:
             entries = sections[name]
