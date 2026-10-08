@@ -46,6 +46,7 @@ def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArti
     schema = load_schema(schema_id)
     validate_required_front_matter(front_matter, schema)
     validate_status(front_matter, schema)
+    validate_verdict(front_matter, schema)
     trace = validate_trace(front_matter)
     upstream = validate_upstream(trace)
     coverage = validate_coverage(trace, schema)
@@ -108,6 +109,11 @@ def validate_schema_definition(schema: dict[str, Any]) -> None:
     fields = schema.get("required_front_matter", [])
     if not isinstance(fields, list):
         raise ValidationError(f"schema {schema_id}: required_front_matter must be a list")
+    verdicts = schema.get("allowed_verdicts")
+    if verdicts is not None and (
+        not isinstance(verdicts, list) or not verdicts or not all(isinstance(item, str) for item in verdicts)
+    ):
+        raise ValidationError(f"schema {schema_id}: allowed_verdicts must be a non-empty list of strings")
     for field in fields:
         leaf = str(field).split(".")[-1].lower()
         if leaf in FORBIDDEN_REQUIRED_FIELD_NAMES:
@@ -139,6 +145,27 @@ def validate_status(front_matter: dict[str, Any], schema: dict[str, Any]) -> Non
         raise ValidationError(f"schema {schema.get('schema_id', '<unknown>')}: allowed_statuses must be strings")
     if status not in allowed:
         raise ValidationError(f"status must be one of {sorted(allowed)}, got {status!r}")
+
+
+def validate_verdict(front_matter: dict[str, Any], schema: dict[str, Any]) -> None:
+    """Enforce a closed verdict vocabulary when the schema declares one.
+
+    Schemas without ``allowed_verdicts`` are unaffected. A schema that declares
+    the list makes ``verdict`` mandatory and case-insensitive; releasing versus
+    blocking semantics stay with the consumer, so a blocking verdict is still a
+    valid artifact here.
+    """
+    allowed = schema.get("allowed_verdicts")
+    if allowed is None:
+        return
+    if not isinstance(allowed, list) or not allowed or not all(isinstance(item, str) for item in allowed):
+        raise ValidationError(f"schema {schema.get('schema_id', '<unknown>')}: allowed_verdicts must be a non-empty list of strings")
+    verdict = front_matter.get("verdict")
+    if not isinstance(verdict, str) or not verdict.strip():
+        raise ValidationError(f"front matter is missing required key verdict; expected one of {sorted(allowed)}")
+    token = verdict.strip().lower()
+    if token not in {item.lower() for item in allowed}:
+        raise ValidationError(f"verdict must be one of {sorted(allowed)}, got {verdict!r}")
 
 
 def validate_trace(front_matter: dict[str, Any]) -> dict[str, Any]:

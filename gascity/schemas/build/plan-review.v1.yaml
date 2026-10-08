@@ -1,0 +1,52 @@
+# Base build artifact schema. Schema IDs are immutable once published;
+# breaking changes require a new version ID (for example gc.build.plan-review.v2).
+# Base schemas must not require owner, stage-owner, persona, or role fields.
+#
+# The plan-review artifact is the release signal between an implementation plan
+# and decomposition. It records the review the same way gc.build.review.v1
+# does, plus a closed-vocabulary `verdict` so the consumer (plan-repair,
+# prepare-decompose, or a producer-boundary check) can read the release
+# decision by machine instead of parsing prose. Only `approved` and `proceed`
+# release decomposition; the validator accepts every listed verdict so a
+# blocking review is still a well-formed artifact.
+schema_id: gc.build.plan-review.v1
+artifact: plan-review
+allowed_statuses:
+  - draft
+  - questions
+  - approved
+  - changes_required
+  - blocked
+  - superseded
+allowed_verdicts:
+  - approved
+  - proceed
+  - proceed-with-fixes
+  - changes-required
+  - changes_required
+  - questions
+  - blocked
+  - rejected
+required_front_matter:
+  - schema
+  - workflow.id
+  - workflow.formula
+  - methodology.pack
+  - methodology.name
+  - producer.formula
+  - producer.stage
+  - producer.attempt
+  - status
+  - verdict
+  - trace
+coverage_statuses:
+  - covered
+  - not_applicable
+  - deferred
+  - blocked
+  - out_of_scope
+  - superseded
+required_sections:
+  - Verdict
+  - Findings
+  - Verification
