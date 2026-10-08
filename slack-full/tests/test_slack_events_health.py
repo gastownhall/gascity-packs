@@ -55,9 +55,16 @@ def test_recent_post_is_healthy(tmp_path: pathlib.Path) -> None:
     )[0] == 0
 
 
-def test_missing_state_is_unreadable(tmp_path: pathlib.Path, capsys) -> None:
-    assert _module().main([]) == 2
-    assert "cannot measure" in capsys.readouterr().out
+def test_no_post_yet_is_healthy(tmp_path: pathlib.Path, capsys) -> None:
+    assert _module().main([]) == 0
+    assert "no post recorded yet" in capsys.readouterr().out
+
+
+def test_unreadable_outbound_state_cannot_measure(tmp_path: pathlib.Path) -> None:
+    state = tmp_path / ".gc" / "slack"
+    state.mkdir(parents=True)
+    (state / "outbound-liveness.json").write_text("{", encoding="utf-8")
+    assert _module().verdict()[0] == 2
 
 
 def test_grace_environment_is_honored(tmp_path: pathlib.Path, monkeypatch) -> None:

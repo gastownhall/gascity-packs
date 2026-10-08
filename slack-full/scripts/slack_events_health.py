@@ -48,6 +48,8 @@ def _event_at(path: pathlib.Path) -> tuple[str, dt.datetime | None]:
 
 def verdict(*, now: str | None = None, grace_min: int | None = None) -> tuple[int, str]:
     event_path, outbound_path = _paths()
+    if not outbound_path.exists():
+        return 0, "SLACK EVENTS: no post recorded yet, nothing to compare"
     try:
         outbound = _read(outbound_path)
         post_at = _outbound_at(outbound)
