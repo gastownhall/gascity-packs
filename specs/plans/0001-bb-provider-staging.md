@@ -1,8 +1,11 @@
 # Project-aware BB candidate qualification
 
-Status: bounded foundation qualification passed, October 7, 2026. Ready for
-staging review; not approved for merge or promotion. The exact manifest and retained evidence are in Chris's external
+Status: the exact GC integration candidate passed qualification in disposable
+staging on October 7–8, 2026. Earlier-build results remain separately identified.
+No candidate is approved for merge or promotion. The exact manifest and retained evidence are in Chris's external
 `bb-provider-project-picker` run directory; they are deliberately outside the VM.
+
+## Earlier foundation qualification
 
 The minimal city imports core and BB, plus required bd/Dolt storage packs. It does not depend on Jarvis, Gotham,
 the GC engineering pack, or Crucible. Candidate execution, browsers, workspaces,
@@ -49,7 +52,7 @@ has a real pending approval; it does not pretend to measure BB's wall-clock time
 
 ## October 7 reported-turn repairs
 
-The current VM build is `1.6.0-dev-jarvis.7-bb-history`. GC now scans beyond the
+The earlier parser-repair VM build was `1.6.0-dev-jarvis.7-bb-history`. GC now scans beyond the
 64 KiB metadata tail for Codex lifecycle markers and retains Claude parallel tool
 result attachments in the active history. Both changes have failing regressions,
 captured transcript replay and passing affected sessionlog/worker/API suites and
@@ -65,3 +68,40 @@ The original user turn was recovered after confirming native completion, without
 resending any prompt or resetting its session. Its historical BB error remains.
 VM-only CLI entrypoints and required storage pack imports were repaired as well.
 Stable services are unchanged; Chris must approve this final staging candidate.
+
+
+## Personal GC integration refresh
+
+The generated contract now comes from personal GC branch
+`csells/gascity:fix/bb-supervisor-continuity`, commit
+`992a8dd485239b74214a0c3befe80fb5bec25669`. Build
+`1.6.0-dev-jarvis.8-bb-integration.2` has SHA256
+`4515da0f4b66a8b0ee301cca797cbd53b5a698abac7cd21159a1c612c4d01957`.
+It combines pinned upstream main and pending-interaction/API PRs with our BB
+continuity changes. Qualification found and repaired API-create command drift,
+repeated live work lookups, manual-session recreation after close, and a native
+pre-push hook that could skip large diffs.
+
+Exact-source native checks pass 234/234 targets and five selected integration
+targets. Plugin schema regeneration, typecheck, 78 tests, two contract guards
+and build pass. The staged live schema matches the generated client. BB remains
+rebased on main `81256f5d42`, candidate `6e5c1c6fd`, SDK runtime 0.6.28.
+Six picker cases and four rendered turns each for Luna/Haiku pass. Both providers
+pass native allow/deny, lost-submit-response recovery without replay, release
+and interruption. All eight closed fixtures stay closed across two reconciliation
+windows, as do ten previously recreated task fixtures. The original repaired user
+conversation retains native identity and history without prompt replay.
+
+VM140 has 6 vCPUs, 14 GiB RAM and 120 GiB disk. Temporary build swap is removed.
+All execution stays inside the disposable VM; the Mac is only a web relay.
+The earlier installer/reboot matrix is historical evidence for its own build.
+BB fork CI is queued without a runner, not passing. No merge or stable promotion
+is approved.
+
+
+Current review conversations: Luna `thr_zjvncacxyr`, Haiku `thr_frr674vn6k`.
+The final summary, native receipts, screenshots and exact binary are exported in
+`bb-provider-project-picker/gc-update-oct7/`. The generated client is verified
+against the serving supervisor; no raw terminal access exists in the BB bridge.
+Optional top-level Codex model metadata can be absent after large output; model
+qualification checks configured options and the exact native test artifact.

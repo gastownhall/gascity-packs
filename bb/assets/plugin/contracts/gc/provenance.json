@@ -1,9 +1,9 @@
 {
   "title": "Gas City Supervisor API",
-  "source_repository": "https://github.com/gastownhall/gascity",
-  "source_commit": "69ce77b8a8e031fc4f6e5e0b9f8f8064294686f2",
-  "build": "v1.6.0-dev-jarvis.7-bb-multiline",
-  "notes": "Captured from /openapi.json on the isolated staging supervisor. The local multiline transport patch changes no API definitions. This is a contract snapshot, not a claim of release qualification.",
-  "sha256": "31ab77031a7ba4f6a03193de201028b65b634cd15497cb879ec259c320a821e0",
+  "source_repository": "https://github.com/csells/gascity",
+  "source_commit": "992a8dd485239b74214a0c3befe80fb5bec25669",
+  "build": "1.6.0-dev-jarvis.8-bb-integration.2",
+  "notes": "Generated canonical OpenAPI from the pinned personal GC integration commit. Live-schema equality is a separate staging qualification gate; no release or stable promotion is implied.",
+  "sha256": "5d095307111f0b38be2e2fd221dedffdd64dda1606df0a937c0028b5d5d9059b",
   "generator": "@hey-api/openapi-ts@0.99.0"
 }

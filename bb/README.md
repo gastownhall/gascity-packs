@@ -20,9 +20,12 @@ bead work is assigned; BB preserves that configured behavior. The
 example suitable for an agent's `prompt.md`.
 
 **Release status:** this project-aware candidate is staged for review in a disposable
-Debian 13 VM. It is not merged, promoted, or published. Its tested combination is
-BB 0.45.0 plus the picker patch, SDK runtime 0.6.28, and a pinned GC
-`1.6.0-dev-jarvis.7` candidate based on `69ce77b8a8e031fc4f6e5e0b9f8f8064294686f2`.
+Debian 13 VM. Source is published on `fix/bb-current-sdk`; it is not merged,
+promoted, or released in the registry. The candidate combines BB 0.45.0 plus the
+picker patch, SDK runtime 0.6.28, and the personal GC integration build pinned in
+[the generated contract provenance](./assets/plugin/contracts/gc/provenance.json).
+Provenance identifies the input; the qualification record below identifies the
+checks actually completed for each version.
 Codex 0.156.1 uses Luna; Claude Code 2.1.292 uses Haiku, both at medium effort
 with subscription authentication. Qualification is recorded in
 [the candidate verification record](./../specs/plans/0001-bb-provider-staging.md).
@@ -90,7 +93,7 @@ and journals; a journal is not a portable cross-host session locator.
 Clone the staging branch, then import its local path from a Gas City city:
 
 ```sh
-git clone --branch feat/bb-provider-gascity-1.4 \
+git clone --branch fix/bb-current-sdk \
   https://github.com/gastownhall/gascity-packs.git
 cd /absolute/path/to/your-city
 gc import add --name bb /absolute/path/to/gascity-packs/bb
@@ -107,9 +110,9 @@ CLI, and invokes `bb plugin install path:<installed-directory>`. It forwards
 none of these installation steps.
 
 Open the **Gas City** sidebar launcher after binding a standard project below.
-For explicit conversation-only use, select the **Gas City** provider in BB’s
-native picker and choose a qualified global agent. With no project selected,
-the agent uses its existing GC directory. BB's personal workspace remains
+For explicit conversation-only use, launch a personal conversation with a global
+agent from the **Gas City** sidebar. The native picker requires a mapped project.
+A personal conversation uses the agent’s existing GC directory. BB's personal workspace remains
 separate; the conversation shows the GC directory and explains that BB's file
 and diff views do not track it.
 Select **Full access**: this is the bridge's supported BB permission mode;
@@ -146,12 +149,10 @@ unmapped standard BB projects produce an error. BB's personal project
 (`proj_personal`) remains projectless.
 
 The launcher lists the mapped city’s globals and rig agents together. Select
-an agent and verify **Existing workspace**: GC 1.4’s expanded config omits the
-effective `work_dir`, so the suggested city/rig path may need correction.
-The provider compares the actual created session directory before sending input.
-Use a canonical absolute `work_dir` in GC configuration. GC 1.4’s Claude
-project-directory encoding also differs from current Claude for underscores;
-see the live verification notes before choosing a runtime workspace.
+an agent and verify **Existing workspace**. Use a canonical absolute `work_dir`
+in GC configuration; a suggested city/rig path does not establish the effective
+execution directory. The provider compares the actual created session directory
+before sending input.
 
 **Refresh** bypasses BB’s model catalog cache. Missing hosts, projects and agents
 remain unavailable until explicitly selected again. Validation errors can be

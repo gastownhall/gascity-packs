@@ -525,14 +525,11 @@
           "TmuxAlias",
           "Scope",
           "Suspended",
-          "Pool",
-          "Env",
           "EnvRemove",
           "PreStart",
           "PromptTemplate",
           "Session",
           "Provider",
-          "ContextAdvisory",
           "Upstream",
           "Args",
           "StartCommand",
@@ -570,8 +567,7 @@
           "InjectFragmentsAppend",
           "MaxActiveSessions",
           "MinActiveSessions",
-          "ScaleCheck",
-          "OptionDefaults"
+          "ScaleCheck"
         ],
         "type": "object"
       },
@@ -1198,7 +1194,7 @@
             ]
           },
           "membership": {
-            "description": "Rule that decided which beads are in Beads: the root, everything carrying gc.root_bead_id == root, plus the root's convoy members when the root is a convoy, and then the transitive parent-child closure taken over all of those \u2014 a convoy member brings its own subtree. Both storage tiers are in scope, so a wisp molecule (whose beads are all ephemeral) returns its members rather than reading as empty. Never dependency reachability, which drops dependency-isolated members such as gc.kind=spec sidecars.",
+            "description": "Rule that decided which beads are in Beads: the root, everything carrying gc.root_bead_id == root, plus the root's convoy members when the root is a convoy, and then the transitive parent-child closure taken over all of those — a convoy member brings its own subtree. Both storage tiers are in scope, so a wisp molecule (whose beads are all ephemeral) returns its members rather than reading as empty. Never dependency reachability, which drops dependency-isolated members such as gc.kind=spec sidecars.",
             "enum": [
               "direct-root-id+parent-closure",
               "direct-root-id+parent-closure+convoy-members"
@@ -2208,8 +2204,7 @@
           "ReplyToMessageID",
           "Attachments",
           "SourceSessionID",
-          "CreatedAt",
-          "Metadata"
+          "CreatedAt"
         ],
         "type": "object"
       },
@@ -2238,7 +2233,7 @@
             "type": "integer"
           },
           "complete": {
-            "description": "True when all child beads are closed and total > 0.",
+            "description": "True when all child beads are closed and total \u003e 0.",
             "type": "boolean"
           },
           "convoy_id": {
@@ -2410,8 +2405,7 @@
           "BindingGeneration",
           "LastPublishedAt",
           "LastMessageID",
-          "SourceSessionID",
-          "Metadata"
+          "SourceSessionID"
         ],
         "type": "object"
       },
@@ -4087,9 +4081,6 @@
         },
         "required": [
           "Message",
-          "Binding",
-          "GroupRoute",
-          "TranscriptEntry",
           "TargetSessionID",
           "TargetAgentName"
         ],
@@ -5666,9 +5657,7 @@
           }
         },
         "required": [
-          "Receipt",
-          "DeliveryContext",
-          "TranscriptEntry"
+          "Receipt"
         ],
         "type": "object"
       },
@@ -5727,7 +5716,7 @@
             "type": "boolean"
           },
           "name": {
-            "description": "The local binding name written to [imports.<name>].",
+            "description": "The local binding name written to [imports.\u003cname\u003e].",
             "type": "string"
           },
           "source": {
@@ -6278,7 +6267,6 @@
           "PromptFlag",
           "ReadyDelayMs",
           "AcceptStartupDialogs",
-          "Env",
           "EnvRemove",
           "Replace"
         ],
@@ -6715,8 +6703,7 @@
           "Conversation",
           "Delivered",
           "FailureKind",
-          "RetryAfter",
-          "Metadata"
+          "RetryAfter"
         ],
         "type": "object"
       },
@@ -7055,7 +7042,6 @@
           "DefaultMergeStrategy",
           "Suspended",
           "SuspendedOnStart",
-          "FormulaVars",
           "BeadsProxiedIdleTimeout"
         ],
         "type": "object"
@@ -7102,7 +7088,7 @@
             "type": "string"
           },
           "step": {
-            "description": "Provisioning step that completed (clone, beads-init, packs, config, routes, \u2026).",
+            "description": "Provisioning step that completed (clone, beads-init, packs, config, routes, …).",
             "type": "string"
           },
           "warn": {
@@ -11493,7 +11479,7 @@
             "type": "string"
           },
           "bead": {
-            "description": "Bead or convoy ID to sling, like gc sling <target> <bead>. The target's default formula is cooked onto the bead unless no_formula is set; a convoy's open children are routed one by one.",
+            "description": "Bead or convoy ID to sling, like gc sling \u003ctarget\u003e \u003cbead\u003e. The target's default formula is cooked onto the bead unless no_formula is set; a convoy's open children are routed one by one.",
             "type": "string"
           },
           "force": {
@@ -11501,7 +11487,7 @@
             "type": "boolean"
           },
           "formula": {
-            "description": "Formula name. Alone, it launches the formula standalone (gc sling --formula). With attached_bead_id, it is attached to that bead (gc sling <target> <bead> --on <formula>).",
+            "description": "Formula name. Alone, it launches the formula standalone (gc sling --formula). With attached_bead_id, it is attached to that bead (gc sling \u003ctarget\u003e \u003cbead\u003e --on \u003cformula\u003e).",
             "type": "string"
           },
           "merge": {
@@ -11958,7 +11944,7 @@
             "type": "string"
           },
           "store_id": {
-            "description": "Store scope: city, or rig/<name>.",
+            "description": "Store scope: city, or rig/\u003cname\u003e.",
             "type": "string"
           }
         },
@@ -11975,7 +11961,7 @@
         "additionalProperties": false,
         "properties": {
           "effective": {
-            "description": "Aggregate verdict: off (gate off), active (every store capable), degraded (auto with at least one incapable store), fail_closed (require with at least one incapable store \u2014 fenced writes on it refuse), pending_restart (on-disk config drifted from the latched mode).",
+            "description": "Aggregate verdict: off (gate off), active (every store capable), degraded (auto with at least one incapable store), fail_closed (require with at least one incapable store — fenced writes on it refuse), pending_restart (on-disk config drifted from the latched mode).",
             "enum": [
               "off",
               "active",
@@ -12533,7 +12519,7 @@
             "type": "integer"
           },
           "packs_lock_sha256": {
-            "description": "SHA-256 hex digest of the first managed city's packs.lock contents, for single-city deployments (mirrors the startup field's first-city semantics). Drift checkers compare this against the committed lockfile copy. Omitted when no city is registered, the city has no packs.lock, or the lockfile is unreadable (read error logged server-side) \u2014 treat absence as unknown, not as proof there is no lockfile.",
+            "description": "SHA-256 hex digest of the first managed city's packs.lock contents, for single-city deployments (mirrors the startup field's first-city semantics). Drift checkers compare this against the committed lockfile copy. Omitted when no city is registered, the city has no packs.lock, or the lockfile is unreadable (read error logged server-side) — treat absence as unknown, not as proof there is no lockfile.",
             "type": "string"
           },
           "startup": {
@@ -26617,7 +26603,7 @@
             "type": "integer"
           },
           "scheme": {
-            "description": "Verifier scheme (github-hmac-sha256, slack-v0, \u2026).",
+            "description": "Verifier scheme (github-hmac-sha256, slack-v0, …).",
             "type": "string"
           },
           "scoped_name": {
@@ -26660,7 +26646,7 @@
             "type": "string"
           },
           "reason": {
-            "description": "Rejection reason enum (perimeter_denied, read_only, rate_limited, operator_fault, verify_failed, bad_payload, dispatch_refused, \u2026).",
+            "description": "Rejection reason enum (perimeter_denied, read_only, rate_limited, operator_fault, verify_failed, bad_payload, dispatch_refused, …).",
             "type": "string"
           },
           "scheme": {
@@ -26729,7 +26715,7 @@
             "type": "string"
           },
           "latency_ms": {
-            "description": "LLM invocation wall-clock latency (best-effort, currently always absent \u2014 no source).",
+            "description": "LLM invocation wall-clock latency (best-effort, currently always absent — no source).",
             "format": "int64",
             "type": "integer"
           },
@@ -28107,12 +28093,12 @@
             }
           },
           {
-            "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.",
+            "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N\u003e0 returns the last N.",
             "explode": false,
             "in": "query",
             "name": "tail",
             "schema": {
-              "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.",
+              "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N\u003e0 returns the last N.",
               "type": "string"
             }
           },
@@ -29023,12 +29009,12 @@
             }
           },
           {
-            "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.",
+            "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N\u003e0 returns the last N.",
             "explode": false,
             "in": "query",
             "name": "tail",
             "schema": {
-              "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.",
+              "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N\u003e0 returns the last N.",
               "type": "string"
             }
           },
@@ -31048,7 +31034,7 @@
     },
     "/v0/city/{cityName}/beads": {
       "get": {
-        "description": "Results are ordered (created_at DESC, id DESC) \u2014 newest beads first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
+        "description": "Results are ordered (created_at DESC, id DESC) — newest beads first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
         "operationId": "get-v0-city-by-city-name-beads",
         "parameters": [
           {
@@ -32946,7 +32932,7 @@
     },
     "/v0/city/{cityName}/convoys": {
       "get": {
-        "description": "Results are ordered (created_at DESC, id DESC) \u2014 newest convoys first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
+        "description": "Results are ordered (created_at DESC, id DESC) — newest convoys first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
         "operationId": "get-v0-city-by-city-name-convoys",
         "parameters": [
           {
@@ -33303,7 +33289,7 @@
     },
     "/v0/city/{cityName}/events": {
       "get": {
-        "description": "Results are ordered seq DESC \u2014 newest events first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
+        "description": "Results are ordered seq DESC — newest events first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
         "operationId": "get-v0-city-by-city-name-events",
         "parameters": [
           {
@@ -37730,7 +37716,7 @@
     },
     "/v0/city/{cityName}/mail": {
       "get": {
-        "description": "Results are ordered (created_at DESC, id DESC) \u2014 newest messages first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
+        "description": "Results are ordered (created_at DESC, id DESC) — newest messages first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
         "operationId": "get-v0-city-by-city-name-mail",
         "parameters": [
           {
@@ -41043,12 +41029,12 @@
             }
           },
           {
-            "description": "The import binding name to remove (the [imports.<name>] key).",
+            "description": "The import binding name to remove (the [imports.\u003cname\u003e] key).",
             "in": "path",
             "name": "name",
             "required": true,
             "schema": {
-              "description": "The import binding name to remove (the [imports.<name>] key).",
+              "description": "The import binding name to remove (the [imports.\u003cname\u003e] key).",
               "type": "string"
             }
           }
@@ -44970,7 +44956,7 @@
         "summary": "Get v0 city by city name rigs"
       },
       "post": {
-        "description": "Create a rig. Without git_url, appends the rig to city.toml synchronously (201). With git_url, clones and provisions asynchronously: returns 202 with an event_cursor \u2014 watch the city event stream for request.result.rig.create, rig.provision.progress, or request.failed carrying the request_id \u2014 or 200 for an idempotent replay of a succeeded create.",
+        "description": "Create a rig. Without git_url, appends the rig to city.toml synchronously (201). With git_url, clones and provisions asynchronously: returns 202 with an event_cursor — watch the city event stream for request.result.rig.create, rig.provision.progress, or request.failed carrying the request_id — or 200 for an idempotent replay of a succeeded create.",
         "operationId": "create-rig",
         "parameters": [
           {
@@ -45025,7 +45011,7 @@
                 }
               }
             },
-            "description": "Rig already exists \u2014 idempotent request_id replay of a succeeded async create.",
+            "description": "Rig already exists — idempotent request_id replay of a succeeded async create.",
             "headers": {
               "X-GC-Request-Id": {
                 "$ref": "#/components/headers/X-GC-Request-Id"
@@ -48889,12 +48875,12 @@
             }
           },
           {
-            "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.",
+            "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N\u003e0 returns the last N.",
             "explode": false,
             "in": "query",
             "name": "tail",
             "schema": {
-              "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.",
+              "description": "Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N\u003e0 returns the last N.",
               "type": "string"
             }
           },
@@ -49244,7 +49230,7 @@
     },
     "/v0/city/{cityName}/sessions": {
       "get": {
-        "description": "Results are ordered (created_at DESC, id DESC) \u2014 newest sessions first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
+        "description": "Results are ordered (created_at DESC, id DESC) — newest sessions first. A truncated response always carries next_cursor; passing it back returns the next page in the same order. Invalid or legacy cursors are rejected with a typed 400 (invalid-cursor).",
         "operationId": "get-v0-city-by-city-name-sessions",
         "parameters": [
           {
