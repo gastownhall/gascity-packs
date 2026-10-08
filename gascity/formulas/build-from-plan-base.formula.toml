@@ -60,8 +60,15 @@ metadata = { "gc.run_target" = "gc.review-synthesizer" }
 description_file = "../assets/workflows/build-from-plan-base/plan-review.md"
 
 [[steps]]
+id = "plan-repair"
+title = "Repair or restart implementation-plan review findings"
+needs = ["plan-review"]
+metadata = { "gc.run_target" = "gc.run-operator" }
+description_file = "../assets/workflows/build-from-plan-base/plan-repair.md"
+
+[[steps]]
 id = "prepare-decompose"
 title = "Validate decompose continuation inputs"
-needs = ["plan-review"]
+needs = ["plan-repair"]
 metadata = { "gc.run_target" = "gc.run-operator" }
 description_file = "../assets/workflows/build-from-plan-base/prepare-decompose.md"
