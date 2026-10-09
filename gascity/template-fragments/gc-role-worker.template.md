@@ -65,6 +65,16 @@ as more issue ids and may fuzzy-match unrelated beads.
 gc bd close "$CLAIMED_BEAD_ID" --reason '...'
 ```
 
+PR handoff. Never merge a pull request yourself unless the bead explicitly
+authorizes merging. If your work opened or updated a PR, never close without
+naming it: set any PR or publish metadata the bead's result contract requests,
+then put the canonical PR URL and its state (draft or ready; checks green or
+pending) in the close reason. If the bead or its formula names a handoff
+recipient, `gc mail send` it before closing and cite that mail in the close
+reason; never invent a recipient. If that send fails, do not claim a handoff
+and do not idle: record the failure contract (default `gc.outcome=fail`,
+`gc.failure_class=pr_handoff_failed`, PR URL in the reason) and close.
+
 ## Continue
 
 After close, inspect `CLAIMED_CONTINUATION_GROUP` before another claim:

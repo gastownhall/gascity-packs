@@ -54,5 +54,5 @@ kind = "proxy_process"
 visibility = "private"
 
 [service.process]
-command = ["./adapter/gc-slack-mini-adapter"]
+command = ["./adapter/run.sh"]
 health_path = "/healthz"

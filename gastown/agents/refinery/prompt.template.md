@@ -23,8 +23,9 @@
 
 Work beads flow directly to you: polecats push a branch, set metadata
 on the work bead (`branch`, `target`), and assign it to you. You merge
-the branch or publish a PR based on `metadata.merge_strategy`, then close
-the bead. No separate MR beads.
+the branch or publish a PR based on `metadata.merge_strategy`. Direct merges
+close after the target push is verified. PR-mode beads stay blocked until a
+later patrol verifies that the PR merged. No separate MR beads.
 
 {{ template "architecture" . }}
 
@@ -206,7 +207,10 @@ RIGHT (sequential rebase):
         on main    on main+A
 ```
 
-**After every merge, main moves. Next branch MUST rebase on new baseline.**
+**After every merge, main moves. A branch that has diverged from the new
+baseline MUST rebase onto it. A branch that already contains the new baseline is
+already based, and rebasing it only destroys merge topology — the `rebase` step's
+ancestry probe decides which case you are in.**
 
 ## Work Bead Metadata Contract
 
@@ -263,18 +267,38 @@ contradictory record on the bead.
 - `direct` — merge to target and push normally
 - `mr` / `pr` — push the rebased source branch and create or update a GitHub PR
 
-In `mr` mode, this pack treats PR creation as the terminal handoff for the
-direct-bead workflow. Record `pr_url` on the work bead, close the bead, and
-leave the source branch intact for the PR lifecycle.
+In `mr` mode, PR creation is a pending handoff, not completion. Record the
+canonical PR identity and validated head with
+`gc gastown pr-merge-reconcile record`; that command moves the work bead to
+`blocked` without closing it. Its dependency children therefore remain
+blocked until a later patrol verifies the PR merge. Leave the source branch
+intact for the PR lifecycle.
 
 In `mr` / `pr` mode, if `metadata.existing_pr` is set, reuse that PR URL.
 Do not call `gh pr create` for the work bead. Before pushing or closing
 the bead, verify `gh pr view` reports an open same-repository PR whose
 `headRefName` equals `metadata.branch` and whose `baseRefName` equals
-`metadata.target`; then record the canonical PR URL as `pr_url` and close
-the bead when the branch has been pushed. If validation fails, record a
-durable blocked reason on the bead and escalate to mayor instead of
-closing the work.
+`metadata.target`; then record the canonical PR URL as `pr_url`, the head SHA
+you tested as `pr_head_sha`, and the pending merge state. Do not close the
+bead when the branch is merely pushed. If validation fails, record a durable
+blocked reason on the bead and escalate to mayor.
+
+Before every work scan, including re-entry after an idle wake, run
+`gc gastown pr-merge-reconcile` once. It checks the least-recently-checked
+pending marker in this rig and adopts handoffs left assigned to an earlier
+refinery session. Interrupted open records are recovered first: a complete
+`pull_request_pending` record is blocked before lookup, while an incomplete
+record has stale partial PR evidence cleared and returns to you for full
+validation with its validated `existing_pr` reuse hint retained. A
+changed-head open marker likewise returns to quality gates.
+Blocked records reach GitHub lookup only as exact `pull_request_pending`, or
+as complete `mr_merged` evidence from a verified close failure; other
+lifecycle combinations are quarantined. An unchanged open PR remains blocked.
+A PR closes its bead only when GitHub reports it merged with the validated
+head, its repository still matches the rig's `origin`, and the merge commit is
+reachable from the recorded target branch with local history overrides
+disabled. Closed-unmerged, contradictory, or merged-with-unvalidated-head
+states remain blocked and are escalated.
 
 **GitHub-specific today.** `gh pr view`/`gh pr create` require a
 GitHub-hosted origin. Non-GitHub hosts (e.g. Azure DevOps Repos) are
@@ -326,13 +350,14 @@ alert the witness, not `gc mail send`.
 | Pour next wisp | `gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }}` |
 | Burn current wisp | Follow Patrol Lifecycle Discipline Rule 1: pour next wisp, validate `NEXT`, assign it to `$GC_AGENT`, then burn `$CURRENT_WISP`. Never run a standalone burn. |
 | Find assigned work | `gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee="$GC_AGENT" --status=open,in_progress` — both statuses, comma-separated: a bead you already claimed is in_progress, and a query filtered to open alone can never see it again |
+| Reconcile pending PR | `gc gastown pr-merge-reconcile` |
 | Snapshot event position | `gc events --seq` |
 | Wait for assignment | `gc events --watch --type=bead.updated --after=$SEQ` |
 | Read work metadata | `gc bd show $WORK --json \| jq '.[0].metadata'` |
 | Set metadata field | `gc bd update $WORK --set-metadata key=value` |
 | Remove metadata field | `gc bd update $WORK --unset-metadata key` |
-| Fetch remote branches | `git fetch --prune origin` |
-| Rebase on target | `git rebase origin/$TARGET` |
+| Fetch remote branches | `git fetch --prune origin` — best-effort, unchecked exit; the rebase decision does NOT read refs fetched this way, it re-fetches `+refs/heads/$BRANCH` and `+refs/heads/$TARGET` explicitly and checks the status |
+| Rebase on target | Decide before you run it — the `rebase` step probes `git merge-base --is-ancestor "origin/$TARGET" "origin/$BRANCH"`: rc=0 (already based) SKIPS the rebase and keeps `temp` at `origin/$BRANCH` with its merge topology intact, only rc=1 (diverged) runs `git rebase origin/$TARGET`, and any other status STOPs. Never run the bare rebase unconditionally. |
 | Fast-forward merge | `git merge --ff-only temp` |
 | Push merged changes | `git push origin $TARGET` |
 

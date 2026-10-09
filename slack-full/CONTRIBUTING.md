@@ -1,12 +1,10 @@
-# Contributing to slack-pack
+# Contributing to slack-full
 
-slack-pack is a Slack provider extension for Gas City. When this directory is
-mirrored to `gastownhall/gascity-packs/slack/`, the root repo's contributing
-guide is the source of truth — start there, then read the slack-pack-specific
-notes below.
-
-For Gas City's own contributor workflow (build, hooks, docs), see the in-tree
-guide at [../../CONTRIBUTING.md](../../CONTRIBUTING.md).
+slack-full is the Slack provider extension for Gas City that lives at
+`slack-full/` in the
+[`gastownhall/gascity-packs`](https://github.com/gastownhall/gascity-packs)
+repository. Open pull requests against that repository; every path below is
+relative to its root.
 
 ## Build flow
 
@@ -26,7 +24,7 @@ Three pieces ship with this pack:
 Build the adapter with:
 
 ```bash
-cd examples/slack-pack/adapter
+cd slack-full/adapter
 go build -o gc-slack-adapter
 ```
 
@@ -39,7 +37,7 @@ run.sh self-heals instead of stranding the service).
 Build the operator CLI with:
 
 ```bash
-cd examples/slack-pack/cli
+cd slack-full/cli
 go build -o gc-slack-cli .
 ```
 
@@ -52,36 +50,37 @@ so the CLI binary must live at that path — i.e. inside the installed pack's
 Run pack tests (pytest, no external deps beyond `pytest` itself):
 
 ```bash
-pytest examples/slack-pack/tests/
+pytest slack-full/tests/
 ```
 
 Run adapter tests:
 
 ```bash
-cd examples/slack-pack/adapter
+cd slack-full/adapter
 go test -race ./...
 ```
 
 Run CLI tests:
 
 ```bash
-cd examples/slack-pack/cli
+cd slack-full/cli
 go test -race ./...
 ```
 
-CI runs all three on every PR that touches `examples/slack-pack/**` (see
-`.github/workflows/slack-pack.yml`).
+CI runs all three on every PR (see the pack tests and the "Run Slack full
+adapter tests" and "Run Slack full CLI tests" steps in
+`.github/workflows/ci.yml`).
 
 ## Secret handling
 
-slack-pack reads Slack credentials from environment variables only. Never
+slack-full reads Slack credentials from environment variables only. Never
 commit `.env` files or tokens. The README's "Adapter env contract" section
 documents the full env-var contract; use a `.env` file outside the repo or a
 secret manager and source it before running adapter / scripts.
 
 ## Pull requests
 
-- Keep PRs scoped to slack-pack (or paired adapter changes when needed).
+- Keep PRs scoped to slack-full (or paired adapter changes when needed).
 - Update `CHANGELOG.md` for any user-visible change — add bullets under a
   new `[Unreleased]` section, and the next release tag promotes them.
 - Run `pytest`, `go test -race ./...` in `adapter/`, and

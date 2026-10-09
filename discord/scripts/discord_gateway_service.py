@@ -29,6 +29,7 @@ GATEWAY_INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15)
 ALIAS_PATTERN = re.compile(r"(?<![A-Za-z0-9_<])@([a-z0-9][a-z0-9_-]*)", re.IGNORECASE)
 DISCORD_RESERVED_MENTIONS = {"everyone", "here"}
 MAX_STATUS_PREVIEW = 160
+REPLY_QUOTE_PREVIEW_LIMIT = 200
 GATEWAY_WORKER_THREADS = 8
 GATEWAY_NAMED_WORKER_THREADS = 1
 GATEWAY_MAX_PENDING_MESSAGES = 128
@@ -264,6 +265,55 @@ def referenced_message_id(message: dict[str, Any]) -> str:
     return str(reference.get("message_id", "")).strip()
 
 
+def resolve_reply_reference(
+    message: dict[str, Any],
+    *,
+    bot_token: str | None = None,
+    allow_network: bool = True,
+) -> dict[str, str]:
+    """Resolve what an inbound reply is replying to: the target id and a
+    short quote of it, so a reader does not have to chase a raw snowflake.
+
+    Three tiers, cheapest first, stopping at the first that yields text:
+    the gateway's own inline ``referenced_message`` (Discord supplies this on
+    most MESSAGE_CREATE reply events); our own chat-publish record, when the
+    reply targets a message we sent ourselves, so no network call is needed;
+    a REST fetch for the rarer case neither has it. A message that is not a
+    reply (no ``message_reference``) costs nothing beyond that check.
+
+    The quote is optional context, so the REST tier is fail-soft: any error
+    leaves the quote empty rather than failing ingress. ``allow_network=False``
+    skips the REST tier entirely, for callers on the gateway receive loop.
+    """
+    reply_to_id = referenced_message_id(message)
+    if not reply_to_id:
+        return {"reply_to_message_id": "", "reply_to_quote": ""}
+    quote = ""
+    inline = message.get("referenced_message")
+    if isinstance(inline, dict) and str(inline.get("id", "")).strip() == reply_to_id:
+        quote = raw_message_content(inline).strip()
+    if not quote:
+        publish_record = common.find_chat_publish_by_remote_message_id(reply_to_id)
+        if publish_record:
+            quote = str(publish_record.get("body", "")).strip()
+    if not quote and allow_network:
+        channel_id = str(message.get("channel_id", "")).strip()
+        # Pass the keyword only when there is a token. fetch_message_via_rest()
+        # gained bot_token upstream, and a base that predates it (the live
+        # gateway's) raises TypeError on ANY bot_token= keyword, even None, which
+        # would take down inbound handling for every reply that reaches this tier.
+        rest_kwargs = {"bot_token": bot_token} if bot_token is not None else {}
+        try:
+            fetched = fetch_message_via_rest(channel_id, reply_to_id, **rest_kwargs)
+        except Exception:
+            fetched = {}
+        if fetched:
+            quote = raw_message_content(fetched).strip()
+    if quote:
+        quote = summarize_body_detail(quote, limit=REPLY_QUOTE_PREVIEW_LIMIT)[0]
+    return {"reply_to_message_id": reply_to_id, "reply_to_quote": quote}
+
+
 def casefold_lookup(values: list[str]) -> tuple[dict[str, str], set[str]]:
     lookup: dict[str, str] = {}
     collisions: set[str] = set()
@@ -313,7 +363,13 @@ def ingress_preview(message: dict[str, Any], bot_user_id: str) -> str:
     return summarize_body(strip_bot_mentions(str(message.get("content", "")), bot_user_id))
 
 
-def ingress_body_fields(message: dict[str, Any], bot_user_id: str) -> dict[str, Any]:
+def ingress_body_fields(
+    message: dict[str, Any],
+    bot_user_id: str,
+    *,
+    bot_token: str | None = None,
+    allow_network: bool = True,
+) -> dict[str, Any]:
     """Body fields for a chat-ingress record.
 
     ``body`` is the whole message — the bot's own mention stripped, everything
@@ -329,6 +385,9 @@ def ingress_body_fields(message: dict[str, Any], bot_user_id: str) -> dict[str, 
     whose missing tail carried the scope limit for the very work it authorized.
 
     All four values derive from one string, so they cannot disagree.
+
+    ``reply_to_message_id`` and ``reply_to_quote`` (gm-52178u) are empty for a
+    non-reply and cost nothing beyond that check; see resolve_reply_reference.
     """
     body = remove_bot_mentions(raw_message_content(message), bot_user_id).strip()
     preview, truncated = summarize_body_detail(body)
@@ -337,6 +396,7 @@ def ingress_body_fields(message: dict[str, Any], bot_user_id: str) -> dict[str, 
         "body_length": len(body),
         "body_preview": preview,
         "body_truncated": truncated,
+        **resolve_reply_reference(message, bot_token=bot_token, allow_network=allow_network),
     }
 
 
@@ -851,6 +911,8 @@ def build_human_envelope(
     mentioned_aliases: list[str],
     delivery: str,
     ingress_id: str,
+    reply_to_id: str = "",
+    reply_to_quote: str = "",
 ) -> str:
     conversation_value, conversation_key = conversation_fields(message, channel_info)
     binding_id = str(binding.get("id", "")).strip()
@@ -868,6 +930,11 @@ def build_human_envelope(
         f"from_display: {display_name_from_message(message)}",
         f"from_user_id: {str((message.get('author') or {}).get('id', '')).strip()}",
         f"delivery: {delivery}",
+        # gm-52178u: same two lines, same names, as the room-launch builders. Both
+        # are empty for a message that is not a reply, so a reader never has to
+        # tell "not a reply" from "field missing".
+        f"reply_to_discord_message_id: {reply_to_id}",
+        f"reply_to_quote_json: {json.dumps(reply_to_quote)}",
         f"mentioned_aliases_json: {json.dumps(mentioned_aliases)}",
         f"untrusted_body_json: {json.dumps(body)}",
         f"publish_binding_id: {binding_id}",
@@ -892,6 +959,8 @@ def build_room_launch_envelope(
     body: str,
     mentioned_handles: list[str],
     ingress_id: str,
+    reply_to_id: str = "",
+    reply_to_quote: str = "",
 ) -> str:
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
@@ -907,6 +976,8 @@ def build_room_launch_envelope(
         f"from_display: {display_name_from_message(message)}",
         f"from_user_id: {str((message.get('author') or {}).get('id', '')).strip()}",
         "delivery: targeted",
+        f"reply_to_discord_message_id: {reply_to_id}",
+        f"reply_to_quote_json: {json.dumps(reply_to_quote)}",
         f"mentioned_handles_json: {json.dumps(mentioned_handles)}",
         f"launch_id: {str(launch.get('launch_id', '')).strip()}",
         "launch_surface_kind: room",
@@ -941,6 +1012,7 @@ def build_room_launch_thread_envelope(
     ingress_id: str,
     routing_mode: str,
     reply_to_id: str,
+    reply_to_quote: str = "",
 ) -> str:
     guild_id = str(message.get("guild_id", "")).strip()
     channel_id = str(message.get("channel_id", "")).strip()
@@ -962,6 +1034,7 @@ def build_room_launch_thread_envelope(
         "delivery: targeted",
         f"routing_mode: {routing_mode}",
         f"reply_to_discord_message_id: {reply_to_id}",
+        f"reply_to_quote_json: {json.dumps(reply_to_quote)}",
         f"mentioned_handles_json: {json.dumps(mentioned_handles)}",
         f"launch_id: {str(launch.get('launch_id', '')).strip()}",
         "launch_surface_kind: room",
@@ -1343,7 +1416,7 @@ def save_rejected_ingress_receipt(
             "binding_id": "",
             "from_user_id": str((message.get("author") or {}).get("id", "")).strip(),
             "from_display": display_name_from_message(message),
-            **ingress_body_fields(message, bot_user_id),
+            **ingress_body_fields(message, bot_user_id, allow_network=False),
             "status": status,
             "reason": reason,
             "message_debug": dict(message_debug or {}),
@@ -1424,6 +1497,7 @@ def process_room_launch_message(
     mentioned_handles = common.extract_agent_handles(body)
     response_mode = str(launcher.get("response_mode", "mention_only")).strip() or "mention_only"
     reply_to_id = referenced_message_id(message)
+    reply_to_quote = str(base_receipt.get("reply_to_quote", ""))
     if len(mentioned_handles) > 1:
         receipt = persist_ingress_receipt(
             {
@@ -1555,7 +1629,11 @@ def process_room_launch_message(
             ),
             "from_user_id": str((message.get("author") or {}).get("id", "")).strip(),
             "from_display": display_name_from_message(message),
-            **ingress_body_fields(message, bot_user_id),
+            # The reply was already resolved into base_receipt; reuse it rather
+            # than fetching the replied-to message a second time.
+            **ingress_body_fields(message, bot_user_id, allow_network=False),
+            "reply_to_message_id": str(base_receipt.get("reply_to_message_id", "")),
+            "reply_to_quote": str(base_receipt.get("reply_to_quote", "")),
         }
     )
     try:
@@ -1587,6 +1665,8 @@ def process_room_launch_message(
         body=body,
         mentioned_handles=mentioned_handles,
         ingress_id=ingress_id,
+        reply_to_id=reply_to_id,
+        reply_to_quote=reply_to_quote,
     )
     idempotency_key = f"ingress:{ingress_id}:target:{target_selector}"
     receipt = persist_ingress_receipt(
@@ -1648,6 +1728,7 @@ def process_room_launch_thread_message(
         return {"status": "ignored_empty", "ingress_id": ingress_id, "receipt": receipt}
     mentioned_handles = common.extract_agent_handles(body)
     reply_to_id = referenced_message_id(message)
+    reply_to_quote = str(base_receipt.get("reply_to_quote", ""))
     if len(mentioned_handles) > 1:
         receipt = persist_ingress_receipt(
             {
@@ -1769,6 +1850,7 @@ def process_room_launch_thread_message(
         ingress_id=ingress_id,
         routing_mode=routing_mode,
         reply_to_id=reply_to_id,
+        reply_to_quote=reply_to_quote,
     )
     idempotency_key = f"ingress:{ingress_id}:target:{target_selector}"
     receipt = persist_ingress_receipt(
@@ -1900,7 +1982,7 @@ def process_inbound_message(
             ):
                 preloaded_binding = None
 
-    body_fields = ingress_body_fields(message, bot_user_id)
+    body_fields = ingress_body_fields(message, bot_user_id, bot_token=recovery_token)
     claimed, base_receipt = common.save_chat_ingress_if_absent(
         {
             "ingress_id": ingress_id,
@@ -2165,6 +2247,10 @@ def process_inbound_message(
             mentioned_aliases=mentioned_aliases,
             delivery=delivery,
             ingress_id=ingress_id,
+            # body_fields is the same dict the receipt above was saved from, so
+            # the envelope can never disagree with the persisted record.
+            reply_to_id=str(body_fields.get("reply_to_message_id", "")),
+            reply_to_quote=str(body_fields.get("reply_to_quote", "")),
         )
         receipt = persist_ingress_receipt(
             {

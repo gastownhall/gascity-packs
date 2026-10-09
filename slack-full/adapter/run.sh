@@ -180,8 +180,22 @@ fi
 # build then dies with "build cache is required, but could not be
 # located". Fill only that gap: when Go can find a cache on its own,
 # leave it alone so rebuilds keep sharing the normal one.
+private_build_dir() {
+  local uid dir
+  uid="$(id -u)" || return 1
+  dir="${TMPDIR:-/tmp}/$1-$uid"
+  mkdir -p -m 700 "$dir" 2>/dev/null || true
+  if [[ -L "$dir" || ! -d "$dir" || ! -O "$dir" ]] || ! chmod 700 "$dir"; then
+    log "ERROR: $dir is not a private directory owned by this user; refusing to build with it"
+    log "manual fix: set HOME, or GOCACHE and GOPATH, in the service environment"
+    return 1
+  fi
+  printf '%s\n' "$dir"
+}
+
 if [[ -z "${GOCACHE:-}" && -z "${XDG_CACHE_HOME:-}" && -z "${HOME:-}" ]]; then
-  export GOCACHE="${TMPDIR:-/tmp}/gc-slack-adapter-gocache"
+  GOCACHE="$(private_build_dir gc-slack-adapter-gocache)" || exit 1
+  export GOCACHE
   log "no HOME / XDG_CACHE_HOME / GOCACHE in the environment — building with GOCACHE=$GOCACHE"
 fi
 
@@ -193,7 +207,8 @@ fi
 # previous error — HOME still unset, so the toolchain fetch dies on
 # "module cache not found: neither GOMODCACHE nor GOPATH is set".
 if [[ -z "${GOPATH:-}" && -z "${GOMODCACHE:-}" && -z "${HOME:-}" ]]; then
-  export GOPATH="${TMPDIR:-/tmp}/gc-slack-adapter-gopath"
+  GOPATH="$(private_build_dir gc-slack-adapter-gopath)" || exit 1
+  export GOPATH
   log "no HOME / GOMODCACHE / GOPATH in the environment — building with GOPATH=$GOPATH"
 fi
 

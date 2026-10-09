@@ -191,6 +191,9 @@ def assert_clean_worker_render(prompt: str, persona_heading: str) -> None:
     assert "CLAIMED_CONTINUATION_GROUP" in prompt
     assert 'gc bd update "$CLAIMED_BEAD_ID"' in prompt
     assert "An empty continuation group is a hard session boundary" in prompt
+    assert "Never merge a pull request yourself unless the bead explicitly" in prompt
+    assert "`gc.failure_class=pr_handoff_failed`" in prompt
+    assert "gc mail send mayor" not in prompt
 
 
 def test_city_scoped_gascity_registers_claim_command_from_rig(

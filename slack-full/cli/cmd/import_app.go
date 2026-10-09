@@ -111,11 +111,11 @@ func NewImportAppCmd(stdout, _ io.Writer) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "import-app <manifest.json>",
-		Short: "Import a Slack app manifest into the gc city's slack-pack registry",
-		Long: `Import a Slack app manifest into the gc city's slack-pack registry.
+		Short: "Import a Slack app manifest into the gc city's slack-full registry",
+		Long: `Import a Slack app manifest into the gc city's slack-full registry.
 
 Reads the JSON manifest at <manifest.json>, validates that it declares
-the bot scopes the slack-pack adapter and downstream commands require,
+the bot scopes the slack-full adapter and downstream commands require,
 and persists an app record keyed by (workspace_id, app_id) at
 <cityPath>/.gc/slack/apps.json.
 

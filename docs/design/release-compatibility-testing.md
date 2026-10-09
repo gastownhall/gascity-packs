@@ -55,6 +55,27 @@ imports the selected pack at city scope, imports `gascity/roles` at rig scope
 when the pack needs the shared run roles, and launches real formulas against
 known fixtures.
 
+The runner imports gc's builtin `core` and `bd` packs from an explicit gascity
+source tree, which must be the same revision `--gc-bin` was built from. Pass it
+with `--gascity-source-root` (or `GASCITY_SOURCE_ROOT` / `GASCITY_REPO_ROOT`):
+a git checkout of the gascity commit gc was built from. Do not point it at the
+Go module cache directory: module zips drop file modes, so every pack script gc
+execs (order scripts, pack command and doctor `run.sh`) would fail with exit
+126. The runner rejects a source root whose exec'd pack scripts are not
+executable. It does not guess a sibling checkout; `--gascity-source-root
+remote` imports the packs from the gascity git remote, which is only correct
+for a gc built from its default branch. The inference workflows resolve the
+gascity ref once with `go mod download -json`, install gc at that exact
+version, check out the module's `.Origin.Hash` commit as a shallow git tree,
+and export that checkout as `GASCITY_SOURCE_ROOT`.
+
+The fixture rig gets a local bare `origin` (next to the rig, as
+`<rig>-origin.git`) with `origin/HEAD` set, because build formulas base
+implementation worktrees on the remote default branch. The gate also passes
+`BD_*` settings through to the city and defaults `BD_DOLT_SHARED_SERVER=false`
+so a user-level bd shared-server setting cannot rebind the disposable city's
+stores.
+
 The `review` gate launches the selected pack's real review formula against a
 known-bad Python diff. It passes only when:
 
@@ -122,8 +143,10 @@ latest release against `gc@latest`.
 
 `.github/workflows/gascity-pack-inference.yml` is the dispatchable
 model-backed behavior gate for all first-class supported packs. It installs
-`bd`, Dolt, Claude Code, and the requested Gas City ref, then runs the
-selected pack gates through the same Ollama-backed Claude environment shape
+Dolt, Claude Code, and the requested Gas City ref, then the `bd` built from the
+same beads module that `gc` embeds (`scripts/install_bd_matching_gc.sh`; `bd`
+is never pinned separately, because the gate refuses a gc/bd beads mismatch),
+then runs the selected pack gates through the same Ollama-backed Claude environment shape
 used by Gas City's Tier C nightly:
 
 - `ANTHROPIC_BASE_URL=https://ollama.com`
@@ -205,7 +228,8 @@ Run the supported-pack inference gate setup path locally without requiring
 Ollama credentials:
 
 ```sh
-python3 scripts/gascity_pack_inference_gate.py --setup-only --skip-inference-env-check --pack all-supported --gate all
+python3 scripts/gascity_pack_inference_gate.py --setup-only --skip-inference-env-check --pack all-supported --gate all \
+  --gascity-source-root /path/to/gascity
 ```
 
 Run the static flow-contract suite locally:
@@ -218,11 +242,13 @@ Run only a code-writing build gate when the Ollama-backed Claude environment
 variables are present:
 
 ```sh
-python3 scripts/gascity_pack_inference_gate.py --pack superpowers --gate build --gc-bin "$(command -v gc)"
+python3 scripts/gascity_pack_inference_gate.py --pack superpowers --gate build --gc-bin "$(command -v gc)" \
+  --gascity-source-root /path/to/gascity
 ```
 
 Run the full inference gate set:
 
 ```sh
-python3 scripts/gascity_pack_inference_gate.py --pack all-supported --gc-bin "$(command -v gc)"
+python3 scripts/gascity_pack_inference_gate.py --pack all-supported --gc-bin "$(command -v gc)" \
+  --gascity-source-root /path/to/gascity
 ```

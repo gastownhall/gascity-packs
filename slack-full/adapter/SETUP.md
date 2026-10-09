@@ -169,7 +169,7 @@ Run the adapter (replace `<gascity-repo>` with your local checkout
 path):
 
 ```bash
-cd <gascity-repo>/examples/slack-pack/adapter
+cd <gascity-packs-repo>/slack-full/adapter
 ./run.sh
 ```
 
@@ -223,7 +223,7 @@ curl -sS -X POST "${GC_API_BASE_URL:-http://127.0.0.1:8372}/v0/city/${CITY_NAME}
 
 Replace `D0XXXXXXXXX` with your DM channel ID from Step 3. For
 multi-session rooms with peer fanout, see `gc slack bind-room` in the
-slack-pack README instead.
+slack-full README instead.
 
 ## Step 6 — Wire env vars for any consumer pack scripts
 
@@ -280,7 +280,7 @@ After=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=-${XDG_CONFIG_HOME:-$HOME/.config}/gc-slack-adapter/env
-ExecStart=<gascity-repo>/examples/slack-pack/adapter/run.sh
+ExecStart=<gascity-packs-repo>/slack-full/adapter/run.sh
 Restart=on-failure
 RestartSec=5
 
@@ -293,7 +293,7 @@ journalctl --user -u gc-slack-adapter -f
 ```
 
 If you'd rather have the gc supervisor manage the adapter (Phase A
-`proxy_process`), follow the cutover sequence in the slack-pack README
+`proxy_process`), follow the cutover sequence in the slack-full README
 instead — that path eliminates the standalone systemd unit and lets
 gc reverse-proxy `/publish` over a UDS while the public Slack
 endpoint stays bound to TCP `:8765`.

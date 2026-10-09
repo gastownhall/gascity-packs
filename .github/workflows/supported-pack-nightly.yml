@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       gascity_ref:
-        description: "Gas City module ref/version to install, such as main, latest, or v1.2.1."
+        description: "Gas City module ref/version to install: latest, main, a tag such as v1.2.1, or a commit SHA. Not a branch name with a slash (release/v1.5.0 is rejected by go); pass its tag or commit SHA."
         required: false
         default: main
       gascity_setup_ref:
@@ -51,7 +51,6 @@ permissions:
 
 env:
   DOLT_VERSION: "2.1.7"
-  BD_VERSION: "v1.1.0"
   CLAUDE_VERSION: "2.1.123"
 
 jobs:
@@ -124,7 +123,7 @@ jobs:
       ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SONNET_MODEL }}
       ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_OPUS_MODEL }}
       CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.GC_WORKER_INFERENCE_CLAUDE_MANIFOLD_SUBAGENT_MODEL }}
-      GC_INFERENCE_EXPECTED_MODEL: kimi-k2.7-code
+      GC_INFERENCE_EXPECTED_MODEL: kimi-k3
       CLAUDE_CODE_EFFORT_LEVEL: auto
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
       PYTHONUNBUFFERED: "1"
@@ -232,7 +231,6 @@ jobs:
         if: steps.subset.outputs.run_gate == 'true'
         run: |
           .gascity-ci/.github/scripts/install-dolt-archive.sh "${DOLT_VERSION}" --cache
-          .gascity-ci/.github/scripts/install-bd-archive.sh "${BD_VERSION}" --cache
           .gascity-ci/.github/scripts/install-claude-native.sh "${CLAUDE_VERSION}" --cache
 
       - name: Install Python test dependencies
@@ -244,9 +242,43 @@ jobs:
         env:
           GASCITY_REF: ${{ github.event.inputs.gascity_ref || 'main' }}
         run: |
-          go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_REF}"
+          # Resolve the ref once so gc and the builtin core/bd packs the gate
+          # imports (GASCITY_SOURCE_ROOT) come from the same gascity revision.
+          # A query such as @latest comes back without .Origin, so resolve the
+          # ref to a version first, then read that exact version's commit.
+          gascity_query="$(go mod download -json "github.com/gastownhall/gascity@${GASCITY_REF}")" || {
+            echo "$gascity_query" >&2
+            exit 1
+          }
+          gascity_version="$(jq -er .Version <<<"$gascity_query")"
+          gascity_module="$(go mod download -json "github.com/gastownhall/gascity@${gascity_version}")" || {
+            echo "$gascity_module" >&2
+            exit 1
+          }
+          gascity_commit="$(jq -er .Origin.Hash <<<"$gascity_module")" || {
+            echo "no commit recorded for gascity ${gascity_version}: $gascity_module" >&2
+            exit 1
+          }
+          go install "github.com/gastownhall/gascity/cmd/gc@${gascity_version}"
+          # Import core/bd from a git checkout of that commit, never the module
+          # cache directory: module zips drop file modes, so every pack script gc
+          # execs would fail with exit 126.
+          gascity_src="${RUNNER_TEMP}/gascity-src"
+          git init --quiet "$gascity_src"
+          git -C "$gascity_src" fetch --quiet --depth 1 https://github.com/gastownhall/gascity.git "$gascity_commit"
+          git -C "$gascity_src" checkout --quiet --detach FETCH_HEAD
+          echo "GASCITY_SOURCE_ROOT=${gascity_src}" >> "$GITHUB_ENV"
+          echo "gascity ${GASCITY_REF} resolved to ${gascity_version} (${gascity_commit}) at ${gascity_src}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           "$(go env GOPATH)/bin/gc" version
+
+      # bd must embed the same beads module as gc (the gate refuses a
+      # mismatch), so derive it from the gc just installed instead of pinning it.
+      - name: Install bd matching gc's beads module
+        if: steps.subset.outputs.run_gate == 'true'
+        run: |
+          scripts/install_bd_matching_gc.sh "$(go env GOPATH)/bin/gc" \
+            .gascity-ci/.github/scripts/install-bd-archive.sh
 
       - name: Validate Manifold Claude configuration
         if: steps.subset.outputs.run_gate == 'true'
@@ -258,7 +290,7 @@ jobs:
           test -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" || { echo "ANTHROPIC_DEFAULT_SONNET_MODEL resolved empty" >&2; exit 1; }
           test -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" || { echo "ANTHROPIC_DEFAULT_OPUS_MODEL resolved empty" >&2; exit 1; }
           test -n "$CLAUDE_CODE_SUBAGENT_MODEL" || { echo "CLAUDE_CODE_SUBAGENT_MODEL resolved empty" >&2; exit 1; }
-          test "$GC_INFERENCE_EXPECTED_MODEL" = "kimi-k2.7-code" || { echo "GC_INFERENCE_EXPECTED_MODEL must pin kimi-k2.7-code" >&2; exit 1; }
+          test "$GC_INFERENCE_EXPECTED_MODEL" = "kimi-k3" || { echo "GC_INFERENCE_EXPECTED_MODEL must pin kimi-k3" >&2; exit 1; }
           printf 'ANTHROPIC_BASE_URL=%s\n' "$ANTHROPIC_BASE_URL"
           printf 'ANTHROPIC_DEFAULT_HAIKU_MODEL=%s\n' "$ANTHROPIC_DEFAULT_HAIKU_MODEL"
           printf 'ANTHROPIC_DEFAULT_SONNET_MODEL=%s\n' "$ANTHROPIC_DEFAULT_SONNET_MODEL"

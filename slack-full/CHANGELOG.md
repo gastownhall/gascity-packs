@@ -10,6 +10,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A HOME-less rebuild no longer uses a shared, guessable build cache.**
+  When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
+  build with `$TMPDIR/gc-slack-adapter-gocache` and
+  `$TMPDIR/gc-slack-adapter-gopath`. Another local user could create those
+  directories first and plant cache entries that end up in the adapter
+  binary. The script now uses per-user `0700` directories named with the
+  uid, and refuses to build if one is a symlink, is not a directory, or is
+  owned by another user. slack-mini and slack-channel got the same fix in
+  #492.
+
+- `_request` in `scripts/slack_intake_common.py` let two failure shapes
+  escape as non-`GCAPIError` exceptions. A peer that answers but breaks the
+  protocol (`IncompleteRead`, `BadStatusLine`) raises
+  `http.client.HTTPException`, which is neither an `OSError` nor a urllib
+  error, and an `HTTPError` whose error body cannot be read raised from
+  inside its own `except` clause. Both now become `GCAPIError`; the
+  `HTTPError` path keeps the status code when the body is unreadable.
+  (`dr-3lhmr`)
+
+- `gc slack status` reported a section it could not read as
+  `(none registered)` and exited 0, which is exactly what it prints for a
+  section that is genuinely empty. A reader could not tell "I looked and
+  there is nothing" from "I could not look". Each of the four reads
+  (adapters, inbound events, outbound events, bindings) now records why it
+  failed; the report marks those `(UNREADABLE: <reason>)` and the JSON
+  output carries them under a top-level `unreadable` key. **The exit code
+  changes: 2 when any section was unreadable, 0 when every section was
+  read.** The sections that were read are still printed in both cases.
+  (`dr-3lhmr`)
+
+- `manifest/app.json` and `manifest/agent-app.json` no longer ship
+  `features.slash_commands: []`, which Slack's manifest validator rejects
+  at import, and `manifest/app.json` now declares the `app_mentions:read`
+  bot scope its `app_mention` subscription requires (#63).
 - `gc slack reply-current` now inherits the thread from the latest
   inbound (gp-i62): a thread-reply inbound's transcript entry carries
   the Slack `thread_ts` in `ReplyToMessageID`, and the reply anchors

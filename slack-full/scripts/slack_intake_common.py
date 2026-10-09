@@ -8,6 +8,7 @@ helpers actually consumed by ``slack_chat_bind`` and
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import pathlib
@@ -169,7 +170,16 @@ def _request(method: str, url: str, body: dict[str, Any] | None = None,
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
+        # Reading the error body is another socket read and fails the same ways
+        # the main one does. An exception raised inside an except clause is not
+        # offered to this statement's remaining clauses, so it would leave the
+        # function uncaught -- the defect the clauses below exist to close,
+        # reintroduced one level in. The status line is already in hand, so a
+        # body that cannot be read costs the body and nothing else.
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except (OSError, http.client.HTTPException) as body_exc:
+            detail = f"<{exc.reason}; error body unreadable: {body_exc}>"
         raise GCAPIError(f"{method} {url} -> {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise GCAPIError(f"{method} {url} failed: {exc}") from exc
@@ -181,6 +191,15 @@ def _request(method: str, url: str, body: dict[str, Any] | None = None,
         # on the one outage shape they exist to survive. socket.timeout is
         # an alias of TimeoutError on the Python versions this pack runs.
         raise GCAPIError(f"{method} {url} timed out after {timeout}s") from exc
+    except http.client.HTTPException as exc:
+        # A peer that answers but breaks the protocol: a body shorter than its
+        # own Content-Length (IncompleteRead), a malformed status line
+        # (BadStatusLine). http.client.HTTPException descends from Exception,
+        # NOT from OSError, so the clause below does not reach it, and urllib
+        # only converts failures raised while SENDING the request. Without this
+        # clause both escape exactly as the bare TimeoutError above did.
+        raise GCAPIError(
+            f"{method} {url} failed: {type(exc).__name__}: {exc}") from exc
     except OSError as exc:
         # The stall's siblings: a gc that dies mid-response sends an RST and
         # resp.read() raises ConnectionResetError, which is neither a

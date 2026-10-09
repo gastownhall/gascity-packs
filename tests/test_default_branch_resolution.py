@@ -2,9 +2,9 @@
 
 Four assets resolve a repository's default branch: the `prepare-worktree`
 workflow step in the `gascity` pack, and the guard that refuses to ship from
-the default branch in `contributing` and twice in `pr-pipeline`. All four used
-to do it with `git remote show origin`, which contacts the remote on every
-invocation.
+the default branch in `contributing-to-gascity` and twice in `pr-pipeline`. All
+four used to do it with `git remote show origin`, which contacts the remote on
+every invocation.
 
 This test does not assert that the files contain a particular string. It pulls
 the shell out of the shipped asset and runs it under `sh` against git
@@ -32,7 +32,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 WORKFLOW_STEP = REPO_ROOT / "gascity/assets/workflows/do-work/prepare-worktree.md"
 FORMULAS = (
-    REPO_ROOT / "contributing/formulas/mol-contributing-fine-tune.formula.toml",
+    REPO_ROOT
+    / "contributing-to-gascity/formulas/mol-contributing-fine-tune.formula.toml",
     REPO_ROOT / "pr-pipeline/formulas/mol-pr-ship.formula.toml",
     REPO_ROOT / "pr-pipeline/formulas/mol-pr-from-issue.formula.toml",
 )

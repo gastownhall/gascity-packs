@@ -1,2 +1,2 @@
-description = "Import a Slack app manifest into the gc city's slack-pack registry"
+description = "Import a Slack app manifest into the gc city's slack-full registry"
 run = "../import-app.sh"

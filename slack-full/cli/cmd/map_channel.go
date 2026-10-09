@@ -41,7 +41,7 @@ func NewMapChannelCmd(stdout, _ io.Writer) *cobra.Command {
 		Long: `Bind a Slack channel to a gc session for slash-command routing.
 
 Persists a (workspace_id, channel_id) → session record at
-<cityPath>/.gc/slack/channel_mappings.json. The slack-pack adapter
+<cityPath>/.gc/slack/channel_mappings.json. The slack-full adapter
 reads this file at startup and routes incoming /slack/interactions
 slash-command requests for the channel to the bound session.
 

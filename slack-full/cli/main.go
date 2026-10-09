@@ -28,7 +28,7 @@ import (
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "gc-slack-cli",
-		Short: "Operator CLI for the gc slack-pack",
+		Short: "Operator CLI for the gc slack-full",
 		Long: "gc-slack-cli operates on the on-disk slack runtime state " +
 			"under <city>/.gc/slack/ — the same files the slack-adapter " +
 			"reads at startup and on SIGHUP. Subcommands are added in " +

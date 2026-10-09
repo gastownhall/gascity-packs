@@ -51,4 +51,3 @@ schema = 2
 # not silently takes the v1 path. gc parses this key today and does not
 # yet enforce it -- it is the declared floor, not a guarantee.
 requires_gc = ">=1.3.0"
-

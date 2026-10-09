@@ -74,6 +74,6 @@ otherwise sever the room's outbound publishing without being told. The removed
 bindings are printed to stderr and returned as `unbound_bindings`.
 
 The pack records the binding under
-`.gc/services/slack/data/config.json` so other slack-pack commands can
+`.gc/services/slack/data/config.json` so other slack-full commands can
 resolve the room without re-querying gc. The local record is written only after
 the authoritative reconciliation succeeds.

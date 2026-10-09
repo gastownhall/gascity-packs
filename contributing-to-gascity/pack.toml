@@ -59,14 +59,14 @@
 # than restating it, so the entry skill stays the single source of truth.
 #
 # Usage in your city's pack.toml:
-#   [imports.contributing]
-#   source = "../packs/contributing"   # path; or git URL when published
+#   [imports.contributing-to-gascity]
+#   source = "../packs/contributing-to-gascity"   # path; or git URL when published
 #
 # The skills then load for your coding agent; the formulas register as gc
 # methods. Nothing here pushes a branch or opens a PR — each step produces an
 # artifact (an issue, a plan, a report) you act on. Pushing is always your call.
 
 [pack]
-name = "contributing"
-version = "0.4.0"
+name = "contributing-to-gascity"
+version = "0.5.0"
 schema = 2

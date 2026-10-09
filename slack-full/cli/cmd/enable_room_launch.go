@@ -41,7 +41,7 @@ func NewEnableRoomLaunchCmd(stdout, _ io.Writer) *cobra.Command {
 		Long: `Enable Slack-launcher mode on a Slack channel.
 
 Persists a (workspace_id, channel_id) → pool_template record at
-<cityPath>/.gc/slack/room_launch_mappings.json. The slack-pack adapter
+<cityPath>/.gc/slack/room_launch_mappings.json. The slack-full adapter
 reads this file at startup and uses it to handle '@@<handle>' posts:
 such a post in an enabled channel spawns a new gc session under the
 configured pool template, registers <handle> as the session's alias,
@@ -52,7 +52,7 @@ The binding is idempotent: re-binding the same channel preserves the
 original CreatedAt and replaces pool_template.
 
 The pool_template is operator-supplied and intentionally opaque to gc.
-Gas City has ZERO hardcoded role names; the slack-pack adapter passes
+Gas City has ZERO hardcoded role names; the slack-full adapter passes
 this string verbatim to gc's session-create endpoint as the 'name'
 field, so it must match an agent template the city actually configures.`,
 		Args: cobra.ExactArgs(1),
@@ -64,7 +64,7 @@ field, so it must match an agent template the city actually configures.`,
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", defaultWorkspace,
 		workspace.IDFlagUsage)
 	cmd.Flags().StringVar(&poolTemplate, "launcher", "",
-		"Pool template (agent name) the slack-pack adapter spawns for `@@<handle>` posts in this channel (required)")
+		"Pool template (agent name) the slack-full adapter spawns for `@@<handle>` posts in this channel (required)")
 	if defaultWorkspace == "" {
 		_ = cmd.MarkFlagRequired("workspace-id")
 	}

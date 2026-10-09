@@ -145,6 +145,10 @@ EOF
 **3. Close the bead and drain:**
 ```bash
 gc bd update "$WORK_BEAD_ID" --status=closed
+STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".notify-close"))' >/dev/null || { echo "notify-close: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=pass --status=closed || exit 1
 gc runtime drain-ack
 ```
 

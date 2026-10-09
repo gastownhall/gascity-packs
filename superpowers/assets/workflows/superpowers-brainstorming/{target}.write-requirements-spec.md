@@ -33,6 +33,55 @@ metadata. If the target repo can safely mirror a design doc under
 `docs/superpowers/specs/`, record that mirror path in the artifact, but do not
 commit from this lane unless the routed bead explicitly asks for it.
 
+The requirements artifact is a Markdown build artifact validated against
+`gc.build.requirements.v1`, not a freeform design doc. The file must start
+with YAML front matter on its first line (`---`), and the front matter must
+declare `schema: gc.build.requirements.v1`, the workflow id/formula, the
+methodology pack/name, the producer formula/stage/attempt, `status`, and
+`trace` with upstream and coverage entries. Use mapping objects, not dotted
+keys or scalar shortcuts:
+
+```yaml
+---
+schema: gc.build.requirements.v1
+workflow:
+  id: <workflow-root-id>
+  formula: <workflow-root-formula>
+methodology:
+  pack: superpowers
+  name: superpowers-brainstorming
+producer:
+  formula: superpowers-brainstorming
+  stage: write-requirements-spec
+  attempt: 1
+status: approved
+trace:
+  upstream:
+    - path: <approved design candidate path>
+      hash: sha256:<digest>
+      ids: [REQ-001]
+  coverage:
+    - id: REQ-001
+      status: covered
+---
+```
+
+- `trace.upstream[]` entries must include `path` and `hash`. For bead inputs,
+  use `path: beads/<bead-id>` and `hash: bead:<bead-id>`.
+- If an upstream entry lists `ids`, every listed id must appear exactly once in
+  `trace.coverage` and in a Markdown coverage table with an `ID` column and a
+  `Status` column whose ID/status pairs exactly match `trace.coverage`.
+- Coverage statuses are not artifact statuses: use `covered`,
+  `not_applicable`, `deferred`, `blocked`, `out_of_scope`, or `superseded`,
+  never `approved`.
+- Include these required sections as `##` headings, in this order: Problem Statement,
+  W6H, User Stories, Technical Stories, Behavior Requirements, Example
+  Mapping, Acceptance Criteria, Out Of Scope, and Open Questions.
+
+When mirroring the spec under `docs/superpowers/specs/`, the mirror may omit
+the front matter; the artifact recorded at `gc.build.requirements_path` must
+keep it.
+
 Before closing, update the exact claimed bead id with the lane metadata:
 
 ```bash

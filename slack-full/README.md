@@ -7,7 +7,7 @@ the same primitives can be ported one at a time.
 
 This pack lives at `slack-full/` in the
 [`gastownhall/gascity-packs`](https://github.com/gastownhall/gascity-packs)
-catalog. A city opts in by path-importing its `pack.toml` (see
+catalog. A city opts in by importing it from that repository (see
 "Install" below).
 
 ## Tiering
@@ -77,7 +77,11 @@ Implemented:
       ID (no session binding required; useful for one-shot ops posts)
 - [x] `gc slack status` — read-only diagnostics (adapters, bindings,
       recent traffic). `--session SID` for one-session detail,
-      `--since 5m` for a time window, `--json` for scripting.
+      `--since 5m` for a time window (default `168h`; `--since ''`
+      reads the full history), `--json` for scripting. Exits 0
+      when every section was read, 2 when any section could not be;
+      an unreadable section is marked `(UNREADABLE: <reason>)` rather
+      than being shown as empty, and the readable sections still print.
 - [x] `gc slack react` — add an emoji reaction to a Slack message
 - [x] `gc slack identity` — register/unregister a per-session
       `chat:write.customize` identity (display name + icon) so each
@@ -243,8 +247,25 @@ which bypasses `/publish` entirely and is unaffected by this guard.
 
 ## Install
 
+Import the pack into your city:
+
+```sh
+gc import add https://github.com/gastownhall/gascity-packs.git//slack-full
+```
+
+That writes the import and pins the release in `packs.lock`. The same import
+by hand in `pack.toml`, followed by `gc import install`:
+
 ```toml
-# city.toml
+[imports.slack-full]
+source = "https://github.com/gastownhall/gascity-packs.git//slack-full"
+```
+
+`gc pack registry show slack-full` prints the registry entry and its releases.
+To work on the pack from a local checkout, point `source` at the path
+instead:
+
+```toml
 [imports.slack-full]
 source = "/path/to/gascity-packs/slack-full"
 ```
@@ -318,6 +339,20 @@ destructive, it is never the default: a run with neither flag is
 rejected before any API call rather than quietly sweeping the room's
 publisher. Re-running `bind-room` on an owned room therefore has to
 name the owner again.
+
+### Threaded replies
+
+When a human replies inside a Slack thread, the text the session
+receives starts with a `[slack thread_ts=<root ts>]` line naming the
+thread root. After it comes the earlier thread context: the root
+message's text on every reply, even when a bot posted it (shown as
+`[bot <bot id>]: ...`), plus any human messages newer than the last
+reply this session already received. Other bot messages, and messages
+with no text (a file-only root, for example), are left out. If the adapter cannot fetch the thread from Slack, the
+marker line is followed by `Thread parent could not be fetched.`
+instead of the context. `gc slack reply-current` already answers in
+the thread; with `gc slack publish-to-channel`, pass the root ts as
+`--thread-ts`. Messages outside a thread arrive without the marker.
 
 ## Adapter as a proxy_process service
 
