@@ -1,9 +1,132 @@
 # Project-aware BB candidate qualification
 
-Status: the PR7076 candidate is staged; October 8 live qualification exposes a
-native Codex command-cancellation blocker. Earlier-build results are separate.
-No candidate is approved for merge or promotion. The exact manifest and retained evidence are in Chris's external
-`bb-provider-project-picker` run directory; they are deliberately outside the VM.
+Status: complete; foundation candidate qualified in disposable staging. Chris's merge/promotion approval remains separate.
+
+## Current integration candidate
+
+GC `077c53b553f0d92fde2c6b425c9a197ce473a791` / `1.6.0-dev-jarvis.8-bb-integration.10` is verified in disposable VM140.
+SHA-256: `151afd75b204d969caebd51260a6861d02c52ac952d2b1b372763c4f95d2ab0c`. The exact generated-client provenance pins this commit.
+BB remains `6e5c1c6fd29b507b812df6d07017904e2a315669`, based on
+main `81256f5d42c9225398650fb3e5e80644d49c7e52`, with SDK runtime 0.6.28.
+
+The first full gate caught a missing runtime-test manifest entry for the new
+fast-turn regression. The manifest and shard counts were corrected before the
+final gate; the failing log remains in the evidence.
+
+An integration run also hit the unchanged upstream shutdown test’s 100 ms
+forced-stop budget under concurrent load. A focused repeated run and the full
+integration retry with two test slots passed on unchanged source. The initial
+failure remains recorded; this is not a claim that the timing-sensitive test was
+repaired.
+
+The first .10 staging cutover failed because BB’s local API port was already
+in use. Runtime rollback preserved conversation state. The service ports are
+now excluded from automatic client-port allocation; cutover waits for both BB
+ports and verifies the connected execution host plus thread API. The original
+socket owner was not established. Failed-cutover evidence is retained.
+
+The staging housekeeping role also has its own working directory. Its four GC
+hooks were byte-identical to the reviewed city hooks, but native resume required
+consent for that path. Provisioning trusts only those exact hashes, preserves all
+other settings, and verifies the retained conversation after resume.
+
+The first rendered Stop check caught a BB bridge ownership leak: GC stopped
+the command, but a still-running shared bridge retained its local thread lease,
+blocking the next bridge from resuming. A regression reproduces that handoff
+without closing the first bridge. Both Stop intents now release the stopped
+thread; interruption waits for cleanup before its response. Other conversations
+keep their ownership, and uncertain delivery still requires explicit recovery.
+The final provider checks and full rendered matrix include this correction.
+
+The final artifact passes all 235 native Bazel targets, seven selected integration
+targets, generated-client/typecheck/build checks, 85 provider tests plus two
+client guards, 199 pack checks without skips, and 29 browser-driver guards.
+Live checks pass Claude foreground and explicit-background Stop, Codex command Stop, absence of delayed writes,
+explicitly detached service preservation and another conversation surviving for both providers,
+repeated old Stop while a new turn runs, crash recovery retaining native identity, sleeping-conversation follow-up without replay, and migration of an actual embedded
+Codex conversation with exact native identity, ordered history and remembered
+context. Rendered BB checks cover project-filtered agents and fox icon, both
+providers' five-turn conversations/tools (including sleeping-context recall) and Stop. Native approval allow/deny and a follow-up after denial,
+lost-submit-reply recovery without replay, release, durable closure, and protected
+conversation continuity pass through the generated supervisor client.
+
+Claude uses the pinned 2.1.292 binary, SHA-256
+`a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3`.
+Its GC adapter retains native Bash task handles and requires matching native
+exit notifications. It preserves explicit detachment and old-turn fences.
+Unknown native versions/tools, unresolved starts, attached human clients and
+ambiguous identical live commands fail visibly; they never become false Stop
+success. The initial .8 live run exposed surviving Claude background work;
+foreground-handle, multi-task navigation and denial-follow-up failures are retained
+in the evidence. An ordinary denial permits a follow-up; explicit Stop intent is
+persisted before native mutation and stays uncertain until command exit is confirmed.
+
+Codex uses the pinned custom 0.156.1 bundle, SHA-256
+`d4b29ce977ae553da6707bdb702e135a4e91d321914438ac52d6eb5c7a75f57a`,
+with its matching helper. Its source and build instructions are in GC's
+`contrib/codex-owned-stop/`. Both live models use subscription authentication:
+Luna and Haiku at medium effort. Temporary build swap and protocol observers
+have been removed. Stable installations remain unchanged.
+
+The .9 live run exposed a native-acceptance retry bug: terminal busy had ceased
+to prevent another submit, allowing Escape to abort work before acceptance was
+recorded. A failing regression reproduces the extra keys. Owned Codex now uses
+bracketed paste and Enter; busy suppresses retries while exact native acceptance
+still determines success. Lost control after a submit remains unconfirmed. A subsequent load probe
+showed an exact receipt arriving after eleven seconds, beyond the old eight-second
+paste-recovery budget. Native acceptance now has its own sixty-second bounded
+wait, covered by a failing-then-passing delayed-receipt regression. The failed
+probe later returned READY exactly once, without replay; its trace is retained.
+
+Fast Codex turns, including the first follow-up after native resume, now use
+native acceptance of the exact message to acknowledge delivery. The earlier .7
+rendered run completed the native turn but failed its terminal-busy check; its
+failed receipt was preserved and never replayed. The final candidate passes the
+same rendered sleep/resume flow.
+
+Committed conversations now retain their identity after startup failure. The
+native adapter reclaims confirmed stale Unix sockets without replacing live
+listeners and handles terminal hangup through graceful cancellation.
+The staged city and rig Codex roles explicitly declare GC-managed hooks before
+fingerprinting. The first rendered run exposed a missing rig declaration; its
+drift-drained disposable thread was archived without replay, the declaration
+was repaired, and the rendered flow rerun. The native adapter finalizes canonical
+reviewed hooks before startup and carries
+explicit resume approval/sandbox choices through the native API, verifying the
+response before accepting the session. Custom profile, extra-root, auto-review,
+and permission-config overrides on remote resume fail explicitly; supported
+`--sandbox` and `--ask-for-approval` flags remain available. No user trust or
+permission defaults are silently replaced.
+
+[Open the review VM](https://csells-mac-mini--51995.getbb.app), select
+**GC City — globals** or **GC Sample — rig + globals**, then the fox and an agent.
+The Mac mini is a web relay only. The sample rig is still qualification scaffolding,
+not the Gotham application repositories. Jarvis voice, Gotham composition,
+Crucible and binding arbitrary existing GC sessions are separate future work.
+
+Operational limits from final log review: one 900-second bead-archive export
+expired during qualification; the next scheduled run exported both scopes and
+committed valid JSONL without intervention. Resource contention is plausible,
+not proven. Track recurrence before promotion. GC's current API suspend endpoint
+stops the native runtime without the persistent operator hold used by CLI suspend;
+three completed review fixtures resumed under their sleep-off policy and retained
+their native identities. They remain idle review conversations. Persistent API
+suspension is not qualified, is not exposed by this BB integration, and must be
+addressed before relying on it for orchestration resource control. BB Stop,
+release, durable close and sleeping-context follow-up have independent passing
+checks. The warning review and registry retain these follow-ups.
+
+This qualifies this Linux staging combination. Earlier installer/reboot evidence
+belongs to earlier builds; this run did not reboot the shared VM or qualify macOS.
+The native Rust suite had one timeout that passed on isolated retry and two skips;
+those limits remain recorded. Branch publication is not approval to merge or
+promote. Chris must approve this exact staged candidate first.
+
+Retained evidence: `/Users/csells/.bb/thread-storage/bb-provider-project-picker/stop-contract-oct8/final-candidate10/`. The exact final provider snapshot is
+`provider-lease-fix/verified-provider.tar.gz` there; it supersedes the initial
+provider snapshot without changing GC's binary.
+Earlier failures below remain historical evidence and do not describe this candidate.
+
 
 ## Earlier foundation qualification
 

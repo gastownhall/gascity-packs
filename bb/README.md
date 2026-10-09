@@ -28,7 +28,7 @@ Provenance identifies the input; the qualification record below identifies the
 checks actually completed for each version.
 Codex 0.156.1 uses Luna; Claude Code 2.1.292 uses Haiku, both at medium effort
 with subscription authentication. Qualification is recorded in
-[the candidate verification record](./../specs/plans/0001-bb-provider-staging.md).
+[the candidate verification record](../specs/plans/archive/0001-bb-provider-staging.md).
 No claim here covers unpatched official GC releases, other native CLIs, or macOS
 execution. Earlier Hillsboro/Kimi results in [verification](./docs/verification.md)
 are historical evidence for their own pinned combinations.
@@ -43,7 +43,7 @@ are historical evidence for their own pinned combinations.
 | Existing workspace | Longest matching configured checkout/worktree path |
 | Thread | One new template-backed GC session, with a durable local ownership receipt |
 | Prompt / streamed answer | GC asynchronous submit / structured transcript SSE |
-| Interrupt | Stop the active GC turn |
+| Interrupt | Stop the accepted turn through GC with confirmed owned-command termination |
 | Release / host disconnect | Detach the BB bridge; retain the GC session |
 
 The native picker uses **Agents** and **Search agents**, with the Gas City fox
@@ -72,7 +72,7 @@ The separate launcher retains its explicit global discovery mode.
 - The custom BB **0.45.0** picker build with SDK runtime **0.6.28**. Declared
   ranges are BB `>=0.45.0 <0.46` and SDK `>=0.6.28 <0.7`; compiling uses the
   published SDK 0.6.23 with the candidate picker contract.
-- Node.js **22+**, npm, and the BB CLI.
+- Node.js **22.18+**, npm, and the BB CLI.
 - For the initial setup below, the BB server, BB execution host, Gas City, and
   pack checkout are on the same machine and run as the same operator. This
   also makes working-directory checks meaningful.
@@ -87,6 +87,79 @@ The adapter runs inside BB's host-side provider infrastructure. There is no
 new HTTP service, ACP server, or background process started by importing this
 pack. Separate BB hosts need their own GC configuration, filesystem paths,
 and journals; a journal is not a portable cross-host session locator.
+
+An ordinary follow-up wakes a sleeping retained session before checking native
+command ownership. This preserves the native conversation and sends no prompt
+until readiness and history checks succeed. GC does not publish native-control
+readiness on session SSE, so that one wake uses a bounded readiness check;
+transcript streaming and asynchronous delivery results continue to use SSE.
+
+## Command Stop in the candidate
+
+Codex turn interruption alone leaves shell commands running. The candidate
+requires the GC integration branch's `gc runtime codex` adapter and its matching
+patched native Codex 0.156.1 bundle for confirmed command Stop. The source patch,
+exact base, helper checksum and build procedure are under
+`contrib/codex-owned-stop/` in that GC branch. The exact Linux staging combination passes the recorded qualification;
+this is an explicit candidate configuration, not a change to GC's defaults.
+
+Put the pinned bundle's `codex` and matching code-mode helper together on the
+candidate runtime's PATH. Preserve the agent's existing model, effort,
+permissions and other launch arguments. For a provider based on builtin Codex,
+the wrapper replaces only the executable prefix:
+
+```toml
+[providers.codex]
+base = "builtin:codex"
+command = "gc runtime codex --"
+resume_command = "gc runtime codex -- resume {{.SessionKey}}"
+```
+
+Declare `install_agent_hooks = ["codex"]` on every city and rig agent using
+this adapter, so GC finalizes its managed hooks before fingerprinting the runtime.
+A same-named rig agent is a separate role and does not inherit the city role's
+hook declaration. For an existing rig role, append the hook provider explicitly:
+
+```toml
+[[patches.agent]]
+name = "codex"
+dir = "your-rig"
+install_agent_hooks_append = ["codex"]
+```
+
+Without that declaration, startup can change the hook-file fingerprint and GC
+will drain the conversation for configuration drift. This is part of the explicit
+adapter opt-in; the BB provider does not edit agent configuration.
+
+Existing embedded Codex processes do not gain the control socket retroactively.
+A verified suspend/resume migration must preserve their exact native conversation
+identity and history. The provider reports unsupported or unconfirmed control
+visibly; it never substitutes a whole-session kill or resubmits the prompt.
+Stop addresses the accepted turn, confirms owned-command exit, and preserves
+services explicitly detached through GC's generated `detach-command` endpoint.
+Merely returning a tool handle or completing a turn does not detach a service.
+Release keeps the session running and is a different operation.
+
+Codex 0.156.1 requires persistent consent for project hooks on remote resume,
+even when `--dangerously-bypass-hook-trust` was used for a fresh launch. Review
+and trust the GC-generated hooks for each city and rig before resuming managed
+conversations. Consent applies to exact hook hashes; changed commands require a
+new review. The staged VM provisions only its reviewed canonical GC hooks. The
+BB provider does not modify hook consent or other native configuration. Missing
+consent prevents native control from becoming ready; it must not trigger a new
+conversation or a replayed prompt.
+
+Claude Code **2.1.292** uses GC's native task adapter. GC retains foreground Bash
+as a native background task before interrupting the turn, then requires matching
+native task/tool exit notifications. A background return, generic rejected-tool
+message or disappearing menu does not prove termination. The adapter persists
+explicit detachment and repeated-Stop fences; BB still uses only generated HTTP/SSE.
+
+Claude Stop fails visibly for unverified native versions or tools (including
+unverified subagent command ownership), unresolved command starts, attached human
+clients, or identical live command prefixes that the native task UI cannot
+distinguish. These cases do not receive a false success acknowledgment. Keep the
+pinned CLI when evaluating this candidate; upgrading it requires new qualification.
 
 ## Install this branch
 
@@ -300,8 +373,10 @@ when reinstalling; they prevent duplicate submission.
 - GC tools and text appear in BB. Full fidelity usage, specialized tool UI,
   arbitrary named-session attachment, remote checkout adoption, and automatic
   mid-turn reconnect recovery are later stages.
-- This is a branch for integration testing. The automated gates below do not
-  yet have a complete passing live product matrix.
+- This is a branch for integration testing. The exact Linux candidate has a
+  separate live qualification record. The historical full product matrix below
+  has not been rerun in its entirety for this candidate; it does not establish
+  macOS or unchanged released-runtime support.
 
 ## Development and checks
 
@@ -313,7 +388,7 @@ npm run typecheck
 npm run build
 npm test
 cd ../../..
-GC_TEST_BIN=/absolute/path/to/gc-1.5 \
+GC_TEST_BIN=/absolute/path/to/gc-candidate \
   python3 -m unittest discover -s bb/tests -v
 ```
 
@@ -357,11 +432,11 @@ async creation, prompt delivery, replay, tool deltas, resume, interrupt,
 release, checkout mismatch, lost responses, and explicit approvals.
 The Python checks use the **actual GC binary** for pack lint,
 resolved configuration, command discovery, and executable entrypoints.
-GC 1.5 has no tagged release yet, so the dedicated workflow builds GC from two
-pinned commits: the unmodified `release/v1.5.0` candidate, and
-`fix/claude-runtime-v1.5.0` (the candidate plus the GC corrections). Both run
-as labeled development builds and cannot certify a released binary. The
-workflow also builds the server, host and frontend with released BB 0.43.3. Installer
+The legacy compatibility workflow builds two historical GC 1.5 development
+commits: the unmodified release candidate and its Claude runtime corrections.
+These checks do not qualify the current candidate. The workflow also builds
+plugin entries with BB 0.43.4; current candidate acceptance uses the exact
+custom BB and GC artifacts identified in the qualification record. Installer
 tests exercise failed builds, registration rollback and retained data.
 
 `BB end-to-end acceptance` additionally requires actual Claude and Codex

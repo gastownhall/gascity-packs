@@ -1,15 +1,20 @@
 # Verification and release status
 
-The pack remains a release candidate. Current Hillsboro qualification uses
-BB 0.43.3, SDK 0.4.104, Claude CLI 2.1.270, and a patched GC 1.4.2 candidate.
+For the current project-aware BB/GC candidate, see the
+[qualification record](../../specs/plans/archive/0001-bb-provider-staging.md) and
+[setup instructions](../README.md). The dated evidence below concerns earlier
+combinations and does not qualify the current candidate.
+
+The September 19 Hillsboro qualification used BB 0.43.3, SDK 0.4.104,
+Claude CLI 2.1.270, and a patched GC 1.4.2 candidate.
 All 40 required live cases passed on the Manifold Kimi route through Claude
 CLI 2.1.270, with zero failed, blocked, or unexecuted cases. The
 [full snapshot-11 ledger](../../specs/research/bb-hillsboro-evidence-2026-09-19/completion11-summary.json)
-pins provider `b17e84154ec3…` and GC `4f41f8285070…`. Those artifacts are now
+pins provider `b17e84154ec3…` and GC `4f41f8285070…`. Those artifacts were
 deployed on Hillsboro, and [production verification passed](../../specs/research/bb-hillsboro-evidence-2026-09-19/deployment-verification.json):
 all 121 pins, six role prompts, live service identities, installed provider
 source, private configuration permissions, and global/mapped-rig catalogs.
-Both services are active; enterprise `bd` 1.1.0 remains unchanged. The verifier
+At that verification, both services were active and enterprise `bd` 1.1.0 was unchanged. The verifier
 submitted no production inference; the full model matrix used isolated state.
 Original configuration and state were backed up. No registry release has been published.
 
@@ -277,8 +282,7 @@ those three explicitly named reports.
 
 For an explicit GC development build, add `--gc-development-base 1.5.0` and
 `--gc-commit <full source commit>`, and use a binary reporting a prerelease
-version such as `1.5.0-candidate.002016a8679a`. GC 1.5 has no tagged release
-yet, so every 1.5 build must run this way; the harness then imports the
+version such as `1.5.0-candidate.002016a8679a`. Historical 1.5 development builds used this override; the harness then imports the
 canonical `core` pin that 1.5's `gc init` writes.
 Reports identify this as development validation and record the binary hash;
 it does not certify the unchanged released binaries. The separate GC candidate
