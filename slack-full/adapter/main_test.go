@@ -43,7 +43,14 @@ var defaultTestDispatchSem chan struct{}
 // pull a non-nil channel from defaultTestDispatchSem above.
 func TestMain(m *testing.M) {
 	defaultTestDispatchSem = make(chan struct{}, 50)
-	os.Exit(m.Run())
+	cityPath, err := os.MkdirTemp("", "gc-slack-adapter-test-city-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("GC_CITY_PATH", cityPath)
+	code := m.Run()
+	os.RemoveAll(cityPath)
+	os.Exit(code)
 }
 
 // TestDispatchSemIsCfgScopedAndParallelSafe is a structural assertion

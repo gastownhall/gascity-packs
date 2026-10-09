@@ -2415,10 +2415,18 @@ func postMessageWithClient(client *http.Client, token string, req slackPostMessa
 	if err := json.Unmarshal(respBody, &sr); err != nil {
 		return nil, fmt.Errorf("decode slack: %w (body=%s)", err, string(respBody))
 	}
+	if httpResp.StatusCode >= 200 && httpResp.StatusCode < 300 && sr.OK {
+		recordOutboundLiveness(req.Channel, sr.TS)
+	}
 	return &sr, nil
 }
 
 func handleSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *threadSessionRegistry, roomLaunchReg *roomLaunchMappingRegistry, subteamMap *subteamAliasMap, threadHandleSticky *threadHandleStickiness) http.HandlerFunc {
+	cityPath := cfg.cityPath
+	if cityPath == "" {
+		cityPath = os.Getenv("GC_CITY_PATH")
+	}
+	liveness := &eventLivenessRecorder{path: companyStateDirDefault(cityPath, "event-liveness.json")}
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2461,6 +2469,10 @@ func handleSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 			w.Header().Set("Content-Type", "text/plain")
 			_, _ = w.Write([]byte(env.Challenge))
 			return
+		}
+
+		if env.Type == "event_callback" {
+			liveness.record(env.Event)
 		}
 
 		// Company-rooms durable admission (Slack company-rooms Phase 1d).
