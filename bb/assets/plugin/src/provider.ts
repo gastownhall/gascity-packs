@@ -194,11 +194,12 @@ export class GasCityProvider {
           }
         }
         session.busy = false; session.turnOpen = false;
-        if (args.intent === "release") {
-          this.sessions.delete(args.threadId);
-          const releasing = this.release(session);
-          if (!session.submission) await releasing;
-        }
+        // BB detaches the thread after either stop intent. A shared bridge can
+        // remain alive for other threads; retaining this lease would prevent
+        // its next bridge from resuming the same GC conversation.
+        this.sessions.delete(args.threadId);
+        const releasing = this.release(session);
+        if (args.intent === "interrupt" || !session.submission) await releasing;
       } finally { session.stopping = false; }
       return {};
     }
@@ -311,12 +312,13 @@ export class GasCityProvider {
         session.warning = undefined;
       }
       acknowledged();
+      const woke = await session.client.prepareTurn(session.target.city, session.sessionId, controller.signal);
       let snapshot = await session.client.transcript(session.target.city, session.sessionId, controller.signal);
       controller.signal.throwIfAborted();
       // A sleeping agent can temporarily expose terminal fallback history while
       // GC wakes its existing runtime. Preserve the prior receipt and wait for
       // native history before recording or submitting this new prompt.
-      if (!receipt.turn || snapshot.history?.tail_state?.degraded) snapshot = await this.waitForReady(session, snapshot, controller.signal);
+      if (woke || !receipt.turn || snapshot.history?.tail_state?.degraded) snapshot = await this.waitForReady(session, snapshot, controller.signal);
       controller.signal.throwIfAborted();
       const transcript = new Transcript(snapshot, message);
       // A durable GC bead can survive a native-runtime reset. BB's local timeline

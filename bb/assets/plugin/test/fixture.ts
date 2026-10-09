@@ -93,6 +93,7 @@ export async function fixture() {
       for (const stream of session.streams) stream.write(`event: structured\nid: approved\ndata: ${JSON.stringify(frame(session.id, session.messages, "idle", "upsert"))}\n\n`);
       return json({ status: "ok" });
     }
+    if (suffix === "/turn-target") return json({mode:"native_interrupt",state:"unknown"});
     if (suffix === "/stop") return json({ status: "ok" });
     return json({ message: "not found" }, 404);
   });

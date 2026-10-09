@@ -139,6 +139,7 @@ test("a canceled startup cannot accept another turn until interrupt finishes", a
     await assert.rejects(turn("creq_23456789am"), /stopping/);
     assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 0);
     releaseRead(); await stopping;
+    await provider.dispatch("thread/resume", { threadId: "stop-race", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution });
     await turn("creq_23456789an");
     await until(() => !!provider.sessions.get("stop-race")?.observation);
     assert.equal(provider.sessions.get("stop-race")?.busy, true);
@@ -164,7 +165,7 @@ for (const lateFailure of ["observer rejection", "startup timeout"] as const) {
     class DelayedObserverClient extends GasCityClient {
       override async *sessionEvents(city: string, id: string, resume: string, signal: AbortSignal) {
         if (++streamCount === 1) {
-          // A transport may finish cancellation/cleanup after stop returns.
+          // Stop must wait for transport cleanup before handing off ownership.
           await oldGate;
           if (lateFailure === "observer rejection") throw new Error("old observer cleanup failed");
         } else {
@@ -181,7 +182,10 @@ for (const lateFailure of ["observer rejection", "startup timeout"] as const) {
       await turn("creq_23456789ak");
       await until(() => streamCount === 1 && !provider.sessions.get("late-observer")?.submission);
       oldObservation = provider.sessions.get("late-observer")!.observation;
-      await provider.dispatch("thread/stop", { threadId: "late-observer", providerThreadId: start.providerThreadId, intent: "interrupt", activeTurnId: null });
+      const stopping = provider.dispatch("thread/stop", { threadId: "late-observer", providerThreadId: start.providerThreadId, intent: "interrupt", activeTurnId: null });
+      await until(() => !!provider.sessions.get("late-observer")?.controller?.signal.aborted);
+      releaseOld(); await oldObservation; await stopping;
+      await provider.dispatch("thread/resume", { threadId: "late-observer", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution });
       await turn("creq_23456789am");
       await until(() => streamCount === 2 && !provider.sessions.get("late-observer")?.submission);
       const currentController = provider.sessions.get("late-observer")!.controller!;
@@ -235,6 +239,7 @@ for (const settlement of ["completed", "failed"] as const) for (const intent of 
       if (intent === "release") {
         await assert.rejects(provider.dispatch("thread/resume", { threadId: "completion-race", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution }), /interrupted or its delivery is uncertain/);
       } else {
+        await provider.dispatch("thread/resume", { threadId: "completion-race", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution });
         await provider.dispatch("turn/start", { threadId: "completion-race", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789aj", input: [{ type: "text", text: "Next" }], options: execution });
         await until(() => messages.flatMap(m => m.params?.deltas ?? []).some(d => d.kind === "turn.boundary" && d.status === "completed"));
         assert.equal((await journal.get("completion-race"))?.turn?.clientRequestId, "creq_23456789aj");
@@ -297,7 +302,8 @@ test("interrupt before GC confirms delivery closes the BB turn but preserves unc
     assert.equal(f.calls.filter(c => c.path.endsWith("/stop")).length, 1);
     assert.equal((await journal.get("unconfirmed"))?.turn?.state, "accepted");
     assert.deepEqual(messages.flatMap(m => m.params?.deltas ?? []).filter(d => d.kind === "turn.boundary").map(d => d.status), ["interrupted"]);
-    await assert.rejects(provider.dispatch("turn/start", { threadId: "unconfirmed", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789ah", input: [{ type: "text", text: "retry" }], options: execution }), /uncertain delivery/);
+    await assert.rejects(provider.dispatch("thread/resume", { threadId: "unconfirmed", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution }), /delivery is uncertain/);
+    assert.equal(f.calls.filter(c => c.path.endsWith("/submit")).length, 1);
     experimental_assembleCapturedThreadEvents(messages, "gas-city");
   } finally { await provider.close(); await f.close(); }
 });
@@ -659,3 +665,27 @@ for (const lost of [false, true]) {
     } finally { await provider.close(); await f.close(); }
   });
 }
+
+
+test("interrupt releases only its bridge ownership before another bridge resumes", async () => {
+  const f = await fixture(), journal = new Journal(join(f.cwd, "journal"));
+  const first = new GasCityProvider({ send: () => {}, config: async () => f.config, journal });
+  const second = new GasCityProvider({ send: () => {}, config: async () => f.config, journal });
+  const execution = { ...options, model: targetId(target) };
+  try {
+    const start: any = await first.dispatch("thread/start", { threadId: "stopped", cwd: f.cwd, instructionMode: "append", options: execution });
+    const other: any = await first.dispatch("thread/start", { threadId: "unrelated", cwd: f.cwd, instructionMode: "append", options: execution });
+    await first.dispatch("turn/start", { threadId: "stopped", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789bc", input: [{ type: "text", text: "hold" }], options: execution });
+    await until(() => !!first.sessions.get("stopped")?.observation);
+    await first.dispatch("thread/stop", { threadId: "stopped", providerThreadId: start.providerThreadId, intent: "interrupt", activeTurnId: null });
+    // BB forgets the runtime after Stop. The old shared bridge remains alive
+    // for other threads, so closing that process would hide the ownership bug.
+    const resumed: any = await second.dispatch("thread/resume", { threadId: "stopped", providerThreadId: start.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution });
+    assert.equal(resumed.providerThreadId, start.providerThreadId);
+    await assert.rejects(second.dispatch("thread/resume", { threadId: "unrelated", providerThreadId: other.providerThreadId, cwd: f.cwd, instructionMode: "append", options: execution }), /owned by process/);
+    await second.dispatch("turn/start", { threadId: "stopped", providerThreadId: start.providerThreadId, clientRequestId: "creq_23456789bd", input: [{ type: "text", text: "Hello" }], options: execution });
+    await until(() => !second.sessions.get("stopped")?.busy);
+    assert.equal((await journal.get("stopped"))?.turn?.state, "completed");
+    assert.equal(f.calls.filter(c => c.path.endsWith("/sessions") && c.method === "POST").length, 2);
+  } finally { await first.close(); await second.close(); await f.close(); }
+});

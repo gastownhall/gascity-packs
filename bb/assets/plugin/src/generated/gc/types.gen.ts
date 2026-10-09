@@ -4662,6 +4662,17 @@ export type SessionTranscriptStructuredResponse = {
     template: string;
 };
 
+export type SessionTurnControlInputBody = {
+    /**
+     * Native process identity; required only to explicitly detach a command.
+     */
+    process_id?: string;
+    /**
+     * Opaque turn identity returned by the runtime target endpoint. A stale target cannot stop new work.
+     */
+    turn_id: string;
+};
+
 export type SessionUnknownStatePayload = {
     /**
      * False on the first-sight emission; true when re-emitted after the bead has sat unrecognized past the escalation threshold.
@@ -5484,6 +5495,12 @@ export type TranscriptMessageKind = 'inbound' | 'outbound';
  * Provenance of a transcript entry (freshly observed vs. replayed from persisted history).
  */
 export type TranscriptProvenance = 'live' | 'hydrated';
+
+export type TurnTarget = {
+    mode: 'owned_commands' | 'native_interrupt';
+    state: string;
+    turn_id?: string;
+};
 
 /**
  * Typed city event stream envelope
@@ -17988,6 +18005,54 @@ export type PostV0CityByCityNameSessionByIdCloseResponses = {
 
 export type PostV0CityByCityNameSessionByIdCloseResponse = PostV0CityByCityNameSessionByIdCloseResponses[keyof PostV0CityByCityNameSessionByIdCloseResponses];
 
+export type PostV0CityByCityNameSessionByIdDetachCommandData = {
+    body: SessionTurnControlInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
+    path: {
+        /**
+         * City name.
+         */
+        cityName: string;
+        /**
+         * Gas City session ID.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/v0/city/{cityName}/session/{id}/detach-command';
+};
+
+export type PostV0CityByCityNameSessionByIdDetachCommandErrors = {
+    /**
+     * Conflict
+     */
+    409: ErrorModel;
+    /**
+     * Unprocessable Entity
+     */
+    422: ErrorModel;
+    /**
+     * Internal Server Error
+     */
+    500: ErrorModel;
+};
+
+export type PostV0CityByCityNameSessionByIdDetachCommandError = PostV0CityByCityNameSessionByIdDetachCommandErrors[keyof PostV0CityByCityNameSessionByIdDetachCommandErrors];
+
+export type PostV0CityByCityNameSessionByIdDetachCommandResponses = {
+    /**
+     * OK
+     */
+    200: TurnTarget;
+};
+
+export type PostV0CityByCityNameSessionByIdDetachCommandResponse = PostV0CityByCityNameSessionByIdDetachCommandResponses[keyof PostV0CityByCityNameSessionByIdDetachCommandResponses];
+
 export type PostV0CityByCityNameSessionByIdKillData = {
     body?: never;
     headers: {
@@ -18510,6 +18575,54 @@ export type PostV0CityByCityNameSessionByIdStopResponses = {
 
 export type PostV0CityByCityNameSessionByIdStopResponse = PostV0CityByCityNameSessionByIdStopResponses[keyof PostV0CityByCityNameSessionByIdStopResponses];
 
+export type PostV0CityByCityNameSessionByIdStopCommandsData = {
+    body: SessionTurnControlInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
+    path: {
+        /**
+         * City name.
+         */
+        cityName: string;
+        /**
+         * Gas City session ID.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/v0/city/{cityName}/session/{id}/stop-commands';
+};
+
+export type PostV0CityByCityNameSessionByIdStopCommandsErrors = {
+    /**
+     * Conflict
+     */
+    409: ErrorModel;
+    /**
+     * Unprocessable Entity
+     */
+    422: ErrorModel;
+    /**
+     * Internal Server Error
+     */
+    500: ErrorModel;
+};
+
+export type PostV0CityByCityNameSessionByIdStopCommandsError = PostV0CityByCityNameSessionByIdStopCommandsErrors[keyof PostV0CityByCityNameSessionByIdStopCommandsErrors];
+
+export type PostV0CityByCityNameSessionByIdStopCommandsResponses = {
+    /**
+     * OK
+     */
+    200: TurnTarget;
+};
+
+export type PostV0CityByCityNameSessionByIdStopCommandsResponse = PostV0CityByCityNameSessionByIdStopCommandsResponses[keyof PostV0CityByCityNameSessionByIdStopCommandsResponses];
+
 export type StreamSessionData = {
     body?: never;
     headers?: {
@@ -18865,6 +18978,48 @@ export type GetV0CityByCityNameSessionByIdTranscriptResponses = {
 };
 
 export type GetV0CityByCityNameSessionByIdTranscriptResponse = GetV0CityByCityNameSessionByIdTranscriptResponses[keyof GetV0CityByCityNameSessionByIdTranscriptResponses];
+
+export type GetV0CityByCityNameSessionByIdTurnTargetData = {
+    body?: never;
+    path: {
+        /**
+         * City name.
+         */
+        cityName: string;
+        /**
+         * Session ID, alias, or runtime session_name.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/v0/city/{cityName}/session/{id}/turn-target';
+};
+
+export type GetV0CityByCityNameSessionByIdTurnTargetErrors = {
+    /**
+     * Conflict
+     */
+    409: ErrorModel;
+    /**
+     * Unprocessable Entity
+     */
+    422: ErrorModel;
+    /**
+     * Internal Server Error
+     */
+    500: ErrorModel;
+};
+
+export type GetV0CityByCityNameSessionByIdTurnTargetError = GetV0CityByCityNameSessionByIdTurnTargetErrors[keyof GetV0CityByCityNameSessionByIdTurnTargetErrors];
+
+export type GetV0CityByCityNameSessionByIdTurnTargetResponses = {
+    /**
+     * OK
+     */
+    200: TurnTarget;
+};
+
+export type GetV0CityByCityNameSessionByIdTurnTargetResponse = GetV0CityByCityNameSessionByIdTurnTargetResponses[keyof GetV0CityByCityNameSessionByIdTurnTargetResponses];
 
 export type PostV0CityByCityNameSessionByIdWakeData = {
     body?: never;

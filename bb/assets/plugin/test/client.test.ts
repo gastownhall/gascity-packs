@@ -28,6 +28,7 @@ test("health rejects a supervisor that reports failed or incomplete startup", as
 test("generated submit operation preserves multiline input and encodes scope once", async () => {
   let seen: { url: string; init?: RequestInit } | undefined;
   const transport = (async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith("/turn-target")) return new Response(JSON.stringify({mode:"native_interrupt",state:"unknown"}), {headers:{"Content-Type":"application/json"}});
     seen = { url: String(url), init };
     return new Response(JSON.stringify({ request_id: "req-test", event_cursor: "42" }), { status: 202, headers: { "Content-Type": "application/json" } });
   }) as typeof fetch;
@@ -81,4 +82,55 @@ test("generated stream does not retry rejected access", async () => {
   const stream = client.sessionEvents("city", "session", "0", new AbortController().signal);
   await assert.rejects(stream.next(), /Gas City 403/);
   assert.equal(requests, 1);
+});
+
+
+test("owned Stop uses a fresh turn target and never falls back to terminal interrupt", async () => {
+  const calls: {path: string; body: unknown}[] = [];let target = "previous";
+  const client = new GasCityClient({id:"stage",url:"http://127.0.0.1:1"}, (async (url:string, init?:RequestInit) => {
+    const path = new URL(String(url)).pathname;calls.push({path,body:init?.body?JSON.parse(String(init.body)):null});
+    const body = path.endsWith("/turn-target") ? {mode:"owned_commands",turn_id:target,state:"inProgress"} : path.endsWith("/submit") ? {request_id:"submitted",event_cursor:"0"} : {mode:"owned_commands",turn_id:target,state:"stopped"};
+    return new Response(JSON.stringify(body),{status:path.endsWith("/submit")?202:200,headers:{"Content-Type":"application/json"}});
+  }) as typeof fetch);
+  await client.submit("city","session",{message:"work"});
+  await assert.rejects(client.stop("city","session"),/ownership|current turn/);
+  assert.equal(calls.filter(c=>c.path.endsWith("/stop")||c.path.endsWith("/stop-commands")).length,0);
+  target="current";await client.stop("city","session");
+  assert.deepEqual(calls.at(-1),{path:"/v0/city/city/session/session/stop-commands",body:{turn_id:"current"}});
+  assert.equal(calls.filter(c=>c.path.endsWith("/stop")).length,0);
+});
+
+test("owned Stop retry retains its original turn after a lost reply", async () => {
+  let target = "before", lost = true;const stopped: string[] = [];
+  const client = new GasCityClient({id:"stage",url:"http://127.0.0.1:1"}, (async (url:string, init?:RequestInit) => {
+    const path=new URL(String(url)).pathname;
+    if(path.endsWith("/stop-commands")){stopped.push(JSON.parse(String(init?.body)).turn_id);if(lost){lost=false;throw new Error("lost reply");}}
+    const body=path.endsWith("/turn-target")?{mode:"owned_commands",turn_id:target,state:"inProgress"}:path.endsWith("/submit")?{request_id:"req",event_cursor:"0"}:{mode:"owned_commands",turn_id:stopped.at(-1),state:"stopped"};
+    return new Response(JSON.stringify(body),{headers:{"Content-Type":"application/json"}});
+  }) as typeof fetch);
+  await client.submit("city","session",{message:"work"});target="owned";
+  await assert.rejects(client.stop("city","session"),/lost reply/);
+  target="newer";await client.stop("city","session");assert.deepEqual(stopped,["owned","owned"]);
+});
+
+for (const outcome of ["ready", "denied", "aborted"] as const) {
+ test(`sleeping conversation prepares its retained runtime before submission: ${outcome}`, async () => {
+  const calls: string[]=[];let probes=0;
+  const transport=(async (url:string,init?:RequestInit)=>{
+   const path=new URL(String(url)).pathname;calls.push(path);
+   if(path.endsWith('/wake'))return new Response(JSON.stringify({status:'ok'}),{status:outcome==='denied'?403:200,headers:{'Content-Type':'application/json'}});
+   if(path.endsWith('/turn-target')){probes++;if(probes===1||outcome==='aborted')return new Response('runtime starting',{status:409});return new Response(JSON.stringify({mode:'owned_commands',state:'idle'}),{headers:{'Content-Type':'application/json'}});}
+   return new Response(JSON.stringify({id:'session',running:false,state:'suspended'}),{headers:{'Content-Type':'application/json'}});
+  }) as typeof fetch;
+  const client=new GasCityClient({id:'local',url:'http://127.0.0.1:1'},transport);
+  const result=client.prepareTurn('city','session',AbortSignal.timeout(outcome==='aborted'?50:5000));
+  if(outcome==='ready')await result;else await assert.rejects(result,outcome==='denied'?/403/:/abort|timeout/i);
+  assert.equal(calls.filter(p=>p.endsWith('/wake')).length,1);
+  assert.equal(calls.some(p=>p.endsWith('/submit')),false);
+  if(outcome==='ready')assert.equal(probes,2);
+ });
+}
+test('preparing an already running conversation does not wake or reconfigure it', async()=>{
+ const calls:string[]=[];const client=new GasCityClient({id:'local',url:'http://127.0.0.1:1'},(async(url:string)=>{calls.push(String(url));return new Response(JSON.stringify({id:'session',running:true,state:'active'}),{headers:{'Content-Type':'application/json'}});}) as typeof fetch);
+ await client.prepareTurn('city','session');assert.equal(calls.length,1);assert(calls[0]?.endsWith('/session/session'));
 });

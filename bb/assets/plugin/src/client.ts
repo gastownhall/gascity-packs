@@ -1,7 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import * as sdk from "./generated/gc/sdk.gen.js";
 import { createClient, type Client } from "./generated/gc/client/index.js";
-import type { AsyncAcceptedBody, CreateSessionData, SubmitSessionData, RespondSessionData, SessionCreateSucceededPayload, SessionSubmitSucceededPayload, TypedEventStreamEnvelope } from "./generated/gc/types.gen.js";
+import type { TurnTarget, AsyncAcceptedBody, CreateSessionData, SubmitSessionData, RespondSessionData, SessionCreateSucceededPayload, SessionSubmitSucceededPayload, TypedEventStreamEnvelope } from "./generated/gc/types.gen.js";
 import type { Frame } from "./transcript.js";
 import type { Connection } from "./config.js";
 
@@ -39,6 +39,8 @@ export async function* parseSSE(body: ReadableStream<Uint8Array>): AsyncGenerato
 }
 export class GasCityClient {
   private readonly api: Client;
+  // A target captured before submission cannot be mistaken for the new turn.
+  private readonly submissions = new Map<string, { baseline: TurnTarget; stopTarget?: string }>();
   constructor(readonly connection: Connection, private readonly transport: typeof fetch = fetch) {
     this.api = createClient({ baseUrl: connection.url.replace(/\/$/, ""), throwOnError: true,
       fetch: async request => this.request(request instanceof Request ? request : new Request(request)) });
@@ -67,8 +69,56 @@ export class GasCityClient {
   providers(city: string, signal?: AbortSignal) { return sdk.getV0CityByCityNameProvidersPublic({ ...this.options(signal), path: { cityName: city } }); }
   getSession(city: string, id: string, signal?: AbortSignal) { return sdk.getV0CityByCityNameSessionById({ ...this.options(signal), path: { cityName: city, id } }); }
   createSession(city: string, body: CreateSessionData["body"], signal?: AbortSignal) { return sdk.createSession({ ...this.options(signal), path: { cityName: city }, body }); }
-  submit(city: string, id: string, body: SubmitSessionData["body"], signal?: AbortSignal) { return sdk.submitSession({ ...this.options(signal), path: { cityName: city, id }, body }); }
-  stop(city: string, id: string, signal?: AbortSignal) { return sdk.postV0CityByCityNameSessionByIdStop({ ...this.options(signal), path: { cityName: city, id } }); }
+  turnTarget(city: string, id: string, signal?: AbortSignal) {
+    return sdk.getV0CityByCityNameSessionByIdTurnTarget({ ...this.options(signal), path: { cityName: city, id } });
+  }
+  async prepareTurn(city: string, id: string, signal?: AbortSignal): Promise<boolean> {
+    const current = await this.getSession(city, id, signal);
+    if (current.running) return false;
+    const deadline = AbortSignal.timeout(150_000);
+    const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    await sdk.postV0CityByCityNameSessionByIdWake({ ...this.options(combined), path: { cityName: city, id } });
+    // Wake records intent before the native control handshake completes. This
+    // capability has no readiness event in GC's session SSE contract. Bound
+    // readiness probes to this one wake; transcript/delivery still use SSE.
+    for (;;) {
+      combined.throwIfAborted();
+      try {
+        const target = await this.turnTarget(city, id, combined);
+        if (!["initializing", "unconfirmed", "submitting", "stopping"].includes(target.state)) return true;
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 409) throw error;
+      }
+      await delay(250, undefined, { signal: combined });
+    }
+  }
+  async submit(city: string, id: string, body: SubmitSessionData["body"], signal?: AbortSignal) {
+    const baseline = await this.turnTarget(city, id, signal);
+    if (baseline.state === "unconfirmed" || baseline.state === "stopping" || baseline.state === "submitting")
+      throw new Error("Gas City command ownership is unconfirmed; cannot submit another turn");
+    this.submissions.set(JSON.stringify([city, id]), { baseline });
+    return sdk.submitSession({ ...this.options(signal), path: { cityName: city, id }, body });
+  }
+  async stop(city: string, id: string, signal?: AbortSignal) {
+    const receipt = this.submissions.get(JSON.stringify([city, id]));
+    if (!receipt) throw new Error("Gas City current turn ownership is unavailable; Stop cannot be confirmed");
+    if (receipt.baseline.mode === "native_interrupt")
+      return sdk.postV0CityByCityNameSessionByIdStop({ ...this.options(signal), path: { cityName: city, id } });
+    if (receipt.baseline.mode !== "owned_commands") throw new Error("Gas City command ownership is unsupported");
+    if (!receipt.stopTarget) {
+      const target = await this.turnTarget(city, id, signal);
+      if (target.mode !== "owned_commands" || !target.turn_id || target.turn_id === receipt.baseline.turn_id ||
+          ["unconfirmed", "stopping", "submitting", "idle"].includes(target.state))
+        throw new Error("Gas City current turn ownership is not confirmed; no Stop was sent");
+      // Retain the exact target even if the reply is lost. A retry must never
+      // cancel a subsequent turn or downgrade to terminal interruption.
+      receipt.stopTarget = target.turn_id;
+    }
+    const stopped = await sdk.postV0CityByCityNameSessionByIdStopCommands({ ...this.options(signal), path: { cityName: city, id }, body: { turn_id: receipt.stopTarget } });
+    if (stopped.turn_id !== receipt.stopTarget || stopped.state !== "stopped")
+      throw new Error("Gas City did not confirm command exit for the requested turn");
+    return stopped;
+  }
   pending(city: string, id: string, signal?: AbortSignal) { return sdk.getV0CityByCityNameSessionByIdPending({ ...this.options(signal), path: { cityName: city, id } }); }
   respond(city: string, id: string, body: RespondSessionData["body"], signal?: AbortSignal) { return sdk.respondSession({ ...this.options(signal), path: { cityName: city, id }, body }); }
   async transcript(city: string, id: string, signal?: AbortSignal): Promise<Frame> {
