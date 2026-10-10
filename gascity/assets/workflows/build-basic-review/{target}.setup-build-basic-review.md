@@ -35,6 +35,15 @@ the artifact excerpts. For each source anchor include:
 - changed files and proof commands from the item or aggregate implementation
   summary
 
+Include a command side-effects section in the review context. Read the project's
+scripts and test setup before describing any verification command as read-only.
+Treat `pnpm run ci:local`, build/install/code-generation commands, and bare
+`pnpm run test:run` as writers unless their full execution path proves otherwise.
+For example, a test's `beforeAll` can build missing `dist/` declarations; those
+writes stay invisible to `git status` when `dist/` is ignored. Run such commands
+in a reviewer-owned disposable checkout, not the shared implementation worktree,
+and record the command, checkout, and generated outputs with its result.
+
 When writing artifact excerpts, append the actual file contents with commands
 such as `cat "$REQUIREMENTS_PATH"` outside any quoted heredoc. Do not write
 literal command substitutions such as `$(cat ...)` or `$(date ...)` into the
