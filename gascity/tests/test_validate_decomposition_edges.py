@@ -26,7 +26,8 @@ FAKE_GC_SOURCE = textwrap.dedent(
     with open(os.environ["FAKE_GC_DEPS"], encoding="utf-8") as handle:
         deps_by_bead = json.load(handle)
 
-    if sys.argv[1:4] != ["bd", "dep", "list"] or "--json" not in sys.argv:
+    command = [os.path.basename(sys.argv[0]), *sys.argv[1:4]]
+    if command != ["gc", "bd", "dep", "list"] or "--json" not in sys.argv:
         sys.stderr.write("fake gc: unsupported invocation: %r\\n" % (sys.argv[1:],))
         raise SystemExit(2)
 
