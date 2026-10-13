@@ -1,0 +1,229 @@
+{
+  "run": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "input_convoy_id": "convoy-example",
+    "source_anchor_id": "anchor-example",
+    "rig_root": "/example/rig",
+    "common_git_dir": "/example/rig/.git",
+    "base_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "source-plan": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "source_plan_owner_id": "plan-owner-example",
+    "base_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "parent_canonical_generation": null,
+    "parent_canonical_oid": null,
+    "nodes": [
+      {
+        "owner_id": "task-a",
+        "strategy": "isolated",
+        "member_ids": [
+          "task-a"
+        ],
+        "source_predecessor_owner_ids": [],
+        "single_lane": false
+      },
+      {
+        "owner_id": "task-b",
+        "strategy": "isolated",
+        "member_ids": [
+          "task-b"
+        ],
+        "source_predecessor_owner_ids": [],
+        "single_lane": false
+      },
+      {
+        "owner_id": "integration-example",
+        "strategy": "integration",
+        "member_ids": [
+          "integration-example"
+        ],
+        "source_predecessor_owner_ids": [
+          "task-b",
+          "task-a"
+        ],
+        "single_lane": false
+      }
+    ],
+    "terminal_owner_id": "integration-example"
+  },
+  "workspace": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "source_plan_owner_id": "plan-owner-example",
+    "workspace_owner_id": "integration-example",
+    "workspace_bead_id": "workspace-physical-example",
+    "strategy": "integration",
+    "work_dir": "/example/worktrees/integration-example",
+    "work_branch": "gc/run-example/gen-1/integration-example",
+    "phase": "entry",
+    "input_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "current_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "active_member_id": "integration-example",
+    "next_member_position": 0,
+    "output_oid": null,
+    "integration_inputs": [
+      {
+        "owner_id": "task-b",
+        "output_oid": "cccccccccccccccccccccccccccccccccccccccc",
+        "workspace_output_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+        "owner_id": "task-a",
+        "output_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "workspace_output_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ],
+    "claim_binding": {
+      "workflow_root_id": "run-example",
+      "generation": 1,
+      "workspace_owner_id": "integration-example",
+      "writer_step_id": "writer-step-example",
+      "writer_attempt_id": "writer-attempt-example"
+    },
+    "writer_attempt_id": "writer-attempt-example",
+    "native_attempt_id": "native-attempt-example",
+    "native_provenance": {
+      "schema_version": "1",
+      "bead_id": "workspace-physical-example",
+      "store_ref": "rig:example",
+      "repo_identity": "/example/rig/.git",
+      "path": "/example/worktrees/integration-example",
+      "branch": "gc/run-example/gen-1/integration-example",
+      "base_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "creator": "gascity.workspace.v1",
+      "owner": "integration-example",
+      "generation": "1",
+      "created_at": "2026-01-01T00:00:00Z",
+      "lifecycle": "active",
+      "attempt_id": "native-attempt-example"
+    }
+  },
+  "member-result": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "source_plan_owner_id": "plan-owner-example",
+    "workspace_owner_id": "task-a",
+    "member_id": "task-a",
+    "status": "changed",
+    "input_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "output_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "commit_oids": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    "acceptance": {
+      "status": "unverified",
+      "subject_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "project_checks": [],
+      "independent_review": {
+        "status": "unrun",
+        "reviewed_oid": null,
+        "reviewer": null,
+        "report_path": null,
+        "report_sha256": null
+      },
+      "artifacts": []
+    }
+  },
+  "owner-output": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "source_plan_owner_id": "plan-owner-example",
+    "workspace_owner_id": "task-a",
+    "strategy": "isolated",
+    "input_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "output_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "final_member_id": "task-a",
+    "final_member_result_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "integration_inputs": null,
+    "integration_evidence_path": null,
+    "integration_evidence_sha256": null
+  },
+  "canonical": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "source_plan_owner_id": "plan-owner-example",
+    "workspace_owner_id": "integration-example",
+    "output_oid": "cccccccccccccccccccccccccccccccccccccccc",
+    "owner_output_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "summary_path": "/example/artifacts/implementation-summary.md",
+    "summary_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "review": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "source_plan_owner_id": "plan-owner-example",
+    "review_id": "review-example",
+    "reviewed_oid": "cccccccccccccccccccccccccccccccccccccccc",
+    "canonical_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "verdict": "approved",
+    "report_path": "/example/artifacts/review.md",
+    "report_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "clean_before": true,
+    "clean_after": true
+  },
+  "publish": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "source_plan_owner_id": "plan-owner-example",
+    "publish_id": "publish-example",
+    "output_oid": "cccccccccccccccccccccccccccccccccccccccc",
+    "canonical_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "approved_review_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "remote": "origin",
+    "ref": "refs/heads/feature-example",
+    "authorization": {
+      "push": true,
+      "open_pr": false,
+      "decision_path": "/example/artifacts/publish-authorization.md",
+      "decision_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "status": "intended",
+    "observed_oid": null,
+    "pr_url": null
+  },
+  "blocker": {
+    "version": 1,
+    "workflow_root_id": "run-example",
+    "generation": 1,
+    "writer_step_id": "writer-step-example",
+    "source_plan_owner_id": "plan-owner-example",
+    "workspace_owner_id": "integration-example",
+    "blocker_id": "blocker-example",
+    "status": "open",
+    "stage": "integration",
+    "member_id": "integration-example",
+    "blocked_from_phase": "active",
+    "blocked_member_id": "integration-example",
+    "blocked_member_position": 0,
+    "blocked_current_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "result_absent": true,
+    "work_dir": "/example/worktrees/integration-example",
+    "expected_input_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "actual_head_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "git_state": "cherry-pick-conflict",
+    "reason": "conflict requires a recorded integration decision",
+    "evidence_path": "/example/artifacts/blockers/integration-example.md",
+    "recommended_next_action": "assign integration recovery agent",
+    "resolution": null
+  }
+}
