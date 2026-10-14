@@ -124,8 +124,13 @@ func (d *inboundEventDedup) finish(key string, accepted bool) {
 }
 
 // statusCapture records the status an http.ResponseWriter was given, so the
-// event handler can settle a dedup claim from its own answer. Writing with no
-// explicit WriteHeader is a 200, as in net/http.
+// event handler can settle a dedup claim from its own answer.
+//
+// It deliberately does not override Write: body bytes pass straight through
+// the embedded writer. A Write override would only default the status to 200,
+// which accepted already reads from an unset code, and a pass-through Write
+// method is a body sink CodeQL flags as reflected XSS for every value any
+// handler writes to a ResponseWriter (the url_verification echo included).
 type statusCapture struct {
 	http.ResponseWriter
 	code int
@@ -138,15 +143,8 @@ func (s *statusCapture) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
-func (s *statusCapture) Write(p []byte) (int, error) {
-	if s.code == 0 {
-		s.code = http.StatusOK
-	}
-	return s.ResponseWriter.Write(p)
-}
-
-// accepted reports whether the answer was non-retryable. A handler that
-// wrote nothing answered 200.
+// accepted reports whether the answer was non-retryable. A handler that wrote
+// a body or nothing at all answered 200, as in net/http, and leaves code unset.
 func (s *statusCapture) accepted() bool {
 	return s.code < http.StatusInternalServerError
 }

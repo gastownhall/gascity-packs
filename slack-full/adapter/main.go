@@ -2548,9 +2548,16 @@ func serveVerifiedSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadR
 			return
 		}
 
-		// URL verification challenge.
+		// URL verification challenge. The handshake is HMAC-verified, and
+		// Slack's challenge is an opaque token; echo only that shape, as
+		// plain text and before any response wrapper, and refuse the rest.
 		if env.Type == "url_verification" && env.Challenge != "" {
+			if !validSlackChallenge(env.Challenge) {
+				http.Error(w, "invalid challenge", http.StatusBadRequest)
+				return
+			}
 			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 			_, _ = w.Write([]byte(env.Challenge))
 			return
 		}
@@ -2599,6 +2606,28 @@ func serveVerifiedSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadR
 		// Phase 4 review fix).
 		go processSlackEvent(cfg, aliasReg, threadReg, roomLaunchReg, subteamMap, threadHandleSticky, env, release)
 	}
+}
+
+// maxSlackChallengeLen bounds the url_verification challenge echoed back.
+// Slack's are ~50 characters; the cap leaves ample margin.
+const maxSlackChallengeLen = 128
+
+// validSlackChallenge reports whether s has the shape of a Slack
+// url_verification challenge: 1..maxSlackChallengeLen characters from the
+// URL-safe token set [A-Za-z0-9_-]. Anything else is not echoed.
+func validSlackChallenge(s string) bool {
+	if s == "" || len(s) > maxSlackChallengeLen {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // parseTeamIDFromEventsBody extracts the JSON `team_id` field from a

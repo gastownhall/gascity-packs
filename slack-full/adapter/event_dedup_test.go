@@ -295,3 +295,110 @@ func TestHealthzReportsInboundDuplicates(t *testing.T) {
 		t.Errorf("healthz missing inbound_event_duplicates_total:\n%s", w.Body.String())
 	}
 }
+
+// TestStatusCaptureAccepted: the dedup claim settles from the answer the
+// handler gave. Only a 5xx is retryable; a body with no explicit status, like
+// no write at all, is the net/http default 200.
+func TestStatusCaptureAccepted(t *testing.T) {
+	cases := []struct {
+		name string
+		do   func(w http.ResponseWriter)
+		want bool
+	}{
+		{"nothing written", func(http.ResponseWriter) {}, true},
+		{"body only is 200", func(w http.ResponseWriter) { _, _ = w.Write([]byte("ok")) }, true},
+		{"explicit 200", func(w http.ResponseWriter) { w.WriteHeader(http.StatusOK) }, true},
+		{"4xx is not retried", func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadRequest) }, true},
+		{"503 is retryable", func(w http.ResponseWriter) { w.WriteHeader(http.StatusServiceUnavailable) }, false},
+		{"first status wins", func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.WriteHeader(http.StatusOK)
+		}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			sw := &statusCapture{ResponseWriter: rec}
+			tc.do(sw)
+			if got := sw.accepted(); got != tc.want {
+				t.Errorf("accepted() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidSlackChallenge(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P", true},
+		{"a", true},
+		{"under_score-dash", true},
+		{strings.Repeat("a", maxSlackChallengeLen), true},
+		{"", false},
+		{strings.Repeat("a", maxSlackChallengeLen+1), false},
+		{"<script>alert(1)</script>", false},
+		{"has space", false},
+		{"line\nbreak", false},
+		{"semi;colon", false},
+		{"quote\"", false},
+		{"café", false},
+	}
+	for _, tc := range cases {
+		if got := validSlackChallenge(tc.in); got != tc.want {
+			t.Errorf("validSlackChallenge(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestSlackEventsURLVerificationEcho: a signed handshake with a token-shaped
+// challenge is echoed as plain text; one carrying markup or an oversized value
+// is refused with 400 and never reflected.
+func TestSlackEventsURLVerificationEcho(t *testing.T) {
+	cfg := dedupTestConfig("http://unused.invalid")
+	aliasReg := newTestHandleAliasRegistry(t)
+	httpHandler := handleSlackEvents(cfg, aliasReg, nil, nil, nil, nil)
+
+	handshake := func(challenge string) *httptest.ResponseRecorder {
+		body, err := json.Marshal(map[string]any{"type": "url_verification", "challenge": challenge})
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		w := httptest.NewRecorder()
+		httpHandler(w, signedSlackEventRequest(t, cfg.slackSigningKey, body))
+		return w
+	}
+
+	t.Run("token challenge is echoed", func(t *testing.T) {
+		const challenge = "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P"
+		w := handshake(challenge)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+		if got := w.Body.String(); got != challenge {
+			t.Errorf("body = %q, want the challenge echoed", got)
+		}
+		if ct := w.Header().Get("Content-Type"); ct != "text/plain" {
+			t.Errorf("Content-Type = %q, want text/plain", ct)
+		}
+		if nf := w.Header().Get("X-Content-Type-Options"); nf != "nosniff" {
+			t.Errorf("X-Content-Type-Options = %q, want nosniff", nf)
+		}
+	})
+
+	for name, challenge := range map[string]string{
+		"markup":    "<script>alert(1)</script>",
+		"oversized": strings.Repeat("a", maxSlackChallengeLen+1),
+	} {
+		t.Run(name+" challenge is refused", func(t *testing.T) {
+			w := handshake(challenge)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", w.Code)
+			}
+			if strings.Contains(w.Body.String(), challenge) {
+				t.Errorf("body reflects the rejected challenge: %q", w.Body.String())
+			}
+		})
+	}
+}
