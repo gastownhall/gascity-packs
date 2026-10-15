@@ -1,9 +1,9 @@
 # gc slack publish-to-channel
 
-Publish a message into a Slack channel by explicit channel id, bypassing
-gc's binding lookup. Used by mayor / chief-of-staff to reply into channels
-they have no binding for, after receiving a `Slack address-by-handle`
-system reminder via the cross-channel `@mayor:` / `@cos:` routing.
+Publish a message into a Slack channel by explicit channel id. Used by
+mayor / chief-of-staff to reply into channels they have no binding for,
+after receiving a `Slack address-by-handle` system reminder via the
+cross-channel `@mayor:` / `@cos:` routing.
 
 ## How it differs from `gc slack publish`
 
@@ -14,6 +14,25 @@ binding. If the session has no binding, the call fails fast.
 required. The session id still flows through so the adapter applies the
 matching identity override (so mayor's reply still appears as "Mayor"
 with the configured avatar).
+
+## Routing and peer visibility (`--via`)
+
+By default (`--via auto`) the post goes through gc's `/extmsg/outbound`,
+the same path `reply-current` uses. In a bind-room (a channel several
+sessions are bound to through `bind-room`), that is what delivers the post
+to the other bound sessions and records it in the gc transcript.
+
+When gc refuses because this session has no binding or room participation
+for the channel (the address-by-handle case), or gc is not listening, the
+command posts directly to the local adapter instead and warns on stderr
+that bound sessions will not see the post. Any other gc failure (a
+timeout, an adapter error reported through gc) exits non-zero without a
+second attempt: gc may already have posted, and posting again would make
+a second copy.
+
+- `--via gc` never falls back.
+- `--via adapter` is the old adapter-only behavior. Slack shows the post,
+  but no peer bound to the room receives it.
 
 ## Usage
 
@@ -33,6 +52,7 @@ gc slack publish-to-channel --conversation-id <chan-id> \
   to `$GC_SESSION_ID`.
 - `--kind` — conversation kind for the envelope (`room` default).
 - `--idempotency-key KEY` — caller-supplied dedup key (optional).
+- `--via auto|gc|adapter` — publish path (default `auto`; see above).
 - `--body STR` / `--body-file PATH` — message body. One required.
 
 ## Typical mayor / cos reply flow
