@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Trusted bot apps.** `SLACK_TRUSTED_BOT_APPS` lists Slack app ids whose
+  bot messages the legacy inbound path admits like a human message, with
+  the actor marked `is_bot` and named from `bot_profile.name`. Each
+  message's `bot_id` must resolve through `bots.info` to a listed app, and
+  the event's declared app ids must agree, so the bot token needs
+  `users:read` (a startup warning says when it is missing). The adapter's
+  own app is never admitted. Other subtypes stay dropped. Unset keeps
+  today's behavior, except that dropped bot messages are now logged (once
+  per app per hour) instead of vanishing silently.
+
 ### Fixed
 
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
