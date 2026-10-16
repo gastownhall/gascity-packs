@@ -21,14 +21,14 @@ default = "interactive"
 [[template]]
 id = "{target}.setup-gstack-qa"
 title = "Prepare gstack QA"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-qa-review/{target}.setup-gstack-qa.md"
 
 [[template]]
 id = "{target}.gstack-qa-loop"
 title = "Run gstack QA until approved"
 needs = ["{target}.setup-gstack-qa"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-qa-review/{target}.gstack-qa-loop.md"
 
 [template.check]
@@ -69,5 +69,9 @@ description_file = "../assets/workflows/gstack-qa-review/{target}.synthesize-qa.
 id = "{target}"
 title = "Finalize gstack QA"
 needs = ["{target}.gstack-qa-loop"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-qa-review/{target}.md"
+
+[vars.failure_scope]
+description = "Optional enclosing native scope. Build entrypoints bind this to build-body; standalone use remains unscoped."
+default = ""

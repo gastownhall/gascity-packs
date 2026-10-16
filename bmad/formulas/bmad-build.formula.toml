@@ -54,7 +54,7 @@ default = "bmad-fix-loop"
 id = "requirements"
 title = "BMAD PRD requirements"
 needs = ["prepare"]
-metadata = { "gc.run_target" = "bmad.prd-writer", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+metadata = { "gc.run_target" = "bmad.prd-writer", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-build/requirements.md"
 
 [steps.check]
@@ -69,7 +69,7 @@ timeout = "5m"
 id = "plan"
 title = "BMAD architecture plan"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "bmad.architect", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+metadata = { "gc.run_target" = "bmad.architect", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-build/plan.md"
 
 [steps.check]
@@ -84,14 +84,14 @@ timeout = "5m"
 id = "plan-review"
 title = "BMAD architecture handoff review"
 needs = ["plan"]
-metadata = { "gc.run_target" = "bmad.architect" }
+metadata = { "gc.run_target" = "bmad.architect", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-build/plan-review.md"
 
 [[steps]]
 id = "decompose"
 title = "BMAD epics and stories"
 needs = ["plan-review"]
-metadata = { "gc.run_target" = "bmad.epic-story-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+metadata = { "gc.run_target" = "bmad.epic-story-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-build/decompose.md"
 
 [steps.check]
@@ -106,7 +106,7 @@ timeout = "5m"
 id = "implementation-readiness"
 title = "BMAD implementation readiness"
 needs = ["decompose"]
-metadata = { "gc.run_target" = "bmad.readiness-reviewer" }
+metadata = { "gc.run_target" = "bmad.readiness-reviewer", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-build/implementation-readiness.md"
 
 [[steps]]
@@ -114,7 +114,7 @@ id = "implement"
 title = "Drain BMAD story development"
 needs = ["implementation-readiness"]
 condition = "{{drain_policy}} == separate"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-build/implement.md"
 
 [steps.drain]
@@ -127,7 +127,7 @@ id = "implement-same-session"
 title = "Drain BMAD story development in one shared session"
 needs = ["implementation-readiness"]
 condition = "{{drain_policy}} == same-session"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-build/implement-same-session.md"
 
 [steps.drain]
@@ -143,7 +143,14 @@ single_lane = true
 id = "review"
 title = "BMAD code review"
 needs = ["summarize-implementation"]
-metadata = { "gc.run_target" = "bmad.bmad-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "bmad.bmad-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "bmad-code-review-flow"
-expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path", failure_scope = "build-body" }
 description_file = "../assets/workflows/bmad-build/review.md"
+
+[[steps]]
+id = "build-body"
+title = "Build pipeline scope"
+needs = ["prepare", "requirements", "plan", "plan-review", "decompose", "implement", "implement-same-session", "summarize-implementation", "review", "finalize", "publish", "implementation-readiness"]
+description_file = "../assets/workflows/bmad-build/build-body.md"
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "build", "gc.scope_role" = "body" }

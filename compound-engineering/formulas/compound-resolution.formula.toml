@@ -13,28 +13,28 @@ contract = "graph.v2"
 [[template]]
 id = "{target}.inventory-artifacts"
 title = "Inventory Compound Engineering artifacts"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-resolution/{target}.inventory-artifacts.md"
 
 [[template]]
 id = "{target}.review-resolution"
 title = "Verify Compound Engineering review resolution"
 needs = ["{target}.inventory-artifacts"]
-metadata = { "gc.run_target" = "compound-engineering.ce-pr-comment-resolver" }
+metadata = { "gc.run_target" = "compound-engineering.ce-pr-comment-resolver", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-resolution/{target}.review-resolution.md"
 
 [[template]]
 id = "{target}.synthesize-resolution"
 title = "Synthesize Compound Engineering resolution"
 needs = ["{target}.review-resolution"]
-metadata = { "gc.run_target" = "compound-engineering.ce-compound" }
+metadata = { "gc.run_target" = "compound-engineering.ce-compound", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-resolution/{target}.synthesize-resolution.md"
 
 [[template]]
 id = "{target}"
 title = "Finalize Compound Engineering build result"
 needs = ["{target}.synthesize-resolution"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-resolution/{target}.md"
 
 [template.check]
@@ -44,3 +44,7 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
+
+[vars.failure_scope]
+description = "Optional enclosing native scope. Build entrypoints bind this to build-body; standalone use remains unscoped."
+default = ""

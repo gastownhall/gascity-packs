@@ -25,14 +25,14 @@ default = "agent"
 [[template]]
 id = "{target}.gather-bmad-review-context"
 title = "Gather BMAD review context"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-code-review-flow/{target}.gather-bmad-review-context.md"
 
 [[template]]
 id = "{target}.bmad-code-review-loop"
 title = "Run BMAD code review until approved"
 needs = ["{target}.gather-bmad-review-context"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-code-review-flow/{target}.bmad-code-review-loop.md"
 
 [template.check]
@@ -91,7 +91,7 @@ description_file = "../assets/workflows/bmad-code-review-flow/{target}.apply-bma
 id = "{target}"
 title = "Finalize BMAD code review"
 needs = ["{target}.bmad-code-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/bmad-code-review-flow/{target}.md"
 
 [template.check]
@@ -101,3 +101,7 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
+
+[vars.failure_scope]
+description = "Optional enclosing native scope. Build entrypoints bind this to build-body; standalone use remains unscoped."
+default = ""
