@@ -940,7 +940,7 @@ export type EventEmitRequest = {
     type: string;
 };
 
-export type EventPayload = AdapterEventPayload | BackendCredentialResolvedPayload | BeadClaimRejectedPayload | BeadClaimReleasedPayload | BeadDeadAssigneeReopenedPayload | BeadEventPayload | BeadWorktreeReapSkippedPayload | BeadWorktreeReapedPayload | BlockedRecomputedPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | ConditionalWritesDegradedPayload | ControlDispatcherScopeGapPayload | ControlRootSettleFailedPayload | ControlStalledPayload | ExecutionClaimWindowExpiredPayload | ExecutionStepStalledPayload | GroupCreatedEventPayload | HookClaimReclaimedStalePayload | InboundEventPayload | MailEventPayload | MoleculeResolvedPayload | NoPayload | OrderSkippedPayload | OrderSuppressedPayload | OutboundChannelMismatchPayload | OutboundEventPayload | ProjectIdentityStampedPayload | Record | RequestFailedPayload | RigCreateSucceededPayload | RigProvisionProgressPayload | RotatedPayload | SessionCreateSucceededPayload | SessionDemandClaimDivergencePayload | SessionDrainAckedWithAssignedWorkPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionPendingClearedPayload | SessionPendingPayload | SessionPoolSlotRetiredAtDrainDeadlinePayload | SessionResetStalledPayload | SessionStrandedPayload | SessionSubmitSucceededPayload | SessionUnknownStatePayload | SessionWakeRefusedPayload | StorageBindingOutcomePayload | StoreDiskCriticalPayload | StoreDiskWarnPayload | StoreMaintenanceDonePayload | StoreMaintenanceFailedPayload | SupervisorFsPressureSkippedTickPayload | SupervisorRequestPayload | SupervisorShutdownPayload | SupervisorStartedPayload | UnboundEventPayload | WebhookReceivedPayload | WebhookRejectedPayload | WorkerOperationEventPayload;
+export type EventPayload = AdapterEventPayload | BackendCredentialResolvedPayload | BeadClaimRejectedPayload | BeadClaimReleasedPayload | BeadDeadAssigneeReopenedPayload | BeadEventPayload | BeadWorktreeReapSkippedPayload | BeadWorktreeReapedPayload | BlockedRecomputedPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | ConditionalWritesDegradedPayload | ControlDispatcherScopeGapPayload | ControlRootSettleFailedPayload | ControlStalledPayload | ExecutionClaimWindowExpiredPayload | ExecutionStepStalledPayload | GroupCreatedEventPayload | HookClaimReclaimedStalePayload | InboundEventPayload | MailEventPayload | MoleculeResolvedPayload | NoPayload | OrderSkippedPayload | OrderSuppressedPayload | OutboundChannelMismatchPayload | OutboundEventPayload | ProjectIdentityStampedPayload | Record | RequestFailedPayload | RigCreateSucceededPayload | RigProvisionProgressPayload | RotatedPayload | SessionCreateSucceededPayload | SessionDemandClaimDivergencePayload | SessionDrainAckedWithAssignedWorkPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionPendingClearedPayload | SessionPendingPayload | SessionPoolSlotRetiredAtDrainDeadlinePayload | SessionResetStalledPayload | SessionStrandedClaimsPayload | SessionStrandedPayload | SessionSubmitSucceededPayload | SessionUnknownStatePayload | SessionWakeRefusedPayload | StorageBindingOutcomePayload | StoreDiskCriticalPayload | StoreDiskWarnPayload | StoreMaintenanceDonePayload | StoreMaintenanceFailedPayload | SupervisorFsPressureSkippedTickPayload | SupervisorRequestPayload | SupervisorShutdownPayload | SupervisorStartedPayload | UnboundEventPayload | WebhookReceivedPayload | WebhookRejectedPayload | WorkerOperationEventPayload;
 
 export type EventRotateAnchor = {
     /**
@@ -1868,7 +1868,7 @@ export type MailReplyInputBody = {
      */
     body?: string;
     /**
-     * Sender name.
+     * Sender: the operator (human, or the dashboard's wire alias DASHBOARD_OPERATOR_WIRE_ALIAS), a configured agent, a configured named session, or a live session of a configured agent. Optional in the schema, but an empty or unconfigured sender is refused (422 at body.from).
      */
     from?: string;
     /**
@@ -1883,7 +1883,7 @@ export type MailSendInputBody = {
      */
     body?: string;
     /**
-     * Sender name.
+     * Sender: the operator (human, or the dashboard's wire alias DASHBOARD_OPERATOR_WIRE_ALIAS), a configured agent, a configured named session, or a live session of a configured agent. Optional in the schema, but an empty or unconfigured sender is refused (422 at body.from).
      */
     from?: string;
     /**
@@ -2238,6 +2238,7 @@ export type OutboundResult = {
 };
 
 export type OutputTurn = {
+    id?: string;
     role: string;
     text: string;
     timestamp?: string;
@@ -2730,6 +2731,10 @@ export type RequestFailedPayload = {
      * Correlation ID from the 202 response.
      */
     request_id: string;
+    /**
+     * Session a failed session.create had already written, when the server could identify it, so the client can inspect or clean it up instead of retrying into a duplicate. Absence does not prove that no session was written. The event subject does not carry this ID; match the event to its request by request_id.
+     */
+    session_id?: string;
 };
 
 export type RigActionBody = {
@@ -2978,11 +2983,30 @@ export type Run = {
     updated_at?: string;
 };
 
+export type RunCancelInterruptFailure = {
+    /**
+     * Why the interrupt failed.
+     */
+    error: string;
+    /**
+     * Session ID, or the step assignee when it could not be resolved to a session.
+     */
+    session: string;
+};
+
 export type RunCancelOutputBody = {
     /**
-     * Count of the run's beads closed by the cancel.
+     * Count of the run's beads closed by the cancel. Closing is the durable part of a cancel: no closed bead is claimed again.
      */
     closed: number;
+    /**
+     * Holders of an in-progress step the cancel closed whose current turn could not be interrupted. The cancel is durable regardless; stop or suspend these sessions directly.
+     */
+    interrupt_failures?: Array<RunCancelInterruptFailure> | null;
+    /**
+     * IDs of the sessions whose current turn was interrupted because they held an in-progress step the cancel closed. Interrupting ends the agent's turn, the same as POST /session/{id}/stop; for Codex it also closes the session's background terminals. It does not verify that every process the step started has exited, and it cannot undo effects the step already made, such as a push or a call to a remote service. The sessions are not killed; they stay up to serve other work.
+     */
+    interrupted?: Array<string> | null;
     /**
      * The canceled run.
      */
@@ -3084,7 +3108,7 @@ export type RunStep = {
      */
     kind?: string;
     /**
-     * Closed step lifecycle status.
+     * Closed step lifecycle status. Under a terminal run an unfinished step reads the status the run's wind-down closes it with (canceled for a canceled run, skipped otherwise), so it never changes from one terminal status to another; a step that executes after the run settles (the workflow finalizer, the teardown tail) reads its own status until it closes.
      */
     status: RunStepStatus;
     /**
@@ -3212,6 +3236,12 @@ export type SessionCreateBody = {
      */
     message?: string;
     /**
+     * External client metadata: real_world_app_* keys only (any other key is refused with 422). The generic bead API never writes a session row.
+     */
+    metadata?: {
+        [key: string]: string;
+    };
+    /**
      * Agent or provider name.
      */
     name?: string;
@@ -3304,9 +3334,17 @@ export type SessionMessageInputBody = {
      * Message text to send.
      */
     message: string;
+    /**
+     * Start or resume the session here if it is not running (an operator's own message; it consumes an operator's hold). Without it, a message to a session that is not running is queued for its next run (expiring after 24h) and the controller is asked to start it; the result's will_start says whether it will.
+     */
+    resume?: boolean;
 };
 
 export type SessionMessageSucceededPayload = {
+    /**
+     * True when the message was queued rather than delivered: the session is held (or not running) and the message waits for its next run, expiring after 24h.
+     */
+    queued: boolean;
     /**
      * Correlation ID from the 202 response.
      */
@@ -3315,6 +3353,14 @@ export type SessionMessageSucceededPayload = {
      * Session ID that received the message.
      */
     session_id: string;
+    /**
+     * Why the controller will not start the session for a queued message, with the remedy.
+     */
+    will_not_start_reason?: string;
+    /**
+     * Present when the message was queued because the session is not running: whether the controller will start it to deliver the message. False means it will not (see will_not_start_reason); resend with resume: true to start it now.
+     */
+    will_start?: boolean;
 };
 
 export type SessionPatchBody = {
@@ -3322,6 +3368,12 @@ export type SessionPatchBody = {
      * Session alias. Empty string clears the alias.
      */
     alias?: string;
+    /**
+     * External client metadata: real_world_app_* keys only (any other key is refused with 422); an empty value clears the key.
+     */
+    metadata?: {
+        [key: string]: string;
+    };
     /**
      * Session title. If provided, must be non-empty.
      */
@@ -3506,6 +3558,9 @@ export type SessionResponse = {
     provider: string;
     reason?: string;
     rig?: string;
+    /**
+     * Whether the session's runtime was live when this response was built, in any open state. It observes the runtime, not the agent: on tmux it is true while the session has a pane whose process has not exited, so a pane still running a launch wrapper or shell before the agent starts reads true, and a pane kept by remain-on-exit after its process exited reads false. GET /session/{id} and GET /sessions read the same probe, which tmux serves from a fleet snapshot refreshed at most every 2 s. Point-in-time: a session in a transitional state (creating, start-pending, draining) can start or stop its process right after; a client confirming quiescence should re-read after its last transition settles.
+     */
     running: boolean;
     session_name: string;
     state: string;
@@ -3513,6 +3568,29 @@ export type SessionResponse = {
     template: string;
     title: string;
     work_dir?: string;
+};
+
+export type SessionStrandedClaimsPayload = {
+    /**
+     * The stranded claims, sorted by bead ID.
+     */
+    claims: Array<StrandedClaim> | null;
+    /**
+     * What left the claims on the seat: its close reason (drained, orphaned, ...), killed, retired, or manual (gc session close).
+     */
+    kind: string;
+    /**
+     * Canonical session bead ID of the closed or retired seat holding the claims.
+     */
+    session_id: string;
+    /**
+     * Runtime session name from the session bead metadata, when set.
+     */
+    session_name?: string;
+    /**
+     * Template of the seat, when set.
+     */
+    template?: string;
 };
 
 export type SessionStrandedPayload = {
@@ -4557,6 +4635,10 @@ export type SessionSubmitInputBody = {
      * Message text to submit.
      */
     message: string;
+    /**
+     * Start or resume the session here if it is not running (an operator's own message; it consumes an operator's hold). Without it, a message to a session that is not running is queued for its next run (expiring after 24h) and the controller is asked to start it; the result's will_start says whether it will.
+     */
+    resume?: boolean;
 };
 
 export type SessionSubmitSucceededPayload = {
@@ -4576,6 +4658,14 @@ export type SessionSubmitSucceededPayload = {
      * Session ID that received the submission.
      */
     session_id: string;
+    /**
+     * Why the controller will not start the session for a queued message, with the remedy.
+     */
+    will_not_start_reason?: string;
+    /**
+     * Present when the message was queued because the session is not running: whether the controller will start it to deliver the message. False means it will not (see will_not_start_reason); resend with resume: true to start it now.
+     */
+    will_start?: boolean;
 };
 
 export type SessionTranscriptConversationResponse = {
@@ -4662,17 +4752,6 @@ export type SessionTranscriptStructuredResponse = {
     template: string;
 };
 
-export type SessionTurnControlInputBody = {
-    /**
-     * Native process identity; required only to explicitly detach a command.
-     */
-    process_id?: string;
-    /**
-     * Opaque turn identity returned by the runtime target endpoint. A stale target cannot stop new work.
-     */
-    turn_id: string;
-};
-
 export type SessionUnknownStatePayload = {
     /**
      * False on the first-sight emission; true when re-emitted after the bead has sat unrecognized past the escalation threshold.
@@ -4750,11 +4829,30 @@ export type SlingBatchSummary = {
     total: number;
 };
 
+export type SlingChildConflict = {
+    /**
+     * Live workflow roots that refused the launch.
+     */
+    blocking_workflow_ids: Array<string> | null;
+    /**
+     * Command that deletes the blocking workflows. Re-slinging with force launches beside them instead.
+     */
+    hint: string;
+    /**
+     * Source bead whose live workflow refused the launch.
+     */
+    source_bead_id: string;
+};
+
 export type SlingChildOutcome = {
     /**
      * Child bead ID.
      */
     bead_id: string;
+    /**
+     * Set when the child failed because its source bead already has a live workflow.
+     */
+    conflict?: SlingChildConflict;
     /**
      * Formula attached to the child, when one was.
      */
@@ -5298,6 +5396,21 @@ export type StoreMaintenanceFailedPayload = {
     stage: string;
 };
 
+export type StrandedClaim = {
+    /**
+     * The claim's work bead ID.
+     */
+    bead_id: string;
+    /**
+     * Why it was kept: unserved-route.
+     */
+    reason: string;
+    /**
+     * The route the claim would be released into, when it has one: no configured agent serves it.
+     */
+    route?: string;
+};
+
 export type SubmissionCapabilities = {
     supports_follow_up: boolean;
     supports_interrupt_now: boolean;
@@ -5496,12 +5609,6 @@ export type TranscriptMessageKind = 'inbound' | 'outbound';
  */
 export type TranscriptProvenance = 'live' | 'hydrated';
 
-export type TurnTarget = {
-    mode: 'owned_commands' | 'native_interrupt';
-    state: string;
-    turn_id?: string;
-};
-
 /**
  * Typed city event stream envelope
  *
@@ -5648,6 +5755,8 @@ export type TypedEventStreamEnvelope = ({
 } & TypedEventStreamEnvelopeRigProvisionProgress) | ({
     type: 'session.cold_start_timeout';
 } & TypedEventStreamEnvelopeSessionColdStartTimeout) | ({
+    type: 'session.conversation_reset';
+} & TypedEventStreamEnvelopeSessionConversationReset) | ({
     type: 'session.crashed';
 } & TypedEventStreamEnvelopeSessionCrashed) | ({
     type: 'session.demand_claim_divergence';
@@ -5678,6 +5787,8 @@ export type TypedEventStreamEnvelope = ({
 } & TypedEventStreamEnvelopeSessionStopped) | ({
     type: 'session.stranded';
 } & TypedEventStreamEnvelopeSessionStranded) | ({
+    type: 'session.stranded_claims';
+} & TypedEventStreamEnvelopeSessionStrandedClaims) | ({
     type: 'session.suspended';
 } & TypedEventStreamEnvelopeSessionSuspended) | ({
     type: 'session.undrained';
@@ -6998,6 +7109,24 @@ export type TypedEventStreamEnvelopeSessionColdStartTimeout = {
 };
 
 /**
+ * TypedEventStreamEnvelope session.conversation_reset
+ */
+export type TypedEventStreamEnvelopeSessionConversationReset = {
+    actor: string;
+    depends_on_step_ids?: Array<string>;
+    message?: string;
+    payload: SessionLifecyclePayload;
+    run_id?: string;
+    seq: number;
+    session_id?: string;
+    step_id?: string;
+    subject?: string;
+    ts: string;
+    type: 'session.conversation_reset';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
  * TypedEventStreamEnvelope session.crashed
  */
 export type TypedEventStreamEnvelopeSessionCrashed = {
@@ -7264,6 +7393,24 @@ export type TypedEventStreamEnvelopeSessionStranded = {
     subject?: string;
     ts: string;
     type: 'session.stranded';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.stranded_claims
+ */
+export type TypedEventStreamEnvelopeSessionStrandedClaims = {
+    actor: string;
+    depends_on_step_ids?: Array<string>;
+    message?: string;
+    payload: SessionStrandedClaimsPayload;
+    run_id?: string;
+    seq: number;
+    session_id?: string;
+    step_id?: string;
+    subject?: string;
+    ts: string;
+    type: 'session.stranded_claims';
     workflow?: WorkflowEventProjection;
 };
 
@@ -7755,6 +7902,8 @@ export type TypedTaggedEventStreamEnvelope = ({
 } & TypedTaggedEventStreamEnvelopeRigProvisionProgress) | ({
     type: 'session.cold_start_timeout';
 } & TypedTaggedEventStreamEnvelopeSessionColdStartTimeout) | ({
+    type: 'session.conversation_reset';
+} & TypedTaggedEventStreamEnvelopeSessionConversationReset) | ({
     type: 'session.crashed';
 } & TypedTaggedEventStreamEnvelopeSessionCrashed) | ({
     type: 'session.demand_claim_divergence';
@@ -7785,6 +7934,8 @@ export type TypedTaggedEventStreamEnvelope = ({
 } & TypedTaggedEventStreamEnvelopeSessionStopped) | ({
     type: 'session.stranded';
 } & TypedTaggedEventStreamEnvelopeSessionStranded) | ({
+    type: 'session.stranded_claims';
+} & TypedTaggedEventStreamEnvelopeSessionStrandedClaims) | ({
     type: 'session.suspended';
 } & TypedTaggedEventStreamEnvelopeSessionSuspended) | ({
     type: 'session.undrained';
@@ -9176,6 +9327,25 @@ export type TypedTaggedEventStreamEnvelopeSessionColdStartTimeout = {
 };
 
 /**
+ * TypedTaggedEventStreamEnvelope session.conversation_reset
+ */
+export type TypedTaggedEventStreamEnvelopeSessionConversationReset = {
+    actor: string;
+    city: string;
+    depends_on_step_ids?: Array<string>;
+    message?: string;
+    payload: SessionLifecyclePayload;
+    run_id?: string;
+    seq: number;
+    session_id?: string;
+    step_id?: string;
+    subject?: string;
+    ts: string;
+    type: 'session.conversation_reset';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
  * TypedTaggedEventStreamEnvelope session.crashed
  */
 export type TypedTaggedEventStreamEnvelopeSessionCrashed = {
@@ -9457,6 +9627,25 @@ export type TypedTaggedEventStreamEnvelopeSessionStranded = {
     subject?: string;
     ts: string;
     type: 'session.stranded';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.stranded_claims
+ */
+export type TypedTaggedEventStreamEnvelopeSessionStrandedClaims = {
+    actor: string;
+    city: string;
+    depends_on_step_ids?: Array<string>;
+    message?: string;
+    payload: SessionStrandedClaimsPayload;
+    run_id?: string;
+    seq: number;
+    session_id?: string;
+    step_id?: string;
+    subject?: string;
+    ts: string;
+    type: 'session.stranded_claims';
     workflow?: WorkflowEventProjection;
 };
 
@@ -10826,6 +11015,10 @@ export type PostV0CityByCityNameAgentByBaseByActionErrors = {
      */
     404: ErrorModel;
     /**
+     * Conflict
+     */
+    409: ErrorModel;
+    /**
      * Unprocessable Entity
      */
     422: ErrorModel;
@@ -11211,6 +11404,10 @@ export type PostV0CityByCityNameAgentByDirByBaseByActionErrors = {
      */
     404: ErrorModel;
     /**
+     * Conflict
+     */
+    409: ErrorModel;
+    /**
      * Unprocessable Entity
      */
     422: ErrorModel;
@@ -11249,7 +11446,7 @@ export type GetV0CityByCityNameAgentsData = {
          */
         index?: string;
         /**
-         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 2m.
+         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 5m.
          */
         wait?: string;
         /**
@@ -11531,6 +11728,14 @@ export type PatchV0CityByCityNameBeadByIdErrors = {
      * Internal Server Error
      */
     500: ErrorModel;
+    /**
+     * Service Unavailable
+     */
+    503: ErrorModel;
+    /**
+     * Gateway Timeout
+     */
+    504: ErrorModel;
 };
 
 export type PatchV0CityByCityNameBeadByIdError = PatchV0CityByCityNameBeadByIdErrors[keyof PatchV0CityByCityNameBeadByIdErrors];
@@ -11823,6 +12028,14 @@ export type PostV0CityByCityNameBeadByIdUpdateErrors = {
      * Internal Server Error
      */
     500: ErrorModel;
+    /**
+     * Service Unavailable
+     */
+    503: ErrorModel;
+    /**
+     * Gateway Timeout
+     */
+    504: ErrorModel;
 };
 
 export type PostV0CityByCityNameBeadByIdUpdateError = PostV0CityByCityNameBeadByIdUpdateErrors[keyof PostV0CityByCityNameBeadByIdUpdateErrors];
@@ -11850,7 +12063,7 @@ export type GetV0CityByCityNameBeadsData = {
          */
         index?: string;
         /**
-         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 2m.
+         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 5m.
          */
         wait?: string;
         /**
@@ -12043,7 +12256,7 @@ export type GetV0CityByCityNameBeadsReadyData = {
          */
         index?: string;
         /**
-         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 2m.
+         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 5m.
          */
         wait?: string;
     };
@@ -12582,7 +12795,7 @@ export type GetV0CityByCityNameConvoysData = {
          */
         index?: string;
         /**
-         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 2m.
+         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 5m.
          */
         wait?: string;
         /**
@@ -12709,7 +12922,7 @@ export type GetV0CityByCityNameEventsData = {
          */
         index?: string;
         /**
-         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 2m.
+         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 5m.
          */
         wait?: string;
         /**
@@ -14442,7 +14655,7 @@ export type GetV0CityByCityNameMailData = {
          */
         index?: string;
         /**
-         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 2m.
+         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 5m.
          */
         wait?: string;
         /**
@@ -17243,7 +17456,7 @@ export type GetV0CityByCityNameRigsData = {
          */
         index?: string;
         /**
-         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 2m.
+         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 5m.
          */
         wait?: string;
         /**
@@ -18005,54 +18218,6 @@ export type PostV0CityByCityNameSessionByIdCloseResponses = {
 
 export type PostV0CityByCityNameSessionByIdCloseResponse = PostV0CityByCityNameSessionByIdCloseResponses[keyof PostV0CityByCityNameSessionByIdCloseResponses];
 
-export type PostV0CityByCityNameSessionByIdDetachCommandData = {
-    body: SessionTurnControlInputBody;
-    headers: {
-        /**
-         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
-         */
-        'X-GC-Request': string;
-    };
-    path: {
-        /**
-         * City name.
-         */
-        cityName: string;
-        /**
-         * Gas City session ID.
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/v0/city/{cityName}/session/{id}/detach-command';
-};
-
-export type PostV0CityByCityNameSessionByIdDetachCommandErrors = {
-    /**
-     * Conflict
-     */
-    409: ErrorModel;
-    /**
-     * Unprocessable Entity
-     */
-    422: ErrorModel;
-    /**
-     * Internal Server Error
-     */
-    500: ErrorModel;
-};
-
-export type PostV0CityByCityNameSessionByIdDetachCommandError = PostV0CityByCityNameSessionByIdDetachCommandErrors[keyof PostV0CityByCityNameSessionByIdDetachCommandErrors];
-
-export type PostV0CityByCityNameSessionByIdDetachCommandResponses = {
-    /**
-     * OK
-     */
-    200: TurnTarget;
-};
-
-export type PostV0CityByCityNameSessionByIdDetachCommandResponse = PostV0CityByCityNameSessionByIdDetachCommandResponses[keyof PostV0CityByCityNameSessionByIdDetachCommandResponses];
-
 export type PostV0CityByCityNameSessionByIdKillData = {
     body?: never;
     headers: {
@@ -18307,6 +18472,74 @@ export type PostV0CityByCityNameSessionByIdPermissionModeResponses = {
 
 export type PostV0CityByCityNameSessionByIdPermissionModeResponse = PostV0CityByCityNameSessionByIdPermissionModeResponses[keyof PostV0CityByCityNameSessionByIdPermissionModeResponses];
 
+export type PostV0CityByCityNameSessionByIdPinData = {
+    body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
+    path: {
+        /**
+         * City name.
+         */
+        cityName: string;
+        /**
+         * Session ID, alias, or runtime session_name.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/v0/city/{cityName}/session/{id}/pin';
+};
+
+export type PostV0CityByCityNameSessionByIdPinErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorModel;
+    /**
+     * Unauthorized
+     */
+    401: ErrorModel;
+    /**
+     * Forbidden
+     */
+    403: ErrorModel;
+    /**
+     * Not Found
+     */
+    404: ErrorModel;
+    /**
+     * Conflict
+     */
+    409: ErrorModel;
+    /**
+     * Unprocessable Entity
+     */
+    422: ErrorModel;
+    /**
+     * Internal Server Error
+     */
+    500: ErrorModel;
+    /**
+     * Service Unavailable
+     */
+    503: ErrorModel;
+};
+
+export type PostV0CityByCityNameSessionByIdPinError = PostV0CityByCityNameSessionByIdPinErrors[keyof PostV0CityByCityNameSessionByIdPinErrors];
+
+export type PostV0CityByCityNameSessionByIdPinResponses = {
+    /**
+     * OK
+     */
+    200: SessionResponse;
+};
+
+export type PostV0CityByCityNameSessionByIdPinResponse = PostV0CityByCityNameSessionByIdPinResponses[keyof PostV0CityByCityNameSessionByIdPinResponses];
+
 export type PostV0CityByCityNameSessionByIdRenameData = {
     body: SessionRenameInputBody;
     headers: {
@@ -18518,6 +18751,10 @@ export type PostV0CityByCityNameSessionByIdStopData = {
          * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
          */
         'X-GC-Request': string;
+        /**
+         * Idempotency key for safe retries.
+         */
+        'Idempotency-Key'?: string;
     };
     path: {
         /**
@@ -18559,6 +18796,10 @@ export type PostV0CityByCityNameSessionByIdStopErrors = {
      */
     500: ErrorModel;
     /**
+     * Not Implemented
+     */
+    501: ErrorModel;
+    /**
      * Service Unavailable
      */
     503: ErrorModel;
@@ -18574,54 +18815,6 @@ export type PostV0CityByCityNameSessionByIdStopResponses = {
 };
 
 export type PostV0CityByCityNameSessionByIdStopResponse = PostV0CityByCityNameSessionByIdStopResponses[keyof PostV0CityByCityNameSessionByIdStopResponses];
-
-export type PostV0CityByCityNameSessionByIdStopCommandsData = {
-    body: SessionTurnControlInputBody;
-    headers: {
-        /**
-         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
-         */
-        'X-GC-Request': string;
-    };
-    path: {
-        /**
-         * City name.
-         */
-        cityName: string;
-        /**
-         * Gas City session ID.
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/v0/city/{cityName}/session/{id}/stop-commands';
-};
-
-export type PostV0CityByCityNameSessionByIdStopCommandsErrors = {
-    /**
-     * Conflict
-     */
-    409: ErrorModel;
-    /**
-     * Unprocessable Entity
-     */
-    422: ErrorModel;
-    /**
-     * Internal Server Error
-     */
-    500: ErrorModel;
-};
-
-export type PostV0CityByCityNameSessionByIdStopCommandsError = PostV0CityByCityNameSessionByIdStopCommandsErrors[keyof PostV0CityByCityNameSessionByIdStopCommandsErrors];
-
-export type PostV0CityByCityNameSessionByIdStopCommandsResponses = {
-    /**
-     * OK
-     */
-    200: TurnTarget;
-};
-
-export type PostV0CityByCityNameSessionByIdStopCommandsResponse = PostV0CityByCityNameSessionByIdStopCommandsResponses[keyof PostV0CityByCityNameSessionByIdStopCommandsResponses];
 
 export type StreamSessionData = {
     body?: never;
@@ -18979,8 +19172,14 @@ export type GetV0CityByCityNameSessionByIdTranscriptResponses = {
 
 export type GetV0CityByCityNameSessionByIdTranscriptResponse = GetV0CityByCityNameSessionByIdTranscriptResponses[keyof GetV0CityByCityNameSessionByIdTranscriptResponses];
 
-export type GetV0CityByCityNameSessionByIdTurnTargetData = {
+export type PostV0CityByCityNameSessionByIdUnpinData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -18992,10 +19191,26 @@ export type GetV0CityByCityNameSessionByIdTurnTargetData = {
         id: string;
     };
     query?: never;
-    url: '/v0/city/{cityName}/session/{id}/turn-target';
+    url: '/v0/city/{cityName}/session/{id}/unpin';
 };
 
-export type GetV0CityByCityNameSessionByIdTurnTargetErrors = {
+export type PostV0CityByCityNameSessionByIdUnpinErrors = {
+    /**
+     * Bad Request
+     */
+    400: ErrorModel;
+    /**
+     * Unauthorized
+     */
+    401: ErrorModel;
+    /**
+     * Forbidden
+     */
+    403: ErrorModel;
+    /**
+     * Not Found
+     */
+    404: ErrorModel;
     /**
      * Conflict
      */
@@ -19008,18 +19223,22 @@ export type GetV0CityByCityNameSessionByIdTurnTargetErrors = {
      * Internal Server Error
      */
     500: ErrorModel;
+    /**
+     * Service Unavailable
+     */
+    503: ErrorModel;
 };
 
-export type GetV0CityByCityNameSessionByIdTurnTargetError = GetV0CityByCityNameSessionByIdTurnTargetErrors[keyof GetV0CityByCityNameSessionByIdTurnTargetErrors];
+export type PostV0CityByCityNameSessionByIdUnpinError = PostV0CityByCityNameSessionByIdUnpinErrors[keyof PostV0CityByCityNameSessionByIdUnpinErrors];
 
-export type GetV0CityByCityNameSessionByIdTurnTargetResponses = {
+export type PostV0CityByCityNameSessionByIdUnpinResponses = {
     /**
      * OK
      */
-    200: TurnTarget;
+    200: SessionResponse;
 };
 
-export type GetV0CityByCityNameSessionByIdTurnTargetResponse = GetV0CityByCityNameSessionByIdTurnTargetResponses[keyof GetV0CityByCityNameSessionByIdTurnTargetResponses];
+export type PostV0CityByCityNameSessionByIdUnpinResponse = PostV0CityByCityNameSessionByIdUnpinResponses[keyof PostV0CityByCityNameSessionByIdUnpinResponses];
 
 export type PostV0CityByCityNameSessionByIdWakeData = {
     body?: never;
@@ -19028,6 +19247,10 @@ export type PostV0CityByCityNameSessionByIdWakeData = {
          * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
          */
         'X-GC-Request': string;
+        /**
+         * Idempotency key for safe retries.
+         */
+        'Idempotency-Key'?: string;
     };
     path: {
         /**
@@ -19290,7 +19513,7 @@ export type GetV0CityByCityNameStatusData = {
          */
         index?: string;
         /**
-         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 2m.
+         * How long to block waiting for changes (Go duration string, e.g. 30s). Default 30s, max 5m.
          */
         wait?: string;
         /**
