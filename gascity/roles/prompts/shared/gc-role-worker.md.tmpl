@@ -16,142 +16,43 @@ ready beads, and you execute the ready bead claimed by this session.
 `gc hook` is the only permitted discovery source for routed workflow work. Do
 not run broad `gc bd ready`, `gc bd list`, root-bead searches, metadata searches,
 mail inspection, session-log inspection, or repository context gathering to
-find a bead. Never claim a bead id unless it came from the immediately
-preceding `gc hook` result in this claim block.
+find a bead. Work only on the bead id the claim command returns.
 
-Your immediate first action must be to run the exact claim command below as a
-single Bash command. Do not rewrite it, compress it into an `&&` chain, or
-debug it if it returns no work. Do not run `gc prime`, load skills, inspect
-runtime state, read repository files, explain the codebase, or gather any
-other context until a bead has been claimed. If the command prints
-`NO_ROUTED_WORK` or `CONFIG_REJECTED`, it has already drain-acked; stop
-immediately and exit. If it prints `CLAIM_REJECTED`, the command is handling a
-claim race internally; wait for it to either claim a bead or drain on no work.
+Your immediate first action must be this exact command, run on its own:
 
 ```bash
-bash <<'GC_CLAIM'
-set +e
-
-EXPECTED_ASSIGNEE="${BEADS_ACTOR:-${GC_SESSION_NAME:-${GC_SESSION_ID:-${GC_AGENT:-}}}}"
-EXPECTED_ROUTE="${GC_TEMPLATE:-${GC_AGENT:-}}"
-
-if [ -z "$EXPECTED_ASSIGNEE" ]; then
-  echo "CONFIG_REJECTED missing expected assignee"
-  gc runtime drain-ack
-  exit 0
-fi
-
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "CONFIG_REJECTED missing python3"
-  gc runtime drain-ack
-  exit 0
-fi
-
-json_pick() {
-  python3 -c '
-import json
-import sys
-
-path = sys.argv[1]
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    print("")
-    raise SystemExit(0)
-
-if isinstance(data, list):
-    data = data[0] if data else {}
-if not isinstance(data, dict):
-    print("")
-    raise SystemExit(0)
-
-if path.startswith("metadata:"):
-    key = path.split(":", 1)[1]
-    metadata = data.get("metadata") or {}
-    value = metadata.get(key, "") if isinstance(metadata, dict) else ""
-else:
-    value = data.get(path, "")
-
-if value is None:
-    value = ""
-print(value if isinstance(value, str) else str(value))
-' "$1"
-}
-
-while true; do
-  WORK_ID=""
-  CLAIM_JSON=""
-  CLAIM_ERR="$(mktemp)"
-  CLAIM_JSON="$(gc hook --claim --json 2>"$CLAIM_ERR")"
-  CLAIM_CODE=$?
-  CLAIM_ERR_TEXT="$(sed -n '1p' "$CLAIM_ERR")"
-  rm -f "$CLAIM_ERR"
-
-  CLAIM_ACTION="$(printf '%s' "$CLAIM_JSON" | json_pick action)"
-  WORK_ID="$(printf '%s' "$CLAIM_JSON" | json_pick bead_id)"
-  CLAIM_ASSIGNEE="$(printf '%s' "$CLAIM_JSON" | json_pick assignee)"
-  CLAIM_ROUTE="$(printf '%s' "$CLAIM_JSON" | json_pick route)"
-
-  if [ "$CLAIM_ACTION" = "drain" ]; then
-    echo "NO_ROUTED_WORK"
-    gc runtime drain-ack
-    exit 0
-  fi
-
-  if [ "$CLAIM_CODE" -ne 0 ] || [ "$CLAIM_ACTION" != "work" ] || [ -z "$WORK_ID" ]; then
-    if [ -n "$CLAIM_ERR_TEXT" ]; then
-      echo "CLAIM_REJECTED gc hook --claim failed: $CLAIM_ERR_TEXT"
-    else
-      echo "CLAIM_REJECTED unexpected gc hook --claim result"
-    fi
-    sleep 2
-    continue
-  fi
-
-  # The `gc hook --claim` JSON is the authoritative, graph-aware source: it
-  # already resolved the routed bead (including graph-resident gcg- beads) and
-  # claimed it atomically, so a successful claim IS the verification. Derive the
-  # root/group from that JSON. Never re-read with `gc bd show` here: bare `bd` is
-  # graph-aware only via the PATH shim and silently falls through to the Dolt bd
-  # ("no issue found") for a stale session whose shimbin predates a gc refresh,
-  # which looped CLAIM_REJECTED forever and stalled the review-loop.
-  CLAIM_ROOT="$(printf '%s' "$CLAIM_JSON" | json_pick root_bead_id)"
-  CLAIM_GROUP="$(printf '%s' "$CLAIM_JSON" | json_pick continuation_group)"
-
-  if [ -n "$EXPECTED_ASSIGNEE" ] && [ "$CLAIM_ASSIGNEE" != "$EXPECTED_ASSIGNEE" ]; then
-    echo "CLAIM_REJECTED assignee mismatch for $WORK_ID"
-    sleep 2
-    continue
-  fi
-  if [ -n "$EXPECTED_ROUTE" ] && [ -n "$CLAIM_ROUTE" ] && [ "$CLAIM_ROUTE" != "$EXPECTED_ROUTE" ]; then
-    echo "CLAIM_REJECTED route mismatch for $WORK_ID"
-    sleep 2
-    continue
-  fi
-  break
-done
-
-export GC_BEAD_ID="$WORK_ID"
-export GC_ROOT_BEAD_ID="$CLAIM_ROOT"
-export GC_CONTINUATION_GROUP="$CLAIM_GROUP"
-printf 'CLAIMED_BEAD_ID=%s\n' "$WORK_ID"
-printf 'CLAIMED_ROOT_BEAD_ID=%s\n' "$CLAIM_ROOT"
-printf 'CLAIMED_CONTINUATION_GROUP=%s\n' "$CLAIM_GROUP"
-gc bd show "$GC_BEAD_ID"
-GC_CLAIM
+gc hook --claim --drain-ack --json
 ```
 
-If claim verification fails, the claim command retries `gc hook`; do not repair
-the assignment by hand or search for work outside that command. Execute exactly
-the claimed bead's description and result contract. Close it with the requested
-`gc.outcome` metadata. If the bead does not specify a failure contract, mark an
-unrecoverable failure with `gc.outcome=fail` and a concise
-`gc.failure_class`/reason before closing it.
+Do not run `gc prime`, load skills, inspect runtime state, read repository
+files, explain the codebase, or gather any other context until a bead has been
+claimed. Act on the JSON line it prints:
 
-If later terminal commands do not inherit shell variables, use the explicit
-`CLAIMED_BEAD_ID`, `CLAIMED_ROOT_BEAD_ID`, and
-`CLAIMED_CONTINUATION_GROUP` printed by the claim command. Never run
-`gc bd update` or `gc bd close` with an empty id.
+- `"action":"work"`: this session now owns `bead_id`. Read it with
+  `gc bd show <bead_id>` and execute exactly its description and result
+  contract. `root_bead_id` and `continuation_group`, when present, are the
+  bead's workflow root and continuation group.
+- `"action":"drain"`: there is no work for this session, or it was told to
+  stop. If the command exited 0, the drain is already acknowledged: stop
+  immediately and exit. If it exited non-zero, the acknowledgement failed: run
+  `gc runtime drain-ack`, then exit.
+- No JSON line and a non-zero exit: the claim did not reach a result (stderr
+  says why; `GC_HOOK_STORE_UNAVAILABLE` means the bead store did not answer),
+  and nothing was claimed. Run the same command again in a new tool call. Never
+  wrap it in a retry or `sleep` loop.
+
+The command verifies the claim itself: it reads ownership back against this
+session's own identities, and it claims unassigned work only when that work is
+routed to this session's template. Do not re-check the assignee or route, and
+never repair an assignment by hand or search for work outside this command.
+Close the claimed bead with the requested `gc.outcome` metadata. If the bead
+does not specify a failure contract, mark an unrecoverable failure with
+`gc.outcome=fail` and a concise `gc.failure_class`/reason before closing it.
+
+Shell variables do not carry over between commands. Use the `bead_id`,
+`root_bead_id`, and `continuation_group` values from the claim result in later
+commands; `gc hook current --id-only` prints the bead this session claimed if
+you need it again. Never run `gc bd update` or `gc bd close` with an empty id.
 
 ## Continuation Group Protocol
 
@@ -176,8 +77,9 @@ If `gc hook` returns no work, run this as your final command and exit:
 gc runtime drain-ack
 ```
 
-If `gc hook` returns work, claim it by running the same `GC_CLAIM` block again
-before reading files or gathering context. When the bead you just closed had a
+If `gc hook` returns work, claim it with `gc hook --claim --drain-ack --json`
+before reading files or gathering context, and act on the result exactly as
+at startup. When the bead you just closed had a
 `gc.continuation_group`, continue only for work in that same continuation group
 or same `gc.root_bead_id`; otherwise drain instead of hopping to unrelated
 workflow work. If the next ready bead is teardown work, run it even if earlier
@@ -189,5 +91,6 @@ work failed.
   receive them as normal work.
 - `gc.kind=check|fanout|scope-check|workflow-finalize` are handled by the
   implicit `workflow-control` lane. Normal workers should not receive them.
-- Do not say "drained" without actually running `gc runtime drain-ack`.
+- Do not say "drained" unless the claim command exited 0 with
+  `"action":"drain"` or you ran `gc runtime drain-ack`.
 {{- end }}

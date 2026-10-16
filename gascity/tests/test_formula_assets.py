@@ -212,22 +212,38 @@ class FormulaAssetTests(unittest.TestCase):
         expected = "\n".join(shared_lines[1:-1]).strip()
 
         for fragment in (
-            "GC_CLAIM",
             "`gc hook` is the only permitted discovery source",
-            "gc hook --claim --json",
-            "gc bd show \"$GC_BEAD_ID\"",
-            "CLAIM_REJECTED",
+            "gc hook --claim --drain-ack --json",
+            '"action":"work"',
+            '"action":"drain"',
+            "gc bd show <bead_id>",
+            "gc hook current --id-only",
             "gc runtime drain-ack",
             "gc.continuation_group",
             "gc.scope_role=teardown",
             "check for more routed work before draining",
-            "running the same `GC_CLAIM` block again",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, expected)
 
+        # The claim is one command the worker types, not a script it retypes on
+        # every fresh session: gc hook --claim already verifies ownership and
+        # route, and the turn boundary is the retry, so nothing of the old
+        # GC_CLAIM heredoc (JSON parsing, identity loop, sleep-retry) may return.
+        for retired in ("GC_CLAIM", "json_pick", "CLAIM_REJECTED", "python3", "while true", "sleep 2"):
+            with self.subTest(retired=retired):
+                self.assertNotIn(retired, expected)
+        claim_section = expected.split("## Startup Claim Protocol", 1)[1].split("\n## ", 1)[0]
+        commands = [
+            line
+            for block in claim_section.split("```bash\n")[1:]
+            for line in block.split("```", 1)[0].splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(commands, ["gc hook --claim --drain-ack --json"])
+
         self.assertNotIn(
-            '\nbd show "$GC_BEAD_ID"\n',
+            "\nbd show ",
             f"\n{expected}\n",
             "claimed graph work must be read through the store-aware gc bd wrapper",
         )
