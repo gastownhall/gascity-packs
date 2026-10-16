@@ -218,6 +218,7 @@ class FormulaAssetTests(unittest.TestCase):
             '"action":"drain"',
             "gc bd show <bead_id>",
             "gc hook current --id-only",
+            "end your turn without draining",
             "gc runtime drain-ack",
             "gc.continuation_group",
             "gc.scope_role=teardown",

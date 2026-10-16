@@ -38,7 +38,8 @@ claimed. Act on the JSON line it prints:
 - No JSON line and a non-zero exit: the claim did not reach a result (stderr
   says why; `GC_HOOK_STORE_UNAVAILABLE` means the bead store did not answer),
   and nothing was claimed. Run the same command again in a new tool call. Never
-  wrap it in a retry or `sleep` loop.
+  wrap it in a retry or `sleep` loop. After three failed attempts in a row, stop
+  and end your turn without draining: the controller prompts you to claim again.
 
 The command verifies the claim itself: it reads ownership back against this
 session's own identities, and it claims unassigned work only when that work is
