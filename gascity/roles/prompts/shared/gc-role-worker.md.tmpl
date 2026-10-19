@@ -86,6 +86,17 @@ or same `gc.root_bead_id`; otherwise drain instead of hopping to unrelated
 workflow work. If the next ready bead is teardown work, run it even if earlier
 work failed.
 
+## Tests
+
+In a repository that builds with Bazel (a `MODULE.bazel` at its root, as in
+gascity and beads), run tests with `bazel test`, never `go test`: name the
+package targets that cover the change and narrow them with `--test_filter`,
+for example `bazel test //internal/config:config_test --test_filter='^TestLoad$'`.
+A target whose inputs have not changed returns its cached result, which is the
+same evidence. A target also passes when its filter matches nothing or its tests
+skip: when a run is your evidence, read `--test_output=all --test_arg=-test.v`
+for the named tests. The repository's AGENTS.md lists its test targets and lanes.
+
 ## Notes
 
 - `gc.kind=workflow` and `gc.kind=scope` are latch beads. You should not
