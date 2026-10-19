@@ -260,11 +260,13 @@ class FormulaAssetTests(unittest.TestCase):
         tests_section = shared.split("\n## Tests\n", 1)[1].split("\n## ", 1)[0]
         for fragment in (
             "`MODULE.bazel`",
-            "run tests with `bazel test`, never `go test`",
+            "run tests with Bazel, never `go test`",
             "`--test_filter`",
-            "`bazel test //internal/config:config_test --test_filter='^TestLoad$'`",
+            "`bazel-test //internal/config:config_test --test_filter='^TestLoad$'`",
+            "elsewhere `bazel test` with the same arguments",
+            "exits 3 when a target ran no test or skipped them all",
             "cached result",
-            "`--test_output=all --test_arg=-test.v`",
+            "never add `--test_arg=-test.v` or `--nocache_test_results`",
             "AGENTS.md",
         ):
             with self.subTest(fragment=fragment):
