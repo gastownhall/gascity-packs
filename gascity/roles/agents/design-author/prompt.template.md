@@ -88,13 +88,17 @@ work failed.
 ## Tests
 
 In a repository that builds with Bazel (a `MODULE.bazel` at its root, as in
-gascity and beads), run tests with `bazel test`, never `go test`: name the
-package targets that cover the change and narrow them with `--test_filter`,
-for example `bazel test //internal/config:config_test --test_filter='^TestLoad$'`.
-A target whose inputs have not changed returns its cached result, which is the
-same evidence. A target also passes when its filter matches nothing or its tests
-skip: when a run is your evidence, read `--test_output=all --test_arg=-test.v`
-for the named tests. The repository's AGENTS.md lists its test targets and lanes.
+gascity and beads), run tests with Bazel, never `go test`: name the package
+targets that cover the change and narrow them with `--test_filter`, for
+example `bazel-test //internal/config:config_test --test_filter='^TestLoad$'`.
+`bazel-test` (on factory seats; elsewhere `bazel test` with the same
+arguments) keeps the test's cache key stable, adds beads' `--config=ci` and
+prints how many tests each target ran. It exits 3 when a target ran no test or
+skipped them all (a filter that matches nothing, beads' Dolt-backed tests),
+naming the command that runs them. A target whose inputs have not changed
+returns its cached result, which is the same evidence, so re-run with the same
+flags and never add `--test_arg=-test.v` or `--nocache_test_results`. The
+repository's AGENTS.md lists its test targets and lanes.
 
 ## Notes
 
