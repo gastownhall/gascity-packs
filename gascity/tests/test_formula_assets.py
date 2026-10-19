@@ -1545,6 +1545,20 @@ class FormulaAssetTests(unittest.TestCase):
                         self.assertIn(default, vocabulary)
                     self.assertIn(f"{{{{{var_name}}}}}", text)
 
+    def test_decomposition_base_parents_work_beads_under_source_bead(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        text = (root / "assets/workflows/decomposition-base/decompose.md").read_text(encoding="utf-8")
+        for fragment in (
+            "gc.var.convoy_id",
+            "gc convoy status <convoy-id> --json",
+            "--parent <source-bead-id>",
+            "milestone",
+            "`tracks` membership",
+            "gc bd show <parent-id> --json",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, text)
+
     def test_github_adapters_validate_methodology_compatibility(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         issue_snapshot = (
