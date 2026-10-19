@@ -254,6 +254,22 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(agent=agent_name):
                 self.assertEqual(prompt.read_text(encoding="utf-8").strip(), expected)
 
+    def test_role_agent_prompts_test_with_bazel_not_go_test(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        shared = (root / "roles" / "prompts" / "shared" / "gc-role-worker.md.tmpl").read_text(encoding="utf-8")
+        tests_section = shared.split("\n## Tests\n", 1)[1].split("\n## ", 1)[0]
+        for fragment in (
+            "`MODULE.bazel`",
+            "run tests with `bazel test`, never `go test`",
+            "`--test_filter`",
+            "`bazel test //internal/config:config_test --test_filter='^TestLoad$'`",
+            "cached result",
+            "`--test_output=all --test_arg=-test.v`",
+            "AGENTS.md",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, " ".join(tests_section.split()))
+
     def test_formula_run_targets_are_backed_by_providerless_role_agents(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         for path in sorted((root / "formulas").glob("*.formula.toml")):
