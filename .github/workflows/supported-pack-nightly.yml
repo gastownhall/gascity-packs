@@ -215,7 +215,7 @@ jobs:
         if: steps.subset.outputs.run_gate == 'true'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.10"
 
       - name: Set up Node
         if: steps.subset.outputs.run_gate == 'true'
