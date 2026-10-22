@@ -572,6 +572,25 @@ this is one extra map build per candidate orphan, not per bead.
 # half-computed verdict skips rather than destroys.
 STILL_ORPHANED=false
 
+# Re-reads <bead>'s updated_at -- a TOP-LEVEL bead field, never a metadata
+# key, so reading it off Step 2's $META (`jq '.[0].metadata'`) would return
+# empty on every bead and this guard could never fire -- and classifies it
+# against this cycle's watermark ($CYCLE_MAP_BUILT_AT). Sets $BEAD_UPDATED_AT
+# as a side effect. Exit 2: could not read. Exit 1: not yet stale. Exit 0:
+# stale enough to act on. Shared by both re-verify paths below so this check
+# exists in exactly one place.
+bead_staleness_verdict() {
+  BEAD_UPDATED_AT=$(printf '%s' "$1" | jq -r '.[0].updated_at // empty' 2>/dev/null || true)
+  BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"
+  case "$BEAD_UPDATED_AT" in ""|*Z) ;; *) BEAD_UPDATED_AT="${BEAD_UPDATED_AT}Z" ;; esac
+  if [ -z "$BEAD_UPDATED_AT" ]; then
+    return 2
+  elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then
+    return 1
+  fi
+  return 0
+}
+
 if [ "$RECOVERY_BLOCKED" = true ]; then
   # Step 2's artifact/branch validation already refused this bead.
   echo "SKIP: <bead> artifact or branch metadata is unsafe/ambiguous (RECOVERY_BLOCKED) — escalate; do not act on it this cycle."
@@ -586,20 +605,18 @@ elif [ "${CANDIDATE_SOURCE:-}" = "step1b" ]; then
   BEAD_JSON=$(gc bd show <bead> --json) || BEAD_JSON=""
   FRESH_ASSIGNEE=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null || true)
   FRESH_ROUTED_TO=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].metadata["gc.routed_to"] // empty' 2>/dev/null || true)
-  BEAD_UPDATED_AT=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].updated_at // empty' 2>/dev/null || true)
-  BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"
-  case "$BEAD_UPDATED_AT" in ""|*Z) ;; *) BEAD_UPDATED_AT="${BEAD_UPDATED_AT}Z" ;; esac
 
   if [ -n "$FRESH_ASSIGNEE" ]; then
     echo "SKIP: <bead> was claimed by $FRESH_ASSIGNEE since the Step 1b snapshot — someone else owns it now; leave it alone."
   elif [ -n "$FRESH_ROUTED_TO" ]; then
     echo "SKIP: <bead> was routed to $FRESH_ROUTED_TO since the Step 1b snapshot — it is being handled; leave it alone."
-  elif [ -z "$BEAD_UPDATED_AT" ]; then
-    echo "SKIP: <bead> updated_at could not be read — cannot confirm the classification is current; leaving it alone this cycle."
-  elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then
-    echo "SKIP: <bead> updated_at ($BEAD_UPDATED_AT) is not older than this cycle's snapshot ($CYCLE_MAP_BUILT_AT) — something touched it mid-cycle. Not acting on a stale classification."
   else
-    STILL_ORPHANED=true
+    bead_staleness_verdict "$BEAD_JSON"
+    case $? in
+      2) echo "SKIP: <bead> updated_at could not be read — cannot confirm the classification is current; leaving it alone this cycle." ;;
+      1) echo "SKIP: <bead> updated_at ($BEAD_UPDATED_AT) is not older than this cycle's snapshot ($CYCLE_MAP_BUILT_AT) — something touched it mid-cycle. Not acting on a stale classification." ;;
+      0) STILL_ORPHANED=true ;;
+    esac
   fi
 elif [ -z "$ASSIGNEE" ]; then
   echo "SKIP: <bead> has no assignee to re-verify — cannot confirm it is orphaned; leaving it alone this cycle."
@@ -620,31 +637,29 @@ else
   BEAD_JSON=$(gc bd show <bead> --json) || BEAD_JSON=""
   FRESH_ASSIGNEE=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null || true)
   FRESH_ASSIGNEE="${FRESH_ASSIGNEE:-$ASSIGNEE}"
-  BEAD_UPDATED_AT=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].updated_at // empty' 2>/dev/null || true)
 
   FRESH_STATE=$(printf '%s' "$LIVENESS_MAP" | jq -r --arg a "$FRESH_ASSIGNEE" '.[$a] // "absent"')
-
-  # Normalize away fractional seconds before comparing. The watermark is stamped
-  # whole-second by `date`, while `gc bd show` emits whole seconds for rig beads
-  # and nanoseconds for graph-resident ones; comparing those two shapes as
-  # strings inverts, because "." (0x2E) sorts before "Z" (0x5A), and it inverts
-  # toward destroying. Truncating both to whole seconds and skipping unless the
-  # bead is *strictly older* than the watermark keeps the boundary second on the
-  # safe side: a bead touched in the same second the cycle started costs one
-  # wasted cycle, which is the direction to be wrong in.
-  BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"
-  case "$BEAD_UPDATED_AT" in ""|*Z) ;; *) BEAD_UPDATED_AT="${BEAD_UPDATED_AT}Z" ;; esac
 
   if [ "$FRESH_ASSIGNEE" != "$ASSIGNEE" ]; then
     echo "SKIP: <bead> was reassigned from $ASSIGNEE to $FRESH_ASSIGNEE since Step 1 — someone else owns it now; leave it alone."
   elif [ "$FRESH_STATE" != "absent" ] && [ "$FRESH_STATE" != "closed" ] && [ "$FRESH_STATE" != "archived" ]; then
     echo "SKIP: <bead> assignee $FRESH_ASSIGNEE is now '$FRESH_STATE' — spawned after the Step 1 snapshot. Not orphaned; leave it alone."
-  elif [ -z "$BEAD_UPDATED_AT" ]; then
-    echo "SKIP: <bead> updated_at could not be read — cannot confirm the classification is current; leaving it alone this cycle."
-  elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then
-    echo "SKIP: <bead> updated_at ($BEAD_UPDATED_AT) is not older than this cycle's liveness snapshot ($CYCLE_MAP_BUILT_AT) — something touched it mid-cycle. Not acting on a stale classification."
   else
-    STILL_ORPHANED=true
+    # Normalize away fractional seconds before comparing. The watermark is
+    # stamped whole-second by `date`, while `gc bd show` emits whole seconds
+    # for rig beads and nanoseconds for graph-resident ones; comparing those
+    # two shapes as strings inverts, because "." (0x2E) sorts before "Z"
+    # (0x5A), and it inverts toward destroying. Truncating both to whole
+    # seconds and skipping unless the bead is *strictly older* than the
+    # watermark keeps the boundary second on the safe side: a bead touched in
+    # the same second the cycle started costs one wasted cycle, which is the
+    # direction to be wrong in. (bead_staleness_verdict, defined above.)
+    bead_staleness_verdict "$BEAD_JSON"
+    case $? in
+      2) echo "SKIP: <bead> updated_at could not be read — cannot confirm the classification is current; leaving it alone this cycle." ;;
+      1) echo "SKIP: <bead> updated_at ($BEAD_UPDATED_AT) is not older than this cycle's liveness snapshot ($CYCLE_MAP_BUILT_AT) — something touched it mid-cycle. Not acting on a stale classification." ;;
+      0) STILL_ORPHANED=true ;;
+    esac
   fi
 fi
 ```
