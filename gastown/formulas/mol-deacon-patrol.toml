@@ -557,7 +557,22 @@ its own wisp leaks one wisp per cycle. `$GC_BEAD_ID` is not set in a patrol
 session, and a patrol wisp stays `open` for its whole life (assigning it does
 not claim it), so the fallback query covers `open,in_progress` and the wisps
 tier (`--include-infra`), and selects only this formula's ephemeral roots.
+
+Every failure in this script drains (`gc runtime drain-ack`) instead of only
+stopping. Gas City moves an always-on deacon onto its next cycle when the wisp
+it was running is gone; a turn that ends with that wisp still open, or with no
+successor, is the deacon's last. A drained deacon is restarted, and its startup
+reconciles the patrol wisps. That covers a failed burn of this wisp too. An
+empty `GC_AGENT` stops the script first: an empty `--assignee` is no filter,
+so the lookup would match every deacon's patrol wisps.
 ```bash
+# An empty GC_AGENT would assign the successor to nobody and widen the lookup
+# below to every deacon's patrol wisps: an empty --assignee is no filter.
+if [ -z "${GC_AGENT:-}" ]; then
+  echo "GC_AGENT is empty; not resolving, pouring or burning patrol wisps. Draining."
+  gc runtime drain-ack
+  exit 1
+fi
 # Preferring the spawn trigger is safe here only because the deacon is a
 # singleton with a fresh wake (agents/deacon/agent.toml: max_active_sessions = 1,
 # wake_mode = "fresh"), so one process env holds exactly one wisp and the
@@ -566,7 +581,7 @@ tier (`--include-infra`), and selects only this formula's ephemeral roots.
 # or the deacon gains a second slot.
 CURRENT_WISP=${GC_BEAD_ID:-${GC_TRIGGER_WORK_BEAD_ID:-}}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-deacon-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-deacon-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
 fi
 if [ -z "$CURRENT_WISP" ]; then
   echo "Could not resolve the current deacon wisp; not pouring a successor."
@@ -587,7 +602,11 @@ if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
   gc runtime drain-ack
   exit 1
 fi
-gc bd mol burn "$CURRENT_WISP" --force
+if ! gc bd mol burn "$CURRENT_WISP" --force; then
+  echo "Could not burn deacon wisp $CURRENT_WISP; draining so a restarted deacon reconciles it."
+  gc runtime drain-ack
+  exit 1
+fi
 ```
 
 **4. Burn this wisp before waiting:**

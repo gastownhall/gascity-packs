@@ -76,7 +76,7 @@ check is how every cycle used to leak one wisp.
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
 fi
 if [ -z "$CURRENT_WISP" ]; then
   echo "Could not resolve the current refinery wisp; not pouring a successor."
@@ -122,7 +122,7 @@ assign the next wisp, burn the current wisp, THEN request restart**:
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
 fi
 if [ -z "$CURRENT_WISP" ]; then
   echo "Could not resolve the current refinery wisp; not pouring a successor or requesting restart."
@@ -189,14 +189,19 @@ done
 # A patrol wisp is an ephemeral mol-refinery-patrol molecule that stays open
 # for its whole life, so look for open AND in_progress roots, and pass
 # --include-infra: gc bd list hides the wisps tier without it. Keep the newest
-# and burn the surplus earlier restarts leaked. A failed query is not "no
-# wisp": stop instead of pouring a duplicate.
-PATROL_WISPS_JSON=$(gc bd list --assignee="$GC_AGENT" --status=open,in_progress --type=molecule --include-infra --limit=0 --json) || {
-  echo "Could not list refinery patrol wisps; not pouring a duplicate."
+# and burn the surplus earlier restarts leaked. ${GC_AGENT:?} fails the query on
+# an empty identity: an empty --assignee matches every assignee, so the burn
+# below would reach other agents' patrol wisps. A failed query is not "no
+# wisp": drain instead of pouring a duplicate, so a restarted session runs this
+# reconcile again.
+PATROL_WISPS_JSON=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json) || {
+  echo "Could not list refinery patrol wisps; draining instead of pouring a duplicate."
+  gc runtime drain-ack
   exit 1
 }
 PATROL_WISPS=$(printf '%s' "$PATROL_WISPS_JSON" | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | reverse | .[].id') || {
-  echo "Could not read the refinery patrol wisp list; not pouring a duplicate."
+  echo "Could not read the refinery patrol wisp list; draining instead of pouring a duplicate."
+  gc runtime drain-ack
   exit 1
 }
 WISP=$(printf '%s\n' $PATROL_WISPS | sed -n '1p')           # keep the newest
@@ -208,20 +213,23 @@ done
 if [ -z "$WISP" ]; then
   WISP=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
   if [ -z "$WISP" ]; then
-    echo "Could not pour a refinery patrol wisp."
+    echo "Could not pour a refinery patrol wisp; draining."
+    gc runtime drain-ack
     exit 1
   fi
   if ! gc bd update "$WISP" --assignee="$GC_AGENT"; then
-    echo "Could not assign refinery patrol wisp $WISP; burning it so it does not leak."
+    echo "Could not assign refinery patrol wisp $WISP; burning it so it does not leak, then draining."
     gc bd mol burn "$WISP" --force || true
+    gc runtime drain-ack
     exit 1
   fi
 fi
 echo "Patrol wisp: $WISP"
 ```
 
-If the block exits non-zero there is no patrol wisp to work: report the error
-and end your turn without pouring; the next startup runs the reconcile again.
+If the block exits non-zero it has already drained the session: there is no
+patrol wisp to work, and a restarted session runs the reconcile again. Report
+the error and stop; do not pour by hand.
 
 Then follow the formula. The step descriptions below are your instructions —
 work through them in order. On crash or restart, re-read the steps and

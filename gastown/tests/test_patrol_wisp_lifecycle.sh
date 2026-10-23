@@ -19,6 +19,14 @@ set -euo pipefail
 # Startup had the same leak by another route: it poured a fresh wisp on every
 # start without looking for the one already assigned.
 #
+# Two more properties are pinned here. Every deacon failure exit drains the
+# session (`gc runtime drain-ack`) rather than only ending the turn: Gas City
+# moves an always-on deacon onto its next cycle only when the wisp it was
+# running is gone, so a turn that ends with that wisp still open, or with no
+# successor, is the deacon's last turn. And an empty GC_AGENT must never reach
+# a lookup: an empty --assignee is no filter, so it would hand back every
+# patrol wisp in the store, other agents' and other cities' included.
+#
 # Every block here is LIFTED out of the shipped formula or prompt and executed
 # against a stateful stub `gc`, not transcribed. The stub keeps a tiny wisp
 # ledger and behaves like the beads CLI where it matters: `gc bd list` hides
@@ -102,6 +110,7 @@ case "$invocation" in
         printf '[]\n'
         exit 0
     fi
+    # Like bd, an empty --assignee is no filter at all.
     awk -F '\t' -v a="$assignee" -v s=",$statuses," '
         (a == "" || $4 == a) && (s == ",," || index(s, "," $3 ",")) { print }
     ' "$STATE" | sort -t "$(printf '\t')" -k6,6nr |
@@ -120,6 +129,10 @@ case "$invocation" in
         printf '{"new_epic_id":"wisp-%s"}\n' "$n"
         ;;
     burn)
+        if [ "${STUB_BURN_FAIL:-0}" = 1 ]; then
+            echo "error: dolt: connection reset by peer (stub)" >&2
+            exit 1
+        fi
         if ! awk -F '\t' -v id="$4" '$1 == id { found = 1 } END { exit !found }' "$STATE"; then
             echo "Error: no issue found matching \"$4\"" >&2
             exit 1
@@ -236,11 +249,13 @@ for text in texts:
             line = block[i].strip()
             if line.startswith("CURRENT_WISP=${GC_BEAD_ID"):
                 start = i
-                # The prompt fallback reads its list once, above the resolution.
+                # The prompt fallback reads its list once, above the resolution,
+                # and the deacon formula refuses an empty identity above it.
                 for k in range(i - 1, -1, -1):
-                    if block[k].strip().startswith("PATROL_WISPS_JSON=$(gc bd list"):
+                    above = block[k].strip()
+                    if above.startswith("PATROL_WISPS_JSON=$(gc bd list") or \
+                            above.startswith('if [ -z "${GC_AGENT:-}" ]; then'):
                         start = k
-                        break
                 end = next((j for j in range(i, len(block))
                             if 'gc bd mol burn "$CURRENT_WISP" --force' in block[j]), None)
                 if end is None:
@@ -294,10 +309,22 @@ run_region() {
 # Legs for a rotate region (resolve -> pour -> assign -> burn).
 # ---------------------------------------------------------------------------
 
+# drained: was `gc runtime drain-ack` called in the last region run?
+drained() { grep -q '^gc runtime drain-ack' "$GC_LOG"; }
+
 # $1 = region, $2 = label, $3 = "strict" (an unnameable wisp pours nothing) or
-# "bootstrap" (a list that reads empty may pour the first wisp).
+# "bootstrap" (a list that reads empty may pour the first wisp), $4 = options:
+#   drain        every failure exit drains the session before exiting
+#   burn-drains  a failed burn of the current wisp drains and exits non-zero
+#   id-guard     an explicit GC_BEAD_ID with an empty GC_AGENT still refuses
 rotate_legs() {
-    local region="$1" label="$2" mode="$3" left
+    local region="$1" label="$2" mode="$3" opts=",$4," left
+
+    must_drain() {  # must_drain <what>: the failure exit drained, if this region drains
+        case "$opts" in
+            *,drain,*) drained || fail "$label: $1 must drain the session (gc runtime drain-ack), not only end the turn" ;;
+        esac
+    }
 
     # The #5502 regression: an open patrol wisp, no GC_BEAD_ID.
     seed_state "w-cur $FORMULA open $AGENT true 1"
@@ -308,6 +335,7 @@ rotate_legs() {
     [ "$(printf '%s\n' "$left" | grep -c .)" -eq 1 ] ||
         fail "$label: expected exactly one assigned patrol wisp after rotating, found: $left"
     [ "$(count_calls 'gc bd mol wisp')" -eq 1 ] || fail "$label: expected exactly one pour"
+    drained && fail "$label: a successful rotation must not drain the session"
 
     # Status half, other side: an in_progress wisp is the current wisp too.
     seed_state "w-cur $FORMULA in_progress $AGENT true 1"
@@ -323,6 +351,7 @@ rotate_legs() {
         [ "$(count_calls 'gc bd mol wisp')" -eq 0 ] ||
             fail "$label: poured a successor without naming the current wisp (resolve-before-pour)"
         [ ! -s "$STATE" ] || fail "$label: the ledger changed although nothing could be named"
+        must_drain "an unnameable current wisp"
     else
         [ "$RC" -eq 0 ] || fail "$label: a list that reads empty must bootstrap one wisp (rc=$RC)"
         [ "$(ids_where "$FORMULA" "$AGENT" | grep -c .)" -eq 1 ] ||
@@ -335,6 +364,7 @@ rotate_legs() {
     [ "$RC" -ne 0 ] || fail "$label: a failed wisp query must stop the path"
     [ "$(count_calls 'gc bd mol wisp')" -eq 0 ] || fail "$label: poured a successor after a failed wisp query"
     has_id w-cur || fail "$label: burned the current wisp after a failed wisp query"
+    must_drain "a failed wisp query"
 
     # An explicit GC_BEAD_ID names the wisp; the query is not consulted.
     seed_state "w-old $FORMULA open $AGENT true 1" "w-cur $FORMULA open $AGENT true 2"
@@ -348,6 +378,7 @@ rotate_legs() {
     run_region "$region" STUB_POUR_FAIL=1
     [ "$RC" -ne 0 ] || fail "$label: a failed pour must stop the path"
     has_id w-cur || fail "$label: burned the current wisp although no successor was poured"
+    must_drain "a failed pour"
 
     # Assignment failure: the unassigned successor is reclaimed, the current kept.
     seed_state "w-cur $FORMULA open $AGENT true 1"
@@ -356,16 +387,40 @@ rotate_legs() {
     has_id w-cur || fail "$label: burned the current wisp although its successor was never assigned"
     [ "$(awk -F '\t' '$4 == ""' "$STATE" | grep -c .)" -eq 0 ] ||
         fail "$label: left an unassigned successor behind; no assignee-scoped query can ever find it"
+    must_drain "a failed assignment"
 
-    # Only this formula's own ephemeral roots are candidates.
-    seed_state "w-cur $FORMULA open $AGENT true 1" \
-        "f-other mol-other-patrol open $AGENT true 5" \
-        "f-durable $FORMULA open $AGENT false 6"
-    run_region "$region"
-    [ "$RC" -eq 0 ] || fail "$label: rotating beside foreign molecules must succeed (rc=$RC)"
-    has_id f-other || fail "$label: burned a molecule of another formula"
-    has_id f-durable || fail "$label: burned a non-ephemeral molecule"
-    has_id w-cur && fail "$label: did not burn its own patrol wisp beside foreign molecules"
+    # A failed burn of the current wisp: the successor is assigned, the current
+    # is still open. Ending the turn there is the deacon's last turn; draining
+    # gets a restarted session whose startup reconciles the pair.
+    case "$opts" in
+    *,burn-drains,*)
+        seed_state "w-cur $FORMULA open $AGENT true 1"
+        run_region "$region" STUB_BURN_FAIL=1
+        [ "$RC" -ne 0 ] || fail "$label: a failed burn of the current wisp must stop the path"
+        drained || fail "$label: a failed burn of the current wisp must drain the session"
+        [ "$(ids_where "$FORMULA" "$AGENT" | grep -c .)" -eq 2 ] ||
+            fail "$label: after a failed burn the current wisp and its assigned successor should both remain for the restarted session to reconcile"
+        ;;
+    esac
+
+    # An empty identity reaches no lookup: an empty --assignee is no filter.
+    seed_state "w-mine $FORMULA open $AGENT true 1" "w-theirs $FORMULA open other-city/agent true 2"
+    run_region "$region" GC_AGENT=
+    [ "$RC" -ne 0 ] || fail "$label: an empty GC_AGENT must stop the path"
+    [ "$(count_calls 'gc bd mol wisp')" -eq 0 ] || fail "$label: poured a successor with an empty GC_AGENT"
+    has_id w-mine || fail "$label: burned a patrol wisp with an empty GC_AGENT"
+    has_id w-theirs || fail "$label: burned another agent's patrol wisp with an empty GC_AGENT"
+    must_drain "an empty GC_AGENT"
+    case "$opts" in
+    *,id-guard,*)
+        seed_state "w-mine $FORMULA open $AGENT true 1" "w-theirs $FORMULA open other-city/agent true 2"
+        run_region "$region" GC_AGENT= GC_BEAD_ID=w-mine
+        [ "$RC" -ne 0 ] || fail "$label: an explicit wisp id with an empty GC_AGENT must stop the path"
+        [ "$(count_calls 'gc bd mol wisp')" -eq 0 ] || fail "$label: poured a successor nobody would own"
+        has_id w-mine || fail "$label: burned the current wisp with no identity to hand its successor to"
+        drained || fail "$label: an empty GC_AGENT must drain the session"
+        ;;
+    esac
 
     # Duplicates: the newest is the current wisp.
     seed_state "w-old $FORMULA open $AGENT true 1" "w-new $FORMULA open $AGENT true 2"
@@ -394,6 +449,13 @@ startup_legs() {
     has_id f-other || fail "$label: burned a molecule of another formula"
     has_id w-elsewhere || fail "$label: burned another agent's wisp"
     grep -F -q 'Patrol wisp: w-3' "$LAST_OUT" || fail "$label: did not report the surviving wisp"
+    drained && fail "$label: a successful reconcile must not drain the session"
+
+    # A surplus burn that fails is retried by a later startup, not fatal.
+    seed_state "w-1 $FORMULA open $AGENT true 1" "w-2 $FORMULA open $AGENT true 2"
+    run_region "$region" STUB_BURN_FAIL=1
+    [ "$RC" -eq 0 ] || fail "$label: a failed surplus burn must not stop the patrol (rc=$RC)"
+    grep -F -q 'Patrol wisp: w-2' "$LAST_OUT" || fail "$label: a failed surplus burn must still resume the newest wisp"
 
     # An in_progress wisp is a patrol wisp too.
     seed_state "w-1 $FORMULA open $AGENT true 1" "w-2 $FORMULA in_progress $AGENT true 2"
@@ -414,12 +476,30 @@ startup_legs() {
     [ "$RC" -ne 0 ] || fail "$label: a failed wisp query must stop startup"
     [ "$(count_calls 'gc bd mol wisp')" -eq 0 ] || fail "$label: poured after a failed wisp query"
     has_id w-1 || fail "$label: burned a wisp after a failed wisp query"
+    drained || fail "$label: a failed wisp query must drain the session so a restarted one reconciles"
 
-    # A bootstrap pour that cannot be assigned is reclaimed.
+    # A bootstrap pour that fails drains.
+    seed_state
+    run_region "$region" STUB_POUR_FAIL=1
+    [ "$RC" -ne 0 ] || fail "$label: a failed bootstrap pour must stop startup"
+    drained || fail "$label: a failed bootstrap pour must drain the session"
+
+    # A bootstrap pour that cannot be assigned is reclaimed, then drains.
     seed_state
     run_region "$region" STUB_ASSIGN_FAIL=1
     [ "$RC" -ne 0 ] || fail "$label: a failed bootstrap assignment must stop startup"
     [ ! -s "$STATE" ] || fail "$label: left an unassigned bootstrap wisp behind"
+    drained || fail "$label: a failed bootstrap assignment must drain the session"
+
+    # An empty identity reaches no lookup: an empty --assignee is no filter,
+    # so the surplus burn would reach every agent's patrol wisps.
+    seed_state "w-mine $FORMULA open $AGENT true 1" "w-theirs $FORMULA open other-city/agent true 2"
+    run_region "$region" GC_AGENT=
+    [ "$RC" -ne 0 ] || fail "$label: an empty GC_AGENT must stop startup"
+    has_id w-mine || fail "$label: burned a patrol wisp with an empty GC_AGENT"
+    has_id w-theirs || fail "$label: burned another agent's patrol wisp with an empty GC_AGENT"
+    [ "$(count_calls 'gc bd mol wisp')" -eq 0 ] || fail "$label: poured with an empty GC_AGENT"
+    drained || fail "$label: an empty GC_AGENT must drain the session"
     return 0
 }
 
@@ -462,7 +542,7 @@ run_leg() {
     fi
 }
 
-# lifted_legs <asset> <formula> <agent> <want-rotate> <want-startup> <rotate-mode>
+# lifted_legs <asset> <formula> <agent> <want-rotate> <want-startup> <rotate-mode> <rotate-options>
 lifted_legs() {
     local asset="$1" dir counts n
     FORMULA="$2"
@@ -473,7 +553,7 @@ lifted_legs() {
     # the legs that can run still report what the blocks actually do.
     for n in $(seq 1 "${counts% *}"); do
         bash -n "$dir/rotate-$n.sh" || fail "$(basename "$asset") rotate region $n does not parse"
-        rotate_legs "$dir/rotate-$n.sh" "$(basename "$asset") rotate region $n" "$6"
+        rotate_legs "$dir/rotate-$n.sh" "$(basename "$asset") rotate region $n" "$6" "$7"
     done
     for n in $(seq 1 "${counts#* }"); do
         bash -n "$dir/startup-$n.sh" || fail "$(basename "$asset") startup region $n does not parse"
@@ -490,16 +570,24 @@ write_gc_stub
 # pour that skips the resolution cannot hide from these legs. Each asset runs
 # twice: against bd's own tier rule, and against gc >= 1.5.0, which appends
 # --include-infra to a molecule list. The status half is red under both.
+#
+# The last argument is the failure contract. Every startup drains on failure.
+# The deacon's rotations drain on every failure, a failed burn included, and
+# refuse an empty identity even when a wisp id is given. The refinery formula's
+# exit paths drain on failure; the refinery rotates in-session, so a failed
+# burn leaves an older wisp that newest-first resolution never picks and the
+# next startup burns. The refinery prompt's two rules are the formula's blocks
+# restated for the agent and stop without draining, as they always have.
 for GC_APPENDS_INFRA in 0 1; do
     tier=$([ "$GC_APPENDS_INFRA" = 1 ] && echo "gc appends --include-infra" || echo "bd tier rule")
     run_leg "refinery formula exit paths ($tier)" lifted_legs \
-        "$GASTOWN/formulas/mol-refinery-patrol.toml" mol-refinery-patrol testrig/refinery 6 0 strict
+        "$GASTOWN/formulas/mol-refinery-patrol.toml" mol-refinery-patrol testrig/refinery 6 0 strict drain
     run_leg "refinery prompt lifecycle + startup ($tier)" lifted_legs \
-        "$GASTOWN/agents/refinery/prompt.template.md" mol-refinery-patrol testrig/refinery 2 1 strict
+        "$GASTOWN/agents/refinery/prompt.template.md" mol-refinery-patrol testrig/refinery 2 1 strict plain
     run_leg "deacon formula next-iteration ($tier)" lifted_legs \
-        "$GASTOWN/formulas/mol-deacon-patrol.toml" mol-deacon-patrol deacon 1 0 strict
+        "$GASTOWN/formulas/mol-deacon-patrol.toml" mol-deacon-patrol deacon 1 0 strict drain,burn-drains,id-guard
     run_leg "deacon prompt fallback + startup ($tier)" lifted_legs \
-        "$GASTOWN/agents/deacon/prompt.template.md" mol-deacon-patrol deacon 1 1 bootstrap
+        "$GASTOWN/agents/deacon/prompt.template.md" mol-deacon-patrol deacon 1 1 bootstrap drain,burn-drains,id-guard
 done
 run_leg "wisp queries see the wisps tier and both statuses" static_legs \
     "$GASTOWN/formulas/mol-refinery-patrol.toml" "$GASTOWN/agents/refinery/prompt.template.md" \
