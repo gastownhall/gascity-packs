@@ -392,43 +392,74 @@ This step surfaces problems that individual patrol steps won't catch:
 commit bloat (compactor dog may have failed), stale backups (backup dog
 may have failed), orphan databases, and zombie Dolt server processes.
 
-**Step 1: Run the health check**
+**Step 1: Run the health check and classify it — one script**
+
+`gc dolt health` is a command of the Dolt pack, not of gc itself. A city with
+no gc-managed Dolt data plane has nothing for it to report: a city that does
+not import the Dolt pack (for example one on an exec or other beads provider)
+answers `unknown command "dolt"`, and a scope whose Dolt is owned by bd (a
+proxied scope) answers with a `skipped` report. Neither is a Dolt outage. So
+capture the exit code and stderr instead of piping the output straight into
+a parser: "not applicable", "the check itself failed" and "here is a report"
+must stay three different answers. Do not probe with `gc dolt --help` first:
+it exits 0 whether or not `gc dolt` exists.
+
 ```bash
-gc dolt health --json
+DOLT_HEALTH_ERR=$(mktemp)
+DOLT_HEALTH_JSON=$(gc dolt health --json 2>"$DOLT_HEALTH_ERR")
+DOLT_HEALTH_RC=$?
+DOLT_HEALTH_STDERR=$(head -c 2000 "$DOLT_HEALTH_ERR")
+rm -f "$DOLT_HEALTH_ERR"
+if [ "$DOLT_HEALTH_RC" -ne 0 ]; then
+  # gc --json reports a missing command as error.code json_command_not_found;
+  # without the JSON envelope it says `unknown command "dolt"` on stderr.
+  if printf '%s' "$DOLT_HEALTH_JSON" | jq -e '.error.code == "json_command_not_found"' >/dev/null 2>&1 ||
+     printf '%s\\n%s\\n' "$DOLT_HEALTH_STDERR" "$DOLT_HEALTH_JSON" | grep -q -e 'unknown command "dolt"' -e 'unknown command "health"'; then
+    echo "DOLT_HEALTH: not-applicable (gc dolt health does not exist in this city; no Dolt pack)"
+  else
+    echo "DOLT_HEALTH: error (gc dolt health --json exited $DOLT_HEALTH_RC)"
+    gc mail send mayor/ -s "DEACON: gc dolt health could not run" \\
+      -m "gc dolt health --json exited $DOLT_HEALTH_RC, so Dolt data-plane health was NOT measured this cycle.
+stderr: $DOLT_HEALTH_STDERR"
+  fi
+elif ! printf '%s' "$DOLT_HEALTH_JSON" | jq -e 'type == "object"' >/dev/null 2>&1; then
+  echo "DOLT_HEALTH: error (gc dolt health --json printed no JSON report)"
+  gc mail send mayor/ -s "DEACON: gc dolt health could not run" \\
+    -m "gc dolt health --json exited 0 without a JSON report, so Dolt data-plane health was NOT measured this cycle.
+stderr: $DOLT_HEALTH_STDERR"
+else
+  printf '%s' "$DOLT_HEALTH_JSON" | jq -r '
+    if (.skipped | type) == "object" then "DOLT_HEALTH: not-applicable (" + (.skipped.reason // "skipped") + ")"
+    elif .applicable == false then "DOLT_HEALTH: not-applicable (" + (.reason // "no Dolt data plane") + ")"
+    else "DOLT_HEALTH: evaluate" end'
+  printf '%s\\n' "$DOLT_HEALTH_JSON"
+fi
 ```
 
-Parse the JSON output (HealthReport schema):
-- `applicable`: false when this city has no Dolt data plane at all
+Act on the `DOLT_HEALTH:` line:
+
+- `not-applicable (<reason>)`: log `Dolt health: not applicable (<reason>)` and
+  move on to the next step. Do NOT escalate and do NOT nudge a dog. A
+  not-applicable report's other fields, if any, are placeholders —
+  `server.reachable` is `false` because no gc-managed Dolt server exists, not
+  because one is down.
+- `error (...)`: the script already sent one non-critical escalation. Health
+  was not measured, so there is nothing to evaluate; move on.
+- `evaluate`: evaluate the report it printed against the table in Step 2.
+
+The report (HealthReport schema):
 - `server`: running, reachable, pid, port, latency_ms
 - `databases[]`: name, commits, open_beads
 - `backups`: dolt_freshness, dolt_age_seconds, dolt_stale
 - `processes`: zombie_count, zombie_pids
 - `orphans[]`: name, size
 
-Note: `--json` always exits 0 when the payload is well-formed; health
-state is signalled in-band. Key decisions off `server.reachable`, not
+Note: `--json` exits 0 when the payload is well-formed; health state is
+signalled in-band. Key decisions off `server.reachable`, not
 `server.running` — a process can hold the port while its goroutines
 are wedged (the latter is what first prompted this check to exist).
 
-**Step 1a: Check applicability BEFORE any threshold.**
-
-A city whose bead ledger is on another backend (MySQL, Postgres) has no
-managed Dolt runtime, so there is no data plane to report on. That city
-reports `applicable: false` with a `reason`, and its remaining fields are
-zero-valued placeholders — `server.reachable` is `false` because no Dolt
-server exists, NOT because one is down. Evaluating the table below on such
-a payload escalates a CRITICAL that no one can act on, every patrol cycle.
-
-```bash
-gc dolt health --json | jq -r 'if .applicable == false then "skip: " + .reason else "evaluate" end'
-```
-
-If it reports `skip`, log `Dolt health: not applicable (<reason>)` and move
-on to the next step. Do NOT escalate and do NOT nudge a dog. An older
-`gc dolt health` omits the field entirely; a payload without `applicable`
-is evaluated normally, exactly as before.
-
-**Step 2: Evaluate thresholds** (only when `applicable` is not false)
+**Step 2: Evaluate thresholds** (only on `DOLT_HEALTH: evaluate`)
 
 | Signal | Threshold | Meaning |
 |--------|-----------|---------|
