@@ -118,9 +118,14 @@ elif [ -z "$ASSIGNED_WISP" ]; then
     exit 1
   fi
 fi
+gc runtime drain-ack
 ```
 
-Then end your turn.
+The fallback ends by draining the session (`gc runtime drain-ack`), not only
+by ending the turn. Gas City moves the deacon onto its next cycle only when
+the wisp it was running is gone, so a fallback that could not rotate the
+patrol wisps would otherwise be the deacon's last turn. A drained deacon is
+restarted, and its startup picks the patrol up again.
 
 ## Context Exhaustion
 
