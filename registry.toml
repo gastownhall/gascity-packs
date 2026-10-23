@@ -117,6 +117,13 @@ schema = 1
     hash = "sha256:5a83996226e3154f29fc1bca13ff0e8b37a1a02cee8f71fb70bddcdcea2e6895"
     description = "Require Gastown polecats to continue claiming formula step beads until final drain."
 
+  [[pack.release]]
+    version = "0.1.11"
+    ref = "release/gastown-0.1.11"
+    commit = "a1b69ead05a8fddbfcded87d9ea188b522c0ba86"
+    hash = "sha256:8886d5ff44cf5f810efecf8c4b2b30778fe2e492aac661d29fe2c57a33f608ab"
+    description = "Maintenance release for Gas City 1.5.x, cut from 0.1.10: the refinery and deacon stop leaking patrol wisps, the deacon dolt-health step treats a missing gc dolt or a skipped report as not applicable, the deacon ends its turn between cycles, and the mayor reports a failed dispatch instead of doing the work itself."
+
 [[pack]]
   name = "cass"
   description = "Coding Agent Session Search prompt fragments and skill overlays for Gas City."
