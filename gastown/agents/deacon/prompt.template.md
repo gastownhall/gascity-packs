@@ -60,9 +60,39 @@ Your formula: `mol-deacon-patrol`
 # Step 2: Nothing? Check mail for attached work
 gc mail inbox
 
-# Step 3: Still nothing? Create patrol wisp (root-only — no child step beads)
-NEW_WISP=$(gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id')
-gc bd update "$NEW_WISP" --assignee="$GC_ALIAS"
+# Step 3: Reconcile your patrol wisps to exactly one; pour one only if none remains.
+# A patrol wisp is an ephemeral mol-deacon-patrol molecule that stays open for
+# its whole life, so look for open AND in_progress roots, and pass
+# --include-infra: gc bd list hides the wisps tier without it. Keep the newest
+# and burn the surplus earlier restarts leaked. A failed query is not "no
+# wisp": stop instead of pouring a duplicate.
+PATROL_WISPS_JSON=$(gc bd list --assignee="$GC_AGENT" --status=open,in_progress --type=molecule --include-infra --limit=0 --json) || {
+  echo "Could not list deacon patrol wisps; not pouring a duplicate."
+  exit 1
+}
+PATROL_WISPS=$(printf '%s' "$PATROL_WISPS_JSON" | jq -r '[.[] | select(.title == "mol-deacon-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | reverse | .[].id') || {
+  echo "Could not read the deacon patrol wisp list; not pouring a duplicate."
+  exit 1
+}
+WISP=$(printf '%s\n' $PATROL_WISPS | sed -n '1p')           # keep the newest
+for EXTRA in $(printf '%s\n' $PATROL_WISPS | sed '1d'); do  # burn the leaked surplus
+  gc bd mol burn "$EXTRA" --force
+done
+if [ -z "$WISP" ]; then
+  # Root-only — no child step beads. Assign with $GC_AGENT, the identity every
+  # patrol-wisp query reads: an assignee no query asks for is a leaked wisp.
+  WISP=$(gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
+  if [ -z "$WISP" ]; then
+    echo "Could not pour a deacon patrol wisp."
+    exit 1
+  fi
+  if ! gc bd update "$WISP" --assignee="$GC_AGENT"; then
+    echo "Could not assign deacon patrol wisp $WISP; burning it so it does not leak."
+    gc bd mol burn "$WISP" --force || true
+    exit 1
+  fi
+fi
+echo "Patrol wisp: $WISP"
 
 # Step 4: Read the formula recipe — these are the steps to execute
 # (Use 'gc bd formula show' for the recipe on disk; 'gc bd mol show' is
@@ -87,34 +117,36 @@ without running `next-iteration` (crash recovery or formula misread).
 If `next-iteration` already ran, do not pour again; run `gc hook`.
 
 ```bash
+# Finish the cycle the way next-iteration does: resolve the wisp you were
+# working FIRST, then pour and assign the successor, then burn that wisp. A
+# patrol wisp stays open for its whole life, so an open wisp is not proof that
+# a successor was queued: it is usually the one you are running. If the list
+# cannot be read, pour nothing; if it reads empty there is no wisp to leak
+# against, so the pour below bootstraps one.
+PATROL_WISPS_JSON=$(gc bd list --assignee="$GC_AGENT" --status=open,in_progress --type=molecule --include-infra --limit=0 --json) || {
+  echo "Could not list deacon patrol wisps; not pouring a successor."
+  exit 1
+}
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(printf '%s' "$PATROL_WISPS_JSON" | jq -r '[.[] | select(.title == "mol-deacon-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty') || {
+    echo "Could not read the deacon patrol wisp list; not pouring a successor."
+    exit 1
+  }
 fi
-ASSIGNED_WISP=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
-if [ -n "$CURRENT_WISP" ] && [ -z "$ASSIGNED_WISP" ]; then
-  NEXT=$(gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
-  if [ -z "$NEXT" ]; then
-    echo "Could not pour next deacon wisp; not burning."
-    exit 1
-  fi
-  if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
-    echo "Could not assign next deacon wisp; not burning."
-    exit 1
-  fi
-  gc bd mol burn "$CURRENT_WISP" --force
-elif [ -n "$CURRENT_WISP" ]; then
-  gc bd mol burn "$CURRENT_WISP" --force
-elif [ -z "$ASSIGNED_WISP" ]; then
-  NEXT=$(gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
-  if [ -z "$NEXT" ]; then
-    echo "Could not bootstrap next deacon wisp."
-    exit 1
-  fi
-  if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
-    echo "Could not assign bootstrap deacon wisp."
-    exit 1
-  fi
+NEXT=$(gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
+if [ -z "$NEXT" ]; then
+  echo "Could not pour next deacon wisp; not burning."
+  exit 1
+fi
+if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
+  echo "Could not assign next deacon wisp; not burning."
+  # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+  gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned deacon wisp $NEXT; burn it by hand."
+  exit 1
+fi
+if [ -n "$CURRENT_WISP" ] && ! gc bd mol burn "$CURRENT_WISP" --force; then
+  echo "Could not burn deacon wisp $CURRENT_WISP; the next startup reconcile removes the surplus."
 fi
 gc hook
 ```
