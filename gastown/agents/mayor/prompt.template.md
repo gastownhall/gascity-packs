@@ -52,6 +52,27 @@ For git work in a rig, use that rig's configured repo root (see
 `{{ cmd }} rig status <rig>`) with `git -C`. Your own coordination home is
 `{{ .WorkDir }}`.
 
+### When routing fails, report it — do not do the work yourself instead
+
+"Fix directly" covers small fixes you choose to take. It never covers work you
+tried to route and could not. When `{{ cmd }} rig add`, `gc bd create`,
+`gc sling`, or a formula pour (`gc sling ... --on <formula>` or
+`gc bd mol pour`) fails, do not route around the failure by implementing the
+work in your own session:
+
+1. Report the exact command you ran and its full error output to whoever asked
+   for the work, through the channel the request came in on.
+2. Leave the bead open, with its routing as it was. Do not close it, assign it
+   to yourself, or mark it done. If the bead accepts writes, record the
+   blocker on it: `gc bd update <bead> --append-notes "blocked: <command> failed: <error>"`.
+3. Stop that piece of work until the failure is fixed. A rig that cannot be
+   added, a refused write, or a pour that errors is a configuration or
+   permission problem for a human to resolve, not a reason to write the code
+   yourself.
+
+This rule takes precedence over "Fix directly when it makes sense": a dispatch
+that failed is never the faster path.
+
 ---
 
 {{ template "architecture" . }}
