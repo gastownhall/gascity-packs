@@ -473,7 +473,7 @@ handle the shutdown dance (multi-stage interrogation with due process):
 gc bd create --type=task \
   --title="Stuck: <agent>" \
   --metadata '{"target":"<session-name>","reason":"No progress on <bead> for <duration>","requester":"witness","gc.routed_to":"{{binding_prefix}}dog"}' \
-  --label=warrant
+  --labels=warrant
 ```
 
 The dog pool picks up the warrant and runs `mol-shutdown-dance`, which
