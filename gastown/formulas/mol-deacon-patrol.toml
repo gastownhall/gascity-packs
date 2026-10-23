@@ -12,7 +12,9 @@ Formula steps are NOT materialized as child beads. Read the step
 descriptions below and work through them in order.
 
 The loop mechanism: every exit path (happy or early) pours the next
-wisp before burning this one. The prompt only bootstraps the first wisp.
+wisp before burning this one, after first resolving this one; it pours
+nothing when it cannot name this wisp. The prompt bootstraps the first wisp
+and, on every startup, reconciles your assigned patrol wisps to exactly one.
 
 ## Deacon Role
 
@@ -423,11 +425,40 @@ gc mail inbox
 ```
 Handle any urgent messages that arrived during patrol. Archive the rest.
 
-**3. Resolve current wisp and pour next iteration BEFORE burning:**
+**3. Resolve current wisp, pour next iteration, then burn this wisp (one script):**
+
+Run this as ONE script. The burn needs the `CURRENT_WISP` this script
+resolves, and a shell that forgot it between two blocks pours a successor and
+burns nothing. Resolve BEFORE pouring, and pour nothing when the current wisp
+cannot be named: a cycle that pours first and only then finds it cannot name
+its own wisp leaks one wisp per cycle. `$GC_BEAD_ID` is not set in a patrol
+session, and a patrol wisp stays `open` for its whole life (assigning it does
+not claim it), so the fallback query covers `open,in_progress` and the wisps
+tier (`--include-infra`), and selects only this formula's ephemeral roots.
+
+Every failure in this script drains (`gc runtime drain-ack`) instead of only
+stopping. Gas City moves an always-on deacon onto its next cycle when the wisp
+it was running is gone; a turn that ends with that wisp still open, or with no
+successor, is the deacon's last. A drained deacon is restarted, and its startup
+reconciles the patrol wisps. That covers a failed burn of this wisp too. An
+empty `GC_AGENT` stops the script first: an empty `--assignee` is no filter,
+so the lookup would match every deacon's patrol wisps.
 ```bash
+# An empty GC_AGENT would assign the successor to nobody and widen the lookup
+# below to every deacon's patrol wisps: an empty --assignee is no filter.
+if [ -z "${GC_AGENT:-}" ]; then
+  echo "GC_AGENT is empty; not resolving, pouring or burning patrol wisps. Draining."
+  gc runtime drain-ack
+  exit 1
+fi
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-deacon-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+fi
+if [ -z "$CURRENT_WISP" ]; then
+  echo "Could not resolve the current deacon wisp; not pouring a successor."
+  gc runtime drain-ack
+  exit 1
 fi
 
 NEXT=$(gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix='{{binding_prefix}}' --json | jq -r '.new_epic_id // empty')
@@ -438,21 +469,22 @@ if [ -z "$NEXT" ]; then
 fi
 if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
   echo "Could not assign next deacon wisp; not burning."
+  # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+  gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned deacon wisp $NEXT; burn it by hand."
+  gc runtime drain-ack
+  exit 1
+fi
+if ! gc bd mol burn "$CURRENT_WISP" --force; then
+  echo "Could not burn deacon wisp $CURRENT_WISP; draining so a restarted deacon reconciles it."
   gc runtime drain-ack
   exit 1
 fi
 ```
 
 **4. Burn this wisp before waiting:**
-```bash
-if [ -n "$CURRENT_WISP" ]; then
-  gc bd mol burn "$CURRENT_WISP" --force
-else
-  echo "Could not resolve current deacon wisp; not burning."
-  gc runtime drain-ack
-  exit 1
-fi
-```
+
+Step 3's script already burned it: the burn lives in that script because it
+needs the `CURRENT_WISP` the script resolved.
 
 Do not sleep with the current wisp still open. The backoff belongs to the
 already-assigned successor wisp; if the session restarts during the sleep, the
