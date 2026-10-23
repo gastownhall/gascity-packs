@@ -1213,22 +1213,29 @@ is already assigned — the new session resumes from context.
 **2. Pour next iteration BEFORE burning (reconcile to exactly one):**
 
 Reuse an already-queued wisp instead of pouring a duplicate. A prior cycle
-may have poured a next wisp without burning, or a restart may have raced —
-keep one open patrol wisp and burn any surplus, so wisps never accumulate.
-Wisp roots are `issue_type=molecule` (never `--type=wisp`, which is not a
-valid gc bd type and matches nothing). They are also ephemeral, so they live
-in the wisps tier that `gc bd list` hides without `--include-infra` — drop that
-flag and this query returns `[]` even when a wisp is already queued.
+may have poured a next wisp without burning it. List patrol wisps with
+`--include-infra` (ephemeral wisps are hidden without it). Do not filter by
+assignee: a restart between the pour and the assign leaves an UNASSIGNED wisp
+that an assignee filter never sees, so it is orphaned and every iteration
+pours another. Exclude this wisp: step 3 burns it, so matching it as NEXT
+would leave no next wisp. Only the last 48 h are considered and at most 3 are
+burned per iteration: older leftovers belong to a deliberate bulk cleanup, not
+to a patrol turn. Keep the newest. Wisp roots are `issue_type=molecule`.
 ```bash
-OPEN_WISPS=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --include-infra --limit=0 --json | jq -r '.[].id')
+THIS="<this-wisp-id>"
+OPEN_WISPS=$(gc bd list --status=open --type=molecule --include-infra --limit=0 --json \
+  | jq -r --arg this "$THIS" --argjson cutoff "$(( $(date +%s) - 172800 ))" \
+    '[.[] | select(.title == "mol-witness-patrol" and .id != $this)
+       | select((try (.created_at | fromdateiso8601) catch 0) >= $cutoff)]
+     | sort_by(.created_at) | reverse | .[].id')
 NEXT=$(printf '%s\n' $OPEN_WISPS | sed -n '1p')
-for extra in $(printf '%s\n' $OPEN_WISPS | sed '1d'); do
+for extra in $(printf '%s\n' $OPEN_WISPS | sed '1d' | head -n 3); do
   gc bd mol burn "$extra" --force
 done
 if [ -z "$NEXT" ]; then
   NEXT=$(gc bd mol wisp mol-witness-patrol --root-only --var binding_prefix='{{binding_prefix}}' --json | jq -r '.new_epic_id')
-  gc bd update "$NEXT" --assignee="$GC_AGENT"
 fi
+gc bd update "$NEXT" --assignee="$GC_AGENT"
 ```
 
 **3. Burn this wisp:**
