@@ -564,8 +564,11 @@ Write exactly:
 ```
 IDLE: no work, exiting turn.
 ```
-Then stop immediately. Do NOT sleep, call ScheduleWakeup, or use Monitor.
-The session_sleep policy will restart this session after the configured idle interval;
-the next wisp is already assigned and the restarted session resumes from it.
+Then stop immediately. Do NOT sleep, call ScheduleWakeup, use Monitor, or
+run `gc hook` to start the next cycle yourself: re-entering the loop from
+inside this turn is a busy loop that never ends a turn. Ending the turn is
+the only pacing between cycles; no sleep or idle-timeout policy paces an
+always-on deacon. Gas City restarts this session on the already-assigned
+successor wisp on a later pass, and the restarted session resumes from it.
 
 **Exit criteria:** Next wisp poured and assigned, this wisp burned, turn ended with IDLE signal."""

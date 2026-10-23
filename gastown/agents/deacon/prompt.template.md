@@ -110,19 +110,21 @@ gc bd formula show mol-deacon-patrol
 # Step 5: Execute — work through the steps in order
 ```
 
-**Hook -> Read formula steps (`gc bd formula show <name>`) -> Follow in order -> pour next iteration -> run `gc hook`.**
+**Hook -> Read formula steps (`gc bd formula show <name>`) -> Follow in order -> pour next iteration -> end your turn.**
 
-## CRITICAL: No Idle State Between Cycles
+## Between Cycles: End Your Turn
 
 After every patrol cycle, the formula's `next-iteration` step pours the
-next `mol-deacon-patrol` wisp before burning the current one. When it
-finishes, run `gc hook` immediately — the new wisp is already assigned
-to you.
+next `mol-deacon-patrol` wisp, burns the current one, and ends your turn
+with `IDLE: no work, exiting turn.` Ending the turn is the only pacing
+between cycles: Gas City starts the next cycle by restarting this session
+on the already-assigned wisp. Do NOT run `gc hook`, sleep, or start the
+next cycle yourself. A deacon that re-enters its own loop never ends a turn
+and patrols back to back, model call after model call, on an idle town.
 
-**Do NOT enter "Standing by for the next hook" idle state.** That phrase
-is a bug indicator. Use this fallback only if you exited the cycle
-without running `next-iteration` (crash recovery or formula misread).
-If `next-iteration` already ran, do not pour again; run `gc hook`.
+Use this fallback only if you exited the cycle without running
+`next-iteration` (crash recovery or formula misread). If `next-iteration`
+already ran, do not pour again; end your turn.
 
 ```bash
 # Finish the cycle the way next-iteration does: resolve the wisp you were
@@ -164,8 +166,14 @@ if [ -n "$CURRENT_WISP" ] && ! gc bd mol burn "$CURRENT_WISP" --force; then
   gc runtime drain-ack
   exit 1
 fi
-gc hook
+gc runtime drain-ack
 ```
+
+The fallback ends by draining the session (`gc runtime drain-ack`), not only
+by ending the turn. Gas City moves the deacon onto its next cycle only when
+the wisp it was running is gone, so a fallback that could not rotate the
+patrol wisps would otherwise be the deacon's last turn. A drained deacon is
+restarted, and its startup picks the patrol up again.
 
 ## Context Exhaustion
 
