@@ -24,10 +24,11 @@ handoff — branch-shape gate, push + push-verify, metadata, refinery
 reassignment, wake/nudge, and drain. **Run that step.**
 
 **Do NOT run submit-and-exit twice** — running the done sequence twice is a bug.
-Do not trust memory for this; check mechanically. Derive the work bead from your
-convoy exactly as the formula's workspace-setup step does — never pass a bare or
-guessed id to `bd`, which fuzzy-matches and can reassign the wrong bead.
-`$GC_BEAD_ID` is the convoy the molecule was poured on. If a clean read shows
+Do not trust memory for this; check mechanically. Read the work bead back from this
+session's claim stamp with `gc hook current --id-only` (an exact id — never pass
+a bare or guessed id to `bd`, which fuzzy-matches and can reassign the wrong
+bead). `$GC_BEAD_ID`, the convoy the molecule was poured on, is never set in a
+session shell, so the convoy derivation is only a fallback for when it is. If a clean read shows
 the work bead is no longer `in_progress` for this session, submit-and-exit
 already reassigned it — drain and exit. Otherwise run it:
 
@@ -45,8 +46,11 @@ READ_OK=0
 READ_TRY=0
 while [ "$READ_TRY" -lt 3 ]; do
   READ_TRY=$((READ_TRY + 1))
-  CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json 2>/dev/null)
-  WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end' 2>/dev/null)
+  WORK_BEAD_ID=$(gc hook current --id-only 2>/dev/null)
+  if [ -z "$WORK_BEAD_ID" ] && [ -n "${GC_BEAD_ID:-}" ]; then
+    CONVOY_STATUS=$(gc convoy status "$GC_BEAD_ID" --json 2>/dev/null)
+    WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end' 2>/dev/null)
+  fi
   if [ -n "$WORK_BEAD_ID" ]; then
     WORK_JSON=$(gc bd show "$WORK_BEAD_ID" --json 2>/dev/null)
     SHOW_CODE=$?
