@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import io
 import pathlib
 import socket
@@ -1864,6 +1865,152 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertEqual(participant["session_name"], "s-gc-old")
         self.assertEqual(participant["delivery_selector"], "s-gc-old")
 
+    def _save_two_seat_launch(self, launch_id: str, root_message_id: str) -> None:
+        # Two dot-suffix-related seats in one launch. The pack-qualified
+        # alias "corp/widget.emma" matches BOTH participants: "corp/emma" by
+        # stripping one leading segment, and "corp/widget.emma" exactly.
+        common.save_room_launch(
+            {
+                "launch_id": launch_id,
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": root_message_id,
+                "thread_id": "333",
+                "participants": {
+                    "corp/emma": {
+                        "qualified_handle": "corp/emma",
+                        "session_alias": "corp/emma",
+                        "session_name": "s-emma-live",
+                        "session_id": "gc-emma-live",
+                        "delivery_selector": "s-emma-live",
+                    },
+                    "corp/widget.emma": {
+                        "qualified_handle": "corp/widget.emma",
+                        "session_alias": "corp/widget.emma",
+                        "session_name": "s-widget-stale",
+                        "session_id": "gc-widget-stale",
+                        "delivery_selector": "s-widget-stale",
+                    },
+                },
+            }
+        )
+
+    def test_publish_binding_message_repin_prefers_exact_participant_over_prefixed(self) -> None:
+        # Regression: the re-pin used to take the first tail-matching
+        # participant in record order, and records round-trip through
+        # sort_keys=True, so "corp/emma" sorted ahead of the seat that was
+        # actually publishing and won. That got all three outcomes wrong at
+        # once -- misattributed source, the live sibling's entry hijacked
+        # (its later deliveries redirected to the publisher), and the stale
+        # seat left unrepaired. Exact matches must beat prefixed ones.
+        self._save_two_seat_launch("room-launch:orig-16", "orig-16")
+
+        payload = self._publish_as_session(
+            "room-launch:orig-16", "corp/widget.emma", "msg-launch-16"
+        )
+
+        self.assertEqual(payload["record"]["source_qualified_handle"], "corp/widget.emma")
+        launch = common.load_room_launch("room-launch:orig-16")
+        assert launch is not None
+        repinned = launch["participants"]["corp/widget.emma"]
+        self.assertEqual(repinned["session_id"], "gc-new")
+        self.assertEqual(repinned["session_name"], "pub--sky")
+        sibling = launch["participants"]["corp/emma"]
+        self.assertEqual(sibling["session_id"], "gc-emma-live")
+        self.assertEqual(sibling["session_name"], "s-emma-live")
+        self.assertEqual(sibling["delivery_selector"], "s-emma-live")
+
+    def test_publish_binding_message_skips_repin_when_participants_are_ambiguous(self) -> None:
+        # Fail-safe arm: a re-pin mutates persisted routing state, so when
+        # the winning tier holds more than one candidate the publish must
+        # leave the record alone rather than guess. Each tier admits exactly
+        # one normalized key, so the only way to collide is participant keys
+        # that differ by case -- which is precisely why this is a guard and
+        # not an unreachable branch.
+        common.save_room_launch(
+            {
+                "launch_id": "room-launch:orig-17",
+                "launcher_id": "launch-room:22",
+                "guild_id": "1",
+                "conversation_id": "22",
+                "root_message_id": "orig-17",
+                "thread_id": "333",
+                "participants": {
+                    "corp/Emma": {
+                        "qualified_handle": "corp/Emma",
+                        "session_alias": "corp/Emma",
+                        "session_name": "s-emma-upper",
+                        "session_id": "gc-emma-upper",
+                        "delivery_selector": "s-emma-upper",
+                    },
+                    "corp/emma": {
+                        "qualified_handle": "corp/emma",
+                        "session_alias": "corp/emma",
+                        "session_name": "s-emma-lower",
+                        "session_id": "gc-emma-lower",
+                        "delivery_selector": "s-emma-lower",
+                    },
+                },
+            }
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()) as captured:
+            payload = self._publish_as_session(
+                "room-launch:orig-17", "corp/widget.emma", "msg-launch-17"
+            )
+
+        self.assertEqual(payload["record"]["source_qualified_handle"], "")
+        # The skip is only actionable if the log says which alias collided,
+        # which seats it hit, and which tier -- an operator reading "skipped"
+        # alone cannot tell a de-duplicable participant table from a bug.
+        logged = captured.getvalue()
+        self.assertIn("re-pin skipped", logged)
+        self.assertIn("corp/widget.emma", logged)
+        self.assertIn("corp/Emma", logged)
+        self.assertIn("corp/emma", logged)
+        self.assertIn("prefixed tier", logged)
+        launch = common.load_room_launch("room-launch:orig-17")
+        assert launch is not None
+        self.assertEqual(launch["participants"]["corp/Emma"]["session_id"], "gc-emma-upper")
+        self.assertEqual(launch["participants"]["corp/emma"]["session_id"], "gc-emma-lower")
+
+    def test_participant_handle_for_alias_resolves_the_hijack_table(self) -> None:
+        # The four dot-suffix-related shapes the first-match-wins loop got
+        # right only by alphabetical luck. Two of them (zulu.alpha,
+        # widget.emma) hijacked the sibling before exact-beats-prefixed.
+        def launch_with(handles: list[str]) -> dict[str, object]:
+            return {"participants": {h: {"qualified_handle": h} for h in handles}}
+
+        cases = [
+            ("corp/gasburger.mayor", ["corp/gasburger.mayor", "corp/mayor"], "corp/gasburger.mayor"),
+            ("corp/pack.sky", ["corp/pack.sky", "corp/sky"], "corp/pack.sky"),
+            ("corp/zulu.alpha", ["corp/alpha", "corp/zulu.alpha"], "corp/zulu.alpha"),
+            ("corp/widget.emma", ["corp/emma", "corp/widget.emma"], "corp/widget.emma"),
+        ]
+        for alias, handles, expected in cases:
+            with self.subTest(alias=alias):
+                self.assertEqual(
+                    common._participant_handle_for_alias(launch_with(handles), alias), expected
+                )
+
+        # Single-participant launches still re-pin through the prefixed tier,
+        # and the scope guards still refuse.
+        self.assertEqual(
+            common._participant_handle_for_alias(launch_with(["corp/sky"]), "corp/pack.sky"),
+            "corp/sky",
+        )
+        self.assertEqual(
+            common._participant_handle_for_alias(launch_with(["daytripper/sky"]), "docbook/pack.sky"),
+            "",
+        )
+        # And the F1 misroute is closed on this path too: two leading
+        # segments no longer reach a one-segment participant.
+        self.assertEqual(
+            common._participant_handle_for_alias(launch_with(["corp/sky"]), "corp/gasburger.zeta.sky"),
+            "",
+        )
+
     def test_publish_binding_message_does_not_record_non_thread_launch_publish_target(self) -> None:
         common.set_chat_binding(common.load_config(), "room", "22", ["corp--sky"], guild_id="1")
         binding = common.resolve_chat_binding(common.load_config(), "room:22")
@@ -2453,6 +2600,66 @@ class DiscordIntakeCommonTests(unittest.TestCase):
         self.assertFalse(common._alias_matches_qualified_handle("employees.emmalou", "emma"))
         self.assertFalse(common._alias_matches_qualified_handle("", "emma"))
         self.assertFalse(common._alias_matches_qualified_handle("employees.emma", ""))
+
+    def test_alias_matches_qualified_handle_strips_exactly_one_segment(self) -> None:
+        # The platform prepends exactly one pack-namespace segment, so only
+        # one may be stripped. A rule that accepted any ".<tail>" suffix let
+        # "corp/gasburger.zeta.sky" answer to @@corp/sky -- a different seat
+        # entirely, addressed silently.
+        self.assertTrue(common._alias_matches_qualified_handle("corp/gasburger.sky", "corp/sky"))
+        self.assertFalse(
+            common._alias_matches_qualified_handle("corp/gasburger.zeta.sky", "corp/sky")
+        )
+        self.assertTrue(
+            common._alias_matches_qualified_handle("corp/gasburger.zeta.sky", "corp/zeta.sky")
+        )
+        # Bare (city-scope) aliases follow the same one-segment rule.
+        self.assertTrue(common._alias_matches_qualified_handle("employees.sky", "sky"))
+        self.assertFalse(common._alias_matches_qualified_handle("employees.zeta.sky", "sky"))
+
+    def test_alias_match_specificity_ranks_exact_above_prefixed(self) -> None:
+        # The rank is what lets the publish-side re-pin break a tie; a bare
+        # boolean cannot, which is how the sibling-hijack got in.
+        self.assertEqual(
+            common._alias_match_specificity("corp/sky", "corp/sky"), common._ALIAS_MATCH_EXACT
+        )
+        self.assertEqual(
+            common._alias_match_specificity("corp/pack.sky", "corp/sky"),
+            common._ALIAS_MATCH_PREFIXED,
+        )
+        self.assertEqual(
+            common._alias_match_specificity("corp/pack.zeta.sky", "corp/sky"),
+            common._ALIAS_MATCH_NONE,
+        )
+        self.assertGreater(common._ALIAS_MATCH_EXACT, common._ALIAS_MATCH_PREFIXED)
+        self.assertGreater(common._ALIAS_MATCH_PREFIXED, common._ALIAS_MATCH_NONE)
+
+    def test_resolve_existing_session_prefers_the_named_seat_over_a_dot_suffix_decoy(self) -> None:
+        # Regression: two dot-suffix-related seats, and the intended one is
+        # asleep -- the normal state of an unengaged seat. The old tail rule
+        # matched both, and _session_record_preference ranks by routability,
+        # not by match specificity, so the decoy's "active" state won and
+        # @@corp/sky was delivered to gc-zeta with no receipt anomaly.
+        sessions = [
+            {"id": "gc-sky", "alias": "corp/gasburger.sky",
+             "session_name": "s-gc-sky", "state": "asleep", "running": False},
+            {"id": "gc-zeta", "alias": "corp/gasburger.zeta.sky",
+             "session_name": "s-gc-zeta", "state": "active", "running": True},
+        ]
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions):
+            identity = common.resolve_existing_session_for_handle("corp/sky")
+        self.assertEqual(identity["session_id"], "gc-sky")
+
+        # Control: the decoy is still reachable at its own qualified handle.
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions):
+            identity = common.resolve_existing_session_for_handle("corp/zeta.sky")
+        self.assertEqual(identity["session_id"], "gc-zeta")
+
+        # Control: with the intended seat absent, the decoy must NOT stand in
+        # for it -- the strict rule fails closed (spawn) rather than open.
+        with mock.patch.object(common, "list_city_sessions", return_value=sessions[1:]):
+            identity = common.resolve_existing_session_for_handle("corp/sky")
+        self.assertEqual(identity, {})
 
     def test_room_launch_poll_timeout_defaults_are_unchanged(self) -> None:
         # The injectable seam exists so tests do not pay the deadline;
