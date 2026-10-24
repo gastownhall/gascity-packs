@@ -41,6 +41,13 @@ schema = 1
     hash = "sha256:149772065f9f2862965146e74d853d17e432628f57d25a4386bbef0fb6744e33"
     description = "Release graph.v2 review/build prompt fixes validated by gascity RC gates."
 
+  [[pack.release]]
+    version = "0.1.7"
+    ref = "main"
+    commit = "53125209611934ab8e4385d87d03e66ede3b18a0"
+    hash = "sha256:d0e551689faf406c4d616413ba6800f23d030e9cbe6604fcf8ac68a2987e1e6e"
+    description = "Release the gascity pack changes merged since 0.1.6 (check-gate stderr surfacing #255, review verdict by owner #376, intake-lane role agents #381) in lockstep with gastown 0.1.11 so gc's bundled pins can advance together."
+
 [[pack]]
   name = "gastown"
   description = "Default Gas Town coding workflow pack."
@@ -116,6 +123,13 @@ schema = 1
     commit = "33d3a430a67d1782ad364556cb566bdb01d0afe3"
     hash = "sha256:5a83996226e3154f29fc1bca13ff0e8b37a1a02cee8f71fb70bddcdcea2e6895"
     description = "Require Gastown polecats to continue claiming formula step beads until final drain."
+
+  [[pack.release]]
+    version = "0.1.11"
+    ref = "main"
+    commit = "53125209611934ab8e4385d87d03e66ede3b18a0"
+    hash = "sha256:e937f65f205d99ae44e63e39eea9548c25be73b7c229554056d66e62f4f06f80"
+    description = "Bound and single-flight status-line.sh store queries (#207); polecat protocol hardening (#185, #273, #290, #291); witness heartbeat and crashed-handoff recovery (#237, #243, #322); boot patrol loop (#261); refinery and Dolt-endpoint fixes merged since 0.1.10."
 
 [[pack]]
   name = "cass"
