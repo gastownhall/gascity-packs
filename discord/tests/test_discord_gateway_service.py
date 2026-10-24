@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import ssl
 import struct
 import tempfile
 import threading
@@ -3916,6 +3917,29 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         self.assertIn("v=10", url)
         self.assertIn("encoding=json", url)
         self.assertNotIn("compress=", url)
+
+    def test_gateway_websocket_wss_requires_tls_1_2_or_newer(self) -> None:
+        contexts: list[ssl.SSLContext] = []
+        real_create_default_context = ssl.create_default_context
+
+        def capture_context(*args: object, **kwargs: object) -> ssl.SSLContext:
+            context = real_create_default_context(*args, **kwargs)
+            contexts.append(context)
+            return context
+
+        class HandshakeStopped(Exception):
+            pass
+
+        with (
+            mock.patch.object(gateway_service.socket, "create_connection", return_value=mock.Mock()),
+            mock.patch.object(gateway_service.ssl, "create_default_context", side_effect=capture_context),
+            mock.patch.object(ssl.SSLContext, "wrap_socket", side_effect=HandshakeStopped),
+        ):
+            with self.assertRaises(HandshakeStopped):
+                gateway_service.GatewayWebSocket("wss://gateway.discord.gg/?v=10&encoding=json")
+
+        self.assertEqual(len(contexts), 1)
+        self.assertGreaterEqual(contexts[0].minimum_version, ssl.TLSVersion.TLSv1_2)
 
     def test_probe_gc_api_health_caches_recent_result(self) -> None:
         runtime_state = gateway_service.GatewayRuntimeState()
