@@ -412,7 +412,7 @@ def test_supported_pack_nightly_workflow_uses_manifold_shape_and_pack_matrix() -
     assert "runs-on: blacksmith-32vcpu-ubuntu-2404" in workflow
     assert "GATE_TIMEOUT: ${{ github.event.inputs.timeout || matrix.gate_timeout }}" in workflow
     assert '--timeout "$GATE_TIMEOUT"' in workflow
-    assert 'DOLT_VERSION: "2.1.7"' in workflow
+    assert 'DOLT_VERSION: "2.6.0"' in workflow
     assert "BD_VERSION" not in workflow
     assert 'go-version: "1.26.10"' in workflow
     assert "ANTHROPIC_BASE_URL: https://works.gascity.com/manifold-api" in workflow
@@ -464,7 +464,7 @@ def test_dispatch_inference_workflow_is_manual_or_external_only() -> None:
     assert "\n  pull_request:" not in workflow
     assert "\n  push:" not in workflow
     assert "runs-on: blacksmith-32vcpu-ubuntu-2404" in workflow
-    assert 'DOLT_VERSION: "2.1.7"' in workflow
+    assert 'DOLT_VERSION: "2.6.0"' in workflow
     assert "BD_VERSION" not in workflow
     assert 'go-version: "1.26.10"' in workflow
     assert "include-hidden-files: true" in workflow

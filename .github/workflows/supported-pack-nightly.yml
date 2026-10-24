@@ -50,7 +50,7 @@ permissions:
   contents: read
 
 env:
-  DOLT_VERSION: "2.1.7"
+  DOLT_VERSION: "2.6.0"
   CLAUDE_VERSION: "2.1.283"
 
 jobs:

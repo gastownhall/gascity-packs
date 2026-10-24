@@ -54,7 +54,7 @@ permissions:
   contents: read
 
 env:
-  DOLT_VERSION: "2.1.7"
+  DOLT_VERSION: "2.6.0"
   CLAUDE_VERSION: "2.1.283"
   # Claude Code appends /v1/messages itself, so this base URL intentionally
   # does not end in /v1.
