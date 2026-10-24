@@ -1,0 +1,303 @@
+{
+  "version": 1,
+  "design": "https://github.com/gastownhall/gascity-packs/issues/209",
+  "scope": "Observable contracts and implementation ownership. Contract-tested reports only this foundation; no native worker acceptance is claimed.",
+  "scenarios": [
+    {
+      "scenario": 1,
+      "name": "Strict CLI and JSON shape",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/512",
+        "component": "Record access / workspace adapter"
+      },
+      "oracle": "Invalid flags, duplicate keys, missing fields and unknown versions return nonzero without any record or Git write. JSON record validation is tested here; workspace CLI is pending.",
+      "status": "implementation-required",
+      "contract_tests": [
+        "gascity/tests/test_workspace_records.py"
+      ]
+    },
+    {
+      "scenario": 2,
+      "name": "Immutable run base",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/512",
+        "component": "Run capture"
+      },
+      "oracle": "Capture the configured commit from registered rig scope, move caller HEAD, and prove the same run still resolves the captured base. Conflicting replay leaves its record unchanged.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 3,
+      "name": "Explicit ordered source plan",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/512",
+        "component": "Source-plan declaration / integration expansion"
+      },
+      "oracle": "Accept one explicit acyclic ordered graph and refuse missing edges, duplicate members, cycles, unreachable terminal and implicit fan-in. Shape/count constraints are tested here; graph traversal is pending.",
+      "status": "implementation-required",
+      "contract_tests": [
+        "gascity/tests/test_workspace_records.py"
+      ]
+    },
+    {
+      "scenario": 4,
+      "name": "Layout and unrelated caller CWD",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/513",
+        "component": "Workspace adapter / native mode and placement"
+      },
+      "oracle": "In ordinary, bare-root and bare-.git fixtures, prepare each permitted parent layout from an unrelated CWD. Verify exact common Git dir, owner, physical record, native attempt and input; refuse foreign checkout ancestors.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 5,
+      "name": "Isolated accepted outputs",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/514",
+        "component": "do-work accepted-output handoff"
+      },
+      "oracle": "Two members start at one captured base in distinct owned workspaces; project checks and independent review bind their exact outputs. Completion alone and unrelated commits cannot supply accepted output.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 6,
+      "name": "Dependent exact input",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/514",
+        "component": "Dependent readiness / do-work entry"
+      },
+      "oracle": "Keep the dependent blocked until the predecessor has an accepted output; then launch at that exact OID. Refuse default-branch input, premature close/readiness and a semantically reverted prerequisite.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 7,
+      "name": "Shared-chain checkpoints",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/515",
+        "component": "Shared owner / concrete final source step"
+      },
+      "oracle": "Use one stable owner and provisioning attempt through ordered members, with changed and no-change results. Each exact accepted result advances once; stale member/retry cannot advance or rewrite it.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 8,
+      "name": "Ordered integration",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/516",
+        "component": "Integration expansion and accepted output"
+      },
+      "oracle": "Integrate explicit predecessor outputs in recorded order; preserve both independent A/B behaviors and record one tested/reviewed output. Refuse missing, reordered or unaccepted inputs.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 9,
+      "name": "Preserved conflict recovery",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/516",
+        "component": "Integration blocker / recovery"
+      },
+      "oracle": "Induce a real merge conflict, retain files and operation state, emit an open blocker, and let explicit recovery record a matching decision before result. Unknown state receives no repair or result.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 10,
+      "name": "Known partial replay",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/513",
+        "component": "Workspace recovery / shared and canonical writers"
+      },
+      "oracle": "Fault between member result and owner advance, owner output and canonical pointer, and resolved blocker and phase restore. Exact retry fills only missing state; conflicting state remains unchanged.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 11,
+      "name": "Unknown state refusal",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/513",
+        "component": "Workspace verifier / native fencing"
+      },
+      "oracle": "Wrong path, repository registration, owner, attempt, OID, active member, dirty state, mode or Git operation yields a blocker and preserves existing work. Native ancestry and exact member input are checked separately.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 12,
+      "name": "Canonical terminal binding",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/517",
+        "component": "Canonical writer"
+      },
+      "oracle": "Bind only the source plan terminal accepted output, member-result digest and exact summary digest. Reject a different OID, nonterminal owner, changed summary or conflicting pointer.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 13,
+      "name": "Exact review and fix invalidation",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/517",
+        "component": "Canonical review / fix generation"
+      },
+      "oracle": "Review detached exact canonical source with before/after HEAD and dirty-state checks. A fix generation consumes reviewed OID, preserves evidence and invalidates old approval; self-review does not authorize output.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 14,
+      "name": "Source-bound publication",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/517",
+        "component": "Publish intent and reconciliation"
+      },
+      "oracle": "Authorized publication consumes the exact approved OID and hashes. Stale/different source refuses effects; lost remote response becomes uncertain until observed remote OID is reconciled.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 15,
+      "name": "Exact continuations",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/518",
+        "component": "Continuation entry / pool resume"
+      },
+      "oracle": "Resume convoy, decomposition, plan, requirements, review, fix and publish from existing root/generation/records and artifact digests. Never recapture ambient base; missing legacy identity blocks with migration evidence.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 16,
+      "name": "Native end-to-end paths",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/519",
+        "component": "Base qualification and methodology adoption"
+      },
+      "oracle": "Run separate, dependent, shared, fanout/fanin, review-fix, publish and restart paths on one pinned core/pack/fixture tuple with actual native workers. Assert prerequisite behavior survives downstream output and record every acceptance result.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 17,
+      "name": "Public layout propagation",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/519",
+        "component": "Public entrypoints / workspace adapter"
+      },
+      "oracle": "Pass nondefault layout variables through every public build, implementation and continuation entrypoint; compare recorded/native layout from unrelated CWD and immutable run rig root despite mutable gc.work_dir.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 18,
+      "name": "Closed current source manifest",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/512",
+        "component": "Records and affected-source discovery"
+      },
+      "oracle": "Discover all formulas and workflow assets in the five packs, match explicit classifications and content hashes, and verify concrete final-source steps plus direct delegation bindings. Unlisted or changed paths fail the contract tests.",
+      "status": "contract-tested",
+      "contract_tests": [
+        "gascity/tests/test_workspace_records.py::WorkspaceSurfaceTests"
+      ]
+    },
+    {
+      "scenario": 19,
+      "name": "Legacy migration and refusal",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/519",
+        "component": "Mode selection / Stage A migration"
+      },
+      "oracle": "Separate cases: an explicit legacy run completes entirely in legacy mode, and an unclassified shadowed asset refuses with migration evidence. Mixed lifecycle paths and implicit adoption earn no success.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 20,
+      "name": "Dedicated-record concurrency",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/512",
+        "component": "Backend characterization / record access"
+      },
+      "oracle": "Use a nondispatched dedicated record that runtime does not update. Race cooperating distinct-key writes with deterministic barriers and real-store stress, with/without the owner lock; bind backend and conditional-write capabilities. Isolation/filter proof is separate from a bead type.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 21,
+      "name": "Scoped lock contention",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/512",
+        "component": "Record access / native bounded lock"
+      },
+      "oracle": "Race independent root/generation/owner scopes and common-Git registration; prove isolated owner progress, fixed owner-before-root ordering, no deadlock and a bounded lock-timeout blocker. Process timeout is unknown completion.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 22,
+      "name": "Exact writer and filesystem admission",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/512",
+        "component": "Attempt ownership / workspace preflight"
+      },
+      "oracle": "Read back native claim and bind exact writer step/attempt, root/generation/stable owner and active member. Refuse absent/stale bindings, assignee-only evidence and unsupported filesystem locks; demonstrate dedicated records cannot be dispatched.",
+      "status": "implementation-required"
+    },
+    {
+      "scenario": 23,
+      "name": "Malformed and stale record refusal",
+      "implementation_owner": {
+        "workstream": "https://github.com/gastownhall/gascity-packs/issues/512",
+        "component": "Record access / restart validation"
+      },
+      "oracle": "Every kind refuses missing required fields, unknown versions, duplicate keys and conflicting root/generation replay. Record validation is tested here; runtime resume must preserve state and emit the corresponding blocker.",
+      "status": "implementation-required",
+      "contract_tests": [
+        "gascity/tests/test_workspace_records.py"
+      ]
+    }
+  ],
+  "rfc_differences": [
+    {
+      "reason": "RFC logical identities and lock filenames can collide when an owner/source anchor is reused by another run or generation.",
+      "contract": "Every logical identity includes workflow_root_id and generation. Owner lock scope is (common_git_dir, workflow_root_id, generation, workspace_owner_id); root lock scope includes root/generation. Version is validated before lookup."
+    },
+    {
+      "reason": "RFC dotted physical record names are a naming proposal, not a required storage capability.",
+      "contract": "Native-generated physical Beads IDs are returned by explicit kind/full-identity lookup. Missing or multiple references refuse; no record ID is synthesized from owner names."
+    },
+    {
+      "reason": "Assignment does not prove a current native claim, and the current writer is not the stable workspace owner or native provisioning attempt.",
+      "contract": "Claim binding includes exact writer_step_id and writer_attempt_id with root/generation/owner. Writers must read back current claim/ownership under the selected lock; assignee alone never authorizes a write."
+    },
+    {
+      "reason": "A dedicated milestone or task type is not intrinsically excluded from native ready/dispatch selection.",
+      "contract": "Lifecycle record storage must prove a nondispatch status/configuration/filter and exclusion from runtime metadata writers. Backend qualification owns that fixture; schemas alone supply no dispatch isolation."
+    },
+    {
+      "reason": "Current native launch reconstructs managed ownership from the invoking work bead; literal detached worktrees and default nested placement also need shared native support.",
+      "contract": "Stable workspace owner and physical workspace record stay separate from invoking step. Native provenance is opaque and immutable for its provisioning attempt. work_branch may be null to represent detached mode; launch/mode/placement support is a separate bounded native extension."
+    },
+    {
+      "reason": "Shared members advance source input while native provisioning base describes the initial workspace creation.",
+      "contract": "Never rewrite native base_ref/base_sha per checkpoint. Member input/current/output OIDs own progression; native_attempt_id and writer_attempt_id remain distinct."
+    },
+    {
+      "reason": "RFC blanket no-CAS and whole-column-loss claims describe older implementations and cannot qualify a selected current backend.",
+      "contract": "Record schemas remain backend-independent. Selected store/binary must prove conditional-write, patch, claim and isolation capabilities before runtime adoption; unsupported external CAS fails closed."
+    },
+    {
+      "reason": "Current do-work preparation resolves/fetches the remote default rather than only reading ambient HEAD, and newer drain-wrapper source-anchor resolution exists.",
+      "contract": "Migration captures a configured/default commit once from registered rig scope, replaces caller-CWD placement, and preserves current root-stamped and synthetic-wrapper source-anchor handling."
+    },
+    {
+      "reason": "Current gstack-work reads source-anchor work_dir and explicitly commits; gstack-work-item has its own concrete implement-item override.",
+      "contract": "Both gstack leaf assets require path and final-result migration. The manifest binds the concrete implement/implement-item assets rather than declaring no path migration or relying only on inheritance."
+    },
+    {
+      "reason": "Current BMAD implement-story and apply-story-findings already resolve root-stamped/synthetic source anchors and commit changes.",
+      "contract": "Preserve that resolution and checkpoint after the story loop final possible source edit, apply-story-findings. Superpowers checkpoints at record-item-result after its review/fix expansion."
+    },
+    {
+      "reason": "Base, Compound and gstack shared-item assets have no explicit focused commit-creation instruction.",
+      "contract": "Their concrete final source step is recorded with missing-explicit-commit. Migration must supply its accepted output/checkpoint contract; this foundation does not claim an existing commit guarantee."
+    },
+    {
+      "reason": "The closed inventory includes planning and artifact-only assets beyond the RFC migration surface.",
+      "contract": "reference marks explicitly inventoried non-lifecycle surfaces; legacy marks current lifecycle responsibilities. Missing or changed inventory entries fail. Classification is source discovery, not launch admission or migration completion."
+    },
+    {
+      "reason": "RFC member completion fields alone do not bind project acceptance to exact source.",
+      "contract": "Accepted member output carries exact-OID project checks and an independent review report plus artifact hashes. Structural validation cannot verify Git ancestry, artifact bytes, reviewer identity or actual acceptance execution."
+    }
+  ]
+}
