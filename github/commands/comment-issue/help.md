@@ -1,5 +1,9 @@
 Post an issue comment using the workspace-owned GitHub App installation.
 
+Every posted body starts with the universal factory marker line
+`<!-- gc-agent:v1 -->` (added automatically when missing), so analytics can
+classify the comment as automation.
+
 Example:
   gc github comment-issue owner/repo 42 \
     --installation-id 123456 \
