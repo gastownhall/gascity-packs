@@ -28,6 +28,7 @@ var dispatchDroppedTotal atomic.Uint64
 func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, "ok\ndispatch_dropped_total=%d\n", dispatchDroppedTotal.Load())
+	_, _ = io.WriteString(w, socketModeHealthzDetail())
 	if gw := companyHealthStatus.Load(); gw != nil {
 		_, _ = io.WriteString(w, gw.healthzDetail())
 	}
