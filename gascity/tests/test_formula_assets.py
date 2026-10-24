@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 import tomllib
@@ -4447,6 +4448,7 @@ description = "Override sink that writes the base triage report contract."
         extra_env: dict[str, str] | None = None,
         script_root: pathlib.Path | None = None,
         script: pathlib.Path | None = None,
+        deps_by_id: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess:
         root = pathlib.Path(__file__).resolve().parents[1]
         if script is None:
@@ -4481,16 +4483,23 @@ description = "Override sink that writes the base triage report contract."
                 "case \"$1\" in\n"
                 "  version) exit 0 ;;\n"
                 "  show) cat \"$BD_SHOW_DIR/$2.json\" ;;\n"
+                "  dep) cat \"${BD_DEP_DIR:-}/${3:-}.json\" 2>/dev/null || echo '[]' ;;\n"
                 "  *) exit 2 ;;\n"
                 "esac\n",
                 encoding="utf-8",
             )
             fake_gc.chmod(0o755)
 
+            dep_dir = tmp / "dep"
+            dep_dir.mkdir()
+            for bead, payload in (deps_by_id or {}).items():
+                (dep_dir / f"{bead}.json").write_text(payload, encoding="utf-8")
+
             env = {
                 **os.environ,
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_DIR": str(show_dir),
+                "BD_DEP_DIR": str(dep_dir),
                 "GC_BEAD_ID": bead_id,
                 **(extra_env or {}),
             }
@@ -5265,6 +5274,191 @@ description = "Override sink that writes the base triage report contract."
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, prompt)
+
+    @staticmethod
+    def _valid_decomposition_artifact(shared_namespaces: str) -> str:
+        return (
+            "---\n"
+            "schema: gc.build.decomposition.v1\n"
+            "workflow:\n"
+            "  id: build-20260610-001\n"
+            "  formula: build-basic\n"
+            "methodology:\n"
+            "  pack: gascity\n"
+            "  name: build-basic\n"
+            "producer:\n"
+            "  formula: decomposition-base\n"
+            "  stage: decomposition\n"
+            "  attempt: 1\n"
+            "status: approved\n"
+            "trace:\n"
+            "  upstream:\n"
+            "    - path: implementation-plan.md\n"
+            "      hash: sha256:"
+            + "a" * 64
+            + "\n"
+            "  coverage:\n"
+            "    - id: WI-1\n"
+            "      status: covered\n"
+            "    - id: WI-2\n"
+            "      status: covered\n"
+            "---\n\n"
+            "## Summary\n\nSummary content.\n\n"
+            "## Selected Downstream Formulas\n\nSelected Downstream Formulas content.\n\n"
+            "## Implementation Convoy\n\nImplementation Convoy content.\n\n"
+            "## Work Items\n\n"
+            "| ID | Bead | Depends On |\n"
+            "| --- | --- | --- |\n"
+            "| WI-1 | gc-aaa111 | - |\n"
+            "| WI-2 | gc-bbb222 | WI-1 |\n\n"
+            "| ID | Status |\n"
+            "| --- | --- |\n"
+            "| WI-1 | covered |\n"
+            "| WI-2 | covered |\n"
+            + shared_namespaces
+        )
+
+    # The Shared Namespaces block of the fixture above, and the live edges that
+    # match its declared WI-2 -> WI-1 order.
+    _SENTINEL_NAMESPACES = (
+        "\n## Shared Namespaces\n\n"
+        "| Namespace | Participants | Owner | Leaf-Only |\n"
+        "| --- | --- | --- | --- |\n"
+        "| (none) | - | - | - |\n"
+    )
+    _DECOMPOSITION_DEPS = {
+        "gc-aaa111": "[]",
+        "gc-bbb222": '[{"depends_on_id": "gc-aaa111", "type": "blocks"}]',
+    }
+
+    def _run_decomposition_gate(
+        self,
+        shared_namespaces: str,
+        extra_env: dict[str, str] | None = None,
+        script_root: pathlib.Path | None = None,
+    ) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory() as artifact_dir:
+            artifact = pathlib.Path(artifact_dir) / "decomposition.md"
+            artifact.write_text(
+                self._valid_decomposition_artifact(shared_namespaces), encoding="utf-8"
+            )
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.decomposition.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.decomposition_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                f'"gc.build.decomposition_path": "{artifact}"'
+                "}}]"
+            )
+            return self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env=extra_env,
+                script_root=script_root,
+                deps_by_id=self._DECOMPOSITION_DEPS,
+            )
+
+    def test_build_artifact_check_runs_shared_namespace_check_for_decomposition(self) -> None:
+        # AC-09 positive: the gate invokes the shared-namespace check for
+        # gc.build.decomposition.v1 and reports its summary line.
+        result = self._run_decomposition_gate(self._SENTINEL_NAMESPACES)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("decomposition edges valid", result.stdout)
+        self.assertIn('shared namespace check: explicit "(none)" sentinel', result.stdout)
+        self.assertIn("build artifact valid", result.stdout)
+
+    def test_build_artifact_check_blocks_decomposition_without_ownership_table(self) -> None:
+        # AC-11 / BR-15: a decomposition whose canonical table lists two work
+        # items and declares no ownership fails the gate, and the check's own
+        # stderr is propagated verbatim rather than summarized.
+        result = self._run_decomposition_gate("")
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("failed shared-namespace ownership check", result.stderr)
+        self.assertIn("no shared-namespace ownership declaration", result.stderr)
+        self.assertIn("| (none) | - | - | - |", result.stderr)
+
+    def test_build_artifact_check_fails_when_namespace_script_missing(self) -> None:
+        # AC-10 / BR-14: with the check script absent from every candidate
+        # location the gate fails "not found" rather than silently skipping.
+        # Run the installed copy. The pack tree itself contains the script, and
+        # the gate prefers that pack validator, so the source script can never
+        # observe a missing candidate.
+        pack_root = pathlib.Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as work_dir:
+            work_root = pathlib.Path(work_dir)
+            staged = work_root / "gascity" / "assets" / "scripts"
+            staged.mkdir(parents=True)
+            for name in (
+                "validate_build_artifact.py",
+                "validate_decomposition_edges.py",
+            ):
+                shutil.copy(pack_root / "assets" / "scripts" / name, staged / name)
+            # The base validator resolves schemas relative to its own file.
+            shutil.copytree(pack_root / "schemas", staged.parents[1] / "schemas")
+            result = self._run_decomposition_gate(
+                self._SENTINEL_NAMESPACES,
+                extra_env={"GC_WORK_DIR": work_dir},
+                script_root=work_root,
+            )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("validate_shared_namespaces.py not found", result.stderr)
+        self.assertNotIn("build artifact valid", result.stdout)
+
+    def test_build_artifact_check_skips_namespace_check_for_other_schemas(self) -> None:
+        # AC-09 negative: a gc.build.requirements.v1 run must not invoke it.
+        with tempfile.TemporaryDirectory() as artifact_dir:
+            artifact = pathlib.Path(artifact_dir) / "requirements.md"
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                f'"gc.build.requirements_path": "{artifact}"'
+                "}}]"
+            )
+            result = self._run_build_artifact_check({"loop": control, "root": root_bead}, "loop")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("shared namespace", result.stdout)
+        self.assertNotIn("shared-namespace", result.stderr)
+
+    def test_decompose_prompts_carry_every_shared_namespace_element(self) -> None:
+        # AC-14: each of the three decompose prompts must state all five parts
+        # of the contract. A single `grep -c "Leaf-Only"` proves only that one
+        # string appears, so each element is asserted on its own here.
+        root = pathlib.Path(__file__).resolve().parents[1]
+        elements = (
+            ("table shape", r"Namespace.{0,40}Participants.{0,40}Owner.{0,40}Leaf-Only"),
+            ("one-owner rule", r"[Ee]xactly one (owner per namespace|work item may own)"),
+            ("leaf-only rule", r"(every other participant|participant that is not the owner)"),
+            ("(none) sentinel", r"\| \(none\) \| - \| - \| - \|"),
+            ("Status prohibition", r"([Nn]o|not add a) Status column"),
+        )
+        for relative_path in (
+            "assets/workflows/build-basic/decompose.md",
+            "assets/workflows/build-from-decompose-base/decompose.md",
+            "assets/workflows/decomposition-base/decompose.md",
+        ):
+            # The prompts are hard-wrapped prose, so every element is matched
+            # against the text with whitespace runs collapsed; otherwise a line
+            # break lands mid-phrase and the assertion reports a missing element
+            # that is plainly there.
+            text = " ".join((root / relative_path).read_text(encoding="utf-8").split())
+            for label, pattern in elements:
+                with self.subTest(asset=relative_path, element=label):
+                    self.assertRegex(text, pattern)
+            with self.subTest(asset=relative_path, element="coverage-matrix rationale"):
+                self.assertIn("coverage matrix", text)
 
     def test_bmad_story_development_emits_base_check_verdict(self) -> None:
         gascity_root = pathlib.Path(__file__).resolve().parents[1]
