@@ -1245,20 +1245,10 @@ func TestHandlePublishSurfacesSlackTruncationOnTheReceipt(t *testing.T) {
 		t.Fatalf("receipt message_id = %q, want 1.2: Slack accepted the post and the ts is real whatever the readback then finds",
 			receipt.MessageID)
 	}
-	// Truncation used to leave Delivered true, because chat.postMessage's own
-	// answer was the only evidence. The readback is now the evidence, and a
-	// truncated message reads back as different text, so the delivery is
-	// reported unconfirmed. The two signals are complementary and both must
-	// survive: "truncated" says what Slack did to the write, Delivered says
-	// what the read API could confirm afterwards.
-	//
-	// "permanent" is the kind on the wire because that is gc's word for it: the
-	// same oversized payload truncates identically on every retry, so re-sending
-	// can only add another visible partial message. The adapter's finer-grained
-	// classification rides in metadata, which is the only additive channel gc
-	// forwards.
-	if receipt.Delivered || receipt.FailureKind != "permanent" {
-		t.Fatalf("receipt delivered=%t failure_kind=%q, want a permanent failure: the readback cannot find the text that was posted once Slack truncates it, and re-posting it truncates the same way",
+	// The partial message was posted. Preserve both Slack's truncation
+	// warning and the unconfirmed readback without telling callers to repost.
+	if !receipt.Delivered || receipt.FailureKind != "" {
+		t.Fatalf("receipt delivered=%t failure_kind=%q, want accepted without a publish failure",
 			receipt.Delivered, receipt.FailureKind)
 	}
 	if got := receipt.Metadata[receiptMetadataKeyReadback]; got != slackReadbackUnconfirmed {

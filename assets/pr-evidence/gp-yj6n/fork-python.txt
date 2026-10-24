@@ -1,0 +1,21 @@
+GC_NO_INSTALL=1 TMPDIR="${TMPDIR%/}" make test PYTEST_DIRS=slack-full/tests
+env -u GC_TEMPLATE $(if python3 -c 'import pytest, yaml, jsonschema' >/dev/null 2>&1; then echo 'python3 -m pytest'; else echo 'uv run --with pytest --with pyyaml --with jsonschema python3 -m pytest'; fi) slack-full/tests -q
+............ss.......................................................... [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 28%]
+........................................................................ [ 37%]
+........................................................................ [ 47%]
+........................................................................ [ 56%]
+........................................................................ [ 65%]
+........................................................................ [ 75%]
+........................................................................ [ 84%]
+........................................................................ [ 94%]
+.............................................                            [100%]
+=============================== warnings summary ===============================
+slack-full/tests/test_slack_company_outbound.py::test_two_process_flock_race
+slack-full/tests/test_slack_company_outbound.py::test_two_process_flock_race
+  /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/tests/test_slack_company_outbound.py:698: DeprecationWarning: This process (pid=52952) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+763 passed, 2 skipped, 2 warnings in 42.28s

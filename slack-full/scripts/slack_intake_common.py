@@ -320,47 +320,55 @@ def publish_via_adapter(
         raise AdapterError(str(exc)) from exc
 
 
+def _publish_receipt(result: Any) -> dict[str, Any]:
+    """Unwrap adapter and both gc receipt shapes without reading transcript IDs."""
+    if not isinstance(result, dict):
+        return {}
+    if "delivered" in result or "message_id" in result:
+        return result
+    for key in ("Receipt", "receipt"):
+        if isinstance(result.get(key), dict):
+            return result[key]
+    return {}
+
+
 def interpret_publish_receipt(result: Any) -> tuple[bool, str]:
-    """Inspect a publish-receipt JSON and return (delivered, failure_kind).
+    """Return acceptance and publish failure for adapter or gc receipt JSON.
 
-    The HTTP layer can succeed (200) while the receipt's `delivered`
-    field is false — slack rejected for auth, channel, rate-limit, etc.
-    Without this inspection, callers stamp loop_close_posted_at based on
-    a 200 alone and the post is silently lost.
-
-    Handles three shapes seen in the wild:
-      - Adapter-direct (lowercase keys, per adapter/main.go publishReceipt
-        JSON tags): {"delivered": bool, "failure_kind": "...", ...}
-      - gc-wrapped, capitalized (Go struct fields without json tags):
-        {"Receipt": {"Delivered": bool, "FailureKind": "...", ...}}
-      - gc-wrapped, lowercase: {"receipt": {"delivered": bool, ...}}
-
-    Fail-closed semantics: if no recognizable `delivered` key is found,
-    returns (False, "schema_mismatch") — better to noisily fail an
-    unknown response than silently mask one.
+    A message timestamp proves Slack accepted the post, including legacy
+    receipts that incorrectly reported a readback miss as delivered=false.
+    Unknown shapes without acceptance evidence still fail closed.
     """
     if not isinstance(result, dict):
         return False, "non_dict_response"
-    if "delivered" in result:
-        delivered = bool(result.get("delivered"))
-        kind = str(result.get("failure_kind", "")) if not delivered else ""
-        return delivered, kind
-    receipt = result.get("Receipt") if isinstance(result.get("Receipt"), dict) else None
-    if receipt is None:
-        receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else None
-    if isinstance(receipt, dict):
-        if "Delivered" in receipt:
-            delivered = bool(receipt.get("Delivered"))
-            kind = str(receipt.get("FailureKind", "")) if not delivered else ""
-            return delivered, kind
-        if "delivered" in receipt:
-            delivered = bool(receipt.get("delivered"))
-            kind = str(receipt.get("failure_kind", "")) if not delivered else ""
-            return delivered, kind
+    receipt = _publish_receipt(result)
+    message_id = receipt.get("MessageID") or receipt.get("message_id")
+    if isinstance(message_id, str) and message_id.strip():
+        return True, ""
+    for delivered_key, failure_key in (("Delivered", "FailureKind"), ("delivered", "failure_kind")):
+        if delivered_key in receipt:
+            delivered = bool(receipt[delivered_key])
+            return delivered, str(receipt.get(failure_key, "")) if not delivered else ""
     return False, "schema_mismatch"
 
 
-# --- session resolution ---------------------------------------------------
+def publish_receipt_exit_code(result: Any) -> int:
+    """Report readback uncertainty on stderr without inducing a duplicate post."""
+    delivered, failure_kind = interpret_publish_receipt(result)
+    if not delivered:
+        print(f"slack publish failed: delivered=false failure_kind={failure_kind or 'unknown'}",
+              file=sys.stderr)
+        return 1
+    receipt = _publish_receipt(result)
+    metadata = receipt.get("Metadata") or receipt.get("metadata") or {}
+    readback = metadata.get("readback", "") if isinstance(metadata, dict) else ""
+    reported_delivered = receipt.get("Delivered", receipt.get("delivered", False))
+    if (readback and readback != "confirmed") or not reported_delivered:
+        message_id = receipt.get("MessageID") or receipt.get("message_id") or ""
+        print(f"slack publish accepted: message_id={message_id}; readback unconfirmed "
+              f"({readback or 'legacy receipt'}); do not repost", file=sys.stderr)
+    return 0
+
 
 def current_session_id() -> str:
     """Best-effort session-id lookup from the calling environment.
