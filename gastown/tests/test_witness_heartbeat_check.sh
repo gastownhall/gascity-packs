@@ -48,6 +48,19 @@ ts_ago() {
     date -u -d "@$(( $(date -u +%s) - $1 ))" +%Y-%m-%dT%H:%M:%SZ
 }
 
+ts_ago_offset() {
+    # Seconds ago -> the same instant spelled with a "+HH:MM"/"-HH:MM" colon
+    # offset instead of Z (zone arithmetic only, not a real timezone lookup).
+    # GNU date here, like ts_ago, for the same reason.
+    local secs_ago="$1" offset="$2" sign hh mm delta
+    sign=${offset:0:1}
+    hh=${offset:1:2}
+    mm=${offset:4:2}
+    delta=$(( 10#$hh * 3600 + 10#$mm * 60 ))
+    [ "$sign" = "-" ] && delta=$(( -delta ))
+    date -u -d "@$(( $(date -u +%s) - secs_ago + delta ))" +"%Y-%m-%dT%H:%M:%S$offset"
+}
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 CITY="$tmp/city"
@@ -116,6 +129,58 @@ test_fractional_seconds_parse() {
     [ "$RC" -eq 0 ] || fail "a fractional-second timestamp should parse as fresh, got $RC ($OUT)"
     printf '%s' "$OUT" | grep -q '^fresh	' ||
         fail "a fractional-second timestamp should report fresh, got: $OUT"
+}
+
+# GH#541: `gc session list --json` emits colon-offset stamps ("+HH:MM")
+# alongside Z ones on Gas City 1.5.0+, and BSD `%z` rejects the colon — only
+# the Z suffix was normalized before BSD parsing, so a colon-offset
+# `last_active` fell through to epoch 0 and read as a false stall.
+
+test_colon_offset_timestamp_parses_as_fresh() {
+    local ts
+    for ts in "$(ts_ago_offset 45 "+02:00")" "$(ts_ago_offset 45 "-07:00")" "$(ts_ago_offset 45 "+00:00")"; do
+        run_check "$(printf '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","state":"asleep","last_active":"%s","closed":false}]}' "$ts")"
+        [ "$RC" -eq 0 ] || fail "a fresh colon-offset timestamp ($ts) must parse and exit 0, got $RC ($OUT)"
+        printf '%s' "$OUT" | grep -q '^fresh	alpha	alpha/witness	asleep	' ||
+            fail "a fresh colon-offset timestamp ($ts) should report fresh, got: $OUT"
+    done
+}
+
+test_stale_colon_offset_timestamp_is_stalled() {
+    local ts
+    ts=$(ts_ago_offset 72000 "-07:00")
+    run_check "$(printf '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","state":"asleep","last_active":"%s","closed":false}]}' "$ts")"
+    [ "$RC" -eq 1 ] || fail "a stale colon-offset timestamp must exit 1, got $RC ($OUT)"
+    printf '%s' "$OUT" | grep -q '^stalled	alpha	alpha/witness	asleep	' ||
+        fail "a stale colon-offset timestamp should report stalled, got: $OUT"
+}
+
+test_colon_offset_with_fractional_seconds_parses_as_fresh() {
+    local offset="-07:00" ts base
+    ts=$(ts_ago_offset 45 "$offset")
+    base=${ts%"$offset"}
+    run_check "$(printf '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","state":"asleep","last_active":"%s","closed":false}]}' "${base}.123456789${offset}")"
+    [ "$RC" -eq 0 ] || fail "a fractional-second colon-offset timestamp must parse as fresh, got $RC ($OUT)"
+    printf '%s' "$OUT" | grep -q '^fresh	' ||
+        fail "a fractional-second colon-offset timestamp should report fresh, got: $OUT"
+}
+
+test_mixed_colon_and_z_forms_compare_correctly() {
+    local fresh_colon
+    fresh_colon=$(ts_ago_offset 45 "+05:30")
+    run_check "$(printf '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","state":"asleep","last_active":"%s","last_nudge_delivered_at":"%s","closed":false}]}' "$STALE" "$fresh_colon")"
+    [ "$RC" -eq 0 ] || fail "a fresh colon-offset self-nudge should keep the witness fresh, got $RC ($OUT)"
+    printf '%s' "$OUT" | grep -q "^fresh	alpha	alpha/witness	asleep	[0-9]*	$fresh_colon\$" ||
+        fail "the newer colon-offset stamp should win over the older Z stamp, got: $OUT"
+}
+
+test_malformed_colon_offset_is_no_heartbeat_not_stalled() {
+    run_check '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","state":"active","last_active":"2026-10-11T00:25:54+ab:cd","closed":false}]}'
+    printf '%s' "$OUT" | grep -q '^no-heartbeat	alpha	alpha/witness	active	-	-$' ||
+        fail "a malformed colon offset should report no-heartbeat, got: $OUT"
+    printf '%s' "$OUT" | grep -q 'stalled' &&
+        fail "a malformed colon offset must not be reported stalled"
+    [ "$RC" -eq 1 ] || fail "a malformed colon-offset heartbeat is a finding (exit 1), got $RC"
 }
 
 test_future_heartbeat_is_clock_skew_not_stale() {
@@ -307,6 +372,11 @@ test_zero_time_sentinel_is_no_heartbeat_not_stalled
 test_malformed_timestamp_is_no_heartbeat_not_stalled
 test_newer_of_the_two_stamps_wins
 test_fractional_seconds_parse
+test_colon_offset_timestamp_parses_as_fresh
+test_stale_colon_offset_timestamp_is_stalled
+test_colon_offset_with_fractional_seconds_parses_as_fresh
+test_mixed_colon_and_z_forms_compare_correctly
+test_malformed_colon_offset_is_no_heartbeat_not_stalled
 test_future_heartbeat_is_clock_skew_not_stale
 test_threshold_is_configurable
 test_bad_threshold_fails_loudly
