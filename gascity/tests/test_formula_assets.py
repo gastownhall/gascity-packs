@@ -5,9 +5,83 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
+
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts")
+)
+
+from formula_compiler_requirement import (  # noqa: E402
+    declared_constraints,
+    declares_graph_compiler,
+    declares_graph_compiler_from,
+    joined_constraints,
+)
+
+# Where a resolved formula carries its accumulated constraint LIST. gc keeps
+# the same list in the unexported `Formula.compilerRequirementSources` and
+# evaluates it one constraint at a time; the comma-joined
+# `Requires.FormulaCompiler` string is what gets serialised, and re-reading
+# that string as a single conjunctive constraint gives a different answer (see
+# `declares_graph_compiler_from`). This key is likewise not part of the TOML.
+CONSTRAINTS_KEY = "_compiler_constraints"
+
+
+def constraints_of(data: dict) -> list[str]:
+    """The constraint list to evaluate for `data`, resolved or straight off disk.
+
+    Known and deliberate: a diamond `extends` chain appends the shared
+    grandparent's constraint twice, here and in gc. Neither implementation
+    deduplicates, and `declaresGraphCompilerRequirement` is an OR over the list,
+    so the repeat cannot change the answer. Left as parity rather than
+    "fixed" on this side, which would make the mirror wrong in a new way.
+    """
+    accumulated = data.get(CONSTRAINTS_KEY)
+    if isinstance(accumulated, list):
+        return list(accumulated)
+    return list(declared_constraints(data))
+
+
+def accumulated_requires(constraints: list[str], fallback: dict) -> dict:
+    """The `requires` table gc leaves on a resolved formula.
+
+    `Resolve` collects formula_compiler constraints from the child and every
+    parent, then overwrites `merged.Requires` with the comma-joined set
+    (`setFormulaCompilerConstraints`). A resolver that instead lets the child's
+    table win drops a parent's stricter constraint, so a child declaring
+    `">=1.0.0"` under a parent declaring `">=2.0.0"` reads as v1 here and
+    compiles as graph-v2 in gc.
+
+    With no constraints anywhere gc leaves `Requires` alone, so the child's own
+    table is returned unchanged.
+    """
+    joined = joined_constraints(constraints)
+    if not joined:
+        return fallback
+    return {"formula_compiler": joined}
+
+
+# Prefixes the gascity pack's shell commands read from the environment.
+# The tests below run those commands as subprocesses; inheriting the
+# developer's environment wholesale let a live Gas City seat's own values
+# reach them. GC_TEMPLATE is the concrete case: commands/claim/run.sh reads
+# EXPECTED_ROUTE="${GC_TEMPLATE:-${GC_AGENT:-}}", so on a machine where a
+# seat exports GC_TEMPLATE=mayor the fixture's GC_AGENT was shadowed and the
+# claim came back CLAIM_REJECTED. In CI nothing is exported, so the suite was
+# green there and red on every real installation.
+PACK_ENV_PREFIXES = ("GC_", "BEADS_", "GASWORKS_", "BD_")
+
+
+def hermetic_env() -> dict[str, str]:
+    """os.environ minus everything the pack reads, for subprocess fixtures."""
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(PACK_ENV_PREFIXES)
+    }
 
 
 FORMULAS = {
@@ -485,6 +559,31 @@ def methodology_selector_defaults(expected: dict) -> dict[str, str]:
     }
 
 
+def declares_graph_v2(data: dict) -> bool:
+    """Whether a formula requires the v2 graph compiler, in either spelling.
+
+    `[requires] formula_compiler = ">=2.0.0"` is the supported form; the legacy
+    `contract = "graph.v2"` is deprecated and produces a blocking `gc doctor`
+    warning in every consuming city. They are equivalent at the compiler:
+    `directFormulaCompilerConstraints` maps the legacy field to exactly the
+    constraint the `[requires]` key produces, and `UsesGraphCompiler` reads the
+    resulting constraint set rather than the literal field.
+
+    Asserting the property rather than the spelling is deliberate. The previous
+    assertions here keyed on `contract` alone, which meant the pack's own suite
+    enforced the deprecated form and went red on the migration away from it.
+
+    The constraint is evaluated, not tested for non-emptiness. A presence check
+    accepts `">=1.0.0"` and `"banana"`, neither of which selects the v2
+    compiler, so it would agree with a formula that opted into nothing. The
+    rule lives once, in `scripts/formula_compiler_requirement.py`.
+
+    Constraints are evaluated separately, never as one joined string, because
+    that is what `declaresGraphCompilerRequirement` does.
+    """
+    return declares_graph_compiler_from(constraints_of(dict(data)))
+
+
 def load_formula(root: pathlib.Path, name: str) -> dict:
     return tomllib.loads((root / "formulas" / f"{name}.formula.toml").read_text(encoding="utf-8"))
 
@@ -534,12 +633,15 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
         "description": data.get("description", ""),
         "version": data.get("version", 1),
         "contract": data.get("contract", ""),
+        "requires": data.get("requires", {}),
         "target_required": data.get("target_required"),
         "vars": {},
         "steps": [],
     }
+    constraints = list(declared_constraints(data))
     for parent in parents:
         parent_data = resolve_formula(root, parent, (*seen, name))
+        constraints.extend(constraints_of(parent_data))
         if not merged["contract"]:
             merged["contract"] = parent_data.get("contract", "")
         if merged["target_required"] is None:
@@ -547,6 +649,8 @@ def resolve_formula(root: pathlib.Path, name: str, seen: tuple[str, ...] = ()) -
         merged["vars"].update(parent_data.get("vars", {}))
         merged["steps"].extend(parent_data.get("steps", []))
 
+    merged["requires"] = accumulated_requires(constraints, merged["requires"])
+    merged[CONSTRAINTS_KEY] = constraints
     merged["vars"].update(data.get("vars", {}))
     merged["steps"] = merged_steps(merged["steps"], data.get("steps", []))
     if data.get("description"):
@@ -567,12 +671,15 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
         "description": data.get("description", ""),
         "version": data.get("version", 1),
         "contract": data.get("contract", ""),
+        "requires": data.get("requires", {}),
         "target_required": data.get("target_required"),
         "vars": {},
         "steps": [],
     }
+    constraints = list(declared_constraints(data))
     for parent in parents:
         parent_data = resolve_formula_from_dirs(formula_dirs, parent, (*seen, name))
+        constraints.extend(constraints_of(parent_data))
         if not merged["contract"]:
             merged["contract"] = parent_data.get("contract", "")
         if merged["target_required"] is None:
@@ -580,6 +687,8 @@ def resolve_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str, seen:
         merged["vars"].update(parent_data.get("vars", {}))
         merged["steps"].extend(parent_data.get("steps", []))
 
+    merged["requires"] = accumulated_requires(constraints, merged["requires"])
+    merged[CONSTRAINTS_KEY] = constraints
     merged["vars"].update(data.get("vars", {}))
     merged["steps"] = merged_steps(merged["steps"], data.get("steps", []))
     if data.get("description"):
@@ -756,7 +865,7 @@ class FormulaAssetTests(unittest.TestCase):
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             name = path.name.removesuffix(".formula.toml")
             self.assertEqual(data["formula"], name)
-            self.assertEqual(data["contract"], "graph.v2")
+            self.assertTrue(declares_graph_v2(data), f"{data.get('formula')} does not require the v2 graph compiler")
             var_names = set(data.get("vars", {}))
             self.assertNotIn("issue", var_names)
             self.assertNotIn("bead_id", var_names)
@@ -861,7 +970,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 # commands/claim/run.sh reads `${GC_TEMPLATE:-${GC_AGENT:-}}`, so
@@ -916,7 +1025,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
@@ -969,7 +1078,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_observer.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_TEMPLATE": "",  # see the GC_TEMPLATE note above
@@ -1047,7 +1156,7 @@ class FormulaAssetTests(unittest.TestCase):
             fake_sleep.write_text("#!/bin/sh\n/bin/sleep 0.05\n", encoding="utf-8")
             fake_sleep.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -1085,7 +1194,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
                 "GC_TEST_CALLS": str(calls),
@@ -1119,7 +1228,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
@@ -1152,7 +1261,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "GC_PACK_DIR": str(root),
                 "GC_PACK_NAME": "gc",
                 "GC_TEST_CALLS": str(calls),
@@ -1190,7 +1299,7 @@ class FormulaAssetTests(unittest.TestCase):
             )
             fake_gc.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -1237,7 +1346,7 @@ class FormulaAssetTests(unittest.TestCase):
             fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             fake_sleep.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -1296,7 +1405,7 @@ class FormulaAssetTests(unittest.TestCase):
             fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             fake_sleep.chmod(0o755)
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "BEADS_ACTOR": "worker",
                 "GC_AGENT": "gc.implementation-worker",
                 "GC_PACK_DIR": str(root),
@@ -1383,7 +1492,7 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(formula=name):
                 data = load_formula(root, name)
                 self.assertEqual(data["formula"], name)
-                self.assertEqual(data["contract"], "graph.v2")
+                self.assertTrue(declares_graph_v2(data), f"{data.get('formula')} does not require the v2 graph compiler")
                 self.assertTrue(data["internal"])
                 self.assertNotIn("catalog", data)
                 self.assertNotIn("extends", data)
@@ -1966,7 +2075,7 @@ class FormulaAssetTests(unittest.TestCase):
         root = pathlib.Path(__file__).resolve().parents[1]
         review = load_formula(root, "build-basic-review")
         self.assertEqual(review["type"], "expansion")
-        self.assertEqual(review["contract"], "graph.v2")
+        self.assertTrue(declares_graph_v2(review), "review formula does not require the v2 graph compiler")
         self.assertEqual(
             review["vars"]["implementation_target"]["default"],
             "gc.implementation-worker",
@@ -2423,7 +2532,7 @@ class FormulaAssetTests(unittest.TestCase):
                     expansion = load_formula(pack_root, expansion_name)
                     self.assertEqual(expansion["formula"], expansion_name)
                     self.assertEqual(expansion["type"], "expansion")
-                    self.assertEqual(expansion["contract"], "graph.v2")
+                    self.assertTrue(declares_graph_v2(expansion), "expansion formula does not require the v2 graph compiler")
 
                     nodes = formula_nodes(expansion)
                     self.assertGreaterEqual(len(nodes), 4)
@@ -2450,7 +2559,7 @@ class FormulaAssetTests(unittest.TestCase):
             item_formula = load_formula(pack_root, expected["implementation_formula"])
             with self.subTest(pack=pack_name, item_formula=expected["implementation_formula"]):
                 self.assertEqual(item_formula["formula"], expected["implementation_formula"])
-                self.assertEqual(item_formula["contract"], "graph.v2")
+                self.assertTrue(declares_graph_v2(item_formula), "item formula does not require the v2 graph compiler")
                 self.assertEqual(item_formula["extends"], ["do-work"])
                 self.assertNotEqual(item_formula.get("type"), "expansion")
                 self.assertTrue(item_formula["target_required"])
@@ -2526,7 +2635,7 @@ class FormulaAssetTests(unittest.TestCase):
             shared_item_formula = load_formula(pack_root, expected["implementation_item_formula"])
             with self.subTest(pack=pack_name, item_formula=expected["implementation_item_formula"]):
                 self.assertEqual(shared_item_formula["formula"], expected["implementation_item_formula"])
-                self.assertEqual(shared_item_formula["contract"], "graph.v2")
+                self.assertTrue(declares_graph_v2(shared_item_formula), "shared item formula does not require the v2 graph compiler")
                 self.assertEqual(shared_item_formula["extends"], ["do-work-item"])
                 self.assertNotEqual(shared_item_formula.get("type"), "expansion")
                 self.assertTrue(shared_item_formula["target_required"])
@@ -3913,7 +4022,7 @@ class FormulaAssetTests(unittest.TestCase):
         for name, (url_var, optional_vars) in expected.items():
             with self.subTest(name=name):
                 data = resolve_formula(root, name)
-                self.assertEqual(data["contract"], "graph.v2")
+                self.assertTrue(declares_graph_v2(data), f"{data.get('formula')} does not require the v2 graph compiler")
                 self.assertFalse(data["target_required"])
                 self.assertTrue(data["vars"][url_var]["required"])
                 self.assertEqual(set(data["vars"]) - {url_var}, optional_vars)
@@ -4089,8 +4198,10 @@ class FormulaAssetTests(unittest.TestCase):
 formula = "github-issue-fix"
 extends = ["github-issue-fix-base"]
 version = 1
-contract = "graph.v2"
 target_required = false
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "github-issue-fix"
@@ -4110,8 +4221,10 @@ description = "Override sink that preserves the base issue-fix protocol."
 formula = "github-issue-triage"
 extends = ["github-issue-triage-base"]
 version = 1
-contract = "graph.v2"
 target_required = false
+
+[requires]
+formula_compiler = ">=2.0.0"
 
 [catalog]
 name = "github-issue-triage"
@@ -4488,7 +4601,7 @@ description = "Override sink that writes the base triage report contract."
             fake_gc.chmod(0o755)
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_DIR": str(show_dir),
                 "GC_BEAD_ID": bead_id,
@@ -4530,7 +4643,7 @@ description = "Override sink that writes the base triage report contract."
             write_check_gc_stub(bin_dir, parent_show=True)
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_path),
                 "BD_PARENT_SHOW_JSON": str(parent_show_path),
@@ -6011,7 +6124,7 @@ description = "Override sink that writes the base triage report contract."
             )
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_json),
                 "BD_LIST_JSON": str(list_json),
@@ -6076,7 +6189,7 @@ description = "Override sink that writes the base triage report contract."
             )
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_json),
                 "BD_LIST_JSON": str(list_json),
@@ -6158,7 +6271,7 @@ description = "Override sink that writes the base triage report contract."
             )
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_json),
                 "BD_LIST_JSON": str(list_json),
@@ -6220,7 +6333,7 @@ description = "Override sink that writes the base triage report contract."
             )
 
             env = {
-                **os.environ,
+                **hermetic_env(),
                 "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
                 "BD_SHOW_JSON": str(show_json),
                 "BD_LIST_JSON": str(list_json),
@@ -6746,6 +6859,140 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("ROOT_RESHOW_FAILURE", result.stderr)
         # The first show succeeded; only the root re-show is being reported.
         self.assertNotIn("gc bd show bd-child failed", result.stderr)
+
+class ExtendsConstraintAccumulationTests(unittest.TestCase):
+    """gc unions formula_compiler constraints down the extends chain.
+
+    `Resolve` in internal/formula/parser.go appends each parent's constraints
+    to the child's and then overwrites `merged.Requires` with the comma-joined
+    set. The resolvers in this file used to merge the `requires` table
+    child-wins, which reaches the opposite answer whenever a child declares its
+    own constraint over a parent's stricter one -- and every consumer of
+    `declares_graph_v2` on a resolved formula inherited that answer.
+
+    Refute the rule:
+      grep -n 'compilerConstraints = append' <gascity>/internal/formula/parser.go
+      grep -n 'func setFormulaCompilerConstraints' -A 12 \
+        <gascity>/internal/formula/requirements.go
+    """
+
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.formulas = pathlib.Path(self.tempdir.name)
+
+    def write(self, name: str, body: str) -> None:
+        (self.formulas / f"{name}.formula.toml").write_text(body, encoding="utf-8")
+
+    def test_a_parents_constraint_survives_a_looser_child_declaration(self) -> None:
+        self.write(
+            "probe-base",
+            'formula = "probe-base"\n'
+            "[requires]\n"
+            'formula_compiler = ">=2.0.0"\n',
+        )
+        self.write(
+            "probe-child",
+            'formula = "probe-child"\n'
+            'extends = ["probe-base"]\n'
+            "[requires]\n"
+            'formula_compiler = ">=1.0.0"\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "probe-child")
+        self.assertEqual(
+            resolved["requires"]["formula_compiler"],
+            ">=1.0.0, >=2.0.0",
+            "the parent's constraint was dropped; gc joins the whole chain",
+        )
+        self.assertTrue(
+            declares_graph_v2(resolved),
+            "gc compiles this as graph-v2 because the parent requires it; a "
+            "child-wins merge reports v1 and the assertions built on this "
+            "resolver go red for a reason that is not true of the formula",
+        )
+
+    def test_constraints_are_evaluated_separately_not_as_one_conjunction(self) -> None:
+        """The joined string is a serialisation; gc evaluates the LIST.
+
+        `declaresGraphCompilerRequirement` walks `compilerRequirementSources`
+        and returns true as soon as one constraint excludes 1.0.0 and admits
+        2.0.0. Here the child qualifies on its own, so gc compiles this chain
+        as graph-v2 -- while the joined `">=2.0.0, !=2.0.0"` admits neither
+        capability and reads as v1. The pair is not a conflict either: their
+        intersection above 2.0.0 is non-empty, so
+        `validateFormulaCompilerConstraintSet` accepts it.
+        """
+        self.write(
+            "split-base",
+            'formula = "split-base"\n[requires]\nformula_compiler = "!=2.0.0"\n',
+        )
+        self.write(
+            "split-child",
+            'formula = "split-child"\nextends = ["split-base"]\n'
+            '[requires]\nformula_compiler = ">=2.0.0"\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "split-child")
+        self.assertEqual(
+            resolved["requires"]["formula_compiler"], ">=2.0.0, !=2.0.0"
+        )
+        self.assertFalse(
+            declares_graph_compiler(
+                {"requires": {"formula_compiler": ">=2.0.0, !=2.0.0"}}
+            ),
+            "re-reading the joined string as one constraint is the failure "
+            "mode this test exists to pin; if it starts agreeing, the "
+            "assertion below stops proving anything",
+        )
+        self.assertTrue(
+            declares_graph_v2(resolved),
+            "the child constraint alone selects the v2 compiler, so gc does "
+            "too; a resolver that only kept the joined string cannot see that",
+        )
+
+    def test_a_grandparents_constraint_is_not_flattened_by_the_middle_link(self) -> None:
+        """Depth-2: the middle formula must pass a LIST up, not its joined string."""
+        self.write(
+            "deep-base",
+            'formula = "deep-base"\n[requires]\nformula_compiler = "!=2.0.0"\n',
+        )
+        self.write(
+            "deep-mid",
+            'formula = "deep-mid"\nextends = ["deep-base"]\n'
+            '[requires]\nformula_compiler = ">=2.0.0"\n',
+        )
+        self.write(
+            "deep-child",
+            'formula = "deep-child"\nextends = ["deep-mid"]\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "deep-child")
+        self.assertEqual(
+            resolved[CONSTRAINTS_KEY],
+            [">=2.0.0", "!=2.0.0"],
+            "the middle formula collapsed its chain into one string",
+        )
+        self.assertTrue(declares_graph_v2(resolved))
+
+    def test_a_chain_declaring_nothing_keeps_an_empty_requires(self) -> None:
+        self.write("plain-base", 'formula = "plain-base"\n')
+        self.write(
+            "plain-child",
+            'formula = "plain-child"\nextends = ["plain-base"]\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "plain-child")
+        self.assertEqual(resolved["requires"], {})
+        self.assertFalse(declares_graph_v2(resolved))
+
+    def test_the_deprecated_contract_key_on_a_parent_also_carries(self) -> None:
+        self.write(
+            "legacy-base",
+            'formula = "legacy-base"\ncontract = "graph.v2"\n',
+        )
+        self.write(
+            "legacy-child",
+            'formula = "legacy-child"\nextends = ["legacy-base"]\n',
+        )
+        resolved = resolve_formula_from_dirs([self.formulas], "legacy-child")
+        self.assertTrue(declares_graph_v2(resolved))
 
 
 if __name__ == "__main__":
