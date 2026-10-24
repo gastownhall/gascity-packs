@@ -37,10 +37,15 @@ Boot was previously shaped as a single-pass agent that ended every wake with
 tokens in 5h, plus a per-second `bead.updated` flood on its own session bead,
 until an operator drained it (gci-fed).
 
-Every other always-mode agent (mayor, deacon, witness) ends its turn without
-draining and lets `idle_timeout` pace the recycle. You do the same. Ending the
-turn leaves the session alive and idle — that is the correct, cheap resting
-state, and the only one that keeps this watchdog off the hot path.
+Ending the turn without draining is the intended contract for every always-mode
+agent, and boot is the first one to actually implement it. Do **not** assume a
+sibling patrol already does it and copy its shape: the deacon still runs
+`gc runtime drain-ack` + `exit 1` whenever it cannot resolve its current wisp
+(`mol-deacon-patrol.toml:563-569`), and since its fallback query is empty in
+steady state that is the path it takes every cycle — the same trap at a slower,
+harder-to-notice cadence (tracked in `mc-x80bo`). Ending the turn leaves the
+session alive and idle — that is the correct, cheap resting state, and the only
+one that keeps this watchdog off the hot path.
 
 ---
 
@@ -61,24 +66,42 @@ Your formula: `mol-boot-patrol`
 # Step 2: Nothing? Check mail for attached work
 gc mail inbox
 
-# Step 3: Still nothing? Create patrol wisp (root-only — no child step beads)
-NEW_WISP=$(gc bd mol wisp mol-boot-patrol --root-only --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
+# Step 3: Still nothing? Reuse the queued successor before pouring a duplicate.
+# next-iteration leaves the next wisp assigned and *open* — Step 1 above filters
+# on --status=in_progress, so it cannot see it. Without this leg every recycle
+# pours a second wisp that next-iteration then has to burn as surplus, which is
+# churn, not a leak. --type=molecule --include-infra for the wisps-tier reason
+# spelled out in the reconcile block below.
+NEW_WISP=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
 if [ -z "$NEW_WISP" ]; then
-  # End the turn here — no drain-ack, no exit. This is the normal startup path,
-  # not the sanctioned crash-recovery exception; the next recycle retries.
-  echo "Could not pour boot patrol wisp; ending turn."
-else
-  # Assign with $GC_AGENT, not $GC_ALIAS: gc sets GC_ALIAS to the alias verbatim
-  # (including empty, when a named session declares none — as boot's does), while
-  # GC_AGENT falls back to the session name and is never empty. An empty
-  # --assignee is honoured as "unassigned", which would orphan this wisp from the
-  # reconcile below and from gc's own crash-recovery probe.
-  if ! gc bd update "$NEW_WISP" --assignee="$GC_AGENT"; then
+  # Nothing queued — pour one (root-only — no child step beads).
+  NEW_WISP=$(gc bd mol wisp mol-boot-patrol --root-only --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
+  if [ -z "$NEW_WISP" ]; then
+    # End the turn here — no drain-ack, no exit. This is the normal startup path,
+    # not the sanctioned crash-recovery exception; the next recycle retries.
+    echo "Could not pour boot patrol wisp; ending turn."
+  # Assign with $GC_AGENT: for a configured named session gc sets GC_AGENT and
+  # GC_ALIAS to the same identity, and GC_AGENT is also the form that stays
+  # non-empty on pool paths, so prefer it. An empty --assignee is honoured as
+  # "unassigned", which would orphan this wisp from the reconcile below and from
+  # gc's own crash-recovery probe. Step 1's rendered query matches on $GC_ALIAS,
+  # which is that same value here.
+  elif ! gc bd update "$NEW_WISP" --assignee="$GC_AGENT"; then
     # Unassigned, so no assignee-scoped query below can ever find it. Reclaim
     # it by id, then end the turn.
     echo "Could not assign boot patrol wisp; reclaiming it and ending turn."
     gc bd mol burn "$NEW_WISP" --force || true
+    NEW_WISP=""
   fi
+fi
+
+# Claim the wisp you are about to work. Pouring and assigning both leave it
+# open, and every "what am I working" query in this loop — Step 1 above and the
+# CURRENT_WISP fallback in the reconcile block below — filters on
+# --status=in_progress. Skip this and none of them can ever resolve: the burn
+# arm below becomes dead code and the wisp is only ever reclaimed as surplus.
+if [ -n "$NEW_WISP" ]; then
+  gc bd update "$NEW_WISP" --status=in_progress || true
 fi
 
 # Step 4: Read the formula recipe — these are the steps to execute
@@ -109,6 +132,9 @@ pour again.
 # and matches nothing). They are also ephemeral, so they live in the wisps tier
 # that gc bd list hides without --include-infra; drop that flag and these
 # queries return [] even when a wisp is assigned, and you pour a duplicate.
+# gc never sets GC_BEAD_ID for a named session, so the fallback query is the leg
+# that actually runs — and it resolves only because startup Step 3 claimed the
+# wisp --status=in_progress. Drop that claim and this returns empty every cycle.
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
   CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --include-infra --limit=1 --json | jq -r '.[0].id // empty')
@@ -171,7 +197,7 @@ the formula steps and resumes from the already-assigned wisp.
 | Want to... | Correct command |
 |------------|----------------|
 | View deacon output | `{{ cmd }} session peek {{ .BindingPrefix }}deacon --lines 30` |
-| Check deacon work | `gc bd list --assignee={{ .BindingPrefix }}deacon --status=in_progress --include-infra --json` (without the flag the wisps tier is hidden, so a patrol wisp never shows) |
+| Check deacon work | `gc bd list --assignee={{ .BindingPrefix }}deacon --include-infra --json` (no `--status` filter — the deacon does not claim its wisps, so they are only ever open; without `--include-infra` the wisps tier is hidden and a patrol wisp never shows either way) |
 | Nudge deacon | `{{ cmd }} session nudge {{ .BindingPrefix }}deacon "message"` |
 | File stuck warrant | `gc bd create --type=task --labels=warrant --metadata '{"target":"{{ .BindingPrefix }}deacon","reason":"...","requester":"boot","gc.routed_to":"{{ .BindingPrefix }}dog"}'` |
 | Pour next wisp | `gc bd mol wisp mol-boot-patrol --root-only --var binding_prefix='{{ .BindingPrefix }}'` |
