@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`publish-to-channel` into a bind-room now reaches the other bound
+  sessions.** It posted straight to the local adapter, so gc never saw the
+  publish and never fanned it out: in a room shared through `bind-room`,
+  Slack showed the post but no peer session received it, and it was missing
+  from the gc transcript. `reply-current` goes through gc and was seen.
+  `publish-to-channel` now publishes through gc's `/extmsg/outbound` first.
+  It falls back to the adapter, with a stderr warning, only when gc refuses
+  because the session has no binding or room participation for the channel
+  (the mayor/cos address-by-handle case this verb exists for) or gc is not
+  listening. A timeout or other gc failure is reported without a second
+  attempt, because gc may already have posted. `--via adapter` keeps the
+  old behavior and `--via gc` never falls back. The JSON output gains a
+  `via` field.
+
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
   When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
   build with `$TMPDIR/gc-slack-adapter-gocache` and
