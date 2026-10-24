@@ -1,0 +1,13 @@
+At fork source d95d6a88598e7a172075e7abe8bdcba7ace33f7e, new path-marker rows only:
+env -u GC_TEMPLATE GC_NO_INSTALL=1 CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib go -C slack-full/adapter test ./... -run TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate -count=1
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.16s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_strike_path_marker_stays_literal (0.00s)
+        publish_readback_test.go:555: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_bold_path_marker_stays_literal (0.00s)
+        publish_readback_test.go:555: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_quoted_query_suffix_stays_literal (0.00s)
+        publish_readback_test.go:555: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.434s
+FAIL
+exit 1

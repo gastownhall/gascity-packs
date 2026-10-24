@@ -1,0 +1,22 @@
+Source: 74d23110
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new link guard rejects valid readbacks in two boundary cases, reporting successful publishes as failures and permitting duplicate retries. Go tests could not run because the read-only sandbox blocks temporary build directories.
+
+Full review comments:
+
+- [P2] Bound verbatim URIs using already-matched link boundaries — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:111-113
+  For `See (https://a.co),(www.b.co)` returned as `See (<https://a.co>),(<http://www.b.co|www.b.co>)`, the expected `slackVerbatimSpan` extends across both URLs because its regex consumes punctuation until whitespace. This check therefore rejects the second link as belonging to the first URI, despite unchanged content and destinations. Split or shorten that range using the already-matched first link's boundary. Otherwise this previously accepted readback becomes `readback_unconfirmed`, allowing retries to duplicate the message.
+
+- [P2] Preserve broadcast-mention boundaries before checking links — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:25-26
+  For `<!here>www.a.co` returned as `<!here><http://www.a.co|www.a.co>`, this parser does not record the broadcast mention. Normalization produces `!herewww.a.co`, so the later preceding-character check sees `e` instead of the original markup boundary and rejects the valid auto-link. The same applies to `<!channel>` and `<!everyone>`. Preserve these reference boundaries alongside user/channel references so correctly delivered notices do not become permanent readback failures that permit duplicate retries.
+The new link guard rejects valid readbacks in two boundary cases, reporting successful publishes as failures and permitting duplicate retries. Go tests could not run because the read-only sandbox blocks temporary build directories.
+
+Full review comments:
+
+- [P2] Bound verbatim URIs using already-matched link boundaries — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:111-113
+  For `See (https://a.co),(www.b.co)` returned as `See (<https://a.co>),(<http://www.b.co|www.b.co>)`, the expected `slackVerbatimSpan` extends across both URLs because its regex consumes punctuation until whitespace. This check therefore rejects the second link as belonging to the first URI, despite unchanged content and destinations. Split or shorten that range using the already-matched first link's boundary. Otherwise this previously accepted readback becomes `readback_unconfirmed`, allowing retries to duplicate the message.
+
+- [P2] Preserve broadcast-mention boundaries before checking links — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:25-26
+  For `<!here>www.a.co` returned as `<!here><http://www.a.co|www.a.co>`, this parser does not record the broadcast mention. Normalization produces `!herewww.a.co`, so the later preceding-character check sees `e` instead of the original markup boundary and rejects the valid auto-link. The same applies to `<!channel>` and `<!everyone>`. Preserve these reference boundaries alongside user/channel references so correctly delivered notices do not become permanent readback failures that permit duplicate retries.

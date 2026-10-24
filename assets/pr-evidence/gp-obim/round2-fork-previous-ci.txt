@@ -1,0 +1,92 @@
+Check	Run Gastown shell tests	﻿2026-10-15T02:45:06.4385207Z ##[group]Run for test_script in gastown/tests/test_*.sh; do
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4385659Z ^[[36;1mfor test_script in gastown/tests/test_*.sh; do^[[0m
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4385979Z ^[[36;1m  bash "$test_script"^[[0m
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4386209Z ^[[36;1mdone^[[0m
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4446359Z shell: /usr/bin/bash -e {0}
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4446614Z env:
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4446879Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4447320Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4447743Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4448158Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4448537Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4448915Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+Check	Run Gastown shell tests	2026-10-15T02:45:06.4449476Z ##[endgroup]
+Check	Run Gastown shell tests	2026-10-15T02:45:07.8804821Z gastown pack asset tests passed
+Check	Run Gastown shell tests	2026-10-15T02:45:08.0890092Z gastown theme script tests passed
+Check	Run Gastown shell tests	2026-10-15T02:45:08.4223236Z ok   leg 1
+Check	Run Gastown shell tests	2026-10-15T02:45:08.5811448Z ok   leg 1b
+Check	Run Gastown shell tests	2026-10-15T02:45:08.7435533Z ok   leg 1c
+Check	Run Gastown shell tests	2026-10-15T02:45:08.8745102Z ok   leg 2
+Check	Run Gastown shell tests	2026-10-15T02:45:09.0010536Z ok   leg 3
+Check	Run Gastown shell tests	2026-10-15T02:45:09.2074702Z ok   leg 4
+Check	Run Gastown shell tests	2026-10-15T02:45:09.3531058Z ok   leg 5
+Check	Run Gastown shell tests	2026-10-15T02:45:09.5073156Z ok   leg 6
+Check	Run Gastown shell tests	2026-10-15T02:45:09.5428517Z ok   leg 7
+Check	Run Gastown shell tests	2026-10-15T02:45:09.7005785Z ok   leg 8
+Check	Run Gastown shell tests	2026-10-15T02:45:09.7229898Z ok   leg 9
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1798674Z ok   leg 10
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1800279Z --- leg summary (formula: /home/runner/work/gascity-packs-prs/gascity-packs-prs/gastown/formulas/mol-refinery-patrol.toml) ---
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1801366Z PASS leg 1
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1801712Z PASS leg 1b
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1802046Z PASS leg 1c
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1802388Z PASS leg 2
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1802708Z PASS leg 3
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1803021Z PASS leg 4
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1803335Z PASS leg 5
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1803647Z PASS leg 6
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1803946Z PASS leg 7
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1804282Z PASS leg 8
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1804620Z PASS leg 9
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1804956Z PASS leg 10
+Check	Run Gastown shell tests	2026-10-15T02:45:10.1805352Z PASS: mol-refinery-patrol rebase guard (12 legs)
+Check	Run Gastown shell tests	2026-10-15T02:45:13.9681009Z mol-witness-patrol orphan recovery tests passed
+Check	Run Gastown shell tests	2026-10-15T02:45:14.3422627Z Preparing worktree (detached HEAD a5b6b6e)
+Check	Run Gastown shell tests	2026-10-15T02:45:14.3452265Z HEAD is now at a5b6b6e fixture
+Check	Run Gastown shell tests	2026-10-15T02:45:14.4789391Z Could not read work bead metadata for ac-safe1.
+Check	Run Gastown shell tests	2026-10-15T02:45:14.5937934Z jq: parse error: Unfinished JSON term at EOF at line 1, column 1
+Check	Run Gastown shell tests	2026-10-15T02:45:14.5942519Z Invalid work bead response for ac-safe1; refusing to create or adopt an artifact.
+Check	Run Gastown shell tests	2026-10-15T02:45:14.7086504Z jq: error (at <stdin>:0): expected exactly one work bead object
+Check	Run Gastown shell tests	2026-10-15T02:45:14.7091322Z Invalid work bead response for ac-safe1; refusing to create or adopt an artifact.
+Check	Run Gastown shell tests	2026-10-15T02:45:14.8235316Z jq: error (at <stdin>:0): expected exactly one work bead object
+Check	Run Gastown shell tests	2026-10-15T02:45:14.8240571Z Invalid work bead response for ac-safe1; refusing to create or adopt an artifact.
+Check	Run Gastown shell tests	2026-10-15T02:45:15.1463545Z FAIL: canonical collision reached a metadata update
+Check	Run Gastown shell tests	2026-10-15T02:45:15.3177659Z FAIL: redirected artifact root reached a metadata update
+Check	Run Gastown shell tests	2026-10-15T02:45:15.3673434Z Preparing worktree (new branch 'gc-gastown.nux-e4a091232820')
+Check	Run Gastown shell tests	2026-10-15T02:45:15.3722338Z HEAD is now at b43c06b tracked ignore fixture
+Check	Run Gastown shell tests	2026-10-15T02:45:15.5124436Z Preparing worktree (new branch 'gc-refinery-118d0e7d9bf0')
+Check	Run Gastown shell tests	2026-10-15T02:45:15.5170729Z HEAD is now at 212b3e9 fixture
+Check	Run Gastown shell tests	2026-10-15T02:45:15.6046280Z From /tmp/tmp.lKwPbz93AT/remote
+Check	Run Gastown shell tests	2026-10-15T02:45:15.6046907Z  * branch            main       -> FETCH_HEAD
+Check	Run Gastown shell tests	2026-10-15T02:45:15.6185910Z Already up to date.
+Check	Run Gastown shell tests	2026-10-15T02:45:15.7106046Z Preparing worktree (new branch 'gc-gastown.nux-a2ceb0edfd31')
+Check	Run Gastown shell tests	2026-10-15T02:45:15.7152827Z HEAD is now at 212b3e9 fixture
+Check	Run Gastown shell tests	2026-10-15T02:45:15.8034878Z From /tmp/tmp.VSHqPV2Csf/remote
+Check	Run Gastown shell tests	2026-10-15T02:45:15.8035290Z  * branch            main       -> FETCH_HEAD
+Check	Run Gastown shell tests	2026-10-15T02:45:15.8174489Z Already up to date.
+Check	Run Gastown shell tests	2026-10-15T02:45:15.8534318Z From /tmp/tmp.VSHqPV2Csf/remote
+Check	Run Gastown shell tests	2026-10-15T02:45:15.8534738Z  * branch            main       -> FETCH_HEAD
+Check	Run Gastown shell tests	2026-10-15T02:45:15.8674781Z Already up to date.
+Check	Run Gastown shell tests	2026-10-15T02:45:15.9386934Z From /tmp/tmp.VSHqPV2Csf/remote
+Check	Run Gastown shell tests	2026-10-15T02:45:15.9387521Z  * branch            main       -> FETCH_HEAD
+Check	Run Gastown shell tests	2026-10-15T02:45:15.9532026Z Switched to branch 'gc-gastown.nux-a2ceb0edfd31'
+Check	Run Gastown shell tests	2026-10-15T02:45:15.9560746Z Updating 212b3e9..468603e
+Check	Run Gastown shell tests	2026-10-15T02:45:15.9561206Z Fast-forward
+Check	Run Gastown shell tests	2026-10-15T02:45:15.9581818Z  main-b.txt | 1 +
+Check	Run Gastown shell tests	2026-10-15T02:45:15.9582401Z  1 file changed, 1 insertion(+)
+Check	Run Gastown shell tests	2026-10-15T02:45:15.9582989Z  create mode 100644 main-b.txt
+Check	Run Gastown shell tests	2026-10-15T02:45:16.0063111Z From /tmp/tmp.VSHqPV2Csf/remote
+Check	Run Gastown shell tests	2026-10-15T02:45:16.0063662Z  * branch            main       -> FETCH_HEAD
+Check	Run Gastown shell tests	2026-10-15T02:45:16.0227334Z Previous HEAD position was 09da966 task work
+Check	Run Gastown shell tests	2026-10-15T02:45:16.0230212Z Switched to branch 'gc-gastown.nux-a2ceb0edfd31'
+Check	Run Gastown shell tests	2026-10-15T02:45:16.0252126Z Already up to date.
+Check	Run Gastown shell tests	2026-10-15T02:45:16.0766864Z From /tmp/tmp.VSHqPV2Csf/remote
+Check	Run Gastown shell tests	2026-10-15T02:45:16.0769858Z  * branch            main       -> FETCH_HEAD
+Check	Run Gastown shell tests	2026-10-15T02:45:16.0896772Z worktree-setup: detached provider HEAD d219f0cbbc46d3da0ac062b0c6ab057d5b48aa50 is not ref-reachable; preserving it and refusing sync
+Check	Run Gastown shell tests	2026-10-15T02:45:16.1271785Z worktree-setup: refusing to sync dirty provider worktree at /tmp/tmp.VSHqPV2Csf/city/.gc/worktrees/demo/polecats/gastown.nux
+Check	Run Gastown shell tests	2026-10-15T02:45:16.1970447Z From /tmp/tmp.VSHqPV2Csf/remote
+Check	Run Gastown shell tests	2026-10-15T02:45:16.1971092Z  * branch            main       -> FETCH_HEAD
+Check	Run Gastown shell tests	2026-10-15T02:45:16.2097539Z worktree-setup: stable provider branch gc-gastown.nux-a2ceb0edfd31 has unique or diverged work; preserving it and refusing sync
+Check	Run Gastown shell tests	2026-10-15T02:45:16.2342892Z worktree-setup: refusing existing path that is not a worktree of /tmp/tmp.VSHqPV2Csf/rig: /tmp/tmp.VSHqPV2Csf/city/.gc/worktrees/demo/polecats/gastown.foreign
+Check	Run Gastown shell tests	2026-10-15T02:45:16.3113958Z gastown/tests/test_polecat_artifact_dir.sh: line 469: rg: command not found
+Check	Run Gastown shell tests	2026-10-15T02:45:16.3116376Z FAIL: shutdown probe did not route the target work query to its rig store
+Check	Run Gastown shell tests	2026-10-15T02:45:16.3132370Z ##[error]Process completed with exit code 1.

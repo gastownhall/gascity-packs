@@ -1,0 +1,12 @@
+Fork source: 9b11aa93aacc98214fc67d7e56d368d4d5b4c858
+Fork base: 065d009bfff97bb9bbbddb9642bc9589a2308c91
+Upstream source: 3f98f79858cc894ce7bd78771967a604e6c76cff
+Upstream base: 153e3e0b5e0924f832788f3045e46fe516ebb327
+Compared git diff --unified=0 across six source files, excluding only index and hunk-location metadata.
+Byte-for-byte identical source delta; SHA256 3c9ef1a11c67425e70a108f6305b21cf2e8f2c97bcf641197e757fbfdf11823d
+slack-full/CHANGELOG.md: base differences outside identical round-2 delta
+slack-full/adapter/publish_readback.go: base differences outside identical round-2 delta
+slack-full/adapter/publish_readback_match.go: identical complete file
+slack-full/adapter/publish_readback_test.go: identical complete file
+slack-full/adapter/publish_receipts.go: identical complete file
+slack-full/adapter/publish_receipts_test.go: identical complete file

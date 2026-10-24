@@ -1,0 +1,11 @@
+slack-channel and slack-mini footer matches: 0
+slack-full/docs and README footer-contract matches: 0
+Broad docs pattern reference marker|_ref matches unrelated identifiers only:
+slack-full/docs/phase5-ledger-readiness.md:93:- Receipt `event` field becomes a reference: `body_ref` (receipt id)
+slack-full/docs/company-rooms.md:389:timestamp, human thread root, receipt id, and an opaque `turn_ref`. The
+
+Adapter matches (footer regression guard; other matches are the unrelated turn_ref protocol):
+slack-full/adapter/main_test.go:961:	if strings.Contains(captured.Text, "_ref:") {
+slack-full/adapter/company_hydration_test.go:455:		"turn_ref: gct-aaaaaaaaaaaaaaaaaaaa",
+slack-full/adapter/company_hydration.go:451:		fmt.Fprintf(b, "turn_ref: %s\n", neutralizeMarkupBoundaries(turn.TurnRef))
+slack-full/adapter/company_delivery_test.go:130:		"turn_ref: " + ptr.TurnRef,

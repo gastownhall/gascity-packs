@@ -1,0 +1,11 @@
+At fork source 74a61b0716e89d8b2218860f8bfc3087095989cf, new repeated-marker rows only:
+env -u GC_TEMPLATE GC_NO_INSTALL=1 CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib go -C slack-full/adapter test ./... -run TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate -count=1
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.16s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_repeated_closing_marker_stays_literal (0.00s)
+        publish_readback_test.go:558: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_repeated_adjacent_markers_stay_literal (0.00s)
+        publish_readback_test.go:558: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.423s
+FAIL
+exit 1

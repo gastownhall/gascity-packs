@@ -1,0 +1,16 @@
+Source: 89bf5740
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher introduces a false delivery failure for unchanged implicit URL paths containing literal percent characters, permitting duplicate reposts. Go tests could not run because the read-only sandbox prevents creating the build directory.
+
+Review comment:
+
+- [P2] Preserve literal percent characters in implicit URL paths — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:148-150
+  When posted text is `www.example.com/100%` and Slack returns `<http://www.example.com/100%|www.example.com/100%>`, `url.Parse` rejects the literal percent, causing a mismatch despite the URL spelling matching exactly. The previous matcher accepted this pair. This produces `readback_unconfirmed`, which `publishReceiptBlocksRepost` does not cache, so retrying can duplicate the delivered message. Validate the authority needed for the userinfo check without requiring the already-matched path to pass URL parsing.
+The new matcher introduces a false delivery failure for unchanged implicit URL paths containing literal percent characters, permitting duplicate reposts. Go tests could not run because the read-only sandbox prevents creating the build directory.
+
+Review comment:
+
+- [P2] Preserve literal percent characters in implicit URL paths — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:148-150
+  When posted text is `www.example.com/100%` and Slack returns `<http://www.example.com/100%|www.example.com/100%>`, `url.Parse` rejects the literal percent, causing a mismatch despite the URL spelling matching exactly. The previous matcher accepted this pair. This produces `readback_unconfirmed`, which `publishReceiptBlocksRepost` does not cache, so retrying can duplicate the delivered message. Validate the authority needed for the userinfo check without requiring the already-matched path to pass URL parsing.

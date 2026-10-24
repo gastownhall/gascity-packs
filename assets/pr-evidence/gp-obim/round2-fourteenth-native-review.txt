@@ -1,0 +1,22 @@
+Source: 7b787bb6
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher can both confirm changed URI content and reject equivalent formatted messages. The Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Compare the entire preserved URI token — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:247-251
+  When readback wraps only a URL prefix, this prefix check permits additional shortcode-shaped URL text. For example, posted `https://example.com/:id:/x done` now matches `<https://example.com/>:id:/x:ok: done`: the ordinary comparison folds away `:ok:`, and `HasPrefix` accepts the remaining suffix without checking its end. The previous matcher rejected this changed URI. Compare both literal token boundaries so added URL characters cannot produce a confirmed delivery.
+
+- [P2] Preserve emoji folding after closing formatting markers — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:297-299
+  For a formatted domain followed by an emoji alias, such as posted `*www.example.com*:thumbsup:` and readback `*<http://www.example.com|www.example.com>*:+1:`, the closing `*` disables shortcode folding and the suffix comparison rejects the equivalent emoji. This previously confirmed successfully but now produces a permanent readback failure. Recognize closing mrkdwn formatting boundaries before treating the remaining suffix as literal URL text.
+The new matcher can both confirm changed URI content and reject equivalent formatted messages. The Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Compare the entire preserved URI token — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:247-251
+  When readback wraps only a URL prefix, this prefix check permits additional shortcode-shaped URL text. For example, posted `https://example.com/:id:/x done` now matches `<https://example.com/>:id:/x:ok: done`: the ordinary comparison folds away `:ok:`, and `HasPrefix` accepts the remaining suffix without checking its end. The previous matcher rejected this changed URI. Compare both literal token boundaries so added URL characters cannot produce a confirmed delivery.
+
+- [P2] Preserve emoji folding after closing formatting markers — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:297-299
+  For a formatted domain followed by an emoji alias, such as posted `*www.example.com*:thumbsup:` and readback `*<http://www.example.com|www.example.com>*:+1:`, the closing `*` disables shortcode folding and the suffix comparison rejects the equivalent emoji. This previously confirmed successfully but now produces a permanent readback failure. Recognize closing mrkdwn formatting boundaries before treating the remaining suffix as literal URL text.

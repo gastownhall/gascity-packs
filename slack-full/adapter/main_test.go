@@ -785,11 +785,8 @@ func TestHandlePublishDedupesOnIdempotencyKey(t *testing.T) {
 	var posts int
 	var captured slackPostMessageReq
 	ts := "1700000000.000100"
-	// The readback has to echo the text actually posted, not the request text:
-	// a keyed publish is stamped with the reference marker, so a fake that
-	// confirmed "hello" would report a content mismatch, leave the receipt
-	// undelivered, and take the dedup cache — which only stores delivered
-	// receipts — out of the picture entirely.
+	// Echo the stored text so readback confirms delivery and the retry
+	// exercises the dedup cache rather than posting a second message.
 	fakeSlack := httptest.NewServer(newFakeSlackPublishHandler(t, &captured, ts, func() { posts++ }))
 	t.Cleanup(fakeSlack.Close)
 	slackAPIBase = fakeSlack.URL
@@ -909,28 +906,8 @@ func TestPublishDedupCache(t *testing.T) {
 	}
 }
 
-// TestReferenceSuffixMatchesCrossLanguageTestVector asserts the same
-// (key, suffix) pair as gas-city's messaging state reconciler.
-func TestReferenceSuffixMatchesCrossLanguageTestVector(t *testing.T) {
-	const key = "dr-3msk6.3-test-vector"
-	const want = "50e90a583c36"
-	if got := referenceSuffix(key); got != want {
-		t.Errorf("referenceSuffix(%q) = %q, want %q (must match the Python-side test vector)", key, got, want)
-	}
-}
-
-func TestReferenceSuffixIsDeterministicAndKeySensitive(t *testing.T) {
-	if referenceSuffix("a") != referenceSuffix("a") {
-		t.Error(`referenceSuffix("a") produced different output on two calls; want deterministic`)
-	}
-	if referenceSuffix("a") == referenceSuffix("b") {
-		t.Error(`referenceSuffix("a") == referenceSuffix("b"); want distinct keys to derive distinct suffixes`)
-	}
-}
-
-// TestHandlePublishAppendsReferenceMarkerWhenIdempotencyKeySet verifies that
-// a keyed publish can be located later in Slack channel history.
-func TestHandlePublishAppendsReferenceMarkerWhenIdempotencyKeySet(t *testing.T) {
+// A keyed publish must preserve the caller's text without a visible footer.
+func TestHandlePublishKeyedTextHasNoReferenceFooter(t *testing.T) {
 	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
 	if err != nil {
 		t.Fatalf("newIdentityRegistry: %v", err)
@@ -952,13 +929,16 @@ func TestHandlePublishAppendsReferenceMarkerWhenIdempotencyKeySet(t *testing.T) 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
 	}
-	const wantText = "hello\n\n_ref:50e90a583c36_"
+	const wantText = "hello"
+	if strings.Contains(captured.Text, "_ref:") {
+		t.Fatalf("keyed publish leaked a reference footer: %q", captured.Text)
+	}
 	if captured.Text != wantText {
 		t.Errorf("posted text = %q, want %q", captured.Text, wantText)
 	}
 }
 
-func TestHandlePublishOmitsReferenceMarkerWhenNoIdempotencyKey(t *testing.T) {
+func TestHandlePublishPreservesUnkeyedText(t *testing.T) {
 	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
 	if err != nil {
 		t.Fatalf("newIdentityRegistry: %v", err)
@@ -981,17 +961,12 @@ func TestHandlePublishOmitsReferenceMarkerWhenNoIdempotencyKey(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
 	}
 	if captured.Text != "hello" {
-		t.Errorf("posted text = %q, want %q (no marker without an idempotency key)", captured.Text, "hello")
+		t.Errorf("posted text = %q, want %q", captured.Text, "hello")
 	}
 }
 
-// TestHandlePublishOmitsReferenceMarkerForEmptyText pins the regression the
-// marker would otherwise introduce. A keyed publish carrying no text fails
-// loudly at Slack (no_text -> permanent). Stamping unconditionally turns it
-// into a marker-only message Slack accepts, so the receipt claims Delivered
-// for a payload that delivered nothing — and dedup caches that receipt, so a
-// legitimate retry replays the lie instead of re-posting.
-func TestHandlePublishOmitsReferenceMarkerForEmptyText(t *testing.T) {
+// Empty keyed text must retain Slack's no_text failure.
+func TestHandlePublishRejectsEmptyKeyedText(t *testing.T) {
 	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
 	if err != nil {
 		t.Fatalf("newIdentityRegistry: %v", err)
@@ -1042,69 +1017,21 @@ func TestHandlePublishOmitsReferenceMarkerForEmptyText(t *testing.T) {
 	}
 }
 
-// TestHandlePublishSkipsReferenceMarkerWhenItCannotFitUnderSlackCeiling pins
-// the truncation boundary. Slack truncates text past its ceiling from the end
-// and still answers ok:true, and the marker is the tail of the text — so
-// stamping past the budget would deliver a mangled partial marker that matches
-// nothing on readback, with a receipt that looks perfect. Skipping keeps the
-// caller's text whole and leaves an honest absence instead.
-func TestHandlePublishSkipsReferenceMarkerWhenItCannotFitUnderSlackCeiling(t *testing.T) {
-	const key = "dr-3msk6.3-test-vector"
-	marker := "\n\n" + referenceMarker(key)
-
-	// atCapability is the largest request text that still leaves room for the
-	// marker — the value registerAdapter advertises.
-	const atCapability = slackMaxMessageLength - referenceMarkerOverhead
-	// The rewrite case sizes itself to atCapability too, so the pre-rewrite
-	// text fits the budget and the post-rewrite text does not.
-	rewriteHead := strings.Repeat("x", atCapability-len(" @bob"))
-
+// Content is sent unchanged, including at and beyond Slack's ceiling. Slack's
+// truncation warning and content readback report any loss; we never trim text.
+func TestHandlePublishPreservesTextAtSlackCeiling(t *testing.T) {
+	const key = "ceiling-key"
+	rewriteHead := strings.Repeat("x", slackMaxMessageLength-len(" @bob"))
 	cases := []struct {
-		name string
-		// aliases is nil everywhere but the rewrite case, matching an install
-		// that has not curated slack-user-aliases.json.
-		aliases *userAliasMap
-		text    string
-		// wantBody is the caller's content as it must reach Slack, ahead of any
-		// marker: the request text, or its rewrite. Spelled out rather than
-		// computed by calling rewrite() so a mutation to the rewrite cannot
-		// move this expectation along with the behavior it is checking.
-		wantBody   string
-		wantMarker bool
+		name     string
+		aliases  *userAliasMap
+		text     string
+		wantBody string
 	}{
-		{
-			name:       "at the advertised capability",
-			text:       strings.Repeat("x", atCapability),
-			wantBody:   strings.Repeat("x", atCapability),
-			wantMarker: true,
-		},
-		{
-			name:       "one byte over the advertised capability",
-			text:       strings.Repeat("x", atCapability+1),
-			wantBody:   strings.Repeat("x", atCapability+1),
-			wantMarker: false,
-		},
-		{
-			name:       "at slack's raw ceiling",
-			text:       strings.Repeat("x", slackMaxMessageLength),
-			wantBody:   strings.Repeat("x", slackMaxMessageLength),
-			wantMarker: false,
-		},
-		{
-			// The budget has to be measured on what is posted, not on what was
-			// requested. This text sits exactly at the advertised capability,
-			// so a fit check reading len(req.Text) stamps it — but "@bob" (4
-			// bytes) rewrites to "<@U012ABCDEF>" (13), and the stamped result
-			// would reach Slack at 40009 bytes, past the ceiling, where the
-			// marker is exactly what gets truncated away. Every other case
-			// passes nil aliases, which makes rewrittenText == req.Text, so
-			// this is the only row that can tell the two operands apart.
-			name:       "at the advertised capability but over it after the alias rewrite",
-			aliases:    &userAliasMap{byHandle: map[string]string{"bob": "<@U012ABCDEF>"}},
-			text:       rewriteHead + " @bob",
-			wantBody:   rewriteHead + " <@U012ABCDEF>",
-			wantMarker: false,
-		},
+		{name: "below ceiling", text: strings.Repeat("x", slackMaxMessageLength-1), wantBody: strings.Repeat("x", slackMaxMessageLength-1)},
+		{name: "at ceiling", text: strings.Repeat("x", slackMaxMessageLength), wantBody: strings.Repeat("x", slackMaxMessageLength)},
+		{name: "over ceiling", text: strings.Repeat("x", slackMaxMessageLength+1), wantBody: strings.Repeat("x", slackMaxMessageLength+1)},
+		{name: "alias rewrite crosses ceiling", aliases: &userAliasMap{byHandle: map[string]string{"bob": "<@U012ABCDEF>"}}, text: rewriteHead + " @bob", wantBody: rewriteHead + " <@U012ABCDEF>"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1137,22 +1064,8 @@ func TestHandlePublishSkipsReferenceMarkerWhenItCannotFitUnderSlackCeiling(t *te
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
 			}
-			gotMarker := strings.HasSuffix(captured.Text, marker)
-			if gotMarker != tc.wantMarker {
-				t.Errorf("request text of %d bytes: marker stamped = %t, want %t (posted %d bytes)",
-					len(tc.text), gotMarker, tc.wantMarker, len(captured.Text))
-			}
-			// The caller's content is never trimmed to make room, whichever
-			// way the stamp decision went. On the rewrite case this also
-			// catches a rewrite that silently failed to apply, which would
-			// otherwise leave the row measuring nothing.
-			if !strings.HasPrefix(captured.Text, tc.wantBody) {
-				t.Errorf("request text of %d bytes: posted text does not start with the caller's content (%d bytes posted, %d expected ahead of any marker); want it preserved verbatim",
-					len(tc.text), len(captured.Text), len(tc.wantBody))
-			}
-			if len(captured.Text) > slackMaxMessageLength {
-				t.Errorf("request text of %d bytes: posted %d bytes, over Slack's %d ceiling — the marker would be truncated away",
-					len(tc.text), len(captured.Text), slackMaxMessageLength)
+			if captured.Text != tc.wantBody {
+				t.Errorf("posted text differs from alias-rewritten request: got %d bytes, want %d", len(captured.Text), len(tc.wantBody))
 			}
 		})
 	}
@@ -1160,8 +1073,7 @@ func TestHandlePublishSkipsReferenceMarkerWhenItCannotFitUnderSlackCeiling(t *te
 
 // TestSlackPostMessageRespParsesTruncationWarning pins the response_metadata
 // tags. Slack signals a delivered-but-truncated message only here, with
-// ok:true, so a wrong tag would silently discard the one wire signal that a
-// keyed delivery lost its marker.
+// ok:true, so a wrong tag would silently discard the truncation signal.
 func TestSlackPostMessageRespParsesTruncationWarning(t *testing.T) {
 	const body = `{"ok":true,"ts":"1.2","response_metadata":{"warnings":["message_truncated"]}}`
 	var resp slackPostMessageResp
@@ -1197,8 +1109,7 @@ type gcWirePublishReceipt struct {
 // TestHandlePublishSurfacesSlackTruncationOnTheReceipt witnesses the diagnosis
 // signal end to end. TestSlackPostMessageRespParsesTruncationWarning covers
 // only the decode of Slack's warning; nothing pinned what the adapter then does
-// with it, and a log line is not observable by the reconciler this marker
-// scheme exists to serve.
+// with it, and a log line is not observable by later receipt readers.
 func TestHandlePublishSurfacesSlackTruncationOnTheReceipt(t *testing.T) {
 	reg, err := newIdentityRegistry(filepath.Join(t.TempDir(), "id.json"))
 	if err != nil {
@@ -1211,13 +1122,13 @@ func TestHandlePublishSurfacesSlackTruncationOnTheReceipt(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/conversations.history" {
 			// What a truncated message actually reads back as: the head of the
-			// post, with the tail Slack cut off — here the whole marker. A fake
+			// post, with the tail Slack cut off. A fake
 			// that echoed the full posted text would confirm a message Slack
 			// says it did not store intact, and the readback assertion below
 			// would be measuring nothing.
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":       true,
-				"messages": []map[string]string{{"ts": "1.2", "text": "hi"}},
+				"messages": []map[string]string{{"ts": "1.2", "text": strings.Repeat("x", slackMaxMessageLength)}},
 			})
 			return
 		}
@@ -1228,7 +1139,11 @@ func TestHandlePublishSurfacesSlackTruncationOnTheReceipt(t *testing.T) {
 	t.Cleanup(fakeSlack.Close)
 	slackAPIBase = fakeSlack.URL
 
-	body := `{"session_id":"gc-pl-1","conversation":{"conversation_id":"C1"},"text":"hi","idempotency_key":"dr-3msk6.3-test-vector"}`
+	bodyBytes, err := json.Marshal(publishRequest{SessionID: "gc-pl-1", Conversation: conversationRef{ConversationID: "C1"}, Text: strings.Repeat("x", slackMaxMessageLength+1), IdempotencyKey: "truncated-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(bodyBytes)
 	req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	cfg := config{slackBotToken: "xoxb-test"}
@@ -1265,7 +1180,7 @@ func TestHandlePublishSurfacesSlackTruncationOnTheReceipt(t *testing.T) {
 		t.Errorf("receipt metadata[%q] = %q, want %q", receiptMetadataKeyReadback, got, slackReadbackUnconfirmed)
 	}
 	if receipt.Metadata["truncated"] != "true" {
-		t.Errorf(`receipt metadata = %v, want metadata["truncated"]="true": Slack warned that it truncated the post, and the receipt is the only place a caller can see that its marker did not survive`,
+		t.Errorf(`receipt metadata = %v, want metadata["truncated"]="true": Slack warned that it truncated the post, and the receipt is the only place a caller can see that its text was cut off`,
 			receipt.Metadata)
 	}
 
@@ -1282,14 +1197,8 @@ func TestHandlePublishSurfacesSlackTruncationOnTheReceipt(t *testing.T) {
 	}
 }
 
-// TestHandlePublishStampsThreadRepliesWhichHistoryDoesNotReturn pins the half
-// of the readback contract's scan-surface rule that lives in this repo: a keyed
-// publish answering another message is posted into a thread, and Slack's
-// conversations.history does not return thread replies. A reader sweeping
-// history alone therefore cannot see this marker — the contract on
-// referenceMarker tells it to walk conversations.replies as well, and that
-// instruction is only correct while this stays true.
-func TestHandlePublishStampsThreadRepliesWhichHistoryDoesNotReturn(t *testing.T) {
+// A keyed reply preserves its text and thread parent.
+func TestHandlePublishPreservesKeyedThreadReply(t *testing.T) {
 	const key = "dr-3msk6.3-test-vector"
 	const parentTS = "1699999999.000100"
 
@@ -1327,37 +1236,15 @@ func TestHandlePublishStampsThreadRepliesWhichHistoryDoesNotReturn(t *testing.T)
 		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
 	}
 	if captured.ThreadTS != parentTS {
-		t.Errorf("posted thread_ts = %q, want %q: reply_to_message_id must post into the thread, which is what puts the marker outside conversations.history",
+		t.Errorf("posted thread_ts = %q, want %q: reply_to_message_id must post into the thread, which is outside conversations.history",
 			captured.ThreadTS, parentTS)
 	}
-	if !strings.HasSuffix(captured.Text, "\n\n"+referenceMarker(key)) {
-		t.Errorf("posted text = %q, want it to end with the reference marker: a threaded keyed delivery is stamped like any other, so the contract's replies-sweep instruction has something to find",
-			captured.Text)
+	if captured.Text != "threaded reply" {
+		t.Errorf("posted text = %q, want unchanged threaded reply", captured.Text)
 	}
 }
 
-func TestReferenceMarkerOverheadMatchesActualAppend(t *testing.T) {
-	appended := "\n\n" + referenceMarker("any-key-of-any-length-at-all")
-	if len(appended) != referenceMarkerOverhead {
-		t.Fatalf("referenceMarkerOverhead = %d, but handlePublish appends %d bytes (%q)",
-			referenceMarkerOverhead, len(appended), appended)
-	}
-	short := "\n\n" + referenceMarker("k")
-	if len(short) != len(appended) {
-		t.Fatalf("marker length varies with key length: %d vs %d", len(short), len(appended))
-	}
-}
-
-func TestAdvertisedMaxMessageLengthLeavesRoomForMarker(t *testing.T) {
-	advertised := slackMaxMessageLength - referenceMarkerOverhead
-	stamped := advertised + len("\n\n"+referenceMarker("dr-3msk6.3-test-vector"))
-	if stamped > slackMaxMessageLength {
-		t.Fatalf("a message at the advertised limit (%d) is %d after stamping, over Slack's %d ceiling",
-			advertised, stamped, slackMaxMessageLength)
-	}
-}
-
-func TestRegisterAdapterAdvertisesMarkerSafeMaxMessageLength(t *testing.T) {
+func TestRegisterAdapterAdvertisesFullMaxMessageLength(t *testing.T) {
 	requestCh := make(chan adapterRegisterRequest, 1)
 	gcStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var got adapterRegisterRequest
@@ -1382,7 +1269,7 @@ func TestRegisterAdapterAdvertisesMarkerSafeMaxMessageLength(t *testing.T) {
 
 	select {
 	case got := <-requestCh:
-		want := slackMaxMessageLength - referenceMarkerOverhead
+		want := slackMaxMessageLength
 		if got.Capabilities.MaxMessageLength != want {
 			t.Fatalf("registered MaxMessageLength = %d, want %d", got.Capabilities.MaxMessageLength, want)
 		}

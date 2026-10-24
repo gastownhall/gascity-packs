@@ -1,0 +1,15 @@
+# codex-gate review: base 355a458adad243a7e17968e72832b9ffc73df6d5 (merge base of --base 355a458adad243a7e17968e72832b9ffc73df6d5 = 355a458adad243a7e17968e72832b9ffc73df6d5 and the head) head d95d6a88598e7a172075e7abe8bdcba7ace33f7e; 6 file(s); class QUICK; model gpt-6-astra; 2026-10-15T07:59:54Z
+# reviewed in a pristine detached worktree at the head (HEAD of /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; 4 untracked entr(ies) there ignored)
+#  slack-full/CHANGELOG.md                      |  3 ++-
+#  slack-full/adapter/publish_readback.go       |  3 ++-
+#  slack-full/adapter/publish_readback_match.go | 31 ++++++++++++++++++++-----------
+#  slack-full/adapter/publish_readback_test.go  | 11 +++++++++++
+#  slack-full/adapter/publish_receipts.go       | 19 +++++++++++++++----
+#  slack-full/adapter/publish_receipts_test.go  | 32 ++++++++++++++++++++++----------
+#  6 files changed, 72 insertions(+), 27 deletions(-)
+
+- **Major — [publish_readback_match.go:483](slack-full/adapter/publish_readback_match.go#L483):** The new early return can mistake a URL path character for closing formatting. For example, expected `~https://a.co/~user/:id:~` now matches stored `~<https://a.co/>~user/:ok:~`: the first `~` ends literal validation, and prose folding erases the changed `:id:`/`:ok:` tokens. The base rejects this mismatch. Preserve literal checking for markers inside URL paths and add this regression case.
+
+Go tests were not run under the read-only gate.
+
+VERDICT: BLOCK

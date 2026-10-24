@@ -1,0 +1,16 @@
+Source: f7e6a614
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher can confirm modified bare-domain URL paths because its suffix validation ignores unconsumed stored characters. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Review comment:
+
+- [P2] Reject unconsumed literal URL suffix characters — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:370-372
+  For newly supported bare-domain links, this returns success without checking whether the stored URL suffix has remaining characters. For example, posted `hou.vc/:id:/x` matches stored `<http://hou.vc/|hou.vc/>:id:/x:ok:`: the ordinary emoji fold removes the added `:ok:`, while this loop consumes only `:id:/x` and returns true. This incorrectly confirms and persists delivery evidence for a changed literal URL path. Require the stored protected suffix to be exhausted as well, while retaining genuine prose boundaries.
+The new matcher can confirm modified bare-domain URL paths because its suffix validation ignores unconsumed stored characters. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Review comment:
+
+- [P2] Reject unconsumed literal URL suffix characters — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:370-372
+  For newly supported bare-domain links, this returns success without checking whether the stored URL suffix has remaining characters. For example, posted `hou.vc/:id:/x` matches stored `<http://hou.vc/|hou.vc/>:id:/x:ok:`: the ordinary emoji fold removes the added `:ok:`, while this loop consumes only `:id:/x` and returns true. This incorrectly confirms and persists delivery evidence for a changed literal URL path. Require the stored protected suffix to be exhausted as well, while retaining genuine prose boundaries.

@@ -1,0 +1,15 @@
+# codex-gate review: base e6163fcaef4fb0a225e0234ba7d39204eedc929f (merge base of --base e6163fcaef4fb0a225e0234ba7d39204eedc929f = e6163fcaef4fb0a225e0234ba7d39204eedc929f and the head) head 65ecfdf798035b390960b6333d956fba120cba92; 4 file(s); class QUICK; model gpt-6-astra; 2026-10-15T09:53:24Z
+# reviewed in a pristine detached worktree at the head (HEAD of /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; 32 untracked entr(ies) there ignored)
+#  slack-full/CHANGELOG.md                      |   5 +
+#  slack-full/adapter/publish_readback.go       |   5 +
+#  slack-full/adapter/publish_readback_match.go | 411 +++++++++++++++++++++++++++++++++----------------------------------
+#  slack-full/adapter/publish_readback_test.go  | 168 ++++++++++++++++++++++++++-
+#  4 files changed, 378 insertions(+), 211 deletions(-)
+
+- **Major — [publish_readback_match.go:526](slack-full/adapter/publish_readback_match.go#L526):** The Unicode boundary rule ignores `proseTail`, so an emoji followed by ordinary path text ends URL protection. For example, `https://a.co/🎉report` now matches `<https://a.co/>:x:report`; the base rejected this changed URL content. Require a trailing prose boundary before allowing emoji normalization.
+
+- **Major — [publish_readback_match.go:565](slack-full/adapter/publish_readback_match.go#L565):** The host shortcode shortcut also matches inside URI credentials. `https://user:id:@example.com` now matches `<https://user>:ok:@example.com`, accepting changed userinfo as delivered. Preserve the complete authority, including userinfo, before applying host-adjacent emoji rules.
+
+Static review only; tests were not run.
+
+VERDICT: BLOCK

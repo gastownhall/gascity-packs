@@ -224,35 +224,372 @@ func TestReadBackPublishedMessageAcceptsSlackCanonicalizedText(t *testing.T) {
 	}
 }
 
-// TestReadBackPublishedMessageMatchesKeyedPublishByReferenceMarker covers the
-// other arm: a keyed publish carries the reference marker as its tail, whose
-// characters are outside Slack's escape set and are not link-shaped, so a tail
-// match identifies this exact publish without depending on any model of Slack's
-// canonicalization at all. The negative arm pins that the marker is load-bearing
-// — a message at the right ts without it is not this publish.
-func TestReadBackPublishedMessageMatchesKeyedPublishByReferenceMarker(t *testing.T) {
-	const marker = "_ref:50e90a583c12_"
-	posted := "shipping the fix\n\n" + marker
+// Keyed publishes follow the same timestamp + canonicalized text rule.
+func TestReadBackPublishedMessageMatchesKeyedPublishByTimestampAndText(t *testing.T) {
+	fastReadbackTimings(t)
+	const posted = "R&D <b> shipping the fix"
 	tests := []struct {
 		name    string
+		ts      string
 		stored  string
 		wantErr bool
 	}{
-		{name: "marker survives canonicalization", stored: slackCanonicalizeForTest("R&D <b> ship\n\n" + marker)},
-		{name: "marker absent", stored: "shipping the fix", wantErr: true},
-		{name: "marker truncated away", stored: "shipping the fix\n\n_ref:50e9", wantErr: true},
+		{name: "canonicalized text", ts: "1700.001", stored: slackCanonicalizeForTest(posted)},
+		{name: "different text at same ts", ts: "1700.001", stored: "shipping the fix", wantErr: true},
+		{name: "same text at different ts", ts: "1700.002", stored: posted, wantErr: true},
+		{name: "truncated text", ts: "1700.001", stored: "R&D <b> shipping", wantErr: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			newSlackReadbackServer(t, "/conversations.history", func(url.Values) {}, mustJSON(t, map[string]any{
 				"ok":       true,
-				"messages": []map[string]string{{"ts": "1700.001", "text": test.stored}},
+				"messages": []map[string]string{{"ts": test.ts, "text": test.stored}},
 			}))
-			target := readbackTarget(posted)
-			target.marker = marker
-			err := readBackPublishedMessage(nil, "xoxb-test", target)
+			err := readBackPublishedMessage(nil, "xoxb-test", readbackTarget(posted))
 			if (err != nil) != test.wantErr {
-				t.Fatalf("readBackPublishedMessage = %v, wantErr %v (stored %q)", err, test.wantErr, test.stored)
+				t.Fatalf("readBackPublishedMessage = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+// These fixtures use Slack's retrieved link format, not the fake's simpler
+// angle-wrap model. A label may repeat the original URL; a different target or
+// label still must fail. See https://docs.slack.dev/messaging/formatting-message-text/#links-in-retrieved-messages.
+func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+	for _, tc := range []struct {
+		name, posted, stored string
+		wantDelivered        bool
+	}{
+		{"labeled URL", "see https://docs.slack.dev/", "see <https://docs.slack.dev/|https://docs.slack.dev/>", true},
+		{"bare domain auto-link", "see hou.vc", "see <http://hou.vc|hou.vc>", true},
+		{"bare domain HTTPS auto-link", "see wendy.sh/docs", "see <https://wendy.sh/docs|wendy.sh/docs>", true},
+		{"bare domain different destination", "see hou.vc", "see <http://attacker.com|hou.vc>", false},
+		{"bare domain path stays literal", "see hou.vc/:id:/x 🎉", "see <http://hou.vc/:id:/x|hou.vc/:id:/x> :tada:", true},
+		{"bare domain changed path", "see hou.vc/:id:/x", "see <http://hou.vc/:100:/x|hou.vc/:100:/x>", false},
+		{"bare IPv4 changed path", "see 127.0.0.1/:id:/x", "see <http://127.0.0.1/:ok:/x|127.0.0.1/:ok:/x>", false},
+		{"bare IPv6 changed path", "see [::1]/:id:/x", "see <http://[::1]/:ok:/x|[::1]/:ok:/x>", false},
+		{"bare domain changed query", "see hou.vc?q=:id:", "see <https://hou.vc?q=:ok:|hou.vc?q=:ok:>", false},
+		{"bare domain changed fragment", "see hou.vc#:id:", "see <http://hou.vc#:ok:|hou.vc#:ok:>", false},
+		{"bare domain changed path beside emoji", "state:ready🎉 see hou.vc/:id:/x", "state:ready:tada: see <http://hou.vc/:ok:/x|hou.vc/:ok:/x>", false},
+		{"bare domain unchanged path beside emoji", "state:ready🎉 see hou.vc/:id:/x", "state:ready:tada: see <http://hou.vc/:id:/x|hou.vc/:id:/x>", true},
+		{"numeric prose with emoji", "Score 4.5/5🎉", "Score 4.5/5:tada:", true},
+		{"numeric prose beside fallback emoji", "state:ready🎉 score 0.5/2✅", "state:ready:tada: score 0.5/2:white_check_mark:", true},
+		{"explicit scheme unchanged", "see <https://example.com|example.com>", "see <https://example.com|example.com>", true},
+		{"explicit scheme changed", "see <https://example.com|example.com>", "see <http://example.com|example.com>", false},
+		{"implicit and explicit schemes", "example.com <https://example.com|example.com>", "<http://example.com|example.com> <https://example.com|example.com>", true},
+		{"repeated label cannot hide changed scheme", "example.com <https://example.com|example.com>", "<https://example.com|example.com> <http://example.com|example.com>", false},
+		{"explicit link after fallback emoji", "state:ready🎉 <https://example.com|example.com>", "state:ready:tada: <https://example.com|example.com>", true},
+		{"explicit link ampersand escaping", "<https://example.com/?x=1&y=2|example.com/?x=1&y=2>", "<https://example.com/?x=1&amp;y=2|example.com/?x=1&amp;y=2>", true},
+		{"parenthesized URL beside emoji", "See (www.example.com/docs)🎉", "See (<http://www.example.com/docs|www.example.com/docs>):tada:", true},
+		{"numeric version prose", "version v1.2.3.4/5🎉", "version v1.2.3.4/5:tada:", true},
+		{"bare IPv6 authority changed", "see [2001:ab::1]", "see <http://[2001:cd::1]|[2001:cd::1]>", false},
+		{"mapped IPv6 path changed", "see [::ffff:192.0.2.1]/:id:/x", "see <http://[::ffff:192.0.2.1]/:ok:/x|[::ffff:192.0.2.1]/:ok:/x>", false},
+		{"FQDN path changed with fallback", "state:ready🎉 see hou.vc./:id:/x", "state:ready:tada: see <http://hou.vc./:ok:/x|hou.vc./:ok:/x>", false},
+		{"scheme-bearing label changed destination", "see https://example.com", "see <http://https://example.com|https://example.com>", false},
+		{"mailto cannot become HTTP userinfo", "<mailto:jane@example.com|jane@example.com>", "<https://jane@example.com|jane@example.com>", false},
+		{"bare email cannot become HTTP userinfo", "contact jane@example.com", "contact <https://jane@example.com|jane@example.com>", false},
+		{"explicit HTTP userinfo remains explicit", "see <https://jane@example.com|jane@example.com>", "see <https://jane@example.com|jane@example.com>", true},
+		{"explicit HTTP userinfo beside emoji", "Done🎉 <https://jane@example.com|jane@example.com>", "Done:tada: <https://jane@example.com|jane@example.com>", true},
+		{"HTTP host and port", "see www.example.com:8080/docs", "see <http://www.example.com:8080/docs|www.example.com:8080/docs>", true},
+		{"HTTPS host and port", "see example.com:8443/docs", "see <https://example.com:8443/docs|example.com:8443/docs>", true},
+		{"legacy www host and port", "see www.example.com:8080/docs", "see <http://example.com:8080/docs|www.example.com:8080/docs>", true},
+		{"many repeated links", strings.Repeat("www.a.co ", 4000), strings.Repeat("<http://www.a.co|www.a.co> ", 4000), true},
+		{"many automatic links then explicit link", strings.Repeat("www.a.co ", 4000) + "<https://last.example|last.example>", strings.Repeat("<http://www.a.co|www.a.co> ", 4000) + "<https://last.example|last.example>", true},
+		{"escaped angle prose", "Use <std::vector>", "Use &lt;std::vector&gt;", true},
+		{"escaped explicit scheme changed", "<https://example.com|example.com>", "&lt;http://example.com|example.com&gt;", false},
+		{"partial explicit URL changed", "https://example.com", "https://<http://example.com|example.com>", false},
+		{"partial domain changed", "docs.example.com", "docs.<http://example.com|example.com>", false},
+		{"URL following punctuation", "See:(hou.vc)🎉", "See:(<http://hou.vc|hou.vc>):tada:", true},
+		{"truncated path shortcode", "see hou.vc/:id:", "see <http://hou.vc/|hou.vc/>", false},
+		{"truncated path Unicode", "see hou.vc/🎉", "see <http://hou.vc/|hou.vc/>", false},
+		{"bare host beside emoji", "see hou.vc🎉", "see <http://hou.vc|hou.vc>:tada:", true},
+		{"quoted URL path", "see \"hou.vc/docs\"", "see \"<http://hou.vc/docs|hou.vc/docs>\"", true},
+		{"comma separated hosts", "hou.vc,wendy.sh", "<http://hou.vc|hou.vc>,<https://wendy.sh|wendy.sh>", true},
+		{"comma separated paths", "www.a.co/x,www.b.co/y", "<http://www.a.co/x|www.a.co/x>,<http://www.b.co/y|www.b.co/y>", true},
+		{"explicit link then comma and auto-link", "<https://a.co>,www.b.co", "<https://a.co>,<http://www.b.co|www.b.co>", true},
+		{"explicit link adjacent to auto-link", "<https://a.co>www.b.co", "<https://a.co><http://www.b.co|www.b.co>", true},
+		{"mention adjacent to auto-link", "<@U123>www.b.co", "<@U123|bob><http://www.b.co|www.b.co>", true},
+		{"bare URI then punctuation and auto-link", "See (https://a.co),(www.b.co)", "See (<https://a.co>),(<http://www.b.co|www.b.co>)", true},
+		{"changed URI after matched link", "https://a.co,https://b.co", "<https://a.co>,https://<http://b.co|b.co>", false},
+		{"broadcast here adjacent to auto-link", "<!here>www.a.co", "<!here><http://www.a.co|www.a.co>", true},
+		{"broadcast channel adjacent to auto-link", "<!channel>www.a.co", "<!channel><http://www.a.co|www.a.co>", true},
+		{"broadcast everyone adjacent to auto-link", "<!everyone>www.a.co", "<!everyone><http://www.a.co|www.a.co>", true},
+		{"changed broadcast before auto-link", "<!here>www.a.co", "<!channel><http://www.a.co|www.a.co>", false},
+		{"angle prose adjacent to auto-link", "Use <std::vector>www.a.co", "Use &lt;std::vector&gt;<http://www.a.co|www.a.co>", true},
+		{"escaped angle prose adjacent to auto-link", "Use &lt;tag&gt;www.a.co🎉", "Use &lt;tag&gt;<http://www.a.co|www.a.co>:tada:", true},
+		{"repeated IDs before explicit mention", "🎉 " + strings.Repeat("@U123 ", 200) + "<@U123>", ":tada: " + strings.Repeat("@U123 ", 200) + "<@U123|bob>", true},
+		{"same target auto-links before explicit link", strings.Repeat("🎉 www.a.co ", 1000) + "<http://www.a.co|www.a.co>", strings.Repeat(":tada: <http://www.a.co|www.a.co> ", 1000) + "<http://www.a.co|www.a.co>", true},
+		{"redundant label emoji conversion", "<https://example.com/🎉|example.com/🎉>", "<https://example.com/🎉|example.com/:tada:>", true},
+		{"redundant label changed destination", "<https://example.com/🎉|example.com/🎉>", "<https://example.com/other|example.com/:tada:>", false},
+		{"redundant label changed literal text", "<https://example.com/🎉|example.com/🎉>", "<https://example.com/🎉|example.com/other:tada:>", false},
+		{"explicit link changed trailing text", "<https://example.com|Done🎉> good", "<https://example.com|Done:tada:> bad", false},
+		{"balanced path suffix unchanged", "hou.vc/wiki/Foo_(bar)/:id:", "<http://hou.vc/wiki/Foo_(bar|hou.vc/wiki/Foo_(bar>)/:id:", true},
+		{"balanced path suffix changed", "hou.vc/wiki/Foo_(bar)/:id:", "<http://hou.vc/wiki/Foo_(bar|hou.vc/wiki/Foo_(bar>)/:ok:", false},
+		{"balanced path suffix dropped", "hou.vc/wiki/Foo_(bar)/:id:", "<http://hou.vc/wiki/Foo_(bar|hou.vc/wiki/Foo_(bar>)/", false},
+		{"nested balanced path suffix changed", "hou.vc/wiki/Foo_([bar])/:id:", "<http://hou.vc/wiki/Foo_([bar|hou.vc/wiki/Foo_([bar>])/:ok:", false},
+		{"unlabeled URI dropped shortcode suffix", "https://example.com/:id:", "<https://example.com/>", false},
+		{"full labeled URI dropped shortcode suffix", "https://example.com/:id:", "<https://example.com/|https://example.com/>", false},
+		{"other scheme dropped shortcode suffix", "s3://bucket/:id:/x", "<s3://bucket/>/x", false},
+		{"unlabeled URI dropped Unicode suffix", "https://example.com/🎉", "<https://example.com/>", false},
+		{"unlabeled URI retained literal Unicode suffix", "https://example.com/🎉", "<https://example.com/>🎉", true},
+		{"unlabeled URI retains literal percent", "https://example.com/100%", "<https://example.com/100%>", true},
+		{"implicit URI retains literal percent", "www.example.com/100%", "<http://www.example.com/100%|www.example.com/100%>", true},
+		{"bare domain retains literal percent", "example.com/100%", "<https://example.com/100%|example.com/100%>", true},
+		{"full URI quoted query unchanged", "https://example.com/?q=':id:'", "<https://example.com/?q=>':id:'", true},
+		{"full URI quoted query changed", "https://example.com/?q=':id:'", "<https://example.com/?q=>':ok:'", false},
+		{"full URI quoted query dropped", "https://example.com/?q=':id:'", "<https://example.com/?q=>''", false},
+		{"implicit URI quoted query changed", "example.com/?q=':id:'", "<http://example.com/?q=|example.com/?q=>':ok:'", false},
+		{"implicit URI apostrophe path unchanged", "example.com/O'Reilly/:id:", "<http://example.com/O|example.com/O>'Reilly/:id:", true},
+		{"implicit URI apostrophe path changed", "example.com/O'Reilly/:id:", "<http://example.com/O|example.com/O>'Reilly/:ok:", false},
+		{"quoted URI before prose shortcode alias", "\"example.com/x\":thumbsup:", "\"<http://example.com/x|example.com/x>\":+1:", true},
+		{"URI before closed code and prose emoji", "example.com/x`code`🎉", "<http://example.com/x|example.com/x>`code`:tada:", true},
+		{"URI unclosed backtick suffix changed", "example.com/x`:id:", "<http://example.com/x|example.com/x>`:ok:", false},
+		{"full URI added literal suffix", "https://example.com/:id:/x done", "<https://example.com/>:id:/x:ok: done", false},
+		{"full URI added shortcode after host", "https://example.com", "<https://example.com>:ok:", false},
+		{"full URI before prose markup", "https://example.com<status: done 🎉>", "<https://example.com>&lt;status: done :tada:&gt;", true},
+		{"full URI before code and prose emoji", "https://example.com`code`🎉", "<https://example.com>`code`:tada:", true},
+		{"bare host comma before prose alias", "www.a.co,:thumbsup:", "<http://www.a.co|www.a.co>,:+1:", true},
+		{"bare host semicolon before prose alias", "www.a.co;:thumbsup:", "<http://www.a.co|www.a.co>;:+1:", true},
+		{"bare host period before prose alias", "www.a.co.:thumbsup:", "<http://www.a.co|www.a.co>.:+1:", true},
+		{"continued domain suffix stays literal", "www.a.co.evil/:id:", "<http://www.a.co|www.a.co>.evil/:ok:", false},
+		{"path sentence comma before prose alias", "www.a.co/x,:thumbsup:", "<http://www.a.co/x|www.a.co/x>,:+1:", true},
+		{"bold host before prose alias", "*www.a.co*:thumbsup:", "*<http://www.a.co|www.a.co>*:+1:", true},
+		{"bold phrase URL before prose alias", "*See www.a.co/x*:thumbsup:", "*See <http://www.a.co/x|www.a.co/x>*:+1:", true},
+		{"italic phrase URL before prose alias", "_See www.a.co/x_:thumbsup:", "_See <http://www.a.co/x|www.a.co/x>_:+1:", true},
+		{"strike phrase URL before prose alias", "~See www.a.co/x~:thumbsup:", "~See <http://www.a.co/x|www.a.co/x>~:+1:", true},
+		{"identifier does not open URL formatting", "status_value www.a.co/x_:id:", "status_value <http://www.a.co/x|www.a.co/x>_:ok:", false},
+		{"escaped marker does not open URL formatting", "\\*See www.a.co/x*:id:", "\\*See <http://www.a.co/x|www.a.co/x>*:ok:", false},
+		{"code marker does not open URL formatting", "`*code*` www.a.co/x*:id:", "`*code*` <http://www.a.co/x|www.a.co/x>*:ok:", false},
+		{"implicit path added suffix", "hou.vc/:id:/x", "<http://hou.vc/|hou.vc/>:id:/x:ok:", false},
+		{"implicit query added suffix", "hou.vc?q=:id:", "<http://hou.vc?q=|hou.vc?q=>:id::ok:", false},
+		{"implicit fragment added suffix", "hou.vc#:id:", "<http://hou.vc#|hou.vc#>:id::ok:", false},
+		{"implicit URI added suffix after complete link", "hou.vc/x", "<http://hou.vc/x|hou.vc/x>:ok:", false},
+		{"implicit URI added suffix before whitespace", "hou.vc/x done", "<http://hou.vc/x|hou.vc/x>:ok: done", false},
+		{"implicit URI added suffix before comma", "hou.vc,:thumbsup:", "<http://hou.vc|hou.vc>:ok:,:+1:", false},
+		{"implicit URI added suffix before quote", "\"hou.vc/x\":thumbsup:", "\"<http://hou.vc/x|hou.vc/x>:ok:\":+1:", false},
+		{"implicit URI added suffix before formatting", "*hou.vc/x*:thumbsup:", "*<http://hou.vc/x|hou.vc/x>:ok:*:+1:", false},
+		{"implicit URI added suffix before parenthesis", "(hou.vc/x)", "(<http://hou.vc/x|hou.vc/x>:ok:)", false},
+		{"implicit URI emoji before markup", "hou.vc🎉<status: done 🎉>", "<http://hou.vc|hou.vc>:tada:&lt;status: done :tada:&gt;", true},
+		{"implicit URI added suffix before markup", "hou.vc/:id:<tag>", "<http://hou.vc/|hou.vc/>:id::ok:&lt;tag&gt;", false},
+		{"keycap does not open URL formatting", "*️⃣ example.com/x*:id:", ":keycap_star: <http://example.com/x|example.com/x>*:ok:", false},
+		{"keycap does not close URL formatting", "*Look *️⃣ example.com/x*:thumbsup:", "*Look :keycap_star: <http://example.com/x|example.com/x>*:+1:", true},
+		{"double underscore identifier does not open formatting", "status__value www.a.co/x_:id:", "status__value <http://www.a.co/x|www.a.co/x>_:ok:", false},
+		{"custom shortcode does not open formatting", ":_custom: www.a.co/x_:id:", ":_custom: <http://www.a.co/x|www.a.co/x>_:ok:", false},
+		{"escaped star does not close URL formatting", "*example.com/x\\*:id:*", "*<http://example.com/x|example.com/x>\\*:ok:*", false},
+		{"keycap does not close formatted URL suffix", "*www.a.co/x*️⃣*", "*<http://www.a.co/x|www.a.co/x>:keycap_star:*", true},
+		{"quoted phrase before prose alias", "\"See www.a.co/x\":thumbsup:", "\"See <http://www.a.co/x|www.a.co/x>\":+1:", true},
+		{"single quoted phrase before prose alias", "'See www.a.co/x':thumbsup:", "'See <http://www.a.co/x|www.a.co/x>':+1:", true},
+		{"apostrophe preserves surrounding quote", "'Here's www.a.co/x':thumbsup:", "'Here's <http://www.a.co/x|www.a.co/x>':+1:", true},
+		{"literal URI marker preserves surrounding formatting", "*See https://a.co/*/x then www.b.co/x*:thumbsup:", "*See <https://a.co/*/x> then <http://www.b.co/x|www.b.co/x>*:+1:", true},
+		{"literal unwrapped URI preserves surrounding formatting", "*See https://a.co/*/x then www.b.co/x*:thumbsup:", "*See https://a.co/*/x then <http://www.b.co/x|www.b.co/x>*:+1:", true},
+		{"literal URI tail preserves surrounding formatting", "*See https://a.co/*/x then www.b.co/x*:thumbsup:", "*See <https://a.co/>*/x then <http://www.b.co/x|www.b.co/x>*:+1:", true},
+		{"implicit URI tail preserves surrounding formatting", "*See www.a.co/*/x then www.b.co/x*:thumbsup:", "*See <http://www.a.co/|www.a.co/>*/x then <http://www.b.co/x|www.b.co/x>*:+1:", true},
+		{"implicit URI tail does not invent formatting", "See www.a.co/*/x then www.b.co/x*:id:", "See <http://www.a.co/|www.a.co/>*/x then <http://www.b.co/x|www.b.co/x>*:ok:", false},
+		{"auto-link after unwrapped comma-separated URI", "s3://bucket/x,www.example.com", "s3://bucket/x,<http://www.example.com|www.example.com>", true},
+		{"auto-link after unwrapped semicolon-separated URI", "s3://bucket/x;www.example.com", "s3://bucket/x;<http://www.example.com|www.example.com>", true},
+		{"unwrapped preceding URI remains literal", "s3://bucket/:id:,www.example.com", "s3://bucket/:ok:,<http://www.example.com|www.example.com>", false},
+		{"full URI italic shortcode internal underscore stays literal", "_https://a.co/:white_check_mark:/:id:_", "_<https://a.co/>:white_check_mark:/:ok:_", false},
+		{"full URI italic path internal underscore stays literal", "_https://a.co/foo_bar:id:_ done", "_<https://a.co/foo>_bar:ok:_ done", false},
+		{"full URI italic path internal underscore unchanged", "_https://a.co/foo_bar:id:_:thumbsup:", "_<https://a.co/foo>_bar:id:_:+1:", true},
+		{"full URI italic custom shortcode stays literal", "_https://a.co/:_custom:/:id:_", "_<https://a.co/>:_custom:/:ok:_", false},
+		{"full URI strike path marker stays literal", "~https://a.co/~user/:id:~", "~<https://a.co/>~user/:ok:~", false},
+		{"full URI strike path marker unchanged", "~https://a.co/~user/:id:~:thumbsup:", "~<https://a.co/>~user/:id:~:+1:", true},
+		{"full URI bold path marker stays literal", "*https://a.co/*user/:id:*", "*<https://a.co/>*user/:ok:*", false},
+		{"full URI nested formatting before prose alias", "*_https://a.co_*:thumbsup:", "*_<https://a.co>_*:+1:", true},
+		{"full URI quoted query suffix stays literal", "'https://a.co/?q=':id:''", "'<https://a.co/?q=>':ok:''", false},
+		{"full URI repeated closing marker stays literal", "*https://a.co/*:id:*", "*<https://a.co/>*:ok:*", false},
+		{"full URI repeated adjacent markers stay literal", "*https://a.co/**:id:", "*<https://a.co/>**:ok:", false},
+		{"full URI repeated closing marker unchanged", "*https://a.co/*:id:*", "*<https://a.co/>*:id:*", true},
+		{"full URI formatting before embedded reference stays literal", "*https://a.co/*:id:@U123/x*", "*<https://a.co/>*:ok:<@U123>/x*", false},
+		{"full URI formatting before embedded reference unchanged", "*https://a.co/*:id:@U123/x*:thumbsup:", "*<https://a.co/>*:id:<@U123>/x*:+1:", true},
+		{"round4 curly double opening quote stays literal", "“www.a.co/x“:id:", "“<http://www.a.co/x|www.a.co/x>“:ok:", false},
+		{"round4 curly single opening quote stays literal", "‘www.a.co/x‘:id:", "‘<http://www.a.co/x|www.a.co/x>‘:ok:", false},
+		{"round4 guillemet opening quote stays literal", "«www.a.co/x«:id:", "«<http://www.a.co/x|www.a.co/x>«:ok:", false},
+		{"round4 single guillemet opening quote stays literal", "‹www.a.co/x‹:id:", "‹<http://www.a.co/x|www.a.co/x>‹:ok:", false},
+		{"round4 literal underscore run before auto link", "a" + strings.Repeat("_", 39970) + "b www.a.co", "a" + strings.Repeat("_", 39970) + "b <http://www.a.co|www.a.co>", true},
+		{"round4 internal Unicode before path text stays literal", "https://a.co/🎉report", "<https://a.co/>:x:report", false},
+		{"round4 implicit internal Unicode before path text stays literal", "www.a.co/🎉report", "<http://www.a.co/|www.a.co/>:x:report", false},
+		{"round4 userinfo shortcode stays literal", "https://user:id:@example.com", "<https://user>:ok:@example.com", false},
+		{"round4 IPv6 authority shortcode stays literal", "https://[2001:b::1]", "<https://[2001>:a::1]", false},
+		{"round4 IPv6 host adjacent alias", "https://[2001:b::1]:thumbsup:", "<https://[2001:b::1]>:+1:", true},
+		{"round4 implicit IPv6 host adjacent alias", "[2001:b::1]:thumbsup:", "<http://[2001:b::1]|[2001:b::1]>:+1:", true},
+		{"round4 userinfo then host adjacent alias", "https://user:id:@example.com:thumbsup:", "<https://user>:id:@example.com:+1:", true},
+		{"round4 userinfo marker stays literal", "*https://user*:id:@example.com", "*<https://user>*:ok:@example.com", false},
+		{"round4 unchanged userinfo before trailing emoji", "https://user:id:@example.com🎉", "<https://user>:id:@example.com:tada:", true},
+		{"round4 internal query emoji before parameter stays literal", "https://a.co/?q=🎉&id=:id:", "<https://a.co/?q=>🎉&id=:ok:", false},
+		{"round4 paired query quotes stay literal", "'See https://a.co/?q='abc':id: details'", "'See <https://a.co/?q=>'abc':ok: details'", false},
+		{"round4 path segment marker before query stays literal", "*https://a.co/*?:id:", "*<https://a.co/>*?:ok:", false},
+		{"round4 prose text after closing marker and emoji", "*www.a.co/x*:thumbsup:now", "*<http://www.a.co/x|www.a.co/x>*:+1:now", true},
+		{"round4 full authority shortcode before path stays literal", "https://a.co:id:/x", "<https://a.co>:ok:/x", false},
+		{"round4 implicit authority shortcode before path stays literal", "www.a.co:id:/x", "<http://www.a.co|www.a.co>:ok:/x", false},
+		{"round4 review Unicode before query stays literal", "https://a.co/🎉?:id:", "<https://a.co/>🎉?:ok:", false},
+		{"round4 unformatted path before Unicode", "https://a.co/pr/1🎉", "<https://a.co/pr/1>:tada:", true},
+		{"round4 unformatted host before Unicode", "https://a.co👍", "<https://a.co>:+1:", true},
+		{"round4 unformatted path punctuation before Unicode", "https://a.co/pr/1!🎉", "<https://a.co/pr/1>!:tada:", true},
+		{"round4 comma inside path stays literal", "www.a.co/x,:id:/end", "<http://www.a.co/x|www.a.co/x>,:ok:/end", false},
+		{"round4 Unicode inside full path stays literal", "https://a.co/👍/:id:", "<https://a.co/>:+1:/:id:", false},
+		{"round4 unchanged Unicode inside path", "hou.vc/@U123/👍/:id:", "<http://hou.vc/|hou.vc/><@U123>/👍/:id:", true},
+		{"round4 gate closing parenthesis before emoji", "(https://a.co)🎉", "(<https://a.co>):tada:", true},
+		{"full URI bold before prose alias", "*https://a.co*:thumbsup:", "*<https://a.co>*:+1:", true},
+		{"full URI italic before prose alias", "_https://a.co_:thumbsup:", "_<https://a.co>_:+1:", true},
+		{"full URI strike before prose alias", "~https://a.co~:thumbsup:", "~<https://a.co>~:+1:", true},
+		{"full URI host adjacent alias is prose", "https://a.co:thumbsup:", "<https://a.co>:+1:", true},
+		{"full URI unformatted suffix unchanged", "https://a.co:thumbsup:", "<https://a.co>:thumbsup:", true},
+		{"full URI bold added suffix before closer", "*https://a.co*:thumbsup:", "*<https://a.co>:ok:*:+1:", false},
+		{"full URI bold changed target before closer", "*https://a.co*:thumbsup:", "*<https://b.co>*:+1:", false},
+		{"full URI closing bold precedes separate formatted URL", "*https://a.co* *www.b.co/x*:thumbsup:", "*<https://a.co>* *<http://www.b.co/x|www.b.co/x>*:+1:", true},
+		{"full URI closing italic precedes separate formatted URL", "_https://a.co_ _www.b.co/x_:thumbsup:", "_<https://a.co>_ _<http://www.b.co/x|www.b.co/x>_:+1:", true},
+		{"bare host marker retains path continuation", "*hou.vc*/:id:*", "*<http://hou.vc|hou.vc>*/:ok:*", false},
+		{"bare host marker retains query continuation", "*hou.vc*?:id:*", "*<http://hou.vc|hou.vc>*?:ok:*", false},
+		{"bare host marker retains fragment continuation", "*hou.vc*#:id:*", "*<http://hou.vc|hou.vc>*#:ok:*", false},
+		{"bare host marker preserves unchanged continuation", "*hou.vc*/:id:*", "*<http://hou.vc|hou.vc>*/:id:*", true},
+		{"bare host tilde retains path continuation", "~hou.vc~/:id:~", "~<http://hou.vc|hou.vc>~/:ok:~", false},
+		{"curly quoted path before prose alias", "“www.a.co/x”:thumbsup:", "“<http://www.a.co/x|www.a.co/x>”:+1:", true},
+		{"curly single quoted path before prose alias", "‘www.a.co/x’:thumbsup:", "‘<http://www.a.co/x|www.a.co/x>’:+1:", true},
+		{"guillemet quoted path before prose alias", "«www.a.co/x»:thumbsup:", "«<http://www.a.co/x|www.a.co/x>»:+1:", true},
+		{"single guillemet quoted path before prose alias", "‹www.a.co/x›:thumbsup:", "‹<http://www.a.co/x|www.a.co/x>›:+1:", true},
+		{"typographic apostrophe stays inside quoted path", "‘www.a.co/O’Reilly/:id:’", "‘<http://www.a.co/O|www.a.co/O>’Reilly/:ok:’", false},
+		{"curly closing quote on unwrapped URI", "“s3://bucket/x” “www.a.co/x”:thumbsup:", "“s3://bucket/x” “<http://www.a.co/x|www.a.co/x>”:+1:", true},
+		{"pipe separator ends implicit path", "|www.a.co/x|:thumbsup:|", "|<http://www.a.co/x|www.a.co/x>|:+1:|", true},
+		{"parenthesized auto-link after unwrapped URI", "(s3://bucket/x),(www.b.co)", "(s3://bucket/x),(<http://www.b.co|www.b.co>)", true},
+		{"literal pipe requires matching stored boundary", "|www.a.co/x|:thumbsup:|", "|<http://www.a.co/x|www.a.co/x>:ok:|:+1:|", false},
+		{"parenthesized URI prefix remains literal", "(s3://bucket/:id:),(www.b.co)", "(s3://bucket/:ok:),(<http://www.b.co|www.b.co>)", false},
+		{"parenthesis alone cannot split a URI", "s3://bucket/(www.b.co)", "s3://bucket/(<http://www.b.co|www.b.co>)", false},
+		{"curly quoted hostname before prose alias", "“www.a.co”:thumbsup:", "“<http://www.a.co|www.a.co>”:+1:", true},
+		{"curly single quoted hostname before prose alias", "‘www.a.co’:thumbsup:", "‘<http://www.a.co|www.a.co>’:+1:", true},
+		{"curly quote inside path remains literal", "www.a.co/x”/:id:", "<http://www.a.co/x|www.a.co/x>”/:ok:", false},
+		{"bracketed prose after a bare hostname", "www.a.co[:thumbsup:]", "<http://www.a.co|www.a.co>[:+1:]", true},
+		{"bracketed path stays literal", "www.a.co/x[:id:]", "<http://www.a.co/x|www.a.co/x>[:ok:]", false},
+		{"mailto span preserves surrounding URI tail", "s3://bucket/jane@example.com/:id:/x", "s3://bucket/<mailto:jane@example.com>/:id:/x", true},
+		{"mailto span rejects changed surrounding URI tail", "s3://bucket/jane@example.com/:id:/x", "s3://bucket/<mailto:jane@example.com>/:ok:/x", false},
+		{"reference span preserves surrounding URI tail", "s3://bucket/@U123/:id:/x", "s3://bucket/<@U123>/:id:/x", true},
+		{"reference span rejects changed surrounding URI tail", "s3://bucket/@U123/:id:/x", "s3://bucket/<@U123>/:ok:/x", false},
+		{"multiple spans preserve literal URI tail", "https://a.co/@U123/:id:/x", "<https://a.co/><@U123>/:id:/x", true},
+		{"multiple spans reject changed literal URI tail", "https://a.co/@U123/:id:/x", "<https://a.co/><@U123>/:ok:/x", false},
+		{"multiple spans reject deleted literal URI tail", "https://a.co/@U123/:id:/x", "<https://a.co/><@U123>//x", false},
+		{"multiple email spans retain literal URI context", "https://a.co/jane@example.com/:id:/x", "<https://a.co/><mailto:jane@example.com>/:ok:/x", false},
+		{"comma email span preserves literal URI tail", "s3://bucket/x,jane@example.com/:id:/x", "s3://bucket/x,<mailto:jane@example.com>/:id:/x", true},
+		{"comma email span rejects changed literal URI tail", "s3://bucket/x,jane@example.com/:id:/x", "s3://bucket/x,<mailto:jane@example.com>/:ok:/x", false},
+		{"semicolon reference span rejects deleted literal URI tail", "s3://bucket/x;@U123/:id:/x", "s3://bucket/x;<@U123>//x", false},
+		{"implicit URI context crosses a reference", "hou.vc/@U123/:id:/x", "<http://hou.vc/|hou.vc/><@U123>/:id:/x", true},
+		{"implicit URI context rejects changed reference tail", "hou.vc/@U123/:id:/x", "<http://hou.vc/|hou.vc/><@U123>/:ok:/x", false},
+		{"implicit URI context rejects deleted reference tail", "hou.vc/@U123/:id:/x", "<http://hou.vc/|hou.vc/><@U123>//x", false},
+		{"implicit URI context crosses email and reference spans", "hou.vc/jane@example.com/@U123/:id:/x", "<http://hou.vc/|hou.vc/><mailto:jane@example.com>/<@U123>/:ok:/x", false},
+		{"inherited implicit URI preserves internal Unicode", "hou.vc/@U123/👍/:id:", "<http://hou.vc/|hou.vc/><@U123>/:+1:/:id:", false},
+		{"prose boundary ends inherited URI context", "hou.vc/x @U123:thumbsup:", "<http://hou.vc/x|hou.vc/x> <@U123>:+1:", true},
+		{"inherited URI preserves bracket depth", "hou.vc/(abc@U123/:id:)", "<http://hou.vc/(abc|hou.vc/(abc><@U123>/:ok:)", false},
+		{"inherited URI preserves unchanged bracketed path", "hou.vc/(abc@U123/:id:)", "<http://hou.vc/(abc|hou.vc/(abc><@U123>/:id:)", true},
+		{"unwrapped URI closing bold precedes a formatted link", "*s3://bucket/x* *www.a.co/x*:thumbsup:", "*s3://bucket/x* *<http://www.a.co/x|www.a.co/x>*:+1:", true},
+		{"unwrapped URI closing italic precedes a formatted link", "_s3://bucket/x_ _www.a.co/x_:thumbsup:", "_s3://bucket/x_ _<http://www.a.co/x|www.a.co/x>_:+1:", true},
+		{"skip repeated impossible URI candidates", "🎉 " + strings.Repeat("s3://www.a.co ", 100) + "www.a.co", ":tada: " + strings.Repeat("s3://www.a.co ", 100) + "<http://www.a.co|www.a.co>", true},
+		{"literal URI tail does not invent formatting", "See https://a.co/*/x then www.b.co/x*:id:", "See <https://a.co/>*/x then <http://www.b.co/x|www.b.co/x>*:ok:", false},
+		{"unwrapped URI quote preserves surrounding quote", "\"See https://a.co/\"x then www.b.co/x\":thumbsup:", "\"See https://a.co/\"x then <http://www.b.co/x|www.b.co/x>\":+1:", true},
+		{"internal URL apostrophe keeps quoted path literal", "'hou.vc/O'Reilly/:id:'", "'<http://hou.vc/O|hou.vc/O>'Reilly/:ok:'", false},
+		{"internal URL apostrophe preserves unchanged quoted path", "'hou.vc/O'Reilly/:id:'", "'<http://hou.vc/O|hou.vc/O>'Reilly/:id:'", true},
+		{"implicit path marker preserves surrounding formatting", "_See www.a.co/a_b then www.b.co/x_:thumbsup:", "_See <http://www.a.co/a_b|www.a.co/a_b> then <http://www.b.co/x|www.b.co/x>_:+1:", true},
+		{"literal URI quotes preserve surrounding quote", "\"See https://a.co/\"q\" then www.b.co/x\":thumbsup:", "\"See <https://a.co/\"q\"> then <http://www.b.co/x|www.b.co/x>\":+1:", true},
+		{"escaped quote does not close URL phrase", "\"See www.a.co/x\\\":id:\"", "\"See <http://www.a.co/x|www.a.co/x>\\\":ok:\"", false},
+		{"full URI trailing Unicode is prose", "https://example.com/🎉", "<https://example.com/>:tada:", true},
+		{"neighboring URI trailing Unicode is prose", "www.a.co,https://b.co/🎉", "<http://www.a.co|www.a.co>,<https://b.co/>:tada:", true},
+		{"neighboring URI accepts literal suffix", "www.a.co,https://b.co/🎉", "<http://www.a.co|www.a.co>,<https://b.co/>🎉", true},
+		{"neighboring quoted URI has its own prose boundary", "www.a.co,\"www.b.co/x\":thumbsup:", "<http://www.a.co|www.a.co>,\"<http://www.b.co/x|www.b.co/x>\":+1:", true},
+		{"full URI before implicit URI and prose emoji", "https://a.co,www.b.co🎉", "<https://a.co>,<http://www.b.co|www.b.co>:tada:", true},
+		{"literal path ID before actual explicit mention", "www.a.co/@U123/:id: <@U123>", "<http://www.a.co/|www.a.co/>@U123/:ok: <@U123|bob>", false},
+		{"auto-link before explicit label emoji", "www.a.co,<https://b.co/🎉|b.co/🎉>", "<http://www.a.co|www.a.co>,<https://b.co/🎉|b.co/:tada:>", true},
+		{"auto-link before changed explicit target", "www.a.co,<https://b.co/🎉|b.co/🎉>", "<http://www.a.co|www.a.co>,<https://b.co/other|b.co/:tada:>", false},
+		{"auto-link before angle prose emoji", "www.a.co,<status: done 🎉>", "<http://www.a.co|www.a.co>,&lt;status: done :tada:&gt;", true},
+		{"explicit link before changed partial URI", "<https://a.co>,https://b.co", "<https://a.co>,https://<http://b.co|b.co>", false},
+		{"changed shortcode after query delimiter", "hou.vc?:id:", "<http://hou.vc?|hou.vc?>:ok:", false},
+		{"changed shortcode after fragment delimiter", "hou.vc#:id:", "<http://hou.vc#|hou.vc#>:ok:", false},
+		{"retained shortcode after query delimiter", "hou.vc?:id:", "<http://hou.vc?|hou.vc?>:id:", true},
+		{"retained shortcode after fragment delimiter", "hou.vc#:id:", "<http://hou.vc#|hou.vc#>:id:", true},
+		{"path followed by retained emoji", "www.a.co/x🎉", "<http://www.a.co/x|www.a.co/x>:tada:", true},
+		{"hostname followed by flag", "www.a.co🇺🇸", "<http://www.a.co|www.a.co>:us:", true},
+		{"path followed by flag", "www.a.co/x🇺🇸", "<http://www.a.co/x|www.a.co/x>:us:", true},
+		{"hostname followed by family", "www.a.co👨‍👩‍👧", "<http://www.a.co|www.a.co>:man-woman-girl:", true},
+		{"path followed by family", "www.a.co/x👨‍👩‍👧", "<http://www.a.co/x|www.a.co/x>:man-woman-girl:", true},
+		{"hostname Unicode before continued text stays literal", "www.a.co👍🏽now", "<http://www.a.co|www.a.co>:+1::skin-tone-4:now", false},
+		{"path Unicode before continued text stays literal", "www.a.co/x👍🏽now", "<http://www.a.co/x|www.a.co/x>:+1::skin-tone-4:now", false},
+		{"missing literal tone after path emoji", "www.a.co/x🎉:skin-tone-4:", "<http://www.a.co/x|www.a.co/x>:tada:", false},
+		{"retained literal tone after path emoji", "www.a.co/x🎉:skin-tone-4:", "<http://www.a.co/x|www.a.co/x>:tada::skin-tone-4:", true},
+		{"retained literal tone after toned path emoji", "www.a.co/x👍🏽:skin-tone-4:", "<http://www.a.co/x|www.a.co/x>:+1::skin-tone-4::skin-tone-4:", true},
+		{"hostname emoji with typed tone", "www.a.co👍:skin-tone-4:", "<http://www.a.co|www.a.co>:+1::skin-tone-4:", true},
+		{"missing flag beside path", "www.a.co/x🇺🇸", "<http://www.a.co/x|www.a.co/x>", false},
+		{"escaped prose with colon and emoji", "Use <status: done 🎉>", "Use &lt;status: done :tada:&gt;", true},
+		{"escaped compact prose with emoji", "Use &lt;Status:ready🎉&gt;", "Use &lt;Status:ready:tada:&gt;", true},
+		{"code occurrences before actual link", "🎉\n```\n" + strings.Repeat("www.a.co\n", 200) + "```\nwww.a.co", ":tada:\n```\n" + strings.Repeat("www.a.co\n", 200) + "```\n<http://www.a.co|www.a.co>", true},
+		{"HTTP userinfo cannot become mailto", "<https://jane@example.com|jane@example.com>", "<mailto:jane@example.com|jane@example.com>", false},
+		{"explicit link cannot disappear", "<https://example.com|example.com>", "example.com", false},
+		{"explicit display label emoji", "<https://example.com|Done🎉>", "<https://example.com|Done:tada:>", true},
+		{"many failed prefix candidates", strings.Repeat("a.co ", 8000), "x <http://a.co|a.co>", false},
+		{"www auto-link", "see www.example.com", "see <http://www.example.com|www.example.com>", true},
+		{"legacy documented www auto-link", "see www.example.com", "see <http://example.com|www.example.com>", true},
+		{"different destination", "see www.example.com", "see <http://www.attacker.com|www.example.com>", false},
+		{"different label", "see www.example.com", "see <http://www.example.com|changed>", false},
+		{"channel label", "see <#C123>", "see <#C123|general>", true},
+		{"changed channel ID", "see <#C123|general>", "see <#C456|general>", false},
+		{"user label", "hello <@U123>", "hello <@U123|bob>", true},
+		{"changed user ID", "hello <@U123|bob>", "hello <@U456|bob>", false},
+		{"group label", "hello <!subteam^S123>", "hello <!subteam^S123|@team>", true},
+		{"changed group ID", "hello <!subteam^S123|@team>", "hello <!subteam^S456|@team>", false},
+		{"email label", "contact jane@example.com", "contact <mailto:jane@example.com|jane@example.com>", true},
+		{"email without label", "contact jane@example.com", "contact <mailto:jane@example.com>", true},
+		{"changed email destination", "contact jane@example.com", "contact <mailto:other@example.com|jane@example.com>", false},
+		{"changed email label", "contact jane@example.com", "contact <mailto:jane@example.com|other@example.com>", false},
+		{"emoji after clock", "Done at 10:30🎉", "Done at 10:30:tada:", true},
+		{"emoji after colon word", "state:ready🎉", "state:ready:tada:", true},
+		{"emoji at both ends of colon words", "✅status:ready🎉", ":white_check_mark:status:ready:tada:", true},
+		{"emoji-named word before emoji", "key:value:ok✅", "key:value:ok:white_check_mark:", true},
+		{"emoji before colon suffix", "✅ok:", ":white_check_mark:ok:", true},
+		{"changed clock before emoji", "Done at 10:30🎉", "Done at 10:45:tada:", false},
+		{"changed word before emoji", "state:ready🎉", "state:changed:tada:", false},
+		{"emoji in code is literal", "`10:30🎉`", "`10:30:tada:`", false},
+		{"emoji in URL is literal", "https://example.com/🎉", "<https://example.com/:tada:>", false},
+		{"literal inline code", "`www.example.com`", "`<http://www.example.com|www.example.com>`", false},
+		{"literal fenced code", "```www.example.com```", "```<http://www.example.com|www.example.com>```", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			original := slackAPIBase
+			t.Cleanup(func() { slackAPIBase = original })
+			posts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/chat.postMessage" {
+					posts++
+					var post slackPostMessageReq
+					if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
+						t.Error(err)
+					}
+					if post.Text != tc.posted {
+						t.Errorf("posted text changed: %q", post.Text)
+					}
+					_, _ = w.Write([]byte(`{"ok":true,"ts":"1700.001"}`))
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "messages": []map[string]string{{"ts": "1700.001", "text": tc.stored}}})
+			}))
+			defer server.Close()
+			slackAPIBase = server.URL
+			body := mustJSON(t, publishRequest{SessionID: "s1", Conversation: conversationRef{ConversationID: "C1"}, Text: tc.posted, IdempotencyKey: "link-key"})
+			handler := handlePublish(config{slackBotToken: "xoxb-test"}, nil, nil, newPublishDedupCache(publishDedupTTL))
+			attempts := 1
+			if tc.wantDelivered {
+				attempts = 2
+			}
+			for range attempts {
+				w := httptest.NewRecorder()
+				handler(w, httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body)))
+				var receipt publishReceipt
+				if err := json.Unmarshal(w.Body.Bytes(), &receipt); err != nil {
+					t.Fatal(err)
+				}
+				if receipt.Delivered != tc.wantDelivered {
+					t.Fatalf("receipt = %+v, want delivered=%v", receipt, tc.wantDelivered)
+				}
+			}
+			if posts != 1 {
+				t.Fatalf("posts = %d, want one even on a retry", posts)
 			}
 		})
 	}
@@ -833,6 +1170,146 @@ func assertSlackReadbackQuery(t *testing.T, query url.Values, channel, messageTS
 	} {
 		if got := query.Get(key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+}
+
+// The cross product is the oracle: URL spelling, enclosure and prose suffix are
+// independent fixtures, not outputs from the tokenizer under test. The few
+// negative canonical cells are typed identifiers continuing an unenclosed path
+// or query. Raw echoes always match; changed link destinations never match.
+func TestSlackNormalizeURLSuffixMatrix(t *testing.T) {
+	urls := []struct {
+		name, posted, target string
+		implicit, path       bool
+	}{
+		{"bare-domain", "a.co", "http://a.co", true, false},
+		{"http", "http://a.co", "http://a.co", false, false},
+		{"https", "https://a.co", "https://a.co", false, false},
+		{"www", "www.a.co", "http://www.a.co", true, false},
+		{"path", "https://a.co/a_b/~c/*d/(e)", "https://a.co/a_b/~c/*d/(e)", false, true},
+		{"query", "https://a.co/search?q=one&x=two", "https://a.co/search?q=one&x=two", false, true},
+		{"other-scheme", "s3://a.co/pr/1", "s3://a.co/pr/1", false, true},
+	}
+	enclosures := []struct{ name, open, close string }{
+		{"none", "", ""}, {"bold", "*", "*"}, {"italic", "_", "_"},
+		{"strike", "~", "~"}, {"parens", "(", ")"}, {"square", "[", "]"},
+		{"double-quotes", "\"", "\""}, {"single-quotes", "'", "'"},
+		{"angle-less", "See: ", ""}, {"double-bold", "**", "**"},
+		{"double-italic", "__", "__"},
+		{"curly-double", "“", "”"}, {"curly-single", "‘", "’"},
+		{"guillemets", "«", "»"}, {"single-guillemets", "‹", "›"},
+	}
+	suffixes := []struct{ name, posted, stored string }{
+		{"nothing", "", ""}, {"space-text", " then text", " then text"},
+		{"comma", ",", ","}, {"period", ".", "."}, {"question", "?", "?"},
+		{"exclamation", "!", "!"}, {"shortcode", ":thumbsup:", ":+1:"},
+		{"space-emoji", " 🎉", " :tada:"},
+		{"second-link", " https://b.co/next", " <https://b.co/next>"},
+		{"unicode", "🎉", ":tada:"},
+		{"comma-shortcode", ",:thumbsup:", ",:+1:"},
+		{"period-shortcode", ".:thumbsup:", ".:+1:"},
+		{"question-shortcode", "?:thumbsup:", "?:+1:"},
+		{"exclamation-shortcode", "!:thumbsup:", "!:+1:"},
+		{"comma-unicode", ",🎉", ",:tada:"},
+		{"text-shortcode", "done:thumbsup:", "done:+1:"},
+		{"shortcode-text", ":thumbsup:now", ":+1:now"},
+	}
+	cells := 0
+	for _, url := range urls {
+		link := "<" + url.target + ">"
+		if url.implicit {
+			link = "<" + url.target + "|" + url.posted + ">"
+		}
+		for _, enclosure := range enclosures {
+			for _, suffix := range suffixes {
+				posted := enclosure.open + url.posted + enclosure.close + suffix.posted
+				stored := enclosure.open + link + enclosure.close + suffix.stored
+				want := enclosure.close != "" ||
+					(((suffix.name != "shortcode" && suffix.name != "text-shortcode" && suffix.name != "shortcode-text") || !url.path) && suffix.name != "question-shortcode")
+				// An underscore/apostrophe between word characters is a literal
+				// identifier character, even when an opener appeared earlier.
+				if suffix.name == "text-shortcode" && url.path && !strings.HasSuffix(url.posted, ")") &&
+					(enclosure.name == "italic" || enclosure.name == "double-italic" || (enclosure.name == "single-quotes" || enclosure.name == "curly-single")) {
+					want = false
+				}
+				for _, variant := range []struct {
+					name, stored string
+					want         bool
+				}{
+					{"canonical", stored, want},
+					{"verbatim", posted, true},
+					{"changed-target", strings.Replace(stored, "a.co", "evil.co", 1), false},
+				} {
+					cells++
+					name := url.name + "/" + enclosure.name + "/" + suffix.name + "/" + variant.name
+					t.Run(name, func(t *testing.T) {
+						row := struct {
+							Name, Posted, Stored string
+							Want                 bool
+						}{name, posted, variant.stored, variant.want}
+						encoded, err := json.Marshal(row)
+						if err != nil {
+							t.Fatal(err)
+						}
+						t.Logf("URL_MATRIX %s", encoded)
+						if got := slackReadbackTextMatches(posted, variant.stored); got != variant.want {
+							t.Fatalf("match(%q, %q) = %v, want %v", posted, variant.stored, got, variant.want)
+						}
+					})
+				}
+			}
+		}
+	}
+	if cells != 5355 {
+		t.Fatalf("matrix cells = %d, want 7 URL forms x 15 enclosures x 17 suffixes x 3 readbacks = 5355", cells)
+	}
+}
+
+// Split readbacks must preserve internal URI bytes regardless of enclosure.
+// These mutations exercise the token end, rather than merely changing a whole
+// returned target that the initial alignment would already reject.
+func TestSlackNormalizeURLLiteralMatrix(t *testing.T) {
+	for _, url := range []struct{ posted, stored string }{
+		{"https://a.co/", "<https://a.co/>"},
+		{"www.a.co/", "<http://www.a.co/|www.a.co/>"},
+	} {
+		for _, enclosure := range []struct{ open, close string }{
+			{"", ""}, {"*", "*"}, {"_", "_"}, {"~", "~"}, {"**", "**"},
+			{"__", "__"}, {"'", "'"}, {"\"", "\""}, {"(", ")"}, {"[", "]"},
+		} {
+			for _, path := range []string{
+				":_custom:/:id:/x", ":white_check_mark:/:id:/x", "foo_bar/:id:/x",
+				"~user/:id:/x", "*user/:id:/x", "**:id:/x", "*:id:*", "**:id:",
+				"(x/:id:)/end", "?q=':id:'", "x,:id:/end", "*:id:@U123/x",
+				"🎉?:id:", "👍?:id:", "🎉#:id:", "🎉/:id:",
+				"?q='abc':id:", `?q="abc":id:`, "?q=“abc”:id:", "?q=‘abc’:id:",
+				"?q=«abc»:id:", "?q=‹abc›:id:", "'abc':id:", `"abc":id:`,
+				`?q='a\'b':id:`, `?q="a\"b":id:`,
+				"?q='a)b':id:", "?q='a]b':id:", `?q="a}b":id:`, `?q='a\')b':id:`,
+				"?q:'abc':id:", `?q={"x":"abc"}:id:`,
+				"?q=🎉&id=:id:", "?q=🎉;id=:id:", "?q=🎉&:id:",
+				"?q=🎉value:id:", "?q=🎉:id:", "?q=🎉=value:id:",
+				"🎉ref:id:", "👍ref:id:",
+			} {
+				for _, suffix := range []struct{ posted, stored string }{
+					{"", ""}, {" :thumbsup:", " :+1:"}, {"🎉", ":tada:"},
+				} {
+					posted := enclosure.open + url.posted + path + enclosure.close + suffix.posted
+					for _, changed := range []bool{false, true} {
+						t.Run(posted+"/changed="+map[bool]string{true: "true", false: "false"}[changed], func(t *testing.T) {
+							storedPath := strings.ReplaceAll(path, "@U123", "<@U123>")
+							if changed {
+								storedPath = strings.Replace(storedPath, ":id:", ":ok:", 1)
+							}
+							stored := enclosure.open + url.stored + storedPath + enclosure.close + suffix.stored
+							if got := slackReadbackTextMatches(posted, stored); got == changed {
+								t.Fatalf("match(%q, %q) = %v, want %v", posted, stored, got, !changed)
+							}
+						})
+					}
+				}
+			}
 		}
 	}
 }

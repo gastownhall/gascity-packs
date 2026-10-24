@@ -1,0 +1,28 @@
+Source: 563be684
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The link checks introduce false failures, incorrect delivery confirmations, and excessive processing for repeated links. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Distinguish host-and-port labels from URI schemes — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:84-87
+  For a posted URL such as `www.example.com:8080/docs`, Slack's valid `<http://www.example.com:8080/docs|www.example.com:8080/docs>` readback now fails: `slackLinkScheme` interprets `www.example.com:` as a scheme. This previously confirmed form becomes a permanent `readback_unconfirmed` failure, allowing a retry to repost an already delivered message. Distinguish host-and-port labels from explicit URI schemes before rejecting them.
+
+- [P2] Preserve email destinations when folding bare labels — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:268-271
+  Posting `contact jane@example.com` now incorrectly confirms a readback of `contact <https://jane@example.com|jane@example.com>`. The new fold removes the HTTP destination, while both guards pass because the original contains neither an explicit link nor a scheme. That destination is an HTTPS URL with userinfo, not the expected email link. Preserve email destination semantics for bare addresses, not only explicit `<mailto:...>` spans.
+
+- [P2] Avoid rescanning earlier occurrences for every returned link — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:89-95
+  For repeated URL labels, this loop restarts at offset zero for every returned link, and each unsuccessful prefix comparison runs full-prefix emoji folds and the fallback. A valid 36,000-character message containing 4,000 copies of `www.a.co ` requires approximately eight million prefix comparisons and scans about 288 GB of prefix data through the folds alone. This cubic processing runs outside the HTTP timeout and can stall publication after Slack has accepted the message. Align occurrences monotonically and reuse normalized prefixes instead.
+The link checks introduce false failures, incorrect delivery confirmations, and excessive processing for repeated links. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Distinguish host-and-port labels from URI schemes — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:84-87
+  For a posted URL such as `www.example.com:8080/docs`, Slack's valid `<http://www.example.com:8080/docs|www.example.com:8080/docs>` readback now fails: `slackLinkScheme` interprets `www.example.com:` as a scheme. This previously confirmed form becomes a permanent `readback_unconfirmed` failure, allowing a retry to repost an already delivered message. Distinguish host-and-port labels from explicit URI schemes before rejecting them.
+
+- [P2] Preserve email destinations when folding bare labels — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:268-271
+  Posting `contact jane@example.com` now incorrectly confirms a readback of `contact <https://jane@example.com|jane@example.com>`. The new fold removes the HTTP destination, while both guards pass because the original contains neither an explicit link nor a scheme. That destination is an HTTPS URL with userinfo, not the expected email link. Preserve email destination semantics for bare addresses, not only explicit `<mailto:...>` spans.
+
+- [P2] Avoid rescanning earlier occurrences for every returned link — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:89-95
+  For repeated URL labels, this loop restarts at offset zero for every returned link, and each unsuccessful prefix comparison runs full-prefix emoji folds and the fallback. A valid 36,000-character message containing 4,000 copies of `www.a.co ` requires approximately eight million prefix comparisons and scans about 288 GB of prefix data through the folds alone. This cubic processing runs outside the HTTP timeout and can stall publication after Slack has accepted the message. Align occurrences monotonically and reuse normalized prefixes instead.

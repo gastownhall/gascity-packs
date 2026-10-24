@@ -1,0 +1,16 @@
+Source: be68ff54
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new URL-suffix validation rejects valid multi-codepoint emoji conversions, causing false delivery failures. Go tests could not run because the read-only sandbox prevents creating the build directory.
+
+Review comment:
+
+- [P2] Match complete emoji sequences in URL suffixes — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:154-159
+  When a bare URL is followed by a flag or ZWJ emoji, this loop rejects valid Slack readback. For example, `www.example.com🇺🇸` returned as `<http://www.example.com|www.example.com>:us:` consumes the first regional indicator against the entire `:us:` shortcode, then fails on the second indicator. Family emoji have the same problem. This turns previously accepted deliveries into permanent `readback_unconfirmed` failures. Match complete emoji sequences rather than requiring one `slackEmojiUnitPrefix` unit on each side.
+The new URL-suffix validation rejects valid multi-codepoint emoji conversions, causing false delivery failures. Go tests could not run because the read-only sandbox prevents creating the build directory.
+
+Review comment:
+
+- [P2] Match complete emoji sequences in URL suffixes — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:154-159
+  When a bare URL is followed by a flag or ZWJ emoji, this loop rejects valid Slack readback. For example, `www.example.com🇺🇸` returned as `<http://www.example.com|www.example.com>:us:` consumes the first regional indicator against the entire `:us:` shortcode, then fails on the second indicator. Family emoji have the same problem. This turns previously accepted deliveries into permanent `readback_unconfirmed` failures. Match complete emoji sequences rather than requiring one `slackEmojiUnitPrefix` unit on each side.
