@@ -12,7 +12,9 @@ Formula steps are NOT materialized as child beads. Read the step
 descriptions below and work through them in order.
 
 The loop mechanism: every exit path (happy or early) pours the next
-wisp before burning this one. The prompt only bootstraps the first wisp.
+wisp before burning this one, after first resolving this one; it pours
+nothing when it cannot name this wisp. The prompt bootstraps the first wisp
+and, on every startup, reconciles your assigned patrol wisps to exactly one.
 
 ## Deacon Role
 
@@ -392,43 +394,93 @@ This step surfaces problems that individual patrol steps won't catch:
 commit bloat (compactor dog may have failed), stale backups (backup dog
 may have failed), orphan databases, and zombie Dolt server processes.
 
-**Step 1: Run the health check**
+**Step 1: Run the health check and classify it — one script**
+
+`gc dolt health` is a command of the Dolt pack, not of gc itself, and it
+reports on a Dolt server that gc manages. A city with no gc-managed Dolt has
+nothing for it to report, and says so in one of three ways: a city that does
+not import the Dolt pack (for example one on an exec or other beads provider)
+answers `unknown command "dolt"`; a scope whose server bd runs behind its
+proxy answers with a `skipped` report; and a city whose server bd owns
+directly (a direct-transport city) has no gc-managed runtime state, so the
+command exits 78 with `dolt-state.json (missing)`. None of these is a Dolt
+outage. A gc-managed server that is down also exits 78, with its state file
+present but no server running, and that one is an outage. So capture the
+exit code and stderr instead of piping the output straight into a parser:
+"not applicable", "down", "the check itself failed" and "here is a report"
+must stay different answers. Do not probe with `gc dolt --help` first: it
+exits 0 whether or not `gc dolt` exists.
+
 ```bash
-gc dolt health --json
+DOLT_HEALTH_ERR=$(mktemp)
+DOLT_HEALTH_JSON=$(gc dolt health --json 2>"$DOLT_HEALTH_ERR")
+DOLT_HEALTH_RC=$?
+DOLT_HEALTH_STDERR=$(head -c 2000 "$DOLT_HEALTH_ERR")
+rm -f "$DOLT_HEALTH_ERR"
+# Exit 78 is the Dolt pack failing to resolve a gc-managed server's port: with
+# no runtime state file there is no gc-managed Dolt in this city, and with a
+# state file but no running server the gc-managed Dolt is down. gc --json
+# reports a missing command as error.code json_command_not_found; without the
+# JSON envelope it says `unknown command "dolt"` on stderr.
+if [ "$DOLT_HEALTH_RC" -ne 0 ]; then
+  if [ "$DOLT_HEALTH_RC" -eq 78 ] && printf '%s' "$DOLT_HEALTH_STDERR" | grep -q 'cannot resolve runtime port' &&
+     printf '%s' "$DOLT_HEALTH_STDERR" | grep -q 'dolt-state.json (missing)'; then
+    echo "DOLT_HEALTH: not-applicable (no gc-managed Dolt runtime in this city; bd owns the server or none exists)"
+  elif [ "$DOLT_HEALTH_RC" -eq 78 ] && printf '%s' "$DOLT_HEALTH_STDERR" | grep -q 'present but not running'; then
+    echo "DOLT_HEALTH: outage (the gc-managed Dolt server is not running) -> CRITICAL row"
+  elif printf '%s' "$DOLT_HEALTH_JSON" | jq -e '.error.code == "json_command_not_found"' >/dev/null 2>&1 ||
+     printf '%s\\n%s\\n' "$DOLT_HEALTH_STDERR" "$DOLT_HEALTH_JSON" | grep -q -e 'unknown command "dolt"' -e 'unknown command "health"'; then
+    echo "DOLT_HEALTH: not-applicable (gc dolt health does not exist in this city; no Dolt pack)"
+  else
+    echo "DOLT_HEALTH: error (gc dolt health --json exited $DOLT_HEALTH_RC)"
+    gc mail send mayor/ --dedup deacon-dolt-health-could-not-run -s "DEACON: gc dolt health could not run" \\
+      -m "gc dolt health --json exited $DOLT_HEALTH_RC, so Dolt data-plane health was NOT measured this cycle.
+stderr: $DOLT_HEALTH_STDERR"
+  fi
+elif ! printf '%s' "$DOLT_HEALTH_JSON" | jq -e 'type == "object"' >/dev/null 2>&1; then
+  echo "DOLT_HEALTH: error (gc dolt health --json printed no JSON report)"
+  gc mail send mayor/ --dedup deacon-dolt-health-could-not-run -s "DEACON: gc dolt health could not run" \\
+    -m "gc dolt health --json exited 0 without a JSON report, so Dolt data-plane health was NOT measured this cycle.
+stderr: $DOLT_HEALTH_STDERR"
+else
+  printf '%s' "$DOLT_HEALTH_JSON" | jq -r '
+    if (.skipped | type) == "object" then "DOLT_HEALTH: not-applicable (" + (.skipped.reason // "skipped") + ")"
+    elif .applicable == false then "DOLT_HEALTH: not-applicable (" + (.reason // "no Dolt data plane") + ")"
+    else "DOLT_HEALTH: evaluate" end'
+  printf '%s\\n' "$DOLT_HEALTH_JSON"
+fi
 ```
 
-Parse the JSON output (HealthReport schema):
-- `applicable`: false when this city has no Dolt data plane at all
+Act on the `DOLT_HEALTH:` line:
+
+- `not-applicable (<reason>)`: log `Dolt health: not applicable (<reason>)` and
+  move on to the next step. Do NOT escalate and do NOT nudge a dog. A
+  not-applicable report's other fields, if any, are placeholders —
+  `server.reachable` is `false` because no gc-managed Dolt server exists, not
+  because one is down.
+- `outage (...)`: the gc-managed Dolt server is down: its runtime state file
+  exists but no server is running. This is Step 2's `server.reachable ==
+  false` row without a report to read; send Step 3's **Server down
+  (CRITICAL)** escalation.
+- `error (...)`: the script already sent one non-critical escalation. It is
+  deduplicated (`--dedup`), so the mayor holds one such message until it is
+  archived, not one per cycle. Health was not measured, so there is nothing to
+  evaluate; move on.
+- `evaluate`: evaluate the report it printed against the table in Step 2.
+
+The report (HealthReport schema):
 - `server`: running, reachable, pid, port, latency_ms
 - `databases[]`: name, commits, open_beads
-- `backups`: dolt_freshness, dolt_age_seconds, dolt_stale
+- `backups`: dolt_freshness, dolt_age_sec, dolt_stale
 - `processes`: zombie_count, zombie_pids
 - `orphans[]`: name, size
 
-Note: `--json` always exits 0 when the payload is well-formed; health
-state is signalled in-band. Key decisions off `server.reachable`, not
+Note: `--json` exits 0 when the payload is well-formed; health state is
+signalled in-band. Key decisions off `server.reachable`, not
 `server.running` — a process can hold the port while its goroutines
 are wedged (the latter is what first prompted this check to exist).
 
-**Step 1a: Check applicability BEFORE any threshold.**
-
-A city whose bead ledger is on another backend (MySQL, Postgres) has no
-managed Dolt runtime, so there is no data plane to report on. That city
-reports `applicable: false` with a `reason`, and its remaining fields are
-zero-valued placeholders — `server.reachable` is `false` because no Dolt
-server exists, NOT because one is down. Evaluating the table below on such
-a payload escalates a CRITICAL that no one can act on, every patrol cycle.
-
-```bash
-gc dolt health --json | jq -r 'if .applicable == false then "skip: " + .reason else "evaluate" end'
-```
-
-If it reports `skip`, log `Dolt health: not applicable (<reason>)` and move
-on to the next step. Do NOT escalate and do NOT nudge a dog. An older
-`gc dolt health` omits the field entirely; a payload without `applicable`
-is evaluated normally, exactly as before.
-
-**Step 2: Evaluate thresholds** (only when `applicable` is not false)
+**Step 2: Evaluate thresholds** (only on `DOLT_HEALTH: evaluate`)
 
 | Signal | Threshold | Meaning |
 |--------|-----------|---------|
@@ -545,8 +597,32 @@ unread for the next cycle's `check-inbox` step — `gc mail peek <id>` shows one
 in full without marking it read. Archiving them here, unhandled, would bury
 them.
 
-**3. Resolve current wisp and pour next iteration BEFORE burning:**
+**3. Resolve current wisp, pour next iteration, then burn this wisp (one script):**
+
+Run this as ONE script. The burn needs the `CURRENT_WISP` this script
+resolves, and a shell that forgot it between two blocks pours a successor and
+burns nothing. Resolve BEFORE pouring, and pour nothing when the current wisp
+cannot be named: a cycle that pours first and only then finds it cannot name
+its own wisp leaks one wisp per cycle. `$GC_BEAD_ID` is not set in a patrol
+session, and a patrol wisp stays `open` for its whole life (assigning it does
+not claim it), so the fallback query covers `open,in_progress` and the wisps
+tier (`--include-infra`), and selects only this formula's ephemeral roots.
+
+Every failure in this script drains (`gc runtime drain-ack`) instead of only
+stopping. Gas City moves an always-on deacon onto its next cycle when the wisp
+it was running is gone; a turn that ends with that wisp still open, or with no
+successor, is the deacon's last. A drained deacon is restarted, and its startup
+reconciles the patrol wisps. That covers a failed burn of this wisp too. An
+empty `GC_AGENT` stops the script first: an empty `--assignee` is no filter,
+so the lookup would match every deacon's patrol wisps.
 ```bash
+# An empty GC_AGENT would assign the successor to nobody and widen the lookup
+# below to every deacon's patrol wisps: an empty --assignee is no filter.
+if [ -z "${GC_AGENT:-}" ]; then
+  echo "GC_AGENT is empty; not resolving, pouring or burning patrol wisps. Draining."
+  gc runtime drain-ack
+  exit 1
+fi
 # Preferring the spawn trigger is safe here only because the deacon is a
 # singleton with a fresh wake (agents/deacon/agent.toml: max_active_sessions = 1,
 # wake_mode = "fresh"), so one process env holds exactly one wisp and the
@@ -555,7 +631,12 @@ them.
 # or the deacon gains a second slot.
 CURRENT_WISP=${GC_BEAD_ID:-${GC_TRIGGER_WORK_BEAD_ID:-}}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-deacon-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+fi
+if [ -z "$CURRENT_WISP" ]; then
+  echo "Could not resolve the current deacon wisp; not pouring a successor."
+  gc runtime drain-ack
+  exit 1
 fi
 
 NEXT=$(gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix='{{binding_prefix}}' --json | jq -r '.new_epic_id // empty')
@@ -566,21 +647,22 @@ if [ -z "$NEXT" ]; then
 fi
 if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
   echo "Could not assign next deacon wisp; not burning."
+  # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+  gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned deacon wisp $NEXT; burn it by hand."
+  gc runtime drain-ack
+  exit 1
+fi
+if ! gc bd mol burn "$CURRENT_WISP" --force; then
+  echo "Could not burn deacon wisp $CURRENT_WISP; draining so a restarted deacon reconciles it."
   gc runtime drain-ack
   exit 1
 fi
 ```
 
 **4. Burn this wisp before waiting:**
-```bash
-if [ -n "$CURRENT_WISP" ]; then
-  gc bd mol burn "$CURRENT_WISP" --force
-else
-  echo "Could not resolve current deacon wisp; not burning."
-  gc runtime drain-ack
-  exit 1
-fi
-```
+
+Step 3's script already burned it: the burn lives in that script because it
+needs the `CURRENT_WISP` the script resolved.
 
 Do not sleep with the current wisp still open. The backoff belongs to the
 already-assigned successor wisp; if the session restarts during the sleep, the
@@ -591,8 +673,11 @@ Write exactly:
 ```
 IDLE: no work, exiting turn.
 ```
-Then stop immediately. Do NOT sleep, call ScheduleWakeup, or use Monitor.
-The session_sleep policy will restart this session after the configured idle interval;
-the next wisp is already assigned and the restarted session resumes from it.
+Then stop immediately. Do NOT sleep, call ScheduleWakeup, use Monitor, or
+run `gc hook` to start the next cycle yourself: re-entering the loop from
+inside this turn is a busy loop that never ends a turn. Ending the turn is
+the only pacing between cycles; no sleep or idle-timeout policy paces an
+always-on deacon. Gas City restarts this session on the already-assigned
+successor wisp on a later pass, and the restarted session resumes from it.
 
 **Exit criteria:** Next wisp poured and assigned, this wisp burned, turn ended with IDLE signal."""

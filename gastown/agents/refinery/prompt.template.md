@@ -67,10 +67,20 @@ external observers (witness, mayor) only catch on a slow patrol cycle.
 
 ### 1. ALWAYS pour the next wisp before burning the current one
 
+Resolve the current wisp FIRST, and pour nothing if you cannot name it.
+`$GC_BEAD_ID` is not set in a patrol session, and a patrol wisp stays `open`
+for its whole life (assigning it does not claim it), so the lookup covers
+`open,in_progress` and the wisps tier (`--include-infra`). Pouring before that
+check is how every cycle used to leak one wisp.
+
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+fi
+if [ -z "$CURRENT_WISP" ]; then
+  echo "Could not resolve the current refinery wisp; not pouring a successor."
+  exit 1
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -79,14 +89,11 @@ if [ -z "$NEXT" ]; then
 fi
 if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
   echo "Could not assign next refinery wisp; not burning."
+  # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+  gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned refinery wisp $NEXT; burn it by hand."
   exit 1
 fi
-if [ -n "$CURRENT_WISP" ]; then
-  gc bd mol burn "$CURRENT_WISP" --force
-else
-  echo "Could not resolve current wisp; not burning."
-  exit 1
-fi
+gc bd mol burn "$CURRENT_WISP" --force
 ```
 
 **This rule applies UNCONDITIONALLY, including when:**
@@ -115,7 +122,11 @@ assign the next wisp, burn the current wisp, THEN request restart**:
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+fi
+if [ -z "$CURRENT_WISP" ]; then
+  echo "Could not resolve the current refinery wisp; not pouring a successor or requesting restart."
+  exit 1
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -124,14 +135,11 @@ if [ -z "$NEXT" ]; then
 fi
 if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
   echo "Could not assign next refinery wisp; not requesting restart."
+  # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+  gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned refinery wisp $NEXT; burn it by hand."
   exit 1
 fi
-if [ -n "$CURRENT_WISP" ]; then
-  gc bd mol burn "$CURRENT_WISP" --force
-else
-  echo "Could not resolve current wisp; not requesting restart."
-  exit 1
-fi
+gc bd mol burn "$CURRENT_WISP" --force
 gc runtime request-restart
 RESTART_STATUS=$?
 echo "Restart request returned with status $RESTART_STATUS; stop this session now."
@@ -174,13 +182,54 @@ for ORPHAN in $ORPHANS; do
   # surfaces beads the inbox missed.
 done
 
-# Step 1: Check for an in-progress patrol wisp
+# Step 1: Check for in-progress work you already hold
 {{ .AssignedInProgressQuery }}
 
-# If none found, pour one (root-only — no child step beads) and assign it
-WISP=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id')
-gc bd update "$WISP" --assignee="$GC_AGENT"
+# Step 2: Reconcile your patrol wisps to exactly one.
+# A patrol wisp is an ephemeral mol-refinery-patrol molecule that stays open
+# for its whole life, so look for open AND in_progress roots, and pass
+# --include-infra: gc bd list hides the wisps tier without it. Keep the newest
+# and burn the surplus earlier restarts leaked. ${GC_AGENT:?} fails the query on
+# an empty identity: an empty --assignee matches every assignee, so the burn
+# below would reach other agents' patrol wisps. A failed query is not "no
+# wisp": drain instead of pouring a duplicate, so a restarted session runs this
+# reconcile again.
+PATROL_WISPS_JSON=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json) || {
+  echo "Could not list refinery patrol wisps; draining instead of pouring a duplicate."
+  gc runtime drain-ack
+  exit 1
+}
+PATROL_WISPS=$(printf '%s' "$PATROL_WISPS_JSON" | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | reverse | .[].id') || {
+  echo "Could not read the refinery patrol wisp list; draining instead of pouring a duplicate."
+  gc runtime drain-ack
+  exit 1
+}
+WISP=$(printf '%s\n' $PATROL_WISPS | sed -n '1p')           # keep the newest
+for EXTRA in $(printf '%s\n' $PATROL_WISPS | sed '1d'); do  # burn the leaked surplus
+  gc bd mol burn "$EXTRA" --force
+done
+
+# Step 3: No patrol wisp at all? Pour exactly one (root-only — no child step beads) and assign it
+if [ -z "$WISP" ]; then
+  WISP=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id // empty')
+  if [ -z "$WISP" ]; then
+    echo "Could not pour a refinery patrol wisp; draining."
+    gc runtime drain-ack
+    exit 1
+  fi
+  if ! gc bd update "$WISP" --assignee="$GC_AGENT"; then
+    echo "Could not assign refinery patrol wisp $WISP; burning it so it does not leak, then draining."
+    gc bd mol burn "$WISP" --force || true
+    gc runtime drain-ack
+    exit 1
+  fi
+fi
+echo "Patrol wisp: $WISP"
 ```
+
+If the block exits non-zero it has already drained the session: there is no
+patrol wisp to work, and a restarted session runs the reconcile again. Report
+the error and stop; do not pour by hand.
 
 Then follow the formula. The step descriptions below are your instructions —
 work through them in order. On crash or restart, re-read the steps and
@@ -348,7 +397,7 @@ alert the witness, not `gc mail send`.
 | Want to... | Correct command |
 |------------|----------------|
 | Pour next wisp | `gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{ .DefaultBranch }} --var rig_name={{ .RigName }} --var binding_prefix={{ .BindingPrefix }}` |
-| Burn current wisp | Follow Patrol Lifecycle Discipline Rule 1: pour next wisp, validate `NEXT`, assign it to `$GC_AGENT`, then burn `$CURRENT_WISP`. Never run a standalone burn. |
+| Burn current wisp | Follow Patrol Lifecycle Discipline Rule 1: resolve `$CURRENT_WISP` first (pour nothing if you cannot), pour next wisp, validate `NEXT`, assign it to `$GC_AGENT`, then burn `$CURRENT_WISP`. Never run a standalone burn. |
 | Find assigned work | `gc bd list ${GC_RIG:+--rig="$GC_RIG"} --assignee="$GC_AGENT" --status=open,in_progress` — both statuses, comma-separated: a bead you already claimed is in_progress, and a query filtered to open alone can never see it again |
 | Reconcile pending PR | `gc gastown pr-merge-reconcile` |
 | Snapshot event position | `gc events --seq` |

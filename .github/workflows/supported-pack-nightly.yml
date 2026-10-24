@@ -51,7 +51,7 @@ permissions:
 
 env:
   DOLT_VERSION: "2.1.7"
-  CLAUDE_VERSION: "2.1.123"
+  CLAUDE_VERSION: "2.1.283"
 
 jobs:
   static-contracts:

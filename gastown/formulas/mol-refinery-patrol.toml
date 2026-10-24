@@ -12,7 +12,20 @@ Formula steps are NOT materialized as child beads. Read the step
 descriptions below and work through them in order.
 
 The loop mechanism: every exit path (happy or early) pours the next
-wisp before burning this one. The prompt only bootstraps the first wisp.
+wisp before burning this one. The prompt bootstraps the first wisp and, on
+every startup, reconciles your assigned patrol wisps to exactly one.
+
+Every exit path resolves THIS wisp before it pours the next one, and pours
+nothing when it cannot. `$GC_BEAD_ID` is not set in a patrol session, so the
+fallback query is what names the current wisp, and it must match how a patrol
+wisp actually looks: an ephemeral `mol-refinery-patrol` molecule that stays
+`open` for its whole life (assignment does not move it to `in_progress`; only
+`gc bd mol burn` ends it). Hence `--status=open,in_progress` and
+`--include-infra` (gc bd list hides the wisps tier without it). A path that
+poured first and only then found it could not name the current wisp leaked
+one wisp per patrol cycle. The lookup passes `--assignee="${GC_AGENT:?}"`: an
+empty `--assignee` is no filter at all, so an empty identity must fail the
+lookup rather than name another agent's patrol wisp as this one.
 
 Work beads flow directly: pool → polecat → refinery → closed.
 No separate MR beads. The polecat sets metadata (branch, target) on
@@ -122,7 +135,12 @@ wisp, burn the current wisp, then request a restart:
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+fi
+if [ -z "$CURRENT_WISP" ]; then
+  echo "Could not resolve the current refinery wisp; not pouring a successor or requesting restart."
+  gc runtime drain-ack
+  exit 1
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -132,16 +150,12 @@ if [ -z "$NEXT" ]; then
 fi
 if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
   echo "Could not assign next refinery wisp; not requesting restart."
+  # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+  gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned refinery wisp $NEXT; burn it by hand."
   gc runtime drain-ack
   exit 1
 fi
-if [ -n "$CURRENT_WISP" ]; then
-  gc bd mol burn "$CURRENT_WISP" --force
-else
-  echo "Could not resolve current wisp; not requesting restart."
-  gc runtime drain-ack
-  exit 1
-fi
+gc bd mol burn "$CURRENT_WISP" --force
 gc runtime request-restart
 RESTART_STATUS=$?
 echo "Restart request returned with status $RESTART_STATUS; stop this session now."
@@ -386,7 +400,12 @@ Target: $TARGET"
   # bead must not end the merge lane.
   CURRENT_WISP=${GC_BEAD_ID:-}
   if [ -z "$CURRENT_WISP" ]; then
-    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+    CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+  fi
+  if [ -z "$CURRENT_WISP" ]; then
+    echo "Could not resolve the current refinery wisp; not pouring a successor."
+    gc runtime drain-ack
+    exit 1
   fi
   NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
   if [ -z "$NEXT" ]; then
@@ -396,16 +415,12 @@ Target: $TARGET"
   fi
   if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
     echo "Could not assign next refinery wisp; not burning."
+    # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+    gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned refinery wisp $NEXT; burn it by hand."
     gc runtime drain-ack
     exit 1
   fi
-  if [ -n "$CURRENT_WISP" ]; then
-    gc bd mol burn "$CURRENT_WISP" --force
-  else
-    echo "Could not resolve current wisp; not burning."
-    gc runtime drain-ack
-    exit 1
-  fi
+  gc bd mol burn "$CURRENT_WISP" --force
   gc runtime drain-ack
   exit 1
 fi
@@ -502,7 +517,12 @@ Step 3a hand this already-rejected tip straight back here on the next crash.
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+fi
+if [ -z "$CURRENT_WISP" ]; then
+  echo "Could not resolve the current refinery wisp; not pouring a successor."
+  gc runtime drain-ack
+  exit 1
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -512,16 +532,12 @@ if [ -z "$NEXT" ]; then
 fi
 if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
   echo "Could not assign next refinery wisp; not burning."
+  # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+  gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned refinery wisp $NEXT; burn it by hand."
   gc runtime drain-ack
   exit 1
 fi
-if [ -n "$CURRENT_WISP" ]; then
-  gc bd mol burn "$CURRENT_WISP" --force
-else
-  echo "Could not resolve current wisp; not burning."
-  gc runtime drain-ack
-  exit 1
-fi
+gc bd mol burn "$CURRENT_WISP" --force
 ```
 7. Close this step after the current wisp is burned.
 
@@ -607,7 +623,12 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
      ```bash
      CURRENT_WISP=${GC_BEAD_ID:-}
      if [ -z "$CURRENT_WISP" ]; then
-       CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+       CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+     fi
+     if [ -z "$CURRENT_WISP" ]; then
+       echo "Could not resolve the current refinery wisp; not pouring a successor."
+       gc runtime drain-ack
+       exit 1
      fi
      NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
      if [ -z "$NEXT" ]; then
@@ -617,16 +638,12 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
      fi
      if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
        echo "Could not assign next refinery wisp; not burning."
+       # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+       gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned refinery wisp $NEXT; burn it by hand."
        gc runtime drain-ack
        exit 1
      fi
-     if [ -n "$CURRENT_WISP" ]; then
-       gc bd mol burn "$CURRENT_WISP" --force
-     else
-       echo "Could not resolve current wisp; not burning."
-       gc runtime drain-ack
-       exit 1
-     fi
+     gc bd mol burn "$CURRENT_WISP" --force
      ```
    - Close this step after the current wisp is burned.
 
@@ -700,10 +717,10 @@ Branch: $BRANCH
 Target: $TARGET"
   CURRENT_WISP=${GC_BEAD_ID:-}
   if [ -z "$CURRENT_WISP" ]; then
-    CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+    CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
   fi
   if [ -z "$CURRENT_WISP" ]; then
-    echo "Could not resolve current wisp; not burning."
+    echo "Could not resolve the current refinery wisp; not pouring a successor."
     echo "$reason"
     echo "STOP. Existing PR metadata needs human correction."
     gc runtime drain-ack
@@ -717,18 +734,12 @@ Target: $TARGET"
   fi
   if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
     echo "Could not assign next refinery wisp; not burning."
+    # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+    gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned refinery wisp $NEXT; burn it by hand."
     gc runtime drain-ack
     exit 1
   fi
-  if [ -n "$CURRENT_WISP" ]; then
-    gc bd mol burn "$CURRENT_WISP" --force
-  else
-    echo "Could not resolve current wisp; not burning."
-    echo "$reason"
-    echo "STOP. Existing PR metadata needs human correction."
-    gc runtime drain-ack
-    exit 1
-  fi
+  gc bd mol burn "$CURRENT_WISP" --force
   echo "$reason"
   echo "STOP. Existing PR metadata needs human correction."
   gc runtime drain-ack
@@ -1530,7 +1541,12 @@ If auto_land = "false": skip this entirely.
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
 if [ -z "$CURRENT_WISP" ]; then
-  CURRENT_WISP=$(gc bd list --assignee="$GC_AGENT" --status=in_progress --type=molecule --limit=1 --json | jq -r '.[0].id // empty')
+  CURRENT_WISP=$(gc bd list --assignee="${GC_AGENT:?}" --status=open,in_progress --type=molecule --include-infra --limit=0 --json | jq -r '[.[] | select(.title == "mol-refinery-patrol" and .ephemeral == true)] | sort_by(.created_at, .id) | last | .id // empty')
+fi
+if [ -z "$CURRENT_WISP" ]; then
+  echo "Could not resolve the current refinery wisp; not pouring a successor."
+  gc runtime drain-ack
+  exit 1
 fi
 NEXT=$(gc bd mol wisp mol-refinery-patrol --root-only --var target_branch={{target_branch}} --var rig_name={{rig_name}} --var binding_prefix={{binding_prefix}} --json | jq -r '.new_epic_id // empty')
 if [ -z "$NEXT" ]; then
@@ -1540,16 +1556,12 @@ if [ -z "$NEXT" ]; then
 fi
 if ! gc bd update "$NEXT" --assignee="$GC_AGENT"; then
   echo "Could not assign next refinery wisp; not burning."
+  # Unassigned, no assignee-scoped query can ever find it again: reclaim it by id.
+  gc bd mol burn "$NEXT" --force || echo "Could not burn the unassigned refinery wisp $NEXT; burn it by hand."
   gc runtime drain-ack
   exit 1
 fi
-if [ -n "$CURRENT_WISP" ]; then
-  gc bd mol burn "$CURRENT_WISP" --force
-else
-  echo "Could not resolve current wisp; not burning."
-  gc runtime drain-ack
-  exit 1
-fi
+gc bd mol burn "$CURRENT_WISP" --force
 ```
 
 Close this step. The new wisp is ready — re-read formula steps to begin."""
