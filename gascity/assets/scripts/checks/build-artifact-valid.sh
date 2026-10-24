@@ -120,6 +120,7 @@ case "$ARTIFACT_PATH" in
         TRIED="${TRIED:+$TRIED, }$root/$RELATIVE_PATH"
         if [ -f "$root/$RELATIVE_PATH" ]; then
           ARTIFACT_PATH="$root/$RELATIVE_PATH"
+          ARTIFACT_ROOT="$root"
           break
         fi
       done
@@ -152,7 +153,19 @@ for candidate in \
 done
 [ -n "$VALIDATOR" ] || fail "validate_build_artifact.py not found beside $SCRIPT_DIR or under GC_WORK_DIR"
 
-if OUTPUT="$(python3 "$VALIDATOR" --schema "$SCHEMA" --path "$ARTIFACT_PATH" 2>&1)"; then
+UPSTREAM_ARGS=(--verify-absolute-upstreams)
+UPSTREAM_ROOT="${ARTIFACT_ROOT:-${GC_RIG_ROOT:-${GC_BEADS_SCOPE_ROOT:-${GC_DIR:-${GC_STORE_PATH:-}}}}}"
+if [ -z "$UPSTREAM_ROOT" ]; then
+  case "$SCRIPT_DIR" in
+    */.gc/scripts/checks) UPSTREAM_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)" ;;
+    *) UPSTREAM_ROOT="${GC_WORK_DIR:-}" ;;
+  esac
+fi
+if [ -n "$UPSTREAM_ROOT" ]; then
+  UPSTREAM_ARGS+=(--upstream-root "$UPSTREAM_ROOT")
+fi
+
+if OUTPUT="$(python3 "$VALIDATOR" --schema "$SCHEMA" --path "$ARTIFACT_PATH" "${UPSTREAM_ARGS[@]}" 2>&1)"; then
   echo "build artifact valid: schema=$SCHEMA path=$ARTIFACT_PATH"
   exit 0
 fi
