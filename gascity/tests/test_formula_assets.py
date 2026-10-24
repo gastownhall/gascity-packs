@@ -106,6 +106,7 @@ BUILD_FROM_CONVOY_STEPS = BUILD_FROM_REVIEW_STEPS | {
     "prepare-convoy",
     "implement",
     "implement-same-session",
+    "drain-scope",
 }
 
 BUILD_FROM_DECOMPOSE_STEPS = BUILD_FROM_CONVOY_STEPS | {
@@ -1756,7 +1757,7 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["implement-same-session"]["drain"]["member_access"], "exclusive")
         self.assertEqual(steps["implement-same-session"]["drain"]["on_item_failure"], "skip_remaining")
         self.assertTrue(steps["implement-same-session"]["drain"]["item"]["single_lane"])
-        self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session"])
+        self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session", "drain-scope"])
         self.assertEqual(steps["review"]["needs"], ["prepare-review"])
         self.assertEqual(steps["repair-review"]["needs"], ["review"])
         self.assertEqual(steps["finalize"]["needs"], ["repair-review"])
@@ -1857,7 +1858,7 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["prepare-convoy"]["needs"], ["decompose"])
         self.assertEqual(steps["implement"]["needs"], ["prepare-convoy"])
         self.assertEqual(steps["implement-same-session"]["needs"], ["prepare-convoy"])
-        self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session"])
+        self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session", "drain-scope"])
         self.assertEqual(steps["review"]["needs"], ["prepare-review"])
         self.assertEqual(steps["repair-review"]["needs"], ["review"])
         self.assertEqual(steps["finalize"]["needs"], ["repair-review"])
@@ -3555,7 +3556,15 @@ class FormulaAssetTests(unittest.TestCase):
         step_ids = [step["id"] for step in data["steps"]]
         self.assertEqual(
             step_ids,
-            ["prepare", "drain-separate", "drain-same-session", "wait-for-drain", "summarize", "publish"],
+            [
+                "prepare",
+                "drain-separate",
+                "drain-same-session",
+                "drain-scope",
+                "wait-for-drain",
+                "summarize",
+                "publish",
+            ],
         )
 
         separate = data["steps"][1]
@@ -3573,13 +3582,13 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(same["drain"]["member_access"], "exclusive")
         self.assertTrue(same["drain"]["item"]["single_lane"])
         self.assertEqual(same["drain"]["on_item_failure"], "skip_remaining")
-        self.assertEqual(data["steps"][3]["metadata"]["gc.run_target"], "gc.run-operator")
         self.assertEqual(data["steps"][4]["metadata"]["gc.run_target"], "gc.run-operator")
-        self.assertEqual(data["steps"][5]["metadata"]["gc.run_target"], "gc.publisher")
-        self.assertEqual(data["steps"][5]["needs"], ["summarize"])
-        summarize = node_description(root, data["steps"][4])
+        self.assertEqual(data["steps"][5]["metadata"]["gc.run_target"], "gc.run-operator")
+        self.assertEqual(data["steps"][6]["metadata"]["gc.run_target"], "gc.publisher")
+        self.assertEqual(data["steps"][6]["needs"], ["summarize"])
+        summarize = node_description(root, data["steps"][5])
         self.assertIn("gc.implementation.summary_path", summarize)
-        wait = node_description(root, data["steps"][3])
+        wait = node_description(root, data["steps"][4])
         for fragment in (
             "Wait only on the core drain control bead",
             "gc.drain_manifest.v1",
@@ -3590,7 +3599,7 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             with self.subTest(step="wait-for-drain", fragment=fragment):
                 self.assertIn(fragment, wait)
-        publish = node_description(root, data["steps"][5])
+        publish = node_description(root, data["steps"][6])
         for fragment in (
             "push {{push}}",
             "open_pr {{open_pr}}",
@@ -3625,6 +3634,132 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, node_description(root, prepare))
+
+    def test_implement_prepare_judges_this_runs_effects_not_its_compiled_graph(self) -> None:
+        """The compiler creates the run's root, drains, controls and routed steps
+        before prepare runs, so prepare must not fail because they exist. Read
+        literally, the old "no workflow roots, drain controls, routed beads,
+        worktrees ... have been created before validation" rejected every run,
+        and a careful validator did. Neither may pre-existing worktrees of other
+        runs fail it. A drain's own gc.drain_state is the signal that execution
+        began: it is set to expanding before any unit, child workflow or
+        worktree is created."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        data = tomllib.loads((root / "formulas" / "implement.formula.toml").read_text(encoding="utf-8"))
+        prepare = node_description(root, next(step for step in data["steps"] if step["id"] == "prepare"))
+
+        self.assertNotIn("no workflow roots, drain controls, routed beads", prepare)
+        for fragment in (
+            "compiled graph exists before this step runs",
+            "Do\nnot fail because they exist",
+            "--metadata-field gc.root_bead_id=<ROOT_ID> --metadata-field gc.kind=drain",
+            "`gc.drain_state=pending`",
+            "`gc.drain_state=expanding`",
+            "belong to other runs",
+            "do not modify or remove them",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, prepare)
+
+    def assert_validation_failure_aborts_drains(
+        self,
+        data: dict,
+        *,
+        gate: str,
+        downstream: list[str],
+    ) -> None:
+        """Assert a failed validation gate skips every drain instead of releasing it.
+
+        `needs` is ordering-only in graph.v2: a step that closes with
+        gc.outcome=fail still releases its dependents. The only specified
+        failure policy is a scope whose failing member declares
+        gc.on_fail=abort_scope, which skips the remaining open members and
+        closes the scope body with gc.outcome=fail.
+        """
+        steps = {step["id"]: step for step in data["steps"]}
+        bodies = [step for step in data["steps"] if (step.get("metadata") or {}).get("gc.kind") == "scope"]
+        self.assertEqual(len(bodies), 1, "expected exactly one drain scope body")
+        body = bodies[0]
+        body_metadata = body["metadata"]
+        self.assertEqual(body_metadata.get("gc.scope_role"), "body")
+        self.assertTrue(body_metadata.get("gc.scope_name"))
+        self.assertNotIn("gc.scope_ref", body_metadata)
+
+        gate_metadata = steps[gate].get("metadata") or {}
+        self.assertEqual(gate_metadata.get("gc.scope_ref"), body["id"])
+        self.assertEqual(gate_metadata.get("gc.scope_role"), "member")
+        self.assertEqual(gate_metadata.get("gc.on_fail"), "abort_scope")
+
+        drains = [step for step in data["steps"] if "drain" in step]
+        drain_ids = [drain["id"] for drain in drains]
+        self.assertTrue(drains, "expected drain steps")
+        for drain in drains:
+            with self.subTest(drain=drain["id"]):
+                metadata = drain.get("metadata") or {}
+                self.assertEqual(metadata.get("gc.scope_ref"), body["id"])
+                self.assertEqual(metadata.get("gc.scope_role"), "member")
+                self.assertNotIn("gc.kind", metadata)
+                self.assertEqual(drain.get("needs"), [gate])
+        self.assertCountEqual(body.get("needs") or [], [gate, *drain_ids])
+
+        # The post-drain path stays outside the scope; otherwise the abort would
+        # skip the steps that record the failure.
+        members = {step["id"] for step in data["steps"] if (step.get("metadata") or {}).get("gc.scope_ref")}
+        self.assertEqual(members, {gate, *drain_ids})
+        self.assertCountEqual(steps[downstream[0]].get("needs") or [], [*drain_ids, body["id"]])
+        for previous, step_id in zip(downstream, downstream[1:]):
+            with self.subTest(downstream=step_id):
+                self.assertIn(previous, steps[step_id].get("needs") or [])
+
+    def test_implement_validation_failure_aborts_drains(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        data = load_formula(root, "implement")
+        self.assert_validation_failure_aborts_drains(
+            data,
+            gate="prepare",
+            downstream=["wait-for-drain", "summarize", "publish"],
+        )
+        wait = node_description(root, next(step for step in data["steps"] if step["id"] == "wait-for-drain"))
+        self.assertIn("skipped because validation failed", wait)
+
+    def test_derived_implement_formulas_keep_validation_abort_on_drain_overrides(self) -> None:
+        gascity_root = pathlib.Path(__file__).resolve().parents[1]
+        packs_root = gascity_root.parent
+        for pack_name, expected in THIRD_PARTY_BUILD_PACKS.items():
+            formula_name = expected["implementation_entry_formula"]
+            with self.subTest(pack=pack_name, formula=formula_name):
+                resolved = resolve_formula_from_dirs(
+                    [gascity_root / "formulas", packs_root / pack_name / "formulas"],
+                    formula_name,
+                )
+                self.assert_validation_failure_aborts_drains(
+                    resolved,
+                    gate="prepare",
+                    downstream=["wait-for-drain", "summarize", "publish"],
+                )
+
+    def test_build_from_convoy_validation_failure_aborts_drains(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        for name in (
+            "build-from-convoy-base",
+            "build-from-convoy",
+            "build-from-decompose-base",
+            "build-from-decompose",
+            "build-from-plan-base",
+            "build-from-plan",
+            "build-from-requirements-base",
+            "build-from-requirements",
+        ):
+            with self.subTest(formula=name):
+                self.assert_validation_failure_aborts_drains(
+                    resolve_formula(root, name),
+                    gate="prepare-convoy",
+                    downstream=["prepare-review", "review", "repair-review", "finalize"],
+                )
+        prepare_review = (root / "assets" / "workflows" / "build-from-convoy-base" / "prepare-review.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("skipped because validation failed", prepare_review)
 
     def test_item_implementation_formulas_route_role_agents(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
