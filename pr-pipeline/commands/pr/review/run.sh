@@ -105,7 +105,19 @@ case "$MAX_DIFF_LINES" in
 esac
 
 if [ "$MAX_DIFF_LINES" -ne 0 ]; then
-    if ! PR_SIZE=$(gh pr view "$PR" --json additions,deletions,changedFiles \
+    # `gh pr view` resolves its repository from the caller's cwd (unless $PR
+    # is itself a full URL), not from --rig/$RIG resolved above — from the
+    # city directory it finds no repository at all, and from a different
+    # repository's checkout it silently reads an unrelated PR number
+    # (GH#522). Run it from the selected rig's own checkout instead.
+    RIG_PATH=$(gc rig list --city "$GC_CITY_PATH" --json 2>/dev/null | jq -r --arg rig "$RIG" \
+                 '.rigs[]? | select(.name == $rig) | .path // empty')
+    if [ -z "$RIG_PATH" ]; then
+        echo "gc pr-pipeline pr review: could not resolve rig '$RIG' to a checkout, refusing" >&2
+        echo "  rather than reading the PR size from an unrelated repository." >&2
+        exit 1
+    fi
+    if ! PR_SIZE=$(cd "$RIG_PATH" && gh pr view "$PR" --json additions,deletions,changedFiles \
                      --jq '"\(.additions + .deletions) \(.changedFiles)"' 2>/dev/null); then
         echo "gc pr-pipeline pr review: could not read PR size for #$PR, refusing" >&2
         echo "  rather than reviewing on an unknown budget. An unreadable size is not zero." >&2
