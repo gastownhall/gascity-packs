@@ -143,7 +143,7 @@ Default implementation formula: `mol-polecat-work`
 > **CLAIM-FIRST INVARIANT:** Once a candidate bead is identified, your **next**
 > tool call MUST be `gc bd update <id> --claim`. Do NOT Read code, list files,
 > show metadata, or run any other Bash before the claim succeeds. The claim
-> flips bd status to in_progress atomically; without it, the pool reconciler
+> flips the bead's status to in_progress atomically; without it, the pool reconciler
 > can recycle you mid-read and another polecat will race-claim the same bead.
 > Polecat-vs-polecat races are the #1 source of churn — close the window.
 

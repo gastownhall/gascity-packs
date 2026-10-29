@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-# json_payload strips any non-JSON prefix lines (e.g., `bd`'s
+# json_payload strips any non-JSON prefix lines (e.g., the bead CLI's
 # `warning: beads.role not configured` diagnostic, which is emitted on
 # stdout before the real payload). Without this, jq fails to parse the
 # combined stdout and the script exits with empty output and status 1,
@@ -19,6 +19,33 @@ json_payload() {
     awk 'found || /^[[:space:]]*[[{]/{ found=1; print }'
 }
 
+# root_members ROOT prints every member of molecule ROOT as one JSON array.
+#
+# `gc bd list --all` reads only the work store. On a split-store city the
+# molecule's steps live in the class binding, so it answered [] and the gate
+# never saw a verdict. `gc ready` federates the city store, the rig stores and
+# the relocated graph store; it takes one --status and has no --all, so the
+# member set is the union of one leg per status. A leg that fails fails the
+# whole read rather than contributing an empty set.
+root_members() {
+    local root="$1" tmp st rc=0
+    tmp="$(mktemp -d)" || return 1
+    for st in open in_progress blocked closed; do
+        { gc ready --metadata-field "gc.root_bead_id=$root" --status "$st" --limit 0 --json 2>/dev/null |
+            json_payload >"$tmp/$st.json" || printf '%s\n' "$st" >>"$tmp/failed"; } &
+    done
+    wait
+    if [ -s "$tmp/failed" ]; then
+        echo "root_members: gc ready failed for status: $(tr '\n' ' ' <"$tmp/failed")" >&2
+        rc=1
+    fi
+    if [ "$rc" -eq 0 ]; then
+        jq -s 'map(select(type == "array")) | add // [] | unique_by(.id)' "$tmp"/*.json || rc=1
+    fi
+    rm -rf "$tmp"
+    return "$rc"
+}
+
 bd_json() {
     local attempt=0
     local output=""
@@ -26,7 +53,7 @@ bd_json() {
     local last_stderr=""
     while [ "$attempt" -lt 10 ]; do
         stderr_file=$(mktemp)
-        if output=$(bd "$@" 2>"$stderr_file" | json_payload) && [ -n "$output" ]; then
+        if output=$(gc bd "$@" 2>"$stderr_file" | json_payload) && [ -n "$output" ]; then
             rm -f "$stderr_file"
             printf '%s\n' "$output"
             return 0
@@ -83,7 +110,7 @@ load_verdict() {
     # TestReviewCheckScriptsPreferNewestVerdictAcrossRalphStep.
     while [ "$attempt" -lt 10 ]; do
         current=$(
-            gc bd list --all --json --limit=0 2>/dev/null |
+            root_members "$root_id" 2>/dev/null |
                 json_payload |
                 jq -r --arg ref "$apply_ref" --arg root "$root_id" '
                     [
