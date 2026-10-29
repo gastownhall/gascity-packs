@@ -82,7 +82,7 @@ JSON
     grep -q -- '--status in_progress' "$tmp/log" || fail "$script: no in_progress leg"
     grep -q -- '--status blocked' "$tmp/log" || fail "$script: no blocked leg"
     grep -q -- '--status closed' "$tmp/log" || fail "$script: no closed leg"
-    if grep -q '^bd list' "$tmp/log"; then
+    if grep -q '^bd[[:space:]]list' "$tmp/log"; then
         fail "$script: still lists members with gc bd list"
     fi
 
