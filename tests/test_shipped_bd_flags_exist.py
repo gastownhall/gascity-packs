@@ -3,10 +3,10 @@
 gc's split-store `gc bd` allowlist (gascity S2) scans every shipped bead
 command and found invocations that bd rejects on every city, split or not:
 
-  * `gc bd list ... --search` (gastown mol-refinery-patrol): bd list has no
+  * `gc bd list ... --search` (gastown mol-refinery-patrol): the list verb has no
     --search flag. The refinery's duplicate-bug check errored, so a
     pre-existing failure was never matched and a duplicate bug was filed each
-    time. bd list's substring filter is --title-contains.
+    time. The list verb's substring filter is --title-contains.
   * `gc bd meta set` (gastown adopt-pr-review-approved.sh): bd has no `meta`
     verb. It was only in a comment, but an agent following it fails. Metadata
     is written with `gc bd update <id> --set-metadata key=value`.
