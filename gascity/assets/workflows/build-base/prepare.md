@@ -70,15 +70,15 @@ validation gates read these keys, so record every derived path even when the
 matching launch input was blank.
 
 When updating metadata, store plain scalar strings without embedded quote
-characters. Prefer a single JSON-object update with `bd update <root> --metadata
+characters. Prefer a single JSON-object update with `gc bd update <root> --metadata
 '{"gc.var.push":"false","gc.var.open_pr":"false","gc.var.max_iterations":"10"}'`
 or individually quoted `--set-metadata 'key=value'` arguments. Do not write
 values like `"false"` or `"10"` that include literal double quotes.
 
 Close commands do not accept metadata flags. Before closing this step, set the
-step outcome with `bd update <claimed-step-id> --set-metadata 'gc.outcome=pass'`
-and then close with `bd close <claimed-step-id> --reason '<concise reason>'`.
-Do not pass `--set-metadata` or `--metadata` to `bd close`, and do not use
+step outcome with `gc bd update <claimed-step-id> --set-metadata 'gc.outcome=pass'`
+and then close with `gc bd close <claimed-step-id> --reason '<concise reason>'`.
+Do not pass `--set-metadata` or `--metadata` to `gc bd close`, and do not use
 `gc.outcome=success`; successful workflow stages use `gc.outcome=pass`.
 
 Do not edit source files. Close this step only after the required paths and input assumptions are explicit.

@@ -54,33 +54,35 @@ work units. Do not reuse the source or launch convoy from `gc.var.convoy_id`.
 
 Use the convoy creation flow exactly:
 
-1. Create each work item with `bd create ...` and capture the returned work-item
-   bead IDs.
+1. Create each work item with `gc bd create ...` and capture the returned work-item
+   bead IDs. Do not use `gc bd create --root-bead`; `--root-bead` is not a
+   create flag. Attach the workflow root relationship with metadata such as
+   `gc.root_bead_id=<workflow-root-id>`.
 2. Create and link the implementation convoy in one command:
    `gc convoy create <name> <work-item-id...> --json`.
 3. Parse `<implementation-convoy-id>` from that JSON response, then verify the
    convoy with `gc convoy list --json`.
 
 Do not create an empty convoy. Do not call `gc convoy add` for newly-created beads.
-The freshly-created IDs may not be visible to that path yet. Do not call `bd show <implementation-convoy-id>`.
+The freshly-created IDs may not be visible to that path yet. Do not call `gc bd show <implementation-convoy-id>`.
 Convoy IDs are not bd issue IDs.
 
 Record the decomposition output on the workflow root bead with
-`bd update "<workflow-root-id>" --set-metadata "gc.build.decomposition_path=<absolute path>"`.
-Do not use `bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
+`gc bd update "<workflow-root-id>" --set-metadata "gc.build.decomposition_path=<absolute path>"`.
+Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
 object.
 
 Then set both `gc.input_convoy_id=<implementation-convoy-id>` and
 `gc.build.implementation_convoy_id=<implementation-convoy-id>` on the workflow
 root bead with a quoted command like:
 
-`bd update "<workflow-root-id>" --set-metadata "gc.input_convoy_id=<implementation-convoy-id>" --set-metadata "gc.build.implementation_convoy_id=<implementation-convoy-id>"`
+`gc bd update "<workflow-root-id>" --set-metadata "gc.input_convoy_id=<implementation-convoy-id>" --set-metadata "gc.build.implementation_convoy_id=<implementation-convoy-id>"`
 
 before closing, verify both metadata fields exist on the workflow root and point
 to the new implementation convoy.
 Before closing this step, set the claimed step outcome with
-`bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close
-with `bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
-`--metadata` or `--set-metadata` to `bd close`.
+`gc bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close
+with `gc bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
+`--metadata` or `--set-metadata` to `gc bd close`.
 
-Artifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.decomposition_path` (fallback `gc.var.decomposition_path`) against schema `gc.build.decomposition.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.
+Artifact validation: this stage is gated by the pack-owned `build-artifact-valid.sh` check, which validates the artifact recorded at `gc.build.decomposition_path` (fallback `gc.var.decomposition_path`) against schema `gc.build.decomposition.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.

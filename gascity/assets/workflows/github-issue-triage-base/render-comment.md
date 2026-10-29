@@ -1,5 +1,5 @@
 
-Read workflow root metadata from `bd show <root-bead-id> --json`.
+Read workflow root metadata from `gc bd show <root-bead-id> --json`.
 If workflow root metadata has `gc.github.reused_current_output=true`, validate
 that `gc.github.comment_path` points to an existing `comment.md` under
 `gc.github.triage_dir`, validate the reused triage report still matches

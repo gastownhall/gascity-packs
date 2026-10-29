@@ -49,7 +49,7 @@ Then create or refresh the canonical GitHub source bead using this v0 contract:
 - Source beads are non-runnable index/cache beads. Do not route the source bead,
   assign it, depend on it, or use it as a readiness gate.
 - Lookup uses object identity only:
-  `bd list --metadata-field gc.kind=github_source --metadata-field gc.github.kind=pull --metadata-field gc.github.repo=<owner>/<repo> --metadata-field gc.github.number=<number> --status open,in_progress,closed --limit 1 --json`.
+  `gc bd list --metadata-field gc.kind=github_source --metadata-field gc.github.kind=pull --metadata-field gc.github.repo=<owner>/<repo> --metadata-field gc.github.number=<number> --status open,in_progress,closed --limit 1 --json`.
 - Write `source-metadata.json` with flat string metadata:
   `gc.kind=github_source`, `gc.github.kind=pull`,
   `gc.github.repo=<owner>/<repo>`, `gc.github.number=<number>`,
@@ -62,19 +62,19 @@ Then create or refresh the canonical GitHub source bead using this v0 contract:
   `gc.github.snapshot_path=<absolute source.json path>`,
   `gc.github.updated_at=<updated_at>`.
 - If no bead exists, create it with
-  `bd create "GitHub PR source: <owner>/<repo>#<number>" --type task --labels gc.github-source,gc.github-pr --external-ref <canonical_url> --metadata @source-metadata.json`.
+  `gc bd create "GitHub PR source: <owner>/<repo>#<number>" --type task --labels gc.github-source,gc.github-pr --external-ref <canonical_url> --metadata @source-metadata.json`.
 - If a bead exists, refresh it with
-  `bd update <source-bead-id> --external-ref <canonical_url> --metadata @source-metadata.json`.
+  `gc bd update <source-bead-id> --external-ref <canonical_url> --metadata @source-metadata.json`.
 
 Then stamp workflow root metadata as the context handoff index for downstream
 steps. Do not write a separate PR-review context file; bead metadata is the
 small stable index, and artifact files hold large payloads.
 
-- Read the current step bead with `bd show <current-step-bead-id> --json` and
+- Read the current step bead with `gc bd show <current-step-bead-id> --json` and
   take `gc.root_bead_id`; hard-fail if it is missing.
 - Resolve the current head-SHA review directory with
   `{{pack_root}}/assets/scripts/artifacts.py path --override "{{artifact_root}}" --relative "/github/pulls/<owner>/<repo>/<number>/reviews/<head-sha>/" --mkdir-parents --directory`.
 - Update the workflow root metadata with:
-  `bd update <root-bead-id> --set-metadata gc.github.source_bead_id=<source-bead-id> --set-metadata gc.github.kind=pull --set-metadata gc.github.repo=<owner>/<repo> --set-metadata gc.github.number=<number> --set-metadata gc.github.url=<canonical_url> --set-metadata gc.github.head_sha=<head_sha> --set-metadata gc.github.snapshot_path=<absolute source.json path> --set-metadata gc.github.review_dir=<absolute review directory> --set-metadata gc.github.artifact_root=<absolute artifact root> --set-metadata gc.github.context_path={{context_path}} --set-metadata gc.github.post_mode={{post_mode}} --set-metadata gc.github.reused_current_output=false`.
+  `gc bd update <root-bead-id> --set-metadata gc.github.source_bead_id=<source-bead-id> --set-metadata gc.github.kind=pull --set-metadata gc.github.repo=<owner>/<repo> --set-metadata gc.github.number=<number> --set-metadata gc.github.url=<canonical_url> --set-metadata gc.github.head_sha=<head_sha> --set-metadata gc.github.snapshot_path=<absolute source.json path> --set-metadata gc.github.review_dir=<absolute review directory> --set-metadata gc.github.artifact_root=<absolute artifact root> --set-metadata gc.github.context_path={{context_path}} --set-metadata gc.github.post_mode={{post_mode}} --set-metadata gc.github.reused_current_output=false`.
 
 Only `gc.github.head_sha` controls head-SHA-keyed PR review reuse.

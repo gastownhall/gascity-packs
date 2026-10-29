@@ -11,14 +11,14 @@ result while preserving the approved build outcome.
 `gc.outcome=noop`. A disabled/no-op publish is a successful publish step:
 
 ```bash
-bd update "$CLAIMED_BEAD_ID" \
+gc bd update "$CLAIMED_BEAD_ID" \
   --set-metadata 'gc.outcome=pass' \
   --set-metadata 'gc.publish_outcome=noop' \
   --set-metadata 'gc.publish_mode=disabled' \
   --set-metadata 'gc.build_outcome=pass' \
   --set-metadata 'gc.final_report=<final report path>' \
   --set-metadata 'gc.artifact_root=<artifact root>'
-bd close "$CLAIMED_BEAD_ID" --reason 'Publishing disabled; build-basic result approved.'
+gc bd close "$CLAIMED_BEAD_ID" --reason 'Publishing disabled; build-basic result approved.'
 ```
 
 Close only after the push, PR creation, or no-op publish result is recorded.

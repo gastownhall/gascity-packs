@@ -12,10 +12,10 @@ backward-compatible alias: the effective interaction mode is
 `interaction_mode` when non-empty, otherwise `mode`. The effective value must
 be `interactive`, `autonomous`, or `headless`; `review_mode` must be `report`,
 `agent`, or `interactive`; `drain_policy` must be `separate` or
-`same-session`. Read the current step bead with `bd show <current-step-bead-id>
+`same-session`. Read the current step bead with `gc bd show <current-step-bead-id>
 --json`, take `gc.root_bead_id` (hard-fail if missing), and record the
 normalized value on the workflow root with
-`bd update <root-bead-id> --set-metadata gc.var.interaction_mode=<effective interaction mode>`.
+`gc bd update <root-bead-id> --set-metadata gc.var.interaction_mode=<effective interaction mode>`.
 Downstream steps read `gc.var.interaction_mode`, never the raw alias.
 
 Methodology selector compatibility gate. For each selected formula —
@@ -72,7 +72,7 @@ Then create or refresh the canonical GitHub source bead using this v0 contract:
 - Source beads are non-runnable index/cache beads. Do not route the source bead,
   assign it, depend on it, or use it as a readiness gate.
 - Lookup uses object identity only:
-  `bd list --metadata-field gc.kind=github_source --metadata-field gc.github.kind=issue --metadata-field gc.github.repo=<owner>/<repo> --metadata-field gc.github.number=<number> --status open,in_progress,closed --limit 1 --json`.
+  `gc bd list --metadata-field gc.kind=github_source --metadata-field gc.github.kind=issue --metadata-field gc.github.repo=<owner>/<repo> --metadata-field gc.github.number=<number> --status open,in_progress,closed --limit 1 --json`.
 - Write `source-metadata.json` with flat string metadata:
   `gc.kind=github_source`, `gc.github.kind=issue`,
   `gc.github.repo=<owner>/<repo>`, `gc.github.number=<number>`,
@@ -83,9 +83,9 @@ Then create or refresh the canonical GitHub source bead using this v0 contract:
   `gc.github.snapshot_path=<absolute source.json path>`,
   `gc.github.updated_at=<updated_at>`.
 - If no bead exists, create it with
-  `bd create "GitHub issue source: <owner>/<repo>#<number>" --type task --labels gc.github-source,gc.github-issue --external-ref <canonical_url> --metadata @source-metadata.json`.
+  `gc bd create "GitHub issue source: <owner>/<repo>#<number>" --type task --labels gc.github-source,gc.github-issue --external-ref <canonical_url> --metadata @source-metadata.json`.
 - If a bead exists, refresh it with
-  `bd update <source-bead-id> --external-ref <canonical_url> --metadata @source-metadata.json`.
+  `gc bd update <source-bead-id> --external-ref <canonical_url> --metadata @source-metadata.json`.
 
 Do not use title, label, assignee, or state changes to invalidate downstream
 fix reuse; `gc.github.body_hash` is the issue content key.

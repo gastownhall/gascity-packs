@@ -1,6 +1,6 @@
 
 Read the current step bead metadata, get `gc.root_bead_id`, then read workflow
-root metadata with `bd show <root-bead-id> --json`. Required workflow root
+root metadata with `gc bd show <root-bead-id> --json`. Required workflow root
 metadata keys are `gc.github.source_bead_id`, `gc.github.repo`,
 `gc.github.number`, `gc.github.url`, `gc.github.head_sha`,
 `gc.github.snapshot_path`, and `gc.github.review_dir`.
@@ -48,7 +48,7 @@ If the selected formula does not declare the mode vars, omit the two mode
 Do not close this step until `REPORT_PATH` exists and validates through
 `{{pack_root}}/assets/scripts/github_reports.py review-outcome "$REPORT_PATH"`.
 Persist the review handoff and result on workflow root metadata:
-`bd update <root-bead-id> --set-metadata gc.github.review_subject_path="$SUBJECT_PATH" --set-metadata gc.github.review_report_path="$REPORT_PATH" --set-metadata gc.github.review_outcome=<approve|comment|request_changes|block>`.
+`gc bd update <root-bead-id> --set-metadata gc.github.review_subject_path="$SUBJECT_PATH" --set-metadata gc.github.review_report_path="$REPORT_PATH" --set-metadata gc.github.review_outcome=<approve|comment|request_changes|block>`.
 
 The adapter does not check out a mutation worktree, push commits, amend
 contributor branches, submit formal GitHub review events, or create follow-up

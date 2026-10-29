@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import re
@@ -48,6 +49,7 @@ FORMULAS = {
 
 ROLE_AGENTS = {
     "design-author",
+    "feature-refiner",
     "design-implementation-reviewer",
     "design-test-risk-reviewer",
     "gap-analyst",
@@ -55,6 +57,7 @@ ROLE_AGENTS = {
     "implementation-worker",
     "issue-triager",
     "publisher",
+    "quality-judge",
     "requirements-planner",
     "review-synthesizer",
     "run-operator",
@@ -218,7 +221,11 @@ MODE_VAR_DEFAULTS = {
     "github-pr-review": {"interaction_mode": "interactive", "review_mode": "report"},
 }
 
+# Derived packs still use the launcher-installed compatibility path in their
+# explicit step overrides. The base gascity pack owns and resolves its script
+# from the sibling asset tree.
 BUILD_ARTIFACT_CHECK_SCRIPT = ".gc/scripts/checks/build-artifact-valid.sh"
+GASCITY_BUILD_ARTIFACT_CHECK_SCRIPT = "../assets/scripts/checks/build-artifact-valid.sh"
 
 # One produce attempt plus two bounded schema-repair attempts per artifact stage.
 BUILD_ARTIFACT_GATE_MAX_ATTEMPTS = 3
@@ -482,6 +489,17 @@ def load_formula(root: pathlib.Path, name: str) -> dict:
     return tomllib.loads((root / "formulas" / f"{name}.formula.toml").read_text(encoding="utf-8"))
 
 
+def _walk_formula_nodes(data: dict):
+    """Yield every step/template node, including nested children and loop bodies."""
+    pending = list(data.get("steps") or []) + list(data.get("template") or [])
+    while pending:
+        node = pending.pop()
+        yield node
+        pending.extend(node.get("children") or [])
+        loop = node.get("loop") or {}
+        pending.extend(loop.get("body") or [])
+
+
 def load_formula_from_dirs(formula_dirs: list[pathlib.Path], name: str) -> dict:
     for formula_dir in reversed(formula_dirs):
         path = formula_dir / f"{name}.formula.toml"
@@ -668,6 +686,66 @@ def assert_pack_or_role_route_target(
     test_case.assertTrue((pack_root / "agents" / local_agent / "agent.toml").is_file())
 
 
+def write_check_gc_stub(bin_dir: pathlib.Path, *, parent_show: bool = False) -> pathlib.Path:
+    """Write a fake `gc` for the check-script tests, and return its path.
+
+    The check gates enumerate molecule members with `gc ready` (one leg per
+    --status) rather than a metadata-filtered `gc bd list`, because a collection
+    query carries no bead id and is refused on a city that relocates the graph
+    class. The stub answers every `ready` leg from BD_LIST_JSON, so the union
+    the gate builds is the same member set the old single list call returned.
+
+    `ready` without --metadata-field is rejected: unscoped, it would return the
+    whole city and the gate could read a *different* molecule's verdict. Any
+    other verb exits 2, so a gate that starts shelling out to something new
+    fails here instead of silently reading an empty set.
+
+    A member carrying an explicit "status" is served only by that status's leg;
+    a member without one is served by every leg (the gate dedupes by id). That
+    lets a test place a bead in exactly one leg and prove the gate unions all
+    four — without disturbing the fixtures that don't model status at all.
+    """
+    show = (
+        "    if [ \"${2:-}\" = \"root\" ]; then\n"
+        "      cat \"$BD_PARENT_SHOW_JSON\"\n"
+        "    else\n"
+        "      cat \"$BD_SHOW_JSON\"\n"
+        "    fi\n"
+        if parent_show
+        else "    cat \"$BD_SHOW_JSON\"\n"
+    )
+    fake_gc = bin_dir / "gc"
+    fake_gc.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [ \"${1:-}\" = \"ready\" ]; then\n"
+        "  case \" $* \" in\n"
+        "    *\" --metadata-field \"*) : ;;\n"
+        "    *) echo \"stub: gc ready without --metadata-field\" >&2; exit 2 ;;\n"
+        "  esac\n"
+        "  st=\"\"\n"
+        "  while [ \"$#\" -gt 0 ]; do\n"
+        "    if [ \"$1\" = \"--status\" ]; then st=\"${2:-}\"; break; fi\n"
+        "    shift\n"
+        "  done\n"
+        "  if [ -z \"$st\" ]; then echo \"stub: gc ready without --status\" >&2; exit 2; fi\n"
+        "  jq --arg st \"$st\" 'map(select((.status // $st) == $st))' \"$BD_LIST_JSON\"\n"
+        "  exit 0\n"
+        "fi\n"
+        "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
+        "shift\n"
+        "case \"$1\" in\n"
+        "  version) exit 0 ;;\n"
+        "  show)\n" + show + "    ;;\n"
+        "  list) cat \"$BD_LIST_JSON\" ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_gc.chmod(0o755)
+    return fake_gc
+
+
 class FormulaAssetTests(unittest.TestCase):
     def test_expected_formula_set_is_convoy_first(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -699,60 +777,549 @@ class FormulaAssetTests(unittest.TestCase):
             self.assertTrue((path.parent / "prompt.template.md").is_file())
         self.assertIn(root / "roles" / "agents" / "run-operator" / "agent.toml", paths)
 
-    def test_role_agent_prompts_include_graph_claim_protocol(self) -> None:
+    def test_role_agent_prompts_embed_shared_claim_protocol(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
-        shared_lines = (
-            root / "roles" / "prompts" / "shared" / "gc-role-worker.md.tmpl"
-        ).read_text(encoding="utf-8").splitlines()
-        expected = "\n".join(shared_lines[1:-1]).strip()
+        fragment = root / "template-fragments" / "gc-role-worker.template.md"
+        text = fragment.read_text(encoding="utf-8")
+        include = '{{ template "gc-role-worker" . }}'
 
-        for fragment in (
-            "GC_CLAIM",
-            "`gc hook --claim --json` is the only permitted discovery source",
-            "gc hook --claim --json",
+        for required in (
+            "only work-discovery command",
+            "may have assigned work before returning",
+            "gc hook --claim --drain-ack --json",
+            "`gc bd mol current`",
             "CLAIMED_BEAD_ID",
-            "CLAIM_REJECTED",
+            "CLAIMED_ROOT_BEAD_ID",
+            "CLAIMED_CONTINUATION_GROUP",
             "gc runtime drain-ack",
-            "gc.continuation_group",
-            "gc.scope_role=teardown",
-            "Never use a bare `bd close` for a bead that asks for close metadata",
-            'bd update "$GC_BEAD_ID"',
-            "Finding review issues, missing tests, or required follow-up is usually the\nbead's output",
-            "check for more routed work before draining",
-            "running the same `GC_CLAIM` block again",
+            "An empty continuation group is a hard session boundary",
+            "Never ask a human whether to proceed after a successful claim",
+            "Every successful claim result is authoritative",
+            "Set required metadata before closing same claimed bead",
+            'gc bd update "$CLAIMED_BEAD_ID"',
+            'gc bd close "$CLAIMED_BEAD_ID"',
+            "Review findings, missing tests, or follow-up usually are output",
+            "After close, inspect `CLAIMED_CONTINUATION_GROUP`",
+            'Never claim "drained" without acknowledgement',
         ):
-            with self.subTest(fragment=fragment):
-                self.assertIn(fragment, expected)
-        self.assertNotIn("bd update \"$WORK_ID\" --claim --json", expected)
+            with self.subTest(required=required):
+                self.assertIn(required, text)
+        self.assertNotIn("GC_CLAIM", text)
 
         for agent_name in ROLE_AGENTS:
             prompt = root / "roles" / "agents" / agent_name / "prompt.template.md"
             with self.subTest(agent=agent_name):
-                self.assertEqual(prompt.read_text(encoding="utf-8").strip(), expected)
+                self.assertEqual(prompt.read_text(encoding="utf-8"), f"{include}\n")
 
-    def test_role_worker_protocol_fragment_matches_shared_prompt(self) -> None:
+    def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
-        shared = root / "roles" / "prompts" / "shared" / "gc-role-worker.md.tmpl"
+        text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
+        close = text[text.index("## Close") : text.index("## Continue")]
 
-        for fragment in (
-            root / "template-fragments" / "gc-role-worker.template.md",
-            root / "roles" / "template-fragments" / "gc-role-worker.template.md",
+        for required in (
+            "Never merge a pull request yourself unless the bead explicitly",
+            "canonical PR URL",
+            "PR or publish metadata the bead's result contract requests",
+            "If the bead or its formula names a handoff",
+            "never invent a recipient",
+            "do not claim a handoff",
+            "`gc.outcome=fail`",
+            "`gc.failure_class=pr_handoff_failed`",
         ):
-            with self.subTest(fragment=fragment):
-                self.assertEqual(fragment.read_text(encoding="utf-8"), shared.read_text(encoding="utf-8"))
+            with self.subTest(required=required):
+                self.assertIn(required, close)
 
-        pack_root = root.parent
-        for pack_name in THIRD_PARTY_BUILD_PACKS:
-            fragment = pack_root / pack_name / "template-fragments" / "gc-role-worker.template.md"
-            with self.subTest(fragment=fragment):
-                self.assertEqual(fragment.read_text(encoding="utf-8"), shared.read_text(encoding="utf-8"))
+        # The fragment is shared by every graph.v2 worker in gascity and the
+        # derived packs. A hard-coded coordinator recipient, or a mail send
+        # chained in front of the close, strands the claimed bead whenever that
+        # recipient does not resolve or the mail store is unavailable.
+        self.assertNotRegex(close, r"gc mail send\s+mayor")
+        self.assertNotRegex(close, r"&&\s*(?:\\\s*)?gc bd close")
+        self.assertNotIn("MERGE REQUEST", close)
 
-    def test_third_party_agents_include_gc_claim_protocol(self) -> None:
+    def test_city_claim_command_verifies_and_normalizes_claim(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        self.assertTrue(command.is_file())
+        self.assertTrue(command.stat().st_mode & 0o111)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = hook ] && [ \"$2\" = --claim ] && [ \"$3\" = --drain-ack ] && [ \"$4\" = --json ]; then\n"
+                "  printf '%s\\n' '{\"action\":\"work\",\"bead_id\":\"bd-123\",\"assignee\":\"worker\",\"route\":\"gc.implementation-worker\"}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = bd-123 ] && [ \"$4\" = --json ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"bd-123\",\"status\":\"in_progress\",\"assignee\":\"worker\",\"metadata\":{\"gc.routed_to\":\"gc.implementation-worker\",\"gc.root_bead_id\":\"root-1\",\"gc.continuation_group\":\"group-1\"}}'\n"
+                "else\n"
+                "  exit 2\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_AGENT": "gc.implementation-worker",
+                # commands/claim/run.sh reads `${GC_TEMPLATE:-${GC_AGENT:-}}`, so
+                # a seat's exported GC_TEMPLATE outranks the GC_AGENT this test is
+                # exercising and the claim is rejected on a route mismatch. Empty
+                # falls through to GC_AGENT; the env dict cannot unset a name.
+                "GC_TEMPLATE": "",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "action": "work",
+                "bead_id": "bd-123",
+                "root_bead_id": "root-1",
+                "continuation_group": "group-1",
+                "bead": {
+                    "id": "bd-123",
+                    "status": "in_progress",
+                    "assignee": "worker",
+                    "metadata": {
+                        "gc.routed_to": "gc.implementation-worker",
+                        "gc.root_bead_id": "root-1",
+                        "gc.continuation_group": "group-1",
+                    },
+                },
+            },
+        )
+
+    def test_city_claim_command_returns_drain_without_bead_lookup(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = hook ] && [ \"$2\" = --claim ] && [ \"$3\" = --drain-ack ] && [ \"$4\" = --json ]; then\n"
+                "  printf '%s\\n' '{\"action\":\"drain\"}'\n"
+                "else\n"
+                "  exit 2\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"action": "drain"})
+
+    def test_city_claim_command_declares_authoritative_convoy_source_on_explicit_run(
+        self,
+    ) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            gc_calls = tmp_path / "gc-calls"
+            observer_calls = tmp_path / "observer-calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = hook ]; then\n"
+                "  printf '%s\\n' '{\"action\":\"work\",\"bead_id\":\"gcg-step\",\"assignee\":\"worker\",\"route\":\"gc.implementation-worker\"}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = gcg-step ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"gcg-step\",\"status\":\"in_progress\",\"assignee\":\"worker\",\"metadata\":{\"gc.routed_to\":\"gc.implementation-worker\",\"gc.input_convoy_id\":\"gcg-input\"}}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = update ] && [ \"$3\" = session-1 ]; then\n"
+                "  exit 0\n"
+                "elif [ \"$1\" = convoy ] && [ \"$2\" = status ] && [ \"$3\" = gcg-input ]; then\n"
+                "  printf '%s\\n' '{\"schema_version\":\"1\",\"convoy\":{\"id\":\"gcg-input\"},\"children\":[{\"id\":\"ga-source-anchor\"},{\"id\":\"ga-rig-anchor\"}]}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = ga-source-anchor ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"ga-source-anchor\",\"metadata\":{\"gc.source_store_ref\":\"city:\",\"gc.source_bead_id\":\"mc-tawl\"}}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ] && [ \"$3\" = ga-rig-anchor ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"ga-rig-anchor\",\"metadata\":{\"gc.source_store_ref\":\"rig:gascity\",\"gc.source_bead_id\":\"ga-local\"}}'\n"
+                "else\n"
+                "  exit 2\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            fake_observer = bin_dir / "gasworks-observer"
+            fake_observer.write_text(
+                "#!/bin/sh\n"
+                "printf '%s|%s\\n' \"${GASWORKS_RUN_ID:-}\" \"$*\" >>\"$OBSERVER_TEST_CALLS\"\n",
+                encoding="utf-8",
+            )
+            fake_observer.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_AGENT": "gc.implementation-worker",
+                "GC_TEMPLATE": "",  # see the GC_TEMPLATE note above
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_SESSION_ID": "session-1",
+                "GC_BEADS_PROJECT_ID": "prj_343030dd09cda2fb",
+                "GASWORKS_RUN_ID": "gwr_explicit",
+                "GASWORKS_OBSERVER_BIN": str(fake_observer),
+                "GC_TEST_CALLS": str(gc_calls),
+                "OBSERVER_TEST_CALLS": str(observer_calls),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
+            call_lines = gc_calls.read_text(encoding="utf-8").splitlines()
+            observer_lines = (
+                observer_calls.read_text(encoding="utf-8").splitlines()
+                if observer_calls.exists()
+                else []
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["bead_id"], "gcg-step")
+        self.assertIn(
+            " ".join(
+                (
+                    "b" + "d",
+                    "update",
+                    "session-1",
+                    "--set-metadata",
+                    "gc.current_run_id=gwr_explicit",
+                )
+            ),
+            call_lines,
+        )
+        self.assertIn("convoy status gcg-input --json", call_lines)
+        self.assertIn(" ".join(("b" + "d", "show", "ga-source-anchor", "--json")), call_lines)
+        self.assertIn(" ".join(("b" + "d", "show", "ga-rig-anchor", "--json")), call_lines)
+        self.assertEqual(
+            observer_lines,
+            [
+                "gwr_explicit|declare-work -beads-project "
+                "prj_343030dd09cda2fb -work-item mc-tawl"
+            ],
+        )
+
+    def test_city_claim_command_bounds_ambiguous_hook_failures_without_drain_ack(
+        self,
+    ) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = hook ]; then\n"
+                "  printf '%s\\n' '{\"action\":\"drain\"}'\n"
+                "  echo 'permanent hook failure' >&2\n"
+                "  exit 7\n"
+                "fi\n"
+                "if [ \"$1\" = runtime ] && [ \"$2\" = drain-ack ]; then\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 2\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            fake_sleep = bin_dir / "sleep"
+            fake_sleep.write_text("#!/bin/sh\n/bin/sleep 0.05\n", encoding="utf-8")
+            fake_sleep.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_AGENT": "gc.implementation-worker",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_TEST_CALLS": str(calls),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run(
+                [str(command)], capture_output=True, env=env, text=True, timeout=2
+            )
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("permanent hook failure", result.stderr)
+        self.assertIn("after 3 attempts", result.stderr)
+        self.assertEqual(call_lines.count("hook --claim --drain-ack --json"), 3)
+        self.assertNotIn("runtime drain-ack", call_lines)
+
+    def test_city_claim_command_drain_acks_missing_assignee_configuration(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = runtime ] && [ \"$2\" = drain-ack ]; then exit 0; fi\n"
+                "exit 2\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_TEST_CALLS": str(calls),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            for key in ("BEADS_ACTOR", "GC_SESSION_NAME", "GC_SESSION_ID", "GC_AGENT"):
+                env.pop(key, None)
+            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("CONFIG_REJECTED", result.stderr)
+        self.assertEqual(call_lines, ["runtime drain-ack"])
+
+    def test_city_claim_command_drain_acks_missing_python_configuration(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = runtime ] && [ \"$2\" = drain-ack ]; then exit 0; fi\n"
+                "exit 2\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_TEST_CALLS": str(calls),
+                "PATH": str(bin_dir),
+            }
+            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("CONFIG_REJECTED", result.stderr)
+        self.assertEqual(call_lines, ["runtime drain-ack"])
+
+    def test_city_claim_command_reports_failed_drain_ack(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = runtime ] && [ \"$2\" = drain-ack ]; then exit 9; fi\n"
+                "exit 2\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_TEST_CALLS": str(calls),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            for key in ("BEADS_ACTOR", "GC_SESSION_NAME", "GC_SESSION_ID", "GC_AGENT"):
+                env.pop(key, None)
+            result = subprocess.run([str(command)], capture_output=True, env=env, text=True)
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("CONFIG_REJECTED", result.stderr)
+        self.assertIn("DRAIN_ACK_FAILED", result.stderr)
+        self.assertEqual(call_lines, ["runtime drain-ack"])
+
+    def test_city_claim_command_termination_signal_stops_before_retry(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = hook ]; then\n"
+                "  kill -TERM \"$PPID\"\n"
+                "  exit 7\n"
+                "fi\n"
+                "exit 2\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_AGENT": "gc.implementation-worker",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_TEST_CALLS": str(calls),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run(
+                [str(command)], capture_output=True, env=env, text=True, timeout=2
+            )
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 143, result.stderr)
+        self.assertEqual(call_lines, ["hook --claim --drain-ack --json"])
+
+    def test_city_claim_command_preserves_owned_route_mismatch_for_recovery(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = hook ]; then\n"
+                "  printf '%s\\n' '{\"action\":\"work\",\"bead_id\":\"bd-123\",\"assignee\":\"worker\",\"route\":\"gc.wrong-worker\"}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ]; then\n"
+                "  printf '%s\\n' '{\"id\":\"bd-123\",\"status\":\"in_progress\",\"assignee\":\"worker\",\"metadata\":{\"gc.routed_to\":\"gc.wrong-worker\",\"gc.root_bead_id\":\"root-1\",\"gc.continuation_group\":\"group-1\"}}'\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = update ]; then\n"
+                "  exit 0\n"
+                "elif [ \"$1\" = runtime ] && [ \"$2\" = drain-ack ]; then\n"
+                "  exit 0\n"
+                "else\n"
+                "  exit 2\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            fake_sleep = bin_dir / "sleep"
+            fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_sleep.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_AGENT": "gc.implementation-worker",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_TEST_CALLS": str(calls),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run(
+                [str(command)],
+                capture_output=True,
+                env=env,
+                text=True,
+            )
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(call_lines.count("hook --claim --drain-ack --json"), 1)
+        self.assertEqual(
+            call_lines.count(" ".join(("b" + "d", "show", "bd-123", "--json"))),
+            1,
+        )
+        self.assertEqual(len(call_lines), 2)
+
+    def test_city_claim_command_preserves_unreadable_claim_after_bounded_retries(
+        self,
+    ) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        command = root / "commands" / "claim" / "run.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            calls = tmp_path / "calls"
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >>\"$GC_TEST_CALLS\"\n"
+                "if [ \"$1\" = hook ]; then\n"
+                "  printf '%s\\n' '{\"action\":\"work\",\"bead_id\":\"bd-123\",\"assignee\":\"worker\",\"route\":\"gc.implementation-worker\"}'\n"
+                "  exit 0\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = show ]; then\n"
+                "  printf '%s\\n' '{}'\n"
+                "  exit 0\n"
+                "elif [ \"$1\" = bd ] && [ \"$2\" = update ]; then\n"
+                "  exit 0\n"
+                "elif [ \"$1\" = runtime ] && [ \"$2\" = drain-ack ]; then\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 2\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            fake_sleep = bin_dir / "sleep"
+            fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_sleep.chmod(0o755)
+            env = {
+                **os.environ,
+                "BEADS_ACTOR": "worker",
+                "GC_AGENT": "gc.implementation-worker",
+                "GC_PACK_DIR": str(root),
+                "GC_PACK_NAME": "gc",
+                "GC_TEST_CALLS": str(calls),
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+            }
+            result = subprocess.run(
+                [str(command)], capture_output=True, env=env, text=True, timeout=2
+            )
+            call_lines = calls.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("incomplete bead record", result.stderr)
+        self.assertEqual(call_lines.count("hook --claim --drain-ack --json"), 1)
+        show_call = " ".join(("b" + "d", "show", "bd-123", "--json"))
+        self.assertEqual(call_lines.count(show_call), 3)
+        self.assertEqual(len(call_lines), 4)
+
+
+    def test_third_party_agents_include_work_claim_protocol(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[2]
         include = '{{ template "gc-role-worker" . }}'
-        expected_fragment = (
-            root / "gascity" / "roles" / "prompts" / "shared" / "gc-role-worker.md.tmpl"
-        ).read_text(encoding="utf-8")
 
         for pack_name in THIRD_PARTY_BUILD_PACKS:
             prompts = sorted((root / pack_name / "agents").glob("*/prompt.template.md"))
@@ -762,8 +1329,6 @@ class FormulaAssetTests(unittest.TestCase):
                     text = prompt.read_text(encoding="utf-8")
                     self.assertIn(include, text)
                     self.assertEqual(text.count(include), 1)
-                    local_fragment = prompt.parent / "template-fragments" / "gc-role-worker.template.md"
-                    self.assertEqual(local_fragment.read_text(encoding="utf-8"), expected_fragment)
 
     def test_formula_route_targets_are_backed_by_providerless_role_agents(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -1049,9 +1614,9 @@ class FormulaAssetTests(unittest.TestCase):
             "Do not inspect pack source directories",
             ".beads/config.yaml",
             "Close commands do not accept metadata flags",
-            "bd update <claimed-step-id> --set-metadata 'gc.outcome=pass'",
-            "bd close <claimed-step-id> --reason",
-            "Do not pass `--set-metadata` or `--metadata` to `bd close`",
+            "gc bd update <claimed-step-id> --set-metadata 'gc.outcome=pass'",
+            "gc bd close <claimed-step-id> --reason",
+            "Do not pass `--set-metadata` or `--metadata` to `gc bd close`",
             "do not use\n`gc.outcome=success`",
         ):
             with self.subTest(asset="build-base/prepare.md", fragment=fragment):
@@ -1391,7 +1956,8 @@ class FormulaAssetTests(unittest.TestCase):
             "gc convoy create <name> <work-item-id...> --json",
             "Do not create an empty convoy",
             "Do not call `gc convoy add` for newly-created beads",
-            "Do not call `bd show <implementation-convoy-id>`",
+            "Do not call `gc bd show <implementation-convoy-id>`",
+            "Do not use `gc bd create --root-bead`",
         ):
             with self.subTest(step="decompose", fragment=fragment):
                 self.assertIn(fragment, decompose_description)
@@ -1448,12 +2014,15 @@ class FormulaAssetTests(unittest.TestCase):
             "code_review.acceptance_verdict=approve",
             "code_review.test_evidence_verdict=approve",
             "code_review.simplicity_verdict=approve",
-            "bd update \"$CLAIMED_BEAD_ID\"",
+            "gc bd update \"$CLAIMED_BEAD_ID\"",
             "source anchor/worktree",
             "launcher rig root may remain unchanged",
             "not to the launcher rig root",
             "normalized `gc.build.review.v1` artifact with `status: approved`",
             "Do not invoke provider-native subagents",
+            "Implementation Worktrees",
+            "`gc.work_dir` is the launcher rig root, not the implementation worktree",
+            "Do not inspect or edit the launcher checkout",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, asset_text)
@@ -1603,12 +2172,78 @@ class FormulaAssetTests(unittest.TestCase):
             text = (root / relative_path).read_text(encoding="utf-8")
             for fragment in (
                 "read the launcher rig root from the workflow root bead's `gc.work_dir`",
-                "GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh",
+                # The gate's validator is a pack asset, not a rig-local
+                # .gc/scripts copy: agents run the absolute path gc resolved
+                # onto the ralph control bead.
+                "the script recorded as `gc.check_path` on the validation loop control bead",
+                'GC_BEAD_ID=<claimed-step-id> GC_RIG_ROOT=<launcher-rig-root> "<gc.check_path>"',
                 "fix every reported validation error before setting `gc.outcome=pass`",
             ):
                 with self.subTest(asset=relative_path, fragment=fragment):
                     self.assertIn(fragment, text)
 
+    def test_build_basic_review_context_is_worktree_anchored(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        workflow_dir = root / "assets" / "workflows" / "build-basic-review"
+        setup = (workflow_dir / "{target}.setup-build-basic-review.md").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (workflow_dir / "{target}.acceptance-review.md").read_text(
+            encoding="utf-8"
+        )
+        test_evidence = (workflow_dir / "{target}.test-evidence-review.md").read_text(
+            encoding="utf-8"
+        )
+        simplicity = (workflow_dir / "{target}.simplicity-review.md").read_text(
+            encoding="utf-8"
+        )
+        synthesize = (workflow_dir / "{target}.synthesize-review.md").read_text(
+            encoding="utf-8"
+        )
+        apply = (workflow_dir / "{target}.apply-review-findings.md").read_text(
+            encoding="utf-8"
+        )
+
+        for fragment in (
+            "gc.build.code_review_context_path",
+            "Implementation Worktrees",
+            "metadata.work_dir",
+            "Do not write\nliteral command substitutions",
+            r"rg -n '\$\((cat|date)'",
+        ):
+            with self.subTest(asset="setup", fragment=fragment):
+                self.assertIn(fragment, setup)
+
+        for asset_name, text in (
+            ("acceptance", acceptance),
+            ("test-evidence", test_evidence),
+            ("simplicity", simplicity),
+            ("synthesize", synthesize),
+            ("apply", apply),
+        ):
+            with self.subTest(asset=asset_name, fragment="context path"):
+                self.assertIn("gc.build.code_review_context_path", text)
+            with self.subTest(asset=asset_name, fragment="worktree section"):
+                self.assertIn("Implementation Worktrees", text)
+            with self.subTest(asset=asset_name, fragment="launcher root"):
+                self.assertIn(
+                    "`gc.work_dir` is the launcher rig root, not the implementation worktree",
+                    text,
+                )
+
+        for asset_name, text in (
+            ("acceptance", acceptance),
+            ("test-evidence", test_evidence),
+            ("simplicity", simplicity),
+            ("apply", apply),
+        ):
+            with self.subTest(asset=asset_name, fragment="cd worktree"):
+                self.assertIn('cd "$WORKTREE"', text)
+            with self.subTest(asset=asset_name, fragment="pwd verification"):
+                self.assertIn("pwd -P", text)
+
+        self.assertIn("do not patch the launcher root", apply)
+        self.assertIn("source anchor and implementation\nworktree", synthesize)
     def test_build_artifact_prompts_use_set_metadata_for_paths(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         path_contracts = {
@@ -1633,11 +2268,11 @@ class FormulaAssetTests(unittest.TestCase):
         for relative_path, keys in path_contracts.items():
             text = (root / relative_path).read_text(encoding="utf-8")
             with self.subTest(asset=relative_path, fragment="metadata warning"):
-                self.assertIn("Do not use `bd update --metadata 'key=value'`", text)
+                self.assertIn("Do not use `gc bd update --metadata 'key=value'`", text)
             for fragment in (
-                'bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"',
-                'bd close "<claimed-step-id>" --reason "<concise reason>"',
-                "Do not pass\n`--metadata` or `--set-metadata` to `bd close`",
+                'gc bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"',
+                'gc bd close "<claimed-step-id>" --reason "<concise reason>"',
+                "Do not pass\n`--metadata` or `--set-metadata` to `gc bd close`",
             ):
                 with self.subTest(asset=relative_path, fragment=fragment):
                     self.assertIn(fragment, text)
@@ -1645,7 +2280,7 @@ class FormulaAssetTests(unittest.TestCase):
                 line for line in text.splitlines() if "Do not use" not in line
             )
             self.assertIsNone(
-                re.search(r"bd update[^`\n]*--metadata ['\"]?[A-Za-z0-9_.-]+=", positive_guidance),
+                re.search(r"gc bd update[^`\n]*--metadata ['\"]?[A-Za-z0-9_.-]+=", positive_guidance),
                 relative_path,
             )
             for key in keys:
@@ -2412,6 +3047,30 @@ class FormulaAssetTests(unittest.TestCase):
                     all(group == "superpowers-task-{{issue}}" for group in continuation_groups)
                 )
 
+    def test_superpowers_finalizer_materializes_canonical_build_summary(self) -> None:
+        packs_root = pathlib.Path(__file__).resolve().parents[2]
+        pack_root = packs_root / "superpowers"
+        build = load_formula(pack_root, "superpowers-build")
+        finalize_step = {step["id"]: step for step in build["steps"]}["finalize"]
+        finalize = (
+            pack_root / "assets" / "workflows" / "superpowers-build" / "finalize.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(finalize_step["metadata"]["gc.run_target"], "superpowers.finisher")
+        for fragment in (
+            "materialize the canonical",
+            "gc.build.implementation_summary_path",
+            "implementation-summary.md",
+            "{{artifact_root}}",
+            "gc.build.implementation-summary.v1",
+            "gc.implementation.summary_path",
+            "source anchors",
+            "gc bd update",
+            "Do not create the final report",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, finalize)
+
     def test_superpowers_development_converts_subagent_reviews_to_fanout(self) -> None:
         packs_root = pathlib.Path(__file__).resolve().parents[2]
         pack_root = packs_root / "superpowers"
@@ -2583,16 +3242,16 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertIn("re-opens the design loop", design_approval)
         self.assertIn("revision summary", design_approval)
         self.assertIn("specific design sections", design_approval)
-        self.assertIn('bd update "$CLAIMED_BEAD_ID"', design_approval)
-        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", design_approval)
+        self.assertIn('gc bd update "$CLAIMED_BEAD_ID"', design_approval)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `gc bd close`", design_approval)
         self.assertIn("stock Superpowers checklist items 6-7", write_spec)
         self.assertIn("Spec self-review", write_spec)
         self.assertIn("stock design-doc state", write_spec)
         self.assertIn("docs/superpowers/specs/", write_spec)
         self.assertIn("On repeated attempts", write_spec)
         self.assertIn("without clobbering loop feedback", write_spec)
-        self.assertIn('bd update "$CLAIMED_BEAD_ID"', write_spec)
-        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", write_spec)
+        self.assertIn('gc bd update "$CLAIMED_BEAD_ID"', write_spec)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `gc bd close`", write_spec)
         self.assertIn("written spec", spec_approval)
         self.assertIn("stock `User reviews spec?` approval gate", spec_approval)
         self.assertIn("stock checklist item 8", spec_approval)
@@ -2608,20 +3267,20 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertIn("silence", spec_approval)
         self.assertIn("spec revision summary", spec_approval)
         self.assertIn("Do not run `.gc/scripts/checks/design-review-approved.sh`", spec_approval)
-        self.assertIn("Do not use\n`bd update --metadata`", spec_approval)
+        self.assertIn("Do not use\n`gc bd update --metadata`", spec_approval)
         self.assertIn("--metadata-field gc.step_id=requirements.review-written-spec", spec_approval)
         self.assertIn("--metadata-field gc.step_id=requirements.apply-spec-feedback", spec_approval)
         self.assertIn("--metadata-field gc.scope_role=member", spec_approval)
-        self.assertIn("Do not use `bd list --root`", spec_approval)
-        self.assertIn('bd update "$CLAIMED_BEAD_ID"', spec_approval)
-        self.assertIn('bd show "$CLAIMED_BEAD_ID" --json', spec_approval)
+        self.assertIn("Do not use `gc bd list --root`", spec_approval)
+        self.assertIn('gc bd update "$CLAIMED_BEAD_ID"', spec_approval)
+        self.assertIn('gc bd show "$CLAIMED_BEAD_ID" --json', spec_approval)
         self.assertIn("design_review.approval_mode=autonomous", spec_approval)
         self.assertIn("design_review.output_path=<approval-summary path>", spec_approval)
         self.assertIn('if type == "array" then .[0] else . end', spec_approval)
         self.assertIn('design_review.verdict == "done"', spec_approval)
-        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", spec_approval)
-        self.assertIn('bd update "$CLAIMED_BEAD_ID"', apply_spec_feedback)
-        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", apply_spec_feedback)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `gc bd close`", spec_approval)
+        self.assertIn('gc bd update "$CLAIMED_BEAD_ID"', apply_spec_feedback)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `gc bd close`", apply_spec_feedback)
         self.assertIn("stock brainstorming terminal state", final_requirements)
         self.assertIn("where Superpowers\nwould invoke `writing-plans`", final_requirements)
         self.assertIn("stock checklist item 9", final_requirements)
@@ -2650,8 +3309,8 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, brainstorm_design)
-        self.assertIn('bd update "$CLAIMED_BEAD_ID"', brainstorm_design)
-        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", brainstorm_design)
+        self.assertIn('gc bd update "$CLAIMED_BEAD_ID"', brainstorm_design)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `gc bd close`", brainstorm_design)
 
         review_written_spec = (
             pack_root
@@ -2662,8 +3321,8 @@ class FormulaAssetTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("stock spec reviewer subagent as a Gas City graph lane", review_written_spec)
         self.assertIn("spec-document-reviewer-prompt.md", review_written_spec)
-        self.assertIn('bd update "$CLAIMED_BEAD_ID"', review_written_spec)
-        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `bd close`", review_written_spec)
+        self.assertIn('gc bd update "$CLAIMED_BEAD_ID"', review_written_spec)
+        self.assertIn("Do not pass `--metadata` or `--set-metadata` to `gc bd close`", review_written_spec)
 
         vendor_skill_root = pack_root / "vendor" / "superpowers" / "skills" / "brainstorming"
         installed_skill_root = pack_root / "skills" / "brainstorming"
@@ -3003,7 +3662,7 @@ class FormulaAssetTests(unittest.TestCase):
             "hard-fail if the selected source anchor id equals the synthetic input convoy id",
             "worktrees/<source-anchor-id>",
             "git worktree add",
-            "bd update <source-anchor-id> --set-metadata work_dir=",
+            "gc bd update <source-anchor-id> --set-metadata work_dir=",
             "Do not edit source files in the launcher checkout",
         ):
             with self.subTest(step="prepare-worktree", fragment=fragment):
@@ -3027,9 +3686,18 @@ class FormulaAssetTests(unittest.TestCase):
 
         close_source = node_description(root, steps["close-source-anchor"])
         for fragment in (
+            "gc.root_bead_id",
+            "gc.source_anchor_id",
+            "DO NOT re-derive",
+            "FALLBACK — only if the root has NO `gc.source_anchor_id`",
+            "gc.synthetic_kind=drain-unit-convoy",
+            "gc.drain_member_id",
             "Read `work_dir` from the source anchor",
             "close only `<source-anchor-id>`",
-            "bd show <source-anchor-id> --json",
+            "handle both an object and a",
+            "`gc.work_dir` is the launcher rig",
+            "points at a worktree without the",
+            "gc bd show <source-anchor-id> --json",
             "status=closed",
             "gc.outcome=pass",
             "if either check fails",
@@ -3038,6 +3706,117 @@ class FormulaAssetTests(unittest.TestCase):
         ):
             with self.subTest(step="close-source-anchor", fragment=fragment):
                 self.assertIn(fragment, close_source)
+
+    def test_pack_close_source_anchor_overrides_read_root_stamped_anchor(self) -> None:
+        gascity_root = pathlib.Path(__file__).resolve().parents[1]
+        pack_root = gascity_root.parent / "superpowers"
+
+        resolved = resolve_formula_from_dirs(
+            [gascity_root / "formulas", pack_root / "formulas"],
+            "superpowers-development",
+        )
+        steps = {step["id"]: step for step in resolved["steps"]}
+        close_source = node_description(pack_root, steps["close-source-anchor"])
+        for fragment in (
+            "gc.root_bead_id",
+            "gc.source_anchor_id",
+            "DO NOT re-derive",
+            "FALLBACK — only if the root has NO `gc.source_anchor_id`",
+            "gc.synthetic_kind=drain-unit-convoy",
+            "gc.drain_member_id",
+            "close only the source anchor with `gc.outcome=pass`",
+        ):
+            with self.subTest(pack="superpowers", fragment=fragment):
+                self.assertIn(fragment, close_source)
+
+    def test_do_work_source_anchor_is_stamped_once_and_read_back(self) -> None:
+        """prepare-worktree is the only resolver; later steps read its stamp.
+
+        Covers the three resolution paths every source-anchor consumer must
+        handle: the stamped id, the unstamped (legacy / shared-drain item)
+        fallback, and the missing-anchor fail-closed path.
+        """
+        gascity_root = pathlib.Path(__file__).resolve().parents[1]
+        repo_root = gascity_root.parent
+
+        def flat(text: str) -> str:
+            return " ".join(text.split())
+
+        do_work = resolve_formula(gascity_root, "do-work")
+        steps = {step["id"]: step for step in do_work["steps"]}
+        prepare = flat(node_description(gascity_root, steps["prepare-worktree"]))
+        implement = flat(node_description(gascity_root, steps["implement"]))
+        close_source = flat(node_description(gascity_root, steps["close-source-anchor"]))
+
+        sp_formulas = [gascity_root / "formulas", repo_root / "superpowers" / "formulas"]
+        sp_closes = {
+            name: flat(
+                node_description(
+                    repo_root / "superpowers",
+                    {s["id"]: s for s in resolve_formula_from_dirs(sp_formulas, name)["steps"]}[
+                        "close-source-anchor"
+                    ],
+                )
+            )
+            for name in ("superpowers-development", "superpowers-development-item")
+        }
+
+        # Stamped path: prepare-worktree writes the stamp, idempotently, and
+        # verifies it; every downstream step reads exactly that id.
+        for fragment in (
+            "gc bd update <root-bead-id> --set-metadata gc.source_anchor_id=<source-anchor-id>",
+            "If the root already has `gc.source_anchor_id` (a retry), it must equal the id resolved above; hard-fail on a mismatch instead of overwriting it",
+            "the root now has `gc.source_anchor_id=<source-anchor-id>` before closing this step",
+        ):
+            with self.subTest(path="stamped", step="prepare-worktree", fragment=fragment):
+                self.assertIn(fragment, prepare)
+        with self.subTest(path="stamped", step="implement"):
+            self.assertIn("If the root has `gc.source_anchor_id`", implement)
+            self.assertIn("use exactly that id and do not re-derive it", implement)
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="stamped", step="close-source-anchor", formula=name):
+                self.assertIn("read that root's `gc.source_anchor_id` metadata", text)
+                self.assertIn("DO NOT re-derive it", text)
+        for rel in (
+            "bmad/assets/workflows/bmad-story-development/implement-story.md",
+            "bmad/assets/workflows/bmad-story-development/apply-story-findings.md",
+            "gstack/assets/workflows/gstack-work/implement.md",
+            "superpowers/assets/workflows/superpowers-development/implement.md",
+        ):
+            with self.subTest(path="stamped", prompt=rel):
+                self.assertIn(
+                    "Resolve the source anchor as the workflow root's stamped `gc.source_anchor_id`",
+                    flat((repo_root / rel).read_text(encoding="utf-8")),
+                )
+
+        # A single-item sling wraps the item in a `gc.synthetic=true` input
+        # convoy; the item, never the wrapper, is the source anchor.
+        for name, text in {"prepare-worktree": prepare, "implement": implement, "do-work close": close_source, **sp_closes}.items():
+            with self.subTest(path="single-item-wrapper", step=name):
+                self.assertIn("`gc.synthetic=true`", text)
+                self.assertIn("gc convoy status <input-convoy-id> --json", text)
+        self.assertIn("Never use the synthetic wrapper convoy id as `<source-anchor-id>`", prepare)
+
+        # Fallback path: unstamped roots (pre-stamp in-flight runs, the shared
+        # drain item lane) derive the anchor with prepare-worktree's rules and
+        # still find a pre-stamp work_dir on the wrapper convoy.
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="fallback", formula=name):
+                self.assertIn("FALLBACK — only if the root has NO `gc.source_anchor_id`", text)
+                self.assertIn("gc.synthetic_kind=drain-unit-convoy", text)
+                self.assertIn("gc.drain_member_id", text)
+                self.assertIn("read `work_dir` from that convoy", text)
+                self.assertIn("still close the member", text)
+        self.assertIn("superpowers-development-item` lane, which has no `prepare-worktree`", sp_closes["superpowers-development-item"])
+        self.assertIn("read `work_dir` from that convoy instead", implement)
+
+        # Missing-anchor / wrong-bead path: fail closed before closing anything.
+        for name, text in {"do-work": close_source, **sp_closes}.items():
+            with self.subTest(path="missing-anchor", formula=name):
+                self.assertIn("if it is missing too, fail this step without closing any bead", text)
+                self.assertIn("gc.synthetic=true", text)
+                self.assertRegex(text, r"fail this step without closing any bead (if it does not hold|unless)")
+                self.assertIn("do not close it again", text)
 
     def test_wrapper_formulas_route_role_agents(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
@@ -3150,9 +3929,9 @@ class FormulaAssetTests(unittest.TestCase):
             "github-pr-review": ("pull", "gc.github.head_sha"),
         }
         required_common = {
-            "bd list --metadata-field gc.kind=github_source",
-            "bd create",
-            "bd update",
+            "gc bd list --metadata-field gc.kind=github_source",
+            "gc bd create",
+            "gc bd update",
             "--external-ref",
             "gc.github.kind",
             "gc.github.repo",
@@ -3251,7 +4030,7 @@ class FormulaAssetTests(unittest.TestCase):
         implementation_plan_normalized = " ".join(implementation_plan.split())
 
         for fragment in (
-            "bd update <root-bead-id>",
+            "gc bd update <root-bead-id>",
             "gc.github.run_dir",
             "gc.github.requirements_path",
             "gc.github.implementation_plan_path",
@@ -3386,8 +4165,8 @@ description = "Override sink that writes the base triage report contract."
             "gc.root_bead_id",
             "gc.github.source_bead_id",
             "gc.github.triage_dir",
-            "bd show <root-bead-id> --json",
-            "bd update <root-bead-id>",
+            "gc bd show <root-bead-id> --json",
+            "gc bd update <root-bead-id>",
             "Read `gc.github.snapshot_path`",
             "Do not write a separate triage context file",
         }
@@ -3542,6 +4321,93 @@ description = "Override sink that writes the base triage report contract."
             self.assertNotIn("/data/projects", text)
             self.assertNotIn("gascity-packs-worktrees", text)
 
+    def test_formula_checks_resolve_from_versioned_pack_assets(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        formula_paths = sorted((root / "formulas").glob("*.formula.toml"))
+        referenced_checks: set[pathlib.Path] = set()
+
+        for formula_path in formula_paths:
+            text = formula_path.read_text(encoding="utf-8")
+            with self.subTest(formula=formula_path.name):
+                self.assertNotIn(
+                    '.gc/scripts/checks/',
+                    text,
+                    "pack-owned validators must not depend on launcher-local .gc files",
+                )
+                data = tomllib.loads(text)
+                for node in _walk_formula_nodes(data):
+                    check = (node.get("check") or {}).get("check")
+                    if not check:
+                        continue
+                    path = check.get("path", "")
+                    # gc resolves only the documented "../assets/<rel>" form
+                    # through the formula layers; anything else is looked up
+                    # under the worker/store directory at runtime.
+                    self.assertTrue(
+                        path.startswith("../assets/scripts/checks/"),
+                        f"{formula_path.name}:{node.get('id')} check path {path!r} "
+                        "must be a layer-resolved ../assets/scripts/checks/ path",
+                    )
+                    script = (formula_path.parent / path).resolve()
+                    self.assertTrue(script.is_file(), f"missing pack check asset: {script}")
+                    self.assertTrue(os.access(script, os.X_OK), f"{script} must be executable")
+                    referenced_checks.add(script)
+
+        self.assertTrue(referenced_checks, "expected formulas to reference pack check assets")
+        self.assertEqual(
+            {script.name for script in referenced_checks},
+            {
+                "build-artifact-valid.sh",
+                "design-review-approved.sh",
+                "implementation-review-approved.sh",
+            },
+        )
+
+    def test_other_packs_do_not_shadow_gascity_check_assets(self) -> None:
+        # gc resolves "../assets/scripts/checks/<name>" to the highest-priority
+        # formula layer that ships that file, across every imported pack. A
+        # sibling pack shipping a same-named check silently replaces the
+        # gascity gate whenever its layer sorts above gascity's in a city.
+        # gastown's design-review-approved.sh predates the migration and is a
+        # known collision (different verdict reader); do not add more.
+        known_collisions = {("gastown", "design-review-approved.sh")}
+        root = pathlib.Path(__file__).resolve().parents[1]
+        gascity_checks = {
+            path.name for path in (root / "assets" / "scripts" / "checks").glob("*.sh")
+        }
+        collisions = set()
+        for pack_dir in sorted(root.parent.iterdir()):
+            if pack_dir == root or not (pack_dir / "pack.toml").is_file():
+                continue
+            checks_dir = pack_dir / "assets" / "scripts" / "checks"
+            for script in sorted(checks_dir.glob("*.sh")) if checks_dir.is_dir() else ():
+                if script.name in gascity_checks:
+                    collisions.add((pack_dir.name, script.name))
+        self.assertEqual(collisions, known_collisions)
+
+    def test_pack_prompts_do_not_send_agents_to_launcher_local_checks(self) -> None:
+        # The formulas resolve their gates from this pack's assets, so no rig
+        # carries a .gc/scripts/checks copy any more. A prompt that tells an
+        # agent to run (or install) one sends it to a path that does not exist.
+        root = pathlib.Path(__file__).resolve().parents[1]
+        surfaces = [
+            path
+            for sub_dir in ("assets", "agents", "commands", "roles", "skills", "template-fragments")
+            for path in sorted((root / sub_dir).rglob("*"))
+            if path.is_file() and path.suffix in {".md", ".toml", ".sh", ".py"}
+        ]
+        self.assertTrue(surfaces)
+        for path in surfaces:
+            text = path.read_text(encoding="utf-8")
+            relative = path.relative_to(root)
+            with self.subTest(asset=str(relative)):
+                if path.name == "build-artifact-valid.sh":
+                    # The check keeps its installed-copy rig-root fallback for
+                    # derived packs that still use the launcher-relative path.
+                    continue
+                self.assertNotIn(".gc/scripts/checks", text)
+                self.assertNotIn("cp -R {{pack_root}}/assets/scripts .gc/scripts", text)
+
     def test_producer_stages_gate_artifacts_with_bounded_repair(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
 
@@ -3567,7 +4433,7 @@ description = "Override sink that writes the base triage report contract."
                     step["check"]["check"],
                     {
                         "mode": "exec",
-                        "path": BUILD_ARTIFACT_CHECK_SCRIPT,
+                        "path": GASCITY_BUILD_ARTIFACT_CHECK_SCRIPT,
                         "timeout": "5m",
                     },
                 )
@@ -3579,9 +4445,24 @@ description = "Override sink that writes the base triage report contract."
         beads_by_id: dict[str, str],
         bead_id: str,
         extra_env: dict[str, str] | None = None,
+        script_root: pathlib.Path | None = None,
+        script: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess:
         root = pathlib.Path(__file__).resolve().parents[1]
-        script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+        if script is None:
+            script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+
+        if script_root is not None:
+            installed_check_dir = script_root / ".gc" / "scripts" / "checks"
+            installed_check_dir.mkdir(parents=True)
+            installed_script = installed_check_dir / script.name
+            installed_script.write_text(script.read_text(encoding="utf-8"), encoding="utf-8")
+            installed_script.chmod(0o755)
+            validator = root / "assets" / "scripts" / "validate_build_artifact.py"
+            (installed_check_dir.parent / validator.name).write_text(
+                validator.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            script = installed_script
 
         with tempfile.TemporaryDirectory() as td:
             tmp = pathlib.Path(td)
@@ -3591,17 +4472,20 @@ description = "Override sink that writes the base triage report contract."
             show_dir.mkdir()
             for bead, payload in beads_by_id.items():
                 (show_dir / f"{bead}.json").write_text(payload, encoding="utf-8")
-            fake_bd = bin_dir / "bd"
-            fake_bd.write_text(
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
+                "while [ \"${1:-}\" != \"bd\" ]; do shift; done\n"
+                "shift\n"
                 "case \"$1\" in\n"
+                "  version) exit 0 ;;\n"
                 "  show) cat \"$BD_SHOW_DIR/$2.json\" ;;\n"
                 "  *) exit 2 ;;\n"
                 "esac\n",
                 encoding="utf-8",
             )
-            fake_bd.chmod(0o755)
+            fake_gc.chmod(0o755)
 
             env = {
                 **os.environ,
@@ -3625,9 +4509,13 @@ description = "Override sink that writes the base triage report contract."
         list_json: str,
         parent_show_json: str | None = None,
         extra_env: dict[str, str] | None = None,
+        script: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess:
+        # `script` runs a caller-supplied copy of the gate instead of the
+        # shipped one, so a test can mutate a line the fixtures cannot reach.
         root = pathlib.Path(__file__).resolve().parents[1]
-        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+        if script is None:
+            script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
 
         with tempfile.TemporaryDirectory() as td:
             tmp = pathlib.Path(td)
@@ -3639,24 +4527,7 @@ description = "Override sink that writes the base triage report contract."
             show_path.write_text(show_json, encoding="utf-8")
             parent_show_path.write_text(parent_show_json or show_json, encoding="utf-8")
             list_path.write_text(list_json, encoding="utf-8")
-            fake_bd = bin_dir / "bd"
-            fake_bd.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "case \"$1\" in\n"
-                "  show)\n"
-                "    if [ \"${2:-}\" = \"root\" ]; then\n"
-                "      cat \"$BD_PARENT_SHOW_JSON\"\n"
-                "    else\n"
-                "      cat \"$BD_SHOW_JSON\"\n"
-                "    fi\n"
-                "    ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_bd.chmod(0o755)
+            write_check_gc_stub(bin_dir, parent_show=True)
 
             env = {
                 **os.environ,
@@ -4032,6 +4903,312 @@ description = "Override sink that writes the base triage report contract."
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("build artifact valid", result.stdout)
 
+    def test_build_artifact_check_resolves_relative_path_from_rig_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_uses_beads_scope_root_when_rig_root_is_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": "",
+                    "GC_BEADS_SCOPE_ROOT": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_derives_rig_root_from_installed_script_when_env_is_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = rig_root / ".gc" / "inference-gate" / "requirements.md"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+            source_root = pathlib.Path(__file__).resolve().parents[1]
+            validator = source_root / "assets" / "scripts" / "validate_build_artifact.py"
+            worktree_validator = per_bead_worktree / "gascity" / "assets" / "scripts" / validator.name
+            worktree_validator.parent.mkdir(parents=True)
+            worktree_validator.write_text(validator.read_text(encoding="utf-8"), encoding="utf-8")
+            for schema in (source_root / "schemas" / "build").glob("*.yaml"):
+                destination = per_bead_worktree / "gascity" / "schemas" / "build" / schema.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(schema.read_text(encoding="utf-8"), encoding="utf-8")
+
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+                '}}]'
+            )
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={
+                    "GC_RIG_ROOT": "",
+                    "GC_BEADS_SCOPE_ROOT": "",
+                    "GC_DIR": "",
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+                script_root=rig_root,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    # Controller-run gates. With the formulas resolving their check from pack
+    # assets, the dispatcher executes the script from the pack tree and only
+    # exports GC_STORE_PATH (durable store root) and GC_WORK_DIR (inherited
+    # gc.work_dir) -- no GC_RIG_ROOT, and no installed <rig>/.gc/scripts copy
+    # to derive the rig root from.
+    _CONTROLLER_ENV_CLEARED = {"GC_RIG_ROOT": "", "GC_BEADS_SCOPE_ROOT": "", "GC_DIR": ""}
+
+    def _relative_requirements_beads(self) -> dict[str, str]:
+        control = (
+            '[{"id": "loop", "metadata": {'
+            '"gc.root_bead_id": "root", '
+            '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+            '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+        )
+        root_bead = (
+            '[{"id": "root", "metadata": {'
+            '"gc.build.requirements_path": ".gc/inference-gate/requirements.md"'
+            '}}]'
+        )
+        return {"loop": control, "root": root_bead}
+
+    def _write_requirements(self, root: pathlib.Path, *, valid: bool = True) -> pathlib.Path:
+        artifact = root / ".gc" / "inference-gate" / "requirements.md"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        text = self._valid_requirements_artifact()
+        if not valid:
+            text = text.replace("status: approved", "status: bogus")
+        artifact.write_text(text, encoding="utf-8")
+        return artifact
+
+    def test_build_artifact_check_from_pack_assets_resolves_relative_path_from_store_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = self._write_requirements(rig_root)
+            per_bead_worktree = tmp / "per-bead-worktree"
+            per_bead_worktree.mkdir()
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={
+                    **self._CONTROLLER_ENV_CLEARED,
+                    "GC_STORE_PATH": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_prefers_store_path_over_work_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            rig_root = tmp / "rig"
+            artifact = self._write_requirements(rig_root)
+            per_bead_worktree = tmp / "per-bead-worktree"
+            stale = self._write_requirements(per_bead_worktree, valid=False)
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={
+                    **self._CONTROLLER_ENV_CLEARED,
+                    "GC_STORE_PATH": str(rig_root),
+                    "GC_WORK_DIR": str(per_bead_worktree),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+        self.assertNotIn(str(stale), result.stdout + result.stderr)
+
+    def test_build_artifact_check_falls_back_to_work_dir_when_store_lacks_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            store_root = tmp / "city"
+            store_root.mkdir()
+            work_dir = tmp / "rig"
+            artifact = self._write_requirements(work_dir)
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={
+                    **self._CONTROLLER_ENV_CLEARED,
+                    "GC_STORE_PATH": str(store_root),
+                    "GC_WORK_DIR": str(work_dir),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+
+    def test_build_artifact_check_reports_every_root_it_tried(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            store_root = tmp / "rig"
+            store_root.mkdir()
+            work_dir = tmp / "per-bead-worktree"
+            work_dir.mkdir()
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={
+                    **self._CONTROLLER_ENV_CLEARED,
+                    "GC_STORE_PATH": str(store_root),
+                    "GC_WORK_DIR": str(work_dir),
+                },
+            )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("does not exist", result.stderr)
+        self.assertIn(str(store_root / ".gc" / "inference-gate" / "requirements.md"), result.stderr)
+        self.assertIn(str(work_dir / ".gc" / "inference-gate" / "requirements.md"), result.stderr)
+
+    def test_build_artifact_check_does_not_treat_a_pack_tree_as_an_installed_rig(self) -> None:
+        # A pack checkout can itself contain a .gc directory (a city or rig
+        # rooted at the pack). Only an installed <rig>/.gc/scripts/checks copy
+        # may derive the rig root from its own location.
+        source_root = pathlib.Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            pack = tmp / "gascity"
+            checks = pack / "assets" / "scripts" / "checks"
+            checks.mkdir(parents=True)
+            check = checks / "build-artifact-valid.sh"
+            check.write_text(
+                (source_root / "assets" / "scripts" / "checks" / check.name).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            check.chmod(0o755)
+            validator = source_root / "assets" / "scripts" / "validate_build_artifact.py"
+            (checks.parent / validator.name).write_text(
+                validator.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            for schema in (source_root / "schemas" / "build").glob("*.yaml"):
+                destination = pack / "schemas" / "build" / schema.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(schema.read_text(encoding="utf-8"), encoding="utf-8")
+            # An invalid artifact under the pack tree would be picked by the
+            # old "<script>/../../.. has .gc" heuristic.
+            decoy = self._write_requirements(pack, valid=False)
+            rig_root = tmp / "rig"
+            artifact = self._write_requirements(rig_root)
+
+            result = self._run_build_artifact_check(
+                self._relative_requirements_beads(),
+                "loop",
+                extra_env={**self._CONTROLLER_ENV_CLEARED, "GC_STORE_PATH": str(rig_root)},
+                script=check,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(artifact), result.stdout)
+        self.assertNotIn(str(decoy), result.stdout + result.stderr)
+
+    def test_build_artifact_check_prefers_its_own_pack_validator_over_work_dir_checkout(self) -> None:
+        # GC_WORK_DIR may be a checkout of this repository on another branch.
+        # A gate resolved from pack assets must validate with the validator and
+        # schemas of the same pack layer, not that checkout's copy.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            artifact = tmp / "requirements.md"
+            artifact.write_text(self._valid_requirements_artifact(), encoding="utf-8")
+            work_dir = tmp / "checkout"
+            stale_validator = work_dir / "gascity" / "assets" / "scripts" / "validate_build_artifact.py"
+            stale_validator.parent.mkdir(parents=True)
+            stale_validator.write_text(
+                "import sys\nprint('stale checkout validator', file=sys.stderr)\nsys.exit(1)\n",
+                encoding="utf-8",
+            )
+            control = (
+                '[{"id": "loop", "metadata": {'
+                '"gc.root_bead_id": "root", '
+                '"gc.build.artifact_schema": "gc.build.requirements.v1", '
+                '"gc.build.artifact_path_keys": "gc.build.requirements_path"}}]'
+            )
+            root_bead = (
+                '[{"id": "root", "metadata": {'
+                f'"gc.build.requirements_path": "{artifact}"'
+                "}}]"
+            )
+
+            result = self._run_build_artifact_check(
+                {"loop": control, "root": root_bead},
+                "loop",
+                extra_env={"GC_WORK_DIR": str(work_dir)},
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("stale checkout validator", result.stdout + result.stderr)
+
     def test_build_artifact_check_blocks_invalid_artifact_with_repair_context(self) -> None:
         with tempfile.TemporaryDirectory() as artifact_dir:
             artifact = pathlib.Path(artifact_dir) / "requirements.md"
@@ -4074,6 +5251,21 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("no artifact path recorded", result.stderr)
         self.assertIn("gc.build.requirements_path,gc.var.requirements_path", result.stderr)
 
+    def test_review_report_prompt_writes_to_the_rig_root(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        prompt = (root / "assets" / "workflows" / "review" / "write-report.md").read_text(
+            encoding="utf-8"
+        )
+
+        for fragment in (
+            "GC_RIG_ROOT",
+            "per-bead worktree",
+            "gc.build.review_report_path={{report_path}}",
+            "or `$GC_WORK_DIR`",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, prompt)
+
     def test_bmad_story_development_emits_base_check_verdict(self) -> None:
         gascity_root = pathlib.Path(__file__).resolve().parents[1]
         bmad_root = gascity_root.parent / "bmad"
@@ -4102,6 +5294,736 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("code_review.verdict=iterate", apply_text)
         self.assertIn("code_review.report_path=<fix summary path>", apply_text)
 
+    def test_implementation_review_check_takes_owner_verdict_not_highest_id(self) -> None:
+        """The owner's verdict decides the loop, and id order is irrelevant.
+
+        gmol dedupes the four status legs with `unique_by(.id)`, so the union
+        arrives in bead-id order. Ownership, not position, decides: the verdict
+        the loop acts on is the one written by the bead that *owns* it -- the
+        apply lane -- and a review lane's opinion never outranks it however the
+        ids or the timestamps fall. Here a review lane, marked by its own
+        `code_review.review_verdict`, carries `iterate`, sorts last by id, and
+        is also the *newer* row; the owner's `done` must still win, because the
+        lane is dropped before recency is ever consulted.
+
+        `updated_at` is real: it is `omitempty` on the reader's bead struct,
+        absent only on a bead never updated since creation, which no verdict
+        carrier can be. The fixtures carry it because the reader emits it.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        def member(bead_id: str, verdict: str, updated: str, *, lane: bool = False) -> dict:
+            metadata = {
+                "gc.root_bead_id": "root",
+                "gc.attempt": "1",
+                "code_review.verdict": verdict,
+                "code_review.report_path": f"/reports/{bead_id}.md",
+            }
+            if lane:
+                # Any `code_review.*_verdict` key marks a review lane. Every
+                # lane prompt in the packs is contracted not to write the bare
+                # `code_review.verdict` the apply lane owns.
+                metadata["code_review.review_verdict"] = verdict
+            return {"id": bead_id, "updated_at": updated, "metadata": metadata}
+
+        # "gcg-zzz" sorts last by id AND carries the newer timestamp -- it loses
+        # on both counts to ownership alone.
+        list_json = json.dumps(
+            [
+                member("gcg-aaa", "done", "2026-08-13T01:00:00Z"),
+                member("gcg-zzz", "iterate", "2026-08-13T03:00:00Z", lane=True),
+            ]
+        )
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_implementation_review_check_is_invariant_under_id_permutation(self) -> None:
+        """Exchanging the two bead ids changes neither exit code nor stdout.
+
+        This is the property the id-ordered `| last` could not hold: the same
+        molecule, relabelled, decided the loop differently. The timestamps stay
+        attached to the *roles* while the ids are exchanged, so nothing but the
+        labelling differs between the two runs.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        def fixture(owner_id: str, lane_id: str) -> str:
+            return json.dumps(
+                [
+                    {
+                        "id": owner_id,
+                        "updated_at": "2026-08-13T01:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            "code_review.verdict": "done",
+                        },
+                    },
+                    {
+                        "id": lane_id,
+                        "updated_at": "2026-08-13T03:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            "code_review.verdict": "iterate",
+                            "code_review.review_verdict": "iterate",
+                        },
+                    },
+                ]
+            )
+
+        first = self._run_implementation_review_check(
+            show_json=show_json, list_json=fixture("gcg-aaa", "gcg-zzz")
+        )
+        second = self._run_implementation_review_check(
+            show_json=show_json, list_json=fixture("gcg-zzz", "gcg-aaa")
+        )
+
+        self.assertEqual(
+            first.returncode,
+            second.returncode,
+            f"{first.stdout}{first.stderr}||{second.stdout}{second.stderr}",
+        )
+        self.assertEqual(first.stdout, second.stdout)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+
+    def test_implementation_review_check_accepts_every_approval_spelling(self) -> None:
+        """One approval vocabulary, matched case-insensitively.
+
+        The bash dispatch and the jq lane-status helper used to carry separate
+        copies of the list, and the bash copy was missing `approve` -- a value
+        the jq copy had always treated as approval.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        for verdict in ("approve", "approved", "pass", "done", "Approve", "DONE"):
+            with self.subTest(verdict=verdict):
+                list_json = json.dumps(
+                    [
+                        {
+                            "id": "apply",
+                            "updated_at": "2026-08-13T01:00:00Z",
+                            "metadata": {
+                                "gc.root_bead_id": "root",
+                                "gc.attempt": "1",
+                                "code_review.verdict": verdict,
+                            },
+                        }
+                    ]
+                )
+
+                result = self._run_implementation_review_check(
+                    show_json=show_json, list_json=list_json
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Implementation review approved", result.stdout)
+
+    def test_implementation_review_check_rejects_owner_iterate_over_lane_approve(self) -> None:
+        """A lane's approval cannot outvote the owner's `iterate`.
+
+        No total order over the *values* satisfies both this case and the
+        `{done, iterate}` fix-pass case below -- they differ only in who wrote
+        each value, which is why the selection partitions by ownership.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        # The lane sorts last by id and is the newer row; only ownership keeps
+        # it from deciding.
+        list_json = json.dumps(
+            [
+                {
+                    "id": "aaa-apply",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "iterate",
+                    },
+                },
+                {
+                    "id": "zzz-acceptance",
+                    "updated_at": "2026-08-13T03:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "approve",
+                        "code_review.acceptance_verdict": "approve",
+                    },
+                },
+            ]
+        )
+
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("needs another iteration: iterate", result.stdout)
+
+    def test_implementation_review_check_never_starves_a_molecule_with_a_verdict(self) -> None:
+        """Narrowing to owners may never empty the candidate set.
+
+        Two shapes reach the same conclusion. A molecule whose only verdict
+        carrier also looks like a lane has no distinguishable owner, so the
+        selection falls back to the full candidate set instead of reporting a
+        missing verdict; and a molecule with no bare verdict at all still
+        reaches the lane-status aggregation, which this change leaves intact.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        with self.subTest(shape="no distinguishable owner"):
+            list_json = json.dumps(
+                [
+                    {
+                        "id": "only-carrier",
+                        "updated_at": "2026-08-13T01:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            "code_review.verdict": "done",
+                            "code_review.review_verdict": "approve",
+                        },
+                    }
+                ]
+            )
+
+            result = self._run_implementation_review_check(
+                show_json=show_json, list_json=list_json
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("missing verdict", result.stdout)
+
+        with self.subTest(shape="lane status only"):
+            list_json = json.dumps(
+                [
+                    {
+                        "id": f"lane-{key}",
+                        "updated_at": "2026-08-13T01:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            f"code_review.{key}_verdict": "approve",
+                        },
+                    }
+                    for key in ("acceptance", "test_evidence", "simplicity")
+                ]
+            )
+
+            result = self._run_implementation_review_check(
+                show_json=show_json, list_json=list_json
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Implementation review approved from lane verdicts", result.stdout)
+
+        with self.subTest(shape="lane status, mixed case"):
+            # The shared vocabulary reaches the jq lane-status helper via
+            # `--argjson approvals` and is matched with `ascii_downcase`. Every
+            # other `*_verdict` fixture in this file spells the value in lower
+            # case, so a helper that hard-coded a case-sensitive list of its own
+            # would leave the suite green. Spell two lanes' approvals in mixed
+            # case to pin the case-insensitive match on this path specifically.
+            list_json = json.dumps(
+                [
+                    {
+                        "id": f"lane-{key}",
+                        "updated_at": "2026-08-13T01:00:00Z",
+                        "metadata": {
+                            "gc.root_bead_id": "root",
+                            "gc.attempt": "1",
+                            f"code_review.{key}_verdict": value,
+                        },
+                    }
+                    for key, value in (
+                        ("acceptance", "Approve"),
+                        ("test_evidence", "approve"),
+                        ("simplicity", "DONE"),
+                    )
+                ]
+            )
+
+            result = self._run_implementation_review_check(
+                show_json=show_json, list_json=list_json
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Implementation review approved from lane verdicts", result.stdout)
+
+    @staticmethod
+    def _owner_bead(bead_id: str, verdict: str, updated: str | None = None) -> dict:
+        bead = {
+            "id": bead_id,
+            "metadata": {
+                "gc.root_bead_id": "root",
+                "gc.attempt": "1",
+                "code_review.verdict": verdict,
+            },
+        }
+        if updated is not None:
+            bead["updated_at"] = updated
+        return bead
+
+    def test_implementation_review_check_prefers_the_newest_owner_verdict(self) -> None:
+        """Among owner-shaped beads the newest `updated_at` decides, both ways.
+
+        Two owner-shaped beads at one attempt is the re-serve-after-stamp shape,
+        and the only thing that distinguishes them is when they were written.
+        The gate must follow that in *both* directions, or it is not reading
+        recency at all: a later `done` closes the loop, and a later `iterate`
+        keeps it open. The second direction is the one that matters -- resolving
+        it toward the stale approval ships unaddressed findings.
+
+        Recency is read by value (`max`), not by row position, so exchanging the
+        two ids leaves both answers unchanged. That is asserted here rather than
+        assumed: it is what separates "reads `updated_at`" from "happens to sort
+        the way the fixture was written".
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        old, new = "2026-08-13T01:00:00Z", "2026-08-13T03:00:00Z"
+
+        for label, stale, fresh, expected_code, expected_out in (
+            ("later iterate keeps the loop open", "done", "iterate", 1, "iterate"),
+            ("later done closes the loop", "iterate", "done", 0, "approved"),
+        ):
+            # Exchange the ids so the fresh row is once id-last and once
+            # id-first: neither ordering may change the decision.
+            for id_order in (("gcg-aaa", "gcg-zzz"), ("gcg-zzz", "gcg-aaa")):
+                stale_id, fresh_id = id_order
+                with self.subTest(case=label, stale_id=stale_id):
+                    list_json = json.dumps(
+                        [
+                            self._owner_bead(stale_id, stale, old),
+                            self._owner_bead(fresh_id, fresh, new),
+                        ]
+                    )
+
+                    result = self._run_implementation_review_check(
+                        show_json=show_json, list_json=list_json
+                    )
+
+                    self.assertEqual(
+                        result.returncode,
+                        expected_code,
+                        result.stdout + result.stderr,
+                    )
+                    self.assertIn(expected_out, result.stdout)
+                    self.assertIn(f'selected "{fresh}" (newest updated_at)', result.stderr)
+
+    def test_implementation_review_check_notes_multiple_owner_candidates(self) -> None:
+        """Owner ambiguity is always reported on stderr, whichever way it falls.
+
+        The note is an audit artifact -- no control flow reads it -- so its job
+        is to let a human tell a recency decision from a fail-closed one after
+        the fact. It names how many owners were seen, every value among them,
+        the selection, and the basis for it.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        list_json = json.dumps(
+            [
+                self._owner_bead("gcg-aaa", "done", "2026-08-13T01:00:00Z"),
+                self._owner_bead("gcg-zzz", "iterate", "2026-08-13T03:00:00Z"),
+            ]
+        )
+
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertIn("2 owner-shaped beads carry code_review.verdict", result.stderr)
+        self.assertIn("values: done, iterate", result.stderr)
+        self.assertIn('selected "iterate" (newest updated_at)', result.stderr)
+
+    def test_implementation_review_check_fails_closed_when_owner_recency_is_unknown(self) -> None:
+        """Owners that disagree with no usable recency resolve to `iterate`.
+
+        `updated_at` is omitempty, so a set where it is missing -- or where the
+        newest rows still disagree -- carries no signal to rank on. The gate
+        then takes the non-approving value: one more loop iteration in a state
+        that should not occur is recoverable, and a silent ship is not. Ranking
+        a partly dated set instead would quietly treat "no timestamp" as
+        "oldest", which is a guess dressed as a reading, so the undated row here
+        must not be demoted into losing.
+
+        Both subtests would pass under a rule that simply preferred the
+        *approving* value, which is what base did -- hence the third assertion,
+        that the stated basis is the fail-closed one and not recency.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+
+        for label, beads in (
+            (
+                "no row is dated",
+                [
+                    self._owner_bead("gcg-aaa", "done"),
+                    self._owner_bead("gcg-zzz", "iterate"),
+                ],
+            ),
+            (
+                "only one row is dated",
+                [
+                    # The dated row is the approval. If the undated row were
+                    # ranked as older, this would approve.
+                    self._owner_bead("gcg-aaa", "done", "2026-08-13T03:00:00Z"),
+                    self._owner_bead("gcg-zzz", "iterate"),
+                ],
+            ),
+            (
+                "the newest rows still disagree",
+                [
+                    self._owner_bead("gcg-aaa", "done", "2026-08-13T03:00:00Z"),
+                    self._owner_bead("gcg-zzz", "iterate", "2026-08-13T03:00:00Z"),
+                ],
+            ),
+        ):
+            with self.subTest(shape=label):
+                result = self._run_implementation_review_check(
+                    show_json=show_json, list_json=json.dumps(beads)
+                )
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("needs another iteration: iterate", result.stdout)
+                self.assertIn('selected "iterate" (fail-closed among 2 values)', result.stderr)
+
+    def test_implementation_review_check_notes_lane_fallback_without_owner(self) -> None:
+        """The no-starvation fallback announces itself and reduces fail-closed.
+
+        When no owner-shaped bead exists, every candidate survives narrowing and
+        the value reduction runs over lane beads. Reaching this branch means the
+        gate is looking at protocol-violating data -- every lane prompt in the
+        packs is contracted not to write the bare `code_review.verdict` -- so it
+        resolves the disagreement the same way the owner path does: toward the
+        non-approving value. One lane's approval does not outvote two `iterate`s
+        just because it is spelled hopefully. The branch must also not be
+        silent: the note names the fallback, how many candidates it reduced, and
+        what it selected.
+
+        All three rows share one timestamp, so recency cannot decide and the
+        fail-closed reduction is what is under test.
+        """
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        list_json = json.dumps(
+            [
+                {
+                    "id": "gcg-aaa",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "iterate",
+                        "code_review.acceptance_verdict": "iterate",
+                    },
+                },
+                {
+                    "id": "gcg-mmm",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "iterate",
+                        "code_review.test_evidence_verdict": "iterate",
+                    },
+                },
+                {
+                    "id": "gcg-zzz",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.verdict": "approve",
+                        "code_review.simplicity_verdict": "approve",
+                    },
+                },
+            ]
+        )
+
+        result = self._run_implementation_review_check(show_json=show_json, list_json=list_json)
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("needs another iteration: iterate", result.stdout)
+        self.assertIn("no owner-shaped bead at attempt 1", result.stderr)
+        self.assertIn("reduced 3 lane candidates", result.stderr)
+        self.assertIn('selected "iterate" (fail-closed among 2 values)', result.stderr)
+
+    def test_implementation_review_check_matches_a_mixed_case_vocabulary_entry(self) -> None:
+        """A vocabulary entry reaches both consumers whatever case it is written in.
+
+        `APPROVAL_VERDICTS` is the single definition the bash dispatch and the
+        jq lane-status helper both read, and the comment above it promises that
+        a spelling added there reaches every consumer at once. Every shipped
+        entry is already lowercase, so a consumer that downcased only the
+        *candidate* would leave this whole suite green while the next `Approve`
+        added to the array matched nothing anywhere. No fixture can reach that
+        line, so the test rewrites it in a copy of the gate.
+
+        The removal case is the control: it fails if the harness is running
+        anything other than the substituted array.
+        """
+        root = pathlib.Path(__file__).resolve().parents[1]
+        gate_source = (
+            root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+        ).read_text(encoding="utf-8")
+        vocabulary = "APPROVAL_VERDICTS=(approve approved pass done)"
+        self.assertEqual(
+            gate_source.count(vocabulary),
+            1,
+            "the vocabulary line moved; retarget this mutation before trusting it",
+        )
+
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        # `approve` is the spelling under test: as an owner verdict it goes
+        # through the bash dispatch, and as three lane verdicts it goes through
+        # the jq helper, which receives the same array via --argjson.
+        owner_rows = json.dumps(
+            [self._owner_bead("gcg-aaa", "approve", "2026-08-13T01:00:00Z")]
+        )
+        lane_rows = json.dumps(
+            [
+                {
+                    "id": "gcg-aaa",
+                    "updated_at": "2026-08-13T01:00:00Z",
+                    "metadata": {
+                        "gc.root_bead_id": "root",
+                        "gc.attempt": "1",
+                        "code_review.acceptance_verdict": "approve",
+                        "code_review.test_evidence_verdict": "approve",
+                        "code_review.simplicity_verdict": "approve",
+                    },
+                }
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            gate = pathlib.Path(td) / "implementation-review-approved.sh"
+            for label, mutation, expected_code, owner_out, lane_out in (
+                (
+                    "a mixed-case entry still matches",
+                    "APPROVAL_VERDICTS=(APPROVE approved pass done)",
+                    0,
+                    "Implementation review approved",
+                    "Implementation review approved from lane verdicts",
+                ),
+                (
+                    "an entry dropped from the array stops matching",
+                    "APPROVAL_VERDICTS=(approved pass done)",
+                    1,
+                    "needs another iteration: approve",
+                    "needs another iteration: iterate:",
+                ),
+            ):
+                gate.write_text(gate_source.replace(vocabulary, mutation), encoding="utf-8")
+                gate.chmod(0o755)
+                for consumer, list_json, expected_out in (
+                    ("bash dispatch", owner_rows, owner_out),
+                    ("jq lane status", lane_rows, lane_out),
+                ):
+                    with self.subTest(case=label, consumer=consumer):
+                        result = self._run_implementation_review_check(
+                            show_json=show_json, list_json=list_json, script=gate
+                        )
+
+                        self.assertEqual(
+                            result.returncode,
+                            expected_code,
+                            result.stdout + result.stderr,
+                        )
+                        self.assertIn(expected_out, result.stdout)
+
+    def _run_sibling_gate(
+        self, script_name: str, *, show_json: str, list_json: str
+    ) -> subprocess.CompletedProcess:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / script_name
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            write_check_gc_stub(bin_dir)
+            show_path = tmp / "show.json"
+            list_path = tmp / "list.json"
+            show_path.write_text(show_json, encoding="utf-8")
+            list_path.write_text(list_json, encoding="utf-8")
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "BD_SHOW_JSON": str(show_path),
+                "BD_LIST_JSON": str(list_path),
+                "GC_BEAD_ID": "loop",
+                "GC_ITERATION": "1",
+            }
+            return subprocess.run(
+                [str(script)], env=env, text=True, capture_output=True, check=False
+            )
+
+    def test_gap_analysis_check_takes_the_newest_verdict_not_the_id_last_one(self) -> None:
+        """The gap-analysis gate decides by recency -- pinned before it is ported.
+
+        This PR leaves its two sibling gates alone and files the port of
+        owner/value selection as a follow-up. `gap-analysis-approved.sh` has
+        exactly one recency mechanism: the `sort_by(.updated_at // "")` inside
+        its `gmol`, staging row order for a bare `| last` at the selection site.
+        Deleting that sort while porting -- which the follow-up as first written
+        proposed -- would reduce the gate to picking a verdict by bead id.
+        Measured: with the sort removed both directions below flip, so this is
+        the fail-open the guard exists to catch.
+
+        It is a behavior test, not a text assertion, so the port stays free to
+        move the mechanism as long as the answers survive. Both directions are
+        asserted because a gate stuck on `iterate` would pass the first alone.
+        """
+        self._assert_sibling_gate_reads_recency(
+            "gap-analysis-approved.sh",
+            verdict_key="gap_analysis.verdict",
+            extra_metadata={},
+            iterate_output="Gap analysis needs another iteration: iterate",
+            approve_output="Gap analysis approved",
+        )
+
+    def test_design_review_check_takes_the_newest_verdict_not_the_id_last_one(self) -> None:
+        """The same guard for design-review, which carries recency somewhere else.
+
+        `design-review-approved.sh` re-sorts at the selection site --
+        `sort_by(.attempt, .updated_at) | last.verdict` -- so unlike its
+        gap-analysis sibling it does not depend on the sort inside its `gmol`;
+        deleting that one alone is measurably inert here. The distinction is
+        worth pinning precisely, because the tempting generalisation from this
+        file to the other is exactly wrong: the same deletion next door is a
+        fail-open. What the two gates do share is the behavior below, and that
+        is what a port has to keep.
+        """
+        self._assert_sibling_gate_reads_recency(
+            "design-review-approved.sh",
+            verdict_key="design_review.verdict",
+            # With no step or scope on the loop bead, this gate matches members
+            # by continuation group.
+            extra_metadata={"gc.continuation_group": "design-review-fixes"},
+            iterate_output="Design review needs another pass",
+            approve_output="Design review approved",
+        )
+
+    def _assert_sibling_gate_reads_recency(
+        self,
+        script_name: str,
+        *,
+        verdict_key: str,
+        extra_metadata: dict,
+        iterate_output: str,
+        approve_output: str,
+    ) -> None:
+        show_json = json.dumps(
+            [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+        )
+        old, new = "2026-08-13T01:00:00Z", "2026-08-13T03:00:00Z"
+
+        def member(bead_id: str, verdict: str, updated: str) -> dict:
+            return {
+                "id": bead_id,
+                "status": "closed",
+                "updated_at": updated,
+                "metadata": {
+                    "gc.root_bead_id": "root",
+                    "gc.attempt": "1",
+                    verdict_key: verdict,
+                    **extra_metadata,
+                },
+            }
+
+        for label, fresh, stale, expected_code, expected_out in (
+            ("a fresh iterate outranks a stale done", "iterate", "done", 1, iterate_output),
+            ("a fresh done outranks a stale iterate", "done", "iterate", 0, approve_output),
+        ):
+            with self.subTest(case=label, script=script_name):
+                # The fresh row is id-*first*, so selecting by id order takes
+                # the stale one. That is the arrangement a lost sort exposes.
+                list_json = json.dumps(
+                    [member("gcg-aaa", fresh, new), member("gcg-zzz", stale, old)]
+                )
+
+                result = self._run_sibling_gate(
+                    script_name, show_json=show_json, list_json=list_json
+                )
+
+                self.assertEqual(result.returncode, expected_code, result.stdout + result.stderr)
+                self.assertIn(expected_out, result.stdout)
+
+    def test_design_review_check_unions_every_status_leg(self) -> None:
+        """The verdict usually lands on a bead the review just closed.
+
+        `gc ready` takes exactly one --status, so the gate queries open,
+        in_progress, blocked and closed and unions the results. Drop any leg and
+        a verdict parked in that state disappears — which is the original bug:
+        the gate reports a member set it could not actually read, and Ralph
+        iterates until it runs out of attempts. Pin the closed leg specifically,
+        because that is where an approval comes to rest.
+        """
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            write_check_gc_stub(bin_dir)
+
+            show_json = tmp / "show.json"
+            list_json = tmp / "list.json"
+            show_json.write_text(
+                json.dumps(
+                    [{"id": "loop", "metadata": {"gc.root_bead_id": "root", "gc.attempt": "1"}}]
+                ),
+                encoding="utf-8",
+            )
+            list_json.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "approved-and-closed",
+                            "status": "closed",
+                            "metadata": {
+                                "gc.root_bead_id": "root",
+                                "gc.attempt": "1",
+                                "gc.continuation_group": "design-review-fixes",
+                                "design_review.verdict": "done",
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "BD_SHOW_JSON": str(show_json),
+                "BD_LIST_JSON": str(list_json),
+                "GC_BEAD_ID": "loop",
+            }
+            result = subprocess.run(
+                [str(script)], env=env, text=True, capture_output=True, check=False
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Design review approved", result.stdout)
+
     def test_design_review_check_scopes_verdict_to_current_loop(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
@@ -4110,18 +6032,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_bd = bin_dir / "bd"
-            fake_bd.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "case \"$1\" in\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_bd.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
@@ -4190,18 +6101,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_bd = bin_dir / "bd"
-            fake_bd.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "case \"$1\" in\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_bd.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
@@ -4283,18 +6183,7 @@ description = "Override sink that writes the base triage report contract."
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
-            fake_bd = bin_dir / "bd"
-            fake_bd.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "case \"$1\" in\n"
-                "  show) cat \"$BD_SHOW_JSON\" ;;\n"
-                "  list) cat \"$BD_LIST_JSON\" ;;\n"
-                "  *) exit 2 ;;\n"
-                "esac\n",
-                encoding="utf-8",
-            )
-            fake_bd.chmod(0o755)
+            write_check_gc_stub(bin_dir)
 
             show_json = tmp / "show.json"
             list_json = tmp / "list.json"
@@ -4450,6 +6339,9 @@ description = "Override sink that writes the base triage report contract."
         self.assertIn("gc.build.code_review_report_path", setup)
         self.assertIn("gc.build.gap_analysis_report_path", setup)
         self.assertIn("gc.build.review_fix_summary_path", setup)
+        self.assertIn("implementation_convoy_id: not provided", setup)
+        self.assertIn("Do not invent an external convoy", setup)
+        self.assertIn("per-bead worktree", setup)
 
         self.assertIn("code_review.review_verdict", request)
         self.assertIn("code_review.review_report_path", request)
@@ -4476,12 +6368,28 @@ description = "Override sink that writes the base triage report contract."
         self.assertNotIn("code_review.verdict=done", gap)
         self.assertNotIn("code_review.report_path=<", gap)
 
+        for reviewer_name, reviewer in (("request", request), ("gap", gap)):
+            with self.subTest(reviewer=reviewer_name):
+                self.assertIn("Initial-review baseline", reviewer)
+                self.assertIn("highest numeric `gc.attempt`", reviewer)
+                self.assertIn("gc.build.review_fix_summary_path", reviewer)
+                self.assertIn("fixed implementation worktree", reviewer)
+                self.assertIn("must not issue an `iterate` verdict merely", reviewer)
+
+        self.assertIn("may be intentionally absent", gap)
+        self.assertIn("must not by itself cause `iterate`", gap)
+        self.assertIn("implementation_convoy_id: not provided", gap)
+
         self.assertIn("code_review.verdict=done|iterate", process)
         self.assertIn("code_review.report_path=<review fix summary path>", process)
         self.assertIn("Use `covered` for resolved\nfindings", process)
         self.assertIn("Include `rationale: <why this id is not covered>`", process)
         self.assertIn("gc.build.code_review_status=approved", process)
         self.assertIn("gc.build.code_review_status=draft", process)
+        self.assertIn("non-blocking for this standalone review", process)
+        self.assertIn("implementation_convoy_id: not provided", process)
+        self.assertIn("must not self-approve its own remediation", process)
+        self.assertIn("next attempt must independently re-review", process)
 
         self.assertIn("gc.build.code_review_status=approved", finalize)
         self.assertIn("gc.build.code_review_approved_at", finalize)
@@ -4509,6 +6417,335 @@ description = "Override sink that writes the base triage report contract."
             write_report_step["expand_vars"]["artifact_path_keys"],
             artifact_keys,
         )
+
+
+    def test_build_artifact_check_failure_surfaces_gc_bd_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "echo 'IMPORT_LOCKED_NOT_CACHED run gc import install' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "bd-err",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("gc bd show bd-err failed", result.stderr)
+        self.assertIn("IMPORT_LOCKED_NOT_CACHED", result.stderr)
+
+    def test_implementation_review_check_notes_gc_bd_stderr_on_tolerant_paths(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                # The member read is `gc ready` (see gmol); let it succeed with an
+                # empty union so this test isolates the tolerant `gc bd show` site.
+                "if [ \"$1\" = \"ready\" ]; then\n"
+                "  printf '[]\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  echo 'STDERR_A root lookup unavailable' >&2\n"
+                "  exit 3\n"
+                "fi\n"
+                "exit 99\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "root-err",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        # Tolerant sites keep their fallbacks (the gate still iterates rather
+        # than crashing), but the attempt log now carries the real error.
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("review check: note: gc bd show root-err failed", result.stderr)
+        self.assertIn("STDERR_A", result.stderr)
+        self.assertIn("Implementation review needs another iteration: missing verdict", result.stdout)
+
+    def test_design_review_check_surfaces_member_read_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"root-ok\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "echo 'DISTINCTIVE_LIST_FAILURE' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "bead-ok",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("gmol: gc ready failed for status:", result.stderr)
+        self.assertIn("DISTINCTIVE_LIST_FAILURE", result.stderr)
+
+    def test_gap_analysis_check_notes_gc_bd_stderr_on_tolerant_paths(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "gap-analysis-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                # The member read is `gc ready` (see gmol); let it succeed with an
+                # empty union so this test isolates the tolerant `gc bd show` site.
+                "if [ \"$1\" = \"ready\" ]; then\n"
+                "  printf '[]\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  echo 'GAP_SHOW_FAILURE' >&2\n"
+                "  exit 3\n"
+                "fi\n"
+                "exit 99\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "gap-root",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("gap check: note: gc bd show gap-root failed", result.stderr)
+        self.assertIn("GAP_SHOW_FAILURE", result.stderr)
+        self.assertIn("Gap analysis needs another iteration: missing verdict", result.stdout)
+
+    # The member read these gates make is `gc ready`, one leg per status, and a
+    # failed leg has to fail the gate rather than contribute an empty set: an
+    # empty union is indistinguishable from "no verdict yet", so swallowing the
+    # error starves the gate silently until Ralph runs out of attempts. The two
+    # tests below pin that -- the underlying stderr reaches the gate's stderr,
+    # and the gate does NOT reach its "needs another iteration" dispatch.
+
+    def test_implementation_review_check_fails_loudly_when_member_read_fails(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"root-ok\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "echo 'REVIEW_MEMBER_READ_FAILURE' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "root-ok",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("gmol: gc ready failed for status:", result.stderr)
+        self.assertIn("REVIEW_MEMBER_READ_FAILURE", result.stderr)
+        self.assertNotIn("needs another iteration", result.stdout)
+
+    def test_gap_analysis_check_fails_loudly_when_member_read_fails(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "gap-analysis-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"gap-ok\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "echo 'GAP_MEMBER_READ_FAILURE' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "gap-ok",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("gmol: gc ready failed for status:", result.stderr)
+        self.assertIn("GAP_MEMBER_READ_FAILURE", result.stderr)
+        self.assertNotIn("needs another iteration", result.stdout)
+
+    # The three tests below pin the capture sites the fixtures above never
+    # reach. Every fixture above fails the *first* `gc bd show`, which short
+    # -circuits design-review and makes the tolerant gates fall back to
+    # `PARENT_ROOT=$ROOT_ID` -- so the fatal design-review handler (the exact
+    # symptom this change exists to fix) and the two re-show sites were
+    # unpinned. Each fixture below lets the first show succeed.
+
+    def test_design_review_check_surfaces_gc_bd_show_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "design-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            # A dedicated TMPDIR that nothing else writes to, so "empty after the
+            # run" is an exact pin on the EXIT trap reclaiming the capture file.
+            tmpdir = pathlib.Path(tmp) / "tmpdir"
+            tmpdir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "echo 'DESIGN_SHOW_FAILURE store unavailable' >&2\n"
+                "exit 3\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "design-bead",
+                "TMPDIR": str(tmpdir),
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+            leaked = sorted(p.name for p in tmpdir.iterdir())
+
+        # This site is fatal by design: a gate that cannot read its own bead
+        # must not fall through to a verdict decision.
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR: gc bd show design-bead failed", result.stderr)
+        self.assertIn("DESIGN_SHOW_FAILURE", result.stderr)
+        # `trap 'rm -f "$GC_ERR"' EXIT INT TERM HUP` actually reclaims the file.
+        self.assertEqual(leaked, [])
+
+    def test_implementation_review_check_notes_parent_show_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "implementation-review-approved.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                # The member read is `gc ready` (see gmol); let it succeed with an
+                # empty union so this test isolates the parent `gc bd show` site.
+                "if [ \"$1\" = \"ready\" ]; then\n"
+                "  printf '[]\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"$2\" = \"show\" ]; then\n"
+                # The root read succeeds and names a *different* parent, which is
+                # the only way control reaches the parent re-show.
+                "  if [ \"$3\" = \"parent-err\" ]; then\n"
+                "    echo 'PARENT_SHOW_FAILURE parent lookup unavailable' >&2\n"
+                "    exit 3\n"
+                "  fi\n"
+                "  printf '%s\\n' '{\"metadata\":{\"gc.root_bead_id\":\"parent-err\",\"gc.attempt\":\"1\"}}'\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 99\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "root-child",
+                "GC_ITERATION": "1",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("review check: note: gc bd show parent-err failed", result.stderr)
+        self.assertIn("PARENT_SHOW_FAILURE", result.stderr)
+        # The root read succeeded, so the tolerant note is the parent's alone --
+        # without this the fixture could regress into the already-pinned site.
+        self.assertNotIn("gc bd show root-child failed", result.stderr)
+
+    def test_build_artifact_check_root_reshow_failure_surfaces_gc_bd_stderr(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        script = root / "assets" / "scripts" / "checks" / "build-artifact-valid.sh"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp) / "bin"
+            bin_dir.mkdir()
+            fake_gc = bin_dir / "gc"
+            fake_gc.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$3\" = \"root-err\" ]; then\n"
+                "  echo 'ROOT_RESHOW_FAILURE root lookup unavailable' >&2\n"
+                "  exit 3\n"
+                "fi\n"
+                # The step read succeeds with a complete artifact contract and a
+                # root that differs from the bead, so the re-show is reached.
+                "printf '%s\\n' '{\"metadata\":{"
+                "\"gc.build.artifact_schema\":\"gc.build.requirements.v1\","
+                "\"gc.build.artifact_path_keys\":\"gc.build.requirements_path\","
+                "\"gc.root_bead_id\":\"root-err\"}}'\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            fake_gc.chmod(0o755)
+            env = {
+                **os.environ,
+                "GC_BEAD_ID": "bd-child",
+                "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            }
+            result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("build-artifact-check: gc bd show root-err failed", result.stderr)
+        self.assertIn("ROOT_RESHOW_FAILURE", result.stderr)
+        # The first show succeeded; only the root re-show is being reported.
+        self.assertNotIn("gc bd show bd-child failed", result.stderr)
 
 
 if __name__ == "__main__":

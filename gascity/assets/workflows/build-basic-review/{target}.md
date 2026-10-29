@@ -3,8 +3,8 @@ Finalize the build-basic starter factory review.
 Verify the latest starter review loop approved the implementation and wrote a
 starter review summary path. Record the approved review path on the workflow
 root bead so the build-basic finalize stage can include it in `factory-run.md`.
-Use `bd update "<workflow-root-id>" --set-metadata "gc.build.review_report_path=<absolute path>"`.
-Do not use `bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
+Use `gc bd update "<workflow-root-id>" --set-metadata "gc.build.review_report_path=<absolute path>"`.
+Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
 object.
 
 Review approval is based on the implementation source anchor/worktree recorded
@@ -61,8 +61,8 @@ Trace front matter must use the validator shape exactly:
 - Verification
 
 Before closing this expansion target, set the claimed step outcome with
-`bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close
-with `bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
-`--metadata` or `--set-metadata` to `bd close`.
+`gc bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close
+with `gc bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
+`--metadata` or `--set-metadata` to `gc bd close`.
 
 Do not invoke provider-native subagents or provider-specific task tools.

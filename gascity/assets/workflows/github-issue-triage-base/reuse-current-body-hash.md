@@ -1,6 +1,6 @@
 
 Read the current step bead metadata, get `gc.root_bead_id`, then read
-workflow root metadata with `bd show <root-bead-id> --json`. Use
+workflow root metadata with `gc bd show <root-bead-id> --json`. Use
 `gc.github.repo`, `gc.github.number`, `gc.github.body_hash`,
 `gc.github.snapshot_path`, and `gc.github.triage_dir` as the context index.
 If any required key is missing, hard-fail and report that the snapshot handoff

@@ -1,5 +1,5 @@
 
-Read workflow root metadata from `bd show <root-bead-id> --json`. Validate the
+Read workflow root metadata from `gc bd show <root-bead-id> --json`. Validate the
 generic review verdict report at `gc.github.review_report_path` and map it with
 `{{pack_root}}/assets/scripts/github_reports.py review-outcome`:
 `pass/none -> approve`, `fail/minor -> comment`, `fail/major -> request_changes`,

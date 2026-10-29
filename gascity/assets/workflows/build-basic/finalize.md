@@ -43,8 +43,8 @@ coverage matrix described here, and these sections:
 
 Record the canonical path on the workflow root bead before validating or
 writing the final report. Use
-`bd update "<workflow-root-id>" --set-metadata "gc.build.implementation_summary_path=<absolute path>"`.
-Do not use `bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
+`gc bd update "<workflow-root-id>" --set-metadata "gc.build.implementation_summary_path=<absolute path>"`.
+Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
 object.
 
 Use mapping objects for front matter; do not use scalar shortcuts such as
@@ -95,14 +95,14 @@ In those sections, include:
 
 Record the final report path on the workflow root bead as both
 `gc.build.final_report_path=<path>` and `gc.build.factory_run_path=<path>`.
-Use `bd update "<workflow-root-id>" --set-metadata "gc.build.final_report_path=<absolute path>" --set-metadata "gc.build.factory_run_path=<absolute path>"`.
-Do not use `bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
+Use `gc bd update "<workflow-root-id>" --set-metadata "gc.build.final_report_path=<absolute path>" --set-metadata "gc.build.factory_run_path=<absolute path>"`.
+Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts a JSON
 object.
 Before closing this step, set the claimed step outcome with
-`bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close
-with `bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
-`--metadata` or `--set-metadata` to `bd close`.
+`gc bd update "<claimed-step-id>" --set-metadata "gc.outcome=pass"`, then close
+with `gc bd close "<claimed-step-id>" --reason "<concise reason>"`. Do not pass
+`--metadata` or `--set-metadata` to `gc bd close`.
 
 Do not publish from this step.
 
-Artifact validation: this stage is gated by `.gc/scripts/checks/build-artifact-valid.sh`, which validates the artifact recorded at `gc.build.final_report_path` against schema `gc.build.final-report.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.
+Artifact validation: this stage is gated by the pack-owned `build-artifact-valid.sh` check, which validates the artifact recorded at `gc.build.final_report_path` against schema `gc.build.final-report.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.

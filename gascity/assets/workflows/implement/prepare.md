@@ -8,15 +8,15 @@ Requirements:
 - identify the current claimed step bead from `CLAIMED_BEAD_ID` in the startup
   claim output, or `$GC_BEAD_ID` if the claim output did not expose one;
   hard-fail if neither value is present
-- read the claimed step JSON with `bd show "$CLAIMED_BEAD_ID" --json`, then
+- read the claimed step JSON with `gc bd show "$CLAIMED_BEAD_ID" --json`, then
   read the current workflow root id from `metadata["gc.root_bead_id"]`
-- read the current workflow root JSON with `bd show "$ROOT_ID" --json`
+- read the current workflow root JSON with `gc bd show "$ROOT_ID" --json`
 - resolve the implementation input convoy from the current workflow root
   metadata key `gc.input_convoy_id`
 - verify the resolved input convoy id matches rendered runtime convoy
   `{{convoy_id}}`
 - validate that input bead is a convoy or normalized singleton convoy with
-  `bd show "<gc.input_convoy_id>" --json` before treating it as implementation
+  `gc bd show "<gc.input_convoy_id>" --json` before treating it as implementation
   work
 - do not search repo, plan, report, artifact, session-log, or runtime files for
   convoy ids; stale files are not graph context

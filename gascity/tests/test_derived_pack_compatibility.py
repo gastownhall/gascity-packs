@@ -26,8 +26,8 @@ DERIVED_PACKS = base_contract.THIRD_PARTY_BUILD_PACKS
 BUILD_BASE_ANCHORS = base_contract.BUILD_BASE_STEPS
 
 CLAIM_PROTOCOL_INCLUDE = '{{ template "gc-role-worker" . }}'
-SHARED_CLAIM_FRAGMENT = (
-    GASCITY_ROOT / "roles" / "prompts" / "shared" / "gc-role-worker.md.tmpl"
+PUBLIC_CLAIM_FRAGMENT = (
+    GASCITY_ROOT / "template-fragments" / "gc-role-worker.template.md"
 )
 
 # Pack-local prompt surfaces that the factory actually executes. Vendored
@@ -328,16 +328,22 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
                             (agent_dir / "prompt.template.md").is_file()
                         )
 
-    def test_agent_prompts_embed_shared_claim_protocol(self) -> None:
-        shared_fragment = SHARED_CLAIM_FRAGMENT.read_text(encoding="utf-8")
+    def test_agent_prompts_use_public_claim_protocol_without_overrides(self) -> None:
+        roles_pack = tomllib.loads(
+            (GASCITY_ROOT / "roles" / "pack.toml").read_text(encoding="utf-8")
+        )
+        self.assertTrue(PUBLIC_CLAIM_FRAGMENT.is_file())
+        self.assertEqual(roles_pack["imports"]["gc"]["source"], "..")
+
         for pack_name in DERIVED_PACKS:
             pack_root = PACKS_ROOT / pack_name
-            pack_fragment = (
+            pack_override = (
                 pack_root / "template-fragments" / "gc-role-worker.template.md"
             )
-            with self.subTest(pack=pack_name, fragment=str(pack_fragment)):
-                self.assertEqual(
-                    pack_fragment.read_text(encoding="utf-8"), shared_fragment
+            with self.subTest(pack=pack_name, fragment=str(pack_override)):
+                self.assertFalse(
+                    pack_override.exists(),
+                    f"{pack_name} must use the public gc-role-worker fragment",
                 )
 
             agent_dirs = sorted(
@@ -357,14 +363,14 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
                     text = prompt.read_text(encoding="utf-8")
                     self.assertIn(CLAIM_PROTOCOL_INCLUDE, text)
                     self.assertEqual(text.count(CLAIM_PROTOCOL_INCLUDE), 1)
-                    local_fragment = (
+                    agent_override = (
                         agent_dir
                         / "template-fragments"
                         / "gc-role-worker.template.md"
                     )
-                    self.assertEqual(
-                        local_fragment.read_text(encoding="utf-8"),
-                        shared_fragment,
+                    self.assertFalse(
+                        agent_override.exists(),
+                        f"{pack_name}.{agent_dir.name} must use the public gc-role-worker fragment",
                     )
 
     def test_prompt_assets_do_not_dispatch_provider_native_subagents(self) -> None:
@@ -474,12 +480,17 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
                             step["check"]["max_attempts"],
                             base_contract.BUILD_ARTIFACT_GATE_MAX_ATTEMPTS,
                         )
-                        self.assertEqual(
-                            step["check"]["check"],
+                        check = step["check"]["check"]
+                        self.assertEqual(check["mode"], "exec")
+                        self.assertEqual(check["timeout"], "5m")
+                        # A derived step may either inherit the gascity
+                        # formula's pack-relative asset or replace the whole
+                        # step with its existing launcher-compatibility path.
+                        self.assertIn(
+                            check["path"],
                             {
-                                "mode": "exec",
-                                "path": base_contract.BUILD_ARTIFACT_CHECK_SCRIPT,
-                                "timeout": "5m",
+                                base_contract.BUILD_ARTIFACT_CHECK_SCRIPT,
+                                base_contract.GASCITY_BUILD_ARTIFACT_CHECK_SCRIPT,
                             },
                         )
                         self.assertEqual(

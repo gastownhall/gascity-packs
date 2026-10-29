@@ -5,7 +5,7 @@ work in this step.
 Load context from bead metadata before investigating:
 
 - Read the current step bead metadata, get `gc.root_bead_id`, then read
-  workflow root metadata with `bd show <root-bead-id> --json`.
+  workflow root metadata with `gc bd show <root-bead-id> --json`.
 - Required workflow root metadata keys are `gc.github.source_bead_id`,
   `gc.github.repo`, `gc.github.number`, `gc.github.body_hash`,
   `gc.github.snapshot_path`, and `gc.github.triage_dir`.
@@ -59,4 +59,4 @@ verdict by the validator. Reproduction work may write logs, repro scripts, and
 patch evidence under the triage artifact directory only.
 
 After validation, update the workflow root metadata with the report result:
-`bd update <root-bead-id> --set-metadata gc.github.triage_report_path=<absolute triage-report.md path> --set-metadata gc.github.triage_verdict=<verdict> --set-metadata gc.github.triage_priority=<priority> --set-metadata gc.github.triage_recommended_next_action=<recommended_next_action>`.
+`gc bd update <root-bead-id> --set-metadata gc.github.triage_report_path=<absolute triage-report.md path> --set-metadata gc.github.triage_verdict=<verdict> --set-metadata gc.github.triage_priority=<priority> --set-metadata gc.github.triage_recommended_next_action=<recommended_next_action>`.

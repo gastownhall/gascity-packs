@@ -58,7 +58,7 @@ directory is known, resolve these absolute paths under that run directory:
 Then publish all path metadata on the workflow root in one update:
 
 ```bash
-bd update <root-bead-id> \
+gc bd update <root-bead-id> \
   --set-metadata gc.github.run_dir=<absolute run directory> \
   --set-metadata gc.github.requirements_path=<absolute requirements.md path> \
   --set-metadata gc.github.implementation_plan_path=<absolute implementation-plan.md path> \
