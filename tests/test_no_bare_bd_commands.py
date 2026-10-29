@@ -131,7 +131,10 @@ BD_SUBCOMMANDS = (
 BD_SUBCOMMAND_PATTERN = "|".join(re.escape(command) for command in BD_SUBCOMMANDS)
 BARE_BD_COMMAND = re.compile(rf"\bbd[ \t]+(?:{BD_SUBCOMMAND_PATTERN})\b")
 BARE_BD_LEADING_FLAG = re.compile(r"\bbd[ \t]+-{1,2}[A-Za-z]")
-BARE_BD_DYNAMIC_COMMAND = re.compile(r'''\bbd[ \t]+(?:["']?\$\{?[A-Za-z_]|\$\()''')
+# `bd "$@"` / `bd $*` forward a caller's argv straight to bd (the gastown
+# review check scripts' bd_json helper did this), so the positional forms
+# count as dynamic commands too.
+BARE_BD_DYNAMIC_COMMAND = re.compile(r'''\bbd[ \t]+(?:["']?\$\{?[A-Za-z_@*]|\$\()''')
 MULTILINE_BARE_BD_COMMAND = re.compile(
     rf"\bbd[ \t]*\r?\n[ \t]*(?:{BD_SUBCOMMAND_PATTERN})\b"
 )
