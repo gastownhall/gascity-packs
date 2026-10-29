@@ -8,8 +8,8 @@
 # Values: "done" (approved) | "iterate" (needs another round)
 #
 # The apply-fixes step sets this after applying synthesis findings:
-#   gc bd meta set $BEAD_ID review.verdict=done
-#   gc bd meta set $BEAD_ID review.verdict=iterate
+#   gc bd update "$BEAD_ID" --set-metadata review.verdict=done
+#   gc bd update "$BEAD_ID" --set-metadata review.verdict=iterate
 
 set -euo pipefail
 
