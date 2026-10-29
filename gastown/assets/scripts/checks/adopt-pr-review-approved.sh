@@ -8,8 +8,8 @@
 # Values: "done" (approved) | "iterate" (needs another round)
 #
 # The apply-fixes step sets this after applying synthesis findings:
-#   bd meta set $BEAD_ID review.verdict=done
-#   bd meta set $BEAD_ID review.verdict=iterate
+#   gc bd update "$BEAD_ID" --set-metadata review.verdict=done
+#   gc bd update "$BEAD_ID" --set-metadata review.verdict=iterate
 
 set -euo pipefail
 
@@ -92,7 +92,7 @@ load_verdict() {
     # so the caller can surface bead-store outages instead of spinning.
     while [ "$attempt" -lt 10 ]; do
         current=$(
-            bd list --all --json --limit=0 2>/dev/null |
+            gc bd list --all --json --limit=0 2>/dev/null |
                 json_payload |
                 jq -r --arg ref "$apply_ref" --arg root "$root_id" '
                     [

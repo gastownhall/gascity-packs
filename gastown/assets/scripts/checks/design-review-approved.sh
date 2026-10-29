@@ -83,7 +83,7 @@ load_verdict() {
     # TestReviewCheckScriptsPreferNewestVerdictAcrossRalphStep.
     while [ "$attempt" -lt 10 ]; do
         current=$(
-            bd list --all --json --limit=0 2>/dev/null |
+            gc bd list --all --json --limit=0 2>/dev/null |
                 json_payload |
                 jq -r --arg ref "$apply_ref" --arg root "$root_id" '
                     [

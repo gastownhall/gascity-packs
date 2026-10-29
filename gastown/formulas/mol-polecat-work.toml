@@ -17,7 +17,7 @@ merge review.
 The polecat sets `metadata.branch` and `metadata.target` on the work bead
 and reassigns it to the refinery. The refinery merges and closes.
 
-**NEVER CLOSE BEADS.** You must not run `bd close` or set status=closed.
+**NEVER CLOSE BEADS.** You must not run `gc bd close` or set status=closed.
 Even if you believe the code is already merged, reassign to refinery —
 only the refinery verifies merges and closes beads.
 `{{base_branch}}` may come from the work bead's own `metadata.target` or

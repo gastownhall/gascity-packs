@@ -385,7 +385,7 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
 3. If pre-existing on target:
    - Check for duplicates first:
      ```bash
-     gc bd list --type=bug --status=open --search "<failure summary>"
+     gc bd list --type=bug --status=open --title-contains "<failure summary>"
      ```
    - If a matching bug already exists: note its ID and proceed with merge.
    - If no duplicate: file a new bead:

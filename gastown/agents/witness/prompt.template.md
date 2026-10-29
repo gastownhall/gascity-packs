@@ -157,7 +157,7 @@ Your patrol wisps are ephemeral molecules on the **town ledger**
 pour them — with `gc bd`, never bare `bd`. Bare `bd` resolves to the rig
 ledger from your CWD and never sees your wisps, so every restart would pour a
 fresh one while the prior wisp leaks. Wisp roots are `issue_type=molecule`;
-never filter `--type=wisp` (not a valid bd type — the query errors and matches
+never filter `--type=wisp` (not a valid gc bd type — the query errors and matches
 nothing).
 
 ```bash
@@ -208,7 +208,7 @@ fi
 # Reconcile queued (open) patrol wisps to exactly one. A prior cycle may have
 # poured a next wisp without burning, or a restart may have raced — keep the
 # first and burn the surplus so wisps never accumulate. Wisp roots are
-# molecules (never --type=wisp, which is not a valid bd type and matches
+# molecules (never --type=wisp, which is not a valid gc bd type and matches
 # nothing).
 OPEN_WISPS=$(gc bd list --assignee="$GC_AGENT" --status=open --type=molecule --limit=0 --json | jq -r '.[].id')
 ASSIGNED_WISP=$(printf '%s\n' $OPEN_WISPS | sed -n '1p')
