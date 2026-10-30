@@ -1,0 +1,1426 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:gascity:workspace-records:v1",
+  "$comment": "Pack data contracts only. Runtime claim, storage, Git, and artifact verification are separate responsibilities.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$(?![\\s\\S])"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "oid": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$(?![\\s\\S])"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^/[^\\u0000-\\u001f\\u007f]*$(?![\\s\\S])"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "project-check": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/text"
+        },
+        "subject_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "evidence_path": {
+          "$ref": "#/$defs/path"
+        },
+        "evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "command",
+        "subject_oid",
+        "exit_code",
+        "evidence_path",
+        "evidence_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "independent-review": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "pending",
+            "unrun"
+          ]
+        },
+        "reviewed_oid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/oid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "report_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "report_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "reviewed_oid",
+        "reviewer",
+        "report_path",
+        "report_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "acceptance": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "accepted",
+            "rejected",
+            "unverified"
+          ]
+        },
+        "subject_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "project_checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/project-check"
+          }
+        },
+        "independent_review": {
+          "$ref": "#/$defs/independent-review"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "subject_oid",
+        "project_checks",
+        "independent_review",
+        "artifacts"
+      ],
+      "additionalProperties": false
+    },
+    "integration-input": {
+      "type": "object",
+      "properties": {
+        "owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "output_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "workspace_output_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "owner_id",
+        "output_oid",
+        "workspace_output_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "claim-binding": {
+      "type": "object",
+      "properties": {
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "workspace_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "writer_attempt_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "workflow_root_id",
+        "generation",
+        "workspace_owner_id",
+        "writer_step_id",
+        "writer_attempt_id"
+      ],
+      "additionalProperties": false
+    },
+    "source-node": {
+      "type": "object",
+      "properties": {
+        "owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "strategy": {
+          "enum": [
+            "isolated",
+            "dependent",
+            "shared-chain",
+            "integration"
+          ]
+        },
+        "member_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "source_predecessor_owner_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "single_lane": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "owner_id",
+        "strategy",
+        "member_ids",
+        "source_predecessor_owner_ids",
+        "single_lane"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "isolated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "member_ids": {
+                "maxItems": 1
+              },
+              "source_predecessor_owner_ids": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "dependent"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "member_ids": {
+                "maxItems": 1
+              },
+              "source_predecessor_owner_ids": {
+                "minItems": 1,
+                "maxItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "shared-chain"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_predecessor_owner_ids": {
+                "maxItems": 1
+              },
+              "single_lane": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "integration"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "member_ids": {
+                "maxItems": 1
+              },
+              "source_predecessor_owner_ids": {
+                "minItems": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "authorization": {
+      "type": "object",
+      "properties": {
+        "push": {
+          "type": "boolean"
+        },
+        "open_pr": {
+          "type": "boolean"
+        },
+        "decision_path": {
+          "$ref": "#/$defs/path"
+        },
+        "decision_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "push",
+        "open_pr",
+        "decision_path",
+        "decision_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "resolution": {
+      "type": "object",
+      "properties": {
+        "decision_path": {
+          "$ref": "#/$defs/path"
+        },
+        "decision_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_head_oid": {
+          "$ref": "#/$defs/oid"
+        }
+      },
+      "required": [
+        "decision_path",
+        "decision_sha256",
+        "expected_head_oid"
+      ],
+      "additionalProperties": false
+    },
+    "run": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "type": "integer",
+          "const": 1
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "input_convoy_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_anchor_id": {
+          "$ref": "#/$defs/id"
+        },
+        "rig_root": {
+          "$ref": "#/$defs/path"
+        },
+        "common_git_dir": {
+          "$ref": "#/$defs/path"
+        },
+        "base_oid": {
+          "$ref": "#/$defs/oid"
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "input_convoy_id",
+        "source_anchor_id",
+        "rig_root",
+        "common_git_dir",
+        "base_oid"
+      ],
+      "additionalProperties": false
+    },
+    "source-plan": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_plan_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "base_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "parent_canonical_generation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/generation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent_canonical_oid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/oid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source-node"
+          }
+        },
+        "terminal_owner_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "source_plan_owner_id",
+        "base_oid",
+        "parent_canonical_generation",
+        "parent_canonical_oid",
+        "nodes",
+        "terminal_owner_id"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "generation": {
+                "const": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parent_canonical_generation": {
+                "type": "null"
+              },
+              "parent_canonical_oid": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "parent_canonical_generation": {
+                "$ref": "#/$defs/generation"
+              },
+              "parent_canonical_oid": {
+                "$ref": "#/$defs/oid"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "workspace": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_plan_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspace_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspace_bead_id": {
+          "$ref": "#/$defs/id"
+        },
+        "strategy": {
+          "enum": [
+            "isolated",
+            "dependent",
+            "shared-chain",
+            "integration",
+            "read-only"
+          ]
+        },
+        "work_dir": {
+          "$ref": "#/$defs/path"
+        },
+        "work_branch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phase": {
+          "enum": [
+            "preparing",
+            "entry",
+            "active",
+            "result",
+            "blocked"
+          ]
+        },
+        "input_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "current_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "active_member_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next_member_position": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_oid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/oid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "integration_inputs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/integration-input"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "claim_binding": {
+          "$ref": "#/$defs/claim-binding"
+        },
+        "writer_attempt_id": {
+          "$ref": "#/$defs/id"
+        },
+        "native_attempt_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "native_provenance": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "source_plan_owner_id",
+        "workspace_owner_id",
+        "workspace_bead_id",
+        "strategy",
+        "work_dir",
+        "work_branch",
+        "phase",
+        "input_oid",
+        "current_oid",
+        "active_member_id",
+        "next_member_position",
+        "output_oid",
+        "integration_inputs",
+        "claim_binding",
+        "writer_attempt_id",
+        "native_attempt_id",
+        "native_provenance"
+      ],
+      "additionalProperties": false
+    },
+    "member-result": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_plan_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspace_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "member_id": {
+          "$ref": "#/$defs/id"
+        },
+        "status": {
+          "enum": [
+            "changed",
+            "no_change"
+          ]
+        },
+        "input_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "output_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "commit_oids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/oid"
+          },
+          "uniqueItems": true
+        },
+        "acceptance": {
+          "$ref": "#/$defs/acceptance"
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "source_plan_owner_id",
+        "workspace_owner_id",
+        "member_id",
+        "status",
+        "input_oid",
+        "output_oid",
+        "commit_oids",
+        "acceptance"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "changed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "commit_oids": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "commit_oids": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "owner-output": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_plan_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspace_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "strategy": {
+          "enum": [
+            "isolated",
+            "dependent",
+            "shared-chain",
+            "integration"
+          ]
+        },
+        "input_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "output_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "final_member_id": {
+          "$ref": "#/$defs/id"
+        },
+        "final_member_result_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "integration_inputs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/integration-input"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "integration_evidence_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "integration_evidence_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "source_plan_owner_id",
+        "workspace_owner_id",
+        "strategy",
+        "input_oid",
+        "output_oid",
+        "final_member_id",
+        "final_member_result_sha256",
+        "integration_inputs",
+        "integration_evidence_path",
+        "integration_evidence_sha256"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "const": "integration"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "integration_inputs": {
+                "type": "array",
+                "minItems": 2
+              },
+              "integration_evidence_path": {
+                "$ref": "#/$defs/path"
+              },
+              "integration_evidence_sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "integration_inputs": {
+                "type": "null"
+              },
+              "integration_evidence_path": {
+                "type": "null"
+              },
+              "integration_evidence_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "canonical": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_plan_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspace_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "output_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "owner_output_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "summary_path": {
+          "$ref": "#/$defs/path"
+        },
+        "summary_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "source_plan_owner_id",
+        "workspace_owner_id",
+        "output_oid",
+        "owner_output_sha256",
+        "summary_path",
+        "summary_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_plan_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "review_id": {
+          "$ref": "#/$defs/id"
+        },
+        "reviewed_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "canonical_record_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "verdict": {
+          "enum": [
+            "approved",
+            "changes_required",
+            "blocked"
+          ]
+        },
+        "report_path": {
+          "$ref": "#/$defs/path"
+        },
+        "report_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "clean_before": {
+          "type": "boolean"
+        },
+        "clean_after": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "source_plan_owner_id",
+        "review_id",
+        "reviewed_oid",
+        "canonical_record_sha256",
+        "verdict",
+        "report_path",
+        "report_sha256",
+        "clean_before",
+        "clean_after"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "const": "approved"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "clean_before": {
+                "const": true
+              },
+              "clean_after": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "publish": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_plan_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "publish_id": {
+          "$ref": "#/$defs/id"
+        },
+        "output_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "canonical_record_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "approved_review_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "remote": {
+          "$ref": "#/$defs/text"
+        },
+        "ref": {
+          "$ref": "#/$defs/text"
+        },
+        "authorization": {
+          "$ref": "#/$defs/authorization"
+        },
+        "status": {
+          "enum": [
+            "intended",
+            "observed",
+            "uncertain"
+          ]
+        },
+        "observed_oid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/oid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^https://[^\\s]+$(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "source_plan_owner_id",
+        "publish_id",
+        "output_oid",
+        "canonical_record_sha256",
+        "approved_review_sha256",
+        "remote",
+        "ref",
+        "authorization",
+        "status",
+        "observed_oid",
+        "pr_url"
+      ],
+      "additionalProperties": false
+    },
+    "blocker": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "workflow_root_id": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "writer_step_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_plan_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspace_owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "blocker_id": {
+          "$ref": "#/$defs/id"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "resolved"
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/text"
+        },
+        "member_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocked_from_phase": {
+          "enum": [
+            "preparing",
+            "entry",
+            "active",
+            "result"
+          ]
+        },
+        "blocked_member_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocked_member_position": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blocked_current_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "result_absent": {
+          "type": "boolean"
+        },
+        "work_dir": {
+          "$ref": "#/$defs/path"
+        },
+        "expected_input_oid": {
+          "$ref": "#/$defs/oid"
+        },
+        "actual_head_oid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/oid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "git_state": {
+          "$ref": "#/$defs/text"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "evidence_path": {
+          "$ref": "#/$defs/path"
+        },
+        "recommended_next_action": {
+          "$ref": "#/$defs/text"
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/resolution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "workflow_root_id",
+        "generation",
+        "writer_step_id",
+        "source_plan_owner_id",
+        "workspace_owner_id",
+        "blocker_id",
+        "status",
+        "stage",
+        "member_id",
+        "blocked_from_phase",
+        "blocked_member_id",
+        "blocked_member_position",
+        "blocked_current_oid",
+        "result_absent",
+        "work_dir",
+        "expected_input_oid",
+        "actual_head_oid",
+        "git_state",
+        "reason",
+        "evidence_path",
+        "recommended_next_action",
+        "resolution"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "open"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "resolution": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "resolution": {
+                "$ref": "#/$defs/resolution"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "x-records": {
+    "run": {
+      "metadata_key": "gc.implementation_run",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "input_convoy_id",
+        "source_anchor_id",
+        "rig_root",
+        "common_git_dir"
+      ],
+      "designated_writer": "declare-run",
+      "lock_scope": "workflow-root",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    },
+    "source-plan": {
+      "metadata_key": "gc.source_plan",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "source_plan_owner_id"
+      ],
+      "designated_writer": "declare-plan",
+      "lock_scope": "workflow-root",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    },
+    "workspace": {
+      "metadata_key": "gc.workspace",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "source_plan_owner_id",
+        "workspace_owner_id"
+      ],
+      "designated_writer": "workspace-owner transition",
+      "lock_scope": "workspace-owner",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    },
+    "member-result": {
+      "metadata_key": "gc.workspace_result",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "source_plan_owner_id",
+        "workspace_owner_id",
+        "member_id"
+      ],
+      "designated_writer": "record-result for active member",
+      "lock_scope": "workspace-owner",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    },
+    "owner-output": {
+      "metadata_key": "gc.workspace_output",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "source_plan_owner_id",
+        "workspace_owner_id"
+      ],
+      "designated_writer": "record-result for final member",
+      "lock_scope": "workspace-owner",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    },
+    "canonical": {
+      "metadata_key": "gc.canonical",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "source_plan_owner_id"
+      ],
+      "designated_writer": "bind-canonical",
+      "lock_scope": "workspace-owner then workflow-root",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    },
+    "review": {
+      "metadata_key": "gc.review",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "source_plan_owner_id",
+        "review_id"
+      ],
+      "designated_writer": "review report owner",
+      "lock_scope": "workflow-root",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    },
+    "publish": {
+      "metadata_key": "gc.publish_intent",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "source_plan_owner_id",
+        "publish_id"
+      ],
+      "designated_writer": "publish formula owner",
+      "lock_scope": "workflow-root",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    },
+    "blocker": {
+      "metadata_key": "gc.workspace_blocker",
+      "identity": [
+        "workflow_root_id",
+        "generation",
+        "source_plan_owner_id",
+        "workspace_owner_id",
+        "blocker_id"
+      ],
+      "designated_writer": "block or resume-blocked for owning workspace",
+      "lock_scope": "workspace-owner",
+      "lookup": "Exact kind and full identity through explicit references to native-generated physical record IDs."
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/run"
+    },
+    {
+      "$ref": "#/$defs/source-plan"
+    },
+    {
+      "$ref": "#/$defs/workspace"
+    },
+    {
+      "$ref": "#/$defs/member-result"
+    },
+    {
+      "$ref": "#/$defs/owner-output"
+    },
+    {
+      "$ref": "#/$defs/canonical"
+    },
+    {
+      "$ref": "#/$defs/review"
+    },
+    {
+      "$ref": "#/$defs/publish"
+    },
+    {
+      "$ref": "#/$defs/blocker"
+    }
+  ]
+}
