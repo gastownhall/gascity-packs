@@ -3,6 +3,20 @@
 # Base schemas must not require owner, stage-owner, persona, or role fields.
 schema_id: gc.build.review.v1
 artifact: review
+
+# Approval floor. An approving verdict certifies that something was actually
+# examined; a matrix in which the reviewer declined most of its own subjects
+# is not an approval of those subjects, it is a report that no review happened.
+# Both knobs are opt-in per schema so a pack can widen or drop the floor.
+#   approval_min_covered          - approvals require at least N `covered` subjects
+#   approval_max_out_of_scope_ratio - subjects the reviewer opted out of
+#                                    (`out_of_scope`, `not_applicable`) may not
+#                                    exceed covered * this (1.0 = may not outnumber)
+# `deferred`, `blocked` and `superseded` are NOT counted: they mean "acknowledged,
+# not carried forward in this artifact", and are a normal companion to an approval.
+approval_min_covered: 1
+approval_max_out_of_scope_ratio: 1.0
+
 allowed_statuses:
   - draft
   - questions
