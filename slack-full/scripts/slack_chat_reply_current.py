@@ -130,6 +130,53 @@ def _resolve_conversation(
 _DEFAULT_KIND = "dm"
 
 
+def _company_turn_owns_reply(
+    args: argparse.Namespace, turn: dict[str, Any], *, turn_ref: str,
+    kind_override: str,
+) -> bool:
+    """Whether this reply answers ``turn`` rather than a legacy conversation.
+
+    A live company pointer is only evidence that the session *was* woken in a
+    room, not that this reply belongs there (gp-x4jak). An explicit
+    --conversation-id always wins: it diverts only when it names the turn's
+    own channel. Otherwise an explicit company selection (--turn-ref, --kind)
+    keeps the turn, and auto-resolution keeps it unless the session's latest
+    inbound is in another conversation and newer than the turn.
+    """
+    channel = turn.get("channel_id", "")
+    explicit = (args.conversation_id or "").strip()
+    if explicit:
+        if explicit == channel:
+            return True
+        if turn_ref:
+            raise SystemExit(
+                f"--conversation-id {explicit} does not match --turn-ref "
+                f"{turn_ref} channel {channel}")
+        return False
+    if turn_ref or kind_override:
+        return True
+    try:
+        session_id = (args.session or "").strip() or common.current_session_id()
+        event = common.find_latest_inbound_for_session(session_id)
+    except common.GCAPIError as exc:
+        print(f"warning: latest-inbound lookup failed, answering the company "
+              f"turn in {channel}: {exc}", file=sys.stderr)
+        return True
+    if event is None:
+        return True
+    cid = ((event.get("payload") or {}).get("conversation_id") or "").strip()
+    if not cid or cid == channel:
+        return True
+    import slack_company_outbound as outbound  # type: ignore
+    inbound_at = outbound._parse_rfc3339(str(event.get("ts") or ""))
+    delivered_at = outbound._parse_rfc3339(turn.get("delivered_at", ""))
+    if inbound_at is not None and delivered_at is not None and inbound_at < delivered_at:
+        return True
+    print(f"latest inbound is in {cid}, newer than the company turn in "
+          f"{channel}; replying to {cid}", file=sys.stderr)
+    return False
+
+
 def _maybe_company_reply(args: argparse.Namespace) -> int | None:
     """Company-context path: post via the acting agent's own token.
 
@@ -143,9 +190,12 @@ def _maybe_company_reply(args: argparse.Namespace) -> int | None:
         post an ordinary reply into the room's thread root with no live
         mentions.
 
-    Only the *absence* of a company pointer returns ``None`` so the legacy path
-    runs byte-for-byte; a session with any company pointer answers into the
-    room (the legacy resolution the company delivery path never feeds).
+    The absence of a company pointer returns ``None`` so the legacy path runs
+    byte-for-byte. So does a pointer that does not own this reply (see
+    ``_company_turn_owns_reply``): an explicit --conversation-id elsewhere, or
+    a newer inbound in another conversation, goes to the legacy path instead
+    of the room. A posted company reply marks its turn answered, so the stale
+    pointer cannot claim later replies.
     """
     session_name = os.environ.get("GC_SESSION_NAME", "").strip()
     if not session_name:
@@ -170,6 +220,11 @@ def _maybe_company_reply(args: argparse.Namespace) -> int | None:
             session_name, kind_override=kind_override, turn_ref=turn_ref)
         if source is None:
             return None  # no company pointer — fall through to the legacy path
+        turn = (outbound.read_turn_ref(session_name, turn_ref)
+                if turn_ref else outbound.read_pointer(session_name, source))
+        if turn is None or not _company_turn_owns_reply(
+                args, turn, turn_ref=turn_ref, kind_override=kind_override):
+            return None  # this reply is not for the company turn
         body = _load_body(args)
         if source == "dm":
             result = outbound.post_company_dm_reply(
@@ -180,9 +235,7 @@ def _maybe_company_reply(args: argparse.Namespace) -> int | None:
                 body=body, origin_ts=origin_ts, session_name=session_name,
                 turn_ref=turn_ref)
         else:
-            turn = (outbound.read_turn_ref(session_name, turn_ref)
-                    if turn_ref else outbound.read_current_turn(session_name))
-            kind = turn.get("kind") if turn is not None else None
+            kind = turn.get("kind")
             if kind == "peer_delegation":
                 result = outbound.post_peer_result(
                     body=body, origin_ts=origin_ts, session_name=session_name,
@@ -199,6 +252,12 @@ def _maybe_company_reply(args: argparse.Namespace) -> int | None:
     except (outbound.OutboundError, outbound.TransientPostError,
             outbound.DefinitivePostError) as exc:
         raise SystemExit(f"company reply failed: {exc}") from exc
+    if result.get("status") == "posted":
+        try:
+            outbound.mark_turn_answered(turn, source)
+        except (OSError, outbound.OutboundError) as exc:
+            print(f"warning: reply posted but its turn was not marked answered: {exc}",
+                  file=sys.stderr)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

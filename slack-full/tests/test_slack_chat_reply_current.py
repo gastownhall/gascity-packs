@@ -30,6 +30,22 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> Non
     monkeypatch.delenv("GC_SLACK_ADAPTER_ENV", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail any unstubbed gc call fast instead of reaching a live API.
+
+    GC_API_BASE_URL above is gc's default port, which on a developer box can
+    be a real city. Tests that exercise transport failures patch urlopen
+    themselves and override this.
+    """
+    import urllib.error
+    import urllib.request
+
+    def refuse(*_args: Any, **_kwargs: Any):
+        raise urllib.error.URLError("unit test: no live gc API")
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+
+
 def _import_modules():
     for name in ("slack_chat_reply_current", "slack_intake_common"):
         sys.modules.pop(name, None)
@@ -911,6 +927,8 @@ def test_company_ambient_targeted_posts_root_reply(
         return 200, {}, {"ok": True, "ts": "1700000000.000800"}
     monkeypatch.setattr(outbound, "_slack_web_post", fake_post)
 
+    # No inbound in another conversation, so the turn owns the reply.
+    monkeypatch.setattr(common, "find_latest_inbound_for_session", lambda _sid: None)
     # Legacy path must NOT be reached (it would call common._request).
     def boom_request(*_a, **_k):
         raise AssertionError("legacy resolution must not run for a company turn")
@@ -1294,3 +1312,151 @@ def test_company_path_raw_flag_passes_tildes(
     rc_code = rc.main(["--body", _RUNWAY_LINE, "--raw"])
     assert rc_code == 0
     assert captured[0]["payload"]["text"] == _RUNWAY_LINE
+
+
+# --------------------------------------------------------------------------
+# gp-x4jak: a live company pointer must not capture replies meant elsewhere.
+# --------------------------------------------------------------------------
+
+
+def _capture_slack(monkeypatch: pytest.MonkeyPatch, outbound) -> list:
+    captured: list = []
+
+    def fake_post(method, token, payload, *, api_base, timeout):
+        captured.append(payload)
+        return 200, {}, {"ok": True, "ts": f"1700000009.00{len(captured):04d}"}
+    monkeypatch.setattr(outbound, "_slack_web_post", fake_post)
+    return captured
+
+
+def _capture_legacy(monkeypatch: pytest.MonkeyPatch, common) -> list:
+    published: list = []
+
+    def fake_publish(**kwargs):
+        published.append(kwargs)
+        return {"Receipt": {"Delivered": True}}
+    monkeypatch.setattr(common, "publish_via_gc_outbound", fake_publish)
+    monkeypatch.setattr(common, "find_latest_inbound_thread_for_session", lambda _sid: None)
+    return published
+
+
+@pytest.mark.parametrize("turn_ref", ["", "gct-dddddddddddddddddddd"])
+def test_explicit_conversation_id_elsewhere_bypasses_room_pointer(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, turn_ref: str) -> None:
+    rc, common = _import_modules()
+    outbound = _import_outbound()
+    _setup_company(outbound, tmp_path)
+    _write_turn(outbound, session="ollie-main", kind="ambient", agent="ollie",
+                ts="1700000000.000500", turn_ref=turn_ref)
+    monkeypatch.setenv("GC_SESSION_NAME", "ollie-main")
+    slack = _capture_slack(monkeypatch, outbound)
+    published = _capture_legacy(monkeypatch, common)
+
+    assert rc.main(["--conversation-id", "C0SEATCHAN", "--body", "for my channel"]) == 0
+    assert slack == []
+    assert [p["conversation_id"] for p in published] == ["C0SEATCHAN"]
+
+
+def test_explicit_conversation_id_matching_pointer_room_uses_company_path(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    rc, common = _import_modules()
+    outbound = _import_outbound()
+    _setup_company(outbound, tmp_path)
+    _write_turn(outbound, session="ollie-main", kind="ambient", agent="ollie",
+                ts="1700000000.000500")
+    monkeypatch.setenv("GC_SESSION_NAME", "ollie-main")
+    slack = _capture_slack(monkeypatch, outbound)
+    published = _capture_legacy(monkeypatch, common)
+
+    assert rc.main(["--conversation-id", "C0AAAAAAA", "--body", "to the room"]) == 0
+    assert published == []
+    assert [(p["channel"], p["thread_ts"]) for p in slack] == [
+        ("C0AAAAAAA", "1700000000.000100")]
+
+
+def test_turn_ref_with_conflicting_conversation_id_is_refused(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    rc, common = _import_modules()
+    outbound = _import_outbound()
+    _setup_company(outbound, tmp_path)
+    turn_ref = "gct-eeeeeeeeeeeeeeeeeeee"
+    turn = _write_turn(outbound, session="ollie-main", kind="ambient", agent="ollie",
+                       ts="1700000000.000500", turn_ref=turn_ref)
+    ref_dir = outbound.turns_dir() / "by-ref"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    (ref_dir / f"{turn_ref}.json").write_text(json.dumps(turn))
+    monkeypatch.setenv("GC_SESSION_NAME", "ollie-main")
+    slack = _capture_slack(monkeypatch, outbound)
+    published = _capture_legacy(monkeypatch, common)
+
+    with pytest.raises(SystemExit) as exc:
+        rc.main(["--turn-ref", turn_ref, "--conversation-id", "C0SEATCHAN",
+                 "--body", "ambiguous"])
+    assert "does not match --turn-ref" in str(exc.value)
+    assert slack == [] and published == []
+
+
+@pytest.mark.parametrize(("inbound_ts", "expect_room"), [
+    ("2026-07-17T12:05:00.123456789Z", False),  # newer inbound in the seat channel
+    ("2026-07-17T11:55:00Z", True),             # older inbound: the turn is current
+])
+def test_latest_inbound_decides_between_room_turn_and_own_channel(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+        inbound_ts: str, expect_room: bool) -> None:
+    rc, common = _import_modules()
+    outbound = _import_outbound()
+    _setup_company(outbound, tmp_path)
+    _write_turn(outbound, session="ollie-main", kind="ambient", agent="ollie",
+                ts="1700000000.000500")  # delivered 2026-07-17T12:00:00Z
+    monkeypatch.setenv("GC_SESSION_NAME", "ollie-main")
+    monkeypatch.setattr(common, "find_latest_inbound_for_session", lambda _sid: {
+        "seq": 7, "ts": inbound_ts,
+        "payload": {"conversation_id": "C0SEATCHAN", "target_agent": "ollie"},
+    })
+    slack = _capture_slack(monkeypatch, outbound)
+    published = _capture_legacy(monkeypatch, common)
+
+    assert rc.main(["--body", "answer"]) == 0
+    if expect_room:
+        assert [p["channel"] for p in slack] == ["C0AAAAAAA"] and published == []
+    else:
+        assert slack == []
+        assert [p["conversation_id"] for p in published] == ["C0SEATCHAN"]
+
+
+def test_answered_room_turn_stops_claiming_replies(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    rc, common = _import_modules()
+    outbound = _import_outbound()
+    _setup_company(outbound, tmp_path)
+    _write_turn(outbound, session="ollie-main", kind="ambient", agent="ollie",
+                ts="1700000000.000500")
+    monkeypatch.setenv("GC_SESSION_NAME", "ollie-main")
+    monkeypatch.setattr(common, "find_latest_inbound_for_session", lambda _sid: None)
+    monkeypatch.setattr(common, "look_up_binding", lambda _sid: {
+        "scope_id": "test-city", "provider": "slack", "account_id": "T0TESTWS",
+        "conversation_id": "C0SEATCHAN", "kind": "room",
+    })
+    slack = _capture_slack(monkeypatch, outbound)
+    published = _capture_legacy(monkeypatch, common)
+
+    # The first reply answers the room turn and marks it answered.
+    assert rc.main(["--body", "room answer"]) == 0
+    assert [p["channel"] for p in slack] == ["C0AAAAAAA"]
+    assert outbound.turn_answered(outbound.read_current_turn("ollie-main"), "room")
+
+    # A later reply no longer lands in the room: it resolves the seat binding.
+    assert rc.main(["--body", "later, unrelated"]) == 0
+    assert len(slack) == 1
+    assert [p["conversation_id"] for p in published] == ["C0SEATCHAN"]
+
+    # --kind room still re-selects the answered turn explicitly.
+    assert rc.main(["--kind", "room", "--body", "follow-up in the room"]) == 0
+    assert [p["channel"] for p in slack] == ["C0AAAAAAA", "C0AAAAAAA"]
+
+    # A new room wake is a new turn and owns the next reply again.
+    _write_turn(outbound, session="ollie-main", kind="ambient", agent="ollie",
+                ts="1700000001.000500", receipt_id="in-y")
+    assert rc.main(["--body", "new room turn"]) == 0
+    assert [p["channel"] for p in slack] == ["C0AAAAAAA"] * 3
+    assert len(published) == 1
