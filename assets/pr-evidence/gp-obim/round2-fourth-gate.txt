@@ -1,0 +1,11 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (965 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T03:21:51Z
+
+**Major — valid host:port auto-links are rejected** at [publish_readback_match.go:86](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:86).
+
+Posting `see www.example.com:8080/docs` and reading back `see <http://www.example.com:8080/docs|www.example.com:8080/docs>` now fails because `slackLinkScheme` matches `www.example.com:`. The base commit accepts this pair. The legacy `<http://example.com:8080/docs|www.example.com:8080/docs>` form also regresses.
+
+This violates B1 and produces `readback_unconfirmed` for correctly delivered messages, allowing keyed retries to repost. Distinguish host:port labels from actual scheme-bearing URLs, and add HTTP, HTTPS, and legacy-www port cases.
+
+No additional findings in M1 or N3. Reviewed changed hunks, callers, and tests; Go tests were not run because they create files.
+
+VERDICT: BLOCK

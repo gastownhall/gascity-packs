@@ -1,0 +1,694 @@
+diff --git a/slack-full/CHANGELOG.md b/slack-full/CHANGELOG.md
+index 08bd4b1c..12bd3832 100644
+--- a/slack-full/CHANGELOG.md
++++ b/slack-full/CHANGELOG.md
+@@ -20,0 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
++  URL tokens use one boundary rule for full and implicit links: enclosing
++  punctuation, formatting runs (including `**` and `__`), sentence punctuation
++  and trailing Unicode emoji leave the URL literal and the suffix as prose.
++  Host-adjacent emoji aliases normalize consistently; internal path/query
++  identifiers and embedded returned link segments remain literal.
+diff --git a/slack-full/adapter/publish_readback.go b/slack-full/adapter/publish_readback.go
+index 41928020..a0564366 100644
+--- a/slack-full/adapter/publish_readback.go
++++ b/slack-full/adapter/publish_readback.go
+@@ -221,0 +222,5 @@ var slackVerbatimSpan = regexp.MustCompile("(?s)```.*?```|`[^`\n]*`|[a-z][a-z0-9
++// Paired quotes starting a URI path segment or query value are literal units.
++// Their closers cannot close an enclosing prose quote; escaped quotes stay
++// inside the value. RE2 keeps an unmatched or repeated opener scan linear.
++var slackURIQuotedValue = regexp.MustCompile(`[=/?:,(\[{](?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|“[^”]*”|‘[^’]*’|«[^»]*»|‹[^›]*›)`)
++
+diff --git a/slack-full/adapter/publish_readback_match.go b/slack-full/adapter/publish_readback_match.go
+index bfa33364..8d67bcd3 100644
+--- a/slack-full/adapter/publish_readback_match.go
++++ b/slack-full/adapter/publish_readback_match.go
+@@ -38,6 +38,4 @@ func slackReadbackLinks(text string) ([]slackReadbackLink, [][2]int) {
+-// Slack's returned auto-link supplies the literal URL boundary. Matching its
+-// label exactly against the original normalized text prevents emoji folding
+-// from erasing URL characters, without guessing whether numeric prose is a
+-// hostname or swallowing punctuation/emoji after a URL. Explicit targets are
+-// checked separately from their display labels; all intervening and trailing
+-// text is compared with the existing prose emoji rules.
++// Align returned links with literal source text, then scan each complete source
++// URL for its end. This separates URL bytes from prose even when Slack returns
++// a link for only part of a URI. Explicit targets retain their identity, while
++// all text after the token uses the existing Unicode/shortcode emoji units.
+@@ -76,3 +74,3 @@ func slackReadbackTextMatches(expected, stored string) bool {
+-		prefix                                string
+-		shortcodes, emoji, markup             bool
+-		optional                              bool
++		tokenStart, tokenLimit                int
++		independent                           bool
++		markup, optional                      bool
+@@ -204,0 +203,4 @@ func slackReadbackTextMatches(expected, stored string) bool {
++					tokenStart := at
++					if inVerbatim {
++						tokenStart = verbatim[verbatimCursor][0]
++					}
+@@ -207,2 +209 @@ func slackReadbackTextMatches(expected, stored string) bool {
+-						limit: limit, prefix: rendered,
+-						shortcodes: implicit && hasPath < 0, emoji: implicit, markup: suffixMarkupCursor < len(markup),
++						limit: limit, tokenStart: tokenStart, independent: implicit || fullURI, markup: suffixMarkupCursor < len(markup),
+@@ -234,0 +236,8 @@ func slackReadbackTextMatches(expected, stored string) bool {
++	nextIndependent := len(expectedText)
++	for i := len(suffixes) - 1; i >= 0; i-- {
++		p := suffixes[i]
++		p.tokenLimit = min(p.limit, nextIndependent)
++		if p.independent {
++			nextIndependent = p.linkStart
++		}
++	}
+@@ -236,3 +245,2 @@ func slackReadbackTextMatches(expected, stored string) bool {
+-	carryAt, carryEmoji := -1, false
+-	var carryDepth [3]int
+-	checkSuffix := func(at int, state uint16) (int, bool) {
++	carryEnd := -1
++	checkSuffix := func(at int, state slackReadbackFormatting) (int, bool) {
+@@ -244,30 +252,18 @@ func slackReadbackTextMatches(expected, stored string) bool {
+-		inherited := p.optional && carryAt == at
+-		if p.optional && !inherited {
+-			carryAt = -1
+-			return at, true
+-		}
+-		emoji := p.emoji
+-		var depth [3]int
+-		if inherited {
+-			emoji, depth = carryEmoji, carryDepth
+-		}
+-		depth = slackReadbackDepth(depth, p.prefix)
+-		atMarkupEnd := func(offset int) bool {
+-			return p.markup && p.expectedEnd == p.limit && storedMarkupStarts[p.storedStart+offset]
+-		}
+-		atProseBoundary := func(offset int) bool {
+-			return slackReadbackClosingMarker(expectedText, p.expectedStart+offset, state)
+-		}
+-		tail := expectedText[p.expectedStart:p.expectedEnd]
+-		// An aligned returned link can split one source URI. Only EOF or
+-		// original markup supplies a definite boundary for such a slice;
+-		// a delimiter inside tail is handled by slackURIToken itself.
+-		complete := p.expectedEnd == len(expectedText) || (p.markup && p.expectedEnd == p.limit)
+-		literal, depth, ok := slackPreservedURLSuffix(tail, storedText[p.storedStart:p.storedEnd], depth, p.shortcodes && !inherited, emoji, complete, atMarkupEnd, atProseBoundary)
+-		carryAt = -1
+-		if ok && literal == len(tail) {
+-			// No prose boundary intervened: an embedded email/reference
+-			// continues this URI with the same literal and bracket rules.
+-			carryAt, carryEmoji, carryDepth = p.expectedEnd, emoji, depth
+-		}
+-		return p.expectedStart + literal, ok
++		if carryEnd <= at || p.independent {
++			if p.optional {
++				return at, true
++			}
++			// Scan the complete SOURCE token, across any returned link segments.
++			// An embedded mention/email cannot turn a literal URI tail into prose.
++			carryEnd = slackReadbackURLEnd(expectedText, p.tokenStart, p.tokenLimit, state)
++		}
++		literalEnd := max(p.expectedStart, min(carryEnd, p.expectedEnd))
++		literal := expectedText[p.expectedStart:literalEnd]
++		stored := storedText[p.storedStart:p.storedEnd]
++		if !strings.HasPrefix(stored, literal) {
++			return at, false
++		}
++		stored = stored[len(literal):]
++		n, ok := slackReadbackProsePrefix(expectedText[literalEnd:p.expectedEnd], stored)
++		return literalEnd, ok && (n == len(stored) ||
++			(p.markup && p.expectedEnd == p.limit && storedMarkupStarts[p.storedStart+len(literal)+n]))
+@@ -281 +277 @@ func slackReadbackTextMatches(expected, stored string) bool {
+-func slackReadbackFormattingMatches(text string, markup, links [][2]int, checkSuffix func(int, uint16) (int, bool)) bool {
++func slackReadbackFormattingMatches(text string, markup, links [][2]int, checkSuffix func(int, slackReadbackFormatting) (int, bool)) bool {
+@@ -311 +307 @@ func slackReadbackFormattingMatches(text string, markup, links [][2]int, checkSu
+-	var state uint16
++	var state slackReadbackFormatting
+@@ -323,7 +319 @@ func slackReadbackFormattingMatches(text string, markup, links [][2]int, checkSu
+-				for end > span[0] {
+-					_, width := utf8.DecodeLastRuneInString(text[span[0]:end])
+-					if !slackReadbackClosingMarker(text, end-width, state) {
+-						break
+-					}
+-					end -= width
+-				}
++				end = slackReadbackURLEnd(text, span[0], end, state)
+@@ -345,2 +335,3 @@ func slackReadbackFormattingMatches(text string, markup, links [][2]int, checkSu
+-		mask := slackReadbackMarker(text, i)
+-		if mask == 0 {
++		bit, width := slackReadbackMarker(text, i)
++		skipEnd = i + width
++		if bit < 0 {
+@@ -349 +340 @@ func slackReadbackFormattingMatches(text string, markup, links [][2]int, checkSu
+-		r, width := utf8.DecodeRuneInString(text[i:])
++		r, _ := utf8.DecodeRuneInString(text[i:])
+@@ -353,13 +344,4 @@ func slackReadbackFormattingMatches(text string, markup, links [][2]int, checkSu
+-		quote := mask >= 1<<3
+-		if strings.ContainsRune("”’»›", r) {
+-			state &^= mask
+-			continue
+-		}
+-		if strings.ContainsRune("“‘«‹", r) {
+-			if !unicode.IsSpace(after) && i+width < len(text) {
+-				state |= mask
+-			}
+-			continue
+-		}
+-		if state&mask != 0 || ((quote || !beforeWord) && !unicode.IsSpace(after) && i+width < len(text)) {
+-			state ^= mask
++		if (state[bit] == width && !strings.ContainsRune("“‘«‹", r)) || strings.ContainsRune("”’»›", r) {
++			state[bit] = 0
++		} else if (bit >= 3 || !beforeWord) && !unicode.IsSpace(after) && i+width < len(text) {
++			state[bit] = width
+@@ -371,13 +353,2 @@ func slackReadbackFormattingMatches(text string, markup, links [][2]int, checkSu
+-func slackReadbackClosingMarker(text string, at int, state uint16) bool {
+-	r, _ := utf8.DecodeRuneInString(text[at:])
+-	if strings.ContainsRune("“‘«‹", r) || slackReadbackMarker(text, at)&state == 0 {
+-		return false
+-	}
+-	return !slackURIContinuesAfter(text, at)
+-}
+-
+-// Formatting punctuation cannot end a URL before a path/query/fragment.
+-func slackURIContinuesAfter(text string, at int) bool {
+-	_, width := utf8.DecodeRuneInString(text[at:])
+-	return at+width < len(text) && strings.ContainsRune("/?#", rune(text[at+width]))
+-}
++// A delimiter RUN is one delimiter: ** and __ must not toggle twice.
++type slackReadbackFormatting [9]int
+@@ -386,11 +357,2 @@ func slackReadbackSeparatorBefore(prefix string) bool {
+-	for len(prefix) > 0 {
+-		r, width := utf8.DecodeLastRuneInString(prefix)
+-		if strings.ContainsRune(",;", r) {
+-			return true
+-		}
+-		if !strings.ContainsRune("([{'\"“‘«‹", r) {
+-			return false
+-		}
+-		prefix = prefix[:len(prefix)-width]
+-	}
+-	return false
++	prefix = strings.TrimRight(prefix, "([{'\"“‘«‹")
++	return strings.HasSuffix(prefix, ",") || strings.HasSuffix(prefix, ";")
+@@ -401 +363 @@ func slackReadbackSeparatorBefore(prefix string) bool {
+-func slackReadbackMarker(text string, at int) uint16 {
++func slackReadbackMarker(text string, at int) (int, int) {
+@@ -417 +379,6 @@ func slackReadbackMarker(text string, at int) uint16 {
+-		return 0
++		return -1, width
++	}
++	if bit < 3 {
++		for at+width < len(text) && text[at+width] == byte(r) {
++			width++
++		}
+@@ -424 +391 @@ func slackReadbackMarker(text string, at int) uint16 {
+-			return 0
++			return -1, width
+@@ -427 +394 @@ func slackReadbackMarker(text string, at int) uint16 {
+-	return uint16(1 << bit)
++	return bit, width
+@@ -431,5 +398 @@ func slackReadbackEscaped(text string, at int) bool {
+-	slashes := 0
+-	for i := at - 1; i >= 0 && text[i] == '\\'; i-- {
+-		slashes++
+-	}
+-	return slashes%2 != 0
++	return (at-len(strings.TrimRight(text[:at], `\`)))%2 != 0
+@@ -464,60 +427,18 @@ func slackExplicitLabelsMatch(expected, stored slackReadbackLink) bool {
+-// A suffix outside Slack's returned URL span must still be present. Unlike
+-// the ordinary prose fold, emoji may convert but cannot disappear here.
+-// Typed shortcode-shaped URL paths stay literal; leading hostname-adjacent
+-// shortcodes are prose (they cannot be a numeric port).
+-func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortcodes, allowEmoji, complete bool, atMarkupEnd, atProseBoundary func(int) bool) (int, [3]int, bool) {
+-	if !allowEmoji {
+-		// Preserve the entire remaining source URI token, using the same
+-		// delimiters as slackVerbatimSpan. Quotes and punctuation can be
+-		// literal path/query characters, regardless of Slack's link end.
+-		literal := slackURIToken(expected)
+-		// Only a trailing run of closing formatting markers and emoji
+-		// can leave URI protection early. A marker followed by path text
+-		// (such as ~user) stays literal. Scan once, retaining the start of
+-		// the last qualifying run; shortcode identifiers stay atomic.
+-		boundary, markerEnd := -1, 0
+-		var seenMarkers uint8
+-		ambiguous := false
+-		for i := 0; i < len(literal); {
+-			if n := slackEmojiUnitPrefix(literal[i:]); n > 0 {
+-				i += n
+-				continue
+-			}
+-			if literal[i] == ':' {
+-				if end := strings.IndexByte(literal[i+1:], ':'); end >= 0 && slackEmojiShortcode.MatchString(strings.ToLower(literal[i:i+end+2])) {
+-					boundary, seenMarkers, ambiguous = -1, 0, false
+-					i += end + 2
+-					continue
+-				}
+-			}
+-			r, width := utf8.DecodeRuneInString(literal[i:])
+-			if strings.ContainsRune("*_~", r) && atProseBoundary(i) {
+-				mask := uint8(1 << strings.IndexRune("*_~", r))
+-				// One active delimiter can close only once. Keep an
+-				// ambiguous repeated-delimiter run entirely literal.
+-				ambiguous = ambiguous || seenMarkers&mask != 0
+-				seenMarkers |= mask
+-				if ambiguous {
+-					boundary = -1
+-				} else if boundary < 0 {
+-					boundary, markerEnd = i, i+width
+-				}
+-			} else {
+-				boundary, seenMarkers, ambiguous = -1, 0, false
+-			}
+-			i += width
+-		}
+-		if boundary >= 0 && (complete || len(literal) < len(expected)) {
+-			// An intermediate URI segment stays literal across returned
+-			// links. At a real end, compare remaining prose with emoji folding.
+-			return boundary, depth, strings.HasPrefix(stored, literal[:markerEnd])
+-		}
+-		// Other punctuation, including quoted query contents, retains the
+-		// original literal rule. Trailing closers still update prose state.
+-		opaque := len(literal)
+-		for opaque > 0 {
+-			_, width := utf8.DecodeLastRuneInString(literal[:opaque])
+-			if !atProseBoundary(opaque - width) {
+-				break
+-			}
+-			opaque -= width
++// Find the source URL token's end once, independently of how many returned
++// <url> / <url|label> segments cover it. The token is literal; everything after
++// it is prose. Balanced path brackets, identifiers, quoted query values and
++// internal/repeated formatting delimiters remain inside the token. Whitespace,
++// original markup, unmatched closing brackets, an enclosing delimiter and
++// trailing sentence punctuation/Unicode emoji end it.
++//
++// Slack documents auto-links and emoji conversion, but does not publish its
++// complete URL lexer. These conservative boundaries pin that contract without
++// treating Slack's returned link end alone as permission to fold URL bytes:
++// https://docs.slack.dev/messaging/formatting-message-text/#links-in-retrieved-messages
++func slackReadbackURLEnd(text string, start, limit int, state slackReadbackFormatting) int {
++	for i := limit; i > start && limit < len(text); {
++		r, width := utf8.DecodeLastRuneInString(text[start:i])
++		i -= width
++		if strings.ContainsRune(",;", r) {
++			limit = i
++			break
+@@ -525 +446,7 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-		return opaque, depth, literal == slackURIToken(stored) || (literal == expected && strings.HasPrefix(stored, literal) && atMarkupEnd(len(literal)))
++		if !strings.ContainsRune("([{'\"“‘«‹", r) {
++			break
++		}
++	}
++	hardEnd := limit
++	if n := strings.IndexFunc(text[start:limit], func(r rune) bool { return unicode.IsSpace(r) || strings.ContainsRune("<>|", r) }); n >= 0 {
++		hardEnd = start + n
+@@ -527,5 +454,10 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-	i, j := 0, 0
+-	for i < len(expected) {
+-		r, width := utf8.DecodeRuneInString(expected[i:])
+-		if unicode.IsSpace(r) || strings.ContainsRune("<>|", r) || atProseBoundary(i) {
+-			return i, depth, strings.HasPrefix(stored[j:], expected[i:i+width])
++	quoted := make(map[int]int)
++	for _, span := range slackURIQuotedValue.FindAllStringIndex(text[start:hardEnd], -1) {
++		quoted[start+span[0]+1] = start + span[1]
++	}
++	end := start
++	var depth [3]int
++	for end < hardEnd {
++		if close := quoted[end]; close > 0 {
++			end = close
++			continue
+@@ -533,3 +465,4 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-		if at := strings.IndexRune(")]}", r); at >= 0 {
+-			if depth[at] == 0 {
+-				return i, depth, strings.HasPrefix(stored[j:], expected[i:i+width])
++		r, width := utf8.DecodeRuneInString(text[end:hardEnd])
++		if b := strings.IndexRune(")]}", r); b >= 0 {
++			if depth[b] == 0 {
++				break
+@@ -537,10 +470,21 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-			depth[at]--
+-		} else if at := strings.IndexRune("([{", r); at >= 0 {
+-			depth[at]++
+-		}
+-		if allowShortcodes {
+-			// These characters end a bare hostname. A slash, query,
+-			// fragment, port or continued domain still keeps URL protection.
+-			continuedMarker := strings.ContainsRune("*_~'\"“”‘’«»‹›", r) && slackURIContinuesAfter(expected, i)
+-			if !continuedMarker && (strings.ContainsRune(",;!([{'\"~=&“”‘’«»‹›", r) || (r == '*' && slackEmojiUnitPrefix(expected[i:]) == 0)) {
+-				return i, depth, strings.HasPrefix(stored[j:], expected[i:i+width])
++			depth[b]--
++		} else if b := strings.IndexRune("([{", r); b >= 0 {
++			depth[b]++
++		}
++		end += width
++	}
++	// Tokenize identifiers/emoji atomically before looking for trailing prose.
++	// Otherwise an underscore in :white_check_mark: becomes a false closer.
++	type unit struct {
++		at, end, bit             int
++		emoji, shortcode, quoted bool
++	}
++	var units []unit
++	for i := start; i < end; {
++		u := unit{at: i, bit: -1}
++		if close := quoted[i]; close > 0 {
++			u.end, u.quoted = close, true
++		} else if n := slackEmojiUnitPrefix(text[i:end]); n > 0 {
++			u.end, u.emoji, u.shortcode = i+n, true, text[i] == ':'
++			if !u.shortcode {
++				u.end = i + slackEmojiToneSuffix(text[i:end], n)
+@@ -548,5 +492,3 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-			if r == '.' {
+-				next, _ := utf8.DecodeRuneInString(expected[i+width:])
+-				if !unicode.IsLetter(next) && !unicode.IsNumber(next) && next != '-' && next != '_' {
+-					return i, depth, strings.HasPrefix(stored[j:], expected[i:i+width])
+-				}
++		} else if text[i] == ':' {
++			if n := strings.IndexByte(text[i+1:end], ':'); n >= 0 && slackEmojiShortcode.MatchString(strings.ToLower(text[i:i+n+2])) {
++				u.end, u.shortcode = i+n+2, true
+@@ -555,20 +497,34 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-		if r != ':' || allowShortcodes {
+-			if n := slackEmojiUnitPrefix(expected[i:]); n > 0 {
+-				if allowShortcodes {
+-					n = slackEmojiToneSuffix(expected[i:], n)
+-				}
+-				m := slackEmojiUnitPrefix(stored[j:])
+-				if m == 0 {
+-					return 0, depth, false
+-				}
+-				// A typed tone token in a URL suffix remains literal, even
+-				// when Slack appends its own tone token to the preceding emoji.
+-				if !allowShortcodes {
+-					toneEnd := slackEmojiToneSuffix(expected[i:], n)
+-					literalTones := expected[i+n : i+toneEnd]
+-					if literalTones != "" && m > len(literalTones) && strings.HasSuffix(stored[j:j+m], literalTones) {
+-						m -= len(literalTones)
+-					}
+-				}
+-				i, j = i+n, j+m
+-				continue
++		if u.end == 0 {
++			bit, width := slackReadbackMarker(text, i)
++			u.end, u.bit = min(i+width, end), bit
++		}
++		units = append(units, u)
++		i = u.end
++	}
++	boundary, proseTail, continuationAfter := end, true, false
++	shortcodeAfter := false
++	var later slackReadbackFormatting
++	for i := len(units) - 1; i >= 0; i-- {
++		u := units[i]
++		switch {
++		case u.quoted:
++			proseTail, continuationAfter = false, true
++		case u.emoji && !u.shortcode && proseTail && !continuationAfter && !shortcodeAfter:
++			boundary, proseTail = u.at, true
++		case u.shortcode:
++			shortcodeAfter = true
++			proseTail = proseTail && u.emoji
++		case u.bit >= 0 && !strings.ContainsAny(text[u.at:u.end], "“‘«‹"):
++			// A closer can have attached prose words. A marker that starts
++			// a path segment or query value still belongs to the URI.
++			segmentStart := u.at > start && strings.ContainsRune("/=", rune(text[u.at-1]))
++			wordTail := !continuationAfter && !segmentStart
++			if state[u.bit] == u.end-u.at && later[u.bit] == 0 && !(continuationAfter && segmentStart) && (proseTail || wordTail) {
++				boundary, continuationAfter, shortcodeAfter = u.at, false, false
++			} else {
++				proseTail = false
++			}
++			later[u.bit]++
++		case strings.ContainsRune(",;.!?", rune(text[u.at])) && proseTail:
++			if text[u.at] != '?' || u.end == end || !units[i+1].shortcode {
++				boundary = u.at
+@@ -575,0 +532,2 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
++		default:
++			proseTail = false
+@@ -577,3 +535,4 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-		allowShortcodes = false
+-		if !strings.HasPrefix(stored[j:], expected[i:i+width]) {
+-			return 0, depth, false
++		// A query after an emoji is still URI content. Only a recognized
++		// enclosing delimiter can move that query back into following prose.
++		if strings.ContainsRune("/?#&=@", rune(text[u.at])) {
++			continuationAfter = true
+@@ -581 +539,0 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-		i, j = i+width, j+width
+@@ -583,9 +541,25 @@ func slackPreservedURLSuffix(expected, stored string, depth [3]int, allowShortco
+-	return i, depth, j == len(stored) || atMarkupEnd(j)
+-}
+-
+-func slackReadbackDepth(depth [3]int, text string) [3]int {
+-	for _, r := range text {
+-		if at := strings.IndexRune("([{", r); at >= 0 {
+-			depth[at]++
+-		} else if at := strings.IndexRune(")]}", r); at >= 0 && depth[at] > 0 {
+-			depth[at]--
++	// Host-adjacent :name: is prose for BOTH full and implicit URLs. A port
++	// stays numeric; after a slash/query/fragment, typed shortcodes are literal.
++	host := start
++	if scheme := slackAbsoluteLinkScheme.FindString(text[start:end]); scheme != "" {
++		host += len(scheme)
++	}
++	if strings.IndexAny(text[host:boundary], "/?#") >= 0 {
++		return boundary
++	}
++	// Credentials and bracketed hosts stay literal before adjacent emoji.
++	host += strings.LastIndexByte(text[host:boundary], '@') + 1
++	for i := host; i < boundary; i++ {
++		if i == host && text[i] == '[' {
++			close := strings.IndexByte(text[i:boundary], ']')
++			if close < 0 {
++				return boundary
++			}
++			i += close
++			continue
++		}
++		if text[i] == ':' && slackEmojiUnitPrefix(text[i:boundary]) > 0 {
++			return i
++		}
++		if strings.ContainsRune(",;!([{'\"~=&", rune(text[i])) && i > host {
++			return i
+@@ -594 +568 @@ func slackReadbackDepth(depth [3]int, text string) [3]int {
+-	return depth
++	return boundary
+@@ -597,3 +571,24 @@ func slackReadbackDepth(depth [3]int, text string) [3]int {
+-func slackURIToken(text string) string {
+-	if end := strings.IndexAny(text, " \t\n\f\r<>|"); end >= 0 {
+-		return text[:end]
++// Like the normal prose matcher, use the existing Unicode/shortcode units.
++// At a URL boundary require each unit to be present: dropped/inserted suffixes
++// must not make a changed link read back as delivered.
++func slackReadbackProsePrefix(expected, stored string) (int, bool) {
++	length := len(stored)
++	for expected != "" {
++		n, m := slackEmojiUnitPrefix(expected), slackEmojiUnitPrefix(stored)
++		if n > 0 && m > 0 {
++			// A typed tone after a Unicode unit is still present separately,
++			// even if Slack appends an inherent tone to that unit's shortcode.
++			if expected[0] != ':' {
++				tone := expected[n:slackEmojiToneSuffix(expected, n)]
++				if tone != "" && m > len(tone) && strings.HasSuffix(stored[:m], tone) {
++					m -= len(tone)
++				}
++			}
++			expected, stored = expected[n:], stored[m:]
++			continue
++		}
++		_, width := utf8.DecodeRuneInString(expected)
++		if !strings.HasPrefix(stored, expected[:width]) {
++			return 0, false
++		}
++		expected, stored = expected[width:], stored[width:]
+@@ -601 +596 @@ func slackURIToken(text string) string {
+-	return text
++	return length - len(stored), true
+diff --git a/slack-full/adapter/publish_readback_test.go b/slack-full/adapter/publish_readback_test.go
+index 8ccc49c1..8df6b4af 100644
+--- a/slack-full/adapter/publish_readback_test.go
++++ b/slack-full/adapter/publish_readback_test.go
+@@ -356 +356 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"comma path suffix stays literal", "www.a.co/x,:id:", "<http://www.a.co/x|www.a.co/x>,:ok:", false},
++		{"path sentence comma before prose alias", "www.a.co/x,:thumbsup:", "<http://www.a.co/x|www.a.co/x>,:+1:", true},
+@@ -405,0 +406,28 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
++		{"round4 curly double opening quote stays literal", "“www.a.co/x“:id:", "“<http://www.a.co/x|www.a.co/x>“:ok:", false},
++		{"round4 curly single opening quote stays literal", "‘www.a.co/x‘:id:", "‘<http://www.a.co/x|www.a.co/x>‘:ok:", false},
++		{"round4 guillemet opening quote stays literal", "«www.a.co/x«:id:", "«<http://www.a.co/x|www.a.co/x>«:ok:", false},
++		{"round4 single guillemet opening quote stays literal", "‹www.a.co/x‹:id:", "‹<http://www.a.co/x|www.a.co/x>‹:ok:", false},
++		{"round4 literal underscore run before auto link", "a" + strings.Repeat("_", 39970) + "b www.a.co", "a" + strings.Repeat("_", 39970) + "b <http://www.a.co|www.a.co>", true},
++		{"round4 internal Unicode before path text stays literal", "https://a.co/🎉report", "<https://a.co/>:x:report", false},
++		{"round4 implicit internal Unicode before path text stays literal", "www.a.co/🎉report", "<http://www.a.co/|www.a.co/>:x:report", false},
++		{"round4 userinfo shortcode stays literal", "https://user:id:@example.com", "<https://user>:ok:@example.com", false},
++		{"round4 IPv6 authority shortcode stays literal", "https://[2001:b::1]", "<https://[2001>:a::1]", false},
++		{"round4 IPv6 host adjacent alias", "https://[2001:b::1]:thumbsup:", "<https://[2001:b::1]>:+1:", true},
++		{"round4 implicit IPv6 host adjacent alias", "[2001:b::1]:thumbsup:", "<http://[2001:b::1]|[2001:b::1]>:+1:", true},
++		{"round4 userinfo then host adjacent alias", "https://user:id:@example.com:thumbsup:", "<https://user>:id:@example.com:+1:", true},
++		{"round4 userinfo marker stays literal", "*https://user*:id:@example.com", "*<https://user>*:ok:@example.com", false},
++		{"round4 unchanged userinfo before trailing emoji", "https://user:id:@example.com🎉", "<https://user>:id:@example.com:tada:", true},
++		{"round4 internal query emoji before parameter stays literal", "https://a.co/?q=🎉&id=:id:", "<https://a.co/?q=>🎉&id=:ok:", false},
++		{"round4 paired query quotes stay literal", "'See https://a.co/?q='abc':id: details'", "'See <https://a.co/?q=>'abc':ok: details'", false},
++		{"round4 path segment marker before query stays literal", "*https://a.co/*?:id:", "*<https://a.co/>*?:ok:", false},
++		{"round4 prose text after closing marker and emoji", "*www.a.co/x*:thumbsup:now", "*<http://www.a.co/x|www.a.co/x>*:+1:now", true},
++		{"round4 full authority shortcode before path stays literal", "https://a.co:id:/x", "<https://a.co>:ok:/x", false},
++		{"round4 implicit authority shortcode before path stays literal", "www.a.co:id:/x", "<http://www.a.co|www.a.co>:ok:/x", false},
++		{"round4 review Unicode before query stays literal", "https://a.co/🎉?:id:", "<https://a.co/>🎉?:ok:", false},
++		{"round4 unformatted path before Unicode", "https://a.co/pr/1🎉", "<https://a.co/pr/1>:tada:", true},
++		{"round4 unformatted host before Unicode", "https://a.co👍", "<https://a.co>:+1:", true},
++		{"round4 unformatted path punctuation before Unicode", "https://a.co/pr/1!🎉", "<https://a.co/pr/1>!:tada:", true},
++		{"round4 comma inside path stays literal", "www.a.co/x,:id:/end", "<http://www.a.co/x|www.a.co/x>,:ok:/end", false},
++		{"round4 Unicode inside full path stays literal", "https://a.co/👍/:id:", "<https://a.co/>:+1:/:id:", false},
++		{"round4 unchanged Unicode inside path", "hou.vc/@U123/👍/:id:", "<http://hou.vc/|hou.vc/><@U123>/👍/:id:", true},
++		{"round4 gate closing parenthesis before emoji", "(https://a.co)🎉", "(<https://a.co>):tada:", true},
+@@ -409 +437 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"full URI unformatted suffix stays literal", "https://a.co:thumbsup:", "<https://a.co>:+1:", false},
++		{"full URI host adjacent alias is prose", "https://a.co:thumbsup:", "<https://a.co>:+1:", true},
+@@ -451 +479 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"inherited implicit URI permits Unicode conversion", "hou.vc/@U123/👍/:id:", "<http://hou.vc/|hou.vc/><@U123>/:+1:/:id:", true},
++		{"inherited implicit URI preserves internal Unicode", "hou.vc/@U123/👍/:id:", "<http://hou.vc/|hou.vc/><@U123>/:+1:/:id:", false},
+@@ -465,2 +493,2 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"unlabeled URI changed literal Unicode suffix", "https://example.com/🎉", "<https://example.com/>:tada:", false},
+-		{"neighboring URI preserves strict suffix", "www.a.co,https://b.co/🎉", "<http://www.a.co|www.a.co>,<https://b.co/>:tada:", false},
++		{"full URI trailing Unicode is prose", "https://example.com/🎉", "<https://example.com/>:tada:", true},
++		{"neighboring URI trailing Unicode is prose", "www.a.co,https://b.co/🎉", "<http://www.a.co|www.a.co>,<https://b.co/>:tada:", true},
+@@ -484,2 +512,2 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"hostname followed by skin tone and text", "www.a.co👍🏽now", "<http://www.a.co|www.a.co>:+1::skin-tone-4:now", true},
+-		{"path followed by skin tone and text", "www.a.co/x👍🏽now", "<http://www.a.co/x|www.a.co/x>:+1::skin-tone-4:now", true},
++		{"hostname Unicode before continued text stays literal", "www.a.co👍🏽now", "<http://www.a.co|www.a.co>:+1::skin-tone-4:now", false},
++		{"path Unicode before continued text stays literal", "www.a.co/x👍🏽now", "<http://www.a.co/x|www.a.co/x>:+1::skin-tone-4:now", false},
+@@ -1147,0 +1176,140 @@ func assertSlackReadbackQuery(t *testing.T, query url.Values, channel, messageTS
++
++// The cross product is the oracle: URL spelling, enclosure and prose suffix are
++// independent fixtures, not outputs from the tokenizer under test. The few
++// negative canonical cells are typed identifiers continuing an unenclosed path
++// or query. Raw echoes always match; changed link destinations never match.
++func TestSlackNormalizeURLSuffixMatrix(t *testing.T) {
++	urls := []struct {
++		name, posted, target string
++		implicit, path       bool
++	}{
++		{"bare-domain", "a.co", "http://a.co", true, false},
++		{"http", "http://a.co", "http://a.co", false, false},
++		{"https", "https://a.co", "https://a.co", false, false},
++		{"www", "www.a.co", "http://www.a.co", true, false},
++		{"path", "https://a.co/a_b/~c/*d/(e)", "https://a.co/a_b/~c/*d/(e)", false, true},
++		{"query", "https://a.co/search?q=one&x=two", "https://a.co/search?q=one&x=two", false, true},
++		{"other-scheme", "s3://a.co/pr/1", "s3://a.co/pr/1", false, true},
++	}
++	enclosures := []struct{ name, open, close string }{
++		{"none", "", ""}, {"bold", "*", "*"}, {"italic", "_", "_"},
++		{"strike", "~", "~"}, {"parens", "(", ")"}, {"square", "[", "]"},
++		{"double-quotes", "\"", "\""}, {"single-quotes", "'", "'"},
++		{"angle-less", "See: ", ""}, {"double-bold", "**", "**"},
++		{"double-italic", "__", "__"},
++		{"curly-double", "“", "”"}, {"curly-single", "‘", "’"},
++		{"guillemets", "«", "»"}, {"single-guillemets", "‹", "›"},
++	}
++	suffixes := []struct{ name, posted, stored string }{
++		{"nothing", "", ""}, {"space-text", " then text", " then text"},
++		{"comma", ",", ","}, {"period", ".", "."}, {"question", "?", "?"},
++		{"exclamation", "!", "!"}, {"shortcode", ":thumbsup:", ":+1:"},
++		{"space-emoji", " 🎉", " :tada:"},
++		{"second-link", " https://b.co/next", " <https://b.co/next>"},
++		{"unicode", "🎉", ":tada:"},
++		{"comma-shortcode", ",:thumbsup:", ",:+1:"},
++		{"period-shortcode", ".:thumbsup:", ".:+1:"},
++		{"question-shortcode", "?:thumbsup:", "?:+1:"},
++		{"exclamation-shortcode", "!:thumbsup:", "!:+1:"},
++		{"comma-unicode", ",🎉", ",:tada:"},
++		{"text-shortcode", "done:thumbsup:", "done:+1:"},
++		{"shortcode-text", ":thumbsup:now", ":+1:now"},
++	}
++	cells := 0
++	for _, url := range urls {
++		link := "<" + url.target + ">"
++		if url.implicit {
++			link = "<" + url.target + "|" + url.posted + ">"
++		}
++		for _, enclosure := range enclosures {
++			for _, suffix := range suffixes {
++				posted := enclosure.open + url.posted + enclosure.close + suffix.posted
++				stored := enclosure.open + link + enclosure.close + suffix.stored
++				want := enclosure.close != "" ||
++					(((suffix.name != "shortcode" && suffix.name != "text-shortcode" && suffix.name != "shortcode-text") || !url.path) && suffix.name != "question-shortcode")
++				// An underscore/apostrophe between word characters is a literal
++				// identifier character, even when an opener appeared earlier.
++				if suffix.name == "text-shortcode" && url.path && !strings.HasSuffix(url.posted, ")") &&
++					(enclosure.name == "italic" || enclosure.name == "double-italic" || (enclosure.name == "single-quotes" || enclosure.name == "curly-single")) {
++					want = false
++				}
++				for _, variant := range []struct {
++					name, stored string
++					want         bool
++				}{
++					{"canonical", stored, want},
++					{"verbatim", posted, true},
++					{"changed-target", strings.Replace(stored, "a.co", "evil.co", 1), false},
++				} {
++					cells++
++					name := url.name + "/" + enclosure.name + "/" + suffix.name + "/" + variant.name
++					t.Run(name, func(t *testing.T) {
++						row := struct {
++							Name, Posted, Stored string
++							Want                 bool
++						}{name, posted, variant.stored, variant.want}
++						encoded, err := json.Marshal(row)
++						if err != nil {
++							t.Fatal(err)
++						}
++						t.Logf("URL_MATRIX %s", encoded)
++						if got := slackReadbackTextMatches(posted, variant.stored); got != variant.want {
++							t.Fatalf("match(%q, %q) = %v, want %v", posted, variant.stored, got, variant.want)
++						}
++					})
++				}
++			}
++		}
++	}
++	if cells != 5355 {
++		t.Fatalf("matrix cells = %d, want 7 URL forms x 15 enclosures x 17 suffixes x 3 readbacks = 5355", cells)
++	}
++}
++
++// Split readbacks must preserve internal URI bytes regardless of enclosure.
++// These mutations exercise the token end, rather than merely changing a whole
++// returned target that the initial alignment would already reject.
++func TestSlackNormalizeURLLiteralMatrix(t *testing.T) {
++	for _, url := range []struct{ posted, stored string }{
++		{"https://a.co/", "<https://a.co/>"},
++		{"www.a.co/", "<http://www.a.co/|www.a.co/>"},
++	} {
++		for _, enclosure := range []struct{ open, close string }{
++			{"", ""}, {"*", "*"}, {"_", "_"}, {"~", "~"}, {"**", "**"},
++			{"__", "__"}, {"'", "'"}, {"\"", "\""}, {"(", ")"}, {"[", "]"},
++		} {
++			for _, path := range []string{
++				":_custom:/:id:/x", ":white_check_mark:/:id:/x", "foo_bar/:id:/x",
++				"~user/:id:/x", "*user/:id:/x", "**:id:/x", "*:id:*", "**:id:",
++				"(x/:id:)/end", "?q=':id:'", "x,:id:/end", "*:id:@U123/x",
++				"🎉?:id:", "👍?:id:", "🎉#:id:", "🎉/:id:",
++				"?q='abc':id:", `?q="abc":id:`, "?q=“abc”:id:", "?q=‘abc’:id:",
++				"?q=«abc»:id:", "?q=‹abc›:id:", "'abc':id:", `"abc":id:`,
++				`?q='a\'b':id:`, `?q="a\"b":id:`,
++				"?q='a)b':id:", "?q='a]b':id:", `?q="a}b":id:`, `?q='a\')b':id:`,
++				"?q:'abc':id:", `?q={"x":"abc"}:id:`,
++				"?q=🎉&id=:id:", "?q=🎉;id=:id:", "?q=🎉&:id:",
++				"?q=🎉value:id:", "?q=🎉:id:", "?q=🎉=value:id:",
++				"🎉ref:id:", "👍ref:id:",
++			} {
++				for _, suffix := range []struct{ posted, stored string }{
++					{"", ""}, {" :thumbsup:", " :+1:"}, {"🎉", ":tada:"},
++				} {
++					posted := enclosure.open + url.posted + path + enclosure.close + suffix.posted
++					for _, changed := range []bool{false, true} {
++						t.Run(posted+"/changed="+map[bool]string{true: "true", false: "false"}[changed], func(t *testing.T) {
++							storedPath := strings.ReplaceAll(path, "@U123", "<@U123>")
++							if changed {
++								storedPath = strings.Replace(storedPath, ":id:", ":ok:", 1)
++							}
++							stored := enclosure.open + url.stored + storedPath + enclosure.close + suffix.stored
++							if got := slackReadbackTextMatches(posted, stored); got == changed {
++								t.Fatalf("match(%q, %q) = %v, want %v", posted, stored, got, !changed)
++							}
++						})
++					}
++				}
++			}
++		}
++	}
++}

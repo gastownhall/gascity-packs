@@ -1,0 +1,45 @@
+Preceding fork PR head: e6163fcaef4fb0a225e0234ba7d39204eedc929f
+[
+  {
+    "bucket": "pass",
+    "link": "https://github.com/aphexcx/gascity-packs-prs/runs/116323576597",
+    "name": "CodeQL",
+    "state": "SUCCESS"
+  },
+  {
+    "bucket": "fail",
+    "link": "https://github.com/aphexcx/gascity-packs-prs/actions/runs/38705369685/job/116323347938",
+    "name": "Check",
+    "state": "FAILURE"
+  },
+  {
+    "bucket": "pass",
+    "link": "https://github.com/aphexcx/gascity-packs-prs/actions/runs/38705369680/job/116323348507",
+    "name": "Analyze (python)",
+    "state": "SUCCESS"
+  },
+  {
+    "bucket": "pass",
+    "link": "https://github.com/aphexcx/gascity-packs-prs/actions/runs/38705369680/job/116323348073",
+    "name": "Analyze (go)",
+    "state": "SUCCESS"
+  }
+]
+
+Selected failure lines from run 38705369685:
+Check	Run Gastown shell tests	2026-10-15T08:31:39.8224634Z HEAD is now at 4456095 fixture
+Check	Run Gastown shell tests	2026-10-15T08:31:39.9378837Z Could not read work bead metadata for ac-safe1.
+Check	Run Gastown shell tests	2026-10-15T08:31:40.0369769Z jq: parse error: Unfinished JSON term at EOF at line 1, column 1
+Check	Run Gastown shell tests	2026-10-15T08:31:40.0373789Z Invalid work bead response for ac-safe1; refusing to create or adopt an artifact.
+Check	Run Gastown shell tests	2026-10-15T08:31:40.1351518Z jq: error (at <stdin>:0): expected exactly one work bead object
+Check	Run Gastown shell tests	2026-10-15T08:31:40.2351709Z jq: error (at <stdin>:0): expected exactly one work bead object
+Check	Run Gastown shell tests	2026-10-15T08:31:40.2355022Z Invalid work bead response for ac-safe1; refusing to create or adopt an artifact.
+Check	Run Gastown shell tests	2026-10-15T08:31:40.3291855Z FAIL: canonical collision reached a metadata update
+Check	Run Gastown shell tests	2026-10-15T08:31:40.4480147Z FAIL: redirected artifact root reached a metadata update
+Check	Run Gastown shell tests	2026-10-15T08:31:40.4907085Z Preparing worktree (new branch 'gc-gastown.nux-21c247121e22')
+Check	Run Gastown shell tests	2026-10-15T08:31:40.4949623Z HEAD is now at 0a93583 tracked ignore fixture
+Check	Run Gastown shell tests	2026-10-15T08:31:41.2725188Z worktree-setup: stable provider branch gc-gastown.nux-9ffa3a1e2209 has unique or diverged work; preserving it and refusing sync
+Check	Run Gastown shell tests	2026-10-15T08:31:41.2937038Z worktree-setup: refusing existing path that is not a worktree of /tmp/tmp.rITA9aJdI7/rig: /tmp/tmp.rITA9aJdI7/city/.gc/worktrees/demo/polecats/gastown.foreign
+Check	Run Gastown shell tests	2026-10-15T08:31:41.3602356Z gastown/tests/test_polecat_artifact_dir.sh: line 469: rg: command not found
+Check	Run Gastown shell tests	2026-10-15T08:31:41.3603788Z FAIL: shutdown probe did not route the target work query to its rig store
+Check	Run Gastown shell tests	2026-10-15T08:31:41.3619877Z ##[error]Process completed with exit code 1.

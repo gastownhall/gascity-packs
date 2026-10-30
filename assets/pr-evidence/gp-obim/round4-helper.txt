@@ -1,0 +1,6 @@
+Installed helper: /Users/tailor512/city/assets/ops/mayor-tools/codex-gate.sh
+SHA256: f0f2ce967a3a9a64f7e61b2c8caf94a8e136bbd0c331472071cd92e0eac8dde1
+Fork main: d1348d0f2e3e504e1101515e2c409db6b7991ca3
+Review base: e6163fcaef4fb0a225e0234ba7d39204eedc929f
+Review head: 940d6c9c0304f4461b2bc4e50e59ad0b6b1d1539
+Class: QUICK; model: gpt-6-astra. The prior PR head is the review base so the helper reviews exactly the requested round-4 delta rather than all earlier rounds.

@@ -1,0 +1,10 @@
+2026/10/15 04:59:27 publish: conv=C1 text=23ch posted=23ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 04:59:27 publish: conv=C1 text=28ch posted=28ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.01s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_internal_Unicode_before_path_text_stays_literal (0.00s)
+        publish_readback_test.go:582: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_userinfo_shortcode_stays_literal (0.00s)
+        publish_readback_test.go:582: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.258s
+FAIL

@@ -1,0 +1,7 @@
+slack-full/adapter/main_test.go:961:	if strings.Contains(captured.Text, "_ref:") {
+slack-full/adapter/company_hydration_test.go:455:		"turn_ref: gct-aaaaaaaaaaaaaaaaaaaa",
+slack-full/adapter/company_delivery_test.go:130:		"turn_ref: " + ptr.TurnRef,
+slack-full/adapter/company_hydration.go:451:		fmt.Fprintf(b, "turn_ref: %s\n", neutralizeMarkupBoundaries(turn.TurnRef))
+Sibling _ref: matches: 0
+Footer-contract docs/README matches (reference marker|\b_ref:): 0
+Broad _ref docs search: 2 unrelated body_ref/turn_ref mentions.

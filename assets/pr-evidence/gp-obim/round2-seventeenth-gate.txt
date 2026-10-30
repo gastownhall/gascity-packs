@@ -1,0 +1,18 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (4112 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T05:52:32Z
+
+- **Major — Literal URL tails corrupt later formatting state** — [publish_readback_match.go:226](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:226).
+
+  This legitimate canonicalization is rejected:
+
+  ```text
+  Posted: *See https://a.co/*/x then www.b.co/x*:thumbsup:
+  Stored: *See <https://a.co/>*/x then <http://www.b.co/x|www.b.co/x>*:+1:
+  ```
+
+  The first suffix check correctly preserves `*/x` literally, but formatting tracking skips only the matched link prefix. It interprets that literal `*` as closing bold, so the second URL’s closing marker cannot restore prose behavior. The valid `:thumbsup:` → `:+1:` conversion then fails, producing `readback_unconfirmed` and allowing a duplicate on retry.
+
+  Exclude preserved literal URI tails from formatting-state transitions and add this case to the keyed-publish integration tests.
+
+Go tests were not run because they create files; review and in-memory tracing remained read-only.
+
+VERDICT: BLOCK

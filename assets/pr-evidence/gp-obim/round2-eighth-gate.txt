@@ -1,0 +1,7 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (1289 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T04:07:14Z
+
+- **Major — Compound emoji suffixes reject valid readbacks** — [publish_readback_match.go:154](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:154). Posting `www.a.co🇺🇸` and receiving `<http://www.a.co|www.a.co>:us:` fails: the loop consumes each regional indicator separately, exhausting `:us:` before processing the second indicator. ZWJ sequences fail similarly. This produces `readback_unconfirmed`, allowing a retry to duplicate an already-delivered message. Consume complete emoji sequences while retaining the non-dropping check, and add flag/ZWJ cases beside URL hosts and paths.
+
+Validated with an in-memory model of the suffix logic. Go tests were not run under the read-only constraint.
+
+VERDICT: BLOCK

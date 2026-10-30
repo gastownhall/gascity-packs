@@ -1,0 +1,8 @@
+Initial runner probes (neither ran tests):
+make test PYTEST_DIRS=slack-full/tests:
+make: *** No rule to make target `test'.  Stop.
+
+python3 -m pytest slack-full/tests -q:
+/opt/homebrew/opt/python@3.14/bin/python3.14: No module named pytest
+
+Upstream CI uses pytest after installing it. Reused the existing cached uv environment offline; no repository dependency or lock changes. pc_610430d246b9 and pc_addf038d2267.

@@ -1,0 +1,14 @@
+Fork round-3 head: e6163fcaef4fb0a225e0234ba7d39204eedc929f
+Fork round-4 source: 940d6c9c0304f4461b2bc4e50e59ad0b6b1d1539
+Twin round-3 head: bdf9b4281d6612a645eda01b8ea458c3077a15f1
+Twin round-4 source: b6e940a6bb55358a1efc3e202c0f8408fb62e64b
+Source commits cherry-picked without conflicts. Four changed source files; the six-file surface verified.
+Source patch identical after excluding Git index and hunk-location metadata.
+Patch SHA256: 6c44a31e30c929b54af7a2040ad7938c48d24f8daca52fa6ef030691e02ef221
+slack-full/CHANGELOG.md: pre-existing base differences unchanged outside identical source patch
+slack-full/adapter/publish_readback.go: pre-existing base differences unchanged outside identical source patch
+slack-full/adapter/publish_readback_match.go: identical whole file
+slack-full/adapter/publish_readback_test.go: identical whole file
+slack-full/adapter/publish_receipts.go: identical whole file
+slack-full/adapter/publish_receipts_test.go: identical whole file
+Generated suffix matrix identical on both bases: 5355 cells; SHA256 7dfe5432dcec77374c3520614abf4dad8b73711abab58f0bc479d7b310874688

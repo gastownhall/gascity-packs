@@ -1,0 +1,9 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (3462 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T05:34:58Z
+
+- **Major — [publish_readback_match.go:327](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:327): Suffix boundaries ignore escaping and keycap units.** Posted `*example.com/x\*:id:*` incorrectly matches stored `*<http://example.com/x|example.com/x>\*:ok:*`: the escaped star ends suffix protection, allowing the changed literal path token to fold away. Conversely, `*www.a.co/x*️⃣*` rejects `*<http://www.a.co/x|www.a.co/x>:keycap_star:*` because the keycap’s star is mistaken for closing formatting. Use actual unescaped formatting boundaries and recognize emoji units before testing closing markers; add both regression cases.
+
+- **Major — [publish_readback_match.go:196](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:196): Quoted phrases lose their closing-quote boundary.** Posted `"See www.a.co/x":thumbsup:` rejects stored `"See <http://www.a.co/x|www.a.co/x>":+1:`, although the previous matcher accepted it. Quote protection is initialized only when the quote immediately precedes the URL, so the legitimate prose alias after the closing quote is compared literally. Track surrounding quote context across the phrase and cover this case.
+
+Validation was read-only source review and in-memory branch traces; the Go tests were not run.
+
+VERDICT: BLOCK

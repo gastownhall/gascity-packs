@@ -1,0 +1,22 @@
+Source: 4e15175f
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher rejects valid Slack canonicalizations in quoted phrases and formatted messages containing literal URL markers. Go tests could not run because the read-only sandbox prevents creating the build directory.
+
+Full review comments:
+
+- [P2] Exclude literal URL markers from formatting-state updates — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:261-265
+  Markers inside bare URLs incorrectly change the surrounding formatting state. For example, `*See https://a.co/*/x then www.b.co/x*:thumbsup:` read back as `*See <https://a.co/*/x> then <http://www.b.co/x|www.b.co/x>*:+1:` previously confirmed. Now the first URL's literal `*` clears the bold state, so the second URL's closing marker is missed and its valid emoji alias is rejected as a changed URL suffix. Exclude matched URL characters from these state updates to avoid reporting successful deliveries as permanent readback failures.
+
+- [P2] Recognize quotes opened earlier in the surrounding prose — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:195-198
+  When a URL ends a quoted phrase, the opening quote is not immediately before the URL, so `closing` remains empty. Consequently, `"See www.a.co/x":thumbsup:` read back as `"See <http://www.a.co/x|www.a.co/x>":+1:` is rejected: `slackPreservedURLSuffix` treats the closing quote and following shortcode as literal path characters. The previous matcher accepted this alias conversion. Track the surrounding quote context so these valid deliveries do not become permanent content mismatches.
+The new matcher rejects valid Slack canonicalizations in quoted phrases and formatted messages containing literal URL markers. Go tests could not run because the read-only sandbox prevents creating the build directory.
+
+Full review comments:
+
+- [P2] Exclude literal URL markers from formatting-state updates — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:261-265
+  Markers inside bare URLs incorrectly change the surrounding formatting state. For example, `*See https://a.co/*/x then www.b.co/x*:thumbsup:` read back as `*See <https://a.co/*/x> then <http://www.b.co/x|www.b.co/x>*:+1:` previously confirmed. Now the first URL's literal `*` clears the bold state, so the second URL's closing marker is missed and its valid emoji alias is rejected as a changed URL suffix. Exclude matched URL characters from these state updates to avoid reporting successful deliveries as permanent readback failures.
+
+- [P2] Recognize quotes opened earlier in the surrounding prose — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:195-198
+  When a URL ends a quoted phrase, the opening quote is not immediately before the URL, so `closing` remains empty. Consequently, `"See www.a.co/x":thumbsup:` read back as `"See <http://www.a.co/x|www.a.co/x>":+1:` is rejected: `slackPreservedURLSuffix` treats the closing quote and following shortcode as literal path characters. The previous matcher accepted this alias conversion. Track the surrounding quote context so these valid deliveries do not become permanent content mismatches.
