@@ -9,6 +9,8 @@ import tempfile
 import tomllib
 import unittest
 
+import yaml
+
 
 FORMULAS = {
     "build-base",
@@ -1900,6 +1902,32 @@ class FormulaAssetTests(unittest.TestCase):
                 self.assertFalse(data["target_required"])
                 self.assertEqual(data["catalog"]["name"], formula)
                 self.assertNotIn("internal", data)
+
+    def test_plan_review_steps_declare_the_plan_review_artifact_contract(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        schema_ids = {
+            (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("schema_id")
+            for path in (root / "schemas" / "build").glob("*.yaml")
+        }
+        self.assertIn("gc.build.plan-review.v1", schema_ids)
+        for formula in ("build-from-plan-base", "build-basic"):
+            with self.subTest(formula=formula):
+                data = load_formula(root, formula)
+                step = next(step for step in data["steps"] if step["id"] == "plan-review")
+                self.assertEqual(step["metadata"]["gc.build.artifact_schema"], "gc.build.plan-review.v1")
+                self.assertEqual(
+                    step["metadata"]["gc.build.artifact_path_keys"],
+                    "gc.build.plan_review_report_path,gc.var.plan_review_path",
+                )
+                self.assertNotIn("check", step)
+        for prompt in (
+            "assets/workflows/build-from-plan-base/plan-review.md",
+            "assets/workflows/build-basic/plan-review.md",
+        ):
+            text = (root / prompt).read_text(encoding="utf-8")
+            with self.subTest(prompt=prompt):
+                self.assertIn("gc.build.plan-review.v1", text)
+                self.assertIn("gc.build.plan_review_report_path", text)
 
     def test_build_basic_extends_full_lifecycle_base(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
