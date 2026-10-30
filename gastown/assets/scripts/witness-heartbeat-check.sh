@@ -108,9 +108,12 @@ ts_epoch() {
     ''|null|0001-*) printf '0'; return 0 ;;
   esac
   norm=$(printf '%s' "$ts" | sed -E 's/\.[0-9]+(Z|[+-][0-9:]+)?$/\1/')
+  # BSD `%z` rejects a colon offset (+HH:MM / -HH:MM), which is a form `gc
+  # session list` emits for local-offset stamps alongside `Z` ones — only on
+  # the BSD leg, since GNU `date -d` already accepts it.
   epoch=$(date -u -d "$norm" +%s 2>/dev/null) \
     || epoch=$(date -u -j -f '%Y-%m-%dT%H:%M:%S%z' \
-                 "$(printf '%s' "$norm" | sed 's/Z$/+0000/')" +%s 2>/dev/null) \
+                 "$(printf '%s' "$norm" | sed -E 's/Z$/+0000/; s/([+-][0-9]{2}):([0-9]{2})$/\1\2/')" +%s 2>/dev/null) \
     || epoch=''
   # Anything non-numeric or pre-epoch is another unusable value, not "ancient".
   case "$epoch" in
