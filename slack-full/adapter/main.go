@@ -183,6 +183,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -1516,31 +1517,15 @@ func (c *publishDedupCache) Get(key string) (publishReceipt, bool) {
 		delete(c.entries, key)
 		return publishReceipt{}, false
 	}
-	return e.receipt, true
+	out := e.receipt
+	out.Metadata = maps.Clone(out.Metadata)
+	return out, true
 }
 
-// publishReceiptBlocksRepost reports whether a retry on the same idempotency
-// key must be answered from this receipt instead of posting again.
-//
-// A delivered receipt replays outright. The harder case is a write Slack
-// accepted — ok:true with a real ts — whose readback then failed. If the read
-// leg itself was unavailable, or the token cannot read history at all, nothing
-// is known about the message except that Slack took it, so re-posting would
-// duplicate a message that is very probably in the channel. Those receipts are
-// remembered and re-verified (replayPublishReceipt) rather than replayed as-is.
-//
-// readback_unconfirmed stays strict and is never remembered: there the read
-// path answered and the message was not in the channel, so the key must be
-// free to post again.
+// publishReceiptBlocksRepost remembers every accepted timestamp, even when
+// the read API cannot confirm it. A retry must not duplicate that post.
 func publishReceiptBlocksRepost(receipt publishReceipt) bool {
-	if receipt.Delivered {
-		return true
-	}
-	switch receipt.Metadata[receiptMetadataKeyReadback] {
-	case slackReadbackUnavailable, slackReadbackAuth:
-		return receipt.MessageID != ""
-	}
-	return false
+	return receipt.Delivered || receipt.MessageID != ""
 }
 
 // Put records a receipt a retry must not re-post (publishReceiptBlocksRepost)
@@ -1553,7 +1538,10 @@ func (c *publishDedupCache) Put(key string, receipt publishReceipt) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
-	c.entries[key] = publishDedupEntry{receipt: receipt, expiresAt: now.Add(c.ttl)}
+	if e, ok := c.entries[key]; !ok || publishReadbackConfirmed(receipt) || !publishReadbackConfirmed(e.receipt) {
+		receipt.Metadata = maps.Clone(receipt.Metadata)
+		c.entries[key] = publishDedupEntry{receipt: receipt, expiresAt: now.Add(c.ttl)}
+	}
 	for k, e := range c.entries {
 		if !now.Before(e.expiresAt) {
 			delete(c.entries, k)
@@ -1561,9 +1549,7 @@ func (c *publishDedupCache) Put(key string, receipt publishReceipt) {
 	}
 }
 
-// Delete forgets key. It is how a remembered posted-but-unconfirmed receipt is
-// released once a later readback proves the message is not in the channel: the
-// key has to be free to post again at that point.
+// Delete explicitly forgets a key. Readback failures never release it.
 func (c *publishDedupCache) Delete(key string) {
 	if key == "" {
 		return
@@ -1607,7 +1593,9 @@ const (
 // Readback contract, for whatever reads these markers back. This comment is
 // the normative statement of the scheme; the CHANGELOG entry and the stamp
 // guard in handlePublish point here rather than restating it, so there is one
-// place to edit when the contract changes:
+// place to edit when the marker contract changes. The acceptance and receipt
+// semantics are documented in docs/delivery-evidence.md: a timestamp remains
+// delivered even when this readback cannot confirm it.
 //
 //   - Marker absence means UNKNOWN, never undelivered. Everything posted
 //     before this change is unmarked; keyed publishes with empty text are not
@@ -1837,16 +1825,8 @@ func handlePublish(cfg config, reg *identityRegistry, userAliases *userAliasMap,
 				}
 				receipt.Metadata["truncated"] = "true"
 			}
-			// The truncation warning is recorded before the readback so the
-			// wire fact survives either outcome: it is what Slack reported
-			// about this write, while Delivered below is what the read API can
-			// confirm. Truncation also fails the readback, so a truncated
-			// publish now reports Delivered:false with FailureKind "permanent"
-			// (metadata["readback"]="readback_unconfirmed") *and*
-			// metadata["truncated"] — strictly more than either half could say
-			// alone. Permanent is the honest kind there: the same oversized
-			// payload truncates identically on every retry, so re-sending it
-			// can only add another visible partial message.
+			// The timestamp proves acceptance even when Slack truncated the body.
+			// Keep that warning and the readback result without inducing a repost.
 			target.messageTS = slackResp.TS
 			confirmPublishReceipt(cfg.slackBotToken, &receipt, target)
 		}
