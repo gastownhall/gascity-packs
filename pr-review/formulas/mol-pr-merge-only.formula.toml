@@ -1,5 +1,5 @@
 description = """
-Merge-Only PR workflow — 3 steps from intake through merge.
+Merge-Only PR workflow — 3 steps from intake to a staged merge hand-off.
 
 Sling a contributor PR to a polecat for rebase + squash merge, SKIPPING the
 review and human-gate steps. Use only when the maintainer has already
@@ -12,10 +12,13 @@ bead needed.
 
 ## Contract
 
-1. Caller slings with `--var pr=<url-or-number>` (and optionally `--var skip_gemini=true` for compat)
+1. Caller slings with `--var pr=<url-or-number>` AND
+   `--metadata evidence.human_approved=true`; finalize writes nothing to
+   GitHub without it (optionally `--var skip_gemini=true` for compat)
 2. Polecat reads steps, executes each in order
 3. After rebase-check, polecat proceeds directly to finalize (NO review, NO human-gate)
-4. Polecat finalizes via Path A: squash merge
+4. Polecat finalizes by STAGING Path A (squash merge) as recorded commands;
+   the maintainer runs them. The pool writes nothing to GitHub
 
 ## Variables
 
@@ -29,9 +32,9 @@ bead needed.
 | Situation | Action |
 |-----------|--------|
 | gh command fails | Check `gh auth status`, report error, stop |
-| Rebase has complex conflicts | Abort rebase, post comment, close root bead, stop |
-| Push fails | Report error, stop. User resolves manually |
-| CI fails | Report failure, stop, wait for nudge |
+| Rebase has complex conflicts | Abort rebase, stage the comment, close root bead, stop |
+| Staging fails | Report error, stop. User resolves manually |
+| CI red or absent | Record `CI_STATE` in the hand-off; the publisher verifies CI at merge time |
 
 ## Difference from mol-adopt-pr
 
@@ -49,6 +52,10 @@ version = 1
 [vars.pr]
 description = "PR URL (https://github.com/org/repo/pull/N) or bare integer"
 required = true
+
+[vars.publish_owner]
+description = "Who runs the recorded publish commands. Recorded as evidence.publish_owner so the hand-off names its publisher. Default: maintainer."
+default = "maintainer"
 
 [vars.skip_gemini]
 description = "Kept for compatibility with mol-adopt-pr callers; has no effect (no review step)"
@@ -84,11 +91,19 @@ gh pr view <number> --json files --jq '.files[].path'
 
 Compare against the PR title/description. If the changes are clearly outside
 the described scope (e.g., a "fix typo" PR that touches dozens of packages),
-the branch has diverged from main. **STOP immediately:**
-- Post a scope mismatch comment asking the contributor to rebase
-- Request changes: `gh pr review <number> --request-changes --body "Branch has diverged from main"`
-- Close the root bead: `gc bd close $ROOT_ID --reason "scope mismatch"`
-- Exit
+the branch has diverged from main. **STOP immediately.** Asking the
+contributor to rebase is a comment and a review under the maintainer's account:
+STAGE both, run neither (dr-vodu2):
+```bash
+STAGED_DIR="${GC_CITY_PATH:?}/.gc/staged-gh/$ROOT_ID-pr-<number>"
+mkdir -p "$STAGED_DIR"
+printf '%s\\n' "<scope mismatch comment asking the contributor to rebase>" > "$STAGED_DIR/comment-scope.md"
+gc bd update $ROOT_ID --append-notes "scope_comment_path: $STAGED_DIR/comment-scope.md
+post_scope_comment_command: gh pr comment <number> --repo <owner>/<repo> --body-file $(printf %q "$STAGED_DIR/comment-scope.md")
+request_changes_command: gh pr review <number> --repo <owner>/<repo> --request-changes --body 'Branch has diverged from main'"
+gc bd close $ROOT_ID --reason "scope mismatch; comment staged for maintainer"
+```
+Exit.
 
 **5. Check maintainer edits:**
 Record in root bead notes: `maintainer_edits: true` or `maintainer_edits: false`.
@@ -150,11 +165,19 @@ MERGEABLE=$(gh pr view <number> --json mergeable --jq '.mergeable')
 - If `CONFLICTING` → continue.
 
 **3. Gate on maintainerCanModify:**
-If `maintainer_edits` is false → **STOP**:
-- Post conflict comment asking author to rebase
-- Add label: `gh pr edit <number> --add-label "status/needs-info"`
-- Close root bead: `gc bd close $ROOT_ID --reason "conflicts, maintainerCanModify=false"`
-- Exit
+If `maintainer_edits` is false → **STOP**. Only the author can rebase, and
+asking them is a comment and a label under the maintainer's account: STAGE
+both, run neither (dr-vodu2):
+```bash
+STAGED_DIR="${GC_CITY_PATH:?}/.gc/staged-gh/$ROOT_ID-pr-<number>"
+mkdir -p "$STAGED_DIR"
+printf '%s\\n' "<conflict comment asking author to rebase>" > "$STAGED_DIR/comment-conflict.md"
+gc bd update $ROOT_ID --append-notes "conflict_comment_path: $STAGED_DIR/comment-conflict.md
+post_conflict_command: gh pr comment <number> --repo <owner>/<repo> --body-file $(printf %q "$STAGED_DIR/comment-conflict.md")
+label_command: gh pr edit <number> --repo <owner>/<repo> --add-label status/needs-info"
+gc bd close $ROOT_ID --reason "conflicts, maintainerCanModify=false; conflict comment staged for maintainer"
+```
+Exit.
 
 **4. Fetch upstream base:**
 ```bash
@@ -188,9 +211,14 @@ For each conflicting file, classify:
 If complex conflicts found:
 ```bash
 git rebase --abort
-gh pr comment <number> --body "<conflict comment asking author to rebase>"
-gh pr edit <number> --add-label "status/needs-info"
-gc bd close $ROOT_ID --reason "complex merge conflicts"
+# Write the body, record both commands, run NEITHER (dr-vodu2).
+STAGED_DIR="${GC_CITY_PATH:?}/.gc/staged-gh/$ROOT_ID-pr-<number>"
+mkdir -p "$STAGED_DIR"
+printf '%s\\n' "<conflict comment asking author to rebase>" > "$STAGED_DIR/comment-conflict.md"
+gc bd update $ROOT_ID --append-notes "conflict_comment_path: $STAGED_DIR/comment-conflict.md
+post_conflict_command: gh pr comment <number> --repo <owner>/<repo> --body-file $(printf %q "$STAGED_DIR/comment-conflict.md")
+label_command: gh pr edit <number> --repo <owner>/<repo> --add-label status/needs-info"
+gc bd close $ROOT_ID --reason "complex merge conflicts; conflict comment staged for maintainer"
 ```
 Exit.
 
@@ -207,11 +235,12 @@ Update notes with:
 
 [[steps]]
 id = "finalize"
-title = "Push and squash-merge (skip-review)"
+title = "Stage the ack, push and squash-merge for the publisher (skip-review)"
 needs = ["rebase-check"]
 description = """
-Skip-review finalize: post a minimal merge-only ack, wait for CI, push if
-rebased, squash-merge. This is Path A from mol-adopt-pr.finalize with the
+Skip-review finalize: verify the recorded human approval, then STAGE a
+minimal merge-only ack, record CI state, and record the push (if rebased)
+and the squash merge as commands. This step performs none of them. This is Path A from mol-adopt-pr.finalize with the
 synthesis-comment machinery pruned (no review_run_dir to read from).
 
 **1. Read root bead notes:**
@@ -251,6 +280,36 @@ Update notes: `merge_path: A`.
 
 ### Path A: Squash Merge (skip-review)
 
+**A.0: Evidence gate — verify recorded human approval before any write.**
+
+The ack comment, the push and the squash merge below are external writes, and
+this formula skips review, so "the maintainer already eyeballed it" must be
+evidence, not convention. The caller records it at sling time via
+`--metadata evidence.human_approved=true`:
+```bash
+HUMAN_APPROVED=$(gc bd show "$ROOT_ID" --json | jq -r '.[0].metadata."evidence.human_approved" // "false"')
+if [ "$HUMAN_APPROVED" != "true" ]; then
+  gc bd update "$ROOT_ID" --set-metadata "gc.halt_chain=true" \\
+                       --set-metadata "summary_for_human=Refusing to merge PR #<N>: evidence.human_approved is not true on the root bead. mol-pr-merge-only skips review, so it needs explicit human approval recorded at sling time (--metadata evidence.human_approved=true). Nothing was posted, pushed or merged. Re-sling with the approval metadata to merge."
+  gc bd close "$ROOT_ID" --reason "human-approval evidence missing"
+  exit 0
+fi
+```
+
+**Nothing below this line writes to GitHub.** The A.1 comment
+and the A.4 merge used to carry
+`GASCITY_SHIP_BYPASS="human_approved_merge:$ROOT_ID"` so a pool worker's `gh`
+would allow them. That carve-out is retired. The recommended deployment gives unattended pool seats a READ-ONLY
+`GH_TOKEN`. Without it the pool itself can publish, and nothing but this
+formula's prose stands between an unreviewed branch and the forge.
+The ack comment is composed and staged, and the push and the merge are
+recorded as commands. The publisher named by `publish_owner` performs all
+three from its own login, after a human approves that artifact.
+
+The human-approval gate above still matters and is not weakened by this: it
+decides whether this PR is a merge candidate at all, and a hand-off for a PR
+nobody approved is still work nobody asked for.
+
 **A.1: Post merge-only ack comment.**
 
 Build a minimal comment (no synthesis — review was skipped):
@@ -266,45 +325,94 @@ and elected to skip the automated multi-model review.
 _Adopted via `mol-pr-merge-only` workflow. Contributor commits preserved._
 ```
 
-Post: `gh pr comment <number> --body "<comment>"`
-
-**A.2: Wait for CI.**
-
-First verify CI checks exist:
+Write it to a file and stage the command that posts it:
 ```bash
-gh pr checks <number>
-```
-If no checks reported → **STOP**, print message telling maintainer to approve
-GitHub Actions workflow run. Wait for nudge.
-
-Once checks exist:
-```bash
-gh pr checks <number> --watch
-```
-If CI fails → **STOP**, report failure, wait for nudge.
-
-**A.3: Push rebased branch (if applicable).**
-If rebase was performed (`rebase_status` is not `not_needed`):
-```bash
-git push --force-with-lease
+ACK_COMMENT="${GC_CITY_PATH:?}/.gc/staged-gh/$ROOT_ID-pr-<number>/ack.md"
+mkdir -p "$(dirname "$ACK_COMMENT")"
+printf '%s\\n' "<comment>" > "$ACK_COMMENT"
+POST_ACK_CMD="gh pr comment <number> --repo <owner>/<repo> --body-file $(printf %q "$ACK_COMMENT")"
 ```
 
-**A.4: Squash merge:**
+**A.2: Record CI state. Do not watch it.**
+
+`gh pr checks` is a read and works under the pool credential:
 ```bash
-gh pr merge <number> --squash
+gh pr checks <number> || true
+CI_STATE=$(gh pr checks <number> --json state --jq '[.[].state] | unique | join(",")' 2>/dev/null || echo "unreadable")
 ```
 
-**A.5: Cleanup:**
+The old step watched CI to a 30-minute ceiling and then merged. It no longer
+merges, so watching only holds a pool slot to produce a verdict that is stale
+by the time anyone acts on it. **CI is verified by the publisher at merge
+time**, which is the only moment it means anything: an approval and a green
+check both attest to the SHA they were taken on. Record `CI_STATE` as evidence
+and move on. If no checks are reported at all, say so in the hand-off -- a
+first-time fork needs a maintainer to approve the workflow run before CI can
+exist, and that is the publisher's first action rather than a reason to halt
+here.
+
+**A.3: Stage the rebased-branch push (if applicable).**
+If rebase was performed (`rebase_status` is not `not_needed`), the rebased
+branch has to reach the contributor fork before the merge. Record it; do not
+push. It is a force-push to somebody else's branch, which needs its own
+human approval:
+Record it with every part resolved, because the publisher runs it from a
+different checkout, possibly after this worktree is gone. Push the exact
+rebased SHA to the contributor fork by URL, lease against the tip the
+contributor had before the rebase, and pin the SHA with a ref so the object
+survives until then:
 ```bash
+REBASED_SHA=$(git rev-parse HEAD)
+PRE_REBASE_HEAD=<pre_rebase_head from notes>
+GIT_DIR_ABS=$(git rev-parse --path-format=absolute --git-common-dir)
+git update-ref "refs/staged-gh/$ROOT_ID" "$REBASED_SHA"
+HEAD_URL=$(gh pr view <number> --repo <owner>/<repo> --json headRepositoryOwner,headRepository \\
+  --jq '"https://github.com/" + .headRepositoryOwner.login + "/" + .headRepository.name + ".git"')
+HEAD_REF=$(gh pr view <number> --repo <owner>/<repo> --json headRefName --jq .headRefName)
+PUSH_CMD="git --git-dir=$(printf %q "$GIT_DIR_ABS") push $(printf %q "--force-with-lease=refs/heads/$HEAD_REF:$PRE_REBASE_HEAD") $(printf %q "$HEAD_URL") $(printf %q "$REBASED_SHA:refs/heads/$HEAD_REF")"
+```
+If `HEAD_URL` is empty the fork is gone or unreadable: record that in the
+hand-off instead of a push command.
+
+**A.4: Stage the squash merge:**
+```bash
+MERGE_CMD="gh pr merge <number> --repo <owner>/<repo> --squash --match-head-commit <the head SHA the approval covers>"
+```
+
+**A.5: Record the hand-off and close.**
+
+The three commands go on the root bead in the order the publisher runs them,
+alongside the staged ack body and the CI state they will re-check:
+```bash
+PUBLISH_OWNER=$(cat <<'OWNER'
+{{publish_owner}}
+OWNER
+)
 git update-ref -d refs/adopt-pr/upstream-base 2>/dev/null || true
-gc bd update $ROOT_ID --notes "<notes with merge_path: A, status: merged>"
+gc bd update "$ROOT_ID" \\
+  --set-metadata "evidence.ack_comment_path=$ACK_COMMENT" \\
+  --set-metadata "evidence.ci_state=$CI_STATE" \\
+  --set-metadata "evidence.publish_ack_cmd=$POST_ACK_CMD" \\
+  --set-metadata "evidence.publish_push_cmd=$PUSH_CMD" \\
+  --set-metadata "evidence.publish_merge_cmd=$MERGE_CMD" \\
+  --set-metadata "evidence.publish_owner=$PUBLISH_OWNER" \\
+  --set-metadata "gc.outcome=merge-ready" \\
+  --set-metadata "summary_for_human=PR #<number> is PREPARED for a squash merge and nothing has been posted, pushed or merged. Human approval is recorded, the rebase is $REBASE_STATUS, and CI read as $CI_STATE at hand-off. Merging is $PUBLISH_OWNER's step, from its own login, after a human approves it; the ack, push and merge commands are on this bead as evidence.publish_ack_cmd, evidence.publish_push_cmd and evidence.publish_merge_cmd, and CI must be re-read at that point rather than trusted from here."
+gc bd update $ROOT_ID --notes "<notes with merge_path: A, status: merge-ready>"
 ```
 
 ---
 
-**Critical rules:**
+**Critical rules, and they now bind the PUBLISHER rather than this step:**
 - **No force-push** except after a rebase (always `--force-with-lease`)
 - **Contributor credit preserved** — squash commit keeps original author
-- **CI checks must exist** — never merge without CI. First-time forks need manual approval.
+- **CI checks must exist** — never merge without CI, and re-read it at merge
+  time. First-time forks need manual approval of the workflow run.
+- **Never merge on a stale approval.** Both the approval and the CI result
+  attest to the SHA they were taken on. If the head moved after this hand-off
+  was written, the hand-off is evidence about a commit that is no longer the
+  one being merged.
 
-**Exit criteria:** PR squash-merged, root bead updated with `status: merged`."""
+**Exit criteria:** ack body staged, CI state recorded, the three publish
+commands on the root bead, root bead at `status: merge-ready`. No GitHub
+write performed."""

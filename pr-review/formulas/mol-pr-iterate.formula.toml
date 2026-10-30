@@ -547,20 +547,18 @@ Compare with `parsed_feedback.comments` from earlier. For each prior
 comment, check if it's resolved (GraphQL only — `gh api graphql -F query=...`)
 or no longer present.
 
-If cleared, post a reply on the original copilot thread noting the change:
+If cleared, STAGE a reply on the original copilot thread noting the change.
+A reply is a comment under the maintainer's account, so record the command for
+the maintainer and do not run it (dr-vodu2):
 ```bash
-gh api "/repos/$REPO/pulls/{{pr}}/comments" \\
-  -f body="Addressed in $last_apply_commit." \\
-  -f in_reply_to=<original_comment_id>
+gc bd update "$ROOT_ID" --append-notes "reply_command: gh api /repos/$REPO/pulls/{{pr}}/comments -f body='Addressed in $last_apply_commit.' -F in_reply_to=<original_comment_id>"
 ```
 
 ### review-comment
 
-Similar to copilot — post a reply to `{{feedback_ref}}`:
+Similar to copilot — STAGE a reply to `{{feedback_ref}}`, do not post it:
 ```bash
-gh api "/repos/$REPO/pulls/{{pr}}/comments" \\
-  -f body="Addressed in $last_apply_commit." \\
-  -f in_reply_to={{feedback_ref}}
+gc bd update "$ROOT_ID" --append-notes "reply_command: gh api /repos/$REPO/pulls/{{pr}}/comments -f body='Addressed in $last_apply_commit.' -F in_reply_to={{feedback_ref}}"
 ```
 
 The polecat does not auto-resolve the comment thread; the reviewer marks
