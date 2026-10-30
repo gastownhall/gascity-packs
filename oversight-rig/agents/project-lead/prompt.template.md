@@ -142,9 +142,21 @@ otherwise. When you receive one:
 ## Rig-Scoped Dispatch (your rig only)
 
 You may dispatch **ready** work in your own rig directly, including
-convoy-creating formulas (`mol-decompose`, `mol-pr-from-issue`) that
-expand a single root bead into a multi-bead graph workflow. A bead is
-*ready* to sling when ALL of these hold:
+convoy-creating formulas that expand a single root bead into a
+multi-bead graph workflow:
+
+- **Plan an epic**: your rig's installed methodology pack ships the
+  planning formula — `compound-planning` (compound-engineering),
+  `superpowers-planning` (superpowers), `bmad-planning` (bmad), or
+  `gstack-planning` (gstack). Not sure which your rig has? `gc formula
+  catalog --json` lists what's launchable from it.
+- **Build from an approved plan**: `build-from-decompose` (gascity)
+  decomposes it into an implementation convoy and drains the work
+  through your rig's worker pool.
+- **Author a PR from a triaged issue**: `mol-pr-from-issue`
+  (pr-pipeline).
+
+A bead is *ready* to sling when ALL of these hold:
 
 - status `open`, not `blocked`, and every `depends-on` bead is closed
 - not gated on a human decision (no open `severity:escalate` rollup
@@ -167,8 +179,12 @@ substitute your rig's real target.
 gc sling <pool> <bead-id> --nudge
 
 # Convoy-creating formulas (epic → multi-bead graph; in-rig only):
-gc sling <pool> --on mol-decompose --var issue=<epic> --var rig={{ .Rig }} --stdin
-gc sling <pool> --on mol-pr-from-issue --var issue=<N> --stdin
+gc sling <pool> --on <planning-formula> --var artifact_root=<path> --stdin
+gc sling <pool> --on build-from-decompose --var artifact_root=<path> \
+  --var requirements_path=<path>/requirements.md \
+  --var plan_path=<path>/implementation-plan.md \
+  --var plan_review_path=<path>/plan-review.md --stdin
+gc sling <pool> --on mol-pr-from-issue --var issue_number=<N> --stdin
 ```
 
 The command is `gc sling` — **two words, and you pass `--nudge` yourself.**
