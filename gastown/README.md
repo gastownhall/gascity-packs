@@ -99,6 +99,22 @@ instead (`--formula` is a boolean that reinterprets the positional argument), an
 `--on <formula>` attaches one to an existing bead. `[agent_defaults]` is the one
 knob that cannot override the agent's own value.
 
+## Formula step ownership
+
+The default `mol-polecat-work` formula requires `formula_compiler >=2.0.0`.
+Its graph.v2 steps are separate, independently routed beads. The shared
+[`following-mol` fragment](template-fragments/following-mol.template.md), used
+by polecat and dog prompts, directs workers to execute only their actual
+claimed physical bead and follow that step's completion and drain instructions.
+The native controller advances the graph and handles control beads; workers
+must not execute sibling steps inline or claim expanded workflow roots.
+
+The fragment also retains sequential guidance for legacy molecule assignments
+and distinguishes restart recovery by workflow contract. A `molecule_id` alone
+does not select legacy navigation for a graph.v2 step. See the Gas City
+[formula v2 specification](https://github.com/gastownhall/gascity/blob/main/docs/reference/specs/formula-spec-v2.md)
+for the graph contract.
+
 ## Dog Pool
 
 Gastown owns `mol-shutdown-dance` and the dog agent that runs stuck-agent
