@@ -162,11 +162,9 @@ gc bd list --status=in_progress --json --limit=0
 gc bd list --status=open --json --limit=0
 ```
 
-Filter for beads with an assignee (skip unassigned beads). This pass does not
-solve the controller race where orphaned work may already have been released to
-open/unassigned before witness observes it; that requires a separate
-worktree-salvage scan keyed by canonical `metadata.artifact_dir`, with a
-validated legacy `metadata.work_dir` fallback. Bound Gastown polecat
+Filter for beads with an assignee (skip unassigned beads for this pass —
+**Step 1b** below covers a bead the controller has already released to
+open/unassigned before witness observed it). Bound Gastown polecat
 assignees use the shape `<rig>/{{binding_prefix}}<polecat-suffix>`.
 
 Get the full session roster for liveness checks:
@@ -307,6 +305,40 @@ a NEW session with a different ID — the old one never comes back.
 infrastructure agents (not pool instances) should be skipped — those
 agents have persistent identity and the controller manages their
 lifecycle directly.
+
+**Step 1b: Released-but-already-handed-off beads.** (gastownhall/gascity-packs#561)
+
+The controller can release a bead to open/unassigned before witness ever
+observes it — for example gastownhall/gascity#8179, where `gc session close`
+on a still-configured named identity (such as the refinery) drops every bead
+addressed to it back to `assignee=null`, `gc.routed_to=""`, even when the
+polecat→refinery handoff had already completed. Step 1's assignee filter
+skips a bead in that state entirely, so without this pass witness has no
+written recipe for it and has to improvise — which has produced the wrong
+call: resetting branch-ready, already-handed-off work back to the polecat
+pool (gastownhall/gascity-packs#561) instead of finishing the handoff.
+
+From the SAME `gc bd list --status=open --json --limit=0` snapshot already
+fetched in Step 1 (no second query needed), filter for candidates with:
+- `assignee` empty or null (the complement of Step 1's filter — this is the
+  released case Step 1 explicitly skips), AND
+- metadata key `gc.routed_to` empty or absent (unrouted — a bead someone has
+  already routed elsewhere is being handled; leave it alone), AND
+- `metadata.branch` is non-empty (there is a published handoff to evaluate;
+  Step 2 re-reads this field itself, so this is only a candidate pre-filter).
+
+There is no assignee and so no session to check liveness against — the
+release itself, not a dead session, is what makes this a candidate. Skip the
+session-ID liveness classification in Step 1 entirely for these; set
+`ASSIGNEE=""` and `CANDIDATE_SOURCE="step1b"` and feed each candidate into
+Step 2 exactly like an orphaned bead from Step 1, where Step 2a (below) uses
+`CANDIDATE_SOURCE` to re-verify by re-reading the bead rather than resolving
+a liveness map:
+
+```bash
+CANDIDATE_SOURCE="step1b"
+ASSIGNEE=""
+```
 
 **Step 2: For each orphaned bead, salvage work from the worktree.**
 
@@ -540,9 +572,52 @@ this is one extra map build per candidate orphan, not per bead.
 # half-computed verdict skips rather than destroys.
 STILL_ORPHANED=false
 
+# Re-reads <bead>'s updated_at -- a TOP-LEVEL bead field, never a metadata
+# key, so reading it off Step 2's $META (`jq '.[0].metadata'`) would return
+# empty on every bead and this guard could never fire -- and classifies it
+# against this cycle's watermark ($CYCLE_MAP_BUILT_AT). Sets $BEAD_UPDATED_AT
+# as a side effect. Exit 2: could not read. Exit 1: not yet stale. Exit 0:
+# stale enough to act on. Shared by both re-verify paths below so this check
+# exists in exactly one place.
+bead_staleness_verdict() {
+  BEAD_UPDATED_AT=$(printf '%s' "$1" | jq -r '.[0].updated_at // empty' 2>/dev/null || true)
+  BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"
+  case "$BEAD_UPDATED_AT" in ""|*Z) ;; *) BEAD_UPDATED_AT="${BEAD_UPDATED_AT}Z" ;; esac
+  if [ -z "$BEAD_UPDATED_AT" ]; then
+    return 2
+  elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then
+    return 1
+  fi
+  return 0
+}
+
 if [ "$RECOVERY_BLOCKED" = true ]; then
   # Step 2's artifact/branch validation already refused this bead.
   echo "SKIP: <bead> artifact or branch metadata is unsafe/ambiguous (RECOVERY_BLOCKED) — escalate; do not act on it this cycle."
+elif [ "${CANDIDATE_SOURCE:-}" = "step1b" ]; then
+  # Step 1b candidate: there is no assignee and so no session to check
+  # liveness against -- the release itself is the orphan signal, not a dead
+  # session. Re-read the bead and require it to still be unassigned, still
+  # unrouted, and still older than this cycle's watermark before treating it
+  # as still a candidate. CYCLE_MAP_BUILT_AT comes from Step 1's own
+  # build_liveness_map call, which already ran this cycle regardless of
+  # candidate source.
+  BEAD_JSON=$(gc bd show <bead> --json) || BEAD_JSON=""
+  FRESH_ASSIGNEE=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null || true)
+  FRESH_ROUTED_TO=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].metadata["gc.routed_to"] // empty' 2>/dev/null || true)
+
+  if [ -n "$FRESH_ASSIGNEE" ]; then
+    echo "SKIP: <bead> was claimed by $FRESH_ASSIGNEE since the Step 1b snapshot — someone else owns it now; leave it alone."
+  elif [ -n "$FRESH_ROUTED_TO" ]; then
+    echo "SKIP: <bead> was routed to $FRESH_ROUTED_TO since the Step 1b snapshot — it is being handled; leave it alone."
+  else
+    bead_staleness_verdict "$BEAD_JSON"
+    case $? in
+      2) echo "SKIP: <bead> updated_at could not be read — cannot confirm the classification is current; leaving it alone this cycle." ;;
+      1) echo "SKIP: <bead> updated_at ($BEAD_UPDATED_AT) is not older than this cycle's snapshot ($CYCLE_MAP_BUILT_AT) — something touched it mid-cycle. Not acting on a stale classification." ;;
+      0) STILL_ORPHANED=true ;;
+    esac
+  fi
 elif [ -z "$ASSIGNEE" ]; then
   echo "SKIP: <bead> has no assignee to re-verify — cannot confirm it is orphaned; leaving it alone this cycle."
 elif ! build_liveness_map; then
@@ -562,31 +637,29 @@ else
   BEAD_JSON=$(gc bd show <bead> --json) || BEAD_JSON=""
   FRESH_ASSIGNEE=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].assignee // empty' 2>/dev/null || true)
   FRESH_ASSIGNEE="${FRESH_ASSIGNEE:-$ASSIGNEE}"
-  BEAD_UPDATED_AT=$(printf '%s' "$BEAD_JSON" | jq -r '.[0].updated_at // empty' 2>/dev/null || true)
 
   FRESH_STATE=$(printf '%s' "$LIVENESS_MAP" | jq -r --arg a "$FRESH_ASSIGNEE" '.[$a] // "absent"')
-
-  # Normalize away fractional seconds before comparing. The watermark is stamped
-  # whole-second by `date`, while `gc bd show` emits whole seconds for rig beads
-  # and nanoseconds for graph-resident ones; comparing those two shapes as
-  # strings inverts, because "." (0x2E) sorts before "Z" (0x5A), and it inverts
-  # toward destroying. Truncating both to whole seconds and skipping unless the
-  # bead is *strictly older* than the watermark keeps the boundary second on the
-  # safe side: a bead touched in the same second the cycle started costs one
-  # wasted cycle, which is the direction to be wrong in.
-  BEAD_UPDATED_AT="${BEAD_UPDATED_AT%%.*}"
-  case "$BEAD_UPDATED_AT" in ""|*Z) ;; *) BEAD_UPDATED_AT="${BEAD_UPDATED_AT}Z" ;; esac
 
   if [ "$FRESH_ASSIGNEE" != "$ASSIGNEE" ]; then
     echo "SKIP: <bead> was reassigned from $ASSIGNEE to $FRESH_ASSIGNEE since Step 1 — someone else owns it now; leave it alone."
   elif [ "$FRESH_STATE" != "absent" ] && [ "$FRESH_STATE" != "closed" ] && [ "$FRESH_STATE" != "archived" ]; then
     echo "SKIP: <bead> assignee $FRESH_ASSIGNEE is now '$FRESH_STATE' — spawned after the Step 1 snapshot. Not orphaned; leave it alone."
-  elif [ -z "$BEAD_UPDATED_AT" ]; then
-    echo "SKIP: <bead> updated_at could not be read — cannot confirm the classification is current; leaving it alone this cycle."
-  elif ! [[ "$BEAD_UPDATED_AT" < "$CYCLE_MAP_BUILT_AT" ]]; then
-    echo "SKIP: <bead> updated_at ($BEAD_UPDATED_AT) is not older than this cycle's liveness snapshot ($CYCLE_MAP_BUILT_AT) — something touched it mid-cycle. Not acting on a stale classification."
   else
-    STILL_ORPHANED=true
+    # Normalize away fractional seconds before comparing. The watermark is
+    # stamped whole-second by `date`, while `gc bd show` emits whole seconds
+    # for rig beads and nanoseconds for graph-resident ones; comparing those
+    # two shapes as strings inverts, because "." (0x2E) sorts before "Z"
+    # (0x5A), and it inverts toward destroying. Truncating both to whole
+    # seconds and skipping unless the bead is *strictly older* than the
+    # watermark keeps the boundary second on the safe side: a bead touched in
+    # the same second the cycle started costs one wasted cycle, which is the
+    # direction to be wrong in. (bead_staleness_verdict, defined above.)
+    bead_staleness_verdict "$BEAD_JSON"
+    case $? in
+      2) echo "SKIP: <bead> updated_at could not be read — cannot confirm the classification is current; leaving it alone this cycle." ;;
+      1) echo "SKIP: <bead> updated_at ($BEAD_UPDATED_AT) is not older than this cycle's liveness snapshot ($CYCLE_MAP_BUILT_AT) — something touched it mid-cycle. Not acting on a stale classification." ;;
+      0) STILL_ORPHANED=true ;;
+    esac
   fi
 fi
 ```
@@ -840,8 +913,13 @@ if [ "$STILL_ORPHANED" = "true" ] && [ "$HANDOFF_STAGE" = "target_recorded" ] &&
     # succeeded by the time this runs, so a failure here leaves inert step
     # beads behind, never an unhandled handoff, and the mail stays truthful.
     gc workflow delete-source <bead> --apply || true
+    if [ "${CANDIDATE_SOURCE:-}" = "step1b" ]; then
+      HANDOFF_ORIGIN_NOTE="the bead had already been released to open/unassigned (not a crashed polecat)"
+    else
+      HANDOFF_ORIGIN_NOTE="the crashed polecat had finished submit-and-exit through step 5"
+    fi
     gc mail send mayor/ -s "ORPHAN_HANDED_OFF: <bead> completed submit, missing only reassignment" \
-      -m "Branch $BRANCH is on origin and handoff_stage=target_recorded was already set (target=$BEAD_TARGET) -- the crashed polecat had finished submit-and-exit through step 5. Completed step 6 (reassign to refinery) instead of resetting to pool."
+      -m "Branch $BRANCH is on origin and handoff_stage=target_recorded was already set (target=$BEAD_TARGET) -- $HANDOFF_ORIGIN_NOTE. Completed step 6 (reassign to refinery) instead of resetting to pool."
     # Wake before nudge, exactly as submit-and-exit step 7: the refinery is
     # an on_demand session with a 2h idle timeout, and nudge alone leaves a
     # stopped one asleep with the handoff unprocessed.
