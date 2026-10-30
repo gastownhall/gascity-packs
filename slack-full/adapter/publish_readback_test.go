@@ -224,6 +224,85 @@ func TestReadBackPublishedMessageAcceptsSlackCanonicalizedText(t *testing.T) {
 	}
 }
 
+// TestSlackNormalizeTextFoldsLabelledLinks pins the fold on the link shapes
+// Slack completes with a label (gp-dadc6). `<target|label>` must fold to the
+// label the sender typed, so a stored `<http://huggingface.co/x|huggingface.co/x>`
+// compares equal to the posted `huggingface.co/x`; folding only the brackets
+// leaves `http://...|huggingface.co/x`, and the delivered message is reported
+// as a permanent content mismatch.
+func TestSlackNormalizeTextFoldsLabelledLinks(t *testing.T) {
+	tests := []struct {
+		name   string
+		posted string
+		stored string
+		equal  bool
+	}{
+		{
+			name:   "scheme-less domain completed with a scheme",
+			posted: "model card: huggingface.co/org/model today",
+			stored: "model card: <http://huggingface.co/org/model|huggingface.co/org/model> today",
+			equal:  true,
+		},
+		{
+			name:   "typed URL returned with a repeated label",
+			posted: "docs: https://docs.slack.dev/",
+			stored: "docs: <https://docs.slack.dev/|https://docs.slack.dev/>",
+			equal:  true,
+		},
+		{
+			name:   "typed URL returned without a label",
+			posted: "docs: https://docs.slack.dev/",
+			stored: "docs: <https://docs.slack.dev/>",
+			equal:  true,
+		},
+		{
+			name:   "email address completed with mailto",
+			posted: "ping ops@example.com now",
+			stored: "ping <mailto:ops@example.com|ops@example.com> now",
+			equal:  true,
+		},
+		{
+			name:   "file name that ends in a TLD",
+			posted: "see run.sh and main.py",
+			stored: "see <http://run.sh|run.sh> and <http://main.py|main.py>",
+			equal:  true,
+		},
+		{
+			name:   "query string escaped inside target and label",
+			posted: "huggingface.co/x?a=1&b=2",
+			stored: "<http://huggingface.co/x?a=1&amp;b=2|huggingface.co/x?a=1&amp;b=2>",
+			equal:  true,
+		},
+		{
+			name:   "sender-authored label compares on the label",
+			posted: "<https://example.com|the runbook>",
+			stored: "<https://example.com|the runbook>",
+			equal:  true,
+		},
+		{
+			name:   "a different label is a different message",
+			posted: "<https://example.com|the runbook>",
+			stored: "<https://example.com|something else>",
+		},
+		{
+			name:   "a different link is a different message",
+			posted: "model card: huggingface.co/org/model",
+			stored: "model card: <http://huggingface.co/org/other|huggingface.co/org/other>",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := slackNormalizeText(test.stored) == slackNormalizeText(test.posted)
+			if got != test.equal {
+				t.Fatalf("fold(stored)==fold(posted) = %t, want %t\nposted %q -> %q\nstored %q -> %q",
+					got, test.equal,
+					test.posted, slackNormalizeText(test.posted),
+					test.stored, slackNormalizeText(test.stored))
+			}
+		})
+	}
+}
+
 // TestReadBackPublishedMessageMatchesKeyedPublishByReferenceMarker covers the
 // other arm: a keyed publish carries the reference marker as its tail, whose
 // characters are outside Slack's escape set and are not link-shaped, so a tail
@@ -690,6 +769,44 @@ func TestHandlePublishDeliversTextSlackCanonicalizes(t *testing.T) {
 	}
 }
 
+// TestHandlePublishDeliversTextWithLabelledAutoLinks is the end-to-end form of
+// TestSlackNormalizeTextFoldsLabelledLinks (gp-dadc6): a status-report body with
+// mrkdwn, backticks and scheme-less domains was posted, stored by Slack, and
+// still reported Delivered:false/permanent (readback_unconfirmed) with a real
+// message_id, so the caller retried and posted it again. The fake stores the
+// domain the way Slack is documented to, as a labelled link.
+func TestHandlePublishDeliversTextWithLabelledAutoLinks(t *testing.T) {
+	fastReadbackTimings(t)
+	const text = "*Status*\n- model card: huggingface.co/org/model\n- script: `run.sh` and README.md\n- PR https://github.com/o/r/pull/313"
+	var captured slackPostMessageReq
+	server := httptest.NewServer(newFakeSlackPublishHandler(t, &captured, "1700.001", nil))
+	t.Cleanup(server.Close)
+	originalBase := slackAPIBase
+	slackAPIBase = server.URL
+	t.Cleanup(func() { slackAPIBase = originalBase })
+
+	body := mustJSON(t, map[string]any{
+		"session_id":   "gc-1",
+		"conversation": map[string]string{"conversation_id": "C123", "kind": "room"},
+		"text":         text,
+	})
+	recorder := httptest.NewRecorder()
+	handlePublish(config{slackBotToken: "xoxb-test"}, nil, nil, newPublishDedupCache(publishDedupTTL))(
+		recorder, httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body)))
+
+	var receipt publishReceipt
+	if err := json.Unmarshal(recorder.Body.Bytes(), &receipt); err != nil {
+		t.Fatalf("decode receipt %q: %v", recorder.Body.String(), err)
+	}
+	if !receipt.Delivered {
+		t.Fatalf("receipt = %+v, want delivered: Slack stored this message with its domains as labelled links",
+			receipt)
+	}
+	if stored := slackCanonicalizeForTest(captured.Text); !strings.Contains(stored, "<http://huggingface.co/org/model|huggingface.co/org/model>") {
+		t.Fatalf("fake Slack did not label-link the domain (%q); the test proves nothing about labelled auto-links", stored)
+	}
+}
+
 func newSlackReadbackServer(
 	t *testing.T,
 	wantPath string,
@@ -741,13 +858,19 @@ func mustJSON(t *testing.T, value any) string {
 	return string(encoded)
 }
 
-// testSlackBareURL matches the URL shape Slack auto-links. `|` is excluded
-// because it is Slack's own label separator inside a link span.
-var testSlackBareURL = regexp.MustCompile(`https?://[^\s<>|]+`)
+// testSlackAutoLinkable matches the text the fake Slack auto-links. `|` is
+// excluded because it is Slack's own label separator inside a link span. The
+// first arm is a URL written with its scheme, which Slack stores as `<url>`; the
+// second is a scheme-less domain or file name ending in a TLD, which Slack
+// completes with a scheme and stores as `<http://text|text>`, keeping what the
+// sender typed as the label. The TLD list is a sample, not Slack's.
+var testSlackAutoLinkable = regexp.MustCompile(
+	`https?://[^\s<>|]+|\b[A-Za-z0-9][A-Za-z0-9-]*\.(?:co|com|io|py|sh|md)\b(?:/[^\s<>|]*)?`)
 
 // slackCanonicalizeForTest models what Slack does to message text between
 // chat.postMessage and conversations.history: it entity-escapes `&`, `<` and
-// `>`, and auto-links bare URLs into `<url>` spans. Markup spans Slack itself
+// `>`, and auto-links URLs into `<url>` spans and scheme-less domains into
+// `<http://domain|domain>` spans. Markup spans Slack itself
 // produced (`<@U…>`, `<#C…>`, `<url|label>`) are passed through, which is why
 // the escape runs on the text between spans rather than over the whole string.
 //
@@ -782,7 +905,12 @@ func slackCanonicalizeForTest(text string) string {
 // this function as evidence about the platform.
 func canonicalizePlainTextForTest(text string) string {
 	escaped := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
-	return testSlackBareURL.ReplaceAllString(escaped, "<$0>")
+	return testSlackAutoLinkable.ReplaceAllStringFunc(escaped, func(linkable string) string {
+		if strings.HasPrefix(linkable, "http://") || strings.HasPrefix(linkable, "https://") {
+			return "<" + linkable + ">"
+		}
+		return "<http://" + linkable + "|" + linkable + ">"
+	})
 }
 
 // newFakeSlackPublishHandler is a fake Slack for tests whose subject is what
