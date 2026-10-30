@@ -508,8 +508,14 @@ the final phase, after room parity.
   root's thread in the company room (`reply_broadcast` is never set, so
   they do not appear in the channel timeline outside the thread). DMs
   never substitute for room delivery of delegations or results.
-- The switchboard uses HTTP Events API delivery (the existing public
-  endpoint); Socket Mode is not built for this scope.
+- The switchboard receives events over HTTP (the existing public
+  endpoint) or, when `SLACK_APP_TOKEN` is set and Socket Mode is enabled
+  on its Slack app, over Socket Mode. Both transports feed the same
+  admission path, so receipts, the startup barrier and origin dedup are
+  identical; a retryable 503 leaves the socket envelope unacked so Slack
+  redelivers it. Registered agent apps keep HTTP delivery: an app-level
+  token covers only the app that owns it. See the README's Socket Mode
+  section.
 
 ## Compatibility and Rollout
 
@@ -583,7 +589,8 @@ Automated tests must prove:
 - Delegation chains longer than one hop.
 - Dynamic discovery of agents or Slack identities.
 - Cross-workspace rooms, Slack Connect, and shared channels.
-- Socket Mode transport.
+- Socket Mode for registered agent apps (the switchboard has it; each
+  agent app would need its own app-level token and connection).
 - Slack token rotation automation (documented posture; disabled in pilot).
 - Direct integration with the durable-request-ledger `/v0` API (tracked;
   blocked on those drafts landing in gascity).

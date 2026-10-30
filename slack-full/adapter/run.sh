@@ -29,6 +29,10 @@
 #                           # adapter exits at startup if unset.
 #
 # Optional env keys:
+#   SLACK_APP_TOKEN         # xapp-... app-level token (connections:write).
+#                           # Enables Socket Mode inbound, so events no
+#                           # longer depend on the public listener; it
+#                           # stays up as the fallback.
 #   LISTEN_PUBLIC           # default :8765 (Funnel exposes this; /slack/events)
 #   LISTEN_INTERNAL         # default 127.0.0.1:8766 (localhost-only; /publish)
 #   INTERNAL_CALLBACK_URL   # default http://127.0.0.1:8766

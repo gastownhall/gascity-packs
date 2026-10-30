@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Socket Mode inbound.** With `SLACK_APP_TOKEN` (an `xapp-` app-level
+  token with `connections:write`) set, the adapter opens a Socket Mode
+  WebSocket and takes events over it, so inbound no longer depends on the
+  public listener being reachable from the internet. The transport is a
+  port of slack-channel's (`adapter/socketmode.go`): paced reconnect,
+  keepalive pings, drain on disconnect warning. Envelope payloads go
+  through the same handler `/slack/events` uses after its signature check,
+  so company-room admission and legacy dispatch behave the same on both
+  transports. An envelope is acked once that handler accepts it; a
+  retryable 503 from the company gateway leaves it unacked so Slack
+  redelivers. The public listener stays up as the fallback and for
+  registered agent apps, OAuth and interactivity. Interactive and slash
+  command envelopes are acked and logged as dropped. A value without the
+  `xapp-` prefix fails startup. `/healthz` gains a Socket Mode block
+  (`socket_mode=on`, connections, envelope and duplicate counters) when
+  it is enabled; HTTP-only output is unchanged.
+
+- **Inbound events are deduplicated by (`api_app_id`, `event_id`)** across
+  both transports, before dispatch. A redelivery after a lost ack, an
+  HTTP retry, or the same event over HTTP and Socket Mode while Socket
+  Mode is being switched is dispatched once and acked. A delivery the
+  handler answers with a 5xx releases its claim, so Slack's redelivery is
+  still processed. The memory is in-process with a one-hour TTL;
+  company-room receipts remain the durable dedup.
+
 ### Fixed
 
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
