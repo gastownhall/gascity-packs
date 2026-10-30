@@ -91,13 +91,20 @@ load_verdict() {
                         | select(.metadata["gc.step_ref"] == $ref and .metadata["gc.root_bead_id"] == $root)
                         | {
                             verdict: .metadata["design_review.verdict"],
-                            timestamp: (.updated_at // .created_at // ""),
-                            id: (.id // "")
+                            timestamp: (.updated_at // "")
                         }
                         | select(.verdict != null and .verdict != "")
                     ]
-                    | sort_by(.timestamp, .id)
-                    | .[-1].verdict // ""
+                    # Creation time cannot rank verdict revisions. If any
+                    # candidate lacks updated_at, retain the entire dispute.
+                    | if length > 0 and all(.[]; .timestamp != "")
+                      then (map(.timestamp) | max) as $latest
+                        | map(select(.timestamp == $latest))
+                      else . end
+                    | map(.verdict | ascii_downcase) | unique
+                    | . as $values
+                    | map(select(. != "done" and . != "approved" and . != "approve" and . != "pass"))
+                    | .[0] // $values[0] // ""
                 ' 2>/dev/null
         ) || current=""
         if [ -n "$current" ] && [ "$current" = "$previous" ]; then
@@ -139,7 +146,7 @@ if ! VERDICT=$(load_verdict "$APPLY_REF" "$ROOT_ID"); then
 fi
 
 case "$VERDICT" in
-    done|approved|pass)
+    done|approved|approve|pass)
         echo "Design review approved — stopping iteration"
         exit 0
         ;;
