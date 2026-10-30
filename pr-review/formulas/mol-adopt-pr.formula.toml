@@ -23,6 +23,14 @@ polecat still pushes the rebased contributor commits there (no new artifact
 under maintainer identity), posts the synthesis comment on the contributor's
 existing PR itself, and only hands off `gh pr merge` to mayor.
 
+## Public GitHub Posts
+
+Every comment or review body this workflow posts on GitHub (`gh pr comment`,
+`gh pr review --body`, `gh api .../comments`) starts with the universal
+factory marker line `<!-- gc-agent:v1 -->`, followed by a blank line and the
+rendered body. Write bodies to a file and post with `--body-file` so the
+marker stays on its own first line; never strip it when editing a body.
+
 ## Contract
 
 1. Caller slings with `--var pr=<url-or-number>` (and optionally `--var skip_gemini=true`)
@@ -490,6 +498,8 @@ Update notes: `merge_path: A|B|C|D`
 Read `<review_run_dir>/outputs/synthesis.md`. Build comment using Path A template:
 
 ```markdown
+<!-- gc-agent:v1 -->
+
 ## Adoption Review
 
 Thanks for the contribution, @<author>! <specific acknowledgment>.

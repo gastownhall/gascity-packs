@@ -85,6 +85,7 @@ STARTED=$(gc bd show {{issue}} --json | jq -r '.metadata.github_fix_started_comm
 if [ -z "$STARTED" ]; then
   BODY=$(mktemp)
   cat >"$BODY" <<EOF
+<!-- gc-agent:v1 -->
 Started work on this issue in Gas City.
 
 - Bead: `{{issue}}`
@@ -299,6 +300,7 @@ if [ -z "$PR_URL" ]; then
   fi
   BODY=$(mktemp)
   cat >"$BODY" <<EOF
+<!-- gc-agent:v1 -->
 ## Summary
 - describe the actual code changes you made for this issue
 
@@ -340,6 +342,7 @@ PR_URL=$(gc bd show {{issue}} --json | jq -r '.metadata.github_fix_pr_url // emp
 if [ -z "$DONE" ] && [ -n "$PR_URL" ]; then
   BODY=$(mktemp)
   cat >"$BODY" <<EOF
+<!-- gc-agent:v1 -->
 The fix is out for review.
 
 - Bead: `{{issue}}`

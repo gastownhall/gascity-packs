@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
 
+from gc_agent_marker import with_agent_marker
+
 
 class GitHubAPIError(Exception):
     pass
@@ -144,7 +146,7 @@ def actor() -> dict[str, Any]:
 
 def comment_create(url: str, body_path: Path) -> dict[str, Any]:
     ref = parse_github_url(url)
-    body = body_path.read_text(encoding="utf-8")
+    body = with_agent_marker(body_path.read_text(encoding="utf-8"))
     data = require_object(gh_api(["-X", "POST", f"repos/{ref.repo_slug}/issues/{ref.number}/comments", "-f", f"body={body}"]))
     return normalize_comment(data)
 
@@ -153,7 +155,7 @@ def comment_update(repo_slug: str, comment_id: int, body_path: Path) -> dict[str
     validate_repo_slug(repo_slug)
     if comment_id <= 0:
         raise GitHubAPIError("comment id must be a positive integer")
-    body = body_path.read_text(encoding="utf-8")
+    body = with_agent_marker(body_path.read_text(encoding="utf-8"))
     data = require_object(gh_api(["-X", "PATCH", f"repos/{repo_slug}/issues/comments/{comment_id}", "-f", f"body={body}"]))
     return normalize_comment(data)
 
