@@ -5232,7 +5232,9 @@ description = "Override sink that writes the base triage report contract."
                 {"loop": control, "root": root_bead}, "loop"
             )
 
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        # Exactly 1: invalid content is a verdict that costs an attempt. 75 or
+        # 78 here would be the misclassification those statuses exist to avoid.
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("failed validation", result.stderr)
         self.assertIn("error:", result.stderr)
         self.assertIn("status", result.stderr)
@@ -6741,7 +6743,9 @@ description = "Override sink that writes the base triage report contract."
             }
             result = subprocess.run([str(script)], capture_output=True, env=env, text=True)
 
-        self.assertNotEqual(result.returncode, 0)
+        # A gc/bd read that could not answer is an infrastructure outcome (75),
+        # not a verdict about the artifact.
+        self.assertEqual(result.returncode, 75, result.stderr)
         self.assertIn("build-artifact-check: gc bd show root-err failed", result.stderr)
         self.assertIn("ROOT_RESHOW_FAILURE", result.stderr)
         # The first show succeeded; only the root re-show is being reported.

@@ -25,8 +25,45 @@ class ValidationError(Exception):
     pass
 
 
+class DependencyError(Exception):
+    """A module this validator needs is not importable by the running interpreter.
+
+    Deliberately not a ValidationError: the artifact was never examined, so the
+    CLI must report it as an environment problem (exit EX_CONFIG) rather than a
+    content verdict (exit 1).
+    """
+
+
+# EX_CONFIG from sysexits.h: the check cannot run on this machine as it is
+# configured. The orchestrator holds the step open on this status instead of
+# grading it, so a missing dependency never costs a producer attempt.
+EX_CONFIG = 78
+
 YAML_ERROR_TYPES = (yaml.YAMLError,) if yaml is not None else ()
 CLI_ERROR_TYPES = (OSError, UnicodeDecodeError, ValidationError) + YAML_ERROR_TYPES
+
+
+def require_yaml(purpose: str) -> None:
+    """Raise DependencyError when PyYAML is not importable, naming the interpreter
+    that was used and the environment that selected it, so the operator who reads
+    the hold reason can tell which Python to fix."""
+    if yaml is not None:
+        return
+    import site  # local: only needed on the failure path
+
+    # Line 1 is what an operator sees in a hold reason, and the orchestrator
+    # keeps about 256 bytes of it: facts first, nothing else. Line 2 carries
+    # the derived path and the remedy.
+    user_site = site.getusersitepackages()
+    if site.ENABLE_USER_SITE is False:
+        user_site += " (user site disabled)"
+    raise DependencyError(
+        f"PyYAML not importable by {sys.executable} (Python {sys.version.split()[0]}) "
+        f"for {purpose}; HOME={os.environ.get('HOME', '')!r} "
+        f"PYTHONUSERBASE={os.environ.get('PYTHONUSERBASE', '')!r}\n"
+        f"user site searched: {user_site}. Install PyYAML for this interpreter; "
+        "this is an environment problem, not a content problem"
+    )
 
 
 @dataclass(frozen=True)
@@ -62,8 +99,7 @@ def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArti
 
 
 def parse_front_matter(text: str) -> tuple[str, dict[str, Any], str]:
-    if yaml is None:
-        raise ValidationError("PyYAML is required to parse build artifacts")
+    require_yaml("build artifacts")
     match = FRONT_MATTER_RE.match(text)
     if not match:
         raise ValidationError("build artifact must start with YAML front matter")
@@ -92,8 +128,7 @@ def schema_roots() -> list[Path]:
 
 
 def load_schema(schema_id: str) -> dict[str, Any]:
-    if yaml is None:
-        raise ValidationError("PyYAML is required to parse build schemas")
+    require_yaml("build schemas")
     for root in schema_roots():
         for path in sorted(root.glob("*.yaml")):
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -312,6 +347,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     try:
         artifact = validate_artifact_text(args.path.read_text(encoding="utf-8"), expected_schema=args.schema)
+    except DependencyError as exc:
+        print(f"environment error: {exc}", file=sys.stderr)
+        return EX_CONFIG
     except CLI_ERROR_TYPES as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
