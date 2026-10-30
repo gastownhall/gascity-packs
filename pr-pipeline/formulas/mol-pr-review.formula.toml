@@ -238,6 +238,11 @@ below. Each finding has a severity: blocker, major, minor, or nit.
 
 **Decision policy** (apply mechanically):
 
+> Note: this is **outgoing self-review** of our OWN branch — `request_changes`
+> here means "iterate our own branch before submitting", not bouncing a
+> contributor's PR. The incoming take-the-good / last-resort-RC policy applies
+> to `mol-adopt-pr`, not here; the verdict ladder below is unchanged.
+
 - Unresolved **blocker** in categories 1-4 → verdict `block`
 - Unresolved **blocker** in categories 5-8 → verdict `request_changes`
 - **Major** issues in 1-8 without mitigation → verdict `request_changes`

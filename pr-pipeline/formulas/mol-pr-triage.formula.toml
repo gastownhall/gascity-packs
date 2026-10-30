@@ -384,7 +384,9 @@ If no Tier 1 OR Tier 2 candidates exist, recommend a Tier 3 to investigate
 or note that the queue is empty and triage should wait for new issues.
 ```
 
-After writing the file:
+After writing the file, record final state, surface the summary on stdout
+(the maintenance PL relays it back to Slack), and close the molecule. All
+values are still in scope from the classification above — no re-read needed:
 
 ```bash
 TIER1=$(jq '[.[] | select(.tier==1)] | length' /tmp/triage-classified.json)
@@ -399,29 +401,7 @@ tier2: $TIER2
 tier3: $TIER3
 tier4: $TIER4
 recommended: $RECOMMENDED
-status: report_written"
-```
-
-**Exit criteria:** Markdown report written; bead notes record path + tier counts + recommended pick.
-"""
-
-[[steps]]
-id = "finalize"
-title = "Surface report path and exit"
-needs = ["report"]
-description = """
-Display the report path and recommended pick on stdout for the maintenance
-PL to relay back to Slack:
-
-```bash
-ROOT_ID=$(gc bd mol current --json | jq -r '.molecule_id')
-NOTES=$(gc bd show "$ROOT_ID" --json | jq -r '.notes // ""')
-TRIAGE_PATH=$(echo "$NOTES" | grep -m1 '^triage_path:' | sed 's/^triage_path: //')
-TIER1=$(echo "$NOTES" | grep -m1 '^tier1:' | sed 's/^tier1: //')
-TIER2=$(echo "$NOTES" | grep -m1 '^tier2:' | sed 's/^tier2: //')
-TIER3=$(echo "$NOTES" | grep -m1 '^tier3:' | sed 's/^tier3: //')
-TIER4=$(echo "$NOTES" | grep -m1 '^tier4:' | sed 's/^tier4: //')
-RECOMMENDED=$(echo "$NOTES" | grep -m1 '^recommended:' | sed 's/^recommended: //')
+status: complete"
 
 cat <<EOF
 [pr-triage] Triage report ready
@@ -431,9 +411,10 @@ cat <<EOF
 [pr-triage] Next: human reviews report, picks an issue, dispatches mol-pr-start.
 EOF
 
-gc bd update "$ROOT_ID" --notes "status: complete"
 gc bd close "$ROOT_ID" --reason "triage report written: $TRIAGE_PATH"
 ```
 
-**Exit criteria:** Report path printed, root bead closed with status:complete.
+**Exit criteria:** Markdown report written; bead notes record path + tier
+counts + recommended pick; summary printed to stdout; root bead closed with
+status:complete.
 """
