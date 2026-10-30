@@ -45,7 +45,9 @@ For every formula change:
 
 ## Global Invariants
 
-- Every formula uses `contract = "graph.v2"`.
+- Every formula declares `[requires] formula_compiler = ">=2.0.0"`. The
+  `contract = "graph.v2"` spelling is deprecated and warned on by `gc doctor`;
+  the two are equivalent at the compiler.
 - No formula declares reserved runtime vars `issue`, `bead_id`, or `convoy_id`.
 - Cataloged formulas are user-runnable; internal/base/helper formulas are not
   cataloged unless deliberately promoted.

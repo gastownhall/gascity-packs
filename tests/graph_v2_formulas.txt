@@ -1,0 +1,99 @@
+# Formulas that declare a formula_compiler constraint selecting the v2 graph
+# compiler, one repo-relative path per line. Read by
+# tests/test_formula_contract_declaration.py.
+#
+# This is a set, not a count. A count cannot tell "one declaration removed,
+# one formula added" from "nothing changed", and a formula stripped of its
+# declaration does not fail to compile -- it silently takes the v1 path.
+#
+# ADDING a formula that declares the constraint: add its line.
+# REMOVING a line: only when the formula itself is deleted or genuinely stops
+# needing the v2 compiler. Regenerating this file to make the test pass is the
+# regression the test exists to catch.
+bmad/formulas/bmad-build.formula.toml
+bmad/formulas/bmad-code-review-flow.formula.toml
+bmad/formulas/bmad-decomposition.formula.toml
+bmad/formulas/bmad-fix-loop.formula.toml
+bmad/formulas/bmad-implementation.formula.toml
+bmad/formulas/bmad-planning.formula.toml
+bmad/formulas/bmad-review.formula.toml
+bmad/formulas/bmad-story-development-item.formula.toml
+bmad/formulas/bmad-story-development.formula.toml
+compound-engineering/formulas/compound-build.formula.toml
+compound-engineering/formulas/compound-code-review.formula.toml
+compound-engineering/formulas/compound-decomposition.formula.toml
+compound-engineering/formulas/compound-fix-loop.formula.toml
+compound-engineering/formulas/compound-implementation.formula.toml
+compound-engineering/formulas/compound-plan-review.formula.toml
+compound-engineering/formulas/compound-planning.formula.toml
+compound-engineering/formulas/compound-resolution.formula.toml
+compound-engineering/formulas/compound-review.formula.toml
+compound-engineering/formulas/compound-work-item.formula.toml
+compound-engineering/formulas/compound-work.formula.toml
+gascity/formulas/build-base.formula.toml
+gascity/formulas/build-basic-review.formula.toml
+gascity/formulas/build-basic.formula.toml
+gascity/formulas/build-from-convoy-base.formula.toml
+gascity/formulas/build-from-convoy.formula.toml
+gascity/formulas/build-from-decompose-base.formula.toml
+gascity/formulas/build-from-decompose.formula.toml
+gascity/formulas/build-from-plan-base.formula.toml
+gascity/formulas/build-from-plan.formula.toml
+gascity/formulas/build-from-requirements-base.formula.toml
+gascity/formulas/build-from-requirements.formula.toml
+gascity/formulas/build-from-review-base.formula.toml
+gascity/formulas/build-from-review.formula.toml
+gascity/formulas/code-review-base.formula.toml
+gascity/formulas/decomposition-base.formula.toml
+gascity/formulas/design-review.formula.toml
+gascity/formulas/do-work-item.formula.toml
+gascity/formulas/do-work.formula.toml
+gascity/formulas/fix-convoy.formula.toml
+gascity/formulas/fix-loop-base.formula.toml
+gascity/formulas/gap-analysis.formula.toml
+gascity/formulas/github-issue-fix-base.formula.toml
+gascity/formulas/github-issue-fix-design-review-work.formula.toml
+gascity/formulas/github-issue-fix.formula.toml
+gascity/formulas/github-issue-triage-base.formula.toml
+gascity/formulas/github-issue-triage.formula.toml
+gascity/formulas/github-pr-review.formula.toml
+gascity/formulas/implement.formula.toml
+gascity/formulas/implementation-base.formula.toml
+gascity/formulas/implementation-item-base.formula.toml
+gascity/formulas/planning-base.formula.toml
+gascity/formulas/publish.formula.toml
+gascity/formulas/review.formula.toml
+gascity/formulas/same-session-implement.formula.toml
+gastown/formulas/mol-idea-to-plan.toml
+gastown/formulas/mol-polecat-work.toml
+gastown/formulas/mol-refinery-patrol.toml
+gastown/formulas/mol-review-leg.toml
+gstack/formulas/gstack-build.formula.toml
+gstack/formulas/gstack-code-review.formula.toml
+gstack/formulas/gstack-decomposition.formula.toml
+gstack/formulas/gstack-fix-loop.formula.toml
+gstack/formulas/gstack-implementation.formula.toml
+gstack/formulas/gstack-plan-review.formula.toml
+gstack/formulas/gstack-planning.formula.toml
+gstack/formulas/gstack-qa-review.formula.toml
+gstack/formulas/gstack-release-readiness.formula.toml
+gstack/formulas/gstack-review.formula.toml
+gstack/formulas/gstack-work-item.formula.toml
+gstack/formulas/gstack-work.formula.toml
+pr-pipeline/formulas/mol-pr-from-issue.formula.toml
+pr-review/formulas/mol-adopt-pr.formula.toml
+pr-review/formulas/mol-pr-iterate.formula.toml
+profiler/formulas/bench-nullop.formula.toml
+profiler/formulas/profile-analyze.formula.toml
+superpowers/formulas/superpowers-brainstorming.formula.toml
+superpowers/formulas/superpowers-build.formula.toml
+superpowers/formulas/superpowers-code-review.formula.toml
+superpowers/formulas/superpowers-decomposition.formula.toml
+superpowers/formulas/superpowers-development-item.formula.toml
+superpowers/formulas/superpowers-development.formula.toml
+superpowers/formulas/superpowers-fix-loop.formula.toml
+superpowers/formulas/superpowers-implementation.formula.toml
+superpowers/formulas/superpowers-plan-review.formula.toml
+superpowers/formulas/superpowers-planning.formula.toml
+superpowers/formulas/superpowers-review.formula.toml
+superpowers/formulas/superpowers-task-review.formula.toml
