@@ -61,7 +61,7 @@ default = "interactive"
 id = "requirements"
 title = "gstack office-hours requirements"
 needs = ["prepare"]
-metadata = { "gc.run_target" = "gstack.office-hours", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+metadata = { "gc.run_target" = "gstack.office-hours", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-build/requirements.md"
 
 [steps.check]
@@ -76,7 +76,7 @@ timeout = "5m"
 id = "plan"
 title = "gstack autoplan draft"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "gstack.founder-reviewer", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+metadata = { "gc.run_target" = "gstack.founder-reviewer", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-build/plan.md"
 
 [steps.check]
@@ -91,16 +91,16 @@ timeout = "5m"
 id = "plan-review"
 title = "gstack plan review fanout"
 needs = ["plan"]
-metadata = { "gc.run_target" = "gstack.review-synthesizer" }
+metadata = { "gc.run_target" = "gstack.review-synthesizer", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "gstack-plan-review"
-expand_vars = { implementation_target = "{{implementation_target}}", interaction_mode = "{{interaction_mode}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", interaction_mode = "{{interaction_mode}}", failure_scope = "build-body" }
 description_file = "../assets/workflows/gstack-build/plan-review.md"
 
 [[steps]]
 id = "decompose"
 title = "Create gstack implementation convoy"
 needs = ["plan-review"]
-metadata = { "gc.run_target" = "gstack.decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+metadata = { "gc.run_target" = "gstack.decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-build/decompose.md"
 
 [steps.check]
@@ -116,7 +116,7 @@ id = "implement"
 title = "Drain gstack work"
 needs = ["decompose"]
 condition = "{{drain_policy}} == separate"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-build/implement.md"
 
 [steps.drain]
@@ -129,7 +129,7 @@ id = "implement-same-session"
 title = "Drain gstack work in one shared session"
 needs = ["decompose"]
 condition = "{{drain_policy}} == same-session"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-build/implement-same-session.md"
 
 [steps.drain]
@@ -145,16 +145,16 @@ single_lane = true
 id = "review"
 title = "gstack review fanout"
 needs = ["summarize-implementation"]
-metadata = { "gc.run_target" = "gstack.review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "gstack.review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "gstack-code-review"
-expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path", failure_scope = "build-body" }
 description_file = "../assets/workflows/gstack-build/review.md"
 
 [[steps]]
 id = "finalize"
 title = "Finalize gstack sprint"
 needs = ["release-readiness"]
-metadata = { "gc.run_target" = "gstack.release-engineer", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+metadata = { "gc.run_target" = "gstack.release-engineer", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-build/finalize.md"
 
 [steps.check]
@@ -169,23 +169,30 @@ timeout = "5m"
 id = "publish"
 title = "Optionally publish gstack sprint"
 needs = ["finalize"]
-metadata = { "gc.run_target" = "gc.publisher" }
+metadata = { "gc.run_target" = "gc.publisher", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-build/publish.md"
 
 [[steps]]
 id = "qa"
 title = "gstack QA fanout"
 needs = ["review"]
-metadata = { "gc.run_target" = "gstack.qa-lead" }
+metadata = { "gc.run_target" = "gstack.qa-lead", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "gstack-qa-review"
-expand_vars = { implementation_target = "{{implementation_target}}", interaction_mode = "{{interaction_mode}}" }
+expand_vars = { implementation_target = "{{implementation_target}}", interaction_mode = "{{interaction_mode}}", failure_scope = "build-body" }
 description_file = "../assets/workflows/gstack-build/qa.md"
 
 [[steps]]
 id = "release-readiness"
 title = "gstack release readiness fanout"
 needs = ["qa"]
-metadata = { "gc.run_target" = "gstack.release-engineer" }
+metadata = { "gc.run_target" = "gstack.release-engineer", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "gstack-release-readiness"
-expand_vars = { review_mode = "{{review_mode}}" }
+expand_vars = { review_mode = "{{review_mode}}", failure_scope = "build-body" }
 description_file = "../assets/workflows/gstack-build/release-readiness.md"
+
+[[steps]]
+id = "build-body"
+title = "Build pipeline scope"
+needs = ["prepare", "requirements", "plan", "plan-review", "decompose", "implement", "implement-same-session", "summarize-implementation", "review", "finalize", "publish", "qa", "release-readiness"]
+description_file = "../assets/workflows/gstack-build/build-body.md"
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "build", "gc.scope_role" = "body" }
