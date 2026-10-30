@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,7 +40,14 @@ class BuildArtifact:
     coverage: list[dict[str, Any]]
 
 
-def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArtifact:
+def validate_artifact_text(
+    text: str,
+    *,
+    expected_schema: str = "",
+    verify_absolute_upstreams: bool = False,
+    artifact_path: Path | None = None,
+    upstream_roots: Iterable[Path] = (),
+) -> BuildArtifact:
     schema_id, front_matter, body = parse_front_matter(text)
     if expected_schema and schema_id != expected_schema:
         raise ValidationError(f"schema must be {expected_schema!r}, got {schema_id!r}")
@@ -48,6 +57,8 @@ def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArti
     validate_status(front_matter, schema)
     trace = validate_trace(front_matter)
     upstream = validate_upstream(trace)
+    if verify_absolute_upstreams:
+        validate_sha256_upstreams(upstream, artifact_path=artifact_path, upstream_roots=upstream_roots)
     coverage = validate_coverage(trace, schema)
     validate_coverage_completeness(upstream, coverage)
     validate_markdown_coverage(body, coverage)
@@ -166,12 +177,62 @@ def validate_upstream(trace: dict[str, Any]) -> list[dict[str, Any]]:
         validate_upstream_path(path, index)
         if ":" not in hash_value:
             raise ValidationError(f"trace.upstream[{index}].hash must include a hash or revision scheme")
+        scheme, _, digest = hash_value.partition(":")
+        if scheme.lower() == "sha256" and not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+            raise ValidationError(f"trace.upstream[{index}].hash with sha256 scheme must contain exactly 64 hexadecimal digits")
         ids = raw.get("ids")
         if ids is not None:
             if not isinstance(ids, list) or not all(isinstance(item, str) and item.strip() for item in ids):
                 raise ValidationError(f"trace.upstream[{index}].ids must be a list of non-empty strings")
         upstream.append(raw)
     return upstream
+
+
+def validate_sha256_upstreams(
+    upstream: list[dict[str, Any]],
+    *,
+    artifact_path: Path | None,
+    upstream_roots: Iterable[Path],
+) -> None:
+    roots = [] if artifact_path is None else [Path(artifact_path).absolute().parent]
+    roots.extend(Path(root) for root in upstream_roots)
+    roots = list(dict.fromkeys(root.resolve() for root in roots))
+    for index, entry in enumerate(upstream):
+        prefix = f"trace.upstream[{index}]"
+        hash_value = required_string(entry, "hash", prefix=prefix)
+        scheme, _, expected = hash_value.partition(":")
+        if scheme.lower() != "sha256":
+            continue
+        path = Path(required_string(entry, "path", prefix=prefix))
+        if not path.is_absolute():
+            matches = set()
+            for root in roots:
+                candidate = (root / path).resolve()
+                if not candidate.is_relative_to(root):
+                    raise ValidationError(f"{prefix}.path escapes upstream root {root}: {path}")
+                if candidate.is_file():
+                    matches.add(candidate)
+            if len(matches) != 1:
+                reason = "is ambiguous" if matches else "does not resolve to a file"
+                raise ValidationError(
+                    f"{prefix}.path {reason}: {path}; roots: {[str(root) for root in roots]}. "
+                    "Use an absolute file path or --upstream-root for the intended input."
+                )
+            path = matches.pop()
+        try:
+            if not path.is_file():
+                raise ValidationError(f"{prefix}.path is not a file: {path}")
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except OSError as exc:
+            raise ValidationError(f"{prefix}.path cannot be read: {path}: {exc}") from exc
+        actual = digest.hexdigest()
+        if actual != expected.lower():
+            raise ValidationError(
+                f"{prefix}.hash does not match file {path}: recorded {hash_value}, actual sha256:{actual}"
+            )
 
 
 def validate_coverage_completeness(upstream: list[dict[str, Any]], coverage: list[dict[str, Any]]) -> None:
@@ -305,13 +366,31 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate a gc build artifact")
     parser.add_argument("--schema", required=True, help="Expected schema id")
     parser.add_argument("--path", required=True, type=Path, help="Artifact markdown path")
+    parser.add_argument(
+        "--verify-absolute-upstreams",
+        action="store_true",
+        help="Verify sha256 file bytes, resolving relative paths beside the artifact or under --upstream-root",
+    )
+    parser.add_argument(
+        "--upstream-root",
+        action="append",
+        default=[],
+        type=Path,
+        help="Additional root for relative sha256 file paths (repeatable; ambiguous paths fail)",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     try:
-        artifact = validate_artifact_text(args.path.read_text(encoding="utf-8"), expected_schema=args.schema)
+        artifact = validate_artifact_text(
+            args.path.read_text(encoding="utf-8"),
+            expected_schema=args.schema,
+            verify_absolute_upstreams=args.verify_absolute_upstreams,
+            artifact_path=args.path,
+            upstream_roots=args.upstream_root,
+        )
     except CLI_ERROR_TYPES as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
