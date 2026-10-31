@@ -20,3 +20,11 @@ def test_local_delivery_graph_is_bounded_and_reviewed_independently():
     for step in steps.values():
         assert step["metadata"]["gc.scope_ref"] == "delivery-body" if step["id"] != "delivery-body" else True
     assert steps["delivery-body"]["metadata"]["gc.scope_role"] == "body"
+
+
+def test_embedded_script_modes_match_git_release_content():
+    # Core restores these suffixes as executable from the Go module embed.
+    # Native Git and the installed binary must therefore hash identical modes.
+    for path in ROOT.rglob("*"):
+        if path.is_file() and path.suffix in {".py", ".sh", ".bash"} and "__pycache__" not in path.parts:
+            assert path.stat().st_mode & 0o111, f"embedded/native mode mismatch: {path.relative_to(ROOT)}"
