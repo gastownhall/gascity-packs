@@ -79,3 +79,28 @@ def test_start_routes_existing_task_without_manual_rig_defaults(tutorial, tmp_pa
     monkeypatch.setattr("sys.argv", ["tutorial", "start"])
     tutorial.main()
     assert len([call for call in calls if call[:3] == ("--rig", "practice", "sling")]) == 1
+
+
+def test_registration_changes_are_baselined_before_source_work(tutorial, tmp_path):
+    repo = tmp_path / "practice"
+    tutorial.scaffold(repo)
+    with (repo / ".gitignore").open("a") as stream:
+        stream.write("\n# Gas City\n.beads/*\n!.beads/identity.toml\n")
+    git = lambda *args: subprocess.check_output(["git", "-C", str(repo), *args], text=True).strip()
+    git("add", ".gitignore")
+    skills = repo / ".claude/skills/test-skill"
+    skills.mkdir(parents=True)
+    (skills / "SKILL.md").write_text("generated runtime skill")
+    tutorial.finish_registration(repo)
+    assert git("status", "--porcelain") == ""
+    assert (repo / "hello.py").read_text().startswith("def greet")
+
+
+def test_registration_never_commits_unfinished_source(tutorial, tmp_path):
+    repo = tmp_path / "practice"
+    tutorial.scaffold(repo)
+    (repo / "hello.py").write_text("# unfinished work\n")
+    before = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True)
+    with pytest.raises(ValueError, match="source changes"):
+        tutorial.finish_registration(repo)
+    assert subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True) == before

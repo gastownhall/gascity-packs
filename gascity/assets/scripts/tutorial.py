@@ -65,6 +65,36 @@ def scaffold(destination):
             shutil.rmtree(staging)
 
 
+
+def finish_registration(repo):
+    """Commit only owned tutorial infrastructure before pinning task input."""
+    repo = Path(repo)
+    if git(repo, "config", "--local", "gascity.tutorial") != MARKER:
+        raise ValueError("registration requires the owned tutorial repository")
+    changed = set(git(repo, "diff", "HEAD", "--name-only").splitlines())
+    if changed - {".gitignore"}:
+        raise ValueError("source changes exist; preserve unfinished work before registration")
+    sinks = (".claude/skills/", ".codex/skills/", ".gemini/skills/", ".agents/skills/", ".opencode/skills/")
+    untracked = git(repo, "ls-files", "--others", "--exclude-standard").splitlines()
+    if any(path != ".beads/identity.toml" and not path.startswith(sinks) for path in untracked):
+        raise ValueError("untracked source changes exist; preserve them before registration")
+    path = repo / ".gitignore"
+    text = path.read_text()
+    # bd init legitimately removes the broad .beads/ exclusion and writes
+    # narrower runtime exclusions; no task source has run at this boundary.
+    for sink in sinks:
+        if sink not in text.splitlines():
+            text += "\n" + sink + "\n"
+    path.write_text(text)
+    git(repo, "add", "--", ".gitignore")
+    identity = repo / ".beads/identity.toml"
+    if identity.is_file():
+        git(repo, "add", "--", ".beads/identity.toml")
+    if git(repo, "diff", "--cached", "--name-only"):
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-m", "tutorial: record local orchestration infrastructure")
+    if git(repo, "status", "--porcelain", "--untracked-files=all"):
+        raise ValueError("registration left source changes; refusing to submit work")
+
 def main():
     import argparse
     import json
@@ -96,6 +126,8 @@ def main():
     if len(rows) > 1:
         raise ValueError("multiple first-task records found; inspect before proceeding")
     if not rows:
+        if args.action == "start":
+            finish_registration(destination)
         if args.action == "status":
             print("The practice repository exists; run gc gc tutorial start to submit its task.")
             return
