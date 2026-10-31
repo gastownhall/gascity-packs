@@ -106,7 +106,8 @@ def main():
     else:
         source = rows[0]
     source_id = source["id"]
-    print(f"Source task: {source_id}; status: {source[status]}", flush=True)
+    status = source["status"]
+    print(f"Source task: {source_id}; status: {status}", flush=True)
     if source["status"] == "closed":
         sha = source.get("metadata", {}).get("gc.delivery.integrated_sha")
         if not sha:
@@ -126,7 +127,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, subprocess.SubprocessError) as exc:
+    except (ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         import sys
         print(f"tutorial: {exc}", file=sys.stderr)
         sys.exit(1)

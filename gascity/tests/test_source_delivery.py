@@ -90,3 +90,12 @@ def test_refuses_unrelated_repository(delivery, tmp_path):
     subprocess.run(["git", "clone", "--no-local", str(repo), str(other)], check=True, capture_output=True)
     with pytest.raises(ValueError, match="different repository"):
         mod.integrate(repo, other, base, output, output, output)
+
+
+def test_store_outage_does_not_spend_content_repair_budget(delivery, monkeypatch):
+    mod, repo, tree, base, output = delivery
+    def unavailable(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, ["gc", "bd", "show"])
+    monkeypatch.setattr(subprocess, "check_output", unavailable)
+    with pytest.raises(mod.InfrastructureError):
+        mod.gc("bd", "show", "task-1", "--json", json_output=True)

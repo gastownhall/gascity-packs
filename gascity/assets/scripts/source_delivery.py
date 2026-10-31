@@ -60,12 +60,22 @@ def integrate(repo, worktree, base, output, reviewed, tested):
     return output
 
 
+class InfrastructureError(RuntimeError):
+    """A store/runtime observation failed before a content verdict existed."""
+
+
 def gc(*args, json_output=False):
     import json
-    result = subprocess.check_output([os.environ.get("GC_BIN", "gc"), *args], text=True)
+    try:
+        result = subprocess.check_output([os.environ.get("GC_BIN", "gc"), *args], text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise InfrastructureError(f"Gas City operation unavailable: {exc}") from exc
     if not json_output:
         return result
-    value = json.loads(result)
+    try:
+        value = json.loads(result)
+    except json.JSONDecodeError as exc:
+        raise InfrastructureError("Gas City returned an unreadable observation") from exc
     return value[0] if isinstance(value, list) and len(value) == 1 else value
 
 
@@ -230,6 +240,10 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except InfrastructureError as exc:
+        import sys
+        print(f"source delivery infrastructure: {exc}", file=sys.stderr)
+        sys.exit(75)
     except (ValueError, subprocess.SubprocessError) as exc:
         import sys
         print(f"source delivery: {exc}", file=sys.stderr)

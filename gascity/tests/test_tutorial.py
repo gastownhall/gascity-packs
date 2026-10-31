@@ -39,3 +39,20 @@ def test_refuses_unowned_existing_path(tutorial, tmp_path):
     with pytest.raises(ValueError, match="existing"):
         tutorial.scaffold(repo)
     assert (repo / "keep.txt").read_text() == "mine"
+
+
+def test_status_reads_existing_task_without_restarting_it(tutorial, tmp_path, monkeypatch, capsys):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    destination = tmp_path / "projects/practice"
+    def observations(*args, **kwargs):
+        if args[:2] == ("rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:4] == ("--rig", "practice", "bd", "list"):
+            return [{"id": "practice-1", "status": "open"}]
+        raise AssertionError(f"status must not mutate or launch work: {args}")
+    monkeypatch.setattr(source_delivery, "gc", observations)
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "status"])
+    tutorial.main()
+    assert "Source task: practice-1; status: open" in capsys.readouterr().out
