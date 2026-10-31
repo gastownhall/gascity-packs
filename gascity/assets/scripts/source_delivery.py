@@ -42,8 +42,14 @@ def task_input(repo, default_branch):
     base = git(repo, "rev-parse", remote_ref)
     try:
         git(repo, "merge-base", "--is-ancestor", predecessor, base)
-    except subprocess.CalledProcessError as exc:
-        raise ValueError("local default branch has unpublished or divergent commits; reconcile explicitly") from exc
+    except subprocess.CalledProcessError:
+        try:
+            git(repo, "merge-base", "--is-ancestor", base, predecessor)
+        except subprocess.CalledProcessError as exc:
+            raise ValueError("local default branch diverged from origin; reconcile explicitly") from exc
+        # Local integration is a supported delivery boundary. A subsequent task
+        # must include accepted local work even before the user publishes it.
+        return expected, predecessor, predecessor
     return remote_ref, base, predecessor
 
 

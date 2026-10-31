@@ -181,7 +181,7 @@ def test_remote_input_fetches_new_default_commit_without_moving_checkout(deliver
     assert mod.integrate(repo, tree, base, output, output, output) == output
 
 
-def test_remote_input_refuses_unpublished_local_commits(delivery, tmp_path):
+def test_remote_input_preserves_local_mainline_commits(delivery, tmp_path):
     mod, repo, tree, base, output = delivery
     remote = tmp_path / "origin.git"
     subprocess.run(["git", "clone", "--bare", str(repo), str(remote)], check=True, capture_output=True)
@@ -189,9 +189,13 @@ def test_remote_input_refuses_unpublished_local_commits(delivery, tmp_path):
     (repo / "local.txt").write_text("preserve local work")
     git(repo, "add", ".")
     git(repo, "commit", "-m", "local work")
-    with pytest.raises(ValueError, match="unpublished or divergent"):
-        mod.task_input(repo, "main")
+    local = git(repo, "rev-parse", "HEAD")
+    assert mod.task_input(repo, "main") == ("refs/heads/main", local, local)
     assert (repo / "local.txt").read_text() == "preserve local work"
+    git(tree, "push", "origin", "HEAD:refs/heads/main")
+    with pytest.raises(ValueError, match="diverged"):
+        mod.task_input(repo, "main")
+    assert git(repo, "rev-parse", "HEAD") == local
 
 
 def test_remote_fetch_failure_is_infrastructure_blocker(delivery, tmp_path):
