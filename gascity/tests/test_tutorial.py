@@ -56,3 +56,26 @@ def test_status_reads_existing_task_without_restarting_it(tutorial, tmp_path, mo
     monkeypatch.setattr("sys.argv", ["tutorial", "status"])
     tutorial.main()
     assert "Source task: practice-1; status: open" in capsys.readouterr().out
+
+
+def test_start_routes_existing_task_without_manual_rig_defaults(tutorial, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    destination = tmp_path / "projects/practice"
+    calls = []
+    def observations(*args, **kwargs):
+        calls.append(args)
+        if args[:2] == ("rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:4] == ("--rig", "practice", "bd", "list"):
+            return [{"id": "practice-1", "status": "open"}]
+        if args[:3] == ("--rig", "practice", "sling"):
+            assert args[3:5] == ("practice/gc.run-operator", "practice-1")
+            return "routed\n"
+        raise AssertionError(f"retry must reuse the existing task: {args}")
+    monkeypatch.setattr(source_delivery, "gc", observations)
+    monkeypatch.setattr(tutorial, "scaffold", lambda path: path)
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "start"])
+    tutorial.main()
+    assert len([call for call in calls if call[:3] == ("--rig", "practice", "sling")]) == 1

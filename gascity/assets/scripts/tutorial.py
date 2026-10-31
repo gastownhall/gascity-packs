@@ -118,7 +118,7 @@ def main():
         return
     if args.action == "start":
         print("[4/4] Starting implementation and independent review", flush=True)
-        print(gc("--rig", "practice", "sling", source_id, "--on", "quick-start",
+        print(gc("--rig", "practice", "sling", "practice/gc.run-operator", source_id, "--on", "quick-start",
                  "--var", "verify_command=" + VERIFY_COMMAND), end="")
     print("Watch: gc status\nInspect: gc gc tutorial status\nPause: gc stop\nResume: gc start")
     print("The source task closes only after the reviewed and tested commit is integrated locally.")
