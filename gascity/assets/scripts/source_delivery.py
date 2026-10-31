@@ -50,7 +50,17 @@ def task_input(repo, default_branch):
         # Local integration is a supported delivery boundary. A subsequent task
         # must include accepted local work even before the user publishes it.
         return expected, predecessor, predecessor
-    return remote_ref, base, predecessor
+    # Native worktree ownership binds the input ref to the eventual local
+    # integration target. Advance only a clean, unchanged mainline so cleanup
+    # can prove that the delivered commit landed on that same local ref.
+    if git(repo, "symbolic-ref", "--quiet", "HEAD") != expected or git(repo, "rev-parse", "HEAD") != predecessor:
+        raise ValueError("default branch changed during fetch; retry from a clean checkout")
+    clean(repo)
+    git(repo, "merge", "--ff-only", "--no-edit", base)
+    if git(repo, "symbolic-ref", "--quiet", "HEAD") != expected or git(repo, "rev-parse", "HEAD") != base:
+        raise ValueError("default branch changed while selecting delivery input")
+    clean(repo)
+    return expected, base, base
 
 
 def configured_default_branch(repo):

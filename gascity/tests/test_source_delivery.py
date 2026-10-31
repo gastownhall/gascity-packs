@@ -170,15 +170,15 @@ def test_local_input_uses_configured_default_branch(delivery):
         mod.task_input(repo, "feature")
 
 
-def test_remote_input_fetches_new_default_commit_without_moving_checkout(delivery, tmp_path):
+def test_remote_input_fast_forwards_clean_default_checkout(delivery, tmp_path):
     mod, repo, tree, base, output = delivery
     remote = tmp_path / "origin.git"
     subprocess.run(["git", "clone", "--bare", str(repo), str(remote)], check=True, capture_output=True)
     git(repo, "remote", "add", "origin", str(remote))
     git(tree, "push", "origin", "HEAD:refs/heads/main")
-    assert mod.task_input(repo, "main") == ("refs/remotes/origin/main", output, base)
-    assert git(repo, "rev-parse", "HEAD") == base
-    assert mod.integrate(repo, tree, base, output, output, output) == output
+    assert mod.task_input(repo, "main") == ("refs/heads/main", output, output)
+    assert git(repo, "rev-parse", "HEAD") == output
+    assert mod.integrate(repo, tree, output, output, output, output) == output
 
 
 def test_remote_input_preserves_local_mainline_commits(delivery, tmp_path):
@@ -204,3 +204,63 @@ def test_remote_fetch_failure_is_infrastructure_blocker(delivery, tmp_path):
     with pytest.raises(mod.InfrastructureError, match="cannot fetch"):
         mod.task_input(repo, "main")
     assert git(repo, "rev-parse", "HEAD") == base
+
+def test_fetched_default_input_supports_native_local_integration_cleanup(delivery, tmp_path):
+    import json
+    import os
+    gc_bin = os.environ.get("GC_TEST_BIN")
+    if not gc_bin:
+        pytest.skip("set GC_TEST_BIN for native worktree lifecycle qualification")
+    mod, repo, tree, base, remote_output = delivery
+    remote = tmp_path / "origin.git"
+    subprocess.run(["git", "clone", "--bare", str(repo), str(remote)], check=True, capture_output=True)
+    git(repo, "remote", "add", "origin", str(remote))
+    git(tree, "push", "origin", "HEAD:refs/heads/main")
+    base_ref, input_sha, predecessor = mod.task_input(repo, "main")
+    root = tmp_path / "owned"
+    owned = root / "flow-1"
+    args = ["--repo", str(repo), "--root", str(root), "--path", str(owned),
+            "--branch", "gc/flow-1", "--base", base_ref, "--base-sha", input_sha,
+            "--bead", "task-1", "--store-ref", "rig:practice", "--creator", "formula-quick-start",
+            "--owner", "formula", "--generation", "flow-1", "--json"]
+    report = json.loads(subprocess.check_output([gc_bin, "worktree", "ensure", *args], text=True))
+    (owned / "next.txt").write_text("next accepted task\n")
+    git(owned, "add", ".")
+    git(owned, "commit", "-m", "next local delivery")
+    output = git(owned, "rev-parse", "HEAD")
+    mod.integrate(repo, owned, predecessor, output, output, output)
+    cleanup = subprocess.run([gc_bin, "worktree", "cleanup", *args,
+                              "--attempt-id", report["provenance"]["attempt_id"]],
+                             text=True, capture_output=True)
+    assert cleanup.returncode == 0, cleanup.stdout + cleanup.stderr
+    assert not owned.exists()
+    assert git(repo, "rev-parse", "HEAD") == output
+
+
+@pytest.mark.parametrize("change", ["dirty", "commit", "branch"])
+def test_remote_input_refuses_checkout_changes_during_fetch(delivery, tmp_path, monkeypatch, change):
+    mod, repo, tree, base, output = delivery
+    remote = tmp_path / "origin.git"
+    subprocess.run(["git", "clone", "--bare", str(repo), str(remote)], check=True, capture_output=True)
+    git(repo, "remote", "add", "origin", str(remote))
+    git(tree, "push", "origin", "HEAD:refs/heads/main")
+    original_git = mod.git
+    def changed_during_fetch(path, *args):
+        result = original_git(path, *args)
+        if args[0] == "fetch":
+            if change == "branch":
+                git(repo, "switch", "-c", "user-work")
+            else:
+                (repo / "user.txt").write_text("preserve concurrent user work")
+                if change == "commit":
+                    git(repo, "add", ".")
+                    git(repo, "commit", "-m", "concurrent user work")
+        return result
+    monkeypatch.setattr(mod, "git", changed_during_fetch)
+    with pytest.raises(ValueError, match="dirty checkout|changed during fetch"):
+        mod.task_input(repo, "main")
+    assert git(repo, "rev-parse", "refs/heads/main") != output
+    if change != "branch":
+        assert (repo / "user.txt").read_text() == "preserve concurrent user work"
+    else:
+        assert git(repo, "symbolic-ref", "--short", "HEAD") == "user-work"

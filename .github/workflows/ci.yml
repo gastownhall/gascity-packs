@@ -65,6 +65,11 @@ jobs:
           GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py tests/test_pack_composition_warnings.py -q
           GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_build_failure_policy_live_gc.py -q
 
+      - name: Exercise Gas City delivery with native worktree ownership
+        run: |
+          GC_TEST_BIN="$(go env GOPATH)/bin/gc" \
+            python3 -m pytest gascity/tests/test_source_delivery.py gascity/tests/test_delivery_command_wrappers.py -q
+
       # Installed, not parsed. `gc lint` above reads each pack on its own and
       # the per-pack suites read their own TOML; neither can say what gc does
       # when a city loads the pack, which is where a user meets it. pr-pipeline

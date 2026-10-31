@@ -15,7 +15,46 @@ publish. It ships three things:
   methodology packs in this repository (bmad, compound-engineering,
   superpowers, gstack) extend and override.
 
-## Quick Start: your first build
+## Quick Start: deliver a local change
+
+The beginner experience is built into Gas City and uses this pack. With one
+coding provider already configured, start a city and its practice task:
+
+```sh
+gc init --experience beginner --default-provider claude ~/bright-lights
+cd ~/bright-lights
+gc gc tutorial start
+gc gc tutorial status
+```
+
+The task runs in an owned worktree, receives independent review and tests,
+integrates locally, and closes only after cleanup and workflow finalization.
+It allows two repair rounds. GitHub and `gh` are optional; no additional starter
+pack or manual pack edits are needed. Model sessions start on demand and the
+experience preserves normal provider and capacity choices.
+
+For an existing project, add the rig and create a bead with acceptance criteria.
+Submit its ID with the project's real verification command:
+
+```sh
+gc sling <task-id> --var verify_command="your project's verification command"
+```
+
+The roles import declares its default sling target as a pack-local agent name.
+Gas City qualifies that name with the actual rig and import binding, so renamed
+imports work. The run operator selects `quick-start` unless you explicitly
+choose another formula. Explicit rig targets override the inherited target;
+conflicting defaults from multiple imports require an explicit selection.
+
+The delivery input is the configured default branch. Fetching `origin` includes
+new remote commits by fast-forwarding a clean local default branch before
+provisioning the task, while retaining previously integrated local commits. A
+dirty or diverged branch or unavailable remote blocks setup visibly. Repositories with
+no `origin` use the local default branch. Source closure proves exact reviewed,
+tested and integrated commit identity, with durable evidence on workflow beads.
+
+## Configure an existing custom city for larger builds
+
 
 Prerequisites: Gas City installed and a city running (`gc init`, `gc start`),
 and your project added as a rig (`gc rig add .` inside the repo). See the
