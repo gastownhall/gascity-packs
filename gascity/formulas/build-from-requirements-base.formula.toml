@@ -26,14 +26,14 @@ default = ""
 [[steps]]
 id = "prepare-requirements"
 title = "Validate requirements continuation inputs"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-requirements-base/prepare-requirements.md"
 
 [[steps]]
 id = "requirements"
 title = "Produce requirements"
 needs = ["prepare-requirements"]
-metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+metadata = { "gc.run_target" = "gc.requirements-planner", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-requirements-base/requirements.md"
 
 [steps.check]
@@ -48,5 +48,12 @@ timeout = "5m"
 id = "prepare-plan"
 title = "Validate plan continuation inputs"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-requirements-base/prepare-plan.md"
+
+[[steps]]
+id = "build-body"
+title = "Build pipeline scope"
+needs = ["prepare-review", "review", "repair-review", "finalize", "publish", "prepare-convoy", "implement", "implement-same-session", "prepare-decompose", "decompose", "prepare-plan", "plan", "plan-review", "prepare-requirements", "requirements"]
+description_file = "../assets/workflows/build-from-requirements-base/build-body.md"
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "build", "gc.scope_role" = "body" }

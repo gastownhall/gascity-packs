@@ -30,7 +30,7 @@ default = "separate"
 [[steps]]
 id = "prepare-convoy"
 title = "Validate implementation convoy"
-metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-convoy-base/prepare-convoy.md"
 
 [[steps]]
@@ -38,7 +38,7 @@ id = "implement"
 title = "Drain continuation implementation convoy"
 needs = ["prepare-convoy"]
 condition = "{{drain_policy}} == separate"
-metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-convoy-base/implement.md"
 
 [steps.drain]
@@ -51,7 +51,7 @@ id = "implement-same-session"
 title = "Drain continuation convoy in one shared session"
 needs = ["prepare-convoy"]
 condition = "{{drain_policy}} == same-session"
-metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-convoy-base/implement-same-session.md"
 
 [steps.drain]
@@ -64,15 +64,15 @@ member_access = "exclusive"
 single_lane = true
 
 [[steps]]
-id = "drain-scope"
-title = "Continuation drain scope"
-needs = ["prepare-convoy", "implement", "implement-same-session"]
-description_file = "../assets/workflows/build-from-convoy-base/drain-scope.md"
-metadata = { "gc.kind" = "scope", "gc.scope_name" = "build-from-convoy-drain", "gc.scope_role" = "body" }
-
-[[steps]]
 id = "prepare-review"
 title = "Validate review continuation inputs"
-needs = ["implement", "implement-same-session", "drain-scope"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+needs = ["implement", "implement-same-session"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-convoy-base/prepare-review.md"
+
+[[steps]]
+id = "build-body"
+title = "Build pipeline scope"
+needs = ["prepare-review", "review", "repair-review", "finalize", "publish", "prepare-convoy", "implement", "implement-same-session"]
+description_file = "../assets/workflows/build-from-convoy-base/build-body.md"
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "build", "gc.scope_role" = "body" }

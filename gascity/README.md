@@ -170,6 +170,31 @@ records the entrypoint it started from, and refuses to finalize as a pass when
 review or repair is still blocked — see "Choosing an entrypoint" above for
 which one matches the artifacts you have.
 
+### Required stage failure policy
+
+Use Gas City **v1.5.0 or newer** for this contract. It uses upstream
+[graph-v2 scopes and failure policy](https://github.com/gastownhall/gascity/blob/v1.5.0/docs/reference/specs/formula-spec-v2.md#35-scopes-and-failure-policy),
+including [scope close-ownership](https://github.com/gastownhall/gascity/pull/5202),
+[logical retry finalization](https://github.com/gastownhall/gascity/pull/4263), and
+[post-settlement teardown](https://github.com/gastownhall/gascity/pull/5271).
+
+Full builds and `build-from-*` continuations place every required stage in a
+native `build-body` scope. A terminal stage failure aborts the remaining stages,
+so a failed requirements, plan, review, or implementation gate cannot be followed
+by a successful finalize or publish no-op. A stage keeps its existing bounded
+repair loop: an unsuccessful attempt can be repaired before logical exhaustion
+fails the enclosing build.
+
+`finalize` and `publish` are required stages, not failure cleanup. Native workflow
+settlement and explicitly declared teardown remain responsible for cleanup.
+
+Formula inheritance replaces a whole step, including metadata. Child overrides
+must preserve `gc.scope_ref = "build-body"`, `gc.on_fail = "abort_scope"`, and the
+scope role (`setup` for prerequisite preparation, `member` for other stages).
+Added stages must also appear in `build-body.needs`. Review expansions accept an
+optional `failure_scope` input; build callers pass `build-body`, while standalone
+callers retain the empty default and do not require an enclosing build scope.
+
 Every formula in this pack uses `contract = "graph.v2"`. Targeted formulas take
 the core-injected reserved convoy target; they do not declare `issue`,
 `bead_id`, or `convoy_id` variables. `drain_policy=separate` is the standalone
@@ -664,7 +689,8 @@ id = "review"
 title = "Run company review quorum"
 needs = ["implement"]
 expand = "company-review-n-wide"
-metadata = { "gc.run_target" = "gc.review-synthesizer" }
+expand_vars = { failure_scope = "build-body" }
+metadata = { "gc.run_target" = "gc.review-synthesizer", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 ```
 
 The expansion can run several independent reviewers, synthesize required

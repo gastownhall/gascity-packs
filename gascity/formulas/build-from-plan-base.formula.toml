@@ -34,14 +34,14 @@ default = ""
 [[steps]]
 id = "prepare-plan"
 title = "Validate plan continuation inputs"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-plan-base/prepare-plan.md"
 
 [[steps]]
 id = "plan"
 title = "Produce implementation plan"
 needs = ["prepare-plan"]
-metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-plan-base/plan.md"
 
 [steps.check]
@@ -56,12 +56,19 @@ timeout = "5m"
 id = "plan-review"
 title = "Review implementation plan"
 needs = ["plan"]
-metadata = { "gc.run_target" = "gc.review-synthesizer" }
+metadata = { "gc.run_target" = "gc.review-synthesizer", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-plan-base/plan-review.md"
 
 [[steps]]
 id = "prepare-decompose"
 title = "Validate decompose continuation inputs"
 needs = ["plan-review"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-plan-base/prepare-decompose.md"
+
+[[steps]]
+id = "build-body"
+title = "Build pipeline scope"
+needs = ["prepare-review", "review", "repair-review", "finalize", "publish", "prepare-convoy", "implement", "implement-same-session", "prepare-decompose", "decompose", "prepare-plan", "plan", "plan-review"]
+description_file = "../assets/workflows/build-from-plan-base/build-body.md"
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "build", "gc.scope_role" = "body" }

@@ -92,6 +92,7 @@ BUILD_BASE_STEPS = [
     "review",
     "finalize",
     "publish",
+    "build-body",
 ]
 
 BUILD_FROM_REVIEW_STEPS = {
@@ -100,13 +101,13 @@ BUILD_FROM_REVIEW_STEPS = {
     "repair-review",
     "finalize",
     "publish",
+    "build-body",
 }
 
 BUILD_FROM_CONVOY_STEPS = BUILD_FROM_REVIEW_STEPS | {
     "prepare-convoy",
     "implement",
     "implement-same-session",
-    "drain-scope",
 }
 
 BUILD_FROM_DECOMPOSE_STEPS = BUILD_FROM_CONVOY_STEPS | {
@@ -1636,7 +1637,10 @@ class FormulaAssetTests(unittest.TestCase):
         for var_name, default in METHODOLOGY_FORMULA_VARS.items():
             self.assertEqual(data["vars"][var_name]["default"], default)
 
-        route_by_step = {step["id"]: step["metadata"]["gc.run_target"] for step in data["steps"]}
+        route_by_step = {
+            step["id"]: step["metadata"]["gc.run_target"]
+            for step in data["steps"] if step["id"] != "build-body"
+        }
         self.assertEqual(route_by_step["prepare"], "gc.run-operator")
         self.assertEqual(route_by_step["requirements"], "gc.requirements-planner")
         self.assertEqual(route_by_step["plan"], "gc.design-author")
@@ -1757,7 +1761,7 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["implement-same-session"]["drain"]["member_access"], "exclusive")
         self.assertEqual(steps["implement-same-session"]["drain"]["on_item_failure"], "skip_remaining")
         self.assertTrue(steps["implement-same-session"]["drain"]["item"]["single_lane"])
-        self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session", "drain-scope"])
+        self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session"])
         self.assertEqual(steps["review"]["needs"], ["prepare-review"])
         self.assertEqual(steps["repair-review"]["needs"], ["review"])
         self.assertEqual(steps["finalize"]["needs"], ["repair-review"])
@@ -1858,7 +1862,7 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(steps["prepare-convoy"]["needs"], ["decompose"])
         self.assertEqual(steps["implement"]["needs"], ["prepare-convoy"])
         self.assertEqual(steps["implement-same-session"]["needs"], ["prepare-convoy"])
-        self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session", "drain-scope"])
+        self.assertEqual(steps["prepare-review"]["needs"], ["implement", "implement-same-session"])
         self.assertEqual(steps["review"]["needs"], ["prepare-review"])
         self.assertEqual(steps["repair-review"]["needs"], ["review"])
         self.assertEqual(steps["finalize"]["needs"], ["repair-review"])
@@ -1916,6 +1920,7 @@ class FormulaAssetTests(unittest.TestCase):
             review_step["expand_vars"],
             {
                 "implementation_target": "{{implementation_target}}",
+                "failure_scope": "build-body",
             },
         )
         self.assertEqual(review_step["needs"], ["summarize-implementation"])
@@ -2359,6 +2364,7 @@ class FormulaAssetTests(unittest.TestCase):
                     "implementation_target": "{{implementation_target}}",
                     "review_mode": "{{review_mode}}",
                     "artifact_path_keys": "gc.build.review_report_path",
+                    "failure_scope": "build-body",
                 }
                 expected_review_expand_vars.update(expected.get("review_expand_vars", {}))
                 self.assertEqual(
@@ -3751,15 +3757,22 @@ class FormulaAssetTests(unittest.TestCase):
             "build-from-requirements",
         ):
             with self.subTest(formula=name):
-                self.assert_validation_failure_aborts_drains(
-                    resolve_formula(root, name),
-                    gate="prepare-convoy",
-                    downstream=["prepare-review", "review", "repair-review", "finalize"],
-                )
-        prepare_review = (root / "assets" / "workflows" / "build-from-convoy-base" / "prepare-review.md").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("skipped because validation failed", prepare_review)
+                # Continuation builds guard the entire pipeline. Standalone
+                # implement retains the narrower drain scope tested above.
+                data = resolve_formula(root, name)
+                steps = {step["id"]: step for step in data["steps"]}
+                body = steps["build-body"]
+                self.assertEqual(body["metadata"]["gc.kind"], "scope")
+                self.assertEqual(body["metadata"]["gc.scope_role"], "body")
+                self.assertCountEqual(body["needs"], set(steps) - {"build-body"})
+                self.assertEqual(steps["prepare-convoy"]["metadata"]["gc.scope_role"], "setup")
+                for step_id in ("prepare-convoy", "implement", "implement-same-session", "prepare-review", "review", "repair-review", "finalize", "publish"):
+                    metadata = steps[step_id]["metadata"]
+                    self.assertEqual(metadata["gc.scope_ref"], "build-body", step_id)
+                    self.assertEqual(metadata["gc.on_fail"], "abort_scope", step_id)
+                for drain_id in ("implement", "implement-same-session"):
+                    self.assertEqual(steps[drain_id]["needs"], ["prepare-convoy"])
+                    self.assertIn("drain", steps[drain_id])
 
     def test_item_implementation_formulas_route_role_agents(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
