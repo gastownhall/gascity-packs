@@ -120,6 +120,8 @@ def test_prepare_links_native_source_finalization_before_provisioning(delivery, 
     calls = []
     def observe(*args, **kwargs):
         calls.append(args)
+        if args[:3] == ("gc", "rig", "list"):
+            return {"rigs": [{"path": str(repo), "default_branch": "main"}]}
         if args[:3] == ("gc", "bd", "show"):
             return {"id": args[3], "status": "open", "metadata": {"gc.root_store_ref": "rig:practice"}}
         if args[:3] == ("gc", "worktree", "ensure"):
@@ -159,3 +161,42 @@ def test_integration_leaves_source_open_for_required_cleanup_and_finalization(de
     assert git(repo, "rev-parse", "HEAD") == output
     assert saved[-1]["integrated_sha"] == output
     assert not any("close" in call for call in calls)
+
+
+def test_local_input_uses_configured_default_branch(delivery):
+    mod, repo, tree, base, output = delivery
+    assert mod.task_input(repo, "main") == ("refs/heads/main", base, base)
+    with pytest.raises(ValueError, match="configured default branch"):
+        mod.task_input(repo, "feature")
+
+
+def test_remote_input_fetches_new_default_commit_without_moving_checkout(delivery, tmp_path):
+    mod, repo, tree, base, output = delivery
+    remote = tmp_path / "origin.git"
+    subprocess.run(["git", "clone", "--bare", str(repo), str(remote)], check=True, capture_output=True)
+    git(repo, "remote", "add", "origin", str(remote))
+    git(tree, "push", "origin", "HEAD:refs/heads/main")
+    assert mod.task_input(repo, "main") == ("refs/remotes/origin/main", output, base)
+    assert git(repo, "rev-parse", "HEAD") == base
+    assert mod.integrate(repo, tree, base, output, output, output) == output
+
+
+def test_remote_input_refuses_unpublished_local_commits(delivery, tmp_path):
+    mod, repo, tree, base, output = delivery
+    remote = tmp_path / "origin.git"
+    subprocess.run(["git", "clone", "--bare", str(repo), str(remote)], check=True, capture_output=True)
+    git(repo, "remote", "add", "origin", str(remote))
+    (repo / "local.txt").write_text("preserve local work")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "local work")
+    with pytest.raises(ValueError, match="unpublished or divergent"):
+        mod.task_input(repo, "main")
+    assert (repo / "local.txt").read_text() == "preserve local work"
+
+
+def test_remote_fetch_failure_is_infrastructure_blocker(delivery, tmp_path):
+    mod, repo, tree, base, output = delivery
+    git(repo, "remote", "add", "origin", str(tmp_path / "unavailable"))
+    with pytest.raises(mod.InfrastructureError, match="cannot fetch"):
+        mod.task_input(repo, "main")
+    assert git(repo, "rev-parse", "HEAD") == base

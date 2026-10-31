@@ -21,6 +21,40 @@ def clean(repo):
         raise ValueError(f"dirty checkout: {repo}; preserve changes before continuing")
 
 
+
+def task_input(repo, default_branch):
+    """Pin the configured mainline, fetching origin when the repository has one."""
+    if not default_branch:
+        raise ValueError("rig has no default branch; configure it before submitting work")
+    git(repo, "check-ref-format", "refs/heads/" + default_branch)
+    expected = "refs/heads/" + default_branch
+    if git(repo, "symbolic-ref", "--quiet", "HEAD") != expected:
+        raise ValueError(f"checkout must be on the configured default branch {default_branch}; preserve and switch branches explicitly")
+    clean(repo)
+    predecessor = git(repo, "rev-parse", "HEAD")
+    if "origin" not in git(repo, "remote").splitlines():
+        return expected, predecessor, predecessor
+    remote_ref = "refs/remotes/origin/" + default_branch
+    try:
+        git(repo, "fetch", "--no-tags", "origin", "+" + expected + ":" + remote_ref)
+    except subprocess.CalledProcessError as exc:
+        raise InfrastructureError("cannot fetch the configured default branch from origin") from exc
+    base = git(repo, "rev-parse", remote_ref)
+    try:
+        git(repo, "merge-base", "--is-ancestor", predecessor, base)
+    except subprocess.CalledProcessError as exc:
+        raise ValueError("local default branch has unpublished or divergent commits; reconcile explicitly") from exc
+    return remote_ref, base, predecessor
+
+
+def configured_default_branch(repo):
+    rigs = gc("gc", "rig", "list", "--json", json_output=True)["rigs"]
+    matches = [rig for rig in rigs if Path(rig["path"]).resolve() == Path(repo).resolve()]
+    if len(matches) != 1:
+        raise ValueError("repository must identify exactly one registered rig")
+    return matches[0].get("default_branch", "")
+
+
 def integrate(repo, worktree, base, output, reviewed, tested):
     """Fast-forward only the exact reviewed/tested output from the fixed input.
 
@@ -124,9 +158,7 @@ def prepare(root, source, repo, workspace_root, verify_command):
     else:
         if bead(source).get("status") == "closed":
             raise ValueError("source task is already closed")
-        clean(repo)
-        base_ref = git(repo, "symbolic-ref", "--quiet", "HEAD")
-        base = git(repo, "rev-parse", "HEAD")
+        base_ref, base, predecessor = task_input(repo, configured_default_branch(repo))
         if not verify_command.strip():
             raise ValueError("a verification command is required")
         workspace_root = str(Path(workspace_root).resolve())
@@ -137,7 +169,8 @@ def prepare(root, source, repo, workspace_root, verify_command):
         if not store_ref:
             raise ValueError("workflow root has no authoritative store reference")
         record = dict(root=root, source=source, repo=repo, store_ref=store_ref, base_ref=base_ref,
-                      base_sha=base, predecessor_sha=base, worktree_root=workspace_root,
+                      base_sha=base, predecessor_sha=predecessor,
+                      integration_ref=git(repo, "symbolic-ref", "--quiet", "HEAD"), worktree_root=workspace_root,
                       worktree=str(Path(workspace_root) / root), branch="gc/" + root,
                       verify_command=verify_command)
         # Pin the input before provisioning, so a crash cannot choose a newer base.
@@ -232,7 +265,10 @@ def main():
             gc("gc", "worktree", "verify", *workspace_args(record), json_output=True)
             if record.get("review_status") != "approved":
                 raise ValueError("review is not approved")
-            integrated = integrate(record["repo"], record["worktree"], record["base_sha"],
+            if record.get("integration_ref") and git(record["repo"], "symbolic-ref", "--quiet", "HEAD") != record["integration_ref"]:
+                raise ValueError("integration branch changed; restore the recorded default branch explicitly")
+            git(record["worktree"], "merge-base", "--is-ancestor", record["base_sha"], record.get("output_sha", ""))
+            integrated = integrate(record["repo"], record["worktree"], record.get("predecessor_sha", record["base_sha"]),
                                    record.get("output_sha", ""), record.get("reviewed_sha", ""),
                                    record.get("tested_sha", ""))
             record["integrated_sha"] = integrated
